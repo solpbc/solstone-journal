@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, read_entity_identity, save_voiceprints_batch,
+    EncoderIdentity, VoiceprintItem, load_entity_voiceprints_file, read_entity_identity,
+    save_voiceprints_batch,
 };
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
@@ -114,6 +115,8 @@ fn write_empty_voiceprints(root: &Path, id: &str) {
     archive
         .write_all(&write_npy("<f4", "(0, 256)", &[]))
         .unwrap();
+    archive.start_file("metadata.npy", options).unwrap();
+    archive.write_all(&write_npy("<U0", "(0,)", &[])).unwrap();
     fs::write(path, archive.finish().unwrap().into_inner()).unwrap();
 }
 
@@ -669,6 +672,12 @@ fn ac1_empty_voiceprints_are_excluded_from_name_variant_pairs() {
         write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
     }
     write_empty_voiceprints(temporary.path(), "empty");
+    assert_eq!(
+        load_entity_voiceprints_file(temporary.path(), "empty")
+            .expect("empty voiceprint archive must load")
+            .rows,
+        0
+    );
 
     let scan = detect_name_variant_candidates(temporary.path()).unwrap();
     assert_eq!(scan.entities_with_voiceprints, 2);
@@ -754,6 +763,21 @@ fn ac3_normalizes_each_voiceprint_row_before_plain_mean() {
 
     let scan = detect_name_variant_candidates(temporary.path()).unwrap();
     assert_eq!(scan.matches_found[0].similarity, 1.0);
+}
+
+#[test]
+fn name_variant_canonical_selection_uses_unicode_code_point_length() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "a-unicode", "𝔸", "Person", false);
+    entity(temporary.path(), "b-ascii", "A ", "Person", false);
+    for id in ["a-unicode", "b-ascii"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+    assert_eq!(scan.candidates.len(), 1);
+    assert_eq!(scan.candidates[0].source_id, "a-unicode");
+    assert_eq!(scan.candidates[0].target_id, "b-ascii");
 }
 
 fn hub_scan(hub_id: &str, leaf_one_id: &str, leaf_two_id: &str) -> Vec<String> {

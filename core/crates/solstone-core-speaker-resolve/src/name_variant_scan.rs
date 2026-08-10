@@ -147,11 +147,12 @@ pub fn detect_name_variant_candidates(
         if i >= j || neighbors[j].len() != 1 {
             continue;
         }
-        let (target, source) = if centroids[i].name.len() >= centroids[j].name.len() {
-            (i, j)
-        } else {
-            (j, i)
-        };
+        let (target, source) =
+            if centroids[i].name.chars().count() >= centroids[j].name.chars().count() {
+                (i, j)
+            } else {
+                (j, i)
+            };
         let rounded = round_similarity(similarity);
         if is_name_variant_match(&centroids[source].name, &centroids[target].name) {
             scan.candidates.push(NameVariantCandidate {
