@@ -62,10 +62,11 @@ from solstone.think.cogitate_policy import (  # noqa: E402
     resolve_read_scope,
 )
 
+SDK_INJECTED_ACTION_PROPERTIES = frozenset({"kind"})
 DEFAULT_READ_CALL_BUDGET_VALUE = 200
 
 FIXTURE_NAME = "solstone-cogitate-oracle"
-FIXTURE_VERSION = 4
+FIXTURE_VERSION = 5
 
 # Spelled out so the corpus below never depends on how a shell or an editor
 # treats a backslash. Several vectors exist specifically to pin backslash
@@ -1017,6 +1018,224 @@ def build_bed(root: Path) -> None:
         (many / f"f{i:03d}.txt").write_text("x\n", encoding="utf-8")
 
 
+def build_sol_execution() -> dict[str, Any]:
+    """The `sol` tool's observation text is what the model reads back.
+
+    Its caps, its section order, its truncation marker and its outcome strings
+    were pinned by nothing before v5, so a rebuild would have been accepted
+    against values transcribed from reading the reference.
+    """
+    from solstone.think.providers import openhands as oh
+
+    fmt = oh._format_shell_output
+    trunc = oh._truncate_output
+    cap = oh._SHELL_STDOUT_CAP
+
+    cases: list[tuple[str, dict[str, Any], str]] = [
+        (
+            "fmt_stdout_only",
+            {"stdout": "hello\n", "stderr": "", "returncode": 0, "timed_out": False},
+            "openhands.py:613-615",
+        ),
+        (
+            "fmt_stderr_only",
+            {"stdout": "", "stderr": "bad\n", "returncode": 0, "timed_out": False},
+            "openhands.py:616-617",
+        ),
+        (
+            "fmt_both",
+            {"stdout": "out", "stderr": "err", "returncode": 0, "timed_out": False},
+            "openhands.py:613-617 - stdout section first, blank line between",
+        ),
+        (
+            "fmt_neither_ok",
+            {"stdout": "", "stderr": "", "returncode": 0, "timed_out": False},
+            "openhands.py:622-623 - the bare success token",
+        ),
+        (
+            "fmt_nonzero_exit",
+            {"stdout": "out", "stderr": "", "returncode": 3, "timed_out": False},
+            "openhands.py:620-621",
+        ),
+        (
+            "fmt_nonzero_exit_no_output",
+            {"stdout": "", "stderr": "", "returncode": 1, "timed_out": False},
+            "openhands.py:620-623 - exit_code alone, NOT 'ok'",
+        ),
+        (
+            "fmt_timeout",
+            {"stdout": "", "stderr": "", "returncode": None, "timed_out": True},
+            "openhands.py:618-619 - the seconds value is INTERPOLATED, not literal",
+        ),
+        (
+            "fmt_timeout_with_partial",
+            {
+                "stdout": "partial out",
+                "stderr": "partial err",
+                "returncode": None,
+                "timed_out": True,
+            },
+            "openhands.py:613-619 - partial output survives a timeout",
+        ),
+        (
+            "fmt_returncode_none_not_timed_out",
+            {"stdout": "x", "stderr": "", "returncode": None, "timed_out": False},
+            "openhands.py:620 - a None returncode adds no exit_code line",
+        ),
+    ]
+    rows: list[dict[str, Any]] = []
+    for case_id, kwargs, citation in cases:
+        rows.append(
+            {
+                "id": case_id,
+                "args": kwargs,
+                "citation": citation,
+                "expect": fmt(**kwargs),
+            }
+        )
+
+    # truncation, including the multibyte boundary a byte-slicing port panics on
+    trunc_cases: list[tuple[str, str, int, str]] = [
+        (
+            "trunc_under_cap",
+            "abc",
+            10,
+            "openhands.py:627-630 - untouched under the cap",
+        ),
+        ("trunc_at_cap", "a" * 10, 10, "openhands.py:628 - == cap is NOT truncated"),
+        ("trunc_over_cap", "a" * 11, 10, "openhands.py:630 - marker appended"),
+        (
+            "trunc_multibyte_boundary",
+            "é" * 11,
+            10,
+            "openhands.py:629 - Python slices CODE POINTS; a byte-slicing port panics here",
+        ),
+        (
+            "trunc_mixed_multibyte",
+            "a" * 8 + "日本語",
+            10,
+            "openhands.py:629 - the cut lands mid-multibyte-sequence by byte count",
+        ),
+        ("trunc_empty", "", 10, "openhands.py:628"),
+    ]
+    trunc_rows: list[dict[str, Any]] = []
+    for case_id, text, limit, citation in trunc_cases:
+        out = trunc(text, limit)
+        trunc_rows.append(
+            {
+                "id": case_id,
+                "input_chars": len(text),
+                "input_bytes": len(text.encode("utf-8")),
+                "cap": limit,
+                "citation": citation,
+                "expect": out,
+                "expect_chars": len(out),
+                "expect_bytes": len(out.encode("utf-8")),
+            }
+        )
+
+    # a real spawn, for the outcomes formatting alone cannot produce
+    run_rows: list[dict[str, Any]] = []
+    for case_id, argv, citation in [
+        (
+            "run_not_found",
+            ["definitely-not-a-real-binary-xyz"],
+            "openhands.py:569-570 - command_not_found, is_error",
+        ),
+    ]:
+        result = oh._run_command(argv)
+        run_rows.append(
+            {
+                "id": case_id,
+                "argv": argv,
+                "citation": citation,
+                "expect": {"text": result["text"], "is_error": result["is_error"]},
+            }
+        )
+
+    return {
+        "note": (
+            "The observation text the model reads back from the sol tool. "
+            "Produced by executing the reference's own formatters, not "
+            "transcribed. The seconds value in the timeout line and the caps are "
+            "INTERPOLATED from constants, so a rebuild must derive them too."
+        ),
+        "limits": {
+            "stdout_cap_chars": oh._SHELL_STDOUT_CAP,
+            "stderr_cap_chars": oh._SHELL_STDERR_CAP,
+            "timeout_seconds": oh._SHELL_TIMEOUT_SECONDS,
+            "truncation_marker": trunc("x" * (cap + 1), cap)[cap:],
+            "citation": "openhands.py:95-97,627-630",
+        },
+        "format_shell_output": rows,
+        "truncate_output": trunc_rows,
+        "run_command": run_rows,
+    }
+
+
+PART_SEPARATOR = "\n\n"
+
+
+def _decompose_system_instruction(
+    system: str | None,
+    config: dict[str, Any],
+    tool_name: str | None,
+    diagnostic: bool,
+) -> dict[str, Any] | None:
+    """Record the system instruction as ORDERED PARTS, never as one blob.
+
+    The blob would embed the runtime preamble, putting a second copy of it in
+    this file -- at a DIFFERENT value from the frozen `preambles` block, and
+    somewhere the divergence ledger cannot see. What this block is actually for
+    is composition: which parts, in what order, joined how. So that is what it
+    records, and the preamble appears only by identity.
+
+    The decomposition is checked against the reference's real output before it is
+    recorded, so it cannot drift into fiction.
+    """
+    from solstone.think.providers.cli import cogitate_sol_tool_hint
+
+    if system is None:
+        return None
+
+    scope_hint = (
+        "Limit filesystem reads to today's segment dir unless the task explicitly "
+        "requires broader history. If you need broader scope, state what and why "
+        "in your reasoning."
+    )
+
+    parts: list[dict[str, Any]] = []
+    if diagnostic:
+        parts.append({"role": "diagnostic_preamble", "text": None})
+    elif tool_name:
+        parts.append({"role": "runtime_preamble", "text": None})
+    if config.get("system_instruction"):
+        parts.append(
+            {"role": "talent_system_instruction", "text": config["system_instruction"]}
+        )
+    if tool_name and not diagnostic:
+        parts.append(
+            {"role": "sol_tool_hint", "text": cogitate_sol_tool_hint(tool_name)}
+        )
+    if config.get("read_scope") and not diagnostic:
+        parts.append({"role": "read_scope_hint", "text": scope_hint})
+
+    order = [part["role"] for part in parts]
+    return {
+        "parts": parts,
+        "order": order,
+        "separator": PART_SEPARATOR,
+        "byte_length": len(system.encode("utf-8")),
+        "sha256": hashlib.sha256(system.encode("utf-8")).hexdigest(),
+        "note": (
+            "A part whose text is null is identified rather than duplicated: its "
+            "bytes live in the preambles block, which is frozen against a "
+            "recorded divergence. Reassemble by joining the parts with the "
+            "separator, substituting the named constant."
+        ),
+    }
+
+
 def build_prompt_vectors() -> list[dict[str, Any]]:
     """The assembled system instruction is model-visible contract.
 
@@ -1102,7 +1321,12 @@ def build_prompt_vectors() -> list[dict[str, Any]]:
                 "sol_tool_name": tool_name,
                 "diagnostic": diagnostic,
                 "citation": citation,
-                "expect": {"prompt_body": body, "system_instruction": system},
+                "expect": {
+                    "prompt_body": body,
+                    "system_instruction": _decompose_system_instruction(
+                        system, config, tool_name, diagnostic
+                    ),
+                },
             }
         )
     rows.append(
@@ -1114,7 +1338,15 @@ def build_prompt_vectors() -> list[dict[str, Any]]:
             "citation": "cli.py:89-102 - the routing hint, derived from the approved family list",
             "expect": {
                 "prompt_body": None,
-                "system_instruction": cogitate_sol_tool_hint("sol"),
+                "system_instruction": {
+                    "parts": [
+                        {
+                            "role": "sol_tool_hint",
+                            "text": cogitate_sol_tool_hint("sol"),
+                        }
+                    ],
+                    "separator": PART_SEPARATOR,
+                },
             },
         }
     )
@@ -1146,13 +1378,22 @@ def build_tool_surface() -> dict[str, Any]:
         if action_type is not None and hasattr(action_type, "model_json_schema"):
             schema = action_type.model_json_schema()
         if schema:
+            # `kind` is an SDK-injected discriminator with a null description.
+            # A native tool must NOT reproduce it, so recording it would make an
+            # equality assertion against this block unsatisfiable.
             row["action_properties"] = {
                 key: {
                     "type": value.get("type"),
                     "description": value.get("description"),
                 }
                 for key, value in sorted(schema.get("properties", {}).items())
+                if key not in SDK_INJECTED_ACTION_PROPERTIES
             }
+            row["sdk_injected_properties_excluded"] = sorted(
+                key
+                for key in schema.get("properties", {})
+                if key in SDK_INJECTED_ACTION_PROPERTIES
+            )
             row["action_required"] = sorted(schema.get("required", []))
         return row
 
@@ -1857,6 +2098,7 @@ def main() -> int:
         },
         "prompt_assembly": build_prompt_vectors(),
         "tool_surface": build_tool_surface(),
+        "sol_execution": build_sol_execution(),
         "read_tools": read_tool_rows,
         "read_tool_limits": {
             "read_file_max_lines": crt.READ_FILE_MAX_LINES,
@@ -1892,6 +2134,11 @@ def main() -> int:
         "failure_caps": len(doc["failure_caps"]),
         "read_tools": len(doc["read_tools"]),
         "prompt_assembly": len(doc["prompt_assembly"]),
+        "sol_execution": (
+            len(doc["sol_execution"]["format_shell_output"])
+            + len(doc["sol_execution"]["truncate_output"])
+            + len(doc["sol_execution"]["run_command"])
+        ),
     }
     total = sum(counts.values())
     print(f"wrote {args.out} ({args.out.stat().st_size} bytes)")
