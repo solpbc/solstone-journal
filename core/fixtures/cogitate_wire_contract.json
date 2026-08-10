@@ -30,8 +30,7 @@
     "success": 0,
     "malformed_request": 65,
     "internal_failure": 70,
-    "dead_stdout_pipe": 74,
-    "provider_configuration_error": 78
+    "dead_stdout_pipe": 74
   },
   "protocol_semantics": {
     "provider_run_error_event_exits_success": true
@@ -75,7 +74,7 @@
     "finish": {
       "role": "native_producer",
       "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "terminal": "boolean" },
-      "optional_fields": { "result": "string", "raw": "json" },
+      "optional_fields": { "result": "string", "raw": "json", "usage": "object" },
       "ts_required": true,
       "terminal_applies": true
     },
@@ -83,7 +82,7 @@
       "role": "native_producer",
       "also_consumer_synthesized_in_python": true,
       "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "terminal": "boolean", "error": "string" },
-      "optional_fields": { "reason_code": "string", "provider_failure": "object", "result": "string", "raw": "json" },
+      "optional_fields": { "reason_code": "string", "provider_failure": "object", "result": "string", "raw": "json", "usage": "object" },
       "ts_required": true,
       "terminal_applies": true
     },

@@ -135,9 +135,10 @@ fn openai_converse_with<T: OpenAiTransport>(
         return converse_failure("provider_key_missing");
     };
     let model = configured_model(config);
+    let base_url = crate::overrides::configured_base_url(config, OPENAI_BASE_URL);
     let body = converse_request_body(request, messages, tools, &model);
     let response = match transport.post_json(
-        OPENAI_BASE_URL,
+        &base_url,
         OPENAI_RESPONSES_PATH,
         &body,
         &api_key,
@@ -164,9 +165,10 @@ fn openai_generate_with<T: OpenAiTransport>(
         return failure("provider_key_missing");
     };
     let model = configured_model(config);
+    let base_url = crate::overrides::configured_base_url(config, OPENAI_BASE_URL);
     let body = request_body(request, &model);
     let response = match transport.post_json(
-        OPENAI_BASE_URL,
+        &base_url,
         OPENAI_RESPONSES_PATH,
         &body,
         &api_key,

@@ -256,6 +256,7 @@ fn terminal_event(outcome: RunOutcome) -> Value {
     let object = value
         .as_object_mut()
         .expect("event_value always returns an object");
+    object.insert("usage".to_owned(), outcome.usage.to_wire_value());
     if let Some(result) = outcome.result {
         object.insert("result".to_owned(), Value::String(result));
     }

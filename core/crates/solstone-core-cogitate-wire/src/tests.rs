@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -13,14 +13,13 @@ use solstone_core_cogitate_runtime::{
     Usage, run_cogitate,
 };
 use solstone_core_generate_wire::{
-    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec,
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, resolve_lane,
 };
 
 use crate::{
     COGITATE_API_KEY_OVERRIDE_ENV, COGITATE_ENDPOINT_URL_OVERRIDE_ENV, CogitateRequest,
-    EndpointConfigurationError, EndpointConverseProvider, EndpointOverrides, NativeRun,
-    REQUEST_SCHEMA, run_or_dry_run, serialize_dry_run, serialize_event, serialize_event_validated,
-    validate_event,
+    DispatchConverseProvider, EndpointOverrides, NativeRun, REQUEST_SCHEMA, run_or_dry_run,
+    serialize_dry_run, serialize_event, serialize_event_validated, validate_event,
 };
 
 fn request_value() -> Value {
@@ -120,6 +119,7 @@ fn request_rejects_provider_endpoint_and_credential_fields() {
 }
 
 const ENV_CHILD: &str = "SOLSTONE_COGITATE_WIRE_ENV_CHILD";
+const PROVIDER_KEY_CHILD: &str = "SOLSTONE_COGITATE_WIRE_PROVIDER_KEY_CHILD";
 
 fn env_child(test: &str, endpoint: Option<&str>, api_key: Option<&str>) -> bool {
     if std::env::var_os(ENV_CHILD).is_some() {
@@ -168,6 +168,137 @@ fn endpoint_override_environment_reads_absent_values() {
     let overrides = EndpointOverrides::from_process();
     assert_eq!(overrides.endpoint_url(), None);
     assert_eq!(overrides.api_key(), None);
+}
+
+#[test]
+fn ambient_provider_key_does_not_bypass_missing_journal_credential() {
+    if std::env::var_os(PROVIDER_KEY_CHILD).is_none() {
+        let status = Command::new(std::env::current_exe().expect("test executable"))
+            .arg("--exact")
+            .arg("tests::ambient_provider_key_does_not_bypass_missing_journal_credential")
+            .env(PROVIDER_KEY_CHILD, "1")
+            .env("GOOGLE_API_KEY", "ambient-only-key")
+            .env_remove("SOLSTONE_GENERATE_API_KEY_OVERRIDE")
+            .status()
+            .expect("run child test");
+        assert!(status.success());
+        return;
+    }
+
+    let config = json!({"providers": {"active": {"provider": "google"}}})
+        .as_object()
+        .expect("config is an object")
+        .clone();
+    let (_, lane) = resolve_lane(&config);
+    let mut provider = DispatchConverseProvider::from_lane(
+        &request(),
+        config,
+        lane,
+        EndpointOverrides::from_values(None, None),
+    )
+    .expect("google provider constructs");
+    let failure = provider
+        .converse(
+            "request-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+        )
+        .expect_err("missing config key refuses before transport");
+    assert_eq!(failure.reason_code, "provider_key_missing");
+}
+
+#[test]
+fn journal_configuration_selects_each_executable_cogitate_arm() {
+    let cases = [
+        (
+            json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "http://endpoint", "served_model_id": "served"}}}),
+            "endpoint",
+        ),
+        (
+            json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "http://endpoint", "served_model_id": "served"}}, "services": {"confidential": {}}}),
+            "confidential",
+        ),
+        (
+            json!({"providers": {"active": {"provider": "google"}}}),
+            "google",
+        ),
+        (
+            json!({"providers": {"active": {"provider": "anthropic"}}}),
+            "anthropic",
+        ),
+        (
+            json!({"providers": {"active": {"provider": "openai"}}}),
+            "openai",
+        ),
+    ];
+    for (value, expected) in cases {
+        let config = value.as_object().expect("config is an object").clone();
+        let (_, lane) = resolve_lane(&config);
+        let provider = DispatchConverseProvider::from_lane(
+            &request(),
+            config,
+            lane,
+            EndpointOverrides::from_values(None, None),
+        )
+        .expect("executable lane constructs a provider");
+        assert_eq!(provider.arm_name(), expected);
+    }
+}
+
+#[test]
+fn confidential_dispatch_stops_at_attestation_before_endpoint_transport() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint listener");
+    let port = listener.local_addr().expect("endpoint address").port();
+    let missing_nvattest_dir = std::env::temp_dir().join(format!(
+        "solstone-missing-nvattest-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos(),
+    ));
+    let config = json!({
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": format!("http://127.0.0.1:{port}"),
+                "served_model_id": "configured-model"
+            }
+        },
+        "services": {"confidential": {"nvattest_dir": missing_nvattest_dir}}
+    })
+    .as_object()
+    .expect("config is an object")
+    .clone();
+    let (_, lane) = resolve_lane(&config);
+    let mut provider = DispatchConverseProvider::from_lane(
+        &request(),
+        config,
+        lane,
+        EndpointOverrides::from_values(None, None),
+    )
+    .expect("confidential provider constructs");
+    let failure = provider
+        .converse(
+            "request-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+        )
+        .expect_err("attestation prerequisite refuses confidential lane");
+    assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+    listener.set_nonblocking(true).expect("set nonblocking");
+    assert!(matches!(
+        listener.accept(),
+        Err(error) if error.kind() == ErrorKind::WouldBlock
+    ));
 }
 
 #[test]
@@ -351,6 +482,42 @@ fn terminal_outcomes_split_and_preserve_partial_error_result() {
     });
     assert_eq!(non_terminal["event"], "error");
     assert_eq!(non_terminal["terminal"], false);
+}
+
+#[test]
+fn terminal_events_always_include_usage_on_finish_and_error() {
+    let usage = Usage {
+        input_tokens: 2,
+        output_tokens: 3,
+        cached_tokens: 4,
+        cache_creation_tokens: 5,
+        reasoning_tokens: 6,
+        requests: 1,
+    };
+    let finish = serialize_event_validated(RuntimeEvent::Terminal {
+        outcome: RunOutcome::clean(Some("done".to_owned()), usage.clone(), "corr-1".to_owned()),
+    })
+    .expect("finish validates");
+    let error = serialize_event_validated(RuntimeEvent::Terminal {
+        outcome: RunOutcome::provider_failure(
+            ConverseFailure {
+                reason_code: "provider_key_missing".to_owned(),
+                retryable: false,
+                blocking: true,
+            },
+            usage,
+            "corr-1".to_owned(),
+        ),
+    })
+    .expect("error validates");
+    for event in [finish, error] {
+        assert_eq!(event["usage"]["input_tokens"], 2);
+        assert_eq!(event["usage"]["output_tokens"], 3);
+        assert_eq!(event["usage"]["cached_tokens"], 4);
+        assert_eq!(event["usage"]["cache_creation_tokens"], 5);
+        assert_eq!(event["usage"]["reasoning_tokens"], 6);
+        assert_eq!(event["usage"]["requests"], 1);
+    }
 }
 
 #[test]
@@ -659,11 +826,23 @@ fn final_turn_response() -> Value {
 fn run_endpoint_request(status: u16, body: Value, secret: &str) -> (Vec<Value>, String) {
     let (url, requests, handle) = spawn_stub(status, body);
     let request = request();
-    let mut provider = EndpointConverseProvider::new(
+    let config = json!({
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {"endpoint_url": "http://configured", "served_model_id": "configured"}
+        }
+    })
+    .as_object()
+    .expect("config is an object")
+    .clone();
+    let (_, lane) = resolve_lane(&config);
+    let mut provider = DispatchConverseProvider::from_lane(
         &request,
+        config,
+        lane,
         EndpointOverrides::from_values(Some(url), Some(secret.to_owned())),
     )
-    .expect("provider configuration");
+    .expect("endpoint lane provider");
     let mut tools = FinalToolExecutor;
     let mut sink = RecordingEventSink::default();
     run_cogitate(&mut provider, &mut tools, request.to_run_input(), &mut sink);
@@ -698,9 +877,6 @@ fn endpoint_provider_threads_bearer_and_never_serializes_credential() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(!stream.contains(secret));
-    let config_error = EndpointConfigurationError::MissingEndpointUrl;
-    assert!(!format!("{config_error}").contains(secret));
-    assert!(!format!("{config_error:?}").contains(secret));
     let malformed =
         CogitateRequest::from_value(&json!({"credential": secret})).expect_err("bad request");
     assert!(!format!("{malformed}").contains(secret));
