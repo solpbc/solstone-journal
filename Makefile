@@ -362,7 +362,7 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR)
 		"-p solstone-core-system --test stt_backend_choice_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-transfer --test transfer_differential" \
-		"-p solstone-core --test transfer_send_differential" \
+		"-p solstone-core --test transfer_send_differential --test export_differential" \
 		"-p solstone-core-system-health --test pipeline_health_oracle" \
 		"-p solstone-core-observe-audio --test audio_differential" \
 		"-p solstone-core-transcribe --test transcribe_differential" ; do \
