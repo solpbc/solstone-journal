@@ -5,6 +5,28 @@
 
 use serde_json::Value;
 
+pub(crate) fn converse_failure_flags(reason_code: &str) -> (bool, bool) {
+    match reason_code {
+        "tool_calls_missing" | "tool_call_arguments_invalid" => (true, false),
+        known => {
+            let entry = solstone_core_generate::contract()["reason_codes"]
+                .as_array()
+                .expect("generate contract reason codes are an array")
+                .iter()
+                .find(|entry| entry["code"].as_str() == Some(known))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "converse reason code {known:?} is not a recognized generate-contract code or converse-only code"
+                    )
+                });
+            (
+                entry["retryable"].as_bool().expect("retryable is boolean"),
+                entry["blocking"].as_bool().expect("blocking is boolean"),
+            )
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConverseMessage {
     User {

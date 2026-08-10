@@ -401,14 +401,14 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             .and_then(Value::as_str)
             .filter(|id| !id.is_empty())
         else {
-            continue;
+            return converse_failure("tool_call_arguments_invalid");
         };
         let Some(name) = function_call
             .get("name")
             .and_then(Value::as_str)
             .filter(|name| !name.is_empty())
         else {
-            continue;
+            return converse_failure("tool_call_arguments_invalid");
         };
         let Some(arguments) = function_call.get("args") else {
             return converse_failure("tool_call_arguments_invalid");
@@ -422,12 +422,6 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
             arguments: arguments.clone(),
             not_offered: !offered.contains(name),
         });
-    }
-    if !parts.is_empty()
-        && tool_calls.is_empty()
-        && parts.iter().any(|part| part.get("functionCall").is_some())
-    {
-        return converse_failure("tool_calls_missing");
     }
     GoogleConverseResult::Turn(ConverseTurn {
         text,
@@ -568,10 +562,11 @@ fn failure(reason_code: &str) -> GoogleResult {
 }
 
 fn converse_failure(reason_code: &str) -> GoogleConverseResult {
+    let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
     GoogleConverseResult::Failed(ConverseFailure {
         reason_code: reason_code.to_owned(),
-        retryable: true,
-        blocking: false,
+        retryable,
+        blocking,
     })
 }
 
@@ -1203,10 +1198,24 @@ mod tests {
             "modelVersion":"gemini","candidates":[{"finishReason":"STOP","content":{"parts":[{"functionCall":{"id":"c","name":"weather","args":[]}}]}}]
         }).to_string(), &offered) else { panic!("invalid expected") };
         assert_eq!(invalid.reason_code, "tool_call_arguments_invalid");
+        assert!(invalid.retryable && !invalid.blocking);
         let GoogleConverseResult::Failed(missing) = parse_converse_response(&json!({
             "modelVersion":"gemini","candidates":[{"finishReason":"STOP","content":{"parts":[{"functionCall":{}}]}}]
         }).to_string(), &offered) else { panic!("missing calls expected") };
-        assert_eq!(missing.reason_code, "tool_calls_missing");
+        assert_eq!(missing.reason_code, "tool_call_arguments_invalid");
+        let GoogleConverseResult::Failed(mixed_malformed) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini","candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"functionCall":{"id":"valid","name":"weather","args":{}}},
+                    {"functionCall":{"id":"malformed","args":{}}}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("mixed malformed calls must fail")
+        };
+        assert_eq!(mixed_malformed.reason_code, "tool_call_arguments_invalid");
         let GoogleConverseResult::Failed(malformed) = parse_converse_response(&json!({
             "modelVersion":"gemini","candidates":[{"finishReason":"MALFORMED_FUNCTION_CALL","content":{"parts":[]}}]
         }).to_string(), &offered) else { panic!("invalid expected") };
@@ -1242,5 +1251,6 @@ mod tests {
             panic!("failure expected")
         };
         assert_eq!(failure.reason_code, "provider_quota_exceeded");
+        assert!(failure.blocking);
     }
 }

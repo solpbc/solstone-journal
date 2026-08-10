@@ -498,10 +498,11 @@ fn failure(reason_code: &str) -> AnthropicResult {
 }
 
 fn converse_failure(reason_code: &str) -> AnthropicConverseResult {
+    let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
     AnthropicConverseResult::Failed(ConverseFailure {
         reason_code: reason_code.to_owned(),
-        retryable: true,
-        blocking: false,
+        retryable,
+        blocking,
     })
 }
 
@@ -1101,5 +1102,6 @@ mod tests {
             panic!("failure expected")
         };
         assert_eq!(failure.reason_code, "provider_quota_exceeded");
+        assert!(failure.blocking);
     }
 }

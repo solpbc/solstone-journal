@@ -425,14 +425,14 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConv
             .and_then(Value::as_str)
             .filter(|id| !id.is_empty())
         else {
-            continue;
+            return converse_failure("tool_call_arguments_invalid");
         };
         let Some(name) = item
             .get("name")
             .and_then(Value::as_str)
             .filter(|name| !name.is_empty())
         else {
-            continue;
+            return converse_failure("tool_call_arguments_invalid");
         };
         let Some(arguments) = item.get("arguments").and_then(Value::as_str) else {
             return converse_failure("tool_call_arguments_invalid");
@@ -449,14 +449,6 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> OpenAiConv
             arguments,
             not_offered: !offered.contains(name),
         });
-    }
-    if !output.is_empty()
-        && tool_calls.is_empty()
-        && output
-            .iter()
-            .any(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
-    {
-        return converse_failure("tool_calls_missing");
     }
     OpenAiConverseResult::Turn(ConverseTurn {
         text,
@@ -604,10 +596,11 @@ fn failure(reason_code: &str) -> OpenAiResult {
 }
 
 fn converse_failure(reason_code: &str) -> OpenAiConverseResult {
+    let (retryable, blocking) = crate::converse::converse_failure_flags(reason_code);
     OpenAiConverseResult::Failed(ConverseFailure {
         reason_code: reason_code.to_owned(),
-        retryable: true,
-        blocking: false,
+        retryable,
+        blocking,
     })
 }
 
@@ -1211,10 +1204,24 @@ mod tests {
             "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","call_id":"c","name":"weather","arguments":"not json"}]
         }).to_string(), &offered) else { panic!("invalid expected") };
         assert_eq!(invalid.reason_code, "tool_call_arguments_invalid");
+        assert!(invalid.retryable && !invalid.blocking);
         let OpenAiConverseResult::Failed(missing) = parse_converse_response(&json!({
             "model":"gpt","status":"completed","usage":{},"output":[{"type":"function_call","arguments":"{}"}]
         }).to_string(), &offered) else { panic!("missing calls expected") };
-        assert_eq!(missing.reason_code, "tool_calls_missing");
+        assert_eq!(missing.reason_code, "tool_call_arguments_invalid");
+        let OpenAiConverseResult::Failed(mixed_malformed) = parse_converse_response(
+            &json!({
+                "model":"gpt","status":"completed","usage":{},"output":[
+                    {"type":"function_call","call_id":"valid","name":"weather","arguments":"{}"},
+                    {"type":"function_call","call_id":"malformed","arguments":"{}"}
+                ]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("mixed malformed calls must fail")
+        };
+        assert_eq!(mixed_malformed.reason_code, "tool_call_arguments_invalid");
         let OpenAiConverseResult::Turn(truncated) = parse_converse_response(&json!({
             "model":"gpt","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{},"output":[{"type":"function_call","call_id":"c","name":"weather","arguments":"{"}]
         }).to_string(), &offered) else { panic!("truncated expected") };
@@ -1246,6 +1253,7 @@ mod tests {
             panic!("failure expected")
         };
         assert_eq!(failure.reason_code, "provider_quota_exceeded");
+        assert!(failure.blocking);
     }
 }
 
