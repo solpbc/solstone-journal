@@ -267,11 +267,7 @@ fn app_response(app: &str) -> Response {
         // threw on every page load. 501 is the exact meaning -- the path is
         // recognized, the functionality is not implemented -- and it routes
         // every client into the failure branch it already has.
-        Some(_) => (
-            StatusCode::NOT_IMPLEMENTED,
-            Json(AppNotConverted::new(app)),
-        )
-            .into_response(),
+        Some(_) => (StatusCode::NOT_IMPLEMENTED, Json(AppNotConverted::new(app))).into_response(),
         None => not_found_response(),
     }
 }

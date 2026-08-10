@@ -284,8 +284,7 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         "/app/home/background",
         "/app/timeline/background",
     ] {
-        let (status, _content_type, _location, body) =
-            get(router(journal.0.clone()), path).await;
+        let (status, _content_type, _location, body) = get(router(journal.0.clone()), path).await;
         assert!(
             !status.is_success(),
             "{path} returned a success status for an unconverted app: {status}"
