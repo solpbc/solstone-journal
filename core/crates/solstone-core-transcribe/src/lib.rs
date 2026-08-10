@@ -441,7 +441,7 @@ impl std::fmt::Display for TranscribeError {
             Self::BackendNotImplemented { backend } => {
                 write!(
                     formatter,
-                    "STT backend is not implemented in this wave: {backend}"
+                    "STT backend is unavailable on this host platform: {backend}"
                 )
             }
         }

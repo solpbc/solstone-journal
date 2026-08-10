@@ -4,7 +4,7 @@
 //! FluidAudio CoreML Parakeet helper client.
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -24,6 +24,7 @@ use crate::config::{
 const HELPER_ENV_KEY: &str = "SOLSTONE_PARAKEET_HELPER";
 const HELPER_RELATIVE: &str = "solstone/observe/transcribe/parakeet_helper";
 const HELPER_NAME: &str = "parakeet-helper";
+const HELPER_SPAWN_RETRIES: usize = 3;
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Invoke CoreML transcription. Model metadata is deliberately not probed here.
@@ -80,7 +81,7 @@ fn transcribe_with_helper(
                 timeout.as_secs_f64()
             ),
         ),
-        error => failure("coreml_helper_exit_failed", error.to_string()),
+        error => failure("coreml_helper_launch_failed", error.to_string()),
     })?;
     if !output.status.success() {
         return Err(failure(
@@ -123,7 +124,7 @@ fn require_ready_helper(helper: &Path) -> Result<(), TranscribeError> {
                 format!("Parakeet helper is missing: {}", helper.display()),
             )
         } else {
-            failure("coreml_helper_exit_failed", error.to_string())
+            failure("coreml_helper_launch_failed", error.to_string())
         }
     })?;
     if !metadata.is_file() {
@@ -229,29 +230,36 @@ fn run_helper(
     arguments: &[String],
     timeout: Duration,
 ) -> Result<HelperOutput, HelperRunError> {
-    let mut child = Command::new(helper)
-        .args(arguments)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    let mut child = spawn_helper(helper, arguments)
         .map_err(|error| HelperRunError::Spawn(error.to_string()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| HelperRunError::Read("missing stdout pipe".to_owned()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| HelperRunError::Read("missing stderr pipe".to_owned()))?;
+    let stdout_reader = spawn_reader(stdout);
+    let stderr_reader = spawn_reader(stderr);
     let started = Instant::now();
     let status = loop {
-        match child
-            .try_wait()
+        match retry_interrupted(|| child.try_wait())
             .map_err(|error| HelperRunError::Wait(error.to_string()))?
         {
             Some(status) => break status,
             None if started.elapsed() >= timeout => {
                 let _ = child.kill();
                 let _ = child.wait();
+                join_reader(stdout_reader, "stdout")?;
+                join_reader(stderr_reader, "stderr")?;
                 return Err(HelperRunError::TimedOut);
             }
             None => thread::sleep(Duration::from_millis(10)),
         }
     };
-    let stdout = read_child_stream(child.stdout.take(), "stdout")?;
-    let stderr = read_child_stream(child.stderr.take(), "stderr")?;
+    let stdout = join_reader(stdout_reader, "stdout")?;
+    let stderr = join_reader(stderr_reader, "stderr")?;
     Ok(HelperOutput {
         status,
         stdout,
@@ -259,13 +267,65 @@ fn run_helper(
     })
 }
 
-fn read_child_stream(stream: Option<impl Read>, name: &str) -> Result<String, HelperRunError> {
-    let mut stream = stream.ok_or_else(|| HelperRunError::Read(format!("missing {name} pipe")))?;
+fn spawn_helper(helper: &Path, arguments: &[String]) -> io::Result<std::process::Child> {
+    let mut retries = 0;
+    loop {
+        match Command::new(helper)
+            .args(arguments)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => return Ok(child),
+            Err(error)
+                if error.kind() == io::ErrorKind::ExecutableFileBusy
+                    && retries < HELPER_SPAWN_RETRIES =>
+            {
+                retries += 1;
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn spawn_reader<R>(stream: R) -> thread::JoinHandle<Result<String, HelperRunError>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || read_child_stream(stream))
+}
+
+fn join_reader(
+    reader: thread::JoinHandle<Result<String, HelperRunError>>,
+    name: &str,
+) -> Result<String, HelperRunError> {
+    reader
+        .join()
+        .map_err(|_| HelperRunError::Read(format!("{name} reader panicked")))?
+}
+
+fn read_child_stream(mut stream: impl Read) -> Result<String, HelperRunError> {
     let mut bytes = Vec::new();
-    stream
-        .read_to_end(&mut bytes)
-        .map_err(|error| HelperRunError::Read(error.to_string()))?;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = retry_interrupted(|| stream.read(&mut buffer))
+            .map_err(|error| HelperRunError::Read(error.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn retry_interrupted<T>(mut operation: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    loop {
+        match operation() {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => return result,
+        }
+    }
 }
 
 fn parse_coreml_response(text: &str) -> Result<TranscriptionResponse, CoremlResponseError> {
@@ -517,11 +577,12 @@ struct TokenTiming {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::{self, Read};
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 
-    use super::{get_model_info_with_helper, transcribe_with_helper};
+    use super::{get_model_info_with_helper, read_child_stream, transcribe_with_helper};
     use crate::TranscribeError;
 
     const SUCCESS: &str = r#"{"transcript":"hello world!","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[{"token":"▁hel","token_id":1,"start":0.0,"end":0.1,"confidence":0.9},{"token":"lo","token_id":2,"start":0.1,"end":0.2,"confidence":0.6},{"token":"▁world","token_id":3,"start":0.2,"end":0.4,"confidence":0.8},{"token":"!","token_id":4,"start":0.4,"end":0.5,"confidence":0.7}]}"#;
@@ -572,6 +633,21 @@ mod tests {
     }
 
     #[test]
+    fn helper_launch_failure_fails_with_its_own_reason() {
+        let temporary = tempfile::tempdir().unwrap();
+        let helper = temporary.path().join("parakeet-helper");
+        fs::write(&helper, "#!/definitely/missing/sh\n").unwrap();
+        let mut permissions = fs::metadata(&helper).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&helper, permissions).unwrap();
+
+        assert_failure_reason(
+            transcribe(&helper).unwrap_err(),
+            "coreml_helper_launch_failed",
+        );
+    }
+
+    #[test]
     fn malformed_helper_json_fails() {
         let helper = helper("printf '%s\\n' not-json");
 
@@ -602,6 +678,29 @@ mod tests {
         assert_eq!(response.words[0].probability, 0.6);
         assert_eq!(response.words[1].word, " world!");
         assert_eq!(response.words[1].probability, 0.7);
+    }
+
+    #[test]
+    fn large_helper_stdout_is_drained_before_exit() {
+        let helper = helper(
+            "printf '%s' '{\"transcript\":\"\",\"audio_sec\":1.0,\"transcribe_ms\":2,\"rtfx\":3.0,\"token_timings\":[],\"padding\":\"'\nhead -c 70000 /dev/zero | tr '\\0' x\nprintf '%s\\n' '\"}'",
+        );
+
+        let response = transcribe_with_timeout(&helper, Duration::from_secs(1)).unwrap();
+
+        assert!(response.words.is_empty());
+        assert!(response.text.is_empty());
+    }
+
+    #[test]
+    fn child_pipe_reader_retries_interrupted_reads() {
+        let output = read_child_stream(InterruptedReader {
+            interrupted: true,
+            bytes: b"helper output".to_vec(),
+        })
+        .unwrap();
+
+        assert_eq!(output, "helper output");
     }
 
     #[test]
@@ -682,6 +781,24 @@ mod tests {
             "'{}'",
             path.display().to_string().replace('\'', "'\\\"'\\\"'")
         )
+    }
+
+    struct InterruptedReader {
+        interrupted: bool,
+        bytes: Vec<u8>,
+    }
+
+    impl Read for InterruptedReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.interrupted {
+                self.interrupted = false;
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
+            }
+            let count = buffer.len().min(self.bytes.len());
+            buffer[..count].copy_from_slice(&self.bytes[..count]);
+            self.bytes.drain(..count);
+            Ok(count)
+        }
     }
 
     fn assert_deferred_reason(error: TranscribeError, expected_reason: &str) {

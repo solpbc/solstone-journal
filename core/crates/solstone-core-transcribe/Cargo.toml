@@ -29,6 +29,7 @@ required-features = ["differential"]
 
 [dependencies]
 chrono = { workspace = true }
+getrandom = { workspace = true }
 nix = { workspace = true, features = ["process", "signal"] }
 serde_json = { workspace = true }
 solstone-core-observe-audio = { workspace = true }
@@ -43,6 +44,9 @@ solstone-core-local = { workspace = true }
 solstone-core-spp-ratls = { workspace = true }
 tempfile = "3.24.0"
 ureq = { workspace = true, features = ["multipart"] }
+
+[dev-dependencies]
+solstone-core-spp-attest = { workspace = true }
 
 [lints]
 workspace = true
