@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::io::AsyncWriteExt;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, timeout};
 
@@ -240,12 +240,14 @@ async fn run_accept_loop(inner: Arc<ServerInner>, listener: UnixListener) {
 fn start_client(inner: Arc<ServerInner>, id: u64, stream: UnixStream) {
     let (outbound, outbound_rx) = mpsc::channel(SERVER_CLIENT_OUTBOUND_CAPACITY);
     let (shutdown, shutdown_rx) = watch::channel(false);
+    let (registered, registered_rx) = oneshot::channel();
     let task = tokio::spawn(run_client(
         Arc::clone(&inner),
         id,
         stream,
         outbound_rx,
         shutdown_rx,
+        registered_rx,
     ));
     lock(&inner.clients).insert(
         id,
@@ -255,6 +257,10 @@ fn start_client(inner: Arc<ServerInner>, id: u64, stream: UnixStream) {
             _task: task,
         },
     );
+    // The peer may have already written a frame by the time accept returns.
+    // Do not let its reader process that frame until this client is in the
+    // broadcast map, otherwise a response can race past its own subscriber.
+    let _ = registered.send(());
 }
 
 async fn run_dispatcher(inner: Arc<ServerInner>, mut broadcasts: mpsc::Receiver<CallosumEnvelope>) {
@@ -289,7 +295,11 @@ async fn run_client(
     stream: UnixStream,
     mut outbound: mpsc::Receiver<Vec<u8>>,
     mut shutdown: watch::Receiver<bool>,
+    registered: oneshot::Receiver<()>,
 ) {
+    if registered.await.is_err() {
+        return;
+    }
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = reader(read_half);
     let mut buffer = Vec::new();

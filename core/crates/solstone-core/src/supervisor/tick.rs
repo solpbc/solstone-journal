@@ -6,7 +6,8 @@ use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
-use solstone_core_callosum::CallosumEnvelope;
+use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
+use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_system::lifecycle::{
     DEFAULT_INTERVAL_SECONDS, check_sync, machine_id, sync_conflict_event, write_sync_heartbeat,
@@ -254,11 +255,20 @@ fn submit_think(
     day: &str,
     reference: String,
 ) -> solstone_core_system::queue::SubmitOutcome {
+    submit_task(queue, argv, reference, Some(day))
+}
+
+fn submit_task(
+    queue: &TaskQueue,
+    argv: Vec<String>,
+    reference: String,
+    day: Option<&str>,
+) -> solstone_core_system::queue::SubmitOutcome {
     let cmd = TaskArgv::from_wire(argv).expect("supervisor constructs a non-empty think argv");
     queue.submit(ExecutionRequest::Bus(BusTaskRequest {
         cmd,
         reference,
-        day: Some(day.to_owned()),
+        day: day.map(str::to_owned),
         scheduler_name: None,
         queue_if_active_cmd_differs: false,
     }))
@@ -504,6 +514,16 @@ async fn drain_inbound(state: &mut SupervisorState) {
 }
 
 fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
+    handle_supervisor_request(state, &message);
+    handle_supervisor_restart(state, &message);
+    handle_supervisor_drain(state, &message);
+    handle_segment_observed(state, &message);
+    handle_activity_recorded(state, &message);
+    handle_think_daily_complete(state, &message);
+    handle_segment_event_log(state, &message);
+}
+
+fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnvelope) {
     if message.tract != "supervisor" || message.event != "request" {
         return;
     }
@@ -541,6 +561,216 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
         queue_if_active_cmd_differs: false,
     };
     let _ = state.queue.submit(ExecutionRequest::Bus(request));
+}
+
+fn handle_supervisor_restart(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "supervisor" || message.event != "restart" {
+        return;
+    }
+    let Some(service) = message_string(message, "service") else {
+        eprintln!("supervisor: restart request missing service");
+        return;
+    };
+    if service == "supervisor" {
+        eprintln!("supervisor: refusing self restart request");
+        return;
+    }
+    let Some(app) = state
+        .app_processes
+        .iter_mut()
+        .find(|app| app.service.as_str() == service)
+    else {
+        eprintln!("supervisor: restart requested for unknown service {service}");
+        return;
+    };
+    match app.request_restart() {
+        Ok(Some(pid)) => emit(
+            &state.server,
+            "supervisor",
+            "restarting",
+            Map::from_iter([
+                ("service".into(), json!(service)),
+                ("pid".into(), json!(pid)),
+            ]),
+        ),
+        Ok(None) => eprintln!("supervisor: restart request ignored for inactive service {service}"),
+        Err(error) => eprintln!("supervisor: failed to restart {service}: {error}"),
+    }
+}
+
+fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "supervisor" || message.event != "drain" || state.is_remote_mode {
+        return;
+    }
+    let result = if let Some(day) = message_string(message, "day") {
+        run_catchup_drain(
+            &state.journal,
+            &state.queue,
+            &BTreeSet::new(),
+            &[day.to_owned()],
+        )
+    } else if message_truthy(message, "exclude_today") {
+        run_catchup_drain(
+            &state.journal,
+            &state.queue,
+            &BTreeSet::from([chrono::Local::now().format("%Y%m%d").to_string()]),
+            &[],
+        )
+    } else {
+        run_catchup_drain(&state.journal, &state.queue, &BTreeSet::new(), &[])
+    };
+    if let Err(error) = result {
+        eprintln!("supervisor: catchup drain request failed: {error}");
+    }
+}
+
+fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "observe" || message.event != "observed" {
+        return;
+    }
+    let Some(segment) = message_string(message, "segment") else {
+        eprintln!("supervisor: observed message missing segment");
+        return;
+    };
+    let day = message_string(message, "day")
+        .map(str::to_owned)
+        .unwrap_or_else(|| chrono::Local::now().format("%Y%m%d").to_string());
+    if message_truthy(message, "batch") {
+        eprintln!("supervisor: batch observed segment held for daily catchup: {day}/{segment}");
+        return;
+    }
+    if processing_is_deferred(&state.journal) || no_thinking_engine_chosen(&state.journal) {
+        eprintln!("supervisor: observed segment held by processing configuration: {day}/{segment}");
+        return;
+    }
+    let stream = message_string(message, "stream").map(str::to_owned);
+    state.flush.last_segment_ts = Some(Instant::now());
+    state.flush.day = Some(day.clone());
+    state.flush.segment = Some(segment.to_owned());
+    state.flush.stream = stream.clone();
+    state.flush.flushed = false;
+    let mut argv = vec![
+        "journal".to_owned(),
+        "think".to_owned(),
+        "-v".to_owned(),
+        "--day".to_owned(),
+        day.clone(),
+        "--segment".to_owned(),
+        segment.to_owned(),
+    ];
+    if let Some(stream) = stream {
+        argv.extend(["--stream".to_owned(), stream]);
+    }
+    argv.push("--live".to_owned());
+    let _ = submit_think(
+        &state.queue,
+        argv,
+        &day,
+        format!("supervisor-observed-{day}-{segment}"),
+    );
+}
+
+fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "activity" || message.event != "recorded" {
+        return;
+    }
+    let (Some(id), Some(facet), Some(day)) = (
+        message_string(message, "id"),
+        message_string(message, "facet"),
+        message_string(message, "day"),
+    ) else {
+        eprintln!("supervisor: activity.recorded message missing id, facet, or day");
+        return;
+    };
+    let _ = submit_task(
+        &state.queue,
+        vec![
+            "journal".to_owned(),
+            "think".to_owned(),
+            "--activity".to_owned(),
+            id.to_owned(),
+            "--facet".to_owned(),
+            facet.to_owned(),
+            "--day".to_owned(),
+            day.to_owned(),
+        ],
+        format!("supervisor-activity-{id}"),
+        Some(day),
+    );
+}
+
+fn handle_think_daily_complete(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "think" || message.event != "daily_complete" {
+        return;
+    }
+    let heartbeat_pid = state.journal.join("health/heartbeat.pid");
+    if let Ok(contents) = std::fs::read_to_string(&heartbeat_pid)
+        && let Ok(pid) = contents.trim().parse::<i32>()
+    {
+        match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None) {
+            Ok(()) | Err(nix::errno::Errno::EPERM) => {
+                eprintln!("supervisor: heartbeat already running with pid {pid}");
+                return;
+            }
+            Err(nix::errno::Errno::ESRCH) => {}
+            Err(error) => eprintln!("supervisor: could not check heartbeat pid {pid}: {error}"),
+        }
+    }
+    let _ = submit_task(
+        &state.queue,
+        vec!["journal".to_owned(), "heartbeat".to_owned()],
+        "supervisor-heartbeat".to_owned(),
+        None,
+    );
+}
+
+fn handle_segment_event_log(state: &SupervisorState, message: &CallosumEnvelope) {
+    if !matches!(message.tract.as_str(), "observe" | "think" | "activity") {
+        return;
+    }
+    let (Some(day), Some(segment)) = (
+        message_string(message, "day"),
+        message_string(message, "segment"),
+    ) else {
+        return;
+    };
+    let day_dir = match day_path(&state.journal, Some(day), false) {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("supervisor: could not resolve event-log day {day}: {error}");
+            return;
+        }
+    };
+    let segment_dir = message_string(message, "stream").map_or_else(
+        || day_dir.join(segment),
+        |stream| day_dir.join(stream).join(segment),
+    );
+    if !segment_dir.is_dir() {
+        return;
+    }
+    if let Err(error) = append_durable_event(&segment_dir, &DurableEvent::Callosum(message.clone()))
+    {
+        eprintln!("supervisor: failed to append segment event log: {error}");
+    }
+}
+
+fn message_string<'a>(message: &'a CallosumEnvelope, key: &str) -> Option<&'a str> {
+    message
+        .extra
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+fn message_truthy(message: &CallosumEnvelope, key: &str) -> bool {
+    message.extra.get(key).is_some_and(|value| match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_none_or(|value| value != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    })
 }
 
 fn sync_tick(state: &mut SupervisorState) -> bool {

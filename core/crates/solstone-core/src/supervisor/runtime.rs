@@ -7,7 +7,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_cli::SupervisorOptions;
@@ -37,6 +37,8 @@ const CONVEY_READY_INTERVAL: Duration = Duration::from_millis(100);
 const CONVEY_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_secs(3);
 const FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(20);
+const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
+const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
 
 pub(crate) struct SupervisorState {
     pub journal: PathBuf,
@@ -113,6 +115,7 @@ pub(crate) struct ManagedAppProcess {
     pub started_at: Option<Instant>,
     pub restart_policy: RestartPolicy,
     pub restart_at: Option<Instant>,
+    pub restart_requested: bool,
 }
 
 impl ManagedAppProcess {
@@ -135,7 +138,25 @@ impl ManagedAppProcess {
             started_at: None,
             restart_policy: RestartPolicy::default(),
             restart_at: None,
+            restart_requested: false,
         }
+    }
+
+    /// Signal a live service for restart without waiting for it to exit.
+    pub(crate) fn request_restart(&mut self) -> Result<Option<u32>, nix::errno::Errno> {
+        if self.restart_requested {
+            return Ok(None);
+        }
+        let Some(process) = self.process.as_ref() else {
+            return Ok(None);
+        };
+        let pid = process.pid();
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(pid as i32),
+            nix::sys::signal::Signal::SIGTERM,
+        )?;
+        self.restart_requested = true;
+        Ok(Some(pid))
     }
 
     pub(crate) fn record_exit(&mut self, exit_code: i32) {
@@ -145,6 +166,7 @@ impl ManagedAppProcess {
             .map(|started| started.elapsed())
             .unwrap_or(Duration::ZERO);
         self.process = None;
+        self.restart_requested = false;
         let delay = self.restart_policy.delay_after_exit(exit_code, uptime);
         self.restart_at = Some(Instant::now() + delay);
     }
@@ -385,6 +407,7 @@ pub(crate) fn spawn_app_process(
     app.process = Some(process);
     app.started_at = Some(Instant::now());
     app.restart_at = None;
+    app.restart_requested = false;
     Ok(())
 }
 
@@ -480,6 +503,7 @@ pub(crate) async fn boot_and_tick(
     let mut connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), serde_json::Map::new());
     connection.start();
+    wait_for_callosum_connection(&mut connection).await?;
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -667,6 +691,44 @@ pub(crate) async fn boot_and_tick(
         regime: ShutdownRegime::Standard,
         sync_conflict,
     })
+}
+
+async fn wait_for_callosum_connection(
+    connection: &mut CallosumSocketConnection,
+) -> Result<(), String> {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos())
+        .to_string();
+    tokio::time::timeout(CALLOSUM_CONNECTION_READY_WINDOW, async {
+        loop {
+            let _ = connection.emit(
+                "__solstone_internal",
+                "connection_ready",
+                serde_json::Map::from_iter([(
+                    "nonce".to_owned(),
+                    serde_json::Value::String(nonce.clone()),
+                )]),
+            );
+            tokio::select! {
+                message = connection.next_message() => {
+                    let Some(message) = message else {
+                        return Err("supervisor Callosum connection stopped before becoming ready".to_owned());
+                    };
+                    if message.tract == "__solstone_internal"
+                        && message.event == "connection_ready"
+                        && message.extra.get("nonce").and_then(serde_json::Value::as_str) == Some(nonce.as_str())
+                    {
+                        return Ok(());
+                    }
+                }
+                _ = tokio::time::sleep(CALLOSUM_CONNECTION_READY_INTERVAL) => {}
+            }
+        }
+    })
+    .await
+    .map_err(|_| "supervisor Callosum connection did not become ready".to_owned())??;
+    Ok(())
 }
 
 #[cfg(test)]

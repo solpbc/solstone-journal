@@ -4,6 +4,8 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -15,6 +17,7 @@ use tokio::net::UnixStream;
 use tokio::time::timeout;
 
 struct TempJournal(PathBuf);
+
 impl TempJournal {
     fn new() -> Self {
         let stamp = SystemTime::now()
@@ -29,6 +32,44 @@ impl TempJournal {
         )
         .expect("journal config");
         Self(root)
+    }
+
+    fn enable_thinking(&self) {
+        fs::write(
+            self.0.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .expect("thinking config");
+    }
+
+    fn install_journal_stub(&self) -> PathBuf {
+        let bin = self.0.join("test-bin");
+        fs::create_dir_all(&bin).expect("journal stub directory");
+        let marker = self.0.join("journal-stub-ran");
+        let path = bin.join("journal");
+        fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\nexec {} ready-sleep {} 30000\n",
+                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+                marker.display(),
+            ),
+        )
+        .expect("journal stub");
+        let mut permissions = fs::metadata(&path)
+            .expect("journal stub metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).expect("journal stub executable");
+        marker
+    }
+
+    fn segment_dir(&self, day: &str, stream: Option<&str>, segment: &str) -> PathBuf {
+        let day = self.0.join("chronicle").join(day);
+        stream.map_or_else(
+            || day.join(segment),
+            |stream| day.join(stream).join(segment),
+        )
     }
 }
 impl Drop for TempJournal {
@@ -74,6 +115,15 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> ChildGuard {
         "SOLSTONE_SUPERVISOR_APP_BINARY",
         env!("CARGO_BIN_EXE_solstone-system-test-child"),
     );
+    let journal_stub_dir = journal.0.join("test-bin");
+    if journal_stub_dir.is_dir() {
+        let path = std::env::var_os("PATH").into_iter().collect::<Vec<_>>();
+        let path = std::env::join_paths(
+            std::iter::once(journal_stub_dir).chain(path.iter().flat_map(std::env::split_paths)),
+        )
+        .expect("journal stub PATH");
+        command.env("PATH", path);
+    }
     if let Some(cap_seconds) = cap_seconds {
         command.env(
             "SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS",
@@ -84,8 +134,12 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> ChildGuard {
 }
 
 fn wait_for_socket(child: &mut ChildGuard, socket: &std::path::Path) {
-    for _ in 0..400 {
-        if socket.exists() {
+    let ready = socket
+        .parent()
+        .expect("Callosum socket health directory")
+        .join("supervisor.ready");
+    for _ in 0..1600 {
+        if socket.exists() && ready.exists() {
             return;
         }
         if let Some(status) = child.0.try_wait().expect("supervisor status") {
@@ -93,7 +147,7 @@ fn wait_for_socket(child: &mut ChildGuard, socket: &std::path::Path) {
         }
         thread::sleep(Duration::from_millis(5));
     }
-    panic!("socket did not appear");
+    panic!("supervisor did not become ready");
 }
 
 async fn connect(
@@ -120,6 +174,12 @@ async fn send_request(
     write.write_all(b"\n").await.expect("frame request");
 }
 
+async fn send_message(write: &mut tokio::net::unix::OwnedWriteHalf, message: Value) {
+    let line = serde_json::to_vec(&message).expect("message JSON");
+    write.write_all(&line).await.expect("write message");
+    write.write_all(b"\n").await.expect("frame message");
+}
+
 async fn receive_until(
     reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
     reference: &str,
@@ -143,6 +203,60 @@ async fn receive_until(
     })
     .await
     .expect("expected Callosum event")
+}
+
+async fn receive_started_command(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+    command: &[&str],
+) -> Value {
+    // The budget is deliberately generous because the journal fixture reaches
+    // the test child through PATH and a shell exec; a tight budget here would
+    // report a slow fork as a supervisor defect. This applies to every caller.
+    timeout(Duration::from_secs(20), async {
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).await.expect("started frame");
+            let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
+            if value["tract"] == "supervisor"
+                && value["event"] == "started"
+                && value["cmd"] == json!(command)
+            {
+                return value;
+            }
+        }
+    })
+    .await
+    .expect("handler task start")
+}
+
+async fn wait_for_path(path: &Path) {
+    timeout(Duration::from_secs(8), async {
+        while !path.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("expected path");
+}
+
+async fn wait_for_logged_message(path: &Path, message: &Value) {
+    timeout(Duration::from_secs(8), async {
+        loop {
+            if let Ok(contents) = fs::read_to_string(path)
+                && let Some(line) = contents.lines().next()
+                && let Ok(mut logged) = serde_json::from_str::<Value>(line)
+                && logged["ts"].is_number()
+            {
+                logged.as_object_mut().expect("event object").remove("ts");
+                if &logged == message {
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("expected logged event");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -296,4 +410,244 @@ async fn ac11_capped_task_is_terminated_with_timeout_exit() {
     .await
     .expect("timeout history projection");
     assert!(status["recent_tasks"].is_array());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn observed_message_submits_live_segment_think_over_socket() {
+    let journal = TempJournal::new();
+    journal.enable_thinking();
+    let _stub_marker = journal.install_journal_stub();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (mut reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({
+            "tract": "observe", "event": "observed", "day": "20260102",
+            "segment": "120000_60", "stream": "camera"
+        }),
+    )
+    .await;
+
+    let started = receive_started_command(
+        &mut reader,
+        &[
+            "journal",
+            "think",
+            "-v",
+            "--day",
+            "20260102",
+            "--segment",
+            "120000_60",
+            "--stream",
+            "camera",
+            "--live",
+        ],
+    )
+    .await;
+    assert_eq!(started["service"], "segment");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn batch_observed_message_does_not_run_the_journal_stub() {
+    let journal = TempJournal::new();
+    journal.enable_thinking();
+    let stub_marker = journal.install_journal_stub();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (_reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({
+            "tract": "observe", "event": "observed", "day": "20260102",
+            "segment": "120000_60", "batch": true
+        }),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert!(!stub_marker.exists(), "batch observation submitted a task");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn activity_recorded_submits_activity_think_over_socket() {
+    let journal = TempJournal::new();
+    journal.enable_thinking();
+    let _stub_marker = journal.install_journal_stub();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (mut reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({
+            "tract": "activity", "event": "recorded", "id": "activity-1",
+            "facet": "work", "day": "20260102"
+        }),
+    )
+    .await;
+
+    let started = receive_started_command(
+        &mut reader,
+        &[
+            "journal",
+            "think",
+            "--activity",
+            "activity-1",
+            "--facet",
+            "work",
+            "--day",
+            "20260102",
+        ],
+    )
+    .await;
+    assert_eq!(started["service"], "activity");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn daily_complete_submits_heartbeat_when_pid_file_is_absent() {
+    let journal = TempJournal::new();
+    let _stub_marker = journal.install_journal_stub();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (mut reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({"tract": "think", "event": "daily_complete"}),
+    )
+    .await;
+
+    let started = receive_started_command(&mut reader, &["journal", "heartbeat"]).await;
+    assert_eq!(started["service"], "heartbeat");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn drain_message_forces_day_think_over_socket() {
+    let journal = TempJournal::new();
+    journal.enable_thinking();
+    let _stub_marker = journal.install_journal_stub();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (mut reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({"tract": "supervisor", "event": "drain", "day": "20260102"}),
+    )
+    .await;
+
+    let started = receive_started_command(
+        &mut reader,
+        &["journal", "think", "-v", "--day", "20260102"],
+    )
+    .await;
+    assert_eq!(started["service"], "daily");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn restart_message_restarts_convey_fixture() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let marker = journal.0.join("health/fixture-convey.marker");
+    wait_for_path(&marker).await;
+    let previous_pid = fs::read_to_string(&marker)
+        .expect("convey marker")
+        .trim()
+        .rsplit(':')
+        .next()
+        .expect("convey pid")
+        .parse::<u32>()
+        .expect("numeric convey pid");
+    let (mut reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({"tract": "supervisor", "event": "restart", "service": "convey"}),
+    )
+    .await;
+    let restarting = timeout(Duration::from_secs(8), async {
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).await.expect("restart frame");
+            let value: Value = serde_json::from_str(&line).expect("restart JSON");
+            if value["tract"] == "supervisor" && value["event"] == "restarting" {
+                return value;
+            }
+        }
+    })
+    .await
+    .expect("restart notification");
+    assert_eq!(restarting["service"], "convey");
+    assert_eq!(restarting["pid"], previous_pid);
+
+    timeout(Duration::from_secs(8), async {
+        loop {
+            let current = fs::read_to_string(&marker).expect("convey marker");
+            let pid = current
+                .trim()
+                .rsplit(':')
+                .next()
+                .expect("convey pid")
+                .parse::<u32>()
+                .expect("numeric convey pid");
+            if pid != previous_pid {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("replacement convey process");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn segment_events_log_appends_existing_stream_segment() {
+    let journal = TempJournal::new();
+    let segment = journal.segment_dir("20260102", Some("camera"), "120000_60");
+    fs::create_dir_all(&segment).expect("segment directory");
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (_reader, mut write) = connect(&socket).await;
+    let message = json!({
+        "tract": "think", "event": "finished", "day": "20260102",
+        "segment": "120000_60", "stream": "camera", "detail": {"count": 1}
+    });
+
+    send_message(&mut write, message.clone()).await;
+    let path = segment.join("events.jsonl");
+    wait_for_logged_message(&path, &message).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn segment_events_log_does_not_materialize_missing_segment() {
+    let journal = TempJournal::new();
+    let segment = journal.segment_dir("20260102", None, "120000_60");
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (_reader, mut write) = connect(&socket).await;
+
+    send_message(
+        &mut write,
+        json!({
+            "tract": "activity", "event": "recorded", "day": "20260102",
+            "segment": "120000_60"
+        }),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert!(!segment.exists());
+    assert!(child.0.try_wait().expect("supervisor status").is_none());
 }
