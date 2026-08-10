@@ -180,3 +180,25 @@ unidecode = "0.3.0"
 ureq = { version = "3.3.0", default-features = false }
 tar = "0.4"
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+
+# Dev-profile debug info. The cargo default (`debug = 2` for the workspace and
+# all 410 dependencies) put ~59G in target/debug against ~2.5G in
+# target/release. Every hopper lode worktree and lane working clone carries its
+# own copy, which reached ~320G on fedora.local and filled /home to 100% on
+# 2026-08-10, surfacing as a linker SIGBUS in an unrelated lane.
+#
+# Two levels on purpose: workspace crates keep line tables, so RUST_BACKTRACE
+# and test failures still report file:line where triage happens; dependencies
+# carry none, and their frames still show function names from the symbol table.
+#
+# Codegen is unaffected — `debug` is orthogonal to opt-level — and
+# [profile.release] is unchanged, so nothing that reaches an owner differs.
+# `incremental` is intentionally left on: it is what makes a lode's
+# edit/rebuild/test loop fast, and trading it for disk would cost the
+# throughput this change exists to protect.
+[profile.dev]
+debug = "line-tables-only"
+
+# "*" matches dependencies only, never workspace members.
+[profile.dev.package."*"]
+debug = false
