@@ -117,6 +117,23 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 🔴 **Two silent-success paths.** `describe.py:964-967` and `depict.py:64-69` **return exit 0 having written nothing** when no thinking engine is configured, and the dispatcher reads that as success — it records a successful contact and marks the file done (`sense.py:562-571`). The live path is protected by a gate (`sense.py:817-825`); ⚠ **the `--day` batch path is not**, and the daily sense-repair pre-phase (`think/thinking.py:4592-4632`) is exactly that path. Re-entry eventually recovers because no output exists, but the success signal is false while it does.
 
+🆕 🔴 **MEASURED 2026-08-09 by running the handler: `transcribe` has TWO sites that unlink the owner's raw audio, not one, and they are 440 lines apart.**
+
+| site | fires when | state / reason written first |
+|---|---|---|
+| `transcribe/main.py:1255` | VAD reports insufficient speech, **before** STT runs | `empty` / `no_decodable_audio` |
+| `transcribe/main.py:815` | **STT returned zero statements**, after VAD accepted the clip | `empty` / `no_decodable_audio` |
+
+Both are gated only by `transcribe.preserve_all`, which **defaults to false**, and both write a terminal processing record *before* unlinking — ✅ the correct fail-closed order, and if that write fails the handler raises and never unlinks.
+
+⚠ **The second site is reachable on audio VAD accepted.** Observed: a clip scored `3.4s speech, has_speech=True` went to STT, the engine returned no words, and the raw was removed. **So an STT backend answering `200` with an empty word list deletes the owner's audio and records it as `no_decodable_audio`** — indistinguishable in the durable record from a clip that genuinely had no speech.
+
+⚠ **`_audio_wire.parse_words` is what separates the two outcomes**, and the razor is narrow: `{"words": [], "text": ""}` reaches the delete; `{"words": [], "text": "hello"}` raises a contract error, writes nothing, and **preserves the audio.**
+
+📌 There is a **third** unlink in the same write path — `transcribe/native.py:183-197` removes an existing `.npz` whenever its `.jsonl` is absent, on every write call. Derived artifact, not owner media.
+
+⛔ **Recorded as a measurement, not a proposal.** `P-journal-retention` § 2 says *"`transcribe` stops unlinking VAD-empty raw audio"*; read literally that names one site and leaves the other in place. **Whether the ruling covers both is a founder call and is raised, not edited here.**
+
 ⚠ **The retry budget is describe-only in practice.** `should_reenter_analysis_output` (`observe/processing_record.py:118-152`) returns `True` **only** for `handler == "describe"`, and transcribe writes its `corrupt_input` output through `_write_failed_processing_jsonl`, which then blocks re-entry at three separate guards. `FAILED_ATTEMPT_BOUND` never applies to audio.
 
 **What is already Rust:** the speaker math, behind a one-record argv+stdio contract: `solstone-core-speakers` (3,749), `-speakers-analyze` (2,049), `-speakers-onnx` (662), reached through `solstone/observe/transcribe/speakers_analyze_adapter.py`. `NATIVE_PROCESS_SPECS` routes `journal depict` to the `solstone-core-depict` binary; its entry point calls the handler in `core/crates/solstone-core-depict/src/lib.rs`. The handler reads and verifies the RF-DETR sidecar and pinned artifacts in Rust. `journal_native_dispatch.rs` poisons sibling interpreters while exercising the compiled journal dispatch, and the depict crate tests the native RF-DETR query. The dispatcher and describe/transcribe drivers remain mapped to their Python owner modules; the native depict handler does not write `_solstone_processing`.
