@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeSet;
+use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
@@ -14,14 +16,20 @@ use solstone_core_system::provider_runtime::{
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
 use solstone_core_system::schedule::ScheduleNow;
+use solstone_core_system::{
+    catchup::{CatchupError, eligible_catchup_days},
+    queue::TaskQueue,
+};
 
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
-use super::runtime::SupervisorState;
+use super::config::{no_thinking_engine_chosen, processing_is_deferred};
+use super::runtime::{DailyState, FlushState, SupervisorState};
 use super::status;
 
 const STATUS_INTERVAL: Duration = Duration::from_secs(5);
 const TICK_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_INBOUND_PER_TICK: usize = 256;
+const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
 
 pub(crate) async fn run(state: &mut SupervisorState) -> bool {
     let mut last_status = Instant::now() - STATUS_INTERVAL;
@@ -33,6 +41,23 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
         record_schedule_completions(state);
         reconcile_providers(state);
         let wall = chrono::Local::now();
+        check_segment_flush(
+            &state.journal,
+            &state.queue,
+            state.is_remote_mode,
+            &mut state.flush,
+            false,
+        );
+        if let Err(error) = handle_daily_tasks(
+            &state.journal,
+            &state.queue,
+            state.is_remote_mode,
+            &mut state.daily,
+            &mut state.flush,
+            wall.date_naive(),
+        ) {
+            eprintln!("supervisor: daily catchup drain failed: {error}");
+        }
         let schedule_sink = SupervisorScheduleSink {
             queue: state.queue.clone(),
             server: state.server.clone(),
@@ -109,6 +134,134 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
             _ = wait_for_shutdown() => return false,
         }
     }
+}
+
+/// Flush the last live segment after it has been idle for the Python-compatible timeout.
+pub(crate) fn check_segment_flush(
+    journal: &Path,
+    queue: &TaskQueue,
+    is_remote: bool,
+    flush: &mut FlushState,
+    force: bool,
+) {
+    if is_remote
+        || flush.last_segment_ts.is_none()
+        || flush.flushed
+        || processing_is_deferred(journal)
+        || no_thinking_engine_chosen(journal)
+        || (!force
+            && flush
+                .last_segment_ts
+                .is_some_and(|last_segment_ts| last_segment_ts.elapsed() < FLUSH_TIMEOUT))
+    {
+        return;
+    }
+    let (Some(day), Some(segment)) = (flush.day.as_deref(), flush.segment.as_deref()) else {
+        return;
+    };
+
+    flush.flushed = true;
+    let _ = submit_think(
+        queue,
+        flush_think_argv(day, segment, flush.stream.as_deref()),
+        day,
+        format!("supervisor-flush-{day}-{segment}"),
+    );
+}
+
+/// Handle one detected local-day rollover, including a forced previous-day flush.
+pub(crate) fn handle_daily_tasks(
+    journal: &Path,
+    queue: &TaskQueue,
+    is_remote: bool,
+    daily: &mut DailyState,
+    flush: &mut FlushState,
+    today: chrono::NaiveDate,
+) -> Result<(), CatchupError> {
+    if is_remote || daily.last_day == Some(today) {
+        return Ok(());
+    }
+    let Some(previous_day) = daily.last_day else {
+        eprintln!("supervisor: daily state not initialized; skipping daily processing");
+        daily.last_day = Some(today);
+        return Ok(());
+    };
+
+    daily.last_day = Some(today);
+    let previous_day = previous_day.format("%Y%m%d").to_string();
+    if !flush.flushed && flush.day.as_deref() == Some(previous_day.as_str()) {
+        check_segment_flush(journal, queue, is_remote, flush, true);
+    }
+    run_catchup_drain(
+        journal,
+        queue,
+        &BTreeSet::from([today.format("%Y%m%d").to_string()]),
+        &[],
+    )
+}
+
+/// Submit one daily think task for each selected, eligible catchup day.
+pub(crate) fn run_catchup_drain(
+    journal: &Path,
+    queue: &TaskQueue,
+    exclude: &BTreeSet<String>,
+    force_days: &[String],
+) -> Result<(), CatchupError> {
+    if no_thinking_engine_chosen(journal) {
+        return Ok(());
+    }
+    for day in eligible_catchup_days(journal, force_days, exclude, SystemTime::now())? {
+        let _ = submit_think(
+            queue,
+            daily_think_argv(&day),
+            &day,
+            format!("supervisor-catchup-{day}"),
+        );
+    }
+    Ok(())
+}
+
+fn flush_think_argv(day: &str, segment: &str, stream: Option<&str>) -> Vec<String> {
+    let mut argv = vec![
+        "journal".to_owned(),
+        "think".to_owned(),
+        "-v".to_owned(),
+        "--day".to_owned(),
+        day.to_owned(),
+        "--segment".to_owned(),
+        segment.to_owned(),
+        "--flush".to_owned(),
+    ];
+    if let Some(stream) = stream {
+        argv.extend(["--stream".to_owned(), stream.to_owned()]);
+    }
+    argv
+}
+
+fn daily_think_argv(day: &str) -> Vec<String> {
+    vec![
+        "journal".to_owned(),
+        "think".to_owned(),
+        "-v".to_owned(),
+        "--day".to_owned(),
+        day.to_owned(),
+    ]
+}
+
+fn submit_think(
+    queue: &TaskQueue,
+    argv: Vec<String>,
+    day: &str,
+    reference: String,
+) -> solstone_core_system::queue::SubmitOutcome {
+    let cmd = TaskArgv::from_wire(argv).expect("supervisor constructs a non-empty think argv");
+    queue.submit(ExecutionRequest::Bus(BusTaskRequest {
+        cmd,
+        reference,
+        day: Some(day.to_owned()),
+        scheduler_name: None,
+        queue_if_active_cmd_differs: false,
+    }))
 }
 
 fn reconcile_app_processes(state: &mut SupervisorState) {
@@ -452,4 +605,208 @@ fn sync_tick(state: &mut SupervisorState) -> bool {
         );
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use chrono::NaiveDate;
+    use solstone_core_system::cap::CapResolver;
+    use solstone_core_system::partition::Partition;
+    use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
+
+    use super::*;
+
+    static NEXT_PATH: AtomicUsize = AtomicUsize::new(0);
+
+    struct Bed {
+        root: PathBuf,
+    }
+
+    impl Bed {
+        fn new(name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "solstone-supervisor-tick-{name}-{}",
+                NEXT_PATH.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&root).expect("temporary journal");
+            fs::create_dir_all(root.join("config")).expect("config directory");
+            Self { root }
+        }
+
+        fn enable_thinking(&self) {
+            fs::write(
+                self.root.join("config/journal.json"),
+                br#"{"providers":{"active":{"provider":"local"}}}"#,
+            )
+            .expect("thinking config");
+        }
+
+        fn updated_day(&self, day: &str) {
+            let path = self.root.join("chronicle").join(day).join("health");
+            fs::create_dir_all(&path).expect("health directory");
+            fs::write(path.join("stream.updated"), b"stream").expect("stream marker");
+        }
+    }
+
+    impl Drop for Bed {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    struct FixedCap;
+
+    impl CapResolver for FixedCap {
+        fn cap_for(&self, _partition: &Partition) -> Duration {
+            Duration::from_secs(60)
+        }
+    }
+
+    fn queue(root: &std::path::Path) -> TaskQueue {
+        TaskQueue::new(TaskQueueOptions {
+            journal_root: root.to_path_buf(),
+            cap_resolver: Arc::new(FixedCap),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: false,
+            before_deadline_commit: None,
+        })
+    }
+
+    fn pending(queue: &TaskQueue) -> usize {
+        queue
+            .collect_queue_counts()
+            .get("pending")
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn date(day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 1, day).expect("fixture date")
+    }
+
+    #[test]
+    fn check_segment_flush_forces_expected_command_and_marks_state() {
+        let bed = Bed::new("forced-flush");
+        bed.enable_thinking();
+        let queue = queue(&bed.root);
+        let mut flush = FlushState {
+            last_segment_ts: Some(Instant::now()),
+            day: Some("20260101".to_owned()),
+            segment: Some("120000_1".to_owned()),
+            stream: Some("camera".to_owned()),
+            flushed: false,
+        };
+
+        check_segment_flush(&bed.root, &queue, false, &mut flush, true);
+
+        assert!(flush.flushed);
+        assert_eq!(pending(&queue), 1);
+        assert_eq!(
+            flush_think_argv("20260101", "120000_1", Some("camera")),
+            [
+                "journal",
+                "think",
+                "-v",
+                "--day",
+                "20260101",
+                "--segment",
+                "120000_1",
+                "--flush",
+                "--stream",
+                "camera",
+            ]
+            .map(str::to_owned)
+        );
+    }
+
+    #[test]
+    fn check_segment_flush_is_a_remote_mode_noop() {
+        let bed = Bed::new("flush-remote");
+        let queue = queue(&bed.root);
+        let mut flush = FlushState {
+            last_segment_ts: Some(Instant::now() - Duration::from_secs(3600)),
+            day: Some("20260101".to_owned()),
+            segment: Some("120000_1".to_owned()),
+            stream: None,
+            flushed: false,
+        };
+
+        check_segment_flush(&bed.root, &queue, true, &mut flush, true);
+
+        assert!(!flush.flushed);
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn handle_daily_tasks_rollover_forces_flush_and_caps_catchup() {
+        let bed = Bed::new("rollover");
+        bed.enable_thinking();
+        for day in [
+            "20260101", "20260102", "20260103", "20260104", "20260105", "20260106",
+        ] {
+            bed.updated_day(day);
+        }
+        let queue = queue(&bed.root);
+        let mut daily = DailyState {
+            last_day: Some(date(6)),
+        };
+        let mut flush = FlushState {
+            last_segment_ts: Some(Instant::now()),
+            day: Some("20260106".to_owned()),
+            segment: Some("120000_1".to_owned()),
+            stream: None,
+            flushed: false,
+        };
+
+        handle_daily_tasks(&bed.root, &queue, false, &mut daily, &mut flush, date(7))
+            .expect("daily rollover");
+
+        assert_eq!(daily.last_day, Some(date(7)));
+        assert!(flush.flushed);
+        assert_eq!(pending(&queue), 5);
+        assert_eq!(
+            daily_think_argv("20260106"),
+            ["journal", "think", "-v", "--day", "20260106"].map(str::to_owned)
+        );
+    }
+
+    #[test]
+    fn handle_daily_tasks_with_no_previous_day_warns_and_skips() {
+        let bed = Bed::new("missing-day");
+        bed.enable_thinking();
+        bed.updated_day("20260101");
+        let queue = queue(&bed.root);
+        let mut daily = DailyState { last_day: None };
+        let mut flush = FlushState::default();
+
+        handle_daily_tasks(&bed.root, &queue, false, &mut daily, &mut flush, date(2))
+            .expect("missing previous day");
+
+        assert_eq!(daily.last_day, Some(date(2)));
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn handle_daily_tasks_is_a_remote_mode_noop() {
+        let bed = Bed::new("daily-remote");
+        let queue = queue(&bed.root);
+        let mut daily = DailyState {
+            last_day: Some(date(1)),
+        };
+        let mut flush = FlushState::default();
+
+        handle_daily_tasks(&bed.root, &queue, true, &mut daily, &mut flush, date(2))
+            .expect("remote daily no-op");
+
+        assert_eq!(daily.last_day, Some(date(1)));
+        assert_eq!(pending(&queue), 0);
+    }
 }

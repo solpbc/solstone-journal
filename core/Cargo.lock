@@ -3187,6 +3187,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-brain",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 mod bus;
+mod config;
 mod runtime;
 mod shutdown;
 mod status;

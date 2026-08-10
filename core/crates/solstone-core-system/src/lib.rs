@@ -4,6 +4,7 @@
 //! Typed system-process and task-request primitives.
 
 pub mod cap;
+pub mod catchup;
 pub mod error;
 pub mod lifecycle;
 pub mod partition;

@@ -40,6 +40,7 @@ const FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(20);
 
 pub(crate) struct SupervisorState {
     pub journal: PathBuf,
+    pub is_remote_mode: bool,
     pub server: Arc<CallosumSocketServer>,
     pub connection: CallosumSocketConnection,
     pub queue: TaskQueue,
@@ -53,6 +54,21 @@ pub(crate) struct SupervisorState {
     pub app_processes: Vec<ManagedAppProcess>,
     pub local: LocalProvider,
     pub parakeet: ParakeetProvider,
+    pub flush: FlushState,
+    pub daily: DailyState,
+}
+
+#[derive(Default)]
+pub(crate) struct FlushState {
+    pub last_segment_ts: Option<Instant>,
+    pub day: Option<String>,
+    pub segment: Option<String>,
+    pub stream: Option<String>,
+    pub flushed: bool,
+}
+
+pub(crate) struct DailyState {
+    pub last_day: Option<chrono::NaiveDate>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -625,6 +641,7 @@ pub(crate) async fn boot_and_tick(
     let heartbeat_filename = lifecycle.heartbeat_filename().to_owned();
     let mut state = SupervisorState {
         journal,
+        is_remote_mode: remote,
         server,
         connection,
         queue,
@@ -638,6 +655,10 @@ pub(crate) async fn boot_and_tick(
         app_processes,
         local,
         parakeet,
+        flush: FlushState::default(),
+        daily: DailyState {
+            last_day: Some(chrono::Local::now().date_naive()),
+        },
     };
     let sync_conflict = tick::run(&mut state).await;
     Ok(SupervisorOutcome {
