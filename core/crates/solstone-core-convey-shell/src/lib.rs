@@ -60,12 +60,16 @@ pub mod registry;
 pub mod session;
 pub mod session_gate;
 mod speakers;
+mod speakers_calendar;
 mod sse;
 mod system;
 
 use assets::lookup;
 use refusal::AppNotConverted;
 use registry::{ShellPayload, known_app, shell_payload};
+
+/// Journal filesystem root shared with converted app route handlers.
+pub(crate) struct JournalRoot(pub PathBuf);
 
 /// Run the loopback Convey server until its process is terminated; port zero is unsupported.
 pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
@@ -126,6 +130,7 @@ fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
 
 pub fn router(journal_root: PathBuf) -> Router {
     let shell = Arc::new(shell_payload());
+    let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -141,10 +146,21 @@ pub fn router(journal_root: PathBuf) -> Router {
             get(speakers::who_is_this),
         )
         .route("/app/speakers/api/state", get(speakers::state))
+        .route("/app/speakers/api/index", get(speakers_calendar::index))
+        .route("/app/speakers/api/grid", get(speakers_calendar::grid))
+        .route(
+            "/app/speakers/api/stats/{month}",
+            get(speakers_calendar::stats),
+        )
+        .route(
+            "/app/speakers/api/segments/{day}",
+            get(speakers_calendar::segments),
+        )
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
-        .layer(Extension(shell));
+        .layer(Extension(shell))
+        .layer(Extension(route_journal_root));
     session_gate::apply_layer(routes, journal_root).fallback(not_found)
 }
 
