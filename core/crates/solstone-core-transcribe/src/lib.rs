@@ -6,7 +6,6 @@
 // Config extraction is implemented before the stage machine that consumes it.
 #[allow(dead_code)]
 mod args;
-#[allow(dead_code)]
 mod audio;
 #[allow(dead_code)]
 mod backend;
