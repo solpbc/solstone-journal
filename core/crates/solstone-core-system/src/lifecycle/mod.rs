@@ -155,17 +155,15 @@ impl SupervisorLifecycle {
     }
 }
 
+/// Gated to match its callers. Both `SupervisorLifecycle::boot` and
+/// `self_heartbeat_filename` are Linux-only, so an ungated definition here was
+/// dead code everywhere else. The macOS and fallback acquisition arms this
+/// carried were unreachable for the same reason — every platform that could
+/// have run them reaches the stub `boot` instead — so they are removed rather
+/// than silenced. Restore them from history alongside a non-Linux `boot`.
+#[cfg(target_os = "linux")]
 fn hostname() -> String {
-    #[cfg(target_os = "linux")]
     let raw = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default();
-    #[cfg(target_os = "macos")]
-    let raw = std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .unwrap_or_default();
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    let raw = String::new();
     sync::sanitize_hostname(raw.trim())
 }
 
