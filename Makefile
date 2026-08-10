@@ -50,7 +50,7 @@ RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solston
 # inherit it.
 CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include))
 ifneq ($(CLANG_BUILTIN_INCLUDE),)
-build check-rust-msrv check-rust-clippy check-rust-test: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+build check-rust-msrv check-rust-clippy check-rust-test check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -268,7 +268,7 @@ check-rust-ios:
 	@$(REQUIRE_RUSTUP)
 	@rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }
 	# Host-only process/server crates, including Convey, are not iOS target concerns in this wave.
-	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-body-rebuild --lib --target $(IOS_TARGET) --locked
+	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --lib --target $(IOS_TARGET) --locked
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)
@@ -311,7 +311,8 @@ check-differentials:
 		"-p solstone-core-system --test stt_backend_choice_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-transfer --test transfer_differential" \
-		"-p solstone-core-system-health --test pipeline_health_oracle" ; do \
+		"-p solstone-core-system-health --test pipeline_health_oracle" \
+		"-p solstone-core-observe-audio --test audio_differential" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
 			|| status=$$?; \

@@ -240,14 +240,14 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
 
     let (status, content_type, _, body) =
         get(router(journal.0.clone()), "/app/home/workspace").await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(content_type, "application/json");
     let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
     assert_eq!(refusal["reason_code"], "app_not_converted");
     assert_eq!(refusal["app"], "home");
 
     let (status, content_type, _, body) = get(router(journal.0.clone()), "/app/home/").await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(content_type, "application/json");
     let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
     assert_eq!(refusal["reason_code"], "app_not_converted");
@@ -270,4 +270,27 @@ async fn sse_is_gated_and_exposes_a_heartbeat_after_establishment() {
     assert_eq!(response.headers()["content-type"], "text/event-stream");
     assert_eq!(response.headers()["cache-control"], "no-cache");
     assert_eq!(response.headers()["x-accel-buffering"], "no");
+}
+
+#[tokio::test]
+async fn an_unconverted_app_refusal_is_never_a_success_status() {
+    // Found in a browser, not a test: shell_boot.js only evaluates a response
+    // when `response.ok`, so a refusal at 200 was parsed as JavaScript. Every
+    // client branches on that bit -- pin it rather than the exact code.
+    let journal = journal_for_phase("established");
+    for path in [
+        "/app/home/",
+        "/app/home/workspace",
+        "/app/home/background",
+        "/app/timeline/background",
+    ] {
+        let (status, _content_type, _location, body) = get(router(journal.0.clone()), path).await;
+        assert!(
+            !status.is_success(),
+            "{path} returned a success status for an unconverted app: {status}"
+        );
+        let refusal: Value = serde_json::from_slice(&body)
+            .unwrap_or_else(|_| panic!("{path} refusal parses as JSON"));
+        assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+    }
 }
