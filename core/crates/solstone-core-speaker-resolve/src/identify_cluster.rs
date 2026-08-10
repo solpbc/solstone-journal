@@ -1500,6 +1500,11 @@ mod tests {
     fn distinct_fresh_operations_each_refuse_an_occupied_create_destination() {
         let temporary = Temp::new();
         entity(temporary.path(), "new_person", "Someone Else");
+        let identity_path = temporary.path().join("entities/new_person/entity.json");
+        let identity_before = fs::read(&identity_path).unwrap();
+        let voiceprints_path = temporary.path().join("entities/new_person/voiceprints.npz");
+        fs::write(&voiceprints_path, b"incumbent-voiceprint-sentinel").unwrap();
+        let voiceprints_before = fs::read(&voiceprints_path).unwrap();
         write_cache(temporary.path());
         write_embeddings(temporary.path());
         let first = IdentifyClusterRequest {
@@ -1524,6 +1529,9 @@ mod tests {
             let result = identify_cluster(request, &encoder()).unwrap();
             assert_eq!(result["status"], "destination_occupied", "{result}");
             assert_eq!(result["entity_id"], "new_person");
+            assert!(!identify_ledger_path(temporary.path()).exists());
+            assert_eq!(fs::read(&identity_path).unwrap(), identity_before);
+            assert_eq!(fs::read(&voiceprints_path).unwrap(), voiceprints_before);
         }
     }
 }

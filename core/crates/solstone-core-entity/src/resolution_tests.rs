@@ -178,6 +178,70 @@ fn name_evidence_resolution_ignores_written_id_slug_collisions() {
 }
 
 #[test]
+fn name_evidence_resolution_preserves_ambiguity_ids_and_choice_replay() {
+    let temporary = TempDir::new();
+    let entities = [
+        entity(Some("sarah_connor"), "Sarah Connor", false),
+        entity(Some("sarah_lee"), "Sarah Lee", false),
+    ];
+
+    let initial = record_entity_resolution_from_name_evidence(
+        temporary.path(),
+        "Sarah",
+        &entities,
+        journal_scope(),
+        origin("name-evidence-ambiguity"),
+        90.0,
+        false,
+    )
+    .unwrap();
+    assert_eq!(initial.outcome, EntityResolutionOutcome::Ambiguous);
+    assert_eq!(initial.tier, Some(MatchTier::FirstWord));
+    assert_eq!(
+        initial
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        ["sarah_lee", "sarah_connor"]
+    );
+
+    record_ambiguity_choice(
+        temporary.path(),
+        &AmbiguityChoiceRequest {
+            scope: journal_scope(),
+            query: "Sarah".to_owned(),
+            entity_id: "sarah_lee".to_owned(),
+            origin: None,
+        },
+        &[
+            AmbiguityChoiceEntity {
+                id: "sarah_connor".to_owned(),
+                blocked: false,
+            },
+            AmbiguityChoiceEntity {
+                id: "sarah_lee".to_owned(),
+                blocked: false,
+            },
+        ],
+    )
+    .unwrap();
+
+    let replay = record_entity_resolution_from_name_evidence(
+        temporary.path(),
+        "Sarah",
+        &entities,
+        journal_scope(),
+        origin("name-evidence-choice-replay"),
+        90.0,
+        false,
+    )
+    .unwrap();
+    assert_eq!(replay.outcome, EntityResolutionOutcome::Resolved);
+    assert_eq!(replay.entity_index, Some(1));
+}
+
+#[test]
 fn low_confidence_tiers_are_ambiguous_without_matcher_uniqueness_guards() {
     let cases = [
         (
