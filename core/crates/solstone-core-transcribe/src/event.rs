@@ -235,6 +235,8 @@ fn error_type_name(error: &TranscribeError) -> &'static str {
         TranscribeError::ParakeetCppFailure { .. } => "ParakeetCppFailure",
         TranscribeError::ConfidentialDeferred { .. } => "ConfidentialDeferred",
         TranscribeError::SpeakerAnalysis(_) => "SpeakerAnalyzeError",
+        TranscribeError::Decode { .. } => "Decode",
+        TranscribeError::BackendNotImplemented { .. } => "BackendNotImplemented",
     }
 }
 

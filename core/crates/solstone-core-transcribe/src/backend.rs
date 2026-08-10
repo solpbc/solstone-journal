@@ -3,8 +3,8 @@
 
 //! Host-input collection around the shared pure STT backend choice.
 
-mod confidential;
-mod parakeet_cpp;
+pub(crate) mod confidential;
+pub(crate) mod parakeet_cpp;
 
 use std::env;
 use std::fs;

@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 solstone-core-transcribe = { workspace = true }
+solstone-core-journal = { workspace = true }
 
 [lints]
 workspace = true

@@ -3189,6 +3189,7 @@ dependencies = [
 name = "solstone-core-transcribe-cli"
 version = "1.0.22"
 dependencies = [
+ "solstone-core-journal",
  "solstone-core-transcribe",
 ]
 

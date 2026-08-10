@@ -5,13 +5,38 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use serde_json::{Map, Value};
+use solstone_core_journal_config::JournalConfigRead;
+use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes, decode_f32_mono};
 use solstone_core_speaker_id::writer::WriteResponse;
 
 use crate::TranscribeError;
+use crate::args::should_skip_process_one_processed;
+use crate::audio::{reduce_audio_if_needed, run_vad, speech_ratio, tag_audio};
+use crate::backend::parakeet_cpp;
+use crate::backend::{
+    confidential, local_stt_backend, platform_floor_bytes, read_available_bytes,
+    resolve_default_backend,
+};
+use crate::config::{
+    confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device, preserve_all,
+};
+use crate::event::{
+    Timings, TranscribedEvent, TranscribedOutcome, build_transcribed_event, emit_transcribed_event,
+};
+use crate::processing::analyzed_record;
 use crate::processing::{corrupt_input_record, empty_record};
+use crate::speakers::analyze_speakers;
 use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with};
-use crate::transcript::remove_orphan_npz;
+use crate::transcript::{
+    FullTranscriptWrite, remove_orphan_npz, restore_statement_timestamps, write_full_transcript,
+};
+
+const SPEAKER_EVIDENCE_VERSION: &str = "speaker-evidence-v1";
+const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
+const OVERLAP_DETECTOR: &str = "pyannote-segmentation-3.0";
 
 /// Immutable facts captured from the owner-media file before processing starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +68,421 @@ pub(crate) enum TerminalOutcome {
     Preserved,
     /// Decode failed, terminal failure proof was written, and input was retained.
     Failed,
+}
+
+/// A completed single-file driver disposition with an intentional zero exit status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProcessOutcome {
+    Skipped,
+    Transcribed,
+    Filtered,
+    Preserved,
+    Failed,
+}
+
+/// Run the currently implemented native transcription path for one segment audio file.
+pub(crate) fn process_one(
+    audio_path: &Path,
+    journal_path: &Path,
+    redo: bool,
+    explicit_backend: Option<&str>,
+    config: &JournalConfigRead,
+) -> Result<ProcessOutcome, TranscribeError> {
+    if should_skip_process_one_processed(audio_path, redo) {
+        return Ok(ProcessOutcome::Skipped);
+    }
+    let started = Instant::now();
+    let facts = capture_input_facts(audio_path)?;
+    let mut timings = Timings::default();
+    if let Some(queue_wait_ms) = queue_wait_ms() {
+        timings.add_ms("queue_wait", queue_wait_ms);
+    }
+    let decoded_at = Instant::now();
+    let full_audio = match decode_f32_mono(audio_path) {
+        Ok(audio) => audio,
+        Err(error) => {
+            timings.add_ms("decode", elapsed_ms(decoded_at));
+            let decode_error = TranscribeError::Decode {
+                detail: error.to_string(),
+            };
+            let write_at = Instant::now();
+            let terminal = decode_failure(&facts, redo)?;
+            timings.add_ms("write", elapsed_ms(write_at));
+            emit_event(
+                audio_path,
+                journal_path,
+                TranscribedOutcome::Failed,
+                None,
+                Some("AudioError"),
+                Some(&decode_error),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &timings,
+                None,
+            );
+            return Ok(match terminal {
+                TerminalOutcome::Failed => ProcessOutcome::Failed,
+                _ => unreachable!(),
+            });
+        }
+    };
+    timings.add_ms("decode", elapsed_ms(decoded_at));
+    let audio_seconds = full_audio.len() as f64 / f64::from(SAMPLE_RATE);
+    let vad_at = Instant::now();
+    let vad = run_vad(&full_audio, min_speech_seconds(config))?;
+    timings.add_ms("vad", elapsed_ms(vad_at));
+    let sound_tags = tag_audio(&full_audio);
+
+    if !vad.has_speech {
+        let write_at = Instant::now();
+        let terminal = vad_no_speech(&facts, preserve_all(config), redo)?;
+        timings.add_ms("write", elapsed_ms(write_at));
+        let outcome = match terminal {
+            TerminalOutcome::Filtered => (ProcessOutcome::Filtered, TranscribedOutcome::Filtered),
+            TerminalOutcome::Preserved => {
+                (ProcessOutcome::Preserved, TranscribedOutcome::Preserved)
+            }
+            TerminalOutcome::Failed => (ProcessOutcome::Failed, TranscribedOutcome::Failed),
+        };
+        emit_event(
+            audio_path,
+            journal_path,
+            outcome.1,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(audio_seconds),
+            None,
+            None,
+            &timings,
+            Some(&vad),
+        );
+        return Ok(outcome.0);
+    }
+
+    let reduce_at = Instant::now();
+    let reduction = reduce_audio_if_needed(&full_audio, &vad, speech_ratio(&vad));
+    if reduction.is_some() {
+        timings.add_ms("reduce", elapsed_ms(reduce_at));
+    }
+    let (reduced_audio, reduction) = reduction
+        .map(|(audio, reduction)| (Some(audio), Some(reduction)))
+        .unwrap_or((None, None));
+    let statement_audio = reduced_audio.as_deref().unwrap_or(&full_audio);
+    let reduced_seconds = reduced_audio
+        .as_ref()
+        .map(|audio| audio.len() as f64 / f64::from(SAMPLE_RATE));
+
+    let backend = resolve_default_backend(
+        explicit_backend,
+        local_stt_backend(),
+        read_available_bytes(),
+        platform_floor_bytes(),
+        confidential::confidential_channel_plausible(config),
+        confidential_audio_enabled(config),
+    )?
+    .backend;
+    if !uses_parakeet_cpp(&backend) {
+        confidential::refuse_confidential_egress(
+            config,
+            &backend,
+            confidential_audio_enabled(config),
+        )?;
+        return Err(TranscribeError::BackendNotImplemented { backend });
+    }
+    let asr_at = Instant::now();
+    let transcription = dispatch_after_egress_gate(config, &backend, || {
+        let wav = audio_to_wav_bytes(statement_audio, SAMPLE_RATE).map_err(|error| {
+            TranscribeError::ParakeetCppFailure {
+                reason: "wav_encode_failed".to_owned(),
+                detail: error.to_string(),
+            }
+        })?;
+        let server = parakeet_cpp::connect(journal_path)?;
+        parakeet_cpp::transcribe(&server, &wav)
+    })?;
+    timings.add_ms("asr", elapsed_ms(asr_at));
+    let model_info =
+        parakeet_cpp::get_model_info(journal_path, parakeet_cpp_device(config).as_deref())?;
+
+    if transcription.words.is_empty() {
+        let write_at = Instant::now();
+        let terminal = stt_zero_statements(&facts, preserve_all(config), redo)?;
+        timings.add_ms("write", elapsed_ms(write_at));
+        let outcome = match terminal {
+            TerminalOutcome::Filtered => (ProcessOutcome::Filtered, TranscribedOutcome::Filtered),
+            TerminalOutcome::Preserved => {
+                (ProcessOutcome::Preserved, TranscribedOutcome::Preserved)
+            }
+            TerminalOutcome::Failed => (ProcessOutcome::Failed, TranscribedOutcome::Failed),
+        };
+        emit_event(
+            audio_path,
+            journal_path,
+            outcome.1,
+            None,
+            None,
+            None,
+            Some(&backend),
+            Some(&model_info.device),
+            Some(&model_info.model),
+            Some(audio_seconds),
+            reduced_seconds,
+            None,
+            &timings,
+            Some(&vad),
+        );
+        return Ok(outcome.0);
+    }
+
+    let statements = statements_from_words(&transcription.words);
+    let restored = reduction.as_ref().map_or_else(
+        || statements.clone(),
+        |mapping| restore_statement_timestamps(&statements, mapping),
+    );
+    let speakers_at = Instant::now();
+    let speaker_result = match analyze_speakers(
+        audio_path,
+        &full_audio,
+        statement_audio,
+        reduced_audio.as_deref(),
+        &statements,
+        &restored,
+        SAMPLE_RATE,
+        0.25,
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            timings.add_ms("speakers_analyze", elapsed_ms(speakers_at));
+            let error = TranscribeError::SpeakerAnalysis(error);
+            emit_event(
+                audio_path,
+                journal_path,
+                TranscribedOutcome::Failed,
+                Some("speaker-analysis-native-failure"),
+                Some("SpeakerAnalyzeError"),
+                Some(&error),
+                Some(&backend),
+                Some(&model_info.device),
+                Some(&model_info.model),
+                Some(audio_seconds),
+                reduced_seconds,
+                None,
+                &timings,
+                Some(&vad),
+            );
+            return Err(error);
+        }
+    };
+    timings.add_ms("speakers_analyze", elapsed_ms(speakers_at));
+    let (jsonl_path, npz_path) = transcript_paths(audio_path);
+    let processing = analyzed_record(facts.input_size);
+    let write_at = Instant::now();
+    write_full_transcript(FullTranscriptWrite {
+        raw_path: audio_path,
+        jsonl_path: &jsonl_path,
+        npz_path: &npz_path,
+        base_time_us_of_day: base_time_us_of_day(audio_path),
+        source: source_from_path(audio_path).as_deref(),
+        speaker_result: &speaker_result,
+        backend: Some(&backend),
+        model: Some(&model_info.model),
+        device: Some(&model_info.device),
+        compute_type: Some(&model_info.compute_type),
+        observer: std::env::var("OBSERVER_NAME").ok().as_deref(),
+        vad_result: Some(&vad),
+        segment_meta: segment_meta().as_ref(),
+        overlap_detector: Some(OVERLAP_DETECTOR),
+        speaker_evidence_version: SPEAKER_EVIDENCE_VERSION,
+        processing: &processing,
+        sound_tags: sound_tags.as_ref(),
+        speaker_analysis_producer: Some(SPEAKER_ANALYSIS_PRODUCER),
+        redo,
+    })?;
+    timings.add_ms("write", elapsed_ms(write_at));
+    emit_event(
+        audio_path,
+        journal_path,
+        TranscribedOutcome::Transcribed,
+        None,
+        None,
+        None,
+        Some(&backend),
+        Some(&model_info.device),
+        Some(&model_info.model),
+        Some(audio_seconds),
+        reduced_seconds,
+        Some(elapsed_ms(started)),
+        &timings,
+        Some(&vad),
+    );
+    Ok(ProcessOutcome::Transcribed)
+}
+
+fn dispatch_after_egress_gate<T, F>(
+    config: &JournalConfigRead,
+    backend: &str,
+    dispatch: F,
+) -> Result<T, TranscribeError>
+where
+    F: FnOnce() -> Result<T, TranscribeError>,
+{
+    confidential::refuse_confidential_egress(config, backend, confidential_audio_enabled(config))?;
+    dispatch()
+}
+
+fn uses_parakeet_cpp(backend: &str) -> bool {
+    backend == "parakeet-cpp" || (backend == "parakeet" && std::env::consts::OS == "linux")
+}
+
+fn statements_from_words(words: &[parakeet_cpp::TranscriptionWord]) -> Vec<Map<String, Value>> {
+    let mut statements = Vec::new();
+    let mut current = Vec::new();
+    for word in words {
+        current.push(word);
+        if word.word.trim_end().ends_with(['.', '?', '!']) {
+            statements.push(statement_from_words(statements.len() as i64 + 1, &current));
+            current.clear();
+        }
+    }
+    if !current.is_empty() {
+        statements.push(statement_from_words(statements.len() as i64 + 1, &current));
+    }
+    statements
+}
+
+fn statement_from_words(id: i64, words: &[&parakeet_cpp::TranscriptionWord]) -> Map<String, Value> {
+    let first = words.first().expect("statement words are nonempty");
+    let last = words.last().expect("statement words are nonempty");
+    Map::from_iter([
+        ("id".to_owned(), Value::from(id)), ("start".to_owned(), Value::from(first.start)),
+        ("end".to_owned(), Value::from(last.end)),
+        ("text".to_owned(), Value::String(words.iter().map(|word| word.word.as_str()).collect::<String>().trim().to_owned())),
+        ("words".to_owned(), Value::Array(words.iter().map(|word| serde_json::json!({"word": word.word, "start": word.start, "end": word.end, "probability": word.probability})).collect())),
+        ("speaker".to_owned(), Value::Null),
+    ])
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_event(
+    audio_path: &Path,
+    journal_path: &Path,
+    outcome: TranscribedOutcome,
+    reason: Option<&str>,
+    error_label: Option<&str>,
+    error: Option<&TranscribeError>,
+    backend: Option<&str>,
+    device: Option<&str>,
+    model: Option<&str>,
+    audio_seconds: Option<f64>,
+    reduced_seconds: Option<f64>,
+    duration_ms: Option<u64>,
+    timings: &Timings,
+    vad: Option<&solstone_core_observe_audio::VadResult>,
+) {
+    let observer = std::env::var("OBSERVER_NAME").ok();
+    let input = journal_relative(journal_path, audio_path);
+    let output = (outcome == TranscribedOutcome::Transcribed)
+        .then(|| journal_relative(journal_path, &audio_path.with_extension("jsonl")));
+    let event = build_transcribed_event(TranscribedEvent {
+        outcome,
+        input: &input,
+        output: output.as_deref(),
+        reason,
+        error,
+        backend,
+        device,
+        model,
+        audio_seconds,
+        reduced_seconds,
+        vad_result: vad,
+        duration_ms,
+        day: day_from_path(audio_path).as_deref(),
+        segment: segment_from_path(audio_path).as_deref(),
+        observer: observer.as_deref(),
+        timings,
+        peak_rss_mib: peak_rss_mib(),
+    });
+    let _ = error_label;
+    let _ = emit_transcribed_event(audio_path.parent().unwrap_or(journal_path), event);
+}
+
+fn elapsed_ms(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+fn queue_wait_ms() -> Option<u64> {
+    std::env::var("SOL_QUEUE_WAIT_MS").ok()?.parse().ok()
+}
+fn segment_meta() -> Option<Map<String, Value>> {
+    std::env::var("SEGMENT_META")
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|value| value.as_object().cloned())
+}
+fn source_from_path(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    stem.strip_suffix("_audio")
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+fn base_time_us_of_day(path: &Path) -> u64 {
+    segment_from_path(path)
+        .and_then(|segment| segment.get(..6).map(str::to_owned))
+        .and_then(|time| {
+            let h = time[0..2].parse::<u64>().ok()?;
+            let m = time[2..4].parse::<u64>().ok()?;
+            let s = time[4..6].parse::<u64>().ok()?;
+            Some((h * 3600 + m * 60 + s) * 1_000_000)
+        })
+        .unwrap_or(0)
+}
+fn segment_from_path(path: &Path) -> Option<String> {
+    path.parent()?
+        .file_name()?
+        .to_str()
+        .filter(|name| is_segment_name(name))
+        .map(str::to_owned)
+}
+fn day_from_path(path: &Path) -> Option<String> {
+    path.components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .find(|part| part.len() == 8 && part.bytes().all(|byte| byte.is_ascii_digit()))
+        .map(str::to_owned)
+}
+fn is_segment_name(value: &str) -> bool {
+    let Some((time, length)) = value.split_once('_') else {
+        return false;
+    };
+    time.len() == 6
+        && !length.is_empty()
+        && time.bytes().all(|byte| byte.is_ascii_digit())
+        && length.bytes().all(|byte| byte.is_ascii_digit())
+}
+fn journal_relative(journal: &Path, path: &Path) -> String {
+    path.strip_prefix(journal)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
+}
+fn peak_rss_mib() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find_map(|line| line.strip_prefix("VmHWM:"))
+                .and_then(|value| value.split_whitespace().next())
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .map(|kib| kib / 1024)
+        .unwrap_or(0)
 }
 
 /// Handle VAD's no-speech terminal branch.
@@ -480,6 +920,37 @@ mod tests {
                 .expect("attempted_at must be a string"),
         )
         .expect("attempted_at must be RFC 3339");
+    }
+
+    #[test]
+    fn confidential_egress_gate_prevents_backend_dispatch() {
+        let config = solstone_core_journal_config::JournalConfigRead {
+            present: true,
+            sha256: None,
+            config: Some(
+                serde_json::json!({
+                    "services": {"confidential": {}},
+                    "providers": {"local": {"credential": "present"}},
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        };
+        let mut dispatched = false;
+        let error = super::dispatch_after_egress_gate(&config, "remote", || {
+            dispatched = true;
+            Ok::<_, TranscribeError>(())
+        })
+        .unwrap_err();
+        assert_eq!(error.exit_code(), 69);
+        assert!(!dispatched);
+    }
+
+    #[test]
+    fn parakeet_cpp_routing_excludes_unimplemented_backends() {
+        assert!(super::uses_parakeet_cpp("parakeet-cpp"));
+        assert!(!super::uses_parakeet_cpp("confidential"));
     }
 
     fn read_header(path: &Path) -> Value {
