@@ -70,6 +70,7 @@ pub(crate) struct SpeakerAnalyzeResult {
     pub(crate) statements: Vec<Map<String, Value>>,
     pub(crate) embedding_payload: Option<SpeakerEmbeddingPayload>,
     pub(crate) speaker_evidence: String,
+    pub(crate) speaker_evidence_multi_fraction: f64,
     pub(crate) overlap_fraction: f64,
     pub(crate) statement_labels: Option<Vec<Option<i64>>>,
 }
@@ -870,7 +871,7 @@ fn accepted_result_from_response(
         ));
     }
     let overlap_fraction = fraction(raw_path, evidence, "overlap_fraction")?;
-    fraction(raw_path, evidence, "multi_window_fraction")?;
+    let speaker_evidence_multi_fraction = fraction(raw_path, evidence, "multi_window_fraction")?;
     fraction(raw_path, evidence, "mean_window_overlap_share")?;
     let labels = statement_labels(raw_path, object)?;
     let mut statements = statements_restored.to_vec();
@@ -893,6 +894,7 @@ fn accepted_result_from_response(
         statements,
         embedding_payload,
         speaker_evidence: speaker_evidence.to_owned(),
+        speaker_evidence_multi_fraction,
         overlap_fraction,
         statement_labels: labels,
     })

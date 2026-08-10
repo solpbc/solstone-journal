@@ -10,6 +10,8 @@ mod audio;
 mod backend;
 #[allow(dead_code)]
 mod config;
+#[allow(dead_code)]
+mod event;
 mod model_assets;
 // The standalone CLI is introduced in a later step; retain the completed
 // stage pieces without treating that staged integration as a lint failure.
@@ -53,6 +55,13 @@ pub enum TranscribeError {
     RawInputRemove { path: PathBuf, detail: String },
     /// A terminal writer request could not be serialized.
     TerminalRequest { detail: String },
+    /// A full transcript writer request could not be serialized.
+    TranscriptRequest { detail: String },
+    /// The temporary embedding payload for a full transcript could not be handled.
+    TranscriptPayload {
+        path: Option<PathBuf>,
+        detail: String,
+    },
     /// The VAD helper binary is unavailable from this installation.
     VadBinary { detail: String },
     /// Preparing or invoking the VAD helper failed temporarily.
@@ -106,6 +115,8 @@ impl TranscribeError {
             | Self::TerminalPayload { .. }
             | Self::RawInputRemove { .. }
             | Self::TerminalRequest { .. }
+            | Self::TranscriptRequest { .. }
+            | Self::TranscriptPayload { .. }
             | Self::VadTemporary { .. } => 75,
             Self::VadBinary { .. } => 78,
             Self::VadHelper {
@@ -178,6 +189,20 @@ impl std::fmt::Display for TranscribeError {
                     "could not serialize terminal writer request: {detail}"
                 )
             }
+            Self::TranscriptRequest { detail } => {
+                write!(
+                    formatter,
+                    "could not serialize transcript writer request: {detail}"
+                )
+            }
+            Self::TranscriptPayload { path, detail } => match path {
+                Some(path) => write!(
+                    formatter,
+                    "could not prepare or remove transcript payload {}: {detail}",
+                    path.display()
+                ),
+                None => write!(formatter, "could not prepare transcript payload: {detail}"),
+            },
             Self::VadBinary { detail }
             | Self::VadTemporary { detail }
             | Self::VadResponse { detail } => formatter.write_str(detail),
@@ -215,6 +240,8 @@ impl std::error::Error for TranscribeError {
             | Self::InputMetadata { .. }
             | Self::RawInputRemove { .. }
             | Self::TerminalRequest { .. }
+            | Self::TranscriptRequest { .. }
+            | Self::TranscriptPayload { .. }
             | Self::VadBinary { .. }
             | Self::VadTemporary { .. }
             | Self::VadHelper { .. }
