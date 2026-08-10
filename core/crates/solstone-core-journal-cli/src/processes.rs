@@ -79,6 +79,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         binary: "solstone-core",
         preset_argv: &["observer"],
     },
+    NativeProcessSpec {
+        token: "export",
+        binary: "solstone-core",
+        preset_argv: &["export"],
+    },
 ];
 
 pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
