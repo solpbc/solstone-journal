@@ -119,6 +119,59 @@ fn ac3_create_new_refuses_non_person_type_before_entity_creation() {
 }
 
 #[test]
+fn create_new_refuses_written_id_slug_collision_in_another_directory() {
+    let temporary = Temp::new();
+    let path = temporary.path().join("entities/unrelated_directory");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(
+        path.join("entity.json"),
+        json!({"id":"new_person","name":"Someone Else","type":"Person"}).to_string(),
+    )
+    .unwrap();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("New Person".to_owned());
+    target_request.create_new = true;
+
+    assert!(matches!(
+        resolve_identify_target(&target_request).unwrap(),
+        IdentifyTargetOutcome::DestinationOccupied { entity_id } if entity_id == "new_person"
+    ));
+}
+
+#[test]
+fn create_new_refuses_literal_destination_directory_with_a_different_written_id() {
+    let temporary = Temp::new();
+    let path = temporary.path().join("entities/new_person");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(
+        path.join("entity.json"),
+        json!({"id":"someone_else","name":"Someone Else","type":"Person"}).to_string(),
+    )
+    .unwrap();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("New Person".to_owned());
+    target_request.create_new = true;
+
+    assert!(matches!(
+        resolve_identify_target(&target_request).unwrap(),
+        IdentifyTargetOutcome::DestinationOccupied { entity_id } if entity_id == "new_person"
+    ));
+}
+
+#[test]
+fn create_new_returns_ready_when_destination_is_unoccupied() {
+    let temporary = Temp::new();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("New Person".to_owned());
+    target_request.create_new = true;
+
+    assert!(matches!(
+        resolve_identify_target(&target_request).unwrap(),
+        IdentifyTargetOutcome::Ready(target) if target.will_create && target.entity_id == "new_person"
+    ));
+}
+
+#[test]
 fn ac3_name_resolution_excludes_non_person_and_resolves_person() {
     let temporary = Temp::new();
     entity(temporary.path(), "tool", "Only Tool", "Tool");

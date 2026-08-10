@@ -195,21 +195,21 @@ pub fn identify_cluster(
     let rows = load_operations(&ledger_path)?;
     let state = fold_operation(&rows, &operation_id)?;
     let prepared_plan = if let Some(state) = state.as_ref() {
-        match plan_identify(request, &operation_id)? {
-            Ok(planned) if planned.fingerprint == state.request_fingerprint => {
-                if state.terminal_status != TerminalStatus::InProgress {
-                    return Ok(state_status_result(state));
-                }
-                state.prepared_plan.clone()
+        if stored_request_matches_raw(&state.prepared_plan, request) {
+            if state.terminal_status != TerminalStatus::InProgress {
+                return Ok(state_status_result(state));
             }
-            Ok(_) => return Ok(fingerprint_conflict_result(&operation_id, state)),
-            Err(_) if stored_request_matches_raw(&state.prepared_plan, request) => {
-                if state.terminal_status != TerminalStatus::InProgress {
-                    return Ok(state_status_result(state));
+            state.prepared_plan.clone()
+        } else {
+            match plan_identify(request, &operation_id)? {
+                Ok(planned) if planned.fingerprint == state.request_fingerprint => {
+                    if state.terminal_status != TerminalStatus::InProgress {
+                        return Ok(state_status_result(state));
+                    }
+                    state.prepared_plan.clone()
                 }
-                state.prepared_plan.clone()
+                Ok(_) | Err(_) => return Ok(fingerprint_conflict_result(&operation_id, state)),
             }
-            Err(_) => return Ok(fingerprint_conflict_result(&operation_id, state)),
         }
     } else {
         let planned = match plan_identify(request, &operation_id)? {
@@ -596,6 +596,9 @@ fn target_outcome_value(outcome: IdentifyTargetOutcome) -> Value {
             json!({"status":"invalid_request","error":"name is unavailable"})
         }
         IdentifyTargetOutcome::NameRequired => json!({"error":"name is required"}),
+        IdentifyTargetOutcome::DestinationOccupied { entity_id } => {
+            json!({"status":"destination_occupied","entity_id":entity_id,"error":format!("Entity id '{entity_id}' already exists.")})
+        }
         IdentifyTargetOutcome::EntityNotFound { entity_id } => {
             json!({"error":format!("Entity '{entity_id}' not found."),"not_found":true})
         }
@@ -1089,6 +1092,7 @@ mod tests {
     use std::io::{Cursor, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use solstone_core_entity::read_visible_history;
     use solstone_core_npy::write_npy;
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
@@ -1423,5 +1427,103 @@ mod tests {
         assert_eq!(state.terminal_status, TerminalStatus::InProgress);
         assert!(state.result.is_none());
         assert!(state.repair_required.is_none());
+    }
+
+    #[test]
+    fn identify_cluster_create_new_resumes_after_recoverable_labels_failure() {
+        let temporary = Temp::new();
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("Target".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "request-create-crash".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+        let label_path = segment_path(temporary.path(), "20260808", "120000_300", "mic", false)
+            .unwrap()
+            .join("talents/speaker_labels.json");
+        fs::create_dir(&label_path).unwrap();
+
+        let first = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(first["status"], "recoverable", "{first}");
+        assert!(
+            temporary
+                .path()
+                .join("entities/target/entity.json")
+                .is_file()
+        );
+        let voiceprints_path = temporary.path().join("entities/target/voiceprints.npz");
+        let voiceprints_before_resume = fs::read(&voiceprints_path).unwrap();
+        let path = identify_ledger_path(temporary.path());
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let state = fold_operation(&load_operations(&path).unwrap(), &operation_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.terminal_status, TerminalStatus::InProgress);
+        assert!(state.completed_phases.contains(&ForwardPhase::Entity));
+        assert!(!state.completed_phases.contains(&ForwardPhase::Labels));
+
+        fs::remove_dir(&label_path).unwrap();
+        let second = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(second["status"], "identified", "{second}");
+        assert_eq!(second["entity_id"], "target");
+
+        let rows = load_operations(&path).unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.event.event_id == format!("{operation_id}:checkpoint:entity"))
+                .count(),
+            1,
+            "entity phase must not re-checkpoint on resume"
+        );
+        assert_eq!(
+            read_visible_history(temporary.path(), "target")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            fs::read(voiceprints_path).unwrap(),
+            voiceprints_before_resume
+        );
+    }
+
+    #[test]
+    fn distinct_fresh_operations_each_refuse_an_occupied_create_destination() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "new_person", "Someone Else");
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let first = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("New Person".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "request-occupied-one".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+        let second = IdentifyClusterRequest {
+            request_id: "request-occupied-two".into(),
+            ..first.clone()
+        };
+
+        for request in [&first, &second] {
+            let result = identify_cluster(request, &encoder()).unwrap();
+            assert_eq!(result["status"], "destination_occupied", "{result}");
+            assert_eq!(result["entity_id"], "new_person");
+        }
     }
 }

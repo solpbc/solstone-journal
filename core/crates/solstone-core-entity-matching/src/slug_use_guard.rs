@@ -55,9 +55,9 @@ const ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "solstone-core-speaker-resolve/src/identify_target.rs",
-        "names the entity id a will-create identify target would be given, forming a \
-         proposed label for a person that does not exist yet -- never used to look \
-         one up",
+        "proposes a new-create id, then immediately checks the resolved identity map and \
+         literal destination directory before returning -- refuses any collision before \
+         Ready is produced; never used to look up or adopt an existing entity",
     ),
     (
         "solstone-core-entities/src/router.rs",

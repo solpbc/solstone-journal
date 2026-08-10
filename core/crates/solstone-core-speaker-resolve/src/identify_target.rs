@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 use solstone_core_entity::{
-    EntityResolutionError, EntityResolutionOutcome, JournalEntity, is_valid_entity_type,
-    load_all_journal_entities, load_entity_voiceprints_file, read_entity_identity,
-    record_entity_resolution,
+    EntityResolutionError, EntityResolutionOutcome, EntityTrustLockError, JournalEntity,
+    hold_entity_trust_lock, is_valid_entity_type, load_all_journal_entities,
+    load_entity_voiceprints_file, read_entity_identity, read_identity_map,
+    record_entity_resolution_from_name_evidence,
 };
 use solstone_core_entity_matching::{MatchTier, entity_slug, token_sort};
 use thiserror::Error;
@@ -75,6 +76,9 @@ pub enum IdentifyTargetOutcome {
     PrincipalMatch,
     NameUnavailable,
     NameRequired,
+    DestinationOccupied {
+        entity_id: String,
+    },
     EntityNotFound {
         entity_id: String,
     },
@@ -99,6 +103,8 @@ pub enum IdentifyTargetError {
     Eligibility(#[from] EligibilityError),
     #[error("entity resolution failed: {0}")]
     Resolution(#[from] EntityResolutionError),
+    #[error("trust lock failed: {0}")]
+    TrustLock(#[from] EntityTrustLockError),
 }
 
 /// Resolve an identify target without constructing or mutating an operation plan.
@@ -129,7 +135,7 @@ pub fn resolve_identify_target(
         .iter()
         .map(|entity| entity.resolution_entity())
         .collect::<Vec<_>>();
-    let resolution = record_entity_resolution(
+    let resolution = record_entity_resolution_from_name_evidence(
         &request.journal_root,
         name,
         &resolution_entities,
@@ -189,8 +195,19 @@ pub fn resolve_identify_target(
             entity_type: request.entity_type.clone(),
         });
     }
+    let proposed_id = entity_slug(name);
+    let _trust = hold_entity_trust_lock(&request.journal_root)?;
+    let occupied = read_identity_map(&request.journal_root)?
+        .resolved
+        .contains_key(&proposed_id)
+        || read_entity_identity(&request.journal_root, &proposed_id)?.is_some();
+    if occupied {
+        return Ok(IdentifyTargetOutcome::DestinationOccupied {
+            entity_id: proposed_id,
+        });
+    }
     Ok(IdentifyTargetOutcome::Ready(TargetResolution {
-        entity_id: entity_slug(name),
+        entity_id: proposed_id,
         entity_name: name.to_owned(),
         entity_type: request.entity_type.clone(),
         will_create: true,
