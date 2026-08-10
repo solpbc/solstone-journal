@@ -182,6 +182,7 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             Some(manifest::Primitive::Status) => host::status(),
             Some(manifest::Primitive::Root) => host::root(),
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
+            Some(manifest::Primitive::Indexer) => local_ops::dispatch("indexer", &rest),
             None => dispatch_process(token, &rest, verbose, spawner),
         },
         JournalCommand::Local { token, rest, .. } => local_ops::dispatch(token, &rest),
@@ -430,7 +431,7 @@ mod tests {
         assert_eq!(JOURNAL_COMMAND_COUNT, 57);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 44);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 43);
         let coherence_tokens = PROCESS_SPECS
             .iter()
             .filter(|spec| spec.kind.requires_coherence())

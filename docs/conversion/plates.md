@@ -133,13 +133,13 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 🔴 **`day` semantics — one meaning, not three.** `day` is **the day the content originated from**: the source segment's day, or for an activity its **start** time. ⛔ It is not the recording day, not the last-seen day, and not the ingest day. For content that is genuinely not day-based, the **only** permitted fallback is the day it was last updated, and a fallback must be named as one rather than silently occupying the same field. ⚠ Before this, `day` conflated recording, source and last-seen meanings.
 
-The SQLite index. **Ephemeral by design and always rebuildable — that property is required, not incidental.** ⚠ The index schema needs architecture work.
+The SQLite index. **Ephemeral by design and always rebuildable — that property is required, not incidental.**
 
-🔴 **Half of it IS already Rust, and the half that is has the larger share of the code.** ⛔ Do not read `think/indexer/native.py:6-11` as "this plate is Python" — it is accurate about what went native and silent about how much. `core/crates/solstone-core-indexer` (11,825 lines) + `solstone-core-indexer-store` (4,411) = **16,236 lines of Rust owning the entire CLI write path** — `--reset`, `--rescan`, `--rescan-full`, `--rescan-file`, `--rebuild-edges`. That is 5.5× the Python it fronts (`indexer/journal.py` 1,693 + `edges.py` 1,263). **A full rebuild is already native.** What remains Python is **the whole read/query path** plus the in-process writers.
+**Production mutation authority:** `journal indexer` dispatches in the Rust journal binary, and `solstone-core-indexer-store` owns scans, file replacements, stream/path pruning, resets, edge rebuilds, and entity-merge edge maintenance. Python feature plates that have not converted yet request those explicit native mutations rather than opening SQLite for writes. The [poisoned-path integration test](../../core/crates/solstone-core-journal-bin/tests/journal_identity.rs) exercises a real rebuild while the supported Python launchers fail on invocation. `think/indexer/journal.py` and `edges.py` retain their Python-era implementations as differential references.
 
-🔴 **The schema DDL exists in two hand-maintained copies** — `think/indexer/journal.py:SCHEMA` and `core/crates/solstone-core-indexer-store/src/db.rs` (`CREATE_FILES` · `CREATE_CHUNKS` · `CREATE_EDGE_FILES` · `CREATE_EDGES` + the three edge indices). `db.rs:27` names the Python side as source of truth **for the edges half only**; the `chunks` DDL carries no such note. This is the two-places-one-contract class inside the plate whose schema is the thing being redesigned.
+**Schema authority:** the production DDL lives in Rust; the Python DDL is reference corpus. Before a native mutation, Rust transactionally copies pre-`stream` and pre-`time_bucket` FTS rows into the current table shape. The [legacy-shape tests](../../core/crates/solstone-core-indexer-store/src/db.rs) cover both migrations and assert that the existing rows remain queryable.
 
-⚠ **Rust's `ensure_schema` has no equivalent of Python's `time_bucket` rebuild check** and its own comment says it relies on `--reset` instead. A pre-`time_bucket` index reached by the native path first gets `CREATE VIRTUAL TABLE IF NOT EXISTS` as a no-op, then an 8-column insert against a 7-column table.
+**Schema v2 sequencing:** v2 remains the next schema change and is separate from this authority change, so rollback does not also have to undo a new durable shape. Its minimum is **SQLite 3.42**, the version that introduced the FTS5 [`secure-delete` configuration option](https://www.sqlite.org/fts5.html#the_secure_delete_configuration_option). The workspace [builds `rusqlite` with bundled SQLite](../../core/Cargo.toml); the iOS canary excludes indexer-store/query and therefore does not set the journal-host floor.
 
 **Shape of the live schema:** one FTS5 virtual table (`content` + **seven `UNINDEXED` columns** — `path`, `day`, `facet`, `agent`, `stream`, `idx`, `time_bucket`), a `files(path, mtime)` staleness watermark, and the derived `edges` / `edge_files` pair. 🔴 **Every metadata filter is therefore a post-filter over the whole match set, and a filter with no search term is a full table scan** — `_build_where_clause` emits `1=1` for an empty query. The `edges` half, which does have real indices, is the existing proof the same file can serve indexed lookups.
 
@@ -179,13 +179,11 @@ The SQLite index. **Ephemeral by design and always rebuildable — that property
   there** — ⛔ **not** "any token in any script is searchable." With `unicode61` a run of Han indexes
   as **one** token, so a query for part of it cannot match; emoji are separators and are not indexed
   at all. Both were measured. Making those findable is a **tokenizer** decision, not a query-path one.
-- 🔴 **Schema work is gated on there being one writer, and there are two.** Only the CLI write
-  operations are native; the in-process writers — day-accumulator appends, chat stream appends,
-  importers, backup restore, observer prune, share delete, entity-merge — still write the index
-  directly from the reference implementation, against its own copy of the DDL. Day-ordered
-  identities, a typed `day`, a content-type dimension and `secure_delete` on every writer connection
-  all need both writers moved together. ⛔ Do not scope a schema change as though the write path were
-  already single.
+- **Schema v2 has one mutation authority.** The Python feature entry points listed in
+  [`strands.md`](strands.md#sjournalindex) now terminate at
+  Rust-owned operations, and `journal indexer` no longer launches an interpreter. Day-ordered
+  identities, a typed `day`, a content-type dimension, and `secure-delete` can therefore move together
+  without a second production writer preserving the old shape.
 
 ## `P-format`
 

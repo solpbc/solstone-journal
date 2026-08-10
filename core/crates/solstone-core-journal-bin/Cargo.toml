@@ -23,6 +23,7 @@ solstone-core-journal-cli = { workspace = true }
 
 [dev-dependencies]
 nix = { workspace = true, features = ["signal"] }
+rusqlite = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 

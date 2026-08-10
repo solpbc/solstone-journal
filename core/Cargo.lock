@@ -2747,6 +2747,7 @@ name = "solstone-core-journal-bin"
 version = "1.0.22"
 dependencies = [
  "nix",
+ "rusqlite",
  "serde_json",
  "sha2",
  "solstone-core-journal-cli",
@@ -2762,6 +2763,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-cli-boundary",
  "solstone-core-facets",
+ "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
  "solstone-core-journal-archive",

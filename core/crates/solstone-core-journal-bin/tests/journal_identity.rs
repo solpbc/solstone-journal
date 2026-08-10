@@ -152,7 +152,7 @@ fn poison_path(temp: &TempDir) -> (PathBuf, PathBuf) {
     let shims = temp.path.join("shims");
     let sentinel = temp.path.join("sentinel.log");
     fs::create_dir(&shims).expect("create shim directory");
-    for name in ["python", "python3"] {
+    for name in ["python", "python3", "pytest", "uv", "ruff"] {
         write_forbidden_shim(&shims.join(name), &sentinel);
     }
     let path = format!(
@@ -171,6 +171,55 @@ fn assert_sentinel_untouched(sentinel: &Path) {
                 .is_empty(),
         "journal identity invoked a forbidden interpreter: {}",
         fs::read_to_string(sentinel).unwrap_or_default(),
+    );
+}
+
+#[test]
+fn journal_indexer_writes_real_index_with_interpreters_poisoned() {
+    let temp = TempDir::new("journal-indexer-native-poison");
+    let journal = temp.path.join("journal");
+    seed_journal(&journal);
+    let talent = journal.join("chronicle/20260809/default/120000_1/talents/native.md");
+    fs::create_dir_all(talent.parent().expect("talent parent")).expect("create talent directory");
+    fs::write(&talent, "# Native index\n\ninterpreter poison needle\n").expect("write index input");
+    let (path, sentinel) = poison_path(&temp);
+
+    let output = run_journal_with_journal(&["indexer", "--rescan-full"], Some(&path), &journal);
+
+    assert!(
+        output.status.success(),
+        "native journal indexer failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert_sentinel_untouched(&sentinel);
+    let conn = rusqlite::Connection::open(journal.join("indexer/journal.sqlite"))
+        .expect("open written index");
+    let indexed: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM chunks WHERE chunks MATCH 'interpreter' AND content LIKE '%poison needle%'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query written index");
+    assert_eq!(indexed, 1, "native writer did not index the real file");
+
+    let query = run_journal_with_journal(&["indexer", "-q", "interpreter"], Some(&path), &journal);
+    assert!(
+        query.status.success(),
+        "native journal query failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&query.stdout),
+        String::from_utf8_lossy(&query.stderr),
+    );
+    assert_sentinel_untouched(&sentinel);
+    let stdout = String::from_utf8_lossy(&query.stdout);
+    assert!(
+        stdout.contains("Total: 1 chunks"),
+        "unexpected query output: {stdout}"
+    );
+    assert!(
+        stdout.contains("poison needle"),
+        "query did not return indexed content: {stdout}"
     );
 }
 

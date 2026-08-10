@@ -208,7 +208,7 @@ def _segment_index_info(
 
     rel_path = f"{day}/{stream}/{segment}"
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
             indexed = bool(
                 conn.execute(

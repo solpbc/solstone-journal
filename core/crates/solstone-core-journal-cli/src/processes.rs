@@ -86,12 +86,6 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
         kind: ProcessKind::Service,
     },
     ProcessSpec {
-        token: "indexer",
-        module: "solstone.think.indexer",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
         token: "start",
         module: "solstone.think.start",
         preset_argv: EMPTY,

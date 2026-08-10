@@ -3,11 +3,9 @@
 
 """Native journal-indexer command runner.
 
-The journal indexer CLI sends command write operations and journal-index reads
-to `solstone-core indexer`. In-process index writers such as backup-restore
-rescans, direct `index_file()` callers, chat stream appends, importers,
-day-accumulator writes, observer prune, share delete, and entity-merge edge
-maintenance continue to call the Python indexer APIs directly.
+Production Python plates may request an index mutation while those plates are
+still converting, but the separate ``solstone-core`` process is the only writer.
+The owner-facing ``journal indexer`` command does not pass through this module.
 """
 
 from __future__ import annotations
@@ -274,6 +272,100 @@ def run_native_indexer_coverage(
             "native journal coverage returned a non-object JSON response"
         )
     return response
+
+
+def run_native_indexer_scan(journal: str, *, full: bool) -> dict[str, Any]:
+    """Run a native journal scan and return its report."""
+    flag = "--rescan-full" if full else "--rescan"
+    return _require_object(_run_native_indexer_read([flag], journal), "scan")
+
+
+def run_native_indexer_reset_and_full_scan(journal: str) -> dict[str, Any]:
+    """Reset and fully rebuild the index in one native command."""
+    return _require_object(
+        _run_native_indexer_read(["--reset", "--rescan-full"], journal),
+        "reset-and-full-scan",
+    )
+
+
+def run_native_indexer_rescan_file(journal: str, file_path: str) -> bool:
+    """Ask the native writer to re-index one file."""
+    response = _require_object(
+        _run_native_indexer_read(
+            ["--rescan-file", _normalize_rescan_file(journal, file_path)], journal
+        ),
+        "rescan-file",
+    )
+    return response.get("indexed") is True
+
+
+def run_native_indexer_prune_stream(journal: str, stream: str) -> dict[str, int]:
+    """Remove native index rows for one stream."""
+    response = _require_object(
+        _run_native_indexer_read(["prune-stream", stream], journal),
+        "prune-stream",
+    )
+    return _require_counts(response, "prune-stream")
+
+
+def run_native_indexer_prune_paths(
+    journal: str, paths: Iterable[str]
+) -> dict[str, int]:
+    """Remove native index rows for exact paths and directory prefixes."""
+    normalized = list(paths)
+    if not normalized:
+        return {"chunks": 0, "files": 0}
+    response = _require_object(
+        _run_native_indexer_read(["prune-paths", *normalized], journal),
+        "prune-paths",
+    )
+    return _require_counts(response, "prune-paths")
+
+
+def run_native_indexer_fold_entity_edges(
+    journal: str, source_id: str, target_id: str
+) -> dict[str, int]:
+    """Fold recorded-merge edge endpoints in the native index."""
+    response = _require_object(
+        _run_native_indexer_read(["fold-entity-edges", source_id, target_id], journal),
+        "fold-entity-edges",
+    )
+    try:
+        return {
+            "rows_folded": int(response["rows_folded"]),
+            "self_edges_dropped": int(response["self_edges_dropped"]),
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise NativeIndexerReadError(
+            "native fold-entity-edges returned invalid counts"
+        ) from exc
+
+
+def run_native_indexer_edge_fingerprint(journal: str, *, rebuild: bool) -> str:
+    """Return a native edge fingerprint, rebuilding first when requested."""
+    verb = "rebuild-edges-fingerprint" if rebuild else "edge-fingerprint"
+    response = _require_object(_run_native_indexer_read([verb], journal), verb)
+    fingerprint = response.get("fingerprint")
+    if not isinstance(fingerprint, str):
+        raise NativeIndexerReadError(f"native {verb} returned an invalid fingerprint")
+    return fingerprint
+
+
+def _require_object(response: Any, operation: str) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        raise NativeIndexerReadError(
+            f"native journal {operation} returned a non-object JSON response"
+        )
+    return response
+
+
+def _require_counts(response: dict[str, Any], operation: str) -> dict[str, int]:
+    try:
+        return {"chunks": int(response["chunks"]), "files": int(response["files"])}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise NativeIndexerReadError(
+            f"native {operation} returned invalid counts"
+        ) from exc
 
 
 def _run_native_indexer_read(

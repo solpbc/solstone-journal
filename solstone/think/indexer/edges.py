@@ -29,6 +29,10 @@ from solstone.think.entities.journal import (
 from solstone.think.entities.loading import load_entities
 from solstone.think.entities.matching import find_matching_entity
 from solstone.think.formatters import discover_files, extract_path_metadata, load_jsonl
+from solstone.think.indexer.native import (
+    run_native_indexer_edge_fingerprint,
+    run_native_indexer_fold_entity_edges,
+)
 from solstone.think.journal_io import MalformedPolicy, read_json
 from solstone.think.utils import segment_key, segment_parse
 
@@ -1130,6 +1134,32 @@ def _edge_rows_all_from_sources(journal: str) -> bool:
         return False
     discovered = set(discover_edge_files(journal))
     return all(path in discovered for path in rows)
+
+
+# Preserve the Python-era mutations as differential references. Production
+# callers use these redefined entry points, whose only writer is solstone-core.
+_reference_fold_entity_edges_for_recorded_merge = fold_entity_edges_for_recorded_merge
+_reference_rebuild_edges_for_recorded_merge_undo = rebuild_edges_for_recorded_merge_undo
+_reference_fingerprint_edge_rows = fingerprint_edge_rows
+
+
+def fold_entity_edges_for_recorded_merge(
+    source_id: str,
+    target_id: str,
+    journal: str,
+) -> dict[str, int]:
+    """Fold recorded-merge edge endpoints through the native writer."""
+    return run_native_indexer_fold_entity_edges(journal, source_id, target_id)
+
+
+def rebuild_edges_for_recorded_merge_undo(journal: str) -> str:
+    """Rebuild and fingerprint merge-undo edges through the native writer."""
+    return run_native_indexer_edge_fingerprint(journal, rebuild=True)
+
+
+def fingerprint_edge_rows(journal: str) -> str:
+    """Read the native writer's deterministic edge fingerprint."""
+    return run_native_indexer_edge_fingerprint(journal, rebuild=False)
 
 
 def discover_edge_files(journal: str) -> dict[str, str]:
