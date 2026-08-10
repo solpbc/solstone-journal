@@ -65,6 +65,7 @@ mod speakers_known;
 mod speakers_npz;
 mod speakers_owner;
 mod speakers_quality;
+mod speakers_review;
 mod sse;
 mod system;
 
@@ -160,6 +161,14 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/speakers/known",
             get(speakers_known::known),
+        )
+        .route(
+            "/app/speakers/api/speakers/{day}/{stream}/{segment_key}",
+            get(speakers_review::segment_speakers),
+        )
+        .route(
+            "/app/speakers/api/review/{day}/{stream}/{segment_key}/{source}",
+            get(speakers_review::review),
         )
         .route(
             "/app/speakers/api/stats/{month}",

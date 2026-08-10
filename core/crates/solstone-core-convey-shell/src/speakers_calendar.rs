@@ -135,7 +135,7 @@ fn refusal(reason_code: &str, message: &str, detail: &str) -> Response {
     error_envelope(reason_code, message, detail, StatusCode::BAD_REQUEST).into_response()
 }
 
-fn is_day(value: &str) -> bool {
+pub(crate) fn is_day(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
@@ -278,7 +278,7 @@ fn read_dirs(path: &Path) -> Vec<fs::DirEntry> {
         .collect()
 }
 
-fn parse_segment(key: &str) -> Option<(String, String, u64)> {
+pub(crate) fn parse_segment(key: &str) -> Option<(String, String, u64)> {
     let (time, length) = key.split_once('_')?;
     if time.len() != 6
         || !time.bytes().all(|byte| byte.is_ascii_digit())
@@ -304,6 +304,21 @@ fn parse_segment(key: &str) -> Option<(String, String, u64)> {
     ))
 }
 
+/// Match the route-level `HHMMSS_LEN` shape without validating wall-clock time.
+pub(crate) fn is_segment_key(key: &str) -> bool {
+    let Some((time, suffix)) = key.split_once('_') else {
+        return false;
+    };
+    let digit_count = suffix.bytes().take_while(u8::is_ascii_digit).count();
+    time.len() == 6
+        && time.bytes().all(|byte| byte.is_ascii_digit())
+        && digit_count > 0
+        && suffix
+            .as_bytes()
+            .get(digit_count)
+            .is_none_or(|byte| *byte == b'_')
+}
+
 pub(crate) fn audio_embedding_sources(path: &Path) -> Vec<String> {
     let mut sources = fs::read_dir(path)
         .ok()
@@ -322,7 +337,7 @@ pub(crate) fn audio_embedding_sources(path: &Path) -> Vec<String> {
     sources
 }
 
-fn load_segment_speakers(path: &Path) -> Vec<String> {
+pub(crate) fn load_segment_speakers(path: &Path) -> Vec<String> {
     read_json(&path.join("talents/speakers.json"))
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default()
@@ -332,7 +347,7 @@ fn load_segment_speakers(path: &Path) -> Vec<String> {
         .collect()
 }
 
-fn load_speaker_labels(path: &Path) -> Option<Value> {
+pub(crate) fn load_speaker_labels(path: &Path) -> Option<Value> {
     read_json(&path.join("talents/speaker_labels.json"))
 }
 
@@ -350,20 +365,25 @@ fn segment_has_speaker_review(labels_data: Option<&Value>) -> bool {
         .is_some_and(|labels| {
             labels
                 .iter()
-                .any(|label| sentence_needs_review(label, labels_data))
+                .any(|label| speaker_sentence_needs_review(Some(label), Some(labels_data)))
         })
 }
 
-fn sentence_needs_review(label: &Value, labels_data: &Value) -> bool {
-    if value_truthy(label) {
-        label.get("confidence").and_then(Value::as_str) == Some("medium")
-            || !label.get("speaker").is_some_and(value_truthy)
-    } else {
-        value_truthy(labels_data)
+/// Return the shared speaker-review flag for an optional sentence label.
+pub(crate) fn speaker_sentence_needs_review(
+    label: Option<&Value>,
+    labels_data: Option<&Value>,
+) -> bool {
+    match label.filter(|label| value_truthy(label)) {
+        Some(label) => {
+            label.get("confidence").and_then(Value::as_str) == Some("medium")
+                || !label.get("speaker").is_some_and(value_truthy)
+        }
+        None => labels_data.is_some_and(value_truthy),
     }
 }
 
-fn value_truthy(value: &Value) -> bool {
+pub(crate) fn value_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,
@@ -385,13 +405,23 @@ fn segment_has_speaker(path: &Path, speaker: &str) -> bool {
 }
 
 pub(crate) fn journal_principal_id(root: &Path) -> Option<String> {
+    load_all_journal_entities(root)
+        .into_iter()
+        .find(|(_, entity)| entity.get("is_principal") == Some(&Value::Bool(true)))
+        .map(|(entity_id, _)| entity_id)
+}
+
+/// Read parseable journal entity records in the Python scanner's sorted ID order.
+pub(crate) fn load_all_journal_entities(root: &Path) -> Vec<(String, Value)> {
     let mut entities = read_dirs(&root.join("entities"));
     entities.sort_by_key(|entry| entry.file_name());
-    entities.into_iter().find_map(|entry| {
-        read_json(&entry.path().join("entity.json"))
-            .filter(|entity| entity.get("is_principal") == Some(&Value::Bool(true)))
-            .map(|_| entry.file_name().to_string_lossy().into_owned())
-    })
+    entities
+        .into_iter()
+        .filter_map(|entry| {
+            read_json(&entry.path().join("entity.json"))
+                .map(|entity| (entry.file_name().to_string_lossy().into_owned(), entity))
+        })
+        .collect()
 }
 
 fn add_attribution_counts(
@@ -411,7 +441,7 @@ fn add_attribution_counts(
     let attribution_total = labels.len();
     let attribution_needs_review = labels
         .iter()
-        .filter(|label| sentence_needs_review(label, labels_data))
+        .filter(|label| speaker_sentence_needs_review(Some(label), Some(labels_data)))
         .count();
     let attribution_null = labels
         .iter()

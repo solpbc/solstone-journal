@@ -16,6 +16,30 @@ pub(crate) struct Voiceprints {
     pub(crate) metadata: Vec<Value>,
 }
 
+/// Segment embedding metadata used to mark transcript rows available for review.
+pub(crate) struct SegmentEmbeddings {
+    pub(crate) statement_ids: Vec<i32>,
+    pub(crate) durations_s: Option<Vec<f32>>,
+}
+
+/// Load the audio-embedding members required by the review surface.
+///
+/// This intentionally treats any unreadable or incomplete archive as absent,
+/// matching Python's broad failure handling around segment NPZ reads.
+pub(crate) fn load_segment_embeddings(path: &Path) -> Option<SegmentEmbeddings> {
+    let mut archive = open_archive(path)?;
+    f32_matrix(&member(&mut archive, "embeddings.npy")?, 256)?;
+    let statement_ids = i32_vector(&member(&mut archive, "statement_ids.npy")?)?;
+    let durations_s = match optional_member(&mut archive, "durations_s.npy") {
+        Some(bytes) => Some(f32_vector(&bytes)?),
+        None => None,
+    };
+    Some(SegmentEmbeddings {
+        statement_ids,
+        durations_s,
+    })
+}
+
 pub(crate) fn load_voiceprints(path: &Path) -> Option<Voiceprints> {
     let mut archive = open_archive(path)?;
     let embeddings = f32_matrix(&member(&mut archive, "embeddings.npy")?, 256)?;
@@ -149,6 +173,17 @@ fn i32_scalar(bytes: &[u8]) -> Option<i32> {
         return None;
     }
     Some(i32::from_le_bytes(blob.payload.try_into().ok()?))
+}
+
+fn i32_vector(bytes: &[u8]) -> Option<Vec<i32>> {
+    let blob = parse_npy(bytes).ok()?;
+    if blob.descr != "<i4" || blob.fortran_order || blob.shape.len() != 1 {
+        return None;
+    }
+    blob.payload
+        .chunks_exact(4)
+        .map(|bytes| Some(i32::from_le_bytes(bytes.try_into().ok()?)))
+        .collect()
 }
 
 fn unicode_array(bytes: &[u8]) -> Option<Vec<String>> {
