@@ -348,7 +348,7 @@ fn rich_fixture_matches_json_and_human_payloads() {
 }
 
 #[test]
-fn save_levels_match_and_preserve_png_bytes() {
+fn save_levels_match_and_preserve_decoded_pixels() {
     let fixture = Fixture::new();
     compare_save(&fixture, "1", &fixture.journal.join("single.png"));
     compare_save(&fixture, "1,2", &fixture.journal.join("batch.png"));

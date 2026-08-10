@@ -85,6 +85,8 @@ fn python_seconds(timestamp: &Value) -> Result<f64, GrabFailure> {
             .as_f64()
             .ok_or_else(|| GrabFailure::runtime("invalid timestamp"))?,
         Value::String(value) if value.is_empty() => 0.0,
+        Value::Array(items) if items.is_empty() => 0.0,
+        Value::Object(values) if values.is_empty() => 0.0,
         Value::String(value) => value
             .parse::<f64>()
             .map_err(|_| GrabFailure::runtime("invalid timestamp"))?,
@@ -117,6 +119,12 @@ mod tests {
             frame_abs_time(start, &json!(null)).unwrap(),
             "2026-08-09T12:00:00"
         );
+        for timestamp in [json!([]), json!({})] {
+            assert_eq!(
+                frame_abs_time(start, &timestamp).unwrap(),
+                "2026-08-09T12:00:00"
+            );
+        }
         assert_eq!(
             frame_abs_time(start, &json!(0.1)).unwrap(),
             "2026-08-09T12:00:00.100000"

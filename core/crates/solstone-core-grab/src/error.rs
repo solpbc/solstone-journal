@@ -17,7 +17,7 @@ pub enum GrabFailure {
     Usage(String),
     #[error("{0}")]
     Runtime(String),
-    #[error("failed to read {path}: {source}")]
+    #[error("failed to access {path}: {source}")]
     Io {
         path: PathBuf,
         source: std::io::Error,

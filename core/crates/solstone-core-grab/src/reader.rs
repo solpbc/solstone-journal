@@ -277,10 +277,7 @@ pub(crate) fn coerce_frame_id(value: &Value) -> Option<i64> {
         Value::Number(number) => number
             .as_i64()
             .or_else(|| number.as_f64().map(|number| number as i64)),
-        Value::String(value) => value
-            .parse::<i64>()
-            .ok()
-            .or_else(|| value.parse::<f64>().ok().map(|number| number as i64)),
+        Value::String(value) => value.parse::<i64>().ok(),
         Value::Bool(value) => Some(i64::from(*value)),
         _ => None,
     }
@@ -523,6 +520,7 @@ mod tests {
     fn frame_id_coercion_matches_python_int_for_common_json_values() {
         assert_eq!(super::coerce_frame_id(&json!(7.0)), Some(7));
         assert_eq!(super::coerce_frame_id(&json!("7")), Some(7));
+        assert_eq!(super::coerce_frame_id(&json!("7.0")), None);
         assert_eq!(super::coerce_frame_id(&json!(true)), Some(1));
     }
 }
