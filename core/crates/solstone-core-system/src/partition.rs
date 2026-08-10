@@ -29,11 +29,10 @@ pub fn partition_for(cmd: &[String]) -> Partition {
         return Partition::new("unknown");
     };
 
-    let first_name = Path::new(first)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(first);
-    if matches!(first_name, "sol" | "journal" | "solstone-core-journal") && cmd.len() > 1 {
+    let recognized = matches!(first.as_str(), "sol" | "journal")
+        || Path::new(first).file_name().and_then(|name| name.to_str())
+            == Some("solstone-core-journal");
+    if recognized && cmd.len() > 1 {
         let mut name = cmd[1].clone();
         if name == "think" {
             // Order is a contract: the first matching mode wins.
@@ -82,6 +81,26 @@ mod tests {
                 "5015".to_owned(),
             ]),
             Partition::new("convey")
+        );
+    }
+
+    #[test]
+    fn retains_exact_matching_for_bare_journal_and_sol() {
+        assert_eq!(
+            partition_for(&["journal".to_owned(), "think".to_owned()]),
+            Partition::new("daily")
+        );
+        assert_eq!(
+            partition_for(&["sol".to_owned(), "heartbeat".to_owned()]),
+            Partition::new("heartbeat")
+        );
+    }
+
+    #[test]
+    fn does_not_treat_an_unrelated_journal_path_as_a_service_command() {
+        assert_eq!(
+            partition_for(&["/opt/tools/journal".to_owned(), "backup".to_owned()]),
+            Partition::new("journal")
         );
     }
 }
