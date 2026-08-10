@@ -3,6 +3,8 @@
 
 //! Host-input collection around the shared pure STT backend choice.
 
+mod parakeet_cpp;
+
 use std::env;
 use std::fs;
 

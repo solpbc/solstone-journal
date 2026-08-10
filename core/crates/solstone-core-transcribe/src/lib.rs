@@ -67,6 +67,10 @@ pub enum TranscribeError {
         available_bytes: Option<u64>,
         floor_bytes: Option<u64>,
     },
+    /// The supervised parakeet.cpp service is unavailable for retryable work.
+    ParakeetCppDeferred { reason: String, detail: String },
+    /// The parakeet.cpp service or client contract failed permanently.
+    ParakeetCppFailure { reason: String, detail: String },
 }
 
 impl TranscribeError {
@@ -106,6 +110,8 @@ impl TranscribeError {
             },
             Self::TerminalWrite { .. } | Self::InputMetadata { .. } | Self::VadResponse { .. } => 1,
             Self::SttSurface { .. } => 1,
+            Self::ParakeetCppDeferred { .. } => 69,
+            Self::ParakeetCppFailure { .. } => 1,
         }
     }
 }
@@ -176,6 +182,10 @@ impl std::fmt::Display for TranscribeError {
                 formatter,
                 "no viable STT backend (available memory: {available_bytes:?}, local floor: {floor_bytes:?})"
             ),
+            Self::ParakeetCppDeferred { reason, detail }
+            | Self::ParakeetCppFailure { reason, detail } => {
+                write!(formatter, "parakeet.cpp {reason}: {detail}")
+            }
         }
     }
 }
@@ -195,7 +205,9 @@ impl std::error::Error for TranscribeError {
             | Self::VadTemporary { .. }
             | Self::VadHelper { .. }
             | Self::VadResponse { .. }
-            | Self::SttSurface { .. } => None,
+            | Self::SttSurface { .. }
+            | Self::ParakeetCppDeferred { .. }
+            | Self::ParakeetCppFailure { .. } => None,
         }
     }
 }

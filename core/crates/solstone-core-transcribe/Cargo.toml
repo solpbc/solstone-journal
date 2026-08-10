@@ -23,6 +23,7 @@ solstone-core-callosum = { workspace = true }
 solstone-core-journal-config = { workspace = true }
 solstone-core-journal-io = { workspace = true }
 tempfile = "3.24.0"
+ureq = { workspace = true, features = ["multipart"] }
 
 [lints]
 workspace = true
