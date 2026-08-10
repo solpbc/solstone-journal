@@ -61,6 +61,7 @@ pub mod session;
 pub mod session_gate;
 mod speakers;
 mod speakers_calendar;
+mod speakers_discovery;
 mod speakers_known;
 mod speakers_npz;
 mod speakers_owner;
@@ -157,6 +158,18 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/owner/status",
             get(speakers_owner::status),
+        )
+        .route(
+            "/app/speakers/api/discovery/cache",
+            get(speakers_discovery::cache),
+        )
+        .route(
+            "/app/speakers/api/discovery/cluster/{cluster_id}/presence",
+            get(speakers_discovery::presence),
+        )
+        .route(
+            "/app/speakers/api/discovery/resolve-statement",
+            get(speakers_discovery::resolve_statement),
         )
         .route(
             "/app/speakers/api/speakers/known",

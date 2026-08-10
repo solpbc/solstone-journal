@@ -395,7 +395,7 @@ fn entity_display(
     (name, principal_id == Some(entity_id))
 }
 
-fn audio_info(
+pub(crate) fn audio_info(
     segment_dir: &Path,
     day: &str,
     stream: &str,
@@ -478,7 +478,7 @@ fn time_to_seconds(time: &str) -> Option<i64> {
 /// `token_sort_ratio` semantics need a faithful implementation, not a merely
 /// similar Rust string-distance crate. A future wave adding fuzzy support must
 /// port those semantics rather than extending this fallback.
-fn find_matching_entity<'a>(
+pub(crate) fn find_matching_entity<'a>(
     detected_name: &str,
     entities: &'a [(String, Value)],
 ) -> Option<&'a Value> {
