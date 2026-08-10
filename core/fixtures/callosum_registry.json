@@ -87,6 +87,8 @@
       "restarting",
       "status",
       "queue",
+      "scheduled",
+      "provider_runtime",
       "request",
       "restart",
       "drain",
@@ -95,9 +97,6 @@
     ],
     "support": [
       "proactive_suggestion"
-    ],
-    "sync": [
-      "status"
     ],
     "think": [
       "started",

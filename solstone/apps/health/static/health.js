@@ -75,7 +75,6 @@
     imports: new Map(),
     think: null,                // Think status snapshot (null when idle)
     thinkActive: false,         // Whether think is currently running
-    sync: null,                 // Sync status snapshot (null when idle)
     serviceLogs: new Map(),     // service name -> array of {ts, stream, line}
     logFollow: true,            // Auto-scroll log viewport
     logsCollapsed: true,
@@ -145,8 +144,6 @@
     thinkInfo: document.getElementById('thinkInfo'),
     thinkProgress: document.getElementById('thinkProgress'),
     thinkAgents: document.getElementById('thinkAgents'),
-    syncCard: document.getElementById('syncCard'),
-    syncInfo: document.getElementById('syncInfo'),
     queuesSection: document.getElementById('queuesSection'),
     queuesValue: document.getElementById('queuesValue'),
     schedulesSection: document.getElementById('schedulesSection'),
@@ -365,7 +362,6 @@
     sense: 'Media Processor',
     observe: 'Screen & Audio',
     think: 'Background Analysis',
-    sync: 'Cloud Sync',
     importer: 'file importer',
     schedule: 'Task Scheduler',
   };
@@ -644,8 +640,7 @@
   function updateAllQuiet() {
     const allHidden = elements.cortexSection.classList.contains('hidden') &&
       elements.importerSection.classList.contains('hidden') &&
-      elements.thinkCard.classList.contains('hidden') &&
-      elements.syncCard.classList.contains('hidden');
+      elements.thinkCard.classList.contains('hidden');
     if (allHidden) updateAllQuietContent();
     elements.allQuietCard.classList.toggle('hidden', !allHidden);
   }
@@ -2065,48 +2060,6 @@
     updateStatusSummary();
   }
 
-  function handleSyncEvent(msg) {
-    if (msg.event !== 'status') return;
-
-    state.sync = msg;
-    updateSyncCard();
-  }
-
-  function updateSyncCard() {
-    const s = state.sync;
-    const lockIcon = `<span aria-hidden="true">${(window.ConveyIcons?.svg('lock') || '')}</span>`;
-    // Show when there's queued work or active upload
-    if (!s || (s.queue_size === 0 && !s.segment)) {
-      elements.syncCard.classList.add('hidden');
-      if (elements.trustIndicator) {
-        elements.trustIndicator.innerHTML = lockIcon + ' all data stored locally on your device';
-      }
-      updateAllQuiet();
-      updateStatusSummary();
-      return;
-    }
-
-    elements.syncCard.classList.remove('hidden');
-
-    renderInfoItems(elements.syncInfo, [
-      { label: 'host', value: s.host || null },
-      { label: 'platform', value: s.platform || null },
-      { label: 'queue', value: String(s.queue_size) },
-      { label: 'state', value: s.state ? s.state + (s.confirm_attempt ? ' (' + s.confirm_attempt + ')' : '') : null },
-      { label: 'segment', value: s.segment || null },
-    ]);
-    if (elements.trustIndicator) {
-      if (s && s.host) {
-        elements.trustIndicator.innerHTML = lockIcon + ' All data stored locally · Syncing to ' + escapeHtml(s.host);
-      } else {
-        elements.trustIndicator.innerHTML = lockIcon + ' all data stored locally on your device';
-      }
-    }
-
-    updateAllQuiet();
-    updateStatusSummary();
-  }
-
   const LOG_BUFFER_SIZE = 50;
 
   // mirror of solstone/apps/health/log_classifier.py — keep in sync
@@ -2572,7 +2525,6 @@
     else if (tract === 'observe') handleObserveEvent(msg);
     else if (tract === 'importer') handleImporterEvent(msg);
     else if (tract === 'think') handleThinkEvent(msg);
-    else if (tract === 'sync') handleSyncEvent(msg);
     else if (tract === 'logs') handleLogsEvent(msg);
     updateStatusSummary();
   }
@@ -2681,7 +2633,7 @@
 
     // Hide dashboard cards and suppress live log rendering
     const dashboard = document.querySelector('.health-dashboard');
-    dashboard.querySelectorAll('.vitals-bar, .observe-card, .observers-card, .registered-observers-card, .activity-grids, .think-card, .sync-card').forEach(el => el.style.display = 'none');
+    dashboard.querySelectorAll('.vitals-bar, .observe-card, .observers-card, .registered-observers-card, .activity-grids, .think-card').forEach(el => el.style.display = 'none');
     state.deepLinkMode = true;
     elements.logsSummaryBadge.style.display = 'none';
 

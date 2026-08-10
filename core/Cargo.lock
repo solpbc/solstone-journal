@@ -2471,6 +2471,7 @@ dependencies = [
 name = "solstone-core-callosum"
 version = "1.0.22"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
  "solstone-core-cogitate-wire",

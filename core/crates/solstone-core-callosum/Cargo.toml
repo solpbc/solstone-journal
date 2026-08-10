@@ -24,6 +24,7 @@ solstone-core-journal-io = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
+regex.workspace = true
 solstone-core-cogitate-wire.workspace = true
 
 [[test]]

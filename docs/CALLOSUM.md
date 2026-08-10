@@ -145,13 +145,6 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 **Events:** `proactive_suggestion`
 **Purpose:** Signal a support suggestion when the support event handler identifies a qualifying condition.
 
-### `sync` - Journal/system synchronization status
-**Source:** No current Callosum producer.
-**Events:** `status`
-**Key fields:** `queue_size`, `segment`, `state`, `host`, `platform`
-**Consumer:** `solstone/apps/health/static/health.js` handles `sync.status` in `handleSyncEvent()` and renders it in `updateSyncCard()`.
-**Purpose:** Reserve the journal/system synchronization status vocabulary for the health UI. If a producer is added, its status would drive the dormant “Syncing to <host>” interface state; this concerns journal data synchronization, not physiological health.
-
 ### `notification` - In-app notification display
 **Source:** `solstone/convey/static/websocket.js` (client-side listener; any service can emit)
 **Events:** any (event name is not interpreted)

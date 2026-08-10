@@ -77,6 +77,7 @@ CALLOSUM_REGISTRY: dict[str, list[str]] = {
         "text_delta",
         "tool_budget_exhausted",
         "warning",
+        "budget_escalation",
     ],
     "importer": [
         "started",
@@ -107,6 +108,8 @@ CALLOSUM_REGISTRY: dict[str, list[str]] = {
         "restarting",
         "status",
         "queue",
+        "scheduled",
+        "provider_runtime",
         "request",
         "restart",
         "drain",
@@ -114,7 +117,6 @@ CALLOSUM_REGISTRY: dict[str, list[str]] = {
         "sync_conflict",
     ],
     "support": ["proactive_suggestion"],
-    "sync": ["status"],
     "think": [
         "started",
         "status",

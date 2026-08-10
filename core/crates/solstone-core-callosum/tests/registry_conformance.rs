@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! This test statically analyzes Python Callosum emitters. When an emitter moves to Rust, this
-//! test no longer sees it and must be extended with matching Rust-side coverage.
+//! This test statically analyzes Python Callosum emitters plus the native supervisor and Cortex
+//! producer surfaces that have crossed the Python/Rust boundary.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -291,6 +293,12 @@ const UNRESOLVED_DYNAMIC_ALLOWLIST: &[&str] = &[
     "solstone/think/cortex.py",
     "solstone/think/thinking.py",
 ];
+const KNOWN_UNPRODUCED_PAIRS: &[(&str, &str)] = &[
+    // cortex.info is durable-log-only when a talent emits non-JSON output.
+    ("cortex", "info"),
+    // cortex.talent_updated has a consumer/type vocabulary but no current bus producer.
+    ("cortex", "talent_updated"),
+];
 
 #[derive(Debug, Deserialize)]
 struct PythonReport {
@@ -354,8 +362,64 @@ fn site_file(site: &str) -> &str {
     site.rsplit_once(':').map_or(site, |(file, _)| file)
 }
 
+fn source_site(path: &str, source: &str, byte_offset: usize) -> String {
+    let line = source[..byte_offset]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
+    format!("{path}:{line}")
+}
+
+fn rust_supervisor_pairs(repository_root: &std::path::Path) -> Vec<ProducedPair> {
+    let emit_pattern = Regex::new(r#"(?s)\bemit\s*\(\s*&[^,]+,\s*"([^"]+)",\s*"([^"]+)",\s*"#)
+        .expect("valid native supervisor emit regex");
+    let mut produced = Vec::new();
+
+    for relative_path in [
+        "core/crates/solstone-core/src/supervisor/bus.rs",
+        "core/crates/solstone-core/src/supervisor/tick.rs",
+    ] {
+        let source = fs::read_to_string(repository_root.join(relative_path))
+            .expect("read native supervisor source");
+        for captures in emit_pattern.captures_iter(&source) {
+            let whole_match = captures.get(0).expect("emit match has full span");
+            produced.push(ProducedPair {
+                tract: captures[1].to_owned(),
+                event: captures[2].to_owned(),
+                site: source_site(relative_path, &source, whole_match.start()),
+            });
+        }
+    }
+
+    produced
+}
+
+fn rust_cortex_pairs() -> Vec<ProducedPair> {
+    solstone_core_cogitate_wire::native_producible_kinds()
+        .iter()
+        .map(|event| ProducedPair {
+            tract: "cortex".to_owned(),
+            event: (*event).to_owned(),
+            site: "core/crates/solstone-core-cogitate-wire/src/event.rs:61".to_owned(),
+        })
+        .collect()
+}
+
+fn merge_produced(
+    produced: &mut BTreeMap<(String, String), BTreeSet<String>>,
+    pairs: impl IntoIterator<Item = ProducedPair>,
+) {
+    for pair in pairs {
+        produced
+            .entry((pair.tract, pair.event))
+            .or_default()
+            .insert(pair.site);
+    }
+}
+
 #[test]
-fn declared_registry_covers_producible_python_pairs() {
+fn declared_registry_covers_producible_pairs() {
     let output = Command::new(python())
         .args(["-c", PYTHON_PROGRAM])
         .env("SOLSTONE_REPO_ROOT", repository_root())
@@ -371,18 +435,21 @@ fn declared_registry_covers_producible_python_pairs() {
     let (declared, wildcard_tracts) = declared_pairs();
 
     let mut produced = BTreeMap::new();
-    for pair in report.produced {
-        produced
-            .entry((pair.tract, pair.event))
-            .or_insert(pair.site);
-    }
+    merge_produced(&mut produced, report.produced);
+    merge_produced(&mut produced, rust_supervisor_pairs(&repository_root()));
+    merge_produced(&mut produced, rust_cortex_pairs());
 
     let undeclared = produced
         .iter()
         .filter(|((tract, event), _site)| {
             !wildcard_tracts.contains(tract) && !declared.contains(&(tract.clone(), event.clone()))
         })
-        .map(|((tract, event), site)| format!("{tract}.{event} ({site})"))
+        .map(|((tract, event), sites)| {
+            format!(
+                "{tract}.{event} ({})",
+                sites.iter().cloned().collect::<Vec<_>>().join(", ")
+            )
+        })
         .collect::<Vec<_>>();
     assert!(
         undeclared.is_empty(),
@@ -393,11 +460,25 @@ fn declared_registry_covers_producible_python_pairs() {
     let missing_producers = declared
         .iter()
         .filter(|pair| !produced.contains_key(*pair))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let known_unproduced = KNOWN_UNPRODUCED_PAIRS
+        .iter()
+        .map(|(tract, event)| ((*tract).to_owned(), (*event).to_owned()))
+        .collect::<BTreeSet<_>>();
+    let unexpected_missing = missing_producers
+        .difference(&known_unproduced)
         .map(|(tract, event)| format!("{tract}.{event}"))
         .collect::<Vec<_>>();
-    println!(
-        "Declared Callosum pairs without static Python producers: {}",
-        missing_producers.join(", ")
+    let stale_exceptions = known_unproduced
+        .difference(&missing_producers)
+        .map(|(tract, event)| format!("{tract}.{event}"))
+        .collect::<Vec<_>>();
+    assert!(
+        unexpected_missing.is_empty() && stale_exceptions.is_empty(),
+        "Declared Callosum pairs without producers changed:\nunexpected: {}\nstale exceptions: {}",
+        unexpected_missing.join(", "),
+        stale_exceptions.join(", "),
     );
 
     let unexpected_unresolved = report
