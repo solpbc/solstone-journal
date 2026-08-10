@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-transcribe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+differential = []
+
+[dependencies]
+solstone-core-observe-audio = { workspace = true }
+solstone-core-system = { workspace = true }
+solstone-core-speaker-id = { workspace = true }
+solstone-core-processing-record = { workspace = true }
+solstone-core-callosum = { workspace = true }
+solstone-core-journal-config = { workspace = true }
+solstone-core-journal-io = { workspace = true }
+
+[lints]
+workspace = true
