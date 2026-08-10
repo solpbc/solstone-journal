@@ -241,6 +241,10 @@ fn drain_m4a_decoder(
     Ok(())
 }
 
+// FFmpeg 9 honors AAC terminal skip/discard padding that PyAV leaves visible,
+// so rebuild packets as payload plus timing to retain oracle-visible tails.
+// This drops all side data, not only discard padding; scope is the tested corpus.
+// Future side-data-bearing M4A must filter only the relevant side-data type.
 fn m4a_payload_packet(packet: &ffmpeg::Packet) -> ffmpeg::Packet {
     let mut payload_only = ffmpeg::Packet::copy(packet.data().unwrap_or_default());
     payload_only.set_pts(packet.pts());
