@@ -364,7 +364,8 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR)
 		"-p solstone-core-transfer --test transfer_differential" \
 		"-p solstone-core --test transfer_send_differential" \
 		"-p solstone-core-system-health --test pipeline_health_oracle" \
-		"-p solstone-core-observe-audio --test audio_differential" ; do \
+		"-p solstone-core-observe-audio --test audio_differential" \
+		"-p solstone-core-transcribe --test transcribe_differential" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
 			|| status=$$?; \
@@ -373,6 +374,11 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR)
 	echo "==> cargo test --features differential --no-fail-fast $$ort_leg"; \
 	$(VAD_ANALYZE_HOST_ORT_ENV) \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$ort_leg \
+			|| status=$$?; \
+	transcribe_ort_leg="-p solstone-core-transcribe --test transcribe_vad_differential"; \
+	echo "==> cargo test --features differential --no-fail-fast $$transcribe_ort_leg"; \
+	$(VAD_ANALYZE_HOST_ORT_ENV) \
+		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$transcribe_ort_leg \
 			|| status=$$?; \
 	if [ $$status -eq 0 ]; then \
 		echo "check-differentials: every leg ran and passed"; \

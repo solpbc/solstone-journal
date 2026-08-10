@@ -394,6 +394,8 @@ fn invoke_child(
     });
     let stdout_rx = capture_stream(stdout, budget.stdout_limit_bytes);
     let stderr_rx = capture_stream(stderr, budget.stderr_limit_bytes);
+    let mut stdout_capture = None;
+    let mut stderr_capture = None;
     let deadline = Instant::now() + budget.timeout;
     let status = loop {
         if Instant::now() >= deadline {
@@ -405,11 +407,11 @@ fn invoke_child(
                 raw_path, "invoke", "timeout", exit_code,
             ));
         }
-        if let Some(error) = stream_limit_error(&stdout_rx, "stdout", child, budget, raw_path)? {
-            return Err(error);
+        if let Some(capture) = poll_capture(&stdout_rx, "stdout", child, budget, raw_path)? {
+            stdout_capture = Some(capture);
         }
-        if let Some(error) = stream_limit_error(&stderr_rx, "stderr", child, budget, raw_path)? {
-            return Err(error);
+        if let Some(capture) = poll_capture(&stderr_rx, "stderr", child, budget, raw_path)? {
+            stderr_capture = Some(capture);
         }
         if let Some(status) = child.try_wait().map_err(|error| {
             SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None)
@@ -418,8 +420,8 @@ fn invoke_child(
         }
         thread::sleep(Duration::from_millis(10));
     };
-    let stdout = receive_capture(stdout_rx, raw_path, "stdout")?;
-    let stderr = receive_capture(stderr_rx, raw_path, "stderr")?;
+    let stdout = receive_capture(stdout_capture, stdout_rx, raw_path, "stdout")?;
+    let stderr = receive_capture(stderr_capture, stderr_rx, raw_path, "stderr")?;
     match stdin_rx.recv() {
         Ok(Ok(())) | Err(_) => {}
         Ok(Err(_error)) => {
@@ -461,25 +463,25 @@ where
     receiver
 }
 
-fn stream_limit_error(
+fn poll_capture(
     receiver: &Receiver<Result<Vec<u8>, CaptureError>>,
     stream: &str,
     child: &mut Child,
     budget: SpeakersAnalyzeBudget,
     raw_path: &Path,
-) -> Result<Option<SpeakerAnalyzeError>, SpeakerAnalyzeError> {
+) -> Result<Option<Result<Vec<u8>, CaptureError>>, SpeakerAnalyzeError> {
     match receiver.try_recv() {
         Ok(Err(CaptureError::TooLarge)) => {
             let exit_code = terminate_and_reap(child, budget)
                 .ok()
                 .flatten()
                 .map(exit_code);
-            Ok(Some(SpeakerAnalyzeError::new(
+            Err(SpeakerAnalyzeError::new(
                 raw_path,
                 "invoke",
                 format!("{stream}-too-large"),
                 exit_code,
-            )))
+            ))
         }
         Ok(Err(CaptureError::Io(error))) => Err(SpeakerAnalyzeError::new(
             raw_path,
@@ -487,33 +489,35 @@ fn stream_limit_error(
             error.to_string(),
             None,
         )),
-        Ok(Ok(_)) | Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => Ok(None),
+        Ok(capture) => Ok(Some(capture)),
+        Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => Ok(None),
     }
 }
 
 fn receive_capture(
+    captured: Option<Result<Vec<u8>, CaptureError>>,
     receiver: Receiver<Result<Vec<u8>, CaptureError>>,
     raw_path: &Path,
     stream: &str,
 ) -> Result<Vec<u8>, SpeakerAnalyzeError> {
-    match receiver.recv() {
-        Ok(Ok(bytes)) => Ok(bytes),
-        Ok(Err(CaptureError::TooLarge)) => Err(SpeakerAnalyzeError::new(
+    let capture = match captured {
+        Some(capture) => capture,
+        None => receiver.recv().map_err(|_| {
+            SpeakerAnalyzeError::new(raw_path, "invoke", format!("{stream}-capture-failed"), None)
+        })?,
+    };
+    match capture {
+        Ok(bytes) => Ok(bytes),
+        Err(CaptureError::TooLarge) => Err(SpeakerAnalyzeError::new(
             raw_path,
             "invoke",
             format!("{stream}-too-large"),
             None,
         )),
-        Ok(Err(CaptureError::Io(error))) => Err(SpeakerAnalyzeError::new(
+        Err(CaptureError::Io(error)) => Err(SpeakerAnalyzeError::new(
             raw_path,
             "invoke",
             error.to_string(),
-            None,
-        )),
-        Err(_) => Err(SpeakerAnalyzeError::new(
-            raw_path,
-            "invoke",
-            format!("{stream}-capture-failed"),
             None,
         )),
     }

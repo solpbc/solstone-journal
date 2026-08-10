@@ -13,9 +13,26 @@ publish = false
 name = "solstone-transcribe"
 path = "src/main.rs"
 
+[[bin]]
+# Standalone helper-process fixtures for the AC16 integration test.  They are
+# intentionally not installed or referenced by the production binary.
+name = "solstone-transcribe-vad-stub"
+path = "tests/fixtures/vad_stub.rs"
+test = false
+
+[[bin]]
+# See the VAD stub above.
+name = "solstone-transcribe-speakers-stub"
+path = "tests/fixtures/speakers_stub.rs"
+test = false
+
 [dependencies]
+serde_json = { workspace = true }
 solstone-core-transcribe = { workspace = true }
 solstone-core-journal = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.24.0"
 
 [lints]
 workspace = true

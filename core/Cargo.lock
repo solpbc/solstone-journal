@@ -3208,8 +3208,10 @@ dependencies = [
 name = "solstone-core-transcribe-cli"
 version = "1.0.22"
 dependencies = [
+ "serde_json",
  "solstone-core-journal",
  "solstone-core-transcribe",
+ "tempfile",
 ]
 
 [[package]]

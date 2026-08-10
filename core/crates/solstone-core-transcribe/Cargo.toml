@@ -12,6 +12,16 @@ publish = false
 [features]
 differential = []
 
+[[test]]
+name = "transcribe_differential"
+path = "tests/transcribe_differential.rs"
+required-features = ["differential"]
+
+[[test]]
+name = "transcribe_vad_differential"
+path = "tests/transcribe_vad_differential.rs"
+required-features = ["differential"]
+
 [dependencies]
 chrono = { workspace = true }
 nix = { workspace = true, features = ["process", "signal"] }
