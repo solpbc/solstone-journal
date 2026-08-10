@@ -50,7 +50,13 @@ RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solston
 # inherit it.
 CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include))
 ifneq ($(CLANG_BUILTIN_INCLUDE),)
-build check-rust-msrv check-rust-clippy check-rust-test check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+# install builds the solstone-core wheel through maturin, and solstone-core now
+# depends transitively on ffmpeg-sys-next (via solstone-core-grab), whose build
+# script needs these args to find limits.h. Leaving install off this list made
+# `make install` fail on a clean environment while every Rust gate stayed green,
+# because the gates carry the export and check-differentials inherits it when it
+# shells into install.
+install .installed build check-rust-msrv check-rust-clippy check-rust-test check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
