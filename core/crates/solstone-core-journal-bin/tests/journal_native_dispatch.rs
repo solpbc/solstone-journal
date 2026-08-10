@@ -84,7 +84,11 @@ impl Harness {
     }
 
     fn run(&self, token: &str) -> String {
-        let output = self.run_process(token);
+        self.run_args(token, &["--opaque", "has space"])
+    }
+
+    fn run_args(&self, token: &str, args: &[&str]) -> String {
+        let output = self.run_process_args(token, args);
         assert!(
             output.status.success(),
             "{token} failed: {}",
@@ -98,11 +102,15 @@ impl Harness {
     }
 
     fn run_process(&self, token: &str) -> Output {
+        self.run_process_args(token, &["--opaque", "has space"])
+    }
+
+    fn run_process_args(&self, token: &str, args: &[&str]) -> Output {
         let _ = fs::remove_file(&self.record);
         let _ = fs::remove_file(&self.poison_marker);
         Command::new(&self.binary)
             .arg(token)
-            .args(["--opaque", "has space"])
+            .args(args)
             .env("NATIVE_DISPATCH_RECORD", &self.record)
             .env("POISON_MARKER", &self.poison_marker)
             .env("HOME", &self._temp.path)
@@ -126,6 +134,21 @@ fn native_process_verbs_exec_their_sibling_without_python() {
     assert_eq!(
         harness.run("grab"),
         "solstone-core\ngrab\n--opaque\nhas space\n"
+    );
+    assert_eq!(
+        harness.run_args(
+            "transfer",
+            &["export", "--day", "20260203", "--output", "out.tgz"]
+        ),
+        "solstone-core\ntransfer\nexport\n--day\n20260203\n--output\nout.tgz\n"
+    );
+    assert_eq!(
+        harness.run_args("transfer", &["import", "--archive", "in.tgz"]),
+        "solstone-core\ntransfer\nimport\n--archive\nin.tgz\n"
+    );
+    assert_eq!(
+        harness.run_args("transfer", &["send", "--to", "office", "--dry-run"]),
+        "solstone-core\ntransfer\nsend\n--to\noffice\n--dry-run\n"
     );
     assert_eq!(
         harness.run("depict"),
