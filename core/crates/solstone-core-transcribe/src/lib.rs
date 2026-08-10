@@ -71,6 +71,8 @@ pub enum TranscribeError {
     ParakeetCppDeferred { reason: String, detail: String },
     /// The parakeet.cpp service or client contract failed permanently.
     ParakeetCppFailure { reason: String, detail: String },
+    /// Confidential transcription was refused or unavailable for retryable work.
+    ConfidentialDeferred { reason: String, detail: String },
 }
 
 impl TranscribeError {
@@ -112,6 +114,7 @@ impl TranscribeError {
             Self::SttSurface { .. } => 1,
             Self::ParakeetCppDeferred { .. } => 69,
             Self::ParakeetCppFailure { .. } => 1,
+            Self::ConfidentialDeferred { .. } => 69,
         }
     }
 }
@@ -186,6 +189,9 @@ impl std::fmt::Display for TranscribeError {
             | Self::ParakeetCppFailure { reason, detail } => {
                 write!(formatter, "parakeet.cpp {reason}: {detail}")
             }
+            Self::ConfidentialDeferred { reason, detail } => {
+                write!(formatter, "confidential transcription {reason}: {detail}")
+            }
         }
     }
 }
@@ -207,7 +213,8 @@ impl std::error::Error for TranscribeError {
             | Self::VadResponse { .. }
             | Self::SttSurface { .. }
             | Self::ParakeetCppDeferred { .. }
-            | Self::ParakeetCppFailure { .. } => None,
+            | Self::ParakeetCppFailure { .. }
+            | Self::ConfidentialDeferred { .. } => None,
         }
     }
 }
