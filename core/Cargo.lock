@@ -3161,6 +3161,8 @@ dependencies = [
 name = "solstone-core-transcribe"
 version = "1.0.22"
 dependencies = [
+ "chrono",
+ "serde_json",
  "solstone-core-callosum",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
