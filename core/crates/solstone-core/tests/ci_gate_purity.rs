@@ -425,6 +425,7 @@ fn rust_host_excludes_match_the_workspace_onnx_closure() {
     let expected_sanity = BTreeSet::from([
         "solstone-core-speakers-analyze".to_owned(),
         "solstone-core-speakers-onnx".to_owned(),
+        "solstone-core-vad-analyze".to_owned(),
     ]);
     assert_eq!(
         expected, expected_sanity,

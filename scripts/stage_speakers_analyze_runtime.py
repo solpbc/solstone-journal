@@ -2,7 +2,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Stage CPU ONNX Runtime bytes for solstone-core-speakers-analyze wheels."""
+"""Stage CPU ONNX Runtime bytes for the ONNX-bundling helper wheels.
+
+The pinned wheel URL/digest table below is the security-relevant part of this
+script and is deliberately single-sourced: every helper package that bundles the
+same CPU ONNX Runtime (`solstone-core-speakers-analyze`,
+`solstone-core-vad-analyze`) stages from this one table. Only the *destination*
+varies, and it is derived from the target package directory's own name so the
+staged payload always matches that package's `build.rs` rpath
+(`$ORIGIN/../lib/<package>`).
+"""
 
 from __future__ import annotations
 
@@ -23,8 +32,26 @@ PACKAGE_DIR = ROOT / "packages" / "solstone-core-speakers-analyze"
 DEFAULT_CACHE_DIR = ROOT / "target" / "speakers-analyze-runtime-cache"
 DEFAULT_LINK_ROOT = ROOT / "target" / "speakers-analyze-runtime-link"
 DEFAULT_RECEIPT_ROOT = ROOT / "target" / "speakers-analyze-runtime-provenance"
-RUNTIME_INSTALL_DIR = Path("data/lib/solstone-core-speakers-analyze")
-NOTICE_INSTALL_DIR = Path("data/share/solstone-core-speakers-analyze/licenses")
+
+
+def runtime_install_dir(package_name: str) -> Path:
+    """Return the wheel-data runtime library directory for ``package_name``.
+
+    This must stay in lockstep with the crate's `build.rs` rpath, which is
+    `$ORIGIN/../lib/<package_name>` on Linux.
+    """
+
+    return Path("data/lib") / package_name
+
+
+def notice_install_dir(package_name: str) -> Path:
+    """Return the wheel-data licence directory for ``package_name``."""
+
+    return Path("data/share") / package_name / "licenses"
+
+
+RUNTIME_INSTALL_DIR = runtime_install_dir("solstone-core-speakers-analyze")
+NOTICE_INSTALL_DIR = notice_install_dir("solstone-core-speakers-analyze")
 LIB_MODE = 0o755
 NOTICE_MODE = 0o644
 FORBIDDEN_GPU_MEMBERS = (
@@ -313,6 +340,10 @@ def stage_runtime(
     wheel_data_root = package_dir / "wheel-data"
     shutil.rmtree(wheel_data_root, ignore_errors=True)
     link_dir = link_root / spec.key
+    # Derived from the destination package, never from a module constant: the
+    # staged payload has to land where that package's own build.rs rpath looks.
+    package_runtime_dir = runtime_install_dir(package_dir.name)
+    package_notice_dir = notice_install_dir(package_dir.name)
 
     with ZipFile(wheel_path) as zip_file:
         names = set(zip_file.namelist())
@@ -335,7 +366,7 @@ def stage_runtime(
                 repair="restore the pinned wheel bytes or update the digest table through design review",
             )
 
-        runtime_path = wheel_data_root / RUNTIME_INSTALL_DIR / spec.runtime_staged_name
+        runtime_path = wheel_data_root / package_runtime_dir / spec.runtime_staged_name
         runtime_record = _write_file(runtime_path, runtime_data, LIB_MODE)
         _stage_link_dir(spec, link_dir, runtime_data)
 
@@ -350,13 +381,14 @@ def stage_runtime(
                     actual=notice_sha,
                     repair="restore the pinned wheel bytes or update the notice digest through design review",
                 )
-            notice_path = wheel_data_root / NOTICE_INSTALL_DIR / notice.staged_name
+            notice_path = wheel_data_root / package_notice_dir / notice.staged_name
             notice_record = _write_file(notice_path, notice_data, NOTICE_MODE)
             notice_record["source_member"] = notice.source_member
             notice_records.append(notice_record)
 
     receipt = {
         "schema": "solstone.speakers-analyze-runtime-provenance.v1",
+        "package": package_dir.name,
         "target": spec.key,
         "wheel": {
             "url": spec.wheel_url,
@@ -382,7 +414,9 @@ def stage_runtime(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Stage pinned CPU ONNX Runtime bytes for the speakers analyzer wheel."
+        description=(
+            "Stage pinned CPU ONNX Runtime bytes for an ONNX-bundling helper wheel."
+        )
     )
     parser.add_argument(
         "--target",
@@ -394,7 +428,10 @@ def _parser() -> argparse.ArgumentParser:
         "--package-dir",
         type=Path,
         default=PACKAGE_DIR,
-        help="solstone-core-speakers-analyze package directory",
+        help=(
+            "destination packaging leaf; its directory name selects the "
+            "wheel-data install paths"
+        ),
     )
     parser.add_argument(
         "--cache-dir",

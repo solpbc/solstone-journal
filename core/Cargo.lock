@@ -3069,6 +3069,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-vad-analyze"
+version = "1.0.22"
+dependencies = [
+ "ort",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
