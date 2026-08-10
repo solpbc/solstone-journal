@@ -740,6 +740,8 @@ Operations for managing asynchronous activity — starting things, running thing
 
 ⚠ **The command channel is modelled as unbounded argv and used as a seven-verb vocabulary.** Every production argv has head `journal` or `sol`. The one genuinely open door is the schedule config, whose `cmd` array is executed verbatim — an owner-editable file on the owner's own machine.
 
+✅ **CONVERTED 2026-08-10 — this plate is native.** `solstone-core-system` holds the command channel (`request` · `partition` · `cap`), the task queue (`queue`), process lifecycle (`lifecycle` · `process`), the scheduler (`schedule`) and provider runtime (`provider_runtime`); `solstone-core-system-health` holds the health plane. They compose into `solstone-core supervisor [--journal PATH]`. **Three findings above were carried into the rebuild rather than re-derived** — the four-way busy branch, the ordered first-hit partition resolver, and the typed channel with exactly one named escape for the schedule config. ⚠ **A caveat that outlived the port:** the *"refused vs never arrived"* ambiguity is a property of the protocol, not of the old implementation — a caller waiting on a skip event still cannot distinguish the two, and a future contract change is where that gets fixed.
+
 ## `P-system-health`
 
 Health of running things — current status, in-memory. ⛔ **System** health, never owner body data.
@@ -750,7 +752,7 @@ Health of running things — current status, in-memory. ⛔ **System** health, n
 
 ⚠ **The run log's identity story is real but NOT where it first appears to be.** ⛔ Corrected: the fold reads `mode` **from inside the record**. The filename-suffix derivation lives in the day-summary path and in two consumers that bypass this plate entirely and glob `*_daily.jsonl` directly — one of which already carries a comment admitting it will *"silently undercount"* if the shape changes. `ref` is written by one of the 18 kinds and **no reader anywhere parses it out of a path**. Fix the derivation where it is; ⛔ do not invent a filename fallback where it is not.
 
-⚠ **The current-status snapshot publishes a field it never populates** — `stale_heartbeats` is hardcoded empty. Either it means something or it goes; shipping it empty is a claim the code does not back.
+✅ **RESOLVED 2026-08-10 — `stale_heartbeats` is populated from real state.** It was hardcoded empty, and the finding was that shipping it empty is a claim the code does not back. The native snapshot derives it from the sync check: foreign writers filtered to `!is_live`. ⛔ It **fails closed** — a live writer is never reported stale — rather than defaulting to "nothing wrong." 📌 The carry-forward is the principle, not the field: *earned status fails closed*, and a published field that always reads healthy is indistinguishable from one nobody computed.
 
 ⚠ **The writer is fail-silent by construction** — a failed open logs once and every later write is a no-op. **So a run whose sidecar never opened is indistinguishable, to this plate, from a run that did nothing.**
 
