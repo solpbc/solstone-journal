@@ -1,8 +1,8 @@
 {
   "fixture": "solstone-cogitate-oracle",
-  "fixture_version": 5,
+  "fixture_version": 6,
   "generated_by": "scripts/cogitate_oracle_corpus.py",
-  "reference_commit": "42043f0141278440766f22a50e0be12a7e5c71e1",
+  "reference_commit": "1b114599e073a9e4d5f4a191576062855978d739",
   "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
   "preambles": {
     "runtime": {
@@ -2020,7 +2020,7 @@
       {
         "path": "escape",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-7xhzf06w/outside/leak.txt",
+        "target": "/tmp/cogitate-oracle-gqbnm8od/outside/leak.txt",
         "escapes_root": true
       },
       {
@@ -2042,7 +2042,7 @@
       {
         "path": "inside_link",
         "type": "symlink",
-        "target": "/tmp/cogitate-oracle-7xhzf06w/journal/facets/work.md",
+        "target": "/tmp/cogitate-oracle-gqbnm8od/journal/facets/work.md",
         "escapes_root": false
       },
       {
@@ -4899,6 +4899,23 @@
           "content"
         ]
       },
+      "finish": {
+        "name": "finish",
+        "description": "Signals the completion of the current task or conversation.\n\nUse this tool when:\n- You have successfully completed the user's requested task\n- You cannot proceed further due to technical limitations or missing information\n\nThe message should include:\n- A clear summary of actions taken and their results\n- Any next steps for the user\n- Explanation if you're unable to complete the task\n- Any follow-up questions if more information is needed\n",
+        "action_properties": {
+          "message": {
+            "type": "string",
+            "description": "Final message to send to the user."
+          }
+        },
+        "sdk_injected_properties_excluded": [
+          "kind"
+        ],
+        "action_required": [
+          "message"
+        ],
+        "ownership": "AGENT SDK, not solstone. Recorded so the rebuild has a reference instead of inventing one; the rebuild OWNS this surface afterwards."
+      },
       "read_file": {
         "name": "read_file",
         "description": "Bounded UTF-8 journal text read. Paths are journal-root-relative; use start_line to paginate a truncation.",
@@ -5073,6 +5090,19 @@
         ],
         "citation": "openhands.py:1373 - otherwise the built-in finish tool is included"
       }
+    },
+    "talent_finalization_branches": {
+      "by_talent": {
+        "entity_assist.md": "finish",
+        "support.md": "finish",
+        "exec.md": "finish",
+        "partner.md": "emit_final",
+        "read.md": "finish",
+        "weekly_reflection.md": "emit_final"
+      },
+      "finish_branch_count": 4,
+      "emit_final_branch_count": 2,
+      "citation": "cogitate_contract.py:110-116 over the shipped talent frontmatter"
     },
     "emit_final_description_source": "Terminal tool for ending the run with its final result.\n\nCall this tool exactly once when the run is complete. The content argument is the final result the system should carry forward.\n\nArtifact talents: when the talent produces an artifact, content is the complete artifact body itself, such as the markdown or text to save. Do not wrap it in commentary or describe the artifact instead of providing it.\n\nAction talents: when the talent's work was done through side-effecting commands during the run, content is a concise, signal-carrying record of what changed, what was found, and why. Do not emit a bare \"done\".\n\nNo-op: call this tool even when no changes were needed. Emit a brief result explaining why nothing changed rather than ending silently.\n",
     "citation": "openhands.py:1347-1380 - the whole binding sequence"

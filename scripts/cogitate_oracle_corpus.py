@@ -66,7 +66,7 @@ SDK_INJECTED_ACTION_PROPERTIES = frozenset({"kind"})
 DEFAULT_READ_CALL_BUDGET_VALUE = 200
 
 FIXTURE_NAME = "solstone-cogitate-oracle"
-FIXTURE_VERSION = 5
+FIXTURE_VERSION = 6
 
 # Spelled out so the corpus below never depends on how a shell or an editor
 # treats a backslash. Several vectors exist specifically to pin backslash
@@ -1353,6 +1353,48 @@ def build_prompt_vectors() -> list[dict[str, Any]]:
     return rows
 
 
+def _talent_finalization_branches() -> dict[str, Any]:
+    """Which real talents take which finalization branch.
+
+    Reachability, measured rather than assumed -- a surface no talent reaches is
+    speculative work, and a surface most of them reach is load-bearing.
+    """
+    import glob
+
+    rows: dict[str, str] = {}
+    for path in sorted(
+        glob.glob("solstone/talent/*.md") + glob.glob("solstone/apps/*/talent/*.md")
+    ):
+        text = Path(path).read_text(encoding="utf-8")
+        depth = 0
+        end = None
+        for index, char in enumerate(text):
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    end = index + 1
+                    break
+        if end is None:
+            continue
+        try:
+            meta = json.loads(text[:end])
+        except json.JSONDecodeError:
+            continue
+        if meta.get("type") != "cogitate":
+            continue
+        rows[Path(path).name] = "emit_final" if expects_emit_final(meta) else "finish"
+    return {
+        "by_talent": rows,
+        "finish_branch_count": sum(1 for value in rows.values() if value == "finish"),
+        "emit_final_branch_count": sum(
+            1 for value in rows.values() if value == "emit_final"
+        ),
+        "citation": "cogitate_contract.py:110-116 over the shipped talent frontmatter",
+    }
+
+
 def build_tool_surface() -> dict[str, Any]:
     """What the model is actually handed, per access tier.
 
@@ -1410,6 +1452,27 @@ def build_tool_surface() -> dict[str, Any]:
         "sol": describe(sol_tools[0]),
         "emit_final": describe(emit_final_tools[0]),
     }
+
+    # The finish tool belongs to the agent SDK, not to solstone -- and 4 of the 6
+    # cogitate talents finalize through it. The conversion removes that SDK, so
+    # the rebuild must DEFINE this surface, and this is the only moment its
+    # current text can be recorded rather than invented.
+    try:
+        from openhands.sdk.tool import FinishTool
+
+        made = FinishTool.create()
+        tools["finish"] = describe(made[0] if isinstance(made, list) else made)
+        tools["finish"]["ownership"] = (
+            "AGENT SDK, not solstone. Recorded so the rebuild has a reference "
+            "instead of inventing one; the rebuild OWNS this surface afterwards."
+        )
+    except Exception as exc:  # pragma: no cover - depends on the installed SDK
+        tools["finish"] = {
+            "unavailable": True,
+            "error": str(exc),
+            "note": "the SDK finish tool could not be resolved on this host",
+        }
+
     for tool in read_tools:
         tools[tool.name] = describe(tool)
 
@@ -1430,6 +1493,7 @@ def build_tool_surface() -> dict[str, Any]:
             "submit": caps.submit,
             "model_tools_excluding_finalization": sorted(names),
         }
+    talent_branches = _talent_finalization_branches()
     finalization = {
         "emit_final": {
             "bound": ["emit_final"],
@@ -1453,6 +1517,7 @@ def build_tool_surface() -> dict[str, Any]:
         "tools": tools,
         "tier_bindings": bindings,
         "finalization_binding": finalization,
+        "talent_finalization_branches": talent_branches,
         "emit_final_description_source": EMIT_FINAL_DESCRIPTION,
         "citation": "openhands.py:1347-1380 - the whole binding sequence",
     }
