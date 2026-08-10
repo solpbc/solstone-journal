@@ -63,6 +63,7 @@ mod speakers;
 mod speakers_calendar;
 mod speakers_discovery;
 mod speakers_known;
+mod speakers_media;
 mod speakers_npz;
 mod speakers_owner;
 mod speakers_quality;
@@ -170,6 +171,14 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/discovery/resolve-statement",
             get(speakers_discovery::resolve_statement),
+        )
+        .route(
+            "/app/speakers/api/people/search",
+            get(speakers_media::people_search),
+        )
+        .route(
+            "/app/speakers/api/serve_audio/{day}/{*rel_path}",
+            get(speakers_media::serve_audio),
         )
         .route(
             "/app/speakers/api/speakers/known",
