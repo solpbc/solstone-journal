@@ -36,6 +36,28 @@ pub enum ResponseAction {
     Drop,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RequestRoute {
+    pub method: String,
+    pub path: String,
+}
+
+impl RequestRoute {
+    pub fn get(path: impl Into<String>) -> Self {
+        Self {
+            method: "GET".to_string(),
+            path: path.into(),
+        }
+    }
+
+    pub fn post(path: impl Into<String>) -> Self {
+        Self {
+            method: "POST".to_string(),
+            path: path.into(),
+        }
+    }
+}
+
 impl ResponseAction {
     pub fn status(status: u16, body: impl Into<Vec<u8>>) -> Self {
         Self::Status {
@@ -51,29 +73,30 @@ impl ResponseAction {
 
 #[derive(Debug, Clone)]
 pub struct PeerPlan {
-    manifest: VecDeque<ResponseAction>,
-    ingest: VecDeque<ResponseAction>,
-    default_manifest: ResponseAction,
-    default_ingest: ResponseAction,
+    routes: BTreeMap<RequestRoute, VecDeque<ResponseAction>>,
 }
 
 impl PeerPlan {
-    pub fn new(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> Self {
+    pub fn new(routes: impl IntoIterator<Item = (RequestRoute, Vec<ResponseAction>)>) -> Self {
         Self {
-            manifest: manifest.into(),
-            ingest: ingest.into(),
-            default_manifest: ResponseAction::manifest_empty(),
-            default_ingest: ResponseAction::status(200, Vec::new()),
+            routes: routes
+                .into_iter()
+                .map(|(route, actions)| (route, actions.into()))
+                .collect(),
         }
     }
 
-    fn next(&mut self, method: &str) -> ResponseAction {
-        let (actions, fallback) = if method == "GET" {
-            (&mut self.manifest, &self.default_manifest)
-        } else {
-            (&mut self.ingest, &self.default_ingest)
+    fn next(&mut self, method: &str, path: &str) -> ResponseAction {
+        let route = RequestRoute {
+            method: method.to_string(),
+            path: path.to_string(),
         };
-        actions.pop_front().unwrap_or_else(|| fallback.clone())
+        self.routes
+            .get_mut(&route)
+            .and_then(VecDeque::pop_front)
+            .unwrap_or_else(|| {
+                ResponseAction::status(500, format!("unexpected peer request: {method} {path}"))
+            })
     }
 }
 
@@ -202,6 +225,51 @@ impl Fixture {
         for (name, bytes) in files {
             fs::write(segment.join(name), bytes).expect("segment file");
         }
+    }
+
+    pub fn add_entity(&self, id: &str, entity: serde_json::Value) {
+        let directory = self.path().join("entities").join(id);
+        fs::create_dir_all(&directory).expect("entity directory");
+        fs::write(directory.join("entity.json"), entity.to_string()).expect("entity identity");
+    }
+
+    pub fn add_facet(&self, name: &str, files: &[(&str, &[u8])]) {
+        let directory = self.path().join("facets").join(name);
+        fs::create_dir_all(&directory).expect("facet directory");
+        for (relative, bytes) in files {
+            let path = directory.join(relative);
+            fs::create_dir_all(path.parent().expect("facet file parent"))
+                .expect("facet file parent");
+            fs::write(path, bytes).expect("facet file");
+        }
+    }
+
+    pub fn add_import(
+        &self,
+        id: &str,
+        import_json: serde_json::Value,
+        imported_json: serde_json::Value,
+        content_manifest: Option<&[serde_json::Value]>,
+    ) {
+        let directory = self.path().join("imports").join(id);
+        fs::create_dir_all(&directory).expect("import directory");
+        fs::write(directory.join("import.json"), import_json.to_string()).expect("import metadata");
+        fs::write(directory.join("imported.json"), imported_json.to_string())
+            .expect("import result");
+        if let Some(content_manifest) = content_manifest {
+            let text = content_manifest
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(directory.join("content_manifest.jsonl"), text).expect("import manifest");
+        }
+    }
+
+    pub fn set_config(&self, config: serde_json::Value) {
+        let directory = self.path().join("config");
+        fs::create_dir_all(&directory).expect("config directory");
+        fs::write(directory.join("journal.json"), config.to_string()).expect("journal config");
     }
 }
 
@@ -346,7 +414,10 @@ async fn handle_connection(
             }
             let raw = streams.remove(&frame.stream_id).unwrap_or_default();
             let request = parse_request(raw)?;
-            let action = plan.lock().expect("plan lock").next(&request.method);
+            let action = plan
+                .lock()
+                .expect("plan lock")
+                .next(&request.method, &request.path);
             requests.lock().expect("request lock").push(request);
             match action {
                 ResponseAction::Drop => return Ok(()),

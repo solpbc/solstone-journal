@@ -1,12 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[allow(dead_code)]
 #[path = "support/stub_peer.rs"]
 mod stub_peer;
 
 use std::process::{Command, Output};
 
-use stub_peer::{Fixture, PeerPlan, ResponseAction, StubPeer};
+use stub_peer::{Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
+
+fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan {
+    PeerPlan::new([
+        (
+            RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
+            manifest,
+        ),
+        (
+            RequestRoute::post("/app/import/journal/remote-i/ingest/segments/20260203"),
+            ingest,
+        ),
+    ])
+}
 
 fn fixture(peer: &StubPeer) -> Fixture {
     let fixture = peer.fixture();
@@ -34,7 +48,7 @@ fn stdout(output: &Output) -> String {
 
 #[test]
 fn live_binary_uploads_over_framed_mtls() {
-    let peer = StubPeer::new(PeerPlan::new(
+    let peer = StubPeer::new(plan(
         vec![ResponseAction::manifest_empty()],
         vec![ResponseAction::status(200, Vec::new())],
     ));
@@ -66,7 +80,7 @@ fn live_binary_uploads_over_framed_mtls() {
 
 #[test]
 fn reserved_files_are_not_uploaded_and_reserved_only_segments_skip() {
-    let peer = StubPeer::new(PeerPlan::new(
+    let peer = StubPeer::new(plan(
         vec![ResponseAction::manifest_empty()],
         vec![ResponseAction::status(200, Vec::new())],
     ));
@@ -101,7 +115,7 @@ fn reserved_files_are_not_uploaded_and_reserved_only_segments_skip() {
 
 #[test]
 fn manifest_failure_degrades_to_empty_and_uploads() {
-    let peer = StubPeer::new(PeerPlan::new(
+    let peer = StubPeer::new(plan(
         vec![ResponseAction::status(500, Vec::new())],
         vec![ResponseAction::status(200, Vec::new())],
     ));
@@ -143,10 +157,7 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
             false,
         ),
     ] {
-        let peer = StubPeer::new(PeerPlan::new(
-            vec![ResponseAction::manifest_empty()],
-            vec![action],
-        ));
+        let peer = StubPeer::new(plan(vec![ResponseAction::manifest_empty()], vec![action]));
         let fixture = fixture(&peer);
         if stops_later_segments {
             fixture.add_segment("audio", "130000_30", &[("later.json", b"later")]);
@@ -170,7 +181,7 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
         }
     }
 
-    let peer = StubPeer::new(PeerPlan::new(
+    let peer = StubPeer::new(plan(
         vec![ResponseAction::manifest_empty()],
         vec![
             ResponseAction::status(500, Vec::new()),
@@ -191,7 +202,7 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
 
 #[test]
 fn connection_drops_retry_uploads() {
-    let peer = StubPeer::new(PeerPlan::new(
+    let peer = StubPeer::new(plan(
         vec![ResponseAction::manifest_empty()],
         vec![
             ResponseAction::Drop,
@@ -212,7 +223,7 @@ fn connection_drops_retry_uploads() {
 
 #[test]
 fn dry_run_only_queries_the_manifest() {
-    let peer = StubPeer::new(PeerPlan::new(
+    let peer = StubPeer::new(plan(
         vec![ResponseAction::manifest_empty()],
         vec![ResponseAction::status(200, Vec::new())],
     ));
