@@ -29,6 +29,12 @@ pub(crate) struct OracleFixture {
     pub policy_commands: Vec<PolicyCommandVector>,
     pub tool_surface: ToolSurfaceFixture,
     pub sol_execution: SolExecutionFixture,
+    pub vocabularies: VocabulariesFixture,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct VocabulariesFixture {
+    pub read_tools: Vec<String>,
 }
 #[derive(Deserialize)]
 pub(crate) struct ToolSurfaceFixture {

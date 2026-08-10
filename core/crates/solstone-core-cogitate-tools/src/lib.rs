@@ -42,7 +42,7 @@ pub use sol_execution::{
 };
 pub use tool_metadata::{
     EMIT_FINAL_TOOL, FINISH_TOOL, GLOB_TOOL, GREP_SEARCH_TOOL, LIST_DIRECTORY_TOOL, READ_FILE_TOOL,
-    ToolArgumentSpec, ToolSpec, sol_tool,
+    ToolArgumentSpec, ToolSpec, resolve_tool_spec, sol_tool,
 };
 pub use types::{
     Entry, GlobOptions, GrepMatch, GrepSearchOptions, ListDirectoryOptions, ReadFileOptions,

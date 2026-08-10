@@ -131,6 +131,15 @@ pub(crate) struct OracleFixture {
     pub preambles: PreamblesFixture,
     pub prompt_assembly: Vec<PromptAssemblyVector>,
     pub read_scope: Vec<ReadScopeVector>,
+    pub vocabularies: VocabulariesFixture,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct VocabulariesFixture {
+    pub journal_commands: Vec<String>,
+    pub finalization_modes: Vec<String>,
+    pub deterministic_failure_reason_codes: Vec<String>,
+    pub deterministic_failure_caps: BTreeMap<String, usize>,
 }
 
 #[derive(Deserialize)]
@@ -240,4 +249,35 @@ pub(crate) struct PreambleFixture {
     pub byte_length: usize,
     pub digest: String,
     pub text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        COGITATE_JOURNAL_COMMANDS, DETERMINISTIC_FAILURE_CAPS, DETERMINISTIC_FAILURE_REASON_CODES,
+        TALENT_FINALIZATION_MODES,
+    };
+
+    #[test]
+    fn vocabularies_match_the_owned_contract_constants() {
+        let fixture = fixture();
+        assert_eq!(
+            fixture.vocabularies.journal_commands,
+            COGITATE_JOURNAL_COMMANDS.map(str::to_owned)
+        );
+        assert_eq!(
+            fixture.vocabularies.finalization_modes,
+            TALENT_FINALIZATION_MODES.map(str::to_owned)
+        );
+        assert_eq!(
+            fixture.vocabularies.deterministic_failure_reason_codes,
+            DETERMINISTIC_FAILURE_REASON_CODES.map(str::to_owned)
+        );
+        let expected = DETERMINISTIC_FAILURE_CAPS
+            .into_iter()
+            .map(|(reason, cap)| (reason.to_owned(), cap))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(fixture.vocabularies.deterministic_failure_caps, expected);
+    }
 }

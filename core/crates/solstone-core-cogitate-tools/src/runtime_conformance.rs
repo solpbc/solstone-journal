@@ -11,8 +11,8 @@ use crate::oracle::{fixture, generated_contract_fixture, sha256_hex};
 use crate::sol_execution::orchestrate_slot_cycle;
 use crate::{
     EMIT_FINAL_TOOL, FINISH_TOOL, KNOWN_TOOL_NAMES, NoopSlotLease, ReadBudget, SlotLease,
-    SlotReacquireError, SolCallBudget, ToolSpec, bound_tools, format_shell_output, glob,
-    run_command, run_sol_command, truncate_output,
+    SlotReacquireError, SolCallBudget, ToolName, ToolSpec, bound_tools, format_shell_output, glob,
+    resolve_tool_spec, run_command, run_sol_command, truncate_output,
 };
 
 #[test]
@@ -140,6 +140,58 @@ fn access_capabilities_gate_all_four_read_tools() {
             })
             .count();
         assert_eq!(reads, usize::from(capabilities.reads) * 4, "{tier}");
+    }
+}
+
+#[test]
+fn read_tool_vocabulary_and_binding_order_match_the_oracle() {
+    let fixture = fixture();
+    let names = [
+        ToolName::ReadFile,
+        ToolName::ListDirectory,
+        ToolName::Glob,
+        ToolName::GrepSearch,
+    ]
+    .map(ToolName::as_str);
+    assert_eq!(fixture.vocabularies.read_tools, names.map(str::to_owned));
+
+    let bound = bound_tools("normal", true).expect("normal is reads-capable");
+    let read_names = bound
+        .iter()
+        .map(|tool| tool.name)
+        .filter(|name| {
+            matches!(
+                *name,
+                "read_file" | "list_directory" | "glob" | "grep_search"
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read_names,
+        fixture
+            .vocabularies
+            .read_tools
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn resolve_tool_spec_round_trips_tool_names() {
+    for tool in [
+        ToolName::ReadFile,
+        ToolName::ListDirectory,
+        ToolName::Glob,
+        ToolName::GrepSearch,
+    ] {
+        assert_eq!(
+            resolve_tool_spec(tool.as_str()).map(|spec| spec.name),
+            Some(tool.as_str())
+        );
+    }
+    for name in ["sol", "emit_final", "nope"] {
+        assert_eq!(resolve_tool_spec(name), None, "{name}");
     }
 }
 

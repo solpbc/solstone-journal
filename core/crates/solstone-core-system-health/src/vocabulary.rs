@@ -25,3 +25,16 @@ pub const DETERMINISTIC_FAILURE_REASON_CODES: &[&str] = &[
     "token_budget_exceeded",
     "wall_clock_exceeded",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deterministic_failure_reason_codes_match_cogitate() {
+        assert_eq!(
+            solstone_core_cogitate::DETERMINISTIC_FAILURE_REASON_CODES.as_slice(),
+            DETERMINISTIC_FAILURE_REASON_CODES
+        );
+    }
+}

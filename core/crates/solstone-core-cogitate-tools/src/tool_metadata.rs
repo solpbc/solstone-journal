@@ -5,6 +5,8 @@ use std::sync::OnceLock;
 
 use solstone_core_cogitate::COGITATE_JOURNAL_COMMANDS;
 
+use crate::ToolName;
+
 /// Model-visible metadata for one cogitate tool.
 #[derive(Debug, Eq, PartialEq)]
 pub struct ToolSpec {
@@ -207,3 +209,21 @@ pub const GREP_SEARCH_TOOL: ToolSpec = ToolSpec {
     read_only_hint: true,
     destructive_hint: false,
 };
+
+/// Resolve a bounded raw-read tool's model metadata from its canonical name.
+pub fn resolve_tool_spec(name: &str) -> Option<&'static ToolSpec> {
+    [
+        ToolName::ReadFile,
+        ToolName::ListDirectory,
+        ToolName::Glob,
+        ToolName::GrepSearch,
+    ]
+    .into_iter()
+    .find(|tool| tool.as_str() == name)
+    .map(|tool| match tool {
+        ToolName::ReadFile => &READ_FILE_TOOL,
+        ToolName::ListDirectory => &LIST_DIRECTORY_TOOL,
+        ToolName::Glob => &GLOB_TOOL,
+        ToolName::GrepSearch => &GREP_SEARCH_TOOL,
+    })
+}

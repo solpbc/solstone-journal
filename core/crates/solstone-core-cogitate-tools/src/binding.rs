@@ -31,10 +31,10 @@ pub fn bound_tools(
     }
     if capabilities.reads {
         tools.extend([
+            &READ_FILE_TOOL,
+            &LIST_DIRECTORY_TOOL,
             &GLOB_TOOL,
             &GREP_SEARCH_TOOL,
-            &LIST_DIRECTORY_TOOL,
-            &READ_FILE_TOOL,
         ]);
     }
     if expects_emit_final {

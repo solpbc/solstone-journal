@@ -3182,6 +3182,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "solstone-core-cogitate",
  "solstone-core-journal-io",
  "thiserror 2.0.19",
 ]

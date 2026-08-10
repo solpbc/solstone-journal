@@ -24,5 +24,8 @@ name = "pipeline_health_oracle"
 path = "tests/pipeline_health_oracle.rs"
 required-features = ["differential"]
 
+[dev-dependencies]
+solstone-core-cogitate.workspace = true
+
 [lints]
 workspace = true

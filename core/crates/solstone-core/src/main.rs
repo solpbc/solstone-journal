@@ -50,6 +50,7 @@ use solstone_core_journal_config_write::{
     CommitConfigError, ConfigExpectation, LockError, LockOptions, commit_journal_config,
 };
 use solstone_core_observer::{CREATE_RETIRED_MESSAGE, ObserverCommand};
+mod talent_contract;
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_INTERNAL_FAILURE: u8 = 70;
@@ -1543,8 +1544,16 @@ fn run_cogitate(command: CogitateCommand) -> ExitCode {
             print!("{}", solstone_core_cogitate_wire::contract_source());
             ExitCode::SUCCESS
         }
+        CogitateCommand::TalentContract => {
+            let contract = talent_contract::talent_contract();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&contract).expect("talent contract serializes")
+            );
+            ExitCode::SUCCESS
+        }
         CogitateCommand::Malformed => {
-            eprintln!("cogitate: expected --contract or --one-shot");
+            eprintln!("cogitate: expected --contract, --talent-contract, or --one-shot");
             ExitCode::from(EXIT_DATAERR)
         }
         CogitateCommand::OneShot => run_cogitate_one_shot(),
