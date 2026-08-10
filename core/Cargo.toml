@@ -91,6 +91,7 @@ solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
+solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }
 solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }

@@ -2487,6 +2487,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "solstone-core-cogitate",
  "solstone-core-format",
 ]
 
