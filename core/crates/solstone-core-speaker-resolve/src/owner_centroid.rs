@@ -44,6 +44,7 @@ pub enum OwnerCentroidError {
     EntityPath(solstone_core_entity::EntityLifecycleError),
     Io { path: PathBuf, detail: String },
     Archive(String),
+    MissingRequiredMember(String),
     Invalid(String),
 }
 
@@ -52,7 +53,9 @@ impl fmt::Display for OwnerCentroidError {
         match self {
             Self::EntityPath(error) => error.fmt(formatter),
             Self::Io { path, detail } => write!(formatter, "{}: {detail}", path.display()),
-            Self::Archive(detail) | Self::Invalid(detail) => formatter.write_str(detail),
+            Self::Archive(detail) | Self::MissingRequiredMember(detail) | Self::Invalid(detail) => {
+                formatter.write_str(detail)
+            }
         }
     }
 }
@@ -455,7 +458,9 @@ fn read_member_bytes(
     name: &str,
 ) -> Result<Vec<u8>, OwnerCentroidError> {
     optional_member(archive, name)?.ok_or_else(|| {
-        OwnerCentroidError::Invalid(format!("owner centroid is missing required member {name}"))
+        OwnerCentroidError::MissingRequiredMember(format!(
+            "owner centroid is missing required member {name}"
+        ))
     })
 }
 
