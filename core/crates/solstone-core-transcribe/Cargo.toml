@@ -22,6 +22,11 @@ name = "transcribe_vad_differential"
 path = "tests/transcribe_vad_differential.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "transcribe_sound_tags_differential"
+path = "tests/transcribe_sound_tags_differential.rs"
+required-features = ["differential"]
+
 [dependencies]
 chrono = { workspace = true }
 nix = { workspace = true, features = ["process", "signal"] }
