@@ -2588,6 +2588,7 @@ dependencies = [
  "solstone-core-convey-http",
  "solstone-core-entity",
  "solstone-core-entity-matching",
+ "solstone-core-facets",
  "solstone-core-journal-io",
  "solstone-core-npy",
  "solstone-core-speaker-id",

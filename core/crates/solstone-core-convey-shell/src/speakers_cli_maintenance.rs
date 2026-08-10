@@ -332,7 +332,7 @@ pub async fn backfill_last_seen(
     Json(json!({"dry_run":dry_run,"labels_read":labels_read,"entities_seen":entity_max_ts.len(),"entities_pending":pending.len(),"rows_scanned":rows_scanned,"rows_pending":rows_pending,"rows_written":rows_written,"pending":pending,"errors":errors})).into_response()
 }
 
-fn accumulate(
+pub(crate) fn accumulate(
     root: &std::path::Path,
     day: &str,
     stream: &str,
@@ -551,10 +551,12 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
         width: 256,
     }
 }
-fn labels(output: &solstone_core_speaker_resolve::resolve::ResolveOutput) -> Vec<Value> {
+pub(crate) fn labels(output: &solstone_core_speaker_resolve::resolve::ResolveOutput) -> Vec<Value> {
     output.labels.iter().map(|label| json!({"sentence_id":label.sentence_id,"speaker":label.speaker,"confidence":label.confidence,"method":label.method,"owner_margin_declined":label.owner_margin_declined,"acoustic_margin_declined":label.acoustic_margin_declined})).collect()
 }
-fn metadata(output: &solstone_core_speaker_resolve::resolve::ResolveOutput) -> Map<String, Value> {
+pub(crate) fn metadata(
+    output: &solstone_core_speaker_resolve::resolve::ResolveOutput,
+) -> Map<String, Value> {
     let mut value = Map::new();
     value.insert(
         "owner_centroid_last_refreshed_at".to_owned(),

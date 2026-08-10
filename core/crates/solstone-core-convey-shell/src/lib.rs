@@ -60,6 +60,7 @@ pub mod registry;
 pub mod session;
 pub mod session_gate;
 mod speakers;
+mod speakers_attribution;
 mod speakers_calendar;
 mod speakers_cli_discovery;
 mod speakers_cli_entities;
@@ -277,6 +278,22 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/attribute-segment",
             post(speakers_cli_maintenance::attribute),
+        )
+        .route(
+            "/app/speakers/api/assign-attribution",
+            post(speakers_attribution::assign),
+        )
+        .route(
+            "/app/speakers/api/confirm-attribution",
+            post(speakers_attribution::confirm),
+        )
+        .route(
+            "/app/speakers/api/correct-attribution",
+            post(speakers_attribution::correct),
+        )
+        .route(
+            "/app/speakers/api/propagate-correction",
+            post(speakers_attribution::propagate),
         )
         .route(
             "/app/speakers/api/merge-names",
