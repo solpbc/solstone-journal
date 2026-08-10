@@ -116,3 +116,86 @@ fn prune_help_is_prunes_own_help() {
         "prune help lost its documented exit contract; got:\n{stdout}"
     );
 }
+
+// --- transfer -------------------------------------------------------------
+//
+// `journal transfer` had the same defect and worse: EVERY invocation, including
+// --help, exited 64 with solstone-core's top-level usage. The verb shipped with
+// no help at all.
+
+const TRANSFER_MALFORMED: &[&[&str]] = &[&["transfer", "--nonsense"], &["transfer", "bogus"]];
+
+#[test]
+fn malformed_transfer_invocations_exit_2_not_64() {
+    for args in TRANSFER_MALFORMED {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(*args)
+            .output()
+            .expect("run solstone-core");
+        let code = output.status.code().expect("exit code");
+        assert_eq!(
+            code,
+            2,
+            "`{}` exited {code}; the reference exits 2 (argparse usage error)",
+            args.join(" ")
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("usage: journal transfer"),
+            "`{}` did not print journal transfer's usage; got:\n{stderr}",
+            args.join(" ")
+        );
+        assert!(
+            !stderr.contains("solstone-core --version"),
+            "`{}` printed solstone-core's top-level usage instead of the verb's; \
+             got:\n{stderr}",
+            args.join(" ")
+        );
+    }
+}
+
+#[test]
+fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
+    // Each subcommand has its OWN help. A single shared string would pass a
+    // laxer assertion while hiding every subcommand's actual grammar.
+    for (args, expected_usage) in [
+        (
+            ["transfer", "--help"].as_slice(),
+            "usage: journal transfer [-h]",
+        ),
+        (
+            ["transfer", "-h"].as_slice(),
+            "usage: journal transfer [-h]",
+        ),
+        (
+            ["transfer", "export", "--help"].as_slice(),
+            "usage: journal transfer export",
+        ),
+        (
+            ["transfer", "import", "--help"].as_slice(),
+            "usage: journal transfer import",
+        ),
+        (
+            ["transfer", "send", "--help"].as_slice(),
+            "usage: journal transfer send",
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .output()
+            .expect("run solstone-core");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "`{}` did not exit 0; the reference serves help here",
+            args.join(" ")
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.starts_with(expected_usage),
+            "`{}` did not print its own help (expected it to start {expected_usage:?}); \
+             got:\n{stdout}",
+            args.join(" ")
+        );
+    }
+}

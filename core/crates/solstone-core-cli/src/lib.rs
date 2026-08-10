@@ -83,6 +83,59 @@ pub const OBSERVER_PRUNE_HELP: &str = concat!(
     "                        after same-start. Off by default.\n",
 );
 
+/// `journal transfer --help`, verbatim from the Python reference. The cut
+/// left the native verb answering 64 with `solstone-core`'s top-level usage
+/// for every invocation including --help, so the verb had no help at all.
+pub const TRANSFER_HELP: &str = concat!(
+    "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n",
+    "\n",
+    "Transfer observed segments between solstone instances\n",
+    "\n",
+    "positional arguments:\n",
+    "  {export,import,send}\n",
+    "    export              Create archive from day's segments\n",
+    "    import              Import archive into journal\n",
+    "    send                Send segments to paired peer\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
+/// `journal transfer export --help`, verbatim from the reference.
+pub const TRANSFER_EXPORT_HELP: &str = concat!(
+    "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help           show this help message and exit\n",
+    "  --day DAY            Day to export (YYYYMMDD format)\n",
+    "  --output, -o OUTPUT  Output archive path (default:\n",
+    "                       scratch/{day}_{hostname}.tgz)\n",
+);
+
+/// `journal transfer import --help`, verbatim from the reference.
+pub const TRANSFER_IMPORT_HELP: &str = concat!(
+    "usage: journal transfer import [-h] --archive ARCHIVE [--dry-run]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --archive, -a ARCHIVE\n",
+    "                        Archive file to import\n",
+    "  --dry-run             Validate archive without extracting\n",
+);
+
+/// `journal transfer send --help`, verbatim from the reference.
+pub const TRANSFER_SEND_HELP: &str = concat!(
+    "usage: journal transfer send [-h] --to TO [--day DAY] [--dry-run]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --to TO     Paired peer label\n",
+    "  --day DAY   Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD, default: all days)\n",
+    "  --dry-run   Show what would be sent without uploading\n",
+);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Version,
@@ -105,6 +158,8 @@ pub enum Command {
     ObserverUsage,
     ObserverHelp,
     ObserverPruneHelp,
+    TransferUsage,
+    TransferHelp(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -497,7 +552,26 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             parse_body(rest).map(Command::Body)
         }
         [command, rest @ ..] if command == OsStr::new("transfer") => {
-            parse_transfer(rest).map(Command::Transfer)
+            // Help is not a token of the transfer parser either, so without this
+            // interception `journal transfer --help` degrades into a usage error
+            // that exits 64 and names solstone-core rather than the verb.
+            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            if let [first, others @ ..] = rest
+                && others.iter().any(help)
+                && let Some(text) = match first.to_str() {
+                    Some("export") => Some(TRANSFER_EXPORT_HELP),
+                    Some("import") => Some(TRANSFER_IMPORT_HELP),
+                    Some("send") => Some(TRANSFER_SEND_HELP),
+                    _ => None,
+                }
+            {
+                return Ok(Command::TransferHelp(text));
+            }
+            if rest.iter().any(help) {
+                return Ok(Command::TransferHelp(TRANSFER_HELP));
+            }
+            // argparse exits 2 here, not 64.
+            Ok(parse_transfer(rest).map_or(Command::TransferUsage, Command::Transfer))
         }
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)

@@ -26,8 +26,9 @@ use solstone_core_cli::{
     IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
     JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
     JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_USAGE,
-    ServiceOptions, SpeakerResolveCommand, SplCommand, TransferCommand, TransferExportOptions,
-    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
+    ServiceOptions, SpeakerResolveCommand, SplCommand, TRANSFER_HELP, TransferCommand,
+    TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE, evaluate_args,
+    version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -120,6 +121,15 @@ fn main() -> ExitCode {
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::Observer(command)) => run_observer(command),
+        Ok(Command::TransferHelp(text)) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::TransferUsage) => {
+            eprint!("{TRANSFER_HELP}");
+            eprintln!("journal transfer: error: invalid arguments");
+            ExitCode::from(2)
+        }
         Ok(Command::ObserverHelp) => {
             print!("{OBSERVER_HELP}");
             ExitCode::SUCCESS
