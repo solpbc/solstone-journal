@@ -188,17 +188,32 @@ reasons, and handler. It includes UTC `attempted_at`, the pre-captured
 `input_size`, and failed-attempt accounting where applicable. The record is
 inserted into the JSONL header as `_solstone_processing`.
 
-`terminal.rs` writes that header-only output itself through
-`solstone-core-journal-io`: staged temporary file plus `install_file`/atomic
-publication for redo semantics, following describe's `promote()` shape. This
-is intentionally not a processing-record writer API; that crate supplies only
-vocabulary and predicates. Terminal publication succeeds completely before
-either owner-media unlink. The exact captured `input_size` therefore binds the
-subsequent `evaluate_terminal_proof` check to the raw bytes that were removed.
+`terminal.rs` and the later full-transcript path in `transcript.rs` both build
+the same `solstone-speaker-transcript-write-request-v1` JSON request and call
+`solstone_core_speaker_id::writer::write_request(bytes)`. The request carries
+`schema`, `output { jsonl_path, npz_path, redo }`, `base_time_us_of_day`,
+`source`, `statements`, `header`, and `embeddings`. The real writer owns
+preflight, redo/`DestinationExists`, staging, and atomic publication; terminal
+publication must not reimplement describe's `promote()` shape.
 
-Full transcript publication remains an in-process adaptation to
-`solstone_core_speaker_id::writer::write_request`; its header receives the
-same processing record for analyzed output.
+For either terminal write, `statements` is `[]`, yet `embeddings` remains a
+complete writer payload: a real temporary zero-byte f32le file at
+`payload_path`, `payload_format: "raw-f32le-row-major-v1"`,
+`dtype: "float32-le"`, `shape: [0, 256]`, `byte_count: 0`, empty
+`statement_ids` and `durations_s`, and
+`encoder: "wespeaker-resnet34-256"`. This exactly follows Python's shared
+writer wrapper, which defaults an empty embedding payload to that `ENCODER_ID`.
+The request must still supply `npz_path`, although the writer's zero-row mode
+does not publish an NPZ. Create the empty payload immediately before the call
+and remove it regardless of the result.
+
+`processing.rs` still relies on `solstone-core-processing-record` only for
+vocabulary and predicates; that crate has no writer API. Its completed value
+is placed directly in the shared writer request's `header` as
+`_solstone_processing`, which `build_header` preserves verbatim in the JSONL
+header. The writer call succeeds completely before either owner-media unlink.
+The exact captured `input_size` therefore binds the subsequent
+`evaluate_terminal_proof` check to the raw bytes that were removed.
 
 ## 5. Output sidecars and writer errors
 
@@ -212,8 +227,10 @@ publication.
 The six subprocess-bound reasons are retired by linkage and must not be
 manufactured: `unsupported-host`, `handshake-skip`, `handshake-fail`,
 `launch-failed`, `invalid-response`, and `payload-tempfile-failed`. There is no
-handshake, helper launch, response parsing, or temporary embedding payload
-transport when calling `write_request` in process.
+handshake, helper launch, or response parsing when calling `write_request` in
+process. The terminal request's local empty payload file is nevertheless
+required by the writer's input validation; its creation or cleanup failure is
+a typed internal failure, not the retired `payload-tempfile-failed` reason.
 
 Map the actual `SpeakerTranscriptWriteError` variants as follows:
 
@@ -227,7 +244,15 @@ Map the actual `SpeakerTranscriptWriteError` variants as follows:
 The mapping is matched on the writer enum variants, not on free-form strings;
 only the corresponding stable `reason()` value is placed in telemetry. This
 includes every present writer variant and deliberately has no compatibility arm
-for retired Python-bound reasons.
+for retired Python-bound reasons. It applies identically to both terminal empty
+writes and the full analyzed write because all three call the same writer
+function. AC24 therefore injects typed and untyped writer failures at Site A
+and Site B against one writer contract, rather than two publication mechanisms.
+
+The temporary zero-byte terminal embedding payload is not owner media and is
+not part of either terminal-media removal site's accounting. It is distinct
+from `_remove_orphan_npz`, which handles a real persisted NPZ sibling left by a
+prior writer attempt when its JSONL is absent.
 
 ## 6. Parakeet C++ and backend selection
 
