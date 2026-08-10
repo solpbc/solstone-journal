@@ -28,7 +28,7 @@ pub use anthropic::{
     anthropic_generate,
 };
 pub use bundled::{BundledError, LOCAL_MODEL_ID, bundled_generate, bundled_input};
-pub use confidential::{ConfidentialResult, confidential_generate};
+pub use confidential::{ConfidentialResult, confidential_converse, confidential_generate};
 pub use converse::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
 };
