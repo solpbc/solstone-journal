@@ -4,6 +4,8 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -1125,6 +1127,35 @@ fn identity_writer_stamps_the_addressed_id_and_refuses_to_clobber_a_create_desti
     assert_eq!(
         fs::read(temporary.path().join("entities/different/entity.json")).unwrap(),
         before
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn identity_writer_refuses_a_dangling_create_destination() {
+    let temporary = TempDir::new();
+    let directory = temporary.path().join("entities/dangling");
+    fs::create_dir_all(&directory).unwrap();
+    let destination = directory.join("entity.json");
+    symlink(directory.join("missing-target.json"), &destination).unwrap();
+
+    let error = save_entity_identity(
+        temporary.path(),
+        "dangling",
+        &json!({"id": "dangling", "name": "Dangling"}),
+        None,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        EntityWriteError::CreateDestinationOccupied { .. }
+    ));
+    assert!(
+        fs::symlink_metadata(destination)
+            .unwrap()
+            .file_type()
+            .is_symlink()
     );
 }
 

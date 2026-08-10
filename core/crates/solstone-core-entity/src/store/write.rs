@@ -42,7 +42,10 @@ use super::history::{
     HistoryEvent, PreparedHistoryEvent, guard_visible_event_collision, read_prepared_history,
     read_visible_history,
 };
-use super::identity::{IdentitySnapshot, read_entity_identity};
+use super::identity::{
+    IdentitySnapshot, entity_identity_destination_occupied, identity_destination_path,
+    read_entity_identity,
+};
 use super::map::read_identity_map;
 use super::paths::{
     ambiguities_path, events_dir, identity_map_cache_path, identity_path, prepared_dir,
@@ -351,13 +354,13 @@ fn save_entity_identity_with_lock_options(
         Some(directory) => (directory.clone(), false),
         None => (identity_id.to_owned(), true),
     };
-    let path = identity_path(journal_root, &entity_dir)?;
-    if creating && path_lexists(&path)? {
+    if creating && entity_identity_destination_occupied(journal_root, &entity_dir)? {
         return Err(EntityWriteError::CreateDestinationOccupied {
             identity_id: identity_id.to_owned(),
-            path,
+            path: identity_destination_path(journal_root, &entity_dir)?,
         });
     }
+    let path = identity_path(journal_root, &entity_dir)?;
 
     reconcile_prepared_history(journal_root, &entity_dir)?;
     let before = read_entity_identity(journal_root, &entity_dir)?;

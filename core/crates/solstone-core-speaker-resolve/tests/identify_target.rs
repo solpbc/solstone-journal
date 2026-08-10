@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -156,6 +158,49 @@ fn create_new_refuses_literal_destination_directory_with_a_different_written_id(
         resolve_identify_target(&target_request).unwrap(),
         IdentifyTargetOutcome::DestinationOccupied { entity_id } if entity_id == "new_person"
     ));
+}
+
+#[test]
+fn create_new_refuses_empty_and_null_literal_identity_destinations() {
+    for contents in [b"".as_slice(), b"null".as_slice()] {
+        let temporary = Temp::new();
+        let path = temporary.path().join("entities/new_person");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("entity.json"), contents).unwrap();
+        let mut target_request = request(temporary.path());
+        target_request.name = Some("New Person".to_owned());
+        target_request.create_new = true;
+
+        assert!(matches!(
+            resolve_identify_target(&target_request).unwrap(),
+            IdentifyTargetOutcome::DestinationOccupied { entity_id } if entity_id == "new_person"
+        ));
+        assert_eq!(fs::read(path.join("entity.json")).unwrap(), contents);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn create_new_refuses_a_dangling_literal_identity_destination() {
+    let temporary = Temp::new();
+    let path = temporary.path().join("entities/new_person");
+    fs::create_dir_all(&path).unwrap();
+    let destination = path.join("entity.json");
+    symlink(path.join("missing-target.json"), &destination).unwrap();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("New Person".to_owned());
+    target_request.create_new = true;
+
+    assert!(matches!(
+        resolve_identify_target(&target_request).unwrap(),
+        IdentifyTargetOutcome::DestinationOccupied { entity_id } if entity_id == "new_person"
+    ));
+    assert!(
+        fs::symlink_metadata(destination)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 }
 
 #[test]

@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 use solstone_core_entity::{
     EntityResolutionError, EntityResolutionOutcome, EntityTrustLockError, JournalEntity,
-    hold_entity_trust_lock, is_valid_entity_type, load_all_journal_entities,
-    load_entity_voiceprints_file, read_entity_identity, read_identity_map,
-    record_entity_resolution_from_name_evidence,
+    entity_identity_destination_occupied, hold_entity_trust_lock, is_valid_entity_type,
+    load_all_journal_entities, load_entity_voiceprints_file, read_entity_identity,
+    read_identity_map, record_entity_resolution_from_name_evidence,
 };
 use solstone_core_entity_matching::{MatchTier, entity_slug, token_sort};
 use thiserror::Error;
@@ -200,7 +200,7 @@ pub fn resolve_identify_target(
     let occupied = read_identity_map(&request.journal_root)?
         .resolved
         .contains_key(&proposed_id)
-        || read_entity_identity(&request.journal_root, &proposed_id)?.is_some();
+        || entity_identity_destination_occupied(&request.journal_root, &proposed_id)?;
     if occupied {
         return Ok(IdentifyTargetOutcome::DestinationOccupied {
             entity_id: proposed_id,

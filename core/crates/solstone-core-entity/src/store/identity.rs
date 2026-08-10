@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_journal_io::{MalformedPolicy, read_json};
+use solstone_core_journal_io::{MalformedPolicy, contained_path, path_lexists, read_json};
 
 use super::error::EntityStoreError;
 use super::paths::identity_path;
@@ -59,4 +59,22 @@ pub fn read_entity_identity(
         written: written.is_some(),
         value,
     }))
+}
+
+/// Return whether the literal identity destination exists, including an empty
+/// file, JSON `null`, or a dangling symlink.
+pub fn entity_identity_destination_occupied(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<bool, EntityStoreError> {
+    let path = identity_destination_path(journal_root, entity_dir)?;
+    path_lexists(&path).map_err(Into::into)
+}
+
+pub(super) fn identity_destination_path(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<PathBuf, EntityStoreError> {
+    let directory = contained_path(journal_root, &format!("entities/{entity_dir}"))?;
+    Ok(directory.join("entity.json"))
 }

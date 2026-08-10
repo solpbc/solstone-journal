@@ -1497,6 +1497,74 @@ mod tests {
     }
 
     #[test]
+    fn identify_cluster_replays_create_after_entity_write_before_checkpoint() {
+        let temporary = Temp::new();
+        write_cache(temporary.path());
+        write_embeddings(temporary.path());
+        let request = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("Target".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "request-create-before-entity-checkpoint".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+        let operation_id = operation_id_for_request(&request.request_id).unwrap();
+        let planned = plan_identify(&request, &operation_id).unwrap().unwrap();
+        let path = identify_ledger_path(temporary.path());
+        append_prepared(&path, &request, &operation_id, &planned).unwrap();
+        phase_entity(
+            temporary.path(),
+            &entity_phase_plan(&planned.prepared_plan).unwrap(),
+        )
+        .unwrap();
+
+        let before_resume = load_operations(&path).unwrap();
+        assert!(
+            before_resume
+                .iter()
+                .all(|row| row.event.event_id != format!("{operation_id}:checkpoint:entity"))
+        );
+        assert_eq!(
+            read_visible_history(temporary.path(), "target")
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(result["entity_id"], "target");
+        let voiceprints_path = temporary.path().join("entities/target/voiceprints.npz");
+        let voiceprints_after_resume = fs::read(&voiceprints_path).unwrap();
+        let rows = load_operations(&path).unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.event.event_id == format!("{operation_id}:checkpoint:entity"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            read_visible_history(temporary.path(), "target")
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let replay = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(replay["status"], "identified", "{replay}");
+        assert_eq!(
+            fs::read(voiceprints_path).unwrap(),
+            voiceprints_after_resume
+        );
+    }
+
+    #[test]
     fn distinct_fresh_operations_each_refuse_an_occupied_create_destination() {
         let temporary = Temp::new();
         entity(temporary.path(), "new_person", "Someone Else");
@@ -1532,6 +1600,36 @@ mod tests {
             assert!(!identify_ledger_path(temporary.path()).exists());
             assert_eq!(fs::read(&identity_path).unwrap(), identity_before);
             assert_eq!(fs::read(&voiceprints_path).unwrap(), voiceprints_before);
+        }
+    }
+
+    #[test]
+    fn fresh_create_refuses_empty_and_null_destinations_before_an_operation_row() {
+        for contents in [b"".as_slice(), b"null".as_slice()] {
+            let temporary = Temp::new();
+            let destination = temporary.path().join("entities/new_person/entity.json");
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::write(&destination, contents).unwrap();
+            write_cache(temporary.path());
+            write_embeddings(temporary.path());
+            let request = IdentifyClusterRequest {
+                journal_root: temporary.path().to_path_buf(),
+                cluster_id: 1,
+                name: Some("New Person".into()),
+                entity_id: None,
+                resolve_only: false,
+                create_new: true,
+                entity_type: "Person".into(),
+                request_id: format!("request-occupied-{}", contents.len()),
+                reviewed_near_match_entity_ids: vec![],
+                caller: String::new(),
+                actor: None,
+            };
+
+            let result = identify_cluster(&request, &encoder()).unwrap();
+            assert_eq!(result["status"], "destination_occupied", "{result}");
+            assert!(!identify_ledger_path(temporary.path()).exists());
+            assert_eq!(fs::read(&destination).unwrap(), contents);
         }
     }
 }
