@@ -64,6 +64,7 @@ solstone-core-journal-config-write.workspace = true
 solstone-core-local.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
+solstone-core-grab.workspace = true
 solstone-core-spl.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true

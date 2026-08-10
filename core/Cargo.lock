@@ -2364,6 +2364,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-generate",
  "solstone-core-generate-wire",
+ "solstone-core-grab",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",

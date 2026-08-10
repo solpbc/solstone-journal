@@ -12,10 +12,11 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
+pub const GRAB_USAGE: &str = "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -30,6 +31,7 @@ pub enum Command {
     Brain(BrainCommand),
     Body(BodyCommand),
     Convey(ConveyOptions),
+    Grab(GrabCommand),
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
 }
@@ -241,6 +243,23 @@ pub struct ServiceOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrabCommand {
+    Help,
+    Run(GrabOptions),
+    ParseError(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrabOptions {
+    pub tokens: Vec<String>,
+    pub out: Option<OsString>,
+    pub force: bool,
+    pub json: bool,
+    pub verbose: bool,
+    pub debug: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalPathOptions {
     pub journal_override: Option<OsString>,
     pub create: bool,
@@ -364,12 +383,140 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
         }
+        [command, rest @ ..] if command == OsStr::new("grab") => {
+            Ok(Command::Grab(parse_grab(rest)))
+        }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             parse_supervisor(rest).map(Command::Supervisor)
         }
         _ => Err(UsageError),
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum GrabParseState {
+    LeadingOptions,
+    Positionals,
+    TrailingOptions,
+}
+
+fn parse_grab(args: &[OsString]) -> GrabCommand {
+    let mut state = GrabParseState::LeadingOptions;
+    let mut end_of_options = false;
+    let mut tokens = Vec::new();
+    let mut out = None;
+    let mut force = false;
+    let mut json = false;
+    let mut verbose = false;
+    let mut debug = false;
+    let mut index = 0;
+
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if !end_of_options && argument == OsStr::new("--") {
+            end_of_options = true;
+            index += 1;
+            continue;
+        }
+        if !end_of_options && is_grab_option(argument) {
+            if argument == OsStr::new("-h") || argument == OsStr::new("--help") {
+                return GrabCommand::Help;
+            }
+            if state == GrabParseState::Positionals {
+                state = GrabParseState::TrailingOptions;
+            }
+            if argument == OsStr::new("--json") {
+                json = true;
+            } else if argument == OsStr::new("--force") {
+                force = true;
+            } else if argument == OsStr::new("-v") || argument == OsStr::new("--verbose") {
+                verbose = true;
+            } else if argument == OsStr::new("-d") || argument == OsStr::new("--debug") {
+                debug = true;
+            } else if argument == OsStr::new("--out") {
+                let Some(value) = args.get(index + 1) else {
+                    return grab_parse_error("argument --out: expected one argument");
+                };
+                if looks_like_grab_option(value.as_os_str()) {
+                    return grab_parse_error("argument --out: expected one argument");
+                }
+                out = Some(value.clone());
+                index += 1;
+            } else if let Some(value) = argument
+                .to_str()
+                .and_then(|value| value.strip_prefix("--out="))
+            {
+                if value.is_empty() {
+                    return grab_parse_error("argument --out: expected one argument");
+                }
+                out = Some(OsString::from(value));
+            } else {
+                return grab_parse_error(&format!(
+                    "unrecognized arguments: {}",
+                    argument.to_string_lossy()
+                ));
+            }
+            index += 1;
+            continue;
+        }
+        if !end_of_options && looks_like_grab_option(argument) {
+            return grab_parse_error(&format!(
+                "unrecognized arguments: {}",
+                argument.to_string_lossy()
+            ));
+        }
+        if state == GrabParseState::TrailingOptions {
+            return grab_parse_error(&format!(
+                "unrecognized arguments: {}",
+                argument.to_string_lossy()
+            ));
+        }
+        let Some(token) = argument.to_str() else {
+            return grab_parse_error("path tokens must be valid Unicode");
+        };
+        tokens.push(token.to_owned());
+        state = GrabParseState::Positionals;
+        index += 1;
+    }
+
+    GrabCommand::Run(GrabOptions {
+        tokens,
+        out,
+        force,
+        json,
+        verbose,
+        debug,
+    })
+}
+
+fn is_grab_option(argument: &OsStr) -> bool {
+    matches!(
+        argument.to_str(),
+        Some(
+            "-h" | "--help"
+                | "--json"
+                | "--force"
+                | "-v"
+                | "--verbose"
+                | "-d"
+                | "--debug"
+                | "--out"
+        )
+    ) || argument
+        .to_str()
+        .is_some_and(|value| value.starts_with("--out="))
+}
+
+fn looks_like_grab_option(argument: &OsStr) -> bool {
+    argument != OsStr::new("-")
+        && argument
+            .to_str()
+            .is_some_and(|value| value.starts_with('-') && value.parse::<f64>().is_err())
+}
+
+fn grab_parse_error(message: &str) -> GrabCommand {
+    GrabCommand::ParseError(message.to_owned())
 }
 
 fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> {
@@ -2883,7 +3030,160 @@ mod tests {
 
     #[test]
     fn usage_lists_supported_commands() {
-        assert!(USAGE.contains(SPEAKER_RESOLVE_USAGE), "{USAGE}");
+        assert_eq!(
+            USAGE,
+            concat!(
+                "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
+                speaker_resolve_usage!(),
+                "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
+            )
+        );
+    }
+
+    #[test]
+    fn grab_usage_is_frozen() {
+        assert_eq!(
+            GRAB_USAGE,
+            "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n"
+        );
+    }
+
+    #[test]
+    fn accepts_grab_zero_through_many_positional_tokens() {
+        for count in 0..=7 {
+            let mut values = vec!["grab"];
+            let expected: Vec<_> = (0..count).map(|index| format!("token-{index}")).collect();
+            values.extend(expected.iter().map(String::as_str));
+            assert_eq!(
+                evaluate_args(&args(&values)),
+                Ok(Command::Grab(GrabCommand::Run(GrabOptions {
+                    tokens: expected,
+                    out: None,
+                    force: false,
+                    json: false,
+                    verbose: false,
+                    debug: false,
+                }))),
+                "{count} tokens"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_grab_option_forms_duplicates_and_contiguous_trailing_options() {
+        for values in [
+            &[
+                "grab",
+                "--out",
+                "frame.png",
+                "--force",
+                "--json",
+                "-v",
+                "--verbose",
+                "-d",
+                "--debug",
+                "DAY",
+                "STREAM",
+            ][..],
+            &[
+                "grab",
+                "--json",
+                "DAY",
+                "STREAM",
+                "--out=frame.png",
+                "--force",
+            ][..],
+            &["grab", "--json", "--json", "DAY"][..],
+        ] {
+            assert!(matches!(
+                evaluate_args(&args(values)),
+                Ok(Command::Grab(GrabCommand::Run(_)))
+            ));
+        }
+        assert_eq!(
+            evaluate_args(&args(&["grab", "--out=frame.png"])),
+            Ok(Command::Grab(GrabCommand::Run(GrabOptions {
+                tokens: vec![],
+                out: Some(OsString::from("frame.png")),
+                force: false,
+                json: false,
+                verbose: false,
+                debug: false,
+            })))
+        );
+    }
+
+    #[test]
+    fn accepts_each_grab_boolean_option_individually() {
+        for (flag, force, json, verbose, debug) in [
+            ("--force", true, false, false, false),
+            ("--json", false, true, false, false),
+            ("-v", false, false, true, false),
+            ("--verbose", false, false, true, false),
+            ("-d", false, false, false, true),
+            ("--debug", false, false, false, true),
+        ] {
+            assert_eq!(
+                evaluate_args(&args(&["grab", flag])),
+                Ok(Command::Grab(GrabCommand::Run(GrabOptions {
+                    tokens: vec![],
+                    out: None,
+                    force,
+                    json,
+                    verbose,
+                    debug,
+                }))),
+                "{flag}"
+            );
+        }
+    }
+
+    #[test]
+    fn grab_end_of_options_and_help_short_circuit() {
+        assert_eq!(
+            evaluate_args(&args(&["grab", "--", "--weird-day-name"])),
+            Ok(Command::Grab(GrabCommand::Run(GrabOptions {
+                tokens: vec!["--weird-day-name".to_owned()],
+                out: None,
+                force: false,
+                json: false,
+                verbose: false,
+                debug: false,
+            })))
+        );
+        for values in [
+            &["grab", "--help"][..],
+            &["grab", "DAY", "-h", "STREAM"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Grab(GrabCommand::Help))
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_grab_malformed_and_interspersed_argv() {
+        assert_eq!(
+            evaluate_args(&args(&["grab", "DAY", "--json", "STREAM"])),
+            Ok(Command::Grab(GrabCommand::ParseError(
+                "unrecognized arguments: STREAM".to_owned()
+            )))
+        );
+        for values in [
+            &["grab", "--bogus"][..],
+            &["grab", "--out"][..],
+            &["grab", "--out", "--json"][..],
+            &["grab", "DAY", "--json", "--", "STREAM"][..],
+        ] {
+            assert!(
+                matches!(
+                    evaluate_args(&args(values)),
+                    Ok(Command::Grab(GrabCommand::ParseError(_)))
+                ),
+                "{values:?}"
+            );
+        }
     }
 
     #[test]
