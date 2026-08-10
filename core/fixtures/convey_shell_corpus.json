@@ -8,6 +8,7 @@
           "<JOURNAL_ROOT>"
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
@@ -18,6 +19,7 @@
       {
         "body_bytes": 15086,
         "body_sha256": "600174b0dbfc37a56fa44d0c320b32958961d43230198fcb7e99e31b98dfbd9c",
+        "body_sha256_basis": "raw-body",
         "content_type": "image/x-icon",
         "method": "GET",
         "path": "/favicon.ico",
@@ -27,6 +29,7 @@
       {
         "body_bytes": 12199,
         "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/static/shell.html",
@@ -38,7 +41,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -56,7 +60,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -75,6 +80,7 @@
           "<JOURNAL_ROOT>"
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
@@ -88,6 +94,7 @@
           "<JOURNAL_ROOT>"
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
@@ -101,6 +108,7 @@
           "<JOURNAL_ROOT>"
         ],
         "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
         "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
         "content_type": "text/plain; charset=utf-8",
         "method": "GET",
@@ -113,7 +121,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -131,7 +140,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -149,7 +159,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -167,7 +178,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -185,7 +197,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -203,7 +216,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -221,7 +235,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -239,7 +254,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -257,7 +273,8 @@
         "body_normalized": [
           "<JOURNAL_ROOT>"
         ],
-        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
@@ -273,6 +290,7 @@
       {
         "body_bytes": 207,
         "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
         "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -285,6 +303,7 @@
       {
         "body_bytes": 207,
         "body_sha256": "33341319624bc7a7f55e1c6de84cdc28419f332ba014f0a40fca9563d717aa22",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/app/home/",
         "method": "GET",
@@ -295,6 +314,7 @@
       {
         "body_bytes": 15086,
         "body_sha256": "600174b0dbfc37a56fa44d0c320b32958961d43230198fcb7e99e31b98dfbd9c",
+        "body_sha256_basis": "raw-body",
         "content_type": "image/x-icon",
         "method": "GET",
         "path": "/favicon.ico",
@@ -304,6 +324,7 @@
       {
         "body_bytes": 12199,
         "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/static/shell.html",
@@ -312,7 +333,8 @@
       },
       {
         "body_bytes": 15456,
-        "body_sha256": "282b7369e7db3ba27464378a601634b9d83b5e66e9b3dfdd5c80c26e4e511af8",
+        "body_sha256": "41db46204541819b408ba95fa97495c3035f893368097b8d61324a15e8790f82",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "apps": [
@@ -693,7 +715,8 @@
       },
       {
         "body_bytes": 137,
-        "body_sha256": "52e4398e9df917903e98bce82d2412a48c7e6f982809851bddecd624373fbc93",
+        "body_sha256": "d6103ee511c17c46cecf2c724a9254e1d42d0bc4d11b236b3f9767d8498fd8ff",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "capture": {
@@ -716,6 +739,7 @@
       {
         "body_bytes": 12199,
         "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/speakers/",
@@ -725,6 +749,7 @@
       {
         "body_bytes": 138905,
         "body_sha256": "488be07c4e607dcc334749a403d6a0f7307388a7da9ddbdc177e4c5fefe1c0b0",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/app/speakers/workspace",
@@ -734,6 +759,7 @@
       {
         "body_bytes": 35880,
         "body_sha256": "01893d458598f64e9286490f67e95c4d0618df5ec88880713b72c60abce586f5",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/javascript; charset=utf-8",
         "method": "GET",
         "path": "/app/speakers/static/who_is_this.js",
@@ -742,7 +768,8 @@
       },
       {
         "body_bytes": 7838,
-        "body_sha256": "a6530562c75bccaf3d310f9df7db47801b74cae8ccaca569b03b56257b7ff646",
+        "body_sha256": "8f34eab03545b97236ce4195655d3ff4624585121a29dfa9e2af47fc0ffae166",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "not_in_new_voices_copy": "this voice isn't in new voices yet. sol needs to hear it a few more times.",
@@ -897,7 +924,8 @@
       },
       {
         "body_bytes": 55,
-        "body_sha256": "ef9a5988652d063cf98aeb4271bc4a765dbe6e2aa78958f63cb88b674cbb37a9",
+        "body_sha256": "aa02d8d6630ff477ac68d1b580445723143ef7560d646db4852d2b2530afc813",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "activity": {},
@@ -913,7 +941,8 @@
       },
       {
         "body_bytes": 856,
-        "body_sha256": "036347618bd8f120f3897bf740681ab23a42aa67a2767be9db01022bf5148165",
+        "body_sha256": "b0a74fd144cbc4f7acaf8205f49de7526d2504e94d1d52eed4930f88fc5d88e4",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "corrections_window_count": 0,
@@ -966,7 +995,8 @@
       },
       {
         "body_bytes": 42,
-        "body_sha256": "aaac268f9ee7c66cfd19dfd885f6203c4bad009732697e62d8ac52f227d00ca9",
+        "body_sha256": "cb633b0fefdac13cc1703dbcfeb0d463242690654e2935d5d669f8c126c8e7a7",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "sort": "recent",
@@ -981,7 +1011,8 @@
       },
       {
         "body_bytes": 425,
-        "body_sha256": "7b2dea546167fe68e15009e79b3c4551c5925725c0e07a79291aa49bb4343caf",
+        "body_sha256": "9994907c94c8e3edb8d39f094a7a37c9b41c6d1a929a20d743bf840a39499113",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "can_build_from_tags": false,
@@ -1002,7 +1033,8 @@
       },
       {
         "body_bytes": 45,
-        "body_sha256": "40dc8282f493d9df8f321367d34162ff9dd5a2447af06cd45ba8b86bbbee403b",
+        "body_sha256": "ba779e04e643fdcb2b72b67a7dbd157b23e74472f2f05258450dad50da066a47",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "clusters": [],
@@ -1016,7 +1048,8 @@
       },
       {
         "body_bytes": 3,
-        "body_sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "body_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {},
         "method": "GET",
@@ -1027,7 +1060,8 @@
       },
       {
         "body_bytes": 26,
-        "body_sha256": "030130cbf31be62e222950a4079b31a400e40d827b7801a9af5316ab80e776bf",
+        "body_sha256": "250dd0eeb1b41edb351664e6ff998f631ff3a9ca0d1a6880b154102074189c26",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "segments": [],
@@ -1041,7 +1075,8 @@
       },
       {
         "body_bytes": 30,
-        "body_sha256": "812fe0e39c5ae780257d3dddfc6fee9d3fbca803e85de8848499311c4ef9af70",
+        "body_sha256": "1081f8ed994602223a4018bf974a8296ca2be5e71b3ce4b344f2e4b212efa934",
+        "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "coverage": null,
@@ -1056,6 +1091,7 @@
       {
         "body_bytes": 207,
         "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
         "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1068,6 +1104,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1078,6 +1115,7 @@
       {
         "body_bytes": 15086,
         "body_sha256": "600174b0dbfc37a56fa44d0c320b32958961d43230198fcb7e99e31b98dfbd9c",
+        "body_sha256_basis": "raw-body",
         "content_type": "image/x-icon",
         "method": "GET",
         "path": "/favicon.ico",
@@ -1087,6 +1125,7 @@
       {
         "body_bytes": 12199,
         "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
         "path": "/static/shell.html",
@@ -1096,6 +1135,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1106,6 +1146,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1116,6 +1157,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1126,6 +1168,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1136,6 +1179,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1146,6 +1190,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1156,6 +1201,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1166,6 +1212,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1176,6 +1223,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1186,6 +1234,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1196,6 +1245,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1206,6 +1256,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1216,6 +1267,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1226,6 +1278,7 @@
       {
         "body_bytes": 197,
         "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "location": "/init",
         "method": "GET",
@@ -1236,6 +1289,7 @@
       {
         "body_bytes": 207,
         "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
         "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
