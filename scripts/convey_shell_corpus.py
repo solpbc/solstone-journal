@@ -104,21 +104,47 @@ PROBES: list[tuple[str, str, str]] = [
 ]
 
 
-def _normalize(value: Any, found: set[str], path: str = "") -> Any:
-    """Replace non-reproducible scalars with placeholders, recording each one."""
+# 🔴 Normalization is a PATH ALLOWLIST, never a shape test.
+#
+# An earlier version replaced any string matching ^\d{8}$ with the day
+# placeholder. On an empty journal that touched one field. On a populated one it
+# would eat /api/grid's `coverage.start` and `coverage.end`, /api/index's
+# coverage, and every `day` value in every segment payload -- and a port
+# returning the WRONG coverage window would still match, because both sides
+# normalize to the same placeholder. An oracle that erases the values it exists
+# to pin is worse than no oracle, because it reports green.
+#
+# Each entry is (probe path, dotted field path within the JSON body).
+NORMALIZED_FIELDS: dict[str, set[str]] = {
+    "/api/shell": {"version"},
+    "/app/speakers/api/state": {"today"},
+}
+
+
+def _normalize(
+    value: Any,
+    found: set[str],
+    allowed: set[str],
+    path: str = "",
+) -> Any:
+    """Replace allowlisted non-reproducible scalars, recording each one.
+
+    ⛔ A field absent from `allowed` is returned verbatim however volatile it
+    looks. Widening this is a decision, not a convenience.
+    """
     if isinstance(value, dict):
         return {
-            key: _normalize(item, found, f"{path}.{key}" if path else key)
+            key: _normalize(item, found, allowed, f"{path}.{key}" if path else key)
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [_normalize(item, found, f"{path}[]") for item in value]
-    if isinstance(value, str):
+        return [_normalize(item, found, allowed, f"{path}[]") for item in value]
+    if isinstance(value, str) and path in allowed:
         if DAY_PATTERN.match(value):
-            found.add(path or "<root>")
+            found.add(path)
             return PLACEHOLDER_DAY
-        if path.endswith("version") and re.match(r"^\d+\.\d+\.\d+", value):
-            found.add(path or "<root>")
+        if re.match(r"^\d+\.\d+\.\d+", value):
+            found.add(path)
             return PLACEHOLDER_VERSION
     return value
 
@@ -153,7 +179,9 @@ def _record(client: Any, method: str, path: str, why: str, root: Path) -> dict[s
         "why": why,
         "status": response.status_code,
         "content_type": content_type,
+        # Overwritten below for JSON cases -- see body_sha256_basis.
         "body_sha256": hashlib.sha256(normalized_body).hexdigest(),
+        "body_sha256_basis": "raw-body",
         "body_bytes": len(normalized_body),
     }
     if normalized_body != body:
@@ -165,8 +193,17 @@ def _record(client: Any, method: str, path: str, why: str, root: Path) -> dict[s
         case["location"] = location
     if "json" in content_type:
         found: set[str] = set()
-        case["json"] = _normalize(json.loads(normalized_body), found)
+        allowed = NORMALIZED_FIELDS.get(path, set())
+        case["json"] = _normalize(json.loads(normalized_body), found, allowed)
         case["normalized_fields"] = sorted(found)
+        # 🔴 A raw-body hash is NOT reproducible for a case carrying a normalized
+        # field: /app/speakers/api/state embeds `today`, so the raw hash rolls at
+        # UTC midnight while the recorded JSON does not. Hash what the corpus
+        # actually asserts -- the canonical normalized JSON.
+        case["body_sha256"] = hashlib.sha256(
+            json.dumps(case["json"], sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        case["body_sha256_basis"] = "normalized-json"
     elif response.status_code >= 400:
         # Error bodies are short and are the whole point of the corrupt phase --
         # record them verbatim so a port can be checked against the real text.
