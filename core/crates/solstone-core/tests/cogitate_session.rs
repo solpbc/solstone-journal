@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
@@ -183,6 +183,13 @@ fn parsed_lines(stdout: &[u8]) -> Vec<Value> {
         .collect()
 }
 
+fn contract_exit_code(name: &str) -> i32 {
+    serde_json::from_str::<Value>(solstone_core_cogitate_wire::contract_source())
+        .expect("cogitate wire contract is JSON")["exit_codes"][name]
+        .as_i64()
+        .expect("cogitate exit code is an integer") as i32
+}
+
 #[test]
 fn one_shot_streams_valid_terminal_ndjson() {
     let journal = TempJournal::new("one-shot");
@@ -190,7 +197,12 @@ fn one_shot_streams_valid_terminal_ndjson() {
     let child = spawn_one_shot(&request(&journal, false).to_string(), Some(&stub.url));
     let output = child.wait_with_output().expect("wait cogitate core");
     stub.join();
-    assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(contract_exit_code("success")),
+        "stderr: {:?}",
+        output.stderr
+    );
     let lines = parsed_lines(&output.stdout);
     assert!(
         lines
@@ -230,7 +242,10 @@ fn one_shot_streams_before_process_exit() {
         child.try_wait().expect("poll cogitate child").is_none(),
         "child exited before the observed first stream line"
     );
-    assert_eq!(child.wait().expect("wait cogitate child").code(), Some(0));
+    assert_eq!(
+        child.wait().expect("wait cogitate child").code(),
+        Some(contract_exit_code("success"))
+    );
     reader.join().expect("stdout reader joins");
     stub.join();
 }
@@ -240,7 +255,12 @@ fn dry_run_needs_no_endpoint_configuration() {
     let journal = TempJournal::new("dry-run");
     let child = spawn_one_shot(&request(&journal, true).to_string(), None);
     let output = child.wait_with_output().expect("wait dry run");
-    assert_eq!(output.status.code(), Some(0), "stderr: {:?}", output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(contract_exit_code("success")),
+        "stderr: {:?}",
+        output.stderr
+    );
     let lines = parsed_lines(&output.stdout);
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0]["event"], "dry_run");
@@ -250,7 +270,52 @@ fn dry_run_needs_no_endpoint_configuration() {
 fn malformed_one_shot_stays_off_stdout() {
     let child = spawn_one_shot("{", None);
     let output = child.wait_with_output().expect("wait malformed request");
-    assert_eq!(output.status.code(), Some(65));
+    assert_eq!(
+        output.status.code(),
+        Some(contract_exit_code("malformed_request"))
+    );
     assert!(output.stdout.is_empty());
     assert!(!output.stderr.is_empty());
+}
+
+#[test]
+fn missing_endpoint_configuration_uses_contract_exit_code() {
+    let journal = TempJournal::new("missing-endpoint");
+    let child = spawn_one_shot(&request(&journal, false).to_string(), None);
+    let output = child.wait_with_output().expect("wait missing endpoint");
+    assert_eq!(
+        output.status.code(),
+        Some(contract_exit_code("provider_configuration_error"))
+    );
+    assert!(output.stdout.is_empty());
+    assert!(!output.stderr.is_empty());
+}
+
+#[test]
+fn dead_stdout_pipe_uses_contract_exit_code() {
+    let journal = TempJournal::new("dead-stdout");
+    let stub = Stub::start(vec![(read_file_response(), Duration::ZERO)]);
+    let mut child = spawn_one_shot(&request(&journal, false).to_string(), Some(&stub.url));
+    let mut stdout = BufReader::new(child.stdout.take().expect("cogitate stdout"));
+    let mut first = String::new();
+    stdout
+        .read_line(&mut first)
+        .expect("read first NDJSON line");
+    assert!(serde_json::from_str::<Value>(&first).is_ok());
+    assert!(child.try_wait().expect("poll cogitate child").is_none());
+    drop(stdout);
+
+    let deadline = Instant::now() + BOUND;
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("poll cogitate child") {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "cogitate did not observe closed stdout"
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    stub.join();
+    assert_eq!(status.code(), Some(contract_exit_code("dead_stdout_pipe")));
 }

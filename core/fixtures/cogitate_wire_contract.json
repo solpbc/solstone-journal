@@ -5,7 +5,6 @@
     "required_fields": {
       "schema": "string",
       "access_tier": "string",
-      "outbound_approval": "null_or_string",
       "expects_emit_final": "boolean",
       "max_turns": "positive_integer",
       "cost_cap_usd": "positive_number",
@@ -15,10 +14,11 @@
       "model": "string",
       "correlation_id": "string",
       "initial_prompt": "string",
-      "system_instruction": "null_or_string",
       "journal_root": "absolute_path"
     },
     "optional_fields": {
+      "outbound_approval": "null_or_string",
+      "system_instruction": "null_or_string",
       "dry_run": "boolean"
     }
   },
@@ -46,7 +46,7 @@
     },
     "start": {
       "role": "transport_only",
-      "required_fields": { "event": "string" },
+      "required_fields": { "event": "string", "ts": "integer" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": false
@@ -89,14 +89,14 @@
     },
     "talent_updated": {
       "role": "transport_only",
-      "required_fields": { "event": "string" },
+      "required_fields": { "event": "string", "ts": "integer" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": false
     },
     "info": {
       "role": "consumer_synthesized",
-      "required_fields": { "event": "string" },
+      "required_fields": { "event": "string", "ts": "integer" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": false
@@ -124,7 +124,7 @@
     },
     "progress": {
       "role": "legacy_registered_not_native_producible",
-      "required_fields": { "event": "string" },
+      "required_fields": { "event": "string", "ts": "integer" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": false
@@ -145,7 +145,7 @@
     },
     "warning": {
       "role": "legacy_registered_not_native_producible",
-      "required_fields": { "event": "string" },
+      "required_fields": { "event": "string", "ts": "integer" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": false
