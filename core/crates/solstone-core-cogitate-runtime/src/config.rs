@@ -10,9 +10,10 @@ const DEFAULT_READ_CALL_BUDGET: i64 = 200;
 
 /// Effective configuration for one bounded cogitate run.
 ///
-/// Prompt assembly stays outside this crate: Python callers prepare it before
-/// reaching the native runtime. The journal root is likewise an explicit input
-/// rather than an implicit environment lookup.
+/// Prompt composition is performed by the native cogitate-wire request boundary
+/// before this runtime receives `RunInput`. The runtime consumes the composed
+/// instruction and an explicit journal root rather than looking up either from
+/// the environment.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunConfig {
     pub access_tier: String,

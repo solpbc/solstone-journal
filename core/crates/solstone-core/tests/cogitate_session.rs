@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+use solstone_core_cogitate::{COGITATE_RUNTIME_PREAMBLE, cogitate_sol_tool_hint};
 
 const BOUND: Duration = Duration::from_secs(3);
 const ENDPOINT_ENV: &str = "SOLSTONE_COGITATE_ENDPOINT_URL_OVERRIDE";
@@ -118,10 +119,15 @@ fn read_request(stream: &mut TcpStream) -> String {
 
 fn request(journal: &TempJournal, dry_run: bool) -> Value {
     json!({
-        "schema": "solstone-cogitate-request-v1",
+        "schema": "solstone-cogitate-request-v2",
         "access_tier": "normal",
         "outbound_approval": null,
-        "expects_emit_final": true,
+        "diagnostic": false,
+        "talent_instruction": "Be concise.",
+        "sol_tool_name": "sol",
+        "read_scope": [],
+        "output_path": null,
+        "schedule": "daily",
         "max_turns": 4,
         "cost_cap_usd": 1.0,
         "context_window": 4096,
@@ -130,7 +136,6 @@ fn request(journal: &TempJournal, dry_run: bool) -> Value {
         "model": "fixture-model",
         "correlation_id": "session-corr",
         "initial_prompt": "Do the task.",
-        "system_instruction": "Be concise.",
         "journal_root": journal.0,
         "dry_run": dry_run
     })
@@ -328,6 +333,69 @@ fn one_shot_streams_valid_terminal_ndjson() {
             .any(|line| { matches!(line["event"].as_str(), Some("finish") | Some("error")) })
     );
     assert_eq!(lines.last().expect("terminal line")["terminal"], true);
+}
+
+#[test]
+fn one_shot_sends_live_composed_system_instruction_to_provider() {
+    let journal = TempJournal::with_byo_endpoint("live-composition");
+    let stub = CapturingStub::start(final_response());
+    let mut request = request(&journal, false);
+    request["talent_instruction"] = json!("TALENT RULES");
+    let child = spawn_one_shot(&request.to_string(), Some(&stub.url));
+    let output = child.wait_with_output().expect("wait cogitate core");
+    let request = stub.join();
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+
+    let body = request
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| serde_json::from_str::<Value>(body).expect("request body is JSON"))
+        .expect("HTTP request has a body");
+    let expected = live_system_instruction_from_oracle_vector("prompt_with_system_instruction");
+    assert_eq!(
+        body["messages"][0],
+        json!({"role": "system", "content": expected})
+    );
+}
+
+fn live_system_instruction_from_oracle_vector(id: &str) -> String {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/cogitate_oracle.json"))
+            .expect("cogitate oracle fixture parses");
+    let vector = fixture["prompt_assembly"]
+        .as_array()
+        .expect("prompt assembly vectors")
+        .iter()
+        .find(|vector| vector["id"] == id)
+        .expect("named prompt assembly vector");
+    let instruction = &vector["expect"]["system_instruction"];
+    let separator = instruction["separator"]
+        .as_str()
+        .expect("system instruction separator");
+
+    instruction["parts"]
+        .as_array()
+        .expect("system instruction parts")
+        .iter()
+        .map(|part| {
+            part["text"].as_str().map(str::to_owned).unwrap_or_else(|| {
+                match part["role"].as_str().expect("part role") {
+                    "runtime_preamble" => {
+                        COGITATE_RUNTIME_PREAMBLE.trim_end_matches('\n').to_owned()
+                    }
+                    "diagnostic_preamble" => solstone_core_cogitate::COGITATE_DIAGNOSTIC_PREAMBLE
+                        .trim_end_matches('\n')
+                        .to_owned(),
+                    "sol_tool_hint" => cogitate_sol_tool_hint(
+                        vector["sol_tool_name"]
+                            .as_str()
+                            .expect("sol tool name for hint"),
+                    ),
+                    role => panic!("unsupported fixture preamble role {role}"),
+                }
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(separator)
 }
 
 #[test]

@@ -8,6 +8,8 @@ pub mod failure_codes;
 pub mod finalization;
 pub mod policy;
 pub mod preambles;
+pub mod prompt;
+pub mod read_scope;
 
 pub use access_tiers::{
     AccessCapabilities, AccessTier, AccessTierError, COGITATE_ACCESS_TIERS, FUTURE_ACCESS_TIERS,
@@ -22,6 +24,8 @@ pub use preambles::{
     COGITATE_DIAGNOSTIC_PREAMBLE, COGITATE_JOURNAL_COMMANDS, COGITATE_RUNTIME_PREAMBLE,
     TALENT_FINALIZATION_MODES,
 };
+pub use prompt::{cogitate_sol_tool_hint, compose_system_instruction};
+pub use read_scope::{ReadScopeConfig, ReadScopeError, resolve_read_scope};
 
 #[cfg(test)]
 mod divergence;

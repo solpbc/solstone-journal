@@ -18,5 +18,8 @@ solstone-core-generate-wire.workspace = true
 solstone-core-local.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+solstone-core-cogitate-tools.workspace = true
+
 [lints]
 workspace = true

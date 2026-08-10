@@ -5,11 +5,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Map, Value};
-use solstone_core_cogitate::capabilities_for_access_tier;
+use solstone_core_cogitate::{
+    FinalizationConfig, FinalizationValue, capabilities_for_access_tier,
+    compose_system_instruction, expects_emit_final,
+};
 use solstone_core_cogitate_runtime::{RunConfig, RunInput};
 use thiserror::Error;
 
-pub const REQUEST_SCHEMA: &str = "solstone-cogitate-request-v1";
+pub const REQUEST_SCHEMA: &str = "solstone-cogitate-request-v2";
 
 /// A fully validated stdin request for one native cogitate run.
 #[derive(Clone, Debug, PartialEq)]
@@ -17,7 +20,12 @@ pub struct CogitateRequest {
     pub schema: String,
     pub access_tier: String,
     pub outbound_approval: Option<String>,
-    pub expects_emit_final: bool,
+    pub diagnostic: bool,
+    pub talent_instruction: Option<String>,
+    pub sol_tool_name: Option<String>,
+    pub read_scope: Vec<String>,
+    pub output_path: Option<String>,
+    pub schedule: Option<String>,
     pub max_turns: usize,
     pub cost_cap_usd: f64,
     pub context_window: Option<u64>,
@@ -26,7 +34,6 @@ pub struct CogitateRequest {
     pub model: String,
     pub correlation_id: String,
     pub initial_prompt: String,
-    pub system_instruction: Option<String>,
     pub journal_root: PathBuf,
     pub dry_run: bool,
 }
@@ -68,7 +75,12 @@ impl CogitateRequest {
             schema,
             access_tier,
             outbound_approval: optional_string(object, "outbound_approval")?,
-            expects_emit_final: required_bool(object, "expects_emit_final")?,
+            diagnostic: optional_bool(object, "diagnostic")?.unwrap_or(false),
+            talent_instruction: optional_string(object, "talent_instruction")?,
+            sol_tool_name: optional_string(object, "sol_tool_name")?,
+            read_scope: optional_string_array(object, "read_scope")?.unwrap_or_default(),
+            output_path: optional_string(object, "output_path")?,
+            schedule: optional_string(object, "schedule")?,
             max_turns: required_positive_usize(object, "max_turns")?,
             cost_cap_usd: required_positive_f64(object, "cost_cap_usd")?,
             context_window: optional_positive_u64(object, "context_window")?,
@@ -77,18 +89,28 @@ impl CogitateRequest {
             model: required_string(object, "model")?,
             correlation_id: required_string(object, "correlation_id")?,
             initial_prompt: required_string(object, "initial_prompt")?,
-            system_instruction: optional_string(object, "system_instruction")?,
             journal_root,
             dry_run: optional_bool(object, "dry_run")?.unwrap_or(false),
         })
     }
 
     pub fn to_run_input(&self) -> RunInput {
+        let expects_emit_final = expects_emit_final(FinalizationConfig {
+            diagnostic: Some(FinalizationValue::Boolean(self.diagnostic)),
+            output_path: self.output_path.as_deref().map(FinalizationValue::String),
+            schedule: self.schedule.as_deref(),
+        });
+        let system_instruction = compose_system_instruction(
+            self.diagnostic,
+            self.talent_instruction.as_deref(),
+            self.sol_tool_name.as_deref(),
+            !self.read_scope.is_empty(),
+        );
         RunInput {
             config: RunConfig {
                 access_tier: self.access_tier.clone(),
                 outbound_approval: self.outbound_approval.clone(),
-                expects_emit_final: self.expects_emit_final,
+                expects_emit_final,
                 max_turns: self.max_turns,
                 cost_cap_usd: self.cost_cap_usd,
                 context_window: self.context_window,
@@ -98,7 +120,7 @@ impl CogitateRequest {
                 correlation_id: self.correlation_id.clone(),
             },
             initial_prompt: self.initial_prompt.clone(),
-            system_instruction: self.system_instruction.clone(),
+            system_instruction,
             journal_root: self.journal_root.clone(),
         }
     }
@@ -109,7 +131,12 @@ fn reject_unknown_fields(object: &Map<String, Value>) -> Result<(), MalformedReq
         "schema",
         "access_tier",
         "outbound_approval",
-        "expects_emit_final",
+        "diagnostic",
+        "talent_instruction",
+        "sol_tool_name",
+        "read_scope",
+        "output_path",
+        "schedule",
         "max_turns",
         "cost_cap_usd",
         "context_window",
@@ -118,7 +145,6 @@ fn reject_unknown_fields(object: &Map<String, Value>) -> Result<(), MalformedReq
         "model",
         "correlation_id",
         "initial_prompt",
-        "system_instruction",
         "journal_root",
         "dry_run",
     ];
@@ -150,11 +176,23 @@ fn optional_string(
     }
 }
 
-fn required_bool(object: &Map<String, Value>, field: &str) -> Result<bool, MalformedRequest> {
-    object
-        .get(field)
-        .and_then(Value::as_bool)
-        .ok_or_else(|| malformed(format!("{field} must be a boolean")))
+fn optional_string_array(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<Option<Vec<String>>, MalformedRequest> {
+    match object.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(Value::as_str)
+            .map(|value| value.map(ToOwned::to_owned))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| malformed(format!("{field} must be an array of strings or null")))
+            .map(Some),
+        Some(_) => Err(malformed(format!(
+            "{field} must be an array of strings or null"
+        ))),
+    }
 }
 
 fn optional_bool(

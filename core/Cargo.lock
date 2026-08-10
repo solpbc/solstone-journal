@@ -2361,6 +2361,7 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-cli",
+ "solstone-core-cogitate",
  "solstone-core-cogitate-runtime",
  "solstone-core-cogitate-tools",
  "solstone-core-cogitate-wire",
@@ -2496,6 +2497,8 @@ version = "1.0.22"
 name = "solstone-core-cogitate"
 version = "1.0.22"
 dependencies = [
+ "chrono",
+ "regex",
  "serde",
  "serde_json",
 ]
@@ -2530,6 +2533,7 @@ dependencies = [
  "serde_json",
  "solstone-core-cogitate",
  "solstone-core-cogitate-runtime",
+ "solstone-core-cogitate-tools",
  "solstone-core-generate",
  "solstone-core-generate-wire",
  "solstone-core-local",

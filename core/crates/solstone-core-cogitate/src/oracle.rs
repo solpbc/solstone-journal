@@ -129,6 +129,8 @@ pub(crate) struct OracleFixture {
     pub failure_caps: Vec<FailureCapVector>,
     pub policy_commands: Vec<PolicyCommandVector>,
     pub preambles: PreamblesFixture,
+    pub prompt_assembly: Vec<PromptAssemblyVector>,
+    pub read_scope: Vec<ReadScopeVector>,
 }
 
 #[derive(Deserialize)]
@@ -160,6 +162,45 @@ pub(crate) struct FinalizationVector {
     pub id: String,
     pub config: serde_json::Map<String, Value>,
     pub expect: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PromptAssemblyVector {
+    pub id: String,
+    pub config: serde_json::Map<String, Value>,
+    pub sol_tool_name: Option<String>,
+    pub diagnostic: bool,
+    pub expect: PromptAssemblyExpectation,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PromptAssemblyExpectation {
+    pub prompt_body: Option<String>,
+    pub system_instruction: PromptSystemInstructionFixture,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PromptSystemInstructionFixture {
+    pub parts: Vec<PromptPartFixture>,
+    pub order: Option<Vec<String>>,
+    pub separator: String,
+    pub byte_length: Option<usize>,
+    pub sha256: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PromptPartFixture {
+    pub role: String,
+    pub text: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ReadScopeVector {
+    pub id: String,
+    pub talent_config: serde_json::Map<String, Value>,
+    pub day: String,
+    pub span: i64,
+    pub expect: Vec<String>,
 }
 
 #[derive(Deserialize)]

@@ -13,5 +13,9 @@ publish = false
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[dependencies]
+chrono.workspace = true
+regex.workspace = true
+
 [lints]
 workspace = true

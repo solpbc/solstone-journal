@@ -9,9 +9,10 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use solstone_core_cogitate_runtime::events::{BudgetLadder, BudgetStage};
 use solstone_core_cogitate_runtime::{
-    ConverseProvider, RecordingEventSink, RunOutcome, RuntimeEvent, ToolExecution, ToolExecutor,
-    Usage, run_cogitate,
+    CogitateToolExecutor, ConverseProvider, RecordingEventSink, RunOutcome, RuntimeEvent,
+    ToolExecution, ToolExecutor, Usage, run_cogitate,
 };
+use solstone_core_cogitate_tools::NoopSlotLease;
 use solstone_core_generate_wire::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, resolve_lane,
 };
@@ -27,7 +28,12 @@ fn request_value() -> Value {
         "schema": REQUEST_SCHEMA,
         "access_tier": "normal",
         "outbound_approval": null,
-        "expects_emit_final": true,
+        "diagnostic": false,
+        "talent_instruction": "Be concise.",
+        "sol_tool_name": "sol",
+        "read_scope": [],
+        "output_path": null,
+        "schedule": "daily",
         "max_turns": 4,
         "cost_cap_usd": 1.5,
         "context_window": 4096,
@@ -36,7 +42,6 @@ fn request_value() -> Value {
         "model": "fixture-model",
         "correlation_id": "corr-1",
         "initial_prompt": "Do the task.",
-        "system_instruction": "Be concise.",
         "journal_root": "/tmp/solstone-cogitate-wire-test"
     })
 }
@@ -60,8 +65,14 @@ fn valid_request_round_trips_to_runtime_input() {
     assert_eq!(input.config.access_tier, "normal");
     assert_eq!(input.config.max_turns, 4);
     assert_eq!(input.config.timeout.as_millis(), 30_000);
+    assert!(input.config.expects_emit_final);
     assert_eq!(input.initial_prompt, "Do the task.");
-    assert_eq!(input.system_instruction.as_deref(), Some("Be concise."));
+    assert!(
+        input
+            .system_instruction
+            .as_deref()
+            .is_some_and(|instruction| instruction.contains("Be concise."))
+    );
     assert_eq!(
         input.journal_root,
         std::path::PathBuf::from("/tmp/solstone-cogitate-wire-test")
@@ -93,6 +104,26 @@ fn malformed_requests_are_rejected_with_specific_messages() {
             json!({"journal_root": "relative"}),
             "journal_root must be an absolute path",
         ),
+        (
+            "legacy finalization",
+            json!({"expects_emit_final": true}),
+            "unknown field \"expects_emit_final\"",
+        ),
+        (
+            "legacy instruction",
+            json!({"system_instruction": "legacy"}),
+            "unknown field \"system_instruction\"",
+        ),
+        (
+            "scope scalar",
+            json!({"read_scope": "chronicle/20260809"}),
+            "read_scope must be an array of strings or null",
+        ),
+        (
+            "scope nested",
+            json!({"read_scope": [["chronicle/20260809"]]}),
+            "read_scope must be an array of strings or null",
+        ),
     ];
     for (name, replacement, expected) in cases {
         let mut value = request_value();
@@ -102,6 +133,57 @@ fn malformed_requests_are_rejected_with_specific_messages() {
         }
         let error = CogitateRequest::from_value(&value).expect_err(name);
         assert!(error.to_string().contains(expected), "{name}: {error}");
+    }
+}
+
+#[test]
+fn v2_schema_rejects_v1_and_defaults_read_scope_to_empty() {
+    let mut v1 = request_value();
+    v1["schema"] = json!("solstone-cogitate-request-v1");
+    let error = CogitateRequest::from_value(&v1).expect_err("v1 is rejected");
+    assert_eq!(
+        error.to_string(),
+        "malformed request: schema must be \"solstone-cogitate-request-v2\", got \"solstone-cogitate-request-v1\""
+    );
+
+    let mut missing_scope = request_value();
+    missing_scope
+        .as_object_mut()
+        .expect("request object")
+        .remove("read_scope");
+    assert!(
+        CogitateRequest::from_value(&missing_scope)
+            .expect("missing scope defaults")
+            .read_scope
+            .is_empty()
+    );
+}
+
+#[test]
+fn request_derives_terminal_tool_from_finalization_inputs() {
+    for (schedule, expected_tool, expected_argument) in [
+        ("daily", "emit_final", "content"),
+        ("segment", "finish", "message"),
+    ] {
+        let mut value = request_value();
+        value["schedule"] = json!(schedule);
+        let input = CogitateRequest::from_value(&value)
+            .expect("request is valid")
+            .to_run_input();
+        let mut slot = NoopSlotLease;
+        let executor = CogitateToolExecutor::new(
+            &input.journal_root,
+            input.config.read_call_budget,
+            &mut slot,
+        );
+        let terminal = executor
+            .offered_tools(&input.config)
+            .expect("offered tools")
+            .into_iter()
+            .find(|tool| tool.name == expected_tool)
+            .expect("expected terminal tool is offered");
+        assert!(input.config.expects_emit_final == (schedule == "daily"));
+        assert_eq!(terminal.parameters["required"], json!([expected_argument]));
     }
 }
 

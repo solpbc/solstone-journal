@@ -90,6 +90,7 @@ image.workspace = true
 nix = { workspace = true, features = ["signal"] }
 rusqlite.workspace = true
 sha2.workspace = true
+solstone-core-cogitate.workspace = true
 solstone-core-npy.workspace = true
 tempfile = "3.24.0"
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }
