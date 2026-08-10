@@ -21,7 +21,8 @@ use solstone_core_cli::{
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, ServiceOptions,
-    SpeakerResolveCommand, SplCommand, USAGE, evaluate_args, version_line,
+    SpeakerResolveCommand, SplCommand, TransferCommand, TransferExportOptions,
+    TransferImportOptions, USAGE, evaluate_args, version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -104,6 +105,7 @@ fn main() -> ExitCode {
         Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Body(command)) => run_body(command),
+        Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
@@ -112,6 +114,113 @@ fn main() -> ExitCode {
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn run_transfer(command: TransferCommand) -> ExitCode {
+    match command {
+        TransferCommand::Export(options) => run_transfer_export(options),
+        TransferCommand::Import(options) => run_transfer_import(options),
+    }
+}
+
+fn run_transfer_export(options: TransferExportOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match solstone_core_transfer::export(
+        &journal,
+        solstone_core_transfer::ExportRequest {
+            day: options.day,
+            output: PathBuf::from(options.output),
+        },
+    ) {
+        Ok(report) => {
+            println!(
+                "exported day={} segments={} files={} output={}",
+                report.day,
+                report.segments,
+                report.files,
+                report.output.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("transfer export failed: {error}");
+            ExitCode::from(match error {
+                solstone_core_transfer::TransferError::MissingDay(_)
+                | solstone_core_transfer::TransferError::NoSegments(_) => 2,
+                solstone_core_transfer::TransferError::InvalidDay
+                | solstone_core_transfer::TransferError::Manifest(_) => EXIT_DATAERR,
+                _ => EXIT_IOERR,
+            })
+        }
+    }
+}
+
+fn run_transfer_import(options: TransferImportOptions) -> ExitCode {
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    match solstone_core_transfer::import(
+        &journal,
+        solstone_core_transfer::ImportRequest {
+            archive: PathBuf::from(options.archive),
+            dry_run: options.dry_run,
+        },
+    ) {
+        Ok(report) => {
+            print_transfer_import_report(&report);
+            ExitCode::SUCCESS
+        }
+        Err(solstone_core_transfer::ImportError::Partial { report, reason }) => {
+            print_transfer_import_report(&report);
+            eprintln!("transfer import failed: {reason}");
+            ExitCode::from(EXIT_IOERR)
+        }
+        Err(solstone_core_transfer::ImportError::Fatal(error)) => {
+            eprintln!("transfer import failed: {error}");
+            ExitCode::from(match error {
+                solstone_core_transfer::TransferError::InvalidDay
+                | solstone_core_transfer::TransferError::Manifest(_)
+                | solstone_core_transfer::TransferError::ArchiveMember(_)
+                | solstone_core_transfer::TransferError::ContentMismatch(_) => EXIT_DATAERR,
+                _ => EXIT_IOERR,
+            })
+        }
+    }
+}
+
+fn print_transfer_import_report(report: &solstone_core_transfer::ImportReport) {
+    for outcome in &report.outcomes {
+        match outcome {
+            solstone_core_transfer::SegmentOutcome::Landed { source, target } => {
+                println!("{source}: landed={target}");
+            }
+            solstone_core_transfer::SegmentOutcome::LandedDeconflicted { source, target } => {
+                println!("{source}: landed-deconflicted={target}");
+            }
+            solstone_core_transfer::SegmentOutcome::SkippedAlreadySynced { source } => {
+                println!("{source}: skipped-already-synced");
+            }
+            solstone_core_transfer::SegmentOutcome::Failed { source, reason } => {
+                println!("{source}: failed={reason}");
+            }
+            solstone_core_transfer::SegmentOutcome::NotAttempted { source } => {
+                println!("{source}: not-attempted");
+            }
+        }
+    }
+    println!(
+        "landed={} skipped={} deconflicted={} failed={} not-attempted={} rescan={}",
+        report.landed(),
+        report.skipped(),
+        report.deconflicted(),
+        report.failed(),
+        report.not_attempted(),
+        report.rescan.as_str(),
+    );
 }
 
 fn run_convey(options: ConveyOptions) -> ExitCode {

@@ -16,6 +16,7 @@ members = [
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-archive",
     "crates/solstone-core-journal-io",
+    "crates/solstone-core-transfer",
     "crates/solstone-core-system-health",
     "crates/solstone-core-brain",
     "crates/solstone-core-brain-cli",
@@ -86,6 +87,7 @@ solstone-core-cli-boundary = { path = "crates/solstone-core-cli-boundary" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }
 solstone-core-journal-config-write = { path = "crates/solstone-core-journal-config-write" }
 solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
+solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
