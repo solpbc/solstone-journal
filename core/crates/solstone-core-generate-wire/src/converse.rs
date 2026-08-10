@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Shared vocabulary for provider-native tool conversations.
+
+use serde_json::Value;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConverseMessage {
+    User {
+        text: String,
+    },
+    Assistant {
+        text: String,
+        tool_calls: Vec<ConverseToolCall>,
+    },
+    ToolResult {
+        tool_call_id: String,
+        tool_name: String,
+        output: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConverseToolSpec {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConverseToolCall {
+    /// The provider identifier required when submitting the result of this call.
+    pub id: String,
+    pub name: String,
+    pub arguments: Value,
+    pub not_offered: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConverseTurn {
+    pub text: String,
+    pub tool_calls: Vec<ConverseToolCall>,
+    pub finish_reason: String,
+    pub usage: Value,
+    pub model: String,
+    pub thinking: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConverseFailure {
+    pub reason_code: String,
+    pub retryable: bool,
+    pub blocking: bool,
+}
+
+#[cfg(test)]
+pub(crate) fn canonical_json(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            let mut entries = object.iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key.clone(), canonical_json(value)))
+                    .collect(),
+            )
+        }
+        Value::Array(values) => Value::Array(values.iter().map(canonical_json).collect()),
+        value => value.clone(),
+    }
+}
