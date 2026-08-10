@@ -355,6 +355,8 @@ The primary owner-facing use of the model. `convey/chat.py` (2,532 lines) + `cha
 
 **Carry forward:** the channel is modelled as unbounded argv and used as a bounded vocabulary; every production argv has head `journal` or `sol`. The single open door is the schedule config, whose `cmd` array is executed verbatim. ⛔ A rewrite that types the channel keeps that door as one explicitly-named variant reachable only from that config — closing it stops work the owner has configured, and generalizing it puts every caller back on unbounded argv.
 
+✅ **CONVERTED 2026-08-10 — the channel is native**, in `solstone-core-system` (`request` · `partition` · `cap` · `queue`). The rewrite kept both halves of the carry-forward: the typed shape **and** the single named escape reachable only from the schedule config. ⚠ **The 14-vs-6 correction above is why it works** — a channel typed from the bus census alone would have carried the right seven verbs and the wrong argument grammar, silently dropping `--live`, `--stream`, `--expected-fingerprint`, and the `--segment`+`--flush` pair that only the in-process callers produce. 📌 **The reusable lesson for any strand of this shape: count the callers, not the emitters.** A bus census answers a question about the bus, not about the vocabulary.
+
 ### `S:journal:establish`
 **Owner** `P-device-link` · **Tier** fixture
 
@@ -400,7 +402,7 @@ Where retention is the provider it owns the contract — it is the one-to-many e
 
 | Strand | Owner | Note |
 |---|---|---|
-| `S:system:system-health` | `P-system-health` | Liveness and current status of running things. ⚠ The snapshot publishes `stale_heartbeats` and never populates it |
+| `S:system:system-health` | `P-system-health` | Liveness and current status of running things. ✅ **Native 2026-08-10.** `stale_heartbeats` is no longer an empty publication — it is derived from the sync check's non-live foreign writers and **fails closed** |
 | `S:system-health:journal-health` | `P-journal` | 🔴 The per-day health JSONL grammar is **18 record kinds**, of which the reader consumes 10. ⚠ Mostly Python string literals, but **three sets already have owners** and re-typing them forks them across languages; the **mode set has no owner anywhere**. ⛔ The writer belongs to `P-thinking` and the contract to `P-journal` — a schema binds three plates and is not `P-system-health`'s to change alone |
 | `S:web:journal` | `P-journal` | ⛔ 100% of `P-web` is `localhost:5015` or an authorized linked device |
 | `S:cli-journal:journal` | `P-journal` | Same-device only; `solstone-core-journal` holds the local capability and its Rust archive/facet/news authorities may modify the journal directly |
