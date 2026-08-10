@@ -2534,8 +2534,10 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
+ "solstone-core-npy",
  "tokio",
  "tower",
+ "zip",
 ]
 
 [[package]]
