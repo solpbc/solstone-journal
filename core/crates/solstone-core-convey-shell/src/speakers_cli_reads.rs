@@ -180,7 +180,7 @@ pub async fn suggest(
     suggestions.extend(import_linkable(&root.0));
     suggestions.extend(candidate_pair_suggestions(&root.0));
     suggestions.extend(low_confidence_suggestions(&root.0));
-    suggestions.sort_by(|left, right| suggestion_sort_key(left).cmp(&suggestion_sort_key(right)));
+    suggestions.sort_by_key(suggestion_sort_key);
     let items = suggestions.into_iter().take(limit).collect::<Vec<_>>();
     Json(json!({"status":"ok","items":items,"issues":[],"markdown":format_suggestions(&items)}))
         .into_response()
