@@ -198,6 +198,32 @@ def build_corpus() -> dict[str, Any]:
         "schema": "solstone-convey-speakers-corpus-v1",
         "generator": "scripts/convey_speakers_corpus.py",
         "seeder": "entity_corpus.seed_populated_speakers_journal",
+        # 🔴 Where the NATIVE surface deliberately differs from what the reference
+        # did. A checker reads this and honours it; anything NOT listed here is a
+        # defect. ⛔ Declaring a deviation only in prose means every independent
+        # check re-finds it, and eventually somebody "fixes" a deliberate choice
+        # back into the defect it replaced.
+        "native_deviations": [
+            {
+                "path": "/app/speakers/api/serve_audio/{day}/{rel}",
+                "when": "an EXISTING file whose extension is not in MIME_TYPES",
+                "reference": "500 -- the handler raises ValueError and Flask renders "
+                "its HTML error page",
+                "native": "a typed 4xx refusal",
+                "why": "a raise is not a refusal; the reference's own behaviour here "
+                "is an unhandled exception, not a contract worth reproducing",
+            },
+            {
+                "field": "intra_cosine_p25",
+                "when": "any route reporting voice-cohesion statistics",
+                "reference": "float64 accumulation via numpy",
+                "native": "equal to within 1e-6 absolute",
+                "why": "a percentile over f32 embeddings differs in the last bits by "
+                "accumulation order; the value drives a coarse quality label and no "
+                "reachable difference in it changes what an owner sees",
+                "tolerance": 1e-6,
+            },
+        ],
         "tz": "UTC",
         "placeholders": {"day": PLACEHOLDER_DAY, "journal_root": PLACEHOLDER_ROOT},
         "journal": {
