@@ -21,5 +21,8 @@ solstone-core-callosum = { workspace = true }
 solstone-core-journal-config = { workspace = true }
 solstone-core-journal-io = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.24.0"
+
 [lints]
 workspace = true
