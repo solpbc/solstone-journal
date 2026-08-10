@@ -42,6 +42,11 @@ impl TempJournal {
         .expect("thinking config");
     }
 
+    fn write_local_port(&self, port: u16) {
+        fs::create_dir_all(self.0.join("health")).expect("health directory");
+        fs::write(self.0.join("health/local.port"), port.to_string()).expect("local port");
+    }
+
     fn install_journal_stub(&self) -> PathBuf {
         let bin = self.0.join("test-bin");
         fs::create_dir_all(&bin).expect("journal stub directory");
@@ -257,6 +262,22 @@ async fn wait_for_logged_message(path: &Path, message: &Value) {
     })
     .await
     .expect("expected logged event");
+}
+
+async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
+    timeout(Duration::from_secs(8), async {
+        loop {
+            if let Ok(bytes) = fs::read(path)
+                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+                && value["phase"] == phase
+            {
+                return value;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("provider runtime phase")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -650,4 +671,96 @@ async fn segment_events_log_does_not_materialize_missing_segment() {
 
     assert!(!segment.exists());
     assert!(child.0.try_wait().expect("supervisor status").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cortex_unavailable_threshold_recycles_bundled_local_runtime() {
+    let journal = TempJournal::new();
+    // The supervisor's local fixture is the existing synthetic healthy-probe
+    // seam; this port is data for the recycle record, not a bound TCP listener.
+    journal.write_local_port(4312);
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (_reader, mut write) = connect(&socket).await;
+
+    for use_id in ["cortex-one", "cortex-two", "cortex-three"] {
+        send_message(
+            &mut write,
+            json!({"tract": "cortex", "event": "start", "use_id": use_id, "provider": "local"}),
+        )
+        .await;
+    }
+    for use_id in ["cortex-one", "cortex-two", "cortex-three"] {
+        send_message(
+            &mut write,
+            json!({"tract": "cortex", "event": "error", "use_id": use_id, "reason_code": "provider_unavailable"}),
+        )
+        .await;
+    }
+
+    let runtime = wait_for_runtime_phase(
+        &journal.0.join("health/providers/runtime/local.json"),
+        "retry-requested",
+    )
+    .await;
+    assert!(
+        runtime["generation"]
+            .as_u64()
+            .is_some_and(|generation| generation >= 1)
+    );
+    assert_eq!(runtime["reason_code"], "local-wedge-provider-unavailable");
+    assert_eq!(
+        runtime["detail"]["use_ids"],
+        json!(["cortex-one", "cortex-three", "cortex-two"])
+    );
+    assert_eq!(runtime["detail"]["port"], 4312);
+    assert_eq!(runtime["detail"]["health_state"], "ready");
+    assert!(runtime["detail"]["token_revision"].as_u64().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cortex_finish_resets_wedge_failures_before_the_threshold() {
+    let journal = TempJournal::new();
+    journal.write_local_port(4312);
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (_reader, mut write) = connect(&socket).await;
+
+    for use_id in ["cortex-one", "cortex-two", "cortex-three"] {
+        send_message(
+            &mut write,
+            json!({"tract": "cortex", "event": "start", "use_id": use_id, "provider": "local"}),
+        )
+        .await;
+    }
+    for use_id in ["cortex-one", "cortex-two"] {
+        send_message(
+            &mut write,
+            json!({"tract": "cortex", "event": "error", "use_id": use_id, "reason_code": "provider_unavailable"}),
+        )
+        .await;
+    }
+    send_message(
+        &mut write,
+        json!({"tract": "cortex", "event": "finish", "use_id": "cortex-one"}),
+    )
+    .await;
+    send_message(
+        &mut write,
+        json!({"tract": "cortex", "event": "error", "use_id": "cortex-three", "reason_code": "provider_unavailable"}),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let path = journal.0.join("health/providers/runtime/local.json");
+    let runtime = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    assert_ne!(
+        runtime.as_ref().map(|value| &value["phase"]),
+        Some(&json!("retry-requested")),
+        "finish must clear the first two failures before the third error"
+    );
 }

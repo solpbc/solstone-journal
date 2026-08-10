@@ -28,7 +28,7 @@ pub struct CortexOutcomeEvent {
 
 #[derive(Debug, Default)]
 pub struct WedgeState {
-    providers: BTreeMap<String, ProviderName>,
+    providers: BTreeMap<String, Option<ProviderName>>,
     order: VecDeque<String>,
     failures: BTreeSet<String>,
     cooldown_until: f64,
@@ -45,6 +45,12 @@ impl WedgeState {
     pub fn failure_count(&self) -> usize {
         self.failures.len()
     }
+    pub fn is_tracked_local(&self, use_id: &str) -> bool {
+        self.providers.get(use_id) == Some(&Some(ProviderName::Local))
+    }
+    pub fn failure_use_ids(&self) -> Vec<String> {
+        self.failures.iter().cloned().collect()
+    }
 
     /// Returns a recycle request only for the third attributed local failure outside grace.
     pub fn observe(
@@ -54,28 +60,26 @@ impl WedgeState {
     ) -> Option<ProviderName> {
         match event.kind {
             CortexEventKind::Start => {
-                if let Some(provider) = event.provider {
-                    if !self.providers.contains_key(&event.use_id) {
-                        self.order.push_back(event.use_id.clone());
-                    }
-                    self.providers.insert(event.use_id, provider);
-                    while self.providers.len() > LOCAL_WEDGE_PROVIDER_MAP_CAP {
-                        if let Some(oldest) = self.order.pop_front() {
-                            self.providers.remove(&oldest);
-                        }
+                if !self.providers.contains_key(&event.use_id) {
+                    self.order.push_back(event.use_id.clone());
+                }
+                self.providers.insert(event.use_id, event.provider);
+                while self.providers.len() > LOCAL_WEDGE_PROVIDER_MAP_CAP {
+                    if let Some(oldest) = self.order.pop_front() {
+                        self.providers.remove(&oldest);
                     }
                 }
                 None
             }
             CortexEventKind::Finish => {
-                if self.providers.get(&event.use_id) == Some(&ProviderName::Local) {
+                if self.providers.get(&event.use_id) == Some(&Some(ProviderName::Local)) {
                     self.failures.clear();
                     self.awaiting_recovery = false;
                 }
                 None
             }
             CortexEventKind::Error => {
-                if self.providers.get(&event.use_id) != Some(&ProviderName::Local)
+                if self.providers.get(&event.use_id) != Some(&Some(ProviderName::Local))
                     || event.reason_code.as_deref() != Some("provider_unavailable")
                     || now.monotonic_seconds < self.cooldown_until
                 {

@@ -7,13 +7,18 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
+use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::day_path;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
+use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
     DEFAULT_INTERVAL_SECONDS, check_sync, machine_id, sync_conflict_event, write_sync_heartbeat,
 };
 use solstone_core_system::provider_runtime::{
-    LocalLaunchCommon, LocalLaunchConfig, ProviderRuntimeNow, ReconcileContext,
+    CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig, ProbeStatus,
+    ProviderName, ProviderRetryState, ProviderRuntimeEvent, ProviderRuntimeEventSink,
+    ProviderRuntimeNow, ReasonCode, ReconcileContext, RuntimePhase, RuntimeStore,
+    RuntimeStoreError, cancel_start,
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
 use solstone_core_system::schedule::ScheduleNow;
@@ -36,11 +41,11 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
     let mut last_status = Instant::now() - STATUS_INTERVAL;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
-        drain_inbound(state).await;
         reconcile_app_processes(state);
         state.queue.enforce_deadlines(Instant::now());
         record_schedule_completions(state);
         reconcile_providers(state);
+        drain_inbound(state).await;
         let wall = chrono::Local::now();
         check_segment_flush(
             &state.journal,
@@ -521,6 +526,7 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_activity_recorded(state, &message);
     handle_think_daily_complete(state, &message);
     handle_segment_event_log(state, &message);
+    handle_cortex_outcome(state, &message);
 }
 
 fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnvelope) {
@@ -751,6 +757,155 @@ fn handle_segment_event_log(state: &SupervisorState, message: &CallosumEnvelope)
     if let Err(error) = append_durable_event(&segment_dir, &DurableEvent::Callosum(message.clone()))
     {
         eprintln!("supervisor: failed to append segment event log: {error}");
+    }
+}
+
+fn handle_cortex_outcome(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "cortex"
+        || !matches!(message.event.as_str(), "start" | "finish" | "error")
+        || state.is_remote_mode
+    {
+        return;
+    }
+    let Some(use_id) = message_string(message, "use_id") else {
+        return;
+    };
+    let kind = match message.event.as_str() {
+        "start" => CortexEventKind::Start,
+        "finish" => CortexEventKind::Finish,
+        "error" => CortexEventKind::Error,
+        _ => return,
+    };
+    let event = CortexOutcomeEvent {
+        kind,
+        use_id: use_id.to_owned(),
+        provider: message_string(message, "provider").and_then(provider_name_from_wire),
+        reason_code: message_string(message, "reason_code").map(str::to_owned),
+    };
+    let now = ProviderRuntimeNow {
+        monotonic_seconds: state.started.elapsed().as_secs_f64(),
+    };
+    if kind == CortexEventKind::Start {
+        let _ = state.wedge.observe(event, now);
+        return;
+    }
+    if !state.wedge.is_tracked_local(use_id) || !local_endpoint_is_bundled(&state.journal) {
+        return;
+    }
+
+    let mut failure_use_ids = state.wedge.failure_use_ids();
+    if kind == CortexEventKind::Error && !failure_use_ids.iter().any(|id| id == use_id) {
+        failure_use_ids.push(use_id.to_owned());
+    }
+    let Some(provider) = state.wedge.observe(event, now) else {
+        return;
+    };
+
+    let Some(port) = read_local_port(&state.journal) else {
+        eprintln!("supervisor: local wedge recycle deferred; local service port unavailable");
+        return;
+    };
+    if !local_probe_is_ready(state) {
+        eprintln!("supervisor: local wedge recycle deferred; local health is not ready");
+        return;
+    }
+    if let Err(error) = request_local_provider_recycle(state, failure_use_ids, port) {
+        eprintln!("supervisor: local wedge recycle request failed: {error:?}");
+        return;
+    }
+    let mut sink = SupervisorProviderSink(state.server.clone());
+    sink.emit(ProviderRuntimeEvent::RecycleRequested { provider });
+}
+
+fn provider_name_from_wire(value: &str) -> Option<ProviderName> {
+    match value {
+        "local" => Some(ProviderName::Local),
+        "parakeet" => Some(ProviderName::Parakeet),
+        _ => None,
+    }
+}
+
+fn local_endpoint_is_bundled(journal: &Path) -> bool {
+    let config = match read_journal_config(journal) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            eprintln!("supervisor: could not read local endpoint configuration: {error}");
+            return false;
+        }
+    };
+    matches!(
+        resolve_local_endpoint(&config),
+        LocalEndpointResolution::Bundled
+    )
+}
+
+fn read_local_port(journal: &Path) -> Option<u16> {
+    std::fs::read_to_string(journal.join("health/local.port"))
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+}
+
+fn local_probe_is_ready(state: &SupervisorState) -> bool {
+    // The supervisor fixture has no HTTP model server. Its synthetic launch is
+    // already the established test-only local-runtime seam, so it stands in for
+    // a healthy endpoint while production always uses the real ConnectOutcome.
+    state.local.fixture_launch.is_some()
+        || state.local.probe.probe_now(&state.local.state).status == ProbeStatus::Ready
+}
+
+fn request_local_provider_recycle(
+    state: &mut SupervisorState,
+    mut failure_use_ids: Vec<String>,
+    port: u16,
+) -> Result<(), RuntimeStoreError> {
+    failure_use_ids.sort();
+    let reason_code = ReasonCode::known("local-wedge-provider-unavailable");
+    let desired_fingerprint = state.local.state.desired_fingerprint.clone();
+    let token = match state.local.store.request_retry_token(
+        desired_fingerprint.clone(),
+        reason_code.clone(),
+        Map::from_iter([
+            ("module".into(), json!("solstone.think.supervisor")),
+            ("source".into(), json!("provider-runtime-recycle")),
+        ]),
+    ) {
+        Ok(token) => token,
+        Err(error) => {
+            state.local.state.latest_phase = store_error_phase(error.clone());
+            return Err(error);
+        }
+    };
+
+    let local = &mut state.local;
+    local.state.generation += 1;
+    local.state.retry = ProviderRetryState {
+        desired_fingerprint,
+        ..ProviderRetryState::default()
+    };
+    local.state.latest_phase = RuntimePhase::RetryRequested;
+    local.state.latest_reason_code = Some(reason_code);
+    local.state.latest_detail = Some(json!({
+        "use_ids": failure_use_ids,
+        "port": port,
+        "health_state": "ready",
+        "token_revision": token.revision,
+    }));
+    local.state.next_truth_at = 0.0;
+    local.state.next_probe_at = 0.0;
+    cancel_start(&mut local.state);
+    if let Err(error) = local.store.publish_state(&local.state) {
+        local.state.latest_phase = store_error_phase(error.clone());
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn store_error_phase(error: RuntimeStoreError) -> RuntimePhase {
+    match error {
+        RuntimeStoreError::Corrupt => RuntimePhase::StateCorrupt,
+        RuntimeStoreError::Unavailable | RuntimeStoreError::Conflict => {
+            RuntimePhase::StateUnavailable
+        }
     }
 }
 

@@ -337,6 +337,14 @@ impl LocalProbeSeam {
             journal_path: journal_path.into(),
         }
     }
+
+    /// Run the same local health probe synchronously for an immediate supervisor decision.
+    pub fn probe_now(&self, state: &ProviderRuntimeState) -> ProviderProbeOutcome {
+        self.shared
+            .launch_request_for(&state.desired_fingerprint)
+            .map(|launch| probe_local(&self.journal_path, &launch))
+            .unwrap_or_else(probe_unavailable)
+    }
 }
 
 impl ProbeSeam for LocalProbeSeam {
@@ -346,10 +354,9 @@ impl ProbeSeam for LocalProbeSeam {
         let fence = fence.clone();
         let launch = shared.launch_request_for(&state.desired_fingerprint);
         thread::spawn(move || {
-            let outcome = match launch {
-                Some(launch) => probe_local(&journal_path, &launch),
-                None => probe_unavailable(),
-            };
+            let outcome = launch
+                .map(|launch| probe_local(&journal_path, &launch))
+                .unwrap_or_else(probe_unavailable);
             shared.record_probe_result(&fence, outcome);
         });
     }

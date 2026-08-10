@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Child;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,7 @@ use super::seams::{RetryToken, RuntimeStore, RuntimeStoreError};
 
 const FILE_MODE: u32 = 0o600;
 const SCHEMA_VERSION: u64 = 1;
+static NEXT_RETRY_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 pub trait RuntimeClock: Send + Sync {
     fn now_utc_rfc3339(&self) -> String;
@@ -397,6 +399,38 @@ impl FileRuntimeStore {
         std::mem::take(&mut self.ready_side_effects)
     }
 
+    /// Durably request a fresh retry observation for this store's provider.
+    pub fn request_retry_token(
+        &mut self,
+        desired_fingerprint: Option<String>,
+        reason_code: ReasonCode,
+        owner: Map<String, Value>,
+    ) -> Result<RetryToken, RuntimeStoreError> {
+        let _lock = self.lock_operation()?;
+        let current = read_retry(&self.retry_path(), self.provider)?;
+        let revision = current.revision + 1;
+        let token_id = format!(
+            "{}-retry-{}",
+            self.provider.as_str(),
+            NEXT_RETRY_TOKEN.fetch_add(1, Ordering::Relaxed)
+        );
+        let record = RetryRecord {
+            revision,
+            token_id: Some(token_id.clone()),
+            desired_fingerprint: desired_fingerprint.clone(),
+            requested_at: Some(self.clock.now_utc_rfc3339()),
+            reason_code: Some(reason_code.clone()),
+            owner: Some(owner),
+        };
+        self.write_retry(&record)?;
+        Ok(RetryToken {
+            revision,
+            token_id,
+            desired_fingerprint,
+            reason_code,
+        })
+    }
+
     fn runtime_directory(&self) -> PathBuf {
         self.journal_path
             .join("health")
@@ -613,6 +647,7 @@ impl RuntimeStore for FileRuntimeStore {
                 },
             );
             return Ok(Some(RetryToken {
+                revision: record.revision,
                 token_id,
                 desired_fingerprint: record.desired_fingerprint,
                 reason_code,
@@ -1139,6 +1174,37 @@ mod tests {
             store.consume_retry_token(ProviderName::Local, &second.token_id),
             Err(RuntimeStoreError::Conflict)
         );
+    }
+
+    #[test]
+    fn request_retry_token_persists_owner_and_advances_revision() {
+        let journal = TempJournal::new();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let mut store = store(&journal, shared);
+        fs::create_dir_all(store.runtime_directory()).unwrap();
+
+        let first = store
+            .request_retry_token(
+                Some("fingerprint".to_owned()),
+                ReasonCode::known("local-wedge-provider-unavailable"),
+                Map::from_iter([("source".to_owned(), json!("provider-runtime-recycle"))]),
+            )
+            .unwrap();
+        let second = store
+            .request_retry_token(
+                Some("fingerprint".to_owned()),
+                ReasonCode::known("local-wedge-provider-unavailable"),
+                Map::from_iter([("source".to_owned(), json!("provider-runtime-recycle"))]),
+            )
+            .unwrap();
+
+        assert_eq!(first.revision, 1);
+        assert_eq!(second.revision, 2);
+        assert_ne!(first.token_id, second.token_id);
+        let record: Value = serde_json::from_slice(&fs::read(store.retry_path()).unwrap()).unwrap();
+        assert_eq!(record["revision"], 2);
+        assert_eq!(record["reason_code"], "local-wedge-provider-unavailable");
+        assert_eq!(record["owner"]["source"], "provider-runtime-recycle");
     }
 
     #[test]

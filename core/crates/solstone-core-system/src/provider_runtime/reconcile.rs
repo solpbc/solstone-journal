@@ -2758,6 +2758,7 @@ mod tests {
         store.retry_tokens.insert(
             ProviderName::Local,
             RetryToken {
+                revision: 1,
                 token_id: "retry".to_owned(),
                 desired_fingerprint: state.desired_fingerprint.clone(),
                 reason_code: ReasonCode::known("retry-token-requested"),
@@ -2825,6 +2826,7 @@ mod tests {
         state.retry.attempt_count = 3;
         state.retry.next_at = 99.0;
         let mut store = RetryStore::with_token(RetryToken {
+            revision: 1,
             token_id: "retry".to_owned(),
             desired_fingerprint: state.desired_fingerprint.clone(),
             reason_code: ReasonCode::known("retry-token-requested"),
@@ -2844,6 +2846,7 @@ mod tests {
         state.latest_phase = RuntimePhase::Backoff;
         state.retry.attempt_count = 3;
         let mut store = RetryStore::with_token(RetryToken {
+            revision: 1,
             token_id: "retry".to_owned(),
             desired_fingerprint: state.desired_fingerprint.clone(),
             reason_code: ReasonCode::known("retry-token-requested"),
@@ -2862,6 +2865,7 @@ mod tests {
         let mut state = state_for(ProviderName::Local);
         state.latest_phase = RuntimePhase::Backoff;
         let mut store = RetryStore::with_token(RetryToken {
+            revision: 1,
             token_id: "retry".to_owned(),
             desired_fingerprint: state.desired_fingerprint.clone(),
             reason_code: ReasonCode::known("retry-token-requested"),

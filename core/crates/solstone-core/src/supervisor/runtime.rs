@@ -19,7 +19,7 @@ use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
     LocalTruthSeam, NoopWorkers, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
     ParakeetProbeSeam, ParakeetRuntimeShared, ProviderName, ProviderRuntimeCoordinator,
-    ProviderRuntimeState, SystemRuntimeClock,
+    ProviderRuntimeState, SystemRuntimeClock, WedgeState,
 };
 use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
 use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow};
@@ -58,6 +58,7 @@ pub(crate) struct SupervisorState {
     pub parakeet: ParakeetProvider,
     pub flush: FlushState,
     pub daily: DailyState,
+    pub wedge: WedgeState,
 }
 
 #[derive(Default)]
@@ -683,6 +684,7 @@ pub(crate) async fn boot_and_tick(
         daily: DailyState {
             last_day: Some(chrono::Local::now().date_naive()),
         },
+        wedge: WedgeState::default(),
     };
     let sync_conflict = tick::run(&mut state).await;
     Ok(SupervisorOutcome {

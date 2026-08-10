@@ -11,6 +11,7 @@ use super::model::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryToken {
+    pub revision: u64,
     pub token_id: String,
     pub desired_fingerprint: Option<String>,
     pub reason_code: ReasonCode,
