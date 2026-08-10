@@ -371,6 +371,10 @@ fn source_site(path: &str, source: &str, byte_offset: usize) -> String {
     format!("{path}:{line}")
 }
 
+/// Literal text-pattern scan, not a Rust parser: it recognizes only
+/// `emit(&..., "tract", "event", ...)` calls. Non-reference first arguments and
+/// comment/string matches are not handled correctly. When adding a supervisor emit site,
+/// ensure `declared_registry_covers_producible_pairs` passes; extend the regex for new shapes.
 fn rust_supervisor_pairs(repository_root: &std::path::Path) -> Vec<ProducedPair> {
     let emit_pattern = Regex::new(r#"(?s)\bemit\s*\(\s*&[^,]+,\s*"([^"]+)",\s*"([^"]+)",\s*"#)
         .expect("valid native supervisor emit regex");
