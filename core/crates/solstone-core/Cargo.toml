@@ -36,6 +36,11 @@ name = "body_restore_client"
 path = "tests/body_restore_client.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "grab_differential"
+path = "tests/grab_differential.rs"
+required-features = ["differential"]
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
@@ -76,6 +81,7 @@ tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-th
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
+image.workspace = true
 nix = { workspace = true, features = ["signal"] }
 rusqlite.workspace = true
 sha2.workspace = true

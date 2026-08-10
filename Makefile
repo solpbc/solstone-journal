@@ -301,7 +301,7 @@ check-differentials:
 	cargo clippy --manifest-path $(RUST_MANIFEST) --features differential --locked --no-deps \
 		-p solstone-core --test native_sol_coverage -- -D warnings || status=$$?; \
 	for leg in \
-		"-p solstone-core --test native_sol_coverage --test journal_config_client --test journal_config_corruption --test body_restore_client" \
+		"-p solstone-core --test native_sol_coverage --test journal_config_client --test journal_config_corruption --test body_restore_client --test grab_differential" \
 		"-p solstone-core-journal-bin --test journal_process_bootstrap" \
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \

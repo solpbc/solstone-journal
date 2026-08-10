@@ -2350,6 +2350,7 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "futures-util",
+ "image",
  "nix",
  "rusqlite",
  "serde",
