@@ -645,7 +645,7 @@ fn provenance_key(day: &str, segment_key: &str, source: &str, sentence_id: i64) 
     format!("{day}|{segment_key}|{source}|{sentence_id}")
 }
 
-fn dot(left: &[f32], right: &[f32]) -> f32 {
+pub(crate) fn dot(left: &[f32], right: &[f32]) -> f32 {
     left.iter()
         .zip(right)
         .map(|(left, right)| left * right)
