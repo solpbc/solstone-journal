@@ -2906,8 +2906,12 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-facets",
+ "solstone-core-indexer-store",
+ "solstone-core-ingest-resolve",
  "solstone-core-journal-io",
+ "solstone-core-segment",
 ]
 
 [[package]]

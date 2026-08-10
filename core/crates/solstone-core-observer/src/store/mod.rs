@@ -4,6 +4,7 @@
 pub mod format;
 pub mod history;
 pub mod paths;
+pub mod prune;
 pub mod reconcile;
 pub mod record;
 pub mod reload;

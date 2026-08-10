@@ -9,6 +9,7 @@ use solstone_core_facets::append_journal_action_log;
 
 use crate::command::ObserverCommand;
 use crate::store::format::{fmt_bytes, render_list, render_status_all, render_status_single};
+use crate::store::prune::{DaySelector, format_result, resolve_prune_days, run_prune};
 use crate::store::reconcile::{ReconcilePlan, reconcile_plan};
 use crate::store::record::ObserverRecord;
 use crate::store::reload::{find_observer, load_observers};
@@ -60,6 +61,54 @@ pub fn system_now_ms() -> i64 {
         .as_millis() as i64
 }
 
+/// `prune`'s exit-code contract (0 clean, 1 usage/unexpected error, 2
+/// refusals present) does not fit `execute`'s binary success/failure
+/// `Result`, so it is dispatched separately -- the same reason `Create`
+/// short-circuits before `execute` is ever called.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PruneOutcome {
+    /// A usage error (bad day/day-range). Print to stderr, exit 1.
+    Usage(String),
+    /// A completed plan or execution. Print to stdout, exit `exit_code`.
+    Report { text: String, exit_code: i32 },
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_prune(
+    journal_root: &Path,
+    day: Option<String>,
+    day_range: Option<(String, String)>,
+    all: bool,
+    stream: Option<String>,
+    execute: bool,
+    cross_start: bool,
+    now_ms: i64,
+) -> PruneOutcome {
+    if cross_start {
+        // TODO: --cross-start is not yet ported (server-authored
+        // segment_original provenance resolution). Refuse loudly rather than
+        // silently running same-start-only and under-reporting duplicates.
+        return PruneOutcome::Usage("--cross-start is not yet implemented".to_owned());
+    }
+    let selector = if let Some(day) = day {
+        DaySelector::Day(day)
+    } else if let Some(range) = day_range {
+        DaySelector::DayRange(range.0, range.1)
+    } else {
+        debug_assert!(all, "parser guarantees exactly one selector");
+        DaySelector::All
+    };
+    let days = match resolve_prune_days(journal_root, &selector) {
+        Ok(days) => days,
+        Err(message) => return PruneOutcome::Usage(message),
+    };
+    let result = run_prune(journal_root, &days, stream.as_deref(), execute, now_ms);
+    PruneOutcome::Report {
+        text: format_result(&result),
+        exit_code: result.exit_code(),
+    }
+}
+
 pub fn execute(
     journal_root: &Path,
     command: ObserverCommand,
@@ -67,6 +116,9 @@ pub fn execute(
 ) -> Result<String, ObserverError> {
     match command {
         ObserverCommand::Create => unreachable!("create is dispatched before journal resolution"),
+        ObserverCommand::Prune { .. } => {
+            unreachable!("prune is dispatched via execute_prune, not execute")
+        }
         ObserverCommand::List { json } => Ok(render_list(&load(journal_root)?, json, now_ms)),
         ObserverCommand::Status {
             identifier: None,
