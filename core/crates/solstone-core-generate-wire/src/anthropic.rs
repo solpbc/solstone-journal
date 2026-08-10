@@ -133,9 +133,10 @@ fn anthropic_converse_with<T: AnthropicTransport>(
         return converse_failure("provider_key_missing");
     };
     let model = configured_model(config);
+    let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
     let body = converse_request_body(request, messages, tools, &model);
     let response = match transport.post_json(
-        ANTHROPIC_BASE_URL,
+        &base_url,
         ANTHROPIC_MESSAGES_PATH,
         &body,
         &api_key,
@@ -163,9 +164,10 @@ fn anthropic_generate_with<T: AnthropicTransport>(
         return failure("provider_key_missing");
     };
     let model = configured_model(config);
+    let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
     let body = request_body(request, &model);
     let response = match transport.post_json(
-        ANTHROPIC_BASE_URL,
+        &base_url,
         ANTHROPIC_MESSAGES_PATH,
         &body,
         &api_key,

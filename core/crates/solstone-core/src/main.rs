@@ -59,7 +59,6 @@ const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
 /// `EX_PROTOCOL`: the caller broke a brain-session framing contract.
 const EXIT_PROTOCOL: u8 = 76;
-const EXIT_PROVIDER_CONFIGURATION: u8 = 78;
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024;
 const MAX_LOCAL_STDIN_BYTES: usize = 1024 * 1024;
 const SESSION_INPUT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -1432,21 +1431,64 @@ fn run_cogitate_one_shot() -> ExitCode {
             }
         };
     }
-    let mut provider =
-        match solstone_core_cogitate_wire::EndpointConverseProvider::from_request(&request) {
-            Ok(provider) => provider,
-            Err(error) => {
-                eprintln!("{error}");
-                return ExitCode::from(EXIT_PROVIDER_CONFIGURATION);
-            }
-        };
+    let config = match read_journal_config(&request.journal_root) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(error) => {
+            eprintln!("could not read journal config: {error}");
+            return ExitCode::from(EXIT_INTERNAL_FAILURE);
+        }
+    };
+    let (_, lane) = solstone_core_generate_wire::resolve_lane(&config);
+    let mut sink = StdoutEventSink;
+    let mut provider = match lane {
+        lane @ (solstone_core_generate_wire::LaneOutcome::ByoEndpoint(_)
+        | solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(_)
+        | solstone_core_generate_wire::LaneOutcome::Anthropic
+        | solstone_core_generate_wire::LaneOutcome::OpenAi
+        | solstone_core_generate_wire::LaneOutcome::Google) => {
+            solstone_core_cogitate_wire::DispatchConverseProvider::from_lane(
+                &request,
+                config,
+                lane,
+                solstone_core_cogitate_wire::EndpointOverrides::from_process(),
+            )
+            .expect("executable cogitate lane constructs a provider")
+        }
+        solstone_core_generate_wire::LaneOutcome::NoEngine => {
+            emit_cogitate_preflight_error(
+                &mut sink,
+                &request,
+                "no_engine_configured",
+                "no provider is configured for this journal",
+            );
+            return ExitCode::SUCCESS;
+        }
+        solstone_core_generate_wire::LaneOutcome::BundledLocal => {
+            emit_cogitate_preflight_error(
+                &mut sink,
+                &request,
+                "bundled_local_unavailable",
+                "the bundled local engine has no cogitate converse arm",
+            );
+            return ExitCode::SUCCESS;
+        }
+        solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
+            emit_cogitate_preflight_error(
+                &mut sink,
+                &request,
+                "unimplemented_lane",
+                "the configured provider is not implemented for cogitate",
+            );
+            return ExitCode::SUCCESS;
+        }
+        _ => unreachable!("resolve_lane never returns a failure outcome"),
+    };
     let mut slot = solstone_core_cogitate_tools::NoopSlotLease;
     let mut tools = solstone_core_cogitate_runtime::CogitateToolExecutor::new(
         &request.journal_root,
         request.read_call_budget,
         &mut slot,
     );
-    let mut sink = StdoutEventSink;
     match solstone_core_cogitate_wire::run_or_dry_run(
         &request,
         &mut provider,
@@ -1463,6 +1505,29 @@ fn run_cogitate_one_shot() -> ExitCode {
             ExitCode::from(EXIT_INTERNAL_FAILURE)
         }
     }
+}
+
+fn emit_cogitate_preflight_error(
+    sink: &mut StdoutEventSink,
+    request: &solstone_core_cogitate_wire::CogitateRequest,
+    reason_code: &str,
+    error_text: &str,
+) {
+    solstone_core_cogitate_runtime::EventSink::emit(
+        sink,
+        solstone_core_cogitate_runtime::RuntimeEvent::Terminal {
+            outcome: solstone_core_cogitate_runtime::RunOutcome {
+                reason_code: Some(reason_code.to_owned()),
+                error_text: Some(error_text.to_owned()),
+                result: None,
+                usage: solstone_core_cogitate_runtime::Usage::default(),
+                raw_payload: None,
+                terminal: true,
+                correlation_id: request.correlation_id.clone(),
+                provider_failure: None,
+            },
+        },
+    );
 }
 
 struct StdoutEventSink;

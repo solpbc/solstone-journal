@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 const BOUND: Duration = Duration::from_secs(3);
 const ENDPOINT_ENV: &str = "SOLSTONE_COGITATE_ENDPOINT_URL_OVERRIDE";
 const API_KEY_ENV: &str = "SOLSTONE_COGITATE_API_KEY_OVERRIDE";
+const BASE_URL_ENV: &str = "SOLSTONE_GENERATE_BASE_URL_OVERRIDE";
 
 struct TempJournal(PathBuf);
 
@@ -30,6 +31,23 @@ impl TempJournal {
         ));
         fs::create_dir_all(&path).expect("create journal root");
         Self(path)
+    }
+
+    fn with_byo_endpoint(label: &str) -> Self {
+        let journal = Self::new(label);
+        fs::create_dir_all(journal.0.join("config")).expect("create config directory");
+        fs::write(
+            journal.0.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"local"},"local":{"endpoint_url":"http://configured","served_model_id":"configured"}}}"#,
+        )
+        .expect("write local endpoint config");
+        journal
+    }
+
+    fn write_config(&self, config: Value) {
+        fs::create_dir_all(self.0.join("config")).expect("create config directory");
+        fs::write(self.0.join("config/journal.json"), config.to_string())
+            .expect("write journal config");
     }
 }
 
@@ -51,7 +69,7 @@ impl Stub {
         let handle = thread::spawn(move || {
             for (body, delay) in responses {
                 let (mut stream, _) = listener.accept().expect("stub accept");
-                read_request(&mut stream);
+                let _ = read_request(&mut stream);
                 thread::sleep(delay);
                 let body = body.to_string();
                 let response = format!(
@@ -69,7 +87,7 @@ impl Stub {
     }
 }
 
-fn read_request(stream: &mut TcpStream) {
+fn read_request(stream: &mut TcpStream) -> String {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 1024];
     let header_end = loop {
@@ -95,6 +113,7 @@ fn read_request(stream: &mut TcpStream) {
         assert!(read > 0, "request closed before body");
         bytes.extend_from_slice(&buffer[..read]);
     }
+    String::from_utf8(bytes).expect("request is UTF-8")
 }
 
 fn request(journal: &TempJournal, dry_run: bool) -> Value {
@@ -151,12 +170,68 @@ fn read_file_response() -> Value {
     })
 }
 
+fn google_final_response() -> Value {
+    json!({
+        "modelVersion": "google-stub-model",
+        "candidates": [{
+            "content": {"parts": [{"functionCall": {
+                "id": "final-1",
+                "name": "emit_final",
+                "args": {"content": "done"}
+            }}]},
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {
+            "promptTokenCount": 2,
+            "candidatesTokenCount": 3,
+            "totalTokenCount": 5
+        }
+    })
+}
+
+fn anthropic_final_response() -> Value {
+    json!({
+        "model": "anthropic-stub-model",
+        "stop_reason": "tool_use",
+        "usage": {"input_tokens": 2, "output_tokens": 3},
+        "content": [{
+            "type": "tool_use",
+            "id": "final-1",
+            "name": "emit_final",
+            "input": {"content": "done"}
+        }]
+    })
+}
+
+fn openai_final_response() -> Value {
+    json!({
+        "model": "openai-stub-model",
+        "status": "completed",
+        "usage": {"input_tokens": 2, "output_tokens": 3},
+        "output": [{
+            "type": "function_call",
+            "call_id": "final-1",
+            "name": "emit_final",
+            "arguments": "{\"content\":\"done\"}"
+        }]
+    })
+}
+
 fn spawn_one_shot(input: &str, endpoint: Option<&str>) -> Child {
+    spawn_one_shot_with_base_url(input, endpoint, None)
+}
+
+fn spawn_one_shot_with_base_url(
+    input: &str,
+    endpoint: Option<&str>,
+    base_url: Option<&str>,
+) -> Child {
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["cogitate", "--one-shot"])
         .env_remove(ENDPOINT_ENV)
         .env_remove(API_KEY_ENV)
+        .env_remove(BASE_URL_ENV)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -164,6 +239,9 @@ fn spawn_one_shot(input: &str, endpoint: Option<&str>) -> Child {
         command
             .env(ENDPOINT_ENV, endpoint)
             .env(API_KEY_ENV, "test-cogitate-credential");
+    }
+    if let Some(base_url) = base_url {
+        command.env(BASE_URL_ENV, base_url);
     }
     let mut child = command.spawn().expect("spawn cogitate core");
     child
@@ -173,6 +251,46 @@ fn spawn_one_shot(input: &str, endpoint: Option<&str>) -> Child {
         .write_all(input.as_bytes())
         .expect("write cogitate request");
     child
+}
+
+struct CapturingStub {
+    url: String,
+    request: mpsc::Receiver<String>,
+    handle: thread::JoinHandle<()>,
+}
+
+impl CapturingStub {
+    fn start(body: Value) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("stub bind");
+        let url = format!("http://{}", listener.local_addr().expect("stub address"));
+        let (sender, request) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("stub accept");
+            sender
+                .send(read_request(&mut stream))
+                .expect("send request");
+            let body = body.to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).expect("stub write");
+        });
+        Self {
+            url,
+            request,
+            handle,
+        }
+    }
+
+    fn join(self) -> String {
+        let request = self
+            .request
+            .recv_timeout(BOUND)
+            .expect("stub receives request");
+        self.handle.join().expect("stub joins");
+        request
+    }
 }
 
 fn parsed_lines(stdout: &[u8]) -> Vec<Value> {
@@ -192,7 +310,7 @@ fn contract_exit_code(name: &str) -> i32 {
 
 #[test]
 fn one_shot_streams_valid_terminal_ndjson() {
-    let journal = TempJournal::new("one-shot");
+    let journal = TempJournal::with_byo_endpoint("one-shot");
     let stub = Stub::start(vec![(final_response(), Duration::ZERO)]);
     let child = spawn_one_shot(&request(&journal, false).to_string(), Some(&stub.url));
     let output = child.wait_with_output().expect("wait cogitate core");
@@ -214,7 +332,7 @@ fn one_shot_streams_valid_terminal_ndjson() {
 
 #[test]
 fn one_shot_streams_before_process_exit() {
-    let journal = TempJournal::new("streaming");
+    let journal = TempJournal::with_byo_endpoint("streaming");
     let stub = Stub::start(vec![
         (read_file_response(), Duration::ZERO),
         (final_response(), Duration::from_millis(300)),
@@ -251,6 +369,118 @@ fn one_shot_streams_before_process_exit() {
 }
 
 #[test]
+fn two_turn_run_accumulates_nondefault_terminal_usage() {
+    let journal = TempJournal::with_byo_endpoint("two-turn-usage");
+    let stub = Stub::start(vec![
+        (read_file_response(), Duration::ZERO),
+        (final_response(), Duration::ZERO),
+    ]);
+    let child = spawn_one_shot(&request(&journal, false).to_string(), Some(&stub.url));
+    let output = child.wait_with_output().expect("wait cogitate core");
+    stub.join();
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+    let lines = parsed_lines(&output.stdout);
+    let usage = &lines.last().expect("terminal event")["usage"];
+    assert_eq!(usage["requests"], 2);
+    assert_eq!(usage["input_tokens"], 4);
+    assert_eq!(usage["output_tokens"], 6);
+    assert_ne!(
+        usage,
+        &json!({
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "cache_creation_tokens": 0,
+            "reasoning_tokens": 0,
+            "requests": 0,
+        })
+    );
+}
+
+/// Before R6a-1 this exits 78 with no stdout: one-shot cogitate constructs
+/// only the endpoint-override provider and never reaches Google's dialect.
+#[test]
+fn one_shot_google_config_dispatches_to_google_dialect() {
+    let journal = TempJournal::new("google-dispatch");
+    journal.write_config(json!({
+        "providers": {"active": {"provider": "google", "model": "configured-model"}},
+        "env": {"GOOGLE_API_KEY": "configured-google-key"}
+    }));
+    let stub = CapturingStub::start(google_final_response());
+    let child =
+        spawn_one_shot_with_base_url(&request(&journal, false).to_string(), None, Some(&stub.url));
+    let output = child.wait_with_output().expect("wait cogitate core");
+    let request = stub.join();
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+    assert!(request.starts_with("POST /v1beta/models/fixture-model:generateContent "));
+    assert!(
+        request
+            .lines()
+            .any(|line| { line.eq_ignore_ascii_case("x-goog-api-key: configured-google-key") })
+    );
+    let lines = parsed_lines(&output.stdout);
+    assert_eq!(lines.last().expect("terminal event")["event"], "finish");
+    assert_eq!(
+        lines.last().expect("terminal event")["usage"]["requests"],
+        1
+    );
+}
+
+#[test]
+fn one_shot_anthropic_config_dispatches_to_anthropic_dialect() {
+    let journal = TempJournal::new("anthropic-dispatch");
+    journal.write_config(json!({
+        "providers": {"active": {"provider": "anthropic"}},
+        "env": {"ANTHROPIC_API_KEY": "configured-anthropic-key"}
+    }));
+    let stub = CapturingStub::start(anthropic_final_response());
+    let child =
+        spawn_one_shot_with_base_url(&request(&journal, false).to_string(), None, Some(&stub.url));
+    let output = child.wait_with_output().expect("wait cogitate core");
+    let request = stub.join();
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+    assert!(request.starts_with("POST /v1/messages "));
+    assert!(
+        request
+            .lines()
+            .any(|line| { line.eq_ignore_ascii_case("x-api-key: configured-anthropic-key") })
+    );
+    let lines = parsed_lines(&output.stdout);
+    assert_eq!(lines.last().expect("terminal event")["event"], "finish");
+    assert_eq!(
+        lines.last().expect("terminal event")["usage"]["requests"],
+        1
+    );
+}
+
+#[test]
+fn one_shot_openai_config_dispatches_to_openai_dialect() {
+    let journal = TempJournal::new("openai-dispatch");
+    journal.write_config(json!({
+        "providers": {"active": {"provider": "openai"}},
+        "env": {"OPENAI_API_KEY": "configured-openai-key"}
+    }));
+    let stub = CapturingStub::start(openai_final_response());
+    let child =
+        spawn_one_shot_with_base_url(&request(&journal, false).to_string(), None, Some(&stub.url));
+    let output = child.wait_with_output().expect("wait cogitate core");
+    let request = stub.join();
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+    assert!(request.starts_with("POST /v1/responses "));
+    assert!(
+        request.lines().any(|line| {
+            line.eq_ignore_ascii_case("authorization: bearer configured-openai-key")
+        })
+    );
+    let lines = parsed_lines(&output.stdout);
+    assert_eq!(lines.last().expect("terminal event")["event"], "finish");
+    assert_eq!(
+        lines.last().expect("terminal event")["usage"]["requests"],
+        1
+    );
+}
+
+#[test]
 fn dry_run_needs_no_endpoint_configuration() {
     let journal = TempJournal::new("dry-run");
     let child = spawn_one_shot(&request(&journal, true).to_string(), None);
@@ -278,22 +508,62 @@ fn malformed_one_shot_stays_off_stdout() {
     assert!(!output.stderr.is_empty());
 }
 
+/// Before R6a-1 this exits 78 with no stdout because one-shot cogitate always
+/// constructs the endpoint-override provider before consulting journal config.
 #[test]
-fn missing_endpoint_configuration_uses_contract_exit_code() {
+fn no_engine_streams_a_terminal_error_instead_of_exiting_silently() {
     let journal = TempJournal::new("missing-endpoint");
     let child = spawn_one_shot(&request(&journal, false).to_string(), None);
     let output = child.wait_with_output().expect("wait missing endpoint");
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+    let lines = parsed_lines(&output.stdout);
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["event"], "error");
+    assert_eq!(lines[0]["reason_code"], "no_engine_configured");
+    assert_eq!(lines[0]["terminal"], true);
+    assert_eq!(lines[0]["usage"]["requests"], 0);
+}
+
+fn assert_preflight_error(journal: &TempJournal, expected_reason_code: &str) {
+    let child = spawn_one_shot(&request(journal, false).to_string(), None);
+    let output = child.wait_with_output().expect("wait preflight failure");
+    assert_eq!(output.status.code(), Some(contract_exit_code("success")));
+    let lines = parsed_lines(&output.stdout);
+    assert_eq!(lines.len(), 1);
+    let event = &lines[0];
+    assert_eq!(event["event"], "error");
+    assert_eq!(event["terminal"], true);
+    assert_eq!(event["reason_code"], expected_reason_code);
     assert_eq!(
-        output.status.code(),
-        Some(contract_exit_code("provider_configuration_error"))
+        event["usage"],
+        json!({
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_tokens": 0,
+            "cache_creation_tokens": 0,
+            "reasoning_tokens": 0,
+            "requests": 0,
+        })
     );
-    assert!(output.stdout.is_empty());
-    assert!(!output.stderr.is_empty());
+}
+
+#[test]
+fn bundled_local_without_a_cogitate_arm_streams_a_named_error() {
+    let journal = TempJournal::new("bundled-local");
+    journal.write_config(json!({"providers": {"active": {"provider": "local"}}}));
+    assert_preflight_error(&journal, "bundled_local_unavailable");
+}
+
+#[test]
+fn unknown_provider_streams_a_named_error() {
+    let journal = TempJournal::new("unknown-provider");
+    journal.write_config(json!({"providers": {"active": {"provider": "unknown"}}}));
+    assert_preflight_error(&journal, "unimplemented_lane");
 }
 
 #[test]
 fn dead_stdout_pipe_uses_contract_exit_code() {
-    let journal = TempJournal::new("dead-stdout");
+    let journal = TempJournal::with_byo_endpoint("dead-stdout");
     let stub = Stub::start(vec![(read_file_response(), Duration::ZERO)]);
     let mut child = spawn_one_shot(&request(&journal, false).to_string(), Some(&stub.url));
     let mut stdout = BufReader::new(child.stdout.take().expect("cogitate stdout"));

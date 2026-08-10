@@ -6,6 +6,7 @@
 use serde_json::{Map, Value};
 
 pub const API_KEY_OVERRIDE_ENV: &str = "SOLSTONE_GENERATE_API_KEY_OVERRIDE";
+pub const BASE_URL_OVERRIDE_ENV: &str = "SOLSTONE_GENERATE_BASE_URL_OVERRIDE";
 pub const MODEL_OVERRIDE_ENV: &str = "SOLSTONE_GENERATE_MODEL_OVERRIDE";
 pub const PROVIDER_OVERRIDE_ENV: &str = "SOLSTONE_GENERATE_PROVIDER_OVERRIDE";
 
@@ -20,6 +21,10 @@ pub fn configured_model(config: &Map<String, Value>, default: &str) -> String {
     non_blank_process_env(MODEL_OVERRIDE_ENV)
         .or_else(|| config_string(config, &["providers", "active", "model"]))
         .unwrap_or_else(|| default.to_owned())
+}
+
+pub fn configured_base_url(_config: &Map<String, Value>, default: &str) -> String {
+    non_blank_process_env(BASE_URL_OVERRIDE_ENV).unwrap_or_else(|| default.to_owned())
 }
 
 pub fn configured_provider(config: &Map<String, Value>) -> String {

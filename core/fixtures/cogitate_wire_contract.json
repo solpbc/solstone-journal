@@ -75,7 +75,7 @@
     "finish": {
       "role": "native_producer",
       "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "terminal": "boolean" },
-      "optional_fields": { "result": "string", "raw": "json" },
+      "optional_fields": { "result": "string", "raw": "json", "usage": "object" },
       "ts_required": true,
       "terminal_applies": true
     },
@@ -83,7 +83,7 @@
       "role": "native_producer",
       "also_consumer_synthesized_in_python": true,
       "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "terminal": "boolean", "error": "string" },
-      "optional_fields": { "reason_code": "string", "provider_failure": "object", "result": "string", "raw": "json" },
+      "optional_fields": { "reason_code": "string", "provider_failure": "object", "result": "string", "raw": "json", "usage": "object" },
       "ts_required": true,
       "terminal_applies": true
     },

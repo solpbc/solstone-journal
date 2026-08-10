@@ -3,14 +3,15 @@
 
 //! Request and NDJSON event wire types for the native cogitate subcommand.
 
+mod dispatch;
 mod endpoint;
 mod event;
 mod request;
 mod validation;
 
+pub use dispatch::DispatchConverseProvider;
 pub use endpoint::{
-    COGITATE_API_KEY_OVERRIDE_ENV, COGITATE_ENDPOINT_URL_OVERRIDE_ENV, EndpointConfigurationError,
-    EndpointConverseProvider, EndpointOverrides,
+    COGITATE_API_KEY_OVERRIDE_ENV, COGITATE_ENDPOINT_URL_OVERRIDE_ENV, EndpointOverrides,
 };
 pub use event::{
     NativeRun, native_producible_kinds, run_or_dry_run, serialize_dry_run, serialize_event,

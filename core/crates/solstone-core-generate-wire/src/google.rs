@@ -130,10 +130,11 @@ fn google_converse_with<T: GoogleTransport>(
         return converse_failure("provider_key_missing");
     };
     let model = configured_model(config);
+    let base_url = crate::overrides::configured_base_url(config, GOOGLE_BASE_URL);
     let path = format!("/v1beta/models/{model}:generateContent");
     let body = converse_request_body(request, messages, tools);
     let response = match transport.post_json(
-        GOOGLE_BASE_URL,
+        &base_url,
         &path,
         &body,
         &api_key,
@@ -160,10 +161,11 @@ fn google_generate_with<T: GoogleTransport>(
         return failure("provider_key_missing");
     };
     let model = configured_model(config);
+    let base_url = crate::overrides::configured_base_url(config, GOOGLE_BASE_URL);
     let path = format!("/v1beta/models/{model}:generateContent");
     let body = request_body(request, &model);
     let response = match transport.post_json(
-        GOOGLE_BASE_URL,
+        &base_url,
         &path,
         &body,
         &api_key,

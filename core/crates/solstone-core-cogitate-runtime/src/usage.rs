@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Provider-neutral token accounting, named to match Python's usage snapshot.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -15,6 +15,18 @@ pub struct Usage {
 }
 
 impl Usage {
+    /// Return the stable terminal-wire representation of this run's usage.
+    pub fn to_wire_value(&self) -> Value {
+        json!({
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cached_tokens": self.cached_tokens,
+            "cache_creation_tokens": self.cache_creation_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "requests": self.requests,
+        })
+    }
+
     pub fn total_tokens(&self) -> u64 {
         self.input_tokens.saturating_add(self.output_tokens)
     }
