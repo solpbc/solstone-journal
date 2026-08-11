@@ -497,7 +497,9 @@ Apps can include their own tests that are discovered and run separately from cor
 - Create `tests/` directory with `conftest.py` and `test_*.py` files
 - **Do not add `__init__.py` to the `tests/` dir.** The repo uses pytest `--import-mode=importlib`; a `tests/__init__.py` without a matching app-level `__init__.py` makes every such dir resolve to the bare module `tests.conftest` and collide (`Plugin already registered`) when the whole suite is collected together. Leave test dirs as plain (non-package) directories.
 - App fixtures should be self-contained (only use pytest builtins like `tmp_path`, `monkeypatch`)
-- Tests run as part of `make test` (collected with `tests/` in one parallel run) or focus one app with `make test-app APP=my_app`
+- During the Rust-conversion freeze, run app tests directly with
+  `pytest solstone/apps/my_app/tests/`; `make test` is Rust-only and
+  `make test-app` is frozen
 - Keep them fast unit/component tests — no real browser or live network
 
 **Directory structure:**

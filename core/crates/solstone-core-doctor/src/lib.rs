@@ -974,7 +974,7 @@ exit 97
             "solstone-1.2.3.dist-info",
             "solstone",
             "1.2.3",
-            Some(">=3.11"),
+            Some(">=3.12"),
         );
         checks::test_support::metadata(
             &site_packages,

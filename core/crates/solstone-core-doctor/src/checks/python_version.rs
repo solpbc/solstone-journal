@@ -12,8 +12,8 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const DEFAULT_REQUIRES_PYTHON: &str = ">=3.11";
-const PYTHON_VERSION_FIX: &str = "install Python >=3.11, then retry";
+const DEFAULT_REQUIRES_PYTHON: &str = ">=3.12";
+const PYTHON_VERSION_FIX: &str = "install Python >=3.12, then retry";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let Some(site_packages) = installed_site_packages_from_executable_dir(&context.install_bin_dir)
@@ -222,7 +222,7 @@ mod tests {
 
         let incompatible = context();
         let incompatible_site = site_packages(&incompatible, "python3.10");
-        solstone_metadata(&incompatible_site, ">=3.11");
+        solstone_metadata(&incompatible_site, ">=3.12");
         fs::write(
             incompatible
                 .install_bin_dir
@@ -238,5 +238,26 @@ mod tests {
         let result = run(&unresolved, check).unwrap();
         assert_eq!(result.status, Status::Skip);
         assert!(result.detail.contains("could not resolve site-packages"));
+    }
+
+    #[test]
+    fn missing_metadata_uses_python_312_fallback_and_fix() {
+        let staged = context();
+        site_packages(&staged, "python3.11");
+        fs::write(
+            staged
+                .install_bin_dir
+                .parent()
+                .expect("staged prefix")
+                .join("pyvenv.cfg"),
+            "version = 3.11.9\n",
+        )
+        .expect("write pyvenv config");
+
+        let result = run(&staged, check("python_version", Severity::Blocker)).unwrap();
+
+        assert_eq!(result.status, Status::Fail);
+        assert_eq!(result.detail, "python 3.11.9 does not satisfy >=3.12");
+        assert_eq!(result.fix.as_deref(), Some(PYTHON_VERSION_FIX));
     }
 }

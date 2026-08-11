@@ -6,7 +6,7 @@ a memory your agents can work from. sol — the app on your devices — experien
 
 this repo is the journal: the memory that holds everything, plus the thin `sol` access client. it's the python core of the solstone platform — the [sol apps](https://solstone.app) on your devices pair with a journal running on a computer you choose. AI agents transcribe, extract entities, detect meetings, build knowledge graphs, and surface daily insights — all without any manual input. everything stays in daily journal directories on your machine. open source, local-first, no cloud required.
 
-Python 3.11+, Linux + macOS, AGPL-3.0-only, maintained by [sol pbc](https://solpbc.org).
+Python 3.12+, Linux + macOS, AGPL-3.0-only, maintained by [sol pbc](https://solpbc.org).
 
 <img src="docs/static/screenshot-home.png" alt="solstone daily dashboard" width="800">
 

@@ -26,8 +26,8 @@ from typing import Callable, Literal, Sequence, TypeVar
 ROOT = Path(__file__).resolve().parents[2]
 MIN_UV = (0, 7, 12)
 MIN_FREE_GIB = 10.0
-DEFAULT_REQUIRES_PYTHON = ">=3.11"
-PYTHON_VERSION_FIX = "install Python >=3.11, then retry"
+DEFAULT_REQUIRES_PYTHON = ">=3.12"
+PYTHON_VERSION_FIX = "install Python >=3.12, then retry"
 LOCAL_BIN_SOL_FIX = (
     "Install via `uv tool install solstone` or `pipx install solstone` for the "
     "canonical layout, or run `ln -s $(command -v sol) ~/.local/bin/sol` to keep "
@@ -484,7 +484,7 @@ def python_version_check(args: object) -> CheckResult:
             check,
             "fail",
             f"python {version_text(current)} does not satisfy {spec}",
-            "install Python >=3.11, then `rm -rf .venv .installed && make install`",
+            "install Python >=3.12, then `rm -rf .venv .installed && make install`",
         )
     return make_result(
         check,

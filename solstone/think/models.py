@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Model constants
 #
 # IMPORTANT: When updating these models, verify pricing support:
-#   1. Run: make test-only TEST=tests/test_models.py::test_all_default_models_have_pricing
+#   1. Run: pytest tests/test_models.py::test_all_default_models_have_pricing
 #   2. If test fails, update genai-prices: make update-prices
 #   3. If still failing, the model may be too new for genai-prices
 #
