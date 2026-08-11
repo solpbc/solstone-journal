@@ -3857,7 +3857,7 @@ fn parse_runtime_failure_request(
     };
     let bundled_runtime_fingerprint_sha256 = match request.get("bundled_runtime_fingerprint_sha256")
     {
-        None => None,
+        None | Some(Value::Null) => None,
         Some(Value::String(value)) if !value.is_empty() => Some(value.clone()),
         Some(_) => return Err(JsonStdinError::Content),
     };

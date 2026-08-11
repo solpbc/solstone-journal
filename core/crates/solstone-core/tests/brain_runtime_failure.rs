@@ -47,7 +47,10 @@ fn run(root: &Path, stdin: &[u8]) -> Output {
     child.wait_with_output().expect("wait for solstone-core")
 }
 
-fn configured_journal(name: &str) -> (PathBuf, String) {
+fn configured_journal(
+    name: &str,
+    bundled_runtime_fingerprint_sha256: Option<Value>,
+) -> (PathBuf, String) {
     let root = temp_path(name);
     fs::create_dir(&root).expect("create root");
     let config = json!({
@@ -64,7 +67,7 @@ fn configured_journal(name: &str) -> (PathBuf, String) {
     let fingerprint = solstone_core_brain::build_active_brain_fingerprint(
         config.as_object().expect("config object"),
         &key,
-        None,
+        bundled_runtime_fingerprint_sha256,
     )
     .expect("fingerprint build")
     .expect("active fingerprint");
@@ -73,7 +76,7 @@ fn configured_journal(name: &str) -> (PathBuf, String) {
 
 #[test]
 fn runtime_failure_stdout_answers_for_accepted_and_rejected_requests() {
-    let (root, fingerprint) = configured_journal("answer");
+    let (root, fingerprint) = configured_journal("answer", None);
     let accepted_request = json!({
         "reason_code": "provider_unavailable",
         "component": "generate",
@@ -102,6 +105,65 @@ fn runtime_failure_stdout_answers_for_accepted_and_rejected_requests() {
     assert!(rejected["record"].is_null());
     assert_eq!(rejected["rejected_reason"], "fingerprint_mismatch");
     assert!(rejected["error"].is_null());
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn runtime_failure_accepts_null_or_omitted_bundled_fingerprint() {
+    for (name, bundled_runtime_fingerprint_sha256) in [
+        ("bundled-omitted", None),
+        ("bundled-null", Some(Value::Null)),
+    ] {
+        let (root, fingerprint) = configured_journal(name, None);
+        let mut request = json!({
+            "reason_code": "provider_unavailable",
+            "component": "generate",
+            "expected_fingerprint_sha256": fingerprint,
+        });
+        if let Some(bundled_runtime_fingerprint_sha256) = bundled_runtime_fingerprint_sha256 {
+            request["bundled_runtime_fingerprint_sha256"] = bundled_runtime_fingerprint_sha256;
+        }
+        let output = run(&root, &serde_json::to_vec(&request).unwrap());
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stderr, b"");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stdout).expect("JSON result")["accepted"],
+            true
+        );
+        fs::remove_dir_all(root).expect("cleanup root");
+    }
+
+    let bundled_runtime_fingerprint_sha256 = "b".repeat(64);
+    let (root, fingerprint) = configured_journal(
+        "bundled-string",
+        Some(Value::String(bundled_runtime_fingerprint_sha256.clone())),
+    );
+    let string_request = json!({
+        "reason_code": "provider_unavailable",
+        "component": "generate",
+        "expected_fingerprint_sha256": fingerprint,
+        "bundled_runtime_fingerprint_sha256": bundled_runtime_fingerprint_sha256,
+    });
+    let string_output = run(&root, &serde_json::to_vec(&string_request).unwrap());
+    assert_eq!(string_output.status.code(), Some(0));
+    assert_eq!(string_output.stderr, b"");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&string_output.stdout).expect("JSON result")["accepted"],
+        true
+    );
+    fs::remove_dir_all(root).expect("cleanup root");
+
+    let root = temp_path("bundled-wrong-type");
+    fs::create_dir(&root).expect("create root");
+    let wrong_type_request = json!({
+        "reason_code": "provider_unavailable",
+        "component": "generate",
+        "expected_fingerprint_sha256": "a".repeat(64),
+        "bundled_runtime_fingerprint_sha256": 7,
+    });
+    let wrong_type_output = run(&root, &serde_json::to_vec(&wrong_type_request).unwrap());
+    assert_eq!(wrong_type_output.status.code(), Some(64));
+    assert_eq!(wrong_type_output.stdout, b"");
     fs::remove_dir_all(root).expect("cleanup root");
 }
 
