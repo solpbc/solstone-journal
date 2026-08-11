@@ -7,10 +7,27 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use serde_json::Value;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::UnixStream;
+use tokio::sync::oneshot;
+use tokio::time::timeout;
+
 const SERVICES: [&str; 4] = ["convey", "sense", "cortex", "spl"];
+// Convey's initial Spawned arrives about 1ms after the Callosum socket becomes
+// connectable; four of five late-connect runs instead latched its ~6s restart.
+// FixtureConveyReadinessProbe::is_ready delegates to ready_sleep_marker_path,
+// so the default fixture marker already proves Convey precedes the remaining
+// apps, and that fact remains covered by the marker assertion.
+const REMAINING_APP_START_REFS: [&str; 3] = [
+    "supervisor-app-sense",
+    "supervisor-app-cortex",
+    "supervisor-app-spl",
+];
 
 struct TempJournal(PathBuf);
 
@@ -111,6 +128,63 @@ fn wait_for_markers(journal: &TempJournal, services: &[&str]) -> BTreeMap<String
     panic!("fixture markers did not appear: {observed:?}");
 }
 
+fn launch_order_violation(refs: &[String]) -> Option<String> {
+    let mut next_expected = 0;
+    for reference in refs {
+        let Some(position) = REMAINING_APP_START_REFS
+            .iter()
+            .position(|expected| *expected == reference)
+        else {
+            return Some(format!("unknown app start ref {reference:?}"));
+        };
+        if position < next_expected {
+            return Some(format!("{reference:?} arrived after a later app start ref"));
+        }
+        next_expected = position + 1;
+    }
+    None
+}
+
+async fn collect_remaining_app_start_refs(
+    socket: PathBuf,
+    capture_entered: oneshot::Sender<()>,
+    captured: Arc<Mutex<Vec<String>>>,
+) {
+    let _ = capture_entered.send(());
+    let stream = loop {
+        match UnixStream::connect(&socket).await {
+            Ok(stream) => break stream,
+            Err(_) => continue,
+        }
+    };
+    let (read, _write) = stream.into_split();
+    let mut reader = BufReader::new(read);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes = reader.read_line(&mut line).await.expect("event line");
+        assert!(bytes > 0, "Callosum disconnected before app starts");
+        let value: Value = serde_json::from_str(&line).expect("event JSON");
+        let Some(reference) = value["ref"].as_str() else {
+            continue;
+        };
+        if value["tract"] != "supervisor"
+            || value["event"] != "started"
+            || !REMAINING_APP_START_REFS.contains(&reference)
+        {
+            continue;
+        }
+        let mut observed = captured.lock().expect("captured app starts");
+        observed.push(reference.to_owned());
+        if REMAINING_APP_START_REFS
+            .iter()
+            .all(|expected| observed.iter().any(|reference| reference == expected))
+        {
+            return;
+        }
+    }
+}
+
 fn assert_marker_absent(journal: &TempJournal, service: &str) {
     for _ in 0..100 {
         assert!(
@@ -163,13 +237,58 @@ fn fixture_process_running(parent_pid: u32, argument: &str) -> bool {
 }
 
 #[test]
-fn app_stack_markers_appear_in_launch_order() {
+fn app_stack_writes_all_fixture_markers() {
     let journal = TempJournal::new();
     let _child = start(&journal, &[], None);
-    let observed = wait_for_markers(&journal, &SERVICES);
-    assert!(observed["convey"] < observed["sense"]);
-    assert!(observed["sense"] < observed["cortex"]);
-    assert!(observed["cortex"] < observed["spl"]);
+    wait_for_markers(&journal, &SERVICES);
+}
+
+#[test]
+fn launch_order_violation_accepts_order_and_rejects_inversion() {
+    let launch_order = REMAINING_APP_START_REFS
+        .iter()
+        .map(|reference| (*reference).to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(launch_order_violation(&launch_order), None);
+
+    let inversion = [
+        "supervisor-app-sense".to_owned(),
+        "supervisor-app-spl".to_owned(),
+        "supervisor-app-cortex".to_owned(),
+    ];
+    assert!(launch_order_violation(&inversion).is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn never_ready_convey_starts_remaining_app_events_in_launch_order() {
+    let journal = TempJournal::new();
+    let socket = journal.0.join("health/callosum.sock");
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let (capture_entered, capture_started) = oneshot::channel();
+    let mut collector = tokio::spawn(collect_remaining_app_start_refs(
+        socket,
+        capture_entered,
+        Arc::clone(&captured),
+    ));
+    capture_started
+        .await
+        .expect("collector entered connect loop");
+    let _child = start(&journal, &[], Some("sleep".to_owned()));
+    match timeout(Duration::from_secs(5), &mut collector).await {
+        Ok(result) => result.expect("app start collector"),
+        Err(_) => {
+            collector.abort();
+            panic!(
+                "timed out collecting remaining app starts: {:?}",
+                captured.lock().expect("captured app starts")
+            );
+        }
+    }
+    let captured = captured.lock().expect("captured app starts").clone();
+    assert!(
+        launch_order_violation(&captured).is_none(),
+        "remaining app starts arrived out of order: {captured:?}"
+    );
 }
 
 #[test]
