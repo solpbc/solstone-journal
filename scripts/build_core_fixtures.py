@@ -127,6 +127,7 @@ from tests.speaker_oracle.overlap import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import check_corpus  # noqa: E402  — sibling module, not a package
 import content_family_corpus  # noqa: E402  — sibling module, not a package
 import entity_corpus  # noqa: E402  — sibling module, not a package
 import install_status_corpus  # noqa: E402  — sibling module, not a package
@@ -141,6 +142,7 @@ GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
 _IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 _SESSION_LINE_LIMIT = 64 * 1024 * 1024
 INSTALL_STATUS_ARTIFACT_PATH = FIXTURE_DIR / "install_status.json"
+CHECK_CORPUS_ARTIFACT_PATH = FIXTURE_DIR / "check_corpus.json"
 EDGE_SCHEMA_ARTIFACT_PATH = FIXTURE_DIR / "edge_schema.json"
 MARKDOWN_CHUNKS_ARTIFACT_PATH = FIXTURE_DIR / "markdown_chunks.json"
 SPEAKER_FILTERBANK_ARTIFACT_PATH = FIXTURE_DIR / "speaker_filterbank.json"
@@ -1573,6 +1575,9 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
         ),
         INSTALL_STATUS_ARTIFACT_PATH: ArtifactDescriptor(
             install_status_corpus.build_install_status_fixture,
+        ),
+        CHECK_CORPUS_ARTIFACT_PATH: ArtifactDescriptor(
+            check_corpus.build_check_fixture,
         ),
         EDGE_SCHEMA_ARTIFACT_PATH: ArtifactDescriptor(
             build_edge_schema_fixture,
