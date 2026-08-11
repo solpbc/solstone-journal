@@ -13,12 +13,15 @@ publish = false
 workspace = true
 
 [dependencies]
+chrono.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+sha2.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
 
 [dev-dependencies]
+solstone-core-facets.workspace = true
 tempfile = "3.24.0"

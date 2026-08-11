@@ -201,7 +201,14 @@
     "nonexistent_path": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "note": "all three return the digest of the EMPTY STRING, so a vanished source dedupes against a prior empty import. Erroring is defensible; pin whichever you choose.",
     "non_utf8_filename": {
-      "result": "bccb37d7755496894d7af7466343e5b50ff3fa94e69df31f18c37adf6fb1fce4"
+      "raises": "UnicodeEncodeError: 'utf-8' codec can't encode character '\\udce9' in position 3: surrogates not allowed",
+      "correction": "\u26d4 AN EARLIER CAPTURE RECORDED A DIGEST HERE AND IT WAS WRONG. It used the valid UTF-8 STRING 'caf\u00e9.md', not a raw non-UTF-8 byte sequence, so it never exercised this case.",
+      "mechanism": "path components come back surrogate-escaped from the filesystem, but the digest's final encode is a PLAIN STRICT utf-8 encode \u2014 so a genuinely non-UTF-8 name RAISES rather than producing a digest.",
+      "implication": "there is no surrogate-escape encoding for a native walker to match. The port must decide what it does with a non-UTF-8 name; matching the reference means refusing.",
+      "valid_utf8_accented_name_for_contrast": {
+        "name": "caf\u00e9.md",
+        "digest": "bccb37d7755496894d7af7466343e5b50ff3fa94e69df31f18c37adf6fb1fce4"
+      }
     }
   }
 }

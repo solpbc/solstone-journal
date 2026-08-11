@@ -2861,9 +2861,12 @@ dependencies = [
 name = "solstone-core-import"
 version = "1.0.22"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-callosum",
+ "solstone-core-facets",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-segment",

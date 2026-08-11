@@ -298,7 +298,12 @@ pub fn iter_segments(journal: &Path, day: PathOrDay<'_>) -> Result<Vec<Segment>,
     Ok(segments)
 }
 
-fn realpath_non_strict(path: &Path) -> Result<PathBuf, PathError> {
+/// Resolve a path through its longest existing prefix without creating it.
+///
+/// Existing components are canonicalized, including symlinks. Nonexistent
+/// trailing components are retained lexically, so callers can safely compare
+/// prospective paths against resolved roots.
+pub fn realpath_non_strict(path: &Path) -> Result<PathBuf, PathError> {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
