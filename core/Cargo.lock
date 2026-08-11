@@ -2596,21 +2596,33 @@ dependencies = [
  "axum",
  "chrono",
  "futures-core",
+ "log",
  "ndarray",
  "nix",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
+ "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-journal-io",
  "solstone-core-npy",
+ "solstone-core-sol-link",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
+ "spl-core",
+ "spl-home",
+ "spl-transport",
+ "time",
  "tokio",
+ "tokio-rustls",
  "tower",
+ "x509-parser",
  "zip",
 ]
 
@@ -3354,6 +3366,18 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "spl-home"
+version = "0.1.0"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.5.0#d64f8a1e2d5b5489183b1d95e178d840ad27cac1"
+dependencies = [
+ "rustls",
+ "spl-core",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

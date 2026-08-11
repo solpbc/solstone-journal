@@ -28,7 +28,9 @@ pub fn tcp_builder() -> http1::Builder {
 /// Construct the HTTP/1 settings for a multiplexed stream connection.
 pub fn mux_builder() -> http1::Builder {
     let mut builder = common_builder();
-    builder.keep_alive(false);
+    // SPL CLOSE is a request half-close, not TCP connection destruction. Hyper
+    // must continue writing the response after the peer has finished uploading.
+    builder.keep_alive(false).half_close(true);
     builder
 }
 

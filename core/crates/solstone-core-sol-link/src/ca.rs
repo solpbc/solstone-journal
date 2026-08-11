@@ -12,6 +12,7 @@ use rcgen::{
     PKCS_ECDSA_P256_SHA256, SerialNumber,
 };
 use ring::rand::{SecureRandom, SystemRandom};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use sha2::Sha256;
 use time::{Duration, OffsetDateTime};
 use x509_parser::oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY};
@@ -52,6 +53,22 @@ pub struct IssuedClientCertificate {
     certificate: Certificate,
     pem: String,
     did: String,
+}
+
+/// A freshly minted server certificate signed by the committed local CA.
+pub struct IssuedServerCertificate {
+    certificate_der: CertificateDer<'static>,
+    private_key: PrivateKeyDer<'static>,
+}
+
+impl IssuedServerCertificate {
+    pub fn certificate_der(&self) -> CertificateDer<'static> {
+        self.certificate_der.clone()
+    }
+
+    pub fn private_key(&self) -> PrivateKeyDer<'static> {
+        self.private_key.clone_key()
+    }
 }
 
 impl IssuedClientCertificate {
@@ -164,6 +181,31 @@ pub fn sign_csr(
         certificate,
         pem,
         did,
+    })
+}
+
+/// Mint a short-lived TLS server leaf from the committed local CA.
+pub fn issue_server_certificate(
+    ca: &LocalCa,
+    home_label: &str,
+) -> Result<IssuedServerCertificate, CaError> {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
+    let now = OffsetDateTime::now_utc();
+    let mut params = CertificateParams::default();
+    params.distinguished_name = common_name(&format!("solstone link ({home_label})"));
+    // No SAN: spl-transport's pinned verifier validates the CA fingerprint,
+    // not a DNS name. `mtls_config` also performs no certificate-validity check.
+    params.subject_alt_names.clear();
+    params.is_ca = IsCa::ExplicitNoCa;
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    params.not_before = now - VALIDITY_BACKDATE;
+    // A new leaf is generated at each door start; it has a 30-day residual lifetime.
+    params.not_after = now + Duration::days(30);
+    params.serial_number = Some(random_serial_number()?);
+    let certificate = params.signed_by(&key, &ca.certificate, &ca.key)?;
+    Ok(IssuedServerCertificate {
+        certificate_der: CertificateDer::from(certificate.der().to_vec()),
+        private_key: PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
     })
 }
 

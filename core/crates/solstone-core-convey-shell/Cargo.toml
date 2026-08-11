@@ -10,15 +10,31 @@ build = "build.rs"
 [lints]
 workspace = true
 
+[features]
+default = ["host"]
+host = [
+    "dep:solstone-core-callosum",
+    "dep:solstone-core-sol-link",
+    "solstone-core-sol-link/host",
+    "dep:rustls",
+    "dep:socket2",
+    "dep:spl-core",
+    "dep:spl-home",
+]
+
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 futures-core = "0.3.33"
+log.workspace = true
 ndarray = "=0.17.2"
 nix = { workspace = true, features = ["signal"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+socket2 = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+solstone-core-callosum = { workspace = true, optional = true }
 solstone-core-convey-http.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
@@ -27,7 +43,10 @@ solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
-tokio = { workspace = true, features = ["net", "rt-multi-thread"] }
+spl-home = { workspace = true, optional = true }
+spl-core = { workspace = true, optional = true }
+solstone-core-sol-link = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
 tower.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
@@ -35,5 +54,11 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+rcgen.workspace = true
+rustls.workspace = true
 sha2.workspace = true
+spl-transport.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+time = "0.3.54"
+x509-parser = "0.16.0"

@@ -117,11 +117,12 @@
 //!    exercises `serve::serve_connection` plus `identity::AccessBasis`; request
 //!    headers, path, query, and body must not alter the injected basis.
 //! 4. `listener.rs::tests::listeners_bind_only_exact_loopback_addresses`
-//!    exercises `listener::bind_loopback` and proves the TCP listeners cannot
-//!    expose the journal host on wildcard addresses.
+//!    exercises `listener::bind_loopback`; the paired-device wildcard door is
+//!    owned separately by `solstone-core-convey-shell::door` via
+//!    `convey_shell::serve`.
 //! 5. `serve.rs::tests::configured_body_header_and_buffer_bounds_are_enforced`
 //!    exercises `serve::tcp_builder`, `serve::mux_builder`, and the
-//!    `RequestBodyLimitLayer` path for 10 MiB bodies, 32 headers, and the
+//!    `RequestBodyLimitLayer` path for 128 MiB bodies, 32 headers, and the
 //!    64 KiB HTTP/1 buffer bound.
 //! 6. `identity.rs::tests::access_basis_has_exactly_two_variants` uses
 //!    exhaustive matches over `AccessBasis` and `Carrier`, so adding an

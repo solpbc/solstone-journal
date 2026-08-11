@@ -42,9 +42,38 @@
 //! Speakers is the only converted workspace in this wave. Every other known
 //! app receives a 200 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
+//!
+//! ## D7: host transport has one indispensable listener and one capability
+//!
+//! `serve` returns an error only when loopback cannot bind: local Convey is the
+//! process's reason to exist. The paired-device door is independently useful
+//! but optional, so it is always recorded as a [`DoorOutcome`] in the handle.
+//! This crate is already excluded from `check-rust-ios` (Makefile:327 and
+//! docs/PORTING.md:45,56); the `host` feature is defence in depth, not that
+//! exclusion's replacement.
+//!
+//! ## D8: paired-device admission is connection-scoped and durable
+//!
+//! Each carrier receives a fresh verifier and identity cell, leaving room for
+//! W1b's second refusal-classification field. The door uses explicit mux limits
+//! (documented beside their configuration): they constrain one carrier only,
+//! never the uncapped population of carriers. Handshake admission fails closed;
+//! after admission, only a definite `Present` removal closes a carrier, so a
+//! transient unreadable ledger cannot discard otherwise unrecoverable material.
+//! Server leaves are fresh with a 30-day residual lifetime; the pinned mTLS
+//! client validates the CA fingerprint but not certificate validity.
 
-use std::path::{Path as FsPath, PathBuf};
+#[cfg(feature = "host")]
+use std::path::Path as FsPath;
+use std::path::PathBuf;
 use std::sync::Arc;
+
+#[cfg(feature = "host")]
+use std::io;
+#[cfg(feature = "host")]
+use std::net::SocketAddr;
+#[cfg(feature = "host")]
+use std::time::Duration;
 
 use axum::Extension;
 use axum::body::Body;
@@ -55,6 +84,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 mod assets;
+#[cfg(feature = "host")]
+mod door;
 pub mod refusal;
 pub mod registry;
 pub mod session;
@@ -87,7 +118,156 @@ use registry::{ShellPayload, known_app, shell_payload};
 /// Journal filesystem root shared with converted app route handlers.
 pub(crate) struct JournalRoot(pub PathBuf);
 
-/// Run the loopback Convey server until its process is terminated; port zero is unsupported.
+/// Reason the paired-device door was not made available at startup.
+#[cfg(feature = "host")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DoorWithheldReason {
+    Unestablished,
+    Corrupt,
+    CommittedIdentityUnavailable,
+}
+
+/// Observable paired-device door startup outcome.
+#[cfg(feature = "host")]
+#[derive(Debug)]
+pub enum DoorOutcome {
+    Bound(SocketAddr),
+    BindFailed { port: u16, source: io::Error },
+    Withheld(DoorWithheldReason),
+}
+
+/// Inputs to the host listener lifecycle. The router is deliberately prebuilt.
+#[cfg(feature = "host")]
+pub struct ConveyServeOptions {
+    pub journal_root: PathBuf,
+    pub loopback_port: u16,
+    pub door_port: u16,
+    pub handshake_timeout: Duration,
+    pub stream_stall_timeout: Duration,
+    pub router: Router,
+}
+
+/// Live host listener set. Call [`Self::shutdown`] in test and embedded lifecycles.
+#[cfg(feature = "host")]
+pub struct ConveyServeHandle {
+    loopback_ipv4: SocketAddr,
+    loopback_ipv6: SocketAddr,
+    door_outcome: DoorOutcome,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+#[cfg(feature = "host")]
+impl ConveyServeHandle {
+    pub fn loopback_ipv4_addr(&self) -> SocketAddr {
+        self.loopback_ipv4
+    }
+    pub fn loopback_ipv6_addr(&self) -> SocketAddr {
+        self.loopback_ipv6
+    }
+    pub fn door_outcome(&self) -> &DoorOutcome {
+        &self.door_outcome
+    }
+    pub fn shutdown(&self) {
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+    pub async fn await_forever(self) -> ! {
+        std::future::pending().await
+    }
+}
+
+/// Failure to establish the indispensable loopback listener.
+#[cfg(feature = "host")]
+#[derive(Debug)]
+pub enum ConveyServeError {
+    LoopbackBind { port: u16, source: io::Error },
+}
+
+#[cfg(feature = "host")]
+impl std::fmt::Display for ConveyServeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LoopbackBind { port, source } => write!(
+                formatter,
+                "convey may already be running; could not bind loopback port {port}: {source}"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "host")]
+impl std::error::Error for ConveyServeError {}
+
+/// Bind loopback and, when available, the paired-device door.
+#[cfg(feature = "host")]
+pub async fn serve(options: ConveyServeOptions) -> Result<ConveyServeHandle, ConveyServeError> {
+    use solstone_core_convey_http::listener::bind_loopback;
+
+    let listeners = bind_loopback(options.loopback_port)
+        .await
+        .map_err(|source| ConveyServeError::LoopbackBind {
+            port: options.loopback_port,
+            source,
+        })?;
+    let loopback_ipv4 = listeners
+        .ipv4_addr()
+        .map_err(|source| ConveyServeError::LoopbackBind {
+            port: options.loopback_port,
+            source,
+        })?;
+    let loopback_ipv6 = listeners
+        .ipv6_addr()
+        .map_err(|source| ConveyServeError::LoopbackBind {
+            port: options.loopback_port,
+            source,
+        })?;
+    let loopback_router = options.router.clone();
+    let loopback_task =
+        tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
+    let door_start = door::start(door::DoorStartOptions {
+        journal_root: options.journal_root,
+        port: options.door_port,
+        handshake_timeout: options.handshake_timeout,
+        stream_stall_timeout: options.stream_stall_timeout,
+        router: options.router,
+    })
+    .await;
+    let mut tasks = vec![loopback_task];
+    tasks.extend(door_start.tasks);
+    Ok(ConveyServeHandle {
+        loopback_ipv4,
+        loopback_ipv6,
+        door_outcome: door_start.outcome,
+        tasks,
+    })
+}
+
+#[cfg(feature = "host")]
+async fn serve_loopback(
+    listeners: solstone_core_convey_http::listener::LoopbackListeners,
+    router: Router,
+) {
+    use solstone_core_convey_http::identity::AccessBasis;
+    use solstone_core_convey_http::serve::{serve_connection, tcp_builder};
+    loop {
+        let Ok((stream, _)) = listeners.accept().await else {
+            continue;
+        };
+        let router = router.clone();
+        tokio::spawn(async move {
+            let builder = tcp_builder();
+            if let Err(error) =
+                serve_connection(stream, router, AccessBasis::Localhost, &builder).await
+            {
+                log::debug!("convey loopback connection failed: {error}");
+            }
+        });
+    }
+}
+
+/// Run the production Convey server until its process is terminated; port zero is unsupported.
+#[cfg(feature = "host")]
 pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
     if port == 0 {
         return Err("convey --port 0 is not supported; choose a concrete loopback port".to_owned());
@@ -97,45 +277,23 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
         .enable_all()
         .build()
         .map_err(|error| format!("convey could not create its Tokio runtime: {error}"))?;
-    runtime.block_on(serve_loop(journal_root, port))
+    let app = router(journal_root.clone());
+    let handle = runtime
+        .block_on(serve(ConveyServeOptions {
+            journal_root: journal_root.clone(),
+            loopback_port: port,
+            door_port: 7657,
+            // spl_transport::connection::HANDSHAKE_TIMEOUT is the shipped symmetric 10 s budget.
+            handshake_timeout: Duration::from_secs(10),
+            stream_stall_timeout: Duration::from_secs(60),
+            router: app,
+        }))
+        .map_err(|error| error.to_string())?;
+    write_port_file(&journal_root, handle.loopback_ipv4_addr().port())?;
+    runtime.block_on(handle.await_forever())
 }
 
-async fn serve_loop(journal_root: PathBuf, port: u16) -> Result<(), String> {
-    use solstone_core_convey_http::identity::AccessBasis;
-    use solstone_core_convey_http::listener::bind_loopback;
-    use solstone_core_convey_http::serve::{serve_connection, tcp_builder};
-
-    let listeners = bind_loopback(port).await.map_err(|error| {
-        if error.kind() == std::io::ErrorKind::AddrInUse {
-            format!("convey could not bind port {port}: convey may already be running")
-        } else {
-            format!("convey could not bind port {port}: {error}")
-        }
-    })?;
-    let bound_port = listeners
-        .ipv4_addr()
-        .map_err(|error| format!("convey could not determine its bound port: {error}"))?
-        .port();
-    write_port_file(&journal_root, bound_port)?;
-    let app = router(journal_root);
-
-    loop {
-        let (stream, _) = listeners
-            .accept()
-            .await
-            .map_err(|error| format!("convey could not accept a connection: {error}"))?;
-        let app = app.clone();
-        tokio::spawn(async move {
-            let builder = tcp_builder();
-            if let Err(error) =
-                serve_connection(stream, app, AccessBasis::Localhost, &builder).await
-            {
-                eprintln!("convey connection failed: {error}");
-            }
-        });
-    }
-}
-
+#[cfg(feature = "host")]
 fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
     let health = journal_root.join("health");
     std::fs::create_dir_all(&health)

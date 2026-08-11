@@ -16,6 +16,8 @@ use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 pub mod acceptor;
 #[cfg(feature = "host")]
 pub mod ca;
+#[cfg(feature = "host")]
+pub mod committed;
 #[cfg(feature = "client")]
 mod direct_seam;
 #[cfg(feature = "host")]
