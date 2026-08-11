@@ -289,6 +289,33 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
             router: app,
         }))
         .map_err(|error| error.to_string())?;
+    // The door outcome is the ONLY signal an operator gets that linked devices can
+    // reach this journal, and until now `serve` computed it and `run_convey` dropped
+    // it on the floor -- so a door that refused was indistinguishable from one that
+    // never existed. That is the exact failure this door was built to end, and the
+    // library-level tests could not see it because they read `door_outcome()` directly.
+    match handle.door_outcome() {
+        DoorOutcome::Bound(address) => {
+            eprintln!("convey: paired-device door listening on {address}");
+        }
+        DoorOutcome::BindFailed { port, source } => {
+            eprintln!(
+                "convey: paired-device door could NOT bind port {port}: {source} -- linked devices cannot reach this journal"
+            );
+        }
+        DoorOutcome::Withheld(reason) => {
+            let detail = match reason {
+                DoorWithheldReason::Unestablished => "journal setup is not complete",
+                DoorWithheldReason::Corrupt => "journal config is corrupt",
+                DoorWithheldReason::CommittedIdentityUnavailable => {
+                    "the committed link identity under journal/link could not be loaded"
+                }
+            };
+            eprintln!(
+                "convey: paired-device door withheld: {detail} -- linked devices cannot reach this journal"
+            );
+        }
+    }
     write_port_file(&journal_root, handle.loopback_ipv4_addr().port())?;
     runtime.block_on(handle.await_forever())
 }
