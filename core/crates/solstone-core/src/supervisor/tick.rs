@@ -599,16 +599,25 @@ fn handle_supervisor_restart(state: &mut SupervisorState, message: &CallosumEnve
         eprintln!("supervisor: restart requested for unknown service {service}");
         return;
     };
+    let restart_id = message
+        .extra
+        .get("restart_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     match app.request_restart() {
-        Ok(Some(pid)) => emit(
-            &state.server,
-            "supervisor",
-            "restarting",
-            Map::from_iter([
+        Ok(Some(pid)) => {
+            *app.restart_id
+                .lock()
+                .expect("restart correlation lock is not poisoned") = restart_id.clone();
+            let mut extra = Map::from_iter([
                 ("service".into(), json!(service)),
                 ("pid".into(), json!(pid)),
-            ]),
-        ),
+            ]);
+            if let Some(restart_id) = restart_id {
+                extra.insert("restart_id".into(), json!(restart_id));
+            }
+            emit(&state.server, "supervisor", "restarting", extra);
+        }
         Ok(None) => eprintln!("supervisor: restart request ignored for inactive service {service}"),
         Err(error) => eprintln!("supervisor: failed to restart {service}: {error}"),
     }
