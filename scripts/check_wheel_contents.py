@@ -45,6 +45,8 @@ from solstone.think.probe import (
     SOLSTONE_CORE_PLATFORM_TAGS,
     SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS,
     SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS,
+    SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS,
+    SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS,
     CorePlatform,
     current_solstone_core_platform,
     is_solstone_core_covered_platform,
@@ -68,6 +70,7 @@ MAX_CORE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_SPEAKERS_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_VAD_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_DESCRIBE_WHEEL_BYTES = 30 * 1024 * 1024
+MAX_VULKAN_PROBE_WHEEL_BYTES = 30 * 1024 * 1024
 PARAKEET_HELPER_MEMBER = (
     "solstone/observe/transcribe/parakeet_helper/_bin/parakeet-helper"
 )
@@ -76,6 +79,8 @@ ROOT_LAUNCHER_NAMES = ("sol", "solstone")
 CORE_SCRIPT_NAMES = ("solstone-core",)
 SPEAKERS_ANALYZE_SCRIPT_NAMES = ("solstone-core-speakers-analyze",)
 DESCRIBE_SCRIPT_NAME = "solstone-core-describe"
+VULKAN_PROBE_PACKAGE_NAME = "solstone-core-vulkan-probe"
+VULKAN_PROBE_SCRIPT_NAME = VULKAN_PROBE_PACKAGE_NAME
 DESCRIBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
     ("linux", "x86_64"): "manylinux_2_27_x86_64",
     ("linux", "aarch64"): "manylinux_2_27_aarch64",
@@ -219,6 +224,9 @@ SPEAKERS_ANALYZE_FORBIDDEN_PROVIDER_RE = re.compile(
 VAD_ANALYZE_TAG_PLATFORMS = {
     tag: platform for platform, tag in VAD_ANALYZE_PLATFORM_TAGS.items()
 }
+VULKAN_PROBE_TAG_PLATFORMS = {
+    tag: platform for platform, tag in SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS.items()
+}
 # The VAD helper bundles the SAME pinned CPU ONNX Runtime as the speakers
 # helper, so its digests and notices come from that one staging table rather
 # than a second copy. Only the install destination differs, and that is derived
@@ -305,6 +313,12 @@ def _is_vad_analyze_wheel(path: Path) -> bool:
 
 def _is_describe_wheel(path: Path) -> bool:
     return path.name.startswith("solstone_core_describe-") and path.name.endswith(
+        ".whl"
+    )
+
+
+def _is_vulkan_probe_wheel(path: Path) -> bool:
+    return path.name.startswith("solstone_core_vulkan_probe-") and path.name.endswith(
         ".whl"
     )
 
@@ -1570,6 +1584,57 @@ def check_native_binary_wheel(path: Path, package: NativePackage) -> list[str]:
     return errors
 
 
+def _check_vulkan_probe_elf_binary(
+    wheel_name: str, content: bytes, platform_tuple: CorePlatform
+) -> list[str]:
+    """Validate the dynamic helper's ELF identity without static-link checks."""
+
+    repair = _speakers_analyze_rebuild_command(platform_tuple)
+    if len(content) < 64:
+        return [_failure(wheel_name, "Vulkan probe ELF binary is too short", expected="at least 64-byte ELF64 header", actual=f"{len(content)} bytes", repair=repair)]
+    if content[:4] != ELF_MAGIC:
+        return [_failure(wheel_name, "Vulkan probe binary is not ELF", expected="ELF magic 7f454c46", actual=content[:4].hex(), repair=repair)]
+    errors: list[str] = []
+    if content[4] != ELF_CLASS_64:
+        errors.append(_failure(wheel_name, "Vulkan probe ELF binary is not ELF64", expected=str(ELF_CLASS_64), actual=str(content[4]), repair=repair))
+    if content[5] != ELF_DATA_LITTLE_ENDIAN:
+        errors.append(_failure(wheel_name, "Vulkan probe ELF binary is not little-endian", expected=str(ELF_DATA_LITTLE_ENDIAN), actual=str(content[5]), repair=repair))
+    actual_machine = struct.unpack_from("<H", content, 18)[0]
+    expected_machine = ELF_MACHINE[platform_tuple[1]]
+    if actual_machine != expected_machine:
+        errors.append(_failure(wheel_name, "Vulkan probe ELF machine does not match wheel tag", expected=f"{platform_tuple[1]} ({expected_machine:#06x})", actual=f"{actual_machine:#06x}", repair=repair))
+    return errors
+
+
+def check_vulkan_probe_wheel(path: Path, package: NativePackage) -> list[str]:
+    """Validate the dynamic Vulkan helper without calling `_check_elf_binary`."""
+
+    errors: list[str] = []
+    tag = _core_wheel_tag(path)
+    platform_tuple = VULKAN_PROBE_TAG_PLATFORMS.get(tag)
+    repair = _speakers_analyze_rebuild_command(platform_tuple)
+    if path.stat().st_size > MAX_VULKAN_PROBE_WHEEL_BYTES:
+        errors.append(_failure(path.name, "Vulkan probe wheel is too large", expected=f"<= {MAX_VULKAN_PROBE_WHEEL_BYTES} bytes", actual=str(path.stat().st_size), repair=repair))
+    if platform_tuple is None:
+        errors.append(_failure(path.name, "Vulkan probe wheel tag is unsupported", expected=", ".join(sorted(SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS.values())), actual=tag, repair=repair))
+    if "-linux_" in path.name:
+        errors.append(f"{path.name}: bare linux tag is not publishable")
+    with zipfile.ZipFile(path) as wheel:
+        expected_members = _native_binary_expected_members(path, package)
+        actual_members = set(wheel.namelist())
+        if actual_members != expected_members:
+            errors.append(_failure(path.name, "Vulkan probe wheel member set is wrong", expected=", ".join(sorted(expected_members)), actual=", ".join(sorted(actual_members)) or "<empty>", repair=repair))
+        binaries = [info for info in wheel.infolist() if info.filename.endswith(f".data/scripts/{package.binary}")]
+        if len(binaries) != 1:
+            errors.append(_failure(path.name, "Vulkan probe binary member count is wrong", expected=f"exactly one .data/scripts/{package.binary}", actual=str(len(binaries)), repair=repair))
+        elif (binaries[0].external_attr >> 16) & 0o111 == 0:
+            errors.append(_failure(path.name, "Vulkan probe binary is not executable", expected="executable mode bit set", actual=oct((binaries[0].external_attr >> 16) & 0o777), repair=repair))
+        elif platform_tuple is not None:
+            errors.extend(_check_vulkan_probe_elf_binary(f"{path.name}:{binaries[0].filename}", wheel.read(binaries[0]), platform_tuple))
+        errors.extend(_check_record(path, wheel))
+    return errors
+
+
 def _speakers_analyze_expected_members(
     path: Path, platform_tuple: CorePlatform
 ) -> tuple[set[str], str, str]:
@@ -2303,6 +2368,11 @@ def _native_platform_tags(
             VAD_ANALYZE_PLATFORM_TAGS[platform]
             for platform in sorted(VAD_ANALYZE_PLATFORM_TAGS)
         )
+    if package.target_family == "vulkan-probe":
+        return tuple(
+            SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS[platform]
+            for platform in SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS
+        )
     return tuple(
         DESCRIBE_PLATFORM_TAGS[platform]
         for platform in sorted(DESCRIBE_PLATFORM_TAGS)
@@ -2443,6 +2513,12 @@ def check_dist(
     ]
     vad_analyze_wheels = [path for path in wheels if _is_vad_analyze_wheel(path)]
     describe_wheels = [path for path in wheels if _is_describe_wheel(path)]
+    vulkan_probe_wheels = [path for path in wheels if _is_vulkan_probe_wheel(path)]
+    vulkan_probe_packages = tuple(
+        package
+        for package in inventory.native_packages
+        if package.distribution == VULKAN_PROBE_PACKAGE_NAME
+    )
     generic_native_packages = tuple(
         package
         for package in inventory.native_packages
@@ -2452,6 +2528,7 @@ def check_dist(
             "solstone-core-describe",
             "solstone-core-speakers-analyze",
             "solstone-core-vad-analyze",
+            VULKAN_PROBE_PACKAGE_NAME,
         }
     )
     generic_native_wheels = {
@@ -2466,6 +2543,7 @@ def check_dist(
             speakers_analyze_wheels
             or vad_analyze_wheels
             or describe_wheels
+            or vulkan_probe_wheels
             or any(generic_native_wheels.values())
         )
         and not base_wheels
@@ -2514,6 +2592,9 @@ def check_dist(
         errors.extend(check_vad_analyze_wheel(path))
     for path in describe_wheels:
         errors.extend(check_describe_wheel(path))
+    for package in vulkan_probe_packages:
+        for path in vulkan_probe_wheels:
+            errors.extend(check_vulkan_probe_wheel(path, package))
     for package, package_wheels in generic_native_wheels.items():
         for path in package_wheels:
             errors.extend(check_native_binary_wheel(path, package))

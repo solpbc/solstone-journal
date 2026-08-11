@@ -477,6 +477,11 @@ driver fault cannot take down the journal; a second, separate call reports per-d
 dynamically linked helper on its own glibc lanes, the way the speaker analyzer ships. ✅ The NVIDIA probe
 is **not** affected: it is a subprocess and a file read.
 
+The shipped shape is `solstone-core-vulkan-probe`: a Linux-only sibling helper
+which dynamically loads the host Vulkan loader and emits the isolated JSON
+device protocol. It must remain independent of the ONNX speaker helper so an
+audio-runtime loader failure cannot prevent GPU enumeration.
+
 🔴 **A native verb reaches this plate as `solstone-core <verb>`, never as a standalone binary.** The
 wheel check builds an **exact** member set from a one-name script list, and the Python↔Rust seam resolves
 that one name behind a version handshake. A separate executable is unreachable on an installed host, and

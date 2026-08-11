@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
@@ -40,10 +40,10 @@ fn python_loader_available() -> bool {
 }
 
 fn core_helper() -> PathBuf {
-    let helper = repository_root().join(".venv/bin/solstone-core");
+    let helper = repository_root().join("core/target/debug/solstone-core-vulkan-probe");
     assert!(
         helper.is_file(),
-        "differential requires make install to provide {}",
+        "differential requires make check-differentials to build {}",
         helper.display()
     );
     helper
@@ -81,13 +81,8 @@ fn child_enumerator_matches_python_when_vulkan_loader_is_available() {
     let config = VulkanProbeConfig {
         program: VulkanProbeProgram::Explicit {
             executable: core_helper(),
-            args: vec![OsString::from(
-                solstone_core_local::vulkan::VULKAN_PROBE_CHILD_ARG,
-            )],
-            env: vec![(
-                OsString::from(solstone_core_local::vulkan::VULKAN_PROBE_CHILD_ENV),
-                OsString::from("1"),
-            )],
+            args: Vec::new(),
+            env: Vec::new(),
         },
         // Well below the 10 s production budget, while leaving ample room for
         // a real loader/ICD probe so the differential is not timing-sensitive.

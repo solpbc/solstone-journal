@@ -26,10 +26,12 @@ hmac.workspace = true
 sha2.workspace = true
 tar.workspace = true
 flate2.workspace = true
-libloading.workspace = true
 thiserror.workspace = true
 solstone-core-brain.workspace = true
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.24.0"
 
 [[test]]
 name = "admission_cross_process"
@@ -40,8 +42,3 @@ required-features = ["differential"]
 name = "vulkan_differential"
 path = "tests/vulkan_differential.rs"
 required-features = ["differential"]
-
-[lints.rust]
-# The five-symbol Vulkan ABI boundary requires audited unsafe calls, matching
-# the existing solstone-core-ced-sys dynamic-loader exception.
-unsafe_code = "allow"

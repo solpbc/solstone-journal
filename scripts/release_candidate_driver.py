@@ -1114,6 +1114,11 @@ def _expected_local_build_commands(
                 (DESCRIBE_X86_64_MATURIN_ARGS, None),
                 (DESCRIBE_AARCH64_MATURIN_ARGS, None),
             )
+        elif package.target_family == "vulkan-probe":
+            build_args = (
+                (SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS, None),
+                (SPEAKERS_ANALYZE_AARCH64_MATURIN_ARGS, None),
+            )
         else:
             build_args = (
                 (SPEAKERS_ANALYZE_X86_64_MATURIN_ARGS, "linux-x86_64"),

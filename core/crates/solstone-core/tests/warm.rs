@@ -17,7 +17,9 @@ mod maturin_leaves;
 #[path = "../src/warm.rs"]
 mod warm;
 
-use warm::{Classification, InventoryRow, collect_for_executable, inventory_rows};
+use warm::{
+    Classification, InventoryRow, PlatformApplicability, collect_for_executable, inventory_rows,
+};
 
 const FIXTURE_ROW: InventoryRow = InventoryRow {
     binary_name: "warm-fixture",
@@ -25,6 +27,7 @@ const FIXTURE_ROW: InventoryRow = InventoryRow {
     crate_name: "warm-fixture",
     argv: &[],
     expected: "fixture reaches main",
+    applicability: PlatformApplicability::All,
 };
 
 struct TempDir(tempfile::TempDir);

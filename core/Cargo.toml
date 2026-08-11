@@ -54,6 +54,7 @@ members = [
     "crates/solstone-core-speakers",
     "crates/solstone-core-speakers-analyze",
     "crates/solstone-core-vad-analyze",
+    "crates/solstone-core-vulkan-probe",
     "crates/solstone-core-describe",
     "crates/solstone-core-grab",
     "crates/solstone-core-observe-audio",

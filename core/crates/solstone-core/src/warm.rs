@@ -43,19 +43,36 @@ pub(crate) struct InventoryRow {
     pub(crate) crate_name: &'static str,
     pub(crate) argv: &'static [&'static str],
     pub(crate) expected: &'static str,
+    pub(crate) applicability: PlatformApplicability,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PlatformApplicability {
+    All,
+    Linux,
+}
+
+impl PlatformApplicability {
+    fn applies_to_host(self) -> bool {
+        match self {
+            Self::All => true,
+            Self::Linux => cfg!(target_os = "linux"),
+        }
+    }
 }
 
 // parakeet-helper is intentionally excluded: it is a macOS base-wheel package member under
 // site-packages, not a maturin bindings="bin" leaf or a sibling of solstone-core's current
 // executable. Locating it requires Python-package layout resolution outside this binary's
 // ownership.
-const INVENTORY: [InventoryRow; 8] = [
+const INVENTORY: [InventoryRow; 9] = [
     InventoryRow {
         binary_name: "solstone-core",
         distribution: "solstone-core",
         crate_name: "solstone-core",
         argv: &["--version"],
         expected: "--version exits 0",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-core-depict",
@@ -63,6 +80,7 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-depict",
         argv: &[],
         expected: "empty invocation exits 1 with solstone-depict-error-v1 malformed-request",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-core-describe",
@@ -70,6 +88,7 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-describe",
         argv: &["--version"],
         expected: "--version exits 0",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-core-journal",
@@ -77,6 +96,7 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-journal-bin",
         argv: &["--version"],
         expected: "--version exits 0",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-retention",
@@ -84,6 +104,7 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-retention-cli",
         argv: &["--help"],
         expected: "--help exits 0",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-core-sol",
@@ -91,6 +112,7 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-sol-bin",
         argv: &["--version"],
         expected: "--version exits 0",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-core-speakers-analyze",
@@ -98,6 +120,7 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-speakers-analyze",
         argv: &[],
         expected: "closed-stdin invocation exits 64 with solstone-speaker-analyze-error-v1 malformed-request",
+        applicability: PlatformApplicability::All,
     },
     InventoryRow {
         binary_name: "solstone-core-vad-analyze",
@@ -105,6 +128,15 @@ const INVENTORY: [InventoryRow; 8] = [
         crate_name: "solstone-core-vad-analyze",
         argv: &[],
         expected: "closed-stdin invocation exits 64 with solstone-vad-error-v1 malformed-request",
+        applicability: PlatformApplicability::All,
+    },
+    InventoryRow {
+        binary_name: "solstone-core-vulkan-probe",
+        distribution: "solstone-core-vulkan-probe",
+        crate_name: "solstone-core-vulkan-probe",
+        argv: &["--version"],
+        expected: "--version exits 0 without loading Vulkan",
+        applicability: PlatformApplicability::Linux,
     },
 ];
 
@@ -114,6 +146,7 @@ pub(crate) enum Classification {
     Missing,
     CannotLoad,
     Unexercised,
+    NotApplicable,
 }
 
 impl Classification {
@@ -123,6 +156,7 @@ impl Classification {
             Self::Missing => "missing",
             Self::CannotLoad => "cannot-load",
             Self::Unexercised => "unexercised",
+            Self::NotApplicable => "not-applicable",
         }
     }
 
@@ -185,6 +219,11 @@ impl WarmReport {
             .iter()
             .filter(|record| record.classification == Classification::Unexercised)
             .count();
+        let not_applicable = self
+            .records
+            .iter()
+            .filter(|record| record.classification == Classification::NotApplicable)
+            .count();
 
         json!({
             "schema": SCHEMA,
@@ -194,6 +233,7 @@ impl WarmReport {
                 "missing": missing,
                 "cannot-load": cannot_load,
                 "unexercised": unexercised,
+                "not-applicable": not_applicable,
             },
             "binaries": self.records.iter().map(WarmRecord::as_json).collect::<Vec<_>>(),
         })
@@ -251,7 +291,13 @@ pub(crate) fn collect_for_executable(executable: &Path, inventory: &[InventoryRo
         records: inventory
             .iter()
             .copied()
-            .map(|row| probe(sibling_dir.join(row.binary_name), row, cargo_tree))
+            .map(|row| {
+                if row.applicability.applies_to_host() {
+                    probe(sibling_dir.join(row.binary_name), row, cargo_tree)
+                } else {
+                    not_applicable_record(row)
+                }
+            })
             .collect(),
     }
 }
@@ -262,9 +308,29 @@ fn unavailable_report(error: io::Error) -> WarmReport {
             .iter()
             .copied()
             .map(|row| {
-                unavailable_record(row, format!("cannot resolve current executable: {error}"))
+                if row.applicability.applies_to_host() {
+                    unavailable_record(row, format!("cannot resolve current executable: {error}"))
+                } else {
+                    not_applicable_record(row)
+                }
             })
             .collect(),
+    }
+}
+
+fn not_applicable_record(row: InventoryRow) -> WarmRecord {
+    WarmRecord {
+        row,
+        classification: Classification::NotApplicable,
+        reason_code: "platform-not-applicable",
+        unresolved_library: None,
+        exit_code: None,
+        signal: None,
+        stderr: String::new(),
+        stderr_truncated: false,
+        error: None,
+        actual: "Linux-only binary is not applicable on this platform".to_owned(),
+        repair: "No repair needed on this platform.",
     }
 }
 
@@ -464,10 +530,10 @@ fn print_human(report: &WarmReport) {
         "On Linux, solstone-core, solstone-core-journal, solstone-retention, solstone-core-sol, and solstone-core-depict are statically linked musl. Warm proves that they start and reach their own code; there is no dynamic loader resolution to prove."
     );
     println!(
-        "On Linux, solstone-core-speakers-analyze and solstone-core-vad-analyze dynamically load the bundled ONNX Runtime. Warm proves their loader resolution as well as their start-up. solstone-core-describe is asserted neither static nor dynamic here; wheel validation only forbids dynamically linked FFmpeg."
+        "On Linux, solstone-core-speakers-analyze and solstone-core-vad-analyze dynamically load the bundled ONNX Runtime, and solstone-core-vulkan-probe dynamically loads the host Vulkan loader. Warm proves their loader resolution as well as their start-up. solstone-core-describe is asserted neither static nor dynamic here; wheel validation only forbids dynamically linked FFmpeg."
     );
     println!(
-        "On macOS every Mach-O links libSystem. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and dyld failures there."
+        "On macOS every Mach-O links libSystem. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and dyld failures there. The Linux-only Vulkan probe row is NOT APPLICABLE on macOS and does not fail warm."
     );
     println!(
         "A GAP is a development-layout sibling that was not built and therefore was not exercised; it is reported by name but does not fail warm."
@@ -478,6 +544,7 @@ fn print_human(report: &WarmReport) {
             Classification::Missing => "MISSING",
             Classification::CannotLoad => "CANNOT LOAD",
             Classification::Unexercised => "GAP",
+            Classification::NotApplicable => "NOT APPLICABLE",
         };
         println!("{label} {}: {}", record.row.binary_name, record.actual);
         if let Some(library) = &record.unresolved_library {

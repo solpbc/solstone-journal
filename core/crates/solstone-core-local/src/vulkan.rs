@@ -3,22 +3,19 @@
 
 //! Vulkan device discovery for the local provider.
 //!
-//! The default child is this executable re-invoked in a hidden mode. On the
-//! shipped static-musl Linux build it cannot `dlopen` a host glibc
-//! `libvulkan.so.1`; that child returns `[]` with exit 0, yielding `([], true)`.
-//! This is indistinguishable from a real no-GPU host and silently wrong on a
-//! GPU host. The check wave must replace the program resolution with the
-//! separate glibc helper before anything selects this path.
+//! The production probe is a separately packaged glibc sibling helper. This
+//! wave makes the Rust probe shippable so a later wave can select it: Rust
+//! `detect_gpus`/`gpu_probe_ok` have no external Rust caller today, and Python
+//! `local_vulkan.py` still owns production probing, so owner-visible behaviour
+//! does not change here.
 
-use std::ffi::{OsString, c_char, c_void};
-use std::io::{self, Write};
+use std::ffi::OsString;
+use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
-
-use libloading::Library;
 
 use crate::VulkanDevice;
 
@@ -26,17 +23,9 @@ const VK_TYPE_INTEGRATED: u32 = 1;
 const VK_TYPE_DISCRETE: u32 = 2;
 const VK_TYPE_VIRTUAL: u32 = 3;
 const VK_TYPE_CPU: u32 = 4;
-const VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO: u32 = 1;
-const VK_DEVICE_LOCAL_BIT: u32 = 0x0000_0001;
-const VK_PHYSICAL_DEVICE_NAME_SIZE: usize = 256;
-const VK_MAX_MEMORY_TYPES: usize = 32;
-const VK_MAX_MEMORY_HEAPS: usize = 16;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const SOFTWARE_NAME_SUBSTRINGS: [&str; 3] = ["llvmpipe", "lavapipe", "swiftshader"];
-#[doc(hidden)]
-pub const VULKAN_PROBE_CHILD_ARG: &str = "--solstone-vulkan-probe-child";
-#[doc(hidden)]
-pub const VULKAN_PROBE_CHILD_ENV: &str = "SOLSTONE_VULKAN_PROBE_CHILD";
+const HELPER: &str = "solstone-core-vulkan-probe";
 
 /// Owner-facing advisory copy for forced CPU transcription placement.
 pub const CPU_PLACEMENT_COPY: &str =
@@ -44,13 +33,17 @@ pub const CPU_PLACEMENT_COPY: &str =
 
 static DETECT_CACHE: Mutex<Option<(Vec<VulkanDevice>, bool)>> = Mutex::new(None);
 
+#[cfg(test)]
+static TEST_HELPER_BASE_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+#[cfg(test)]
+static TEST_PROBE_SERIAL: Mutex<()> = Mutex::new(());
+
 /// Program resolution for the isolated Vulkan probe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VulkanProbeProgram {
-    /// Re-invoke the current executable in the private child mode.
-    CurrentExecutable,
-    /// Run an explicitly supplied child program. This is the seam a future
-    /// sibling glibc helper uses without changing probe callers.
+    /// Resolve the packaged sibling helper beside the current executable.
+    SiblingHelper,
+    /// Run an explicitly supplied child program for direct protocol tests.
     Explicit {
         executable: PathBuf,
         args: Vec<OsString>,
@@ -65,260 +58,34 @@ pub struct VulkanProbeConfig {
     pub timeout: Duration,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedProbeProgram {
     executable: PathBuf,
     args: Vec<OsString>,
     env: Vec<(OsString, OsString)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResolveProbeProgramError {
+    CurrentExeUnavailable,
+    CurrentExeParentMissing,
+    HelperMissing(PathBuf),
+    HelperNotExecutable(PathBuf),
+}
+
 impl Default for VulkanProbeConfig {
     fn default() -> Self {
         Self {
-            program: VulkanProbeProgram::CurrentExecutable,
+            program: VulkanProbeProgram::SiblingHelper,
             timeout: PROBE_TIMEOUT,
         }
     }
 }
-
-#[repr(C)]
-struct VkInstanceCreateInfo {
-    s_type: u32,
-    p_next: *const c_void,
-    flags: u32,
-    p_application_info: *const c_void,
-    enabled_layer_count: u32,
-    pp_enabled_layer_names: *const *const c_char,
-    enabled_extension_count: u32,
-    pp_enabled_extension_names: *const *const c_char,
-}
-
-#[repr(C, align(8))]
-struct VkPhysicalDeviceProperties {
-    api_version: u32,
-    driver_version: u32,
-    vendor_id: u32,
-    device_id: u32,
-    device_type: u32,
-    device_name: [c_char; VK_PHYSICAL_DEVICE_NAME_SIZE],
-    // Vulkan writes the rest of VkPhysicalDeviceProperties after device_name.
-    // This matches Python's deliberately oversized ctypes tail without binding
-    // the unneeded limits/sparse-properties fields.
-    _tail: [u8; 8192],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct VkMemoryType {
-    property_flags: u32,
-    heap_index: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct VkMemoryHeap {
-    size: u64,
-    flags: u32,
-}
-
-#[repr(C)]
-struct VkPhysicalDeviceMemoryProperties {
-    memory_type_count: u32,
-    memory_types: [VkMemoryType; VK_MAX_MEMORY_TYPES],
-    memory_heap_count: u32,
-    memory_heaps: [VkMemoryHeap; VK_MAX_MEMORY_HEAPS],
-}
-
-type VkInstance = *mut c_void;
-type VkPhysicalDevice = *mut c_void;
-type VkResult = i32;
-type VkCreateInstance = unsafe extern "system" fn(
-    *const VkInstanceCreateInfo,
-    *const c_void,
-    *mut VkInstance,
-) -> VkResult;
-type VkDestroyInstance = unsafe extern "system" fn(VkInstance, *const c_void);
-type VkEnumeratePhysicalDevices =
-    unsafe extern "system" fn(VkInstance, *mut u32, *mut VkPhysicalDevice) -> VkResult;
-type VkGetPhysicalDeviceProperties =
-    unsafe extern "system" fn(VkPhysicalDevice, *mut VkPhysicalDeviceProperties);
-type VkGetPhysicalDeviceMemoryProperties =
-    unsafe extern "system" fn(VkPhysicalDevice, *mut VkPhysicalDeviceMemoryProperties);
-
-struct VulkanFns {
-    // Keep the library live for the full lifetime of all copied function pointers.
-    _library: Library,
-    create_instance: VkCreateInstance,
-    destroy_instance: VkDestroyInstance,
-    enumerate_physical_devices: VkEnumeratePhysicalDevices,
-    get_physical_device_properties: VkGetPhysicalDeviceProperties,
-    get_physical_device_memory_properties: VkGetPhysicalDeviceMemoryProperties,
-}
-
-impl VulkanFns {
-    fn load() -> Result<Self, ()> {
-        // `libloading` is already in the solstone-core shipping closure. Keeping
-        // this to five hand-declared symbols rather than adding ash minimizes the
-        // dependency/API covenant for this deliberately small Vulkan surface.
-        let library = unsafe { Library::new("libvulkan.so.1") }.map_err(|_| ())?;
-        let create_instance = unsafe {
-            *library
-                .get::<VkCreateInstance>(b"vkCreateInstance\0")
-                .map_err(|_| ())?
-        };
-        let destroy_instance = unsafe {
-            *library
-                .get::<VkDestroyInstance>(b"vkDestroyInstance\0")
-                .map_err(|_| ())?
-        };
-        let enumerate_physical_devices = unsafe {
-            *library
-                .get::<VkEnumeratePhysicalDevices>(b"vkEnumeratePhysicalDevices\0")
-                .map_err(|_| ())?
-        };
-        let get_physical_device_properties = unsafe {
-            *library
-                .get::<VkGetPhysicalDeviceProperties>(b"vkGetPhysicalDeviceProperties\0")
-                .map_err(|_| ())?
-        };
-        let get_physical_device_memory_properties = unsafe {
-            *library
-                .get::<VkGetPhysicalDeviceMemoryProperties>(
-                    b"vkGetPhysicalDeviceMemoryProperties\0",
-                )
-                .map_err(|_| ())?
-        };
-        Ok(Self {
-            _library: library,
-            create_instance,
-            destroy_instance,
-            enumerate_physical_devices,
-            get_physical_device_properties,
-            get_physical_device_memory_properties,
-        })
-    }
-}
-
-/// Enumerate Vulkan devices in the current process.
-fn enumerate_in_process() -> Vec<VulkanDevice> {
-    let functions = match VulkanFns::load() {
-        Ok(functions) => functions,
-        // Scope §1 ports local_vulkan.py's swallow-and-return-empty contract
-        // for loader and Vulkan failures. CLAUDE.md §8's normal fail-loudly
-        // rule is deliberately not applied here.
-        Err(()) => return Vec::new(),
-    };
-    let mut instance = std::ptr::null_mut();
-    let result = (|| -> Result<Vec<VulkanDevice>, ()> {
-        let create_info = VkInstanceCreateInfo {
-            s_type: VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            p_next: std::ptr::null(),
-            flags: 0,
-            p_application_info: std::ptr::null(),
-            enabled_layer_count: 0,
-            pp_enabled_layer_names: std::ptr::null(),
-            enabled_extension_count: 0,
-            pp_enabled_extension_names: std::ptr::null(),
-        };
-        if unsafe { (functions.create_instance)(&create_info, std::ptr::null(), &mut instance) }
-            != 0
-        {
-            return Err(());
-        }
-
-        let mut count = 0_u32;
-        if unsafe {
-            (functions.enumerate_physical_devices)(instance, &mut count, std::ptr::null_mut())
-        } != 0
-            || count == 0
-        {
-            return Err(());
-        }
-        let count = usize::try_from(count).map_err(|_| ())?;
-        let mut raw_devices = Vec::new();
-        raw_devices.try_reserve_exact(count).map_err(|_| ())?;
-        raw_devices.resize(count, std::ptr::null_mut());
-        let mut returned_count = u32::try_from(count).map_err(|_| ())?;
-        if unsafe {
-            (functions.enumerate_physical_devices)(
-                instance,
-                &mut returned_count,
-                raw_devices.as_mut_ptr(),
-            )
-        } != 0
-        {
-            return Err(());
-        }
-        let returned_count = usize::try_from(returned_count)
-            .map_err(|_| ())?
-            .min(raw_devices.len());
-        let mut devices = Vec::new();
-        devices.try_reserve_exact(returned_count).map_err(|_| ())?;
-        for (index, raw_device) in raw_devices.into_iter().take(returned_count).enumerate() {
-            let mut properties = VkPhysicalDeviceProperties {
-                api_version: 0,
-                driver_version: 0,
-                vendor_id: 0,
-                device_id: 0,
-                device_type: 0,
-                device_name: [0; VK_PHYSICAL_DEVICE_NAME_SIZE],
-                _tail: [0; 8192],
-            };
-            unsafe { (functions.get_physical_device_properties)(raw_device, &mut properties) };
-            let name_bytes = properties
-                .device_name
-                .iter()
-                .map(|byte| *byte as u8)
-                .take_while(|byte| *byte != 0)
-                .collect::<Vec<_>>();
-            let mut memory = VkPhysicalDeviceMemoryProperties {
-                memory_type_count: 0,
-                memory_types: [VkMemoryType {
-                    property_flags: 0,
-                    heap_index: 0,
-                }; VK_MAX_MEMORY_TYPES],
-                memory_heap_count: 0,
-                memory_heaps: [VkMemoryHeap { size: 0, flags: 0 }; VK_MAX_MEMORY_HEAPS],
-            };
-            unsafe { (functions.get_physical_device_memory_properties)(raw_device, &mut memory) };
-            let heap_count = usize::try_from(memory.memory_heap_count)
-                .map_err(|_| ())?
-                .min(VK_MAX_MEMORY_HEAPS);
-            // Python sums every DEVICE_LOCAL heap's size. heapBudget and the
-            // largest heap are both wrong for this enumeration contract. Python
-            // has bignums; saturating u64 is the closest result here, since
-            // hiding every GPU on overflow is worse.
-            let vram_bytes = memory.memory_heaps[..heap_count]
-                .iter()
-                .filter(|heap| heap.flags & VK_DEVICE_LOCAL_BIT != 0)
-                .fold(0_u64, |total, heap| total.saturating_add(heap.size));
-            devices.push(VulkanDevice {
-                index: u32::try_from(index).map_err(|_| ())?,
-                name: String::from_utf8_lossy(&name_bytes).into_owned(),
-                device_type: Some(properties.device_type),
-                vram_mib: vram_bytes / (1024 * 1024),
-            });
-        }
-        Ok(devices)
-    })();
-    if !instance.is_null() {
-        unsafe { (functions.destroy_instance)(instance, std::ptr::null()) };
-    }
-    // Scope §1 requires every in-process error to become an empty, clean probe
-    // result. CLAUDE.md §8's fail-loudly rule is deliberately not applied here.
-    result.unwrap_or_default()
-}
-
-/// Write the private child protocol: one JSON device array and nothing else.
-pub fn write_vulkan_probe_json(mut writer: impl Write) -> io::Result<()> {
-    serde_json::to_writer(&mut writer, &enumerate_in_process())?;
-    writer.write_all(b"\n")
-}
-
 /// Perform a child probe without reading or writing the memoized snapshot.
 pub fn enumerate_gpus(config: &VulkanProbeConfig) -> (Vec<VulkanDevice>, bool) {
     let program = match resolve_program(&config.program) {
         Ok(resolved) => resolved,
-        Err(()) => return (Vec::new(), false),
+        Err(_) => return (Vec::new(), false),
     };
     let mut child = match Command::new(program.executable)
         .args(program.args)
@@ -387,17 +154,67 @@ fn lock_cache() -> MutexGuard<'static, Option<(Vec<VulkanDevice>, bool)>> {
 }
 
 #[cfg(test)]
-pub(crate) fn reset_detect_cache() {
-    *lock_cache() = None;
+pub(crate) struct VulkanProbeTestGuard {
+    _serial: MutexGuard<'static, ()>,
 }
 
-fn resolve_program(program: &VulkanProbeProgram) -> Result<ResolvedProbeProgram, ()> {
+#[cfg(test)]
+impl Drop for VulkanProbeTestGuard {
+    fn drop(&mut self) {
+        *TEST_HELPER_BASE_DIR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        *lock_cache() = None;
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn reset_detect_cache(helper_base_dir: Option<PathBuf>) -> VulkanProbeTestGuard {
+    let serial = TEST_PROBE_SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *TEST_HELPER_BASE_DIR
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = helper_base_dir;
+    *lock_cache() = None;
+    VulkanProbeTestGuard { _serial: serial }
+}
+
+fn resolve_program(
+    program: &VulkanProbeProgram,
+) -> Result<ResolvedProbeProgram, ResolveProbeProgramError> {
     match program {
-        VulkanProbeProgram::CurrentExecutable => Ok(ResolvedProbeProgram {
-            executable: std::env::current_exe().map_err(|_| ())?,
-            args: vec![OsString::from(VULKAN_PROBE_CHILD_ARG)],
-            env: vec![(OsString::from(VULKAN_PROBE_CHILD_ENV), OsString::from("1"))],
-        }),
+        // Keep Vulkan enumeration in its own glibc helper rather than solstone-core-speakers-analyze. The speaker helper has a DT_NEEDED libonnxruntime and a pinned DT_RUNPATH; coupling this probe to it would make GPU discovery fail when the unrelated audio runtime cannot load. This leaf has a one-time packaging cost but keeps the loader dependency boundary honest.
+        // `CurrentExecutable` and the private child argument/environment were deliberately removed: the static-musl solstone-core binary must never be a fallback Vulkan loader. The only production program is the packaged sibling helper; absence is a failed probe, not an empty successful enumeration.
+        VulkanProbeProgram::SiblingHelper => {
+            let executable = std::env::current_exe()
+                .map_err(|_| ResolveProbeProgramError::CurrentExeUnavailable)?;
+            #[cfg(test)]
+            let base_dir = TEST_HELPER_BASE_DIR
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+                .or_else(|| executable.parent().map(PathBuf::from));
+            #[cfg(not(test))]
+            let base_dir = executable.parent().map(PathBuf::from);
+            let path = base_dir
+                .ok_or(ResolveProbeProgramError::CurrentExeParentMissing)?
+                .join(HELPER);
+            let metadata = fs::metadata(&path)
+                .map_err(|_| ResolveProbeProgramError::HelperMissing(path.clone()))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if metadata.permissions().mode() & 0o111 == 0 {
+                    return Err(ResolveProbeProgramError::HelperNotExecutable(path));
+                }
+            }
+            Ok(ResolvedProbeProgram {
+                executable: path,
+                args: Vec::new(),
+                env: Vec::new(),
+            })
+        }
         VulkanProbeProgram::Explicit {
             executable,
             args,
@@ -565,7 +382,41 @@ mod tests {
 
     #[test]
     fn test_only_cache_reset_is_available_to_unit_tests() {
-        reset_detect_cache();
+        let _guard = reset_detect_cache(None);
+    }
+
+    #[test]
+    fn memoized_probe_reports_missing_sibling_as_failed() {
+        let _guard = reset_detect_cache(None);
+        assert!(!gpu_probe_ok());
+        assert!(detect_gpus().is_empty());
+    }
+
+    #[test]
+    fn memoized_probe_uses_test_sibling_helper() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("temporary helper directory");
+        let helper = directory.path().join(HELPER);
+        fs::write(&helper, "#!/bin/sh\nprintf '[]\\n'\n").expect("write helper");
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o755))
+            .expect("make helper executable");
+        let _guard = reset_detect_cache(Some(directory.path().to_path_buf()));
+        assert!(gpu_probe_ok());
+        assert!(detect_gpus().is_empty());
+    }
+
+    #[test]
+    fn default_program_resolves_only_the_sibling_helper() {
+        let _guard = reset_detect_cache(None);
+        match resolve_program(&VulkanProbeConfig::default().program) {
+            Ok(program) => assert!(program.executable.ends_with(HELPER)),
+            Err(ResolveProbeProgramError::HelperMissing(path)) => {
+                assert!(path.ends_with(HELPER));
+            }
+            Err(error) => panic!("unexpected helper resolution error: {error:?}"),
+        }
     }
 
     #[test]

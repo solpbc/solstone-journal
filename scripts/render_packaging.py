@@ -21,6 +21,7 @@ from solstone.think.probe import (  # noqa: E402
     solstone_core_marker_pins,
     solstone_core_speakers_analyze_marker_pins,
     solstone_core_unsupported_platform_pin,
+    solstone_core_vulkan_probe_marker_pins,
 )
 
 ROOT_PYPROJECT = ROOT / "pyproject.toml"
@@ -120,6 +121,9 @@ def _rewrite_leaf(text: str, version: str) -> str:
     text = _rewrite_native_pins(
         text, version, "solstone-core-retention", "journal leaf pyproject"
     )
+    text = _rewrite_native_pins(
+        text, version, "solstone-core-vulkan-probe", "journal leaf pyproject"
+    )
     return text
 
 
@@ -158,10 +162,13 @@ def _rewrite_native_pins(
         rf'(?P<quote>"){re.escape(distribution)}==[^";]+; '
         r'(?P<marker>[^"]+)(?P=quote)'
     )
-    expected = {
-        pin.replace("solstone-core==", f"{distribution}==", 1)
-        for pin in solstone_core_marker_pins(version)
-    }
+    if distribution == "solstone-core-vulkan-probe":
+        expected = set(solstone_core_vulkan_probe_marker_pins(version))
+    else:
+        expected = {
+            pin.replace("solstone-core==", f"{distribution}==", 1)
+            for pin in solstone_core_marker_pins(version)
+        }
     seen_markers: list[str] = []
 
     def replacement(match: re.Match[str]) -> str:

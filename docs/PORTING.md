@@ -88,6 +88,11 @@ musl. The prebuilt ONNX Runtime wheels are glibc-only native libraries; the Linu
 library, so the three-target native dependency proof would fail rather than
 merely remain pending.
 
+`solstone-core-vulkan-probe` follows the same separately packaged helper shape
+on the two Linux glibc lanes. It owns the host Vulkan `dlopen` boundary rather
+than adding that dependency to the static-musl `solstone-core` binary or to the
+ONNX-linked speaker helper.
+
 The shipping shape for the speaker analyzer is settled: ship
 `solstone-core-speakers-analyze` as a separate platform wheel on its own glibc
 and macOS lanes, carrying the pinned CPU ONNX Runtime shared library that the

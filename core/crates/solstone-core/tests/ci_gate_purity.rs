@@ -266,7 +266,7 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .filter_map(|invocation| invocation.split_whitespace().next())
         .collect::<Vec<_>>();
     let mut expected = vec!["fmt", "check", "clippy", "test", "build"];
-    expected.extend(["run"; if cfg!(target_os = "linux") { 8 } else { 6 }]);
+    expected.extend(["run"; if cfg!(target_os = "linux") { 9 } else { 6 }]);
     if cfg!(target_os = "macos") {
         expected.push("check");
     }

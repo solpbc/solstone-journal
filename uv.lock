@@ -33,6 +33,7 @@ members = [
     "solstone-core-sol",
     "solstone-core-speakers-analyze",
     "solstone-core-vad-analyze",
+    "solstone-core-vulkan-probe",
     "solstone-journal",
     "solstone-journal-cuda",
     "solstone-journal-models",
@@ -41,6 +42,7 @@ overrides = [
     { name = "solstone-core-speakers-analyze", marker = "python_full_version < '3.12'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-unsupported-platform", marker = "python_full_version < '3.12'", specifier = "==1.0.22" },
     { name = "solstone-core-vad-analyze", marker = "python_full_version < '3.12'", editable = "packages/solstone-core-vad-analyze" },
+    { name = "solstone-core-vulkan-probe", marker = "python_full_version < '3.12'", editable = "packages/solstone-core-vulkan-probe" },
     { name = "solstone-journal-host", marker = "python_full_version < '3.12'", specifier = "==0.7.0" },
 ]
 
@@ -4476,6 +4478,8 @@ requires-dist = [
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
+    { name = "solstone-core-vulkan-probe", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-vulkan-probe" },
+    { name = "solstone-core-vulkan-probe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-vulkan-probe" },
 ]
 
 [[package]]
@@ -4524,6 +4528,8 @@ requires-dist = [
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
     { name = "solstone-core-speakers-analyze", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-speakers-analyze" },
+    { name = "solstone-core-vulkan-probe", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-vulkan-probe" },
+    { name = "solstone-core-vulkan-probe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-vulkan-probe" },
 ]
 
 [[package]]

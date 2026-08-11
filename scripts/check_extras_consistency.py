@@ -54,6 +54,7 @@ from solstone.think.probe import (
     solstone_core_marker_pins,
     solstone_core_speakers_analyze_marker_pins,
     solstone_core_unsupported_platform_pin,
+    solstone_core_vulkan_probe_marker_pins,
 )
 
 # The thin access partition. Adding anything here must keep the `sol` access
@@ -155,6 +156,8 @@ def _check_models_pin(extras: dict, member_version: str | None) -> list[str]:
 
 
 def _native_marker_pins(distribution: str, version: str) -> list[str]:
+    if distribution == "solstone-core-vulkan-probe":
+        return list(solstone_core_vulkan_probe_marker_pins(version))
     return [
         dep.replace("solstone-core==", f"{distribution}==", 1)
         for dep in solstone_core_marker_pins(version)
@@ -295,6 +298,7 @@ def _leaf_dependencies(
         "solstone-core",
         "solstone-core-journal",
         "solstone-core-depict",
+        "solstone-core-vulkan-probe",
     ):
         expected = sorted(_native_marker_pins(native_name, root_version or ""))
         pins = sorted(dep for dep in deps if dep.startswith(f"{native_name}=="))
@@ -530,6 +534,9 @@ def main(root: Path | None = None) -> int:
         root / "packages" / "solstone-core-speakers-analyze" / "pyproject.toml"
     )
     describe_pyproject = root / "packages" / "solstone-core-describe" / "pyproject.toml"
+    vulkan_probe_pyproject = (
+        root / "packages" / "solstone-core-vulkan-probe" / "pyproject.toml"
+    )
     makefile = root / "Makefile"
     errors: list[str] = []
 
@@ -542,6 +549,7 @@ def main(root: Path | None = None) -> int:
     journal_core_data = _read_toml(journal_core_pyproject, root, errors)
     speakers_analyze_data = _read_toml(speakers_analyze_pyproject, root, errors)
     describe_data = _read_toml(describe_pyproject, root, errors)
+    vulkan_probe_data = _read_toml(vulkan_probe_pyproject, root, errors)
 
     project = data.get("project", {})
     root_version = project.get("version")
@@ -700,6 +708,13 @@ def main(root: Path | None = None) -> int:
         root_version=root_version,
         errors=errors,
     )
+    _check_command_leaf(
+        data=vulkan_probe_data,
+        root_version=root_version,
+        distribution="solstone-core-vulkan-probe",
+        crate="solstone-core-vulkan-probe",
+        errors=errors,
+    )
     errors.extend(
         _check_speakers_analyze_pins(
             label="CPU leaf", deps=cpu_deps, root_version=root_version
@@ -714,6 +729,14 @@ def main(root: Path | None = None) -> int:
         errors.extend(
             _check_native_leaf_pins(
                 distribution="solstone-core-retention",
+                label=label,
+                deps=deps,
+                root_version=root_version,
+            )
+        )
+        errors.extend(
+            _check_native_leaf_pins(
+                distribution="solstone-core-vulkan-probe",
                 label=label,
                 deps=deps,
                 root_version=root_version,

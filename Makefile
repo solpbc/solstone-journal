@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -262,6 +262,16 @@ wheel-vad-analyze-linux-aarch64:
 	rm -f dist/solstone_core_vad_analyze-*.whl
 	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-aarch64" MATURIN_PEP517_ARGS="$(VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vad-analyze --wheel
 
+wheel-vulkan-probe-linux: wheel-vulkan-probe-linux-x86_64
+
+wheel-vulkan-probe-linux-x86_64:
+	rm -f dist/solstone_core_vulkan_probe-*.whl
+	MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-vulkan-probe --wheel
+
+wheel-vulkan-probe-linux-aarch64:
+	rm -f dist/solstone_core_vulkan_probe-*.whl
+	MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vulkan-probe --wheel
+
 # Host-side staged runtime for the ONNX-linked crates' own cargo test runs.
 # Directory-existence rule, so a populated stage is not re-downloaded; the wheel
 # targets above always restage explicitly for their own cross target.
@@ -368,7 +378,7 @@ check-rust-deny:
 # sets SOLSTONE_VULKAN_DIFFERENTIAL_NO_LOADER=1; its --nocapture mode makes the
 # resulting RUN or SKIP report visible in this gate's output.
 .PHONY: check-differentials
-check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR)
+check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
 	@status=0; \
@@ -428,6 +438,12 @@ check-rust-shipped-binaries: build
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-retention-cli --bin solstone-retention --locked -- --help >/dev/null
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-sol-bin --bin solstone-core-sol --locked -- --version >/dev/null
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --bin solstone-core-describe --locked -- --version >/dev/null
+	@set -eu; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "Vulkan-probe smoke: not run on $$(uname -s); this wheel ships on Linux"; \
+	else \
+		cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-vulkan-probe --bin solstone-core-vulkan-probe --locked -- --version >/dev/null; \
+	fi
 	@set -eu; \
 	if output=$$(cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-depict --bin solstone-core-depict --locked 2>&1); then \
 		echo "solstone-core-depict unexpectedly accepted an empty invocation" >&2; \

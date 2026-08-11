@@ -129,6 +129,11 @@ SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS: tuple[CorePlatform, ...] = (
     ("darwin", "arm64"),
 )
 
+SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS: tuple[CorePlatform, ...] = (
+    ("linux", "x86_64"),
+    ("linux", "aarch64"),
+)
+
 
 def _solstone_core_speakers_analyze_platform_tag(
     platform_tuple: CorePlatform,
@@ -148,6 +153,14 @@ SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS: dict[CorePlatform, str] = {
 SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_MARKERS: tuple[str, ...] = tuple(
     _solstone_core_platform_marker(platform_tuple)
     for platform_tuple in SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS
+)
+SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
+    platform_tuple: f"manylinux_2_27_{platform_tuple[1]}"
+    for platform_tuple in SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS
+}
+SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_MARKERS: tuple[str, ...] = tuple(
+    _solstone_core_platform_marker(platform_tuple)
+    for platform_tuple in SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS
 )
 
 
@@ -191,6 +204,13 @@ def solstone_core_speakers_analyze_marker_pins(version: str) -> tuple[str, ...]:
     return tuple(
         f"solstone-core-speakers-analyze=={version}; {marker}"
         for marker in SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_MARKERS
+    )
+
+
+def solstone_core_vulkan_probe_marker_pins(version: str) -> tuple[str, ...]:
+    return tuple(
+        f"solstone-core-vulkan-probe=={version}; {marker}"
+        for marker in SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_MARKERS
     )
 
 
