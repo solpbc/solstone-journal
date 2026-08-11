@@ -7,7 +7,7 @@ use solstone_core_import::{ImportError, MODULE_STUBS};
 
 #[test]
 fn every_import_module_stub_is_unique_and_unimplemented() {
-    assert_eq!(MODULE_STUBS.len(), 19);
+    assert_eq!(MODULE_STUBS.len(), 18);
     let names = MODULE_STUBS
         .iter()
         .map(|(name, _)| *name)

@@ -29,7 +29,12 @@ pub use contract::{
     ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest, SaveRequest,
     SourceHash, SourceImmutabilityReport, observe_source_immutability, should_write_manifest,
 };
-
+pub use events::{
+    EnrichmentReady, EventEmitter, FileImported, ImporterCompleted, ImporterError, ImporterStarted,
+    ImporterStatus, ObservedSegment, ObservingMeta, ObservingSegment, emit_enrichment_ready,
+    emit_file_imported, emit_importer_completed, emit_importer_error, emit_importer_started,
+    emit_importer_status, emit_observe_observed, emit_observe_observing, emit_supervisor_drain,
+};
 /// Error returned by an importer seam that has no implementation yet.
 #[derive(Debug, Eq, PartialEq)]
 pub enum ImportError {
@@ -58,7 +63,6 @@ pub const MODULE_STUBS: &[ModuleStub] = &[
     ("metadata", metadata::reserved_seam),
     ("publish", publish::reserved_seam),
     ("dedupe", dedupe::reserved_seam),
-    ("events", events::reserved_seam),
     ("audio", audio::reserved_seam),
     ("text", text::reserved_seam),
     ("consent_gate", consent_gate::reserved_seam),

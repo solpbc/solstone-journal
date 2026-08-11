@@ -2861,7 +2861,9 @@ dependencies = [
 name = "solstone-core-import"
 version = "1.0.22"
 dependencies = [
+ "serde",
  "serde_json",
+ "solstone-core-callosum",
  "solstone-core-segment",
 ]
 
