@@ -11,9 +11,23 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 WHO_IS_THIS_JS = (
-    REPO_ROOT / "solstone" / "apps" / "speakers" / "static" / "who_is_this.js"
+    REPO_ROOT
+    / "core"
+    / "crates"
+    / "solstone-core-convey-shell"
+    / "assets"
+    / "speakers"
+    / "who_is_this.js"
 )
-WORKSPACE_HTML = REPO_ROOT / "solstone" / "apps" / "speakers" / "workspace.html"
+WORKSPACE_HTML = (
+    REPO_ROOT
+    / "core"
+    / "crates"
+    / "solstone-core-convey-shell"
+    / "assets"
+    / "speakers"
+    / "workspace.html"
+)
 APP_CSS = REPO_ROOT / "solstone" / "convey" / "static" / "app.css"
 SPK_OVERVIEW_SELECT_CLASS = re.compile(r"\.spk-overview-select(?![A-Za-z0-9_-])")
 CSS_DISPLAY_DECLARATION = re.compile(r"(^|;)\s*display\s*:", re.IGNORECASE)

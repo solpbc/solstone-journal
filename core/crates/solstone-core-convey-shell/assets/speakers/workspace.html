@@ -1,0 +1,4497 @@
+<style>
+/* Speakers app styles - all classes prefixed with .spk- */
+
+.spk-wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 2rem;
+}
+
+.spk-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 0;
+  min-height: calc(100vh - 260px);
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.spk-segments {
+  background: #fff;
+  border-radius: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.spk-segments-header {
+  padding: 20px 16px 12px 16px;
+  margin: 0;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1;
+  color: #374151;
+}
+
+.spk-segments-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.spk-segment {
+  padding: 12px 16px;
+  background-image: linear-gradient(#e5e7eb, #e5e7eb);
+  background-size: calc(100% - 32px) 1px;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  border-left: 3px solid transparent;
+}
+
+.spk-segment:hover {
+  background-color: #f9fafb;
+}
+
+.spk-segment:active {
+  background-color: #f3f4f6;
+}
+
+.spk-segment.active {
+  background-color: #eff6ff;
+  border-left-color: #3b82f6;
+}
+
+.spk-segment-time {
+  font-weight: 500;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: #1f2937;
+}
+
+.spk-segment-meta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #6b7280;
+  margin-top: 6px;
+}
+
+.spk-segment-sources {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.spk-source-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #d1d5db;
+  border-radius: 12px;
+  font-size: 11px;
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.spk-empty {
+  padding: 24px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.spk-segments .surface-state {
+  padding: 24px 16px;
+}
+
+.spk-segments-status,
+.spk-review-status {
+  margin: 12px 0;
+}
+
+.spk-filter-indicator {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.spk-filter-indicator:empty {
+  display: none;
+}
+
+.spk-segments-status:empty,
+.spk-review-status:empty {
+  display: none;
+}
+
+.spk-detail > .surface-state {
+  flex: 1;
+  background: #f9fafb;
+  border: 1px dashed #e5e7eb;
+  border-radius: 12px;
+  margin: 20px;
+  padding: 80px 24px 24px;
+}
+
+.spk-detail {
+  background: #fff;
+  border-radius: 0;
+  border: none;
+  border-left: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.spk-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.spk-detail-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.spk-source-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 12px;
+}
+
+.spk-source-tab {
+  padding: 6px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #fff;
+  color: #374151;
+  transition: all 0.15s;
+}
+
+.spk-source-tab:hover {
+  background: #f9fafb;
+}
+
+.spk-source-tab:active:not(.active) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.spk-source-tab.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+.spk-audio-player {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.spk-audio-player audio {
+  width: 100%;
+}
+
+.spk-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spk-player-controls audio {
+  flex: 1;
+  min-width: 0;
+}
+
+.spk-skip-back,
+.spk-speed-toggle {
+  padding: 4px 8px;
+  background: #e5e7eb;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: #374151;
+  transition: background 0.15s;
+}
+
+.spk-skip-back:hover,
+.spk-speed-toggle:hover {
+  background: #d1d5db;
+}
+
+.spk-skip-back:active,
+.spk-speed-toggle:active {
+  background: #9ca3af;
+}
+
+.spk-sentences {
+  margin-top: 16px;
+}
+
+.spk-sentences-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.spk-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.spk-seeding-prompt {
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--bg-info, #e8f4fd);
+  border: 1px solid var(--border-info, #b3d9f2);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary, #333);
+}
+
+.spk-filter-btn {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.spk-filter-btn:hover:not(.active) { background: #f9fafb; border-color: #9ca3af; }
+.spk-filter-btn:active:not(.active) { background: #f3f4f6; border-color: #6b7280; }
+
+.spk-filter-btn.active {
+  background: #1f2937;
+  border-color: #1f2937;
+  color: #fff;
+}
+
+.spk-sentence {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid #f3f4f6;
+  border-left: 3px solid transparent;
+  align-items: start;
+}
+
+.spk-sentence:hover {
+  background: #fafafa;
+}
+
+.spk-sentence.spk-playing {
+  background: #eff6ff;
+  border-left-color: #3b82f6;
+}
+
+.spk-sentence-time {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: #6b7280;
+  padding-top: 2px;
+}
+
+.spk-sentence-text {
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.spk-sentence-speaker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #4b5563;
+  flex-wrap: wrap;
+}
+
+.spk-confidence-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  background: #d1d5db;
+}
+
+.spk-confidence-high {
+  background: #16a34a;
+}
+
+.spk-confidence-medium {
+  background: #eab308;
+}
+
+.spk-confidence-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.spk-correction-original {
+  text-decoration: line-through;
+  color: #9ca3af;
+}
+
+.spk-review-state {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.spk-sentence-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spk-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.spk-btn-icon {
+  padding: 4px 8px;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.spk-btn-icon:hover {
+  background: #e5e7eb;
+}
+
+.spk-btn-icon:active { background: #d1d5db; }
+
+.spk-btn-primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.spk-btn-primary:hover {
+  background: #2563eb;
+}
+
+.spk-btn-primary:active { background: #1d4ed8; }
+.spk-btn-primary:disabled { opacity: 0.6; cursor: wait; }
+
+.spk-btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.spk-btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+.spk-select-small {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #fff;
+  min-width: 150px;
+  transition: border-color 0.15s;
+}
+
+.spk-select-small:hover { border-color: #9ca3af; }
+
+.spk-status {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 8px;
+  transition: opacity 0.3s ease;
+}
+
+.spk-status-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.spk-status-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.spk-discovery-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.spk-discovery-notice-text {
+  display: grid;
+  gap: 4px;
+}
+
+.spk-discovery-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.spk-discovery-retry {
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 3px 8px;
+}
+
+.spk-discovery-retry:hover,
+.spk-discovery-retry:focus {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.spk-discovery-retry:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.spk-status-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0 0 8px;
+  opacity: 0.7;
+}
+
+.spk-status-dismiss:hover,
+.spk-status-dismiss:focus {
+  opacity: 1;
+}
+
+.spk-status-dismiss:focus-visible {
+  outline: 2px solid #991b1b;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.spk-status-info {
+  background: #e8f4fd;
+  border: 1px solid #b3d9f2;
+  color: #1e40af;
+}
+
+.spk-speaker-count {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #dbeafe;
+  border-radius: 12px;
+  font-size: 11px;
+  color: #1d4ed8;
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.spk-review-badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.spk-speakers {
+  margin-bottom: 20px;
+}
+
+.spk-speakers-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 10px;
+}
+
+.spk-speaker-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.spk-speaker-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.spk-speaker-matched {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.spk-speaker-unmatched {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #6b7280;
+}
+
+.spk-speaker-entity {
+  font-weight: 500;
+}
+
+.spk-speaker-detected {
+  font-size: 12px;
+}
+
+.spk-speaker-matched .spk-speaker-detected {
+  color: #15803d;
+}
+
+.spk-speaker-unmatched .spk-speaker-detected {
+  color: #6b7280;
+}
+
+.spk-owner-banner {
+  display: none;
+  margin-bottom: 12px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+
+.spk-owner-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.spk-owner-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e3a8a;
+}
+
+.spk-owner-copy {
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.spk-owner-samples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.spk-owner-sample {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.spk-owner-sample-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d4ed8;
+  margin-bottom: 8px;
+}
+
+.spk-owner-sample-meta {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 8px;
+}
+
+.spk-owner-sample audio {
+  width: 100%;
+}
+
+.spk-owner-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.spk-owner-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.spk-owner-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.spk-owner-btn-confirm {
+  background: #16a34a;
+  color: #fff;
+}
+
+.spk-owner-btn-confirm:not(:disabled):hover { background: #15803d; }
+
+.spk-owner-btn-confirm:not(:disabled):active { background: #166534; }
+
+.spk-owner-btn-reject {
+  background: #fff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.spk-owner-btn-reject:not(:disabled):hover {
+  background: #eff6ff;
+  border-color: #60a5fa;
+}
+
+.spk-owner-btn-reject:not(:disabled):active {
+  background: #dbeafe;
+  border-color: #3b82f6;
+}
+
+.spk-owner-diagnostics {
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.spk-owner-diagnostics-summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.spk-owner-diagnostics-summary::-webkit-details-marker {
+  display: none;
+}
+
+.spk-owner-diagnostics-body {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spk-owner-diagnostics-line {
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.spk-owner-progress-line,
+.spk-owner-teach-meta,
+.spk-owner-notice {
+  font-size: 13px;
+  color: #334155;
+}
+
+.spk-owner-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(147, 197, 253, 0.35);
+}
+
+.spk-owner-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #2563eb;
+}
+
+.spk-owner-teach-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.spk-owner-teach-text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #111827;
+}
+
+.spk-owner-teach-audio {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.spk-owner-teach-audio audio {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.spk-owner-reveal {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.spk-owner-facts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.spk-owner-fact {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #14532d;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.spk-discovery-banner {
+  display: none;
+  margin-bottom: 8px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.spk-discovery-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.spk-discovery-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #14532d;
+}
+
+.spk-discovery-copy {
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.spk-discovery-clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.spk-discovery-cluster {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #bbf7d0;
+  background: rgba(255, 255, 255, 0.8);
+  transition: opacity 0.3s ease;
+}
+
+.spk-discovery-cluster-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #166534;
+  margin-bottom: 10px;
+}
+
+.spk-discovery-sample {
+  margin-bottom: 8px;
+}
+
+.spk-discovery-sample-text {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 4px;
+  font-style: italic;
+}
+
+.spk-discovery-sample audio {
+  width: 100%;
+}
+
+.spk-discovery-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #16a34a;
+  color: #fff;
+  transition: background 0.15s;
+}
+
+.spk-discovery-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.spk-discovery-btn:not(:disabled):hover { background: #15803d; }
+
+.spk-discovery-btn:not(:disabled):active { background: #166534; }
+
+.spk-who-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.spk-who-backdrop[hidden] {
+  display: none;
+}
+
+.spk-who-dialog {
+  width: min(100%, 560px);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
+  padding: 22px;
+}
+
+.spk-who-title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  line-height: 1.25;
+  color: #111827;
+}
+
+.spk-who-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.spk-who-lede,
+.spk-who-no-evidence,
+.spk-who-preview-body,
+.spk-who-keep-body,
+.spk-who-receipt-body {
+  margin: 0;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.spk-who-samples,
+.spk-who-people,
+.spk-who-mentions,
+.spk-who-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spk-who-sample,
+.spk-who-person {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.spk-who-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spk-who-sample-label,
+.spk-who-sample-unavailable {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.spk-who-sample-audio {
+  width: 100%;
+}
+
+.spk-who-shelf-title {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #111827;
+}
+
+.spk-who-person-action {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.spk-who-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spk-who-search-label {
+  font-weight: 600;
+  color: #111827;
+}
+
+.spk-who-search-input {
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.spk-who-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Semantic element resets - prevent browser defaults from changing layout */
+.spk-detail-title,
+.spk-speakers-title,
+.spk-sentences-title,
+.spk-speaker-entity {
+  margin: 0;
+  padding: 0;
+}
+
+/* List resets - no bullets, no margin, no padding */
+.spk-segments-list,
+.spk-speaker-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Focus-visible indicators */
+.spk-source-tab:focus-visible,
+.spk-filter-btn:focus-visible,
+.spk-btn:focus-visible,
+.spk-skip-back:focus-visible,
+.spk-speed-toggle:focus-visible,
+.spk-expand-btn:focus-visible,
+.spk-load-more-btn:focus-visible,
+.spk-segment:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Banner buttons need darker ring for contrast on colored backgrounds */
+.spk-owner-btn:focus-visible,
+.spk-discovery-btn:focus-visible,
+.spk-owner-diagnostics-summary:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
+/* Inputs and selects use :focus (browser convention - always show focus ring) */
+.spk-select-small:focus,
+.spk-who-search-input:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Progressive disclosure - collapsed detail */
+.spk-detail-collapsed .spk-speakers,
+.spk-detail-collapsed .spk-sentences {
+  display: none;
+}
+
+.spk-detail-summary {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spk-detail-summary span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spk-expand-btn {
+  background: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  margin: 8px 0;
+  transition: background 0.15s;
+}
+
+.spk-expand-btn:hover {
+  background: #f9fafb;
+}
+
+.spk-expand-btn:active {
+  background: #e5e7eb;
+}
+
+/* Pagination - load more */
+.spk-load-more {
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  text-align: center;
+}
+
+.spk-load-more-btn {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #6b7280;
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.15s;
+}
+
+.spk-load-more-btn:hover {
+  background: #f3f4f6;
+}
+
+.spk-load-more-btn:active {
+  background: #e5e7eb;
+}
+
+.spk-load-more-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.spk-segments-count {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 12px;
+  vertical-align: baseline;
+  line-height: 1;
+}
+
+@keyframes spk-fade-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+.spk-apply-btn { animation: spk-fade-in 0.15s ease; }
+
+@keyframes spk-spin {
+  to { transform: rotate(360deg); }
+}
+.spk-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #b3d9f2;
+  border-top-color: #1e40af;
+  border-radius: 50%;
+  animation: spk-spin 1s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@media (max-width: 768px) {
+  .spk-wrap {
+    padding: 12px 16px;
+  }
+  .spk-layout {
+    grid-template-columns: 1fr;
+    gap: 0;
+    min-height: auto;
+  }
+  .spk-segments-list {
+    max-height: 40vh;
+  }
+  .spk-detail {
+    border-left: none;
+    border-top: 1px solid #e5e7eb;
+    padding: 16px;
+  }
+  .spk-discovery-clusters {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+  .spk-select-small {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .spk-wrap {
+    padding: 8px 12px;
+  }
+  .spk-segments-list {
+    max-height: 35vh;
+  }
+  .spk-detail {
+    padding: 12px;
+  }
+  .spk-sentence {
+    grid-template-columns: 40px 1fr auto;
+    gap: 8px;
+  }
+  .spk-discovery-clusters {
+    grid-template-columns: 1fr;
+  }
+  .spk-owner-samples {
+    grid-template-columns: 1fr;
+  }
+  .spk-owner-banner,
+  .spk-discovery-banner {
+    padding: 12px;
+  }
+  .spk-select-small {
+    min-width: 0;
+  }
+  /* Font size floor - no text below 14px on mobile */
+  .spk-source-badge,
+  .spk-confidence-label,
+  .spk-speaker-detected,
+  .spk-speaker-count,
+  .spk-review-badge,
+  .spk-segment-meta,
+  .spk-sentence-speaker,
+  .spk-owner-sample-title,
+  .spk-owner-sample-meta {
+    font-size: 14px;
+  }
+  .spk-sentence-time,
+  .spk-filter-btn,
+  .spk-btn,
+  .spk-select-small,
+  .spk-status,
+  .spk-discovery-sample-text,
+  .spk-segments-count,
+  .spk-source-tab,
+  .spk-seeding-prompt,
+  .spk-speaker-card,
+  .spk-owner-btn,
+  .spk-discovery-cluster-title,
+  .spk-discovery-btn,
+  .spk-who-search-input,
+  .spk-detail-summary,
+  .spk-expand-btn,
+  .spk-load-more-btn {
+    font-size: 14px;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .spk-skip-back,
+  .spk-speed-toggle {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  .spk-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .spk-btn-icon {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  .spk-filter-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .spk-source-tab {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .spk-select-small {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  .spk-expand-btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+  .spk-load-more-btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+  .spk-owner-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .spk-discovery-btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+  .spk-who-search-input {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+  .spk-status-dismiss {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px;
+  }
+}
+</style>
+
+<div data-date-nav></div>
+
+<div id="speakersDayView" hidden>
+<div class="spk-wrap">
+  <div id="spkOwnerBanner" class="spk-owner-banner" tabindex="-1"></div>
+  <div id="spkDiscoveryBanner" class="spk-discovery-banner" aria-live="polite"></div>
+  <div class="spk-layout">
+    <nav class="spk-segments" aria-label="segments">
+      <h2 class="spk-segments-header">
+        <span id="spkSegmentsHeader"></span>
+      </h2>
+      <div id="spkFilterIndicator" class="spk-filter-indicator"></div>
+      <div id="spkSegmentsStatus" class="spk-segments-status" aria-live="polite"></div>
+      <ul class="spk-segments-list" id="spkSegmentList" role="listbox">
+        <li class="spk-empty">loading...</li>
+      </ul>
+      <div class="spk-load-more" id="spkLoadMore" style="display: none;">
+        <button class="spk-load-more-btn" id="spkLoadMoreBtn">load more segments</button>
+      </div>
+    </nav>
+
+    <div class="spk-detail" id="spkDetail" aria-live="polite">
+      <div class="surface-state surface-state--empty">
+        <div class="surface-state-icon" id="spkInitialEmptyIcon" aria-hidden="true"></div>
+        <h2 class="surface-state-heading">ready to review</h2>
+        <p class="surface-state-desc">select a segment from the list to review speaker assignments</p>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(() => {
+  const DAY_RE = /^\d{8}$/;
+  const { segment } = window.solPathContext();
+  const searchParams = new URLSearchParams(window.location.search);
+  const speakerFilter = searchParams.get('speaker') || '';
+  window.SPEAKERS_CONTEXT = {
+    isDay: DAY_RE.test(segment || ''),
+    day: segment || null,
+    speakerFilter,
+    voiceClusterId: searchParams.get('voice_cluster_id') || '',
+    statementHandoff: {
+      day: searchParams.get('voice_day') || '',
+      stream: searchParams.get('voice_stream') || '',
+      segmentKey: searchParams.get('voice_segment_key') || '',
+      source: searchParams.get('voice_source') || '',
+      sentenceId: searchParams.get('voice_sentence_id') || '',
+    },
+  };
+  window.loadSpeakersState = function loadSpeakersState() {
+    const params = new URLSearchParams();
+    if (speakerFilter) params.set('speaker', speakerFilter);
+    const suffix = params.toString() ? `?${params}` : '';
+    return window.apiJson(`/app/speakers/api/state${suffix}`);
+  };
+  window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
+})();
+</script>
+
+<script src="/app/speakers/static/who_is_this.js"></script>
+
+<script>
+(() => {
+  const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+  const initialEmptyIcon = document.getElementById('spkInitialEmptyIcon');
+  if (initialEmptyIcon) {
+    initialEmptyIcon.innerHTML = window.ConveyIcons.svg('mouse-pointer-2');
+  }
+
+  function attachAudioErrorListeners(container) {
+    container.querySelectorAll('audio').forEach(audio => {
+      audio.addEventListener('error', () => {
+        const msg = document.createElement('div');
+        msg.className = 'spk-status spk-status-error';
+        msg.setAttribute('role', 'alert');
+        msg.innerHTML = 'couldn\'t load this audio<button class="spk-status-dismiss" aria-label="dismiss">&times;</button>';
+        msg.querySelector('.spk-status-dismiss').addEventListener('click', (e) => {
+          e.target.closest('.spk-status-error').remove();
+        });
+        audio.parentNode.insertBefore(msg, audio.nextSibling);
+        audio.style.display = 'none';
+      });
+    });
+  }
+
+  function renderRefreshError(message, serverMessage) {
+    const detail = serverMessage ? `<p>${escapeHtml(serverMessage)}</p>` : '';
+    return `<div class="surface-state-refresh-error"><strong>${escapeHtml(message)}</strong>${detail}</div>`;
+  }
+
+  function setSegmentsStatus(message, serverMessage) {
+    if (!segmentsStatus) return;
+    segmentsStatus.innerHTML = message ? renderRefreshError(message, serverMessage) : '';
+  }
+
+  function setReviewStatus(message, serverMessage) {
+    const reviewStatus = document.getElementById('spkReviewStatus');
+    if (!reviewStatus) return;
+    reviewStatus.innerHTML = message ? renderRefreshError(message, serverMessage) : '';
+  }
+
+  const METHOD_DISPLAY = {
+    acoustic: 'voice match',
+    structural_single_speaker: 'only speaker',
+    structural_setting: 'setting match',
+    owner_centroid: 'voice profile match',
+    user_confirmed: 'you confirmed',
+    user_corrected: 'you corrected',
+    user_assigned: 'you assigned',
+    user_identified: 'you identified',
+    context: 'context match',
+    contextual: 'context match',
+  };
+  let day = '';
+  let SPK_COPY = {};
+  let OWNER_MIN = 0;
+  let speakerFilter = '';
+  let speakerFilterName = '';
+  const segmentList = document.getElementById('spkSegmentList');
+  const detailPanel = document.getElementById('spkDetail');
+  const ownerBanner = document.getElementById('spkOwnerBanner');
+  const discoveryBanner = document.getElementById('spkDiscoveryBanner');
+  const segmentsStatus = document.getElementById('spkSegmentsStatus');
+  const filterIndicator = document.getElementById('spkFilterIndicator');
+
+  let segments = [];
+  let segmentTotal = 0;
+  let selectedSegment = null;
+  let selectedSource = null;
+  let audioPlayer = null;
+  let currentSentences = [];
+  let reviewEntities = [];
+  let hasLabels = false;
+  let reviewSummary = null;
+  const statusTimers = {};
+  let currentFilter = 'all';
+  let playingSentenceId = null;
+  let detailExpanded = false;
+  let ownerDetectionInFlight = false;
+  let ownerStatusData = null;
+  let ownerTeachState = null;
+  let ownerTeachPrincipalId = null;
+  // Teach-start intent drives sessions; handoff generation preserves explicit #owner-teach visibility.
+  let ownerTeachStartRequested = false;
+  let ownerTeachRequestId = 0;
+  let ownerTeachHandoffSeq = 0;
+  let ownerTeachHandoffGeneration = 0;
+  let ownerStatusRequestSeq = 0;
+  let dayDiscoveryRequestSeq = 0;
+  let dayDiscoveryClusters = [];
+  let dayDiscoveryNotice = null;
+  let segmentsRequestSeq = 0;
+  let segmentSpeakersRequestSeq = 0;
+  let reviewRequestSeq = 0;
+  let ownerRevealPendingSource = null;
+  let ownerRevealShown = false;
+  let whoIsThisSheet = null;
+  const ownerTeachDeclinedKeys = new Set();
+  const OWNER_TEACH_HASH = 'owner-teach';
+  const OWNER_TEACH_REVIEW_CONCURRENCY = 4;
+
+  function focusOwnerBanner() {
+    ownerBanner.focus();
+    ownerBanner.scrollIntoView({ block: 'nearest' });
+  }
+
+  function beginOwnerTeachHandoff() {
+    if (ownerTeachHandoffGeneration !== 0) return;
+    ownerTeachHandoffGeneration = ++ownerTeachHandoffSeq;
+    renderThisIsMeGuidance();
+    focusOwnerBanner();
+  }
+
+  function initSpeakers() {
+    ownerTeachStartRequested = window.location.hash.slice(1) === OWNER_TEACH_HASH;
+    if (ownerTeachStartRequested) {
+      beginOwnerTeachHandoff();
+    }
+    checkOwnerStatus();
+    loadSegments();
+
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash.slice(1);
+      if (hash === OWNER_TEACH_HASH) {
+        navigateToOwnerHelp();
+        return;
+      }
+      ownerTeachHandoffGeneration = 0;
+      if (hash && !selectSegmentByKey(hash) && segments.length < segmentTotal) {
+        loadUntilFound(hash);
+      }
+    });
+  }
+
+  function applySpeakersDayState(payload) {
+    const context = window.SPEAKERS_CONTEXT || {};
+    day = context.day || '';
+    SPK_COPY = payload.speaker_copy || {};
+    ownerBanner.setAttribute('aria-label', SPK_COPY.SPK_OVERVIEW_YOUR_VOICE_HEADER || '');
+    OWNER_MIN = payload.owner_min_statements || 0;
+    speakerFilter = context.speakerFilter || '';
+    speakerFilterName = payload.speaker_filter_name || speakerFilter;
+    const header = document.getElementById('spkSegmentsHeader');
+    if (header) header.textContent = SPK_COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL || '';
+  }
+
+  function renderSpeakersStateError(err) {
+    window.logError?.(err, { context: 'speakers-state' });
+    const errorHtml = window.SurfaceState.error({
+      heading: "Couldn't load speakers",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage || err?.message || '',
+      detail: err,
+      retry: true,
+    });
+    segmentList.innerHTML = `<li>${errorHtml}</li>`;
+    detailPanel.innerHTML = errorHtml;
+    detailPanel.querySelector('.surface-state-retry')?.addEventListener('click', () => {
+      window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
+      startSpeakersDay();
+    });
+  }
+
+  async function startSpeakersDay() {
+    const context = window.SPEAKERS_CONTEXT || {};
+    if (!context.isDay) return;
+    document.getElementById('speakersDayView').hidden = false;
+    segmentList.innerHTML = '<li class="spk-empty">loading...</li>';
+    try {
+      const payload = await window.SPEAKERS_STATE_PROMISE;
+      applySpeakersDayState(payload);
+      initSpeakers();
+    } catch (err) {
+      renderSpeakersStateError(err);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startSpeakersDay);
+  } else {
+    startSpeakersDay();
+  }
+
+  segmentList.addEventListener('keydown', e => {
+    const item = e.target.closest('.spk-segment');
+    if (!item) return;
+
+    const items = [...segmentList.querySelectorAll('.spk-segment')];
+    const idx = items.indexOf(item);
+
+    function moveFocus(target) {
+      item.setAttribute('tabindex', '-1');
+      target.setAttribute('tabindex', '0');
+      target.focus();
+      target.scrollIntoView({ block: 'nearest' });
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (idx < items.length - 1) moveFocus(items[idx + 1]);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (idx > 0) moveFocus(items[idx - 1]);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      if (items.length) moveFocus(items[0]);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      if (items.length) moveFocus(items[items.length - 1]);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const seg = segments.find(s => s.key === item.dataset.key);
+      if (seg) {
+        window.location.hash = seg.key;
+        selectSegment(seg);
+      }
+    }
+  });
+
+  function renderThisIsMeGuidance() {
+    ownerBanner.style.display = 'block';
+    ownerBanner.replaceChildren();
+    const panel = document.createElement('div');
+    panel.className = 'spk-owner-panel';
+    const copy = document.createElement('div');
+    copy.className = 'spk-owner-copy';
+    copy.textContent = SPK_COPY.SPK_THIS_IS_ME_GUIDANCE || '';
+    panel.appendChild(copy);
+    ownerBanner.appendChild(panel);
+  }
+
+  function removeDiscoveryCluster(clusterId) {
+    dayDiscoveryClusters = dayDiscoveryClusters.filter((cluster) => String(cluster.cluster_id) !== String(clusterId));
+    renderDayDiscoveryBanner();
+  }
+
+  async function refreshWhoIsThisDayContext() {
+    const activeSegment = selectedSegment;
+    const activeSource = selectedSource;
+    await Promise.all([
+      checkDiscovery({ throwOnError: true }),
+      loadSegments({ throwOnError: true }),
+    ]);
+    if (activeSegment && activeSource) {
+      await Promise.all([
+        loadSpeakers(activeSegment, { throwOnError: true }),
+        loadReview(activeSegment, activeSource, { throwOnError: true }),
+      ]);
+    }
+  }
+
+  function ensureWhoIsThisSheet() {
+    if (whoIsThisSheet) {
+      whoIsThisSheet.setCopy(SPK_COPY);
+      return whoIsThisSheet;
+    }
+    whoIsThisSheet = window.SpeakersWhoIsThis.init({
+      mount: document.body,
+      copy: SPK_COPY,
+      context: window.SPEAKERS_CONTEXT || {},
+      apiJson: window.apiJson,
+      logError: window.logError,
+      formatDateShort: window.formatDateShort,
+      onThisIsMe: () => {
+        beginOwnerTeachHandoff();
+        navigateToOwnerHelp();
+      },
+      onIdentified: ({ clusterId }) => {
+        removeDiscoveryCluster(clusterId);
+        loadSegments();
+        if (selectedSegment && selectedSource) {
+          loadReview(selectedSegment, selectedSource);
+        }
+      },
+      onDismissed: ({ clusterId }) => {
+        removeDiscoveryCluster(clusterId);
+      },
+      onFullyRestoredUndo: async () => {
+        await refreshWhoIsThisDayContext();
+      },
+    });
+    return whoIsThisSheet;
+  }
+
+  function openWhoIsThis(cluster, trigger) {
+    ensureWhoIsThisSheet().open({
+      cluster,
+      clusterId: cluster.cluster_id,
+      trigger,
+    });
+  }
+
+  async function checkOwnerStatus() {
+    const requestSeq = ++ownerStatusRequestSeq;
+    const requestGeneration = ownerTeachHandoffGeneration;
+    const stale = () => requestSeq !== ownerStatusRequestSeq || requestGeneration !== ownerTeachHandoffGeneration;
+    try {
+      const data = await window.apiJson('/app/speakers/api/owner/status');
+      if (stale()) return;
+      ownerStatusData = data;
+      if (data.status === 'confirmed') {
+        ownerDetectionInFlight = false;
+        const revealSource = ownerRevealPendingSource;
+        const reveal = ownerRevealDecision(ownerRevealShown, revealSource, data.status);
+        ownerRevealShown = reveal.nextLatchShown;
+        ownerTeachState = null;
+        ownerTeachStartRequested = false;
+        if (reveal.show) {
+          ownerRevealPendingSource = null;
+          hideDiscovery();
+          renderOwnerReveal(data, revealSource);
+          return data;
+        }
+        ownerRevealPendingSource = null;
+        hideOwnerBannerUnlessHandoff();
+        checkDiscovery();
+        return data;
+      }
+
+      if (ownerStatusStartsTeachSession(data)) {
+        hideDiscovery();
+        if (ownerTeachState?.active) {
+          ownerTeachState.statusData = data;
+          renderOwnerTeachSession();
+        } else if (ownerTeachStartRequested) {
+          startOwnerTeachSession(data);
+        } else {
+          renderOwnerNotReady(data);
+        }
+        if (data.status === 'needs_detection' && !ownerDetectionInFlight) {
+          ownerDetectionInFlight = true;
+          window.apiJson('/app/speakers/api/owner/detect', { method: 'POST' })
+            .then(() => {
+              ownerDetectionInFlight = false;
+              checkOwnerStatus();
+            })
+            .catch((err) => {
+              ownerDetectionInFlight = false;
+              renderOwnerBanner(`Couldn't analyze voice patterns — ${err.serverMessage}`);
+              window.logError(err, { context: 'speakers: owner detect failed' });
+            });
+        }
+        return data;
+      }
+
+      ownerDetectionInFlight = false;
+      if (data.status === 'no_cluster') {
+        ownerTeachState = null;
+        ownerTeachStartRequested = false;
+        hideDiscovery();
+        hideOwnerBannerUnlessHandoff();
+        return data;
+      }
+      if (data.status === 'candidate') {
+        ownerTeachState = null;
+        ownerTeachStartRequested = false;
+        hideDiscovery();
+        renderOwnerCandidate(data);
+        return data;
+      }
+
+      ownerTeachState = null;
+      ownerTeachStartRequested = false;
+      hideOwnerBannerUnlessHandoff();
+      checkDiscovery();
+      return data;
+    } catch (err) {
+      if (stale()) return;
+      ownerDetectionInFlight = false;
+      hideDiscovery();
+      renderOwnerBanner(`Couldn't load owner status — ${err.serverMessage}`);
+      window.logError(err, { context: 'speakers: checkOwnerStatus failed' });
+    }
+  }
+
+  function renderOwnerBanner(message) {
+    ownerBanner.style.display = 'block';
+    ownerBanner.innerHTML = `
+      <div class="spk-owner-panel">
+        <div class="spk-owner-title">Owner voiceprint</div>
+        <div class="spk-owner-copy">${escapeHtml(message)}</div>
+      </div>
+    `;
+  }
+
+  function hideOwnerBanner() {
+    ownerBanner.style.display = 'none';
+    ownerBanner.innerHTML = '';
+  }
+
+  function hideOwnerBannerUnlessHandoff() {
+    if (ownerTeachHandoffGeneration !== 0) return;
+    hideOwnerBanner();
+  }
+
+  function renderOwnerCandidate(data) {
+    const samples = data.samples || [];
+    ownerBanner.style.display = 'block';
+    ownerBanner.innerHTML = `
+      <div class="spk-owner-panel">
+        <div class="spk-owner-title">is this your voice?</div>
+        <div class="spk-owner-copy">
+          sol found a voice pattern that's likely yours, from ${escapeHtml(data.cluster_size || 0)} voice samples. review a few examples before confirming.
+        </div>
+        <div class="spk-owner-samples">
+          ${samples.map((sample, index) => `
+            <div class="spk-owner-sample">
+              <div class="spk-owner-sample-title">sample ${index + 1}</div>
+              <div class="spk-owner-sample-meta">
+                ${escapeHtml(sample.day)} · ${escapeHtml(sample.stream)} · ${escapeHtml(sample.segment_key)}
+              </div>
+              ${sample.audio_url ? `<audio controls preload="metadata" src="${sample.audio_url}"></audio>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div class="spk-owner-actions">
+          <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerConfirm">yes, that's me</button>
+          <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerReject">no, try again</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
+      submitOwnerChoice('/app/speakers/api/owner/confirm', 'candidate');
+    });
+    document.getElementById('spkOwnerReject')?.addEventListener('click', () => {
+      submitOwnerChoice('/app/speakers/api/owner/reject');
+    });
+
+    attachAudioErrorListeners(ownerBanner);
+  }
+
+  function formatOwnerMetric(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a';
+    if (Number.isInteger(value)) return String(value);
+    return value.toFixed(2);
+  }
+
+  function todayDayKey() {
+    const now = new Date();
+    const year = String(now.getFullYear());
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const datePart = String(now.getDate()).padStart(2, '0');
+    return `${year}${month}${datePart}`;
+  }
+
+  function principalEntityId() {
+    const principal = reviewEntities.find(entity => entity.is_principal);
+    return principal ? principal.entity_id : null;
+  }
+
+  function ownerStatusStartsTeachSession(data) {
+    return Boolean(
+      data
+      && (
+        data.status === 'needs_detection'
+        || data.status === 'low_quality'
+        || (data.status === 'none' && Number(data.segments_with_embeddings || 0) > 0)
+      )
+    );
+  }
+
+  function ownerTeachMomentumCount(state) {
+    const count = Number(state?.manual_tags_count || 0);
+    if (!Number.isFinite(count)) return 0;
+    return Math.max(0, Math.floor(count));
+  }
+
+  function ownerTeachTemplateText(template, replacements) {
+    return Object.entries(replacements).reduce(
+      (text, entry) => text.replaceAll(`{${entry[0]}}`, String(entry[1])),
+      template || ''
+    );
+  }
+
+  function ownerTeachProgressText(state, copy, minimum) {
+    return ownerTeachTemplateText(copy.SPK_OWNER_TEACH_PROGRESS_TEMPLATE, {
+      count: ownerTeachMomentumCount(state),
+      minimum,
+    });
+  }
+
+  function ownerTeachExhaustedBody(state, copy, minimum) {
+    return ownerTeachTemplateText(copy.SPK_OWNER_TEACH_EXHAUSTED_BODY_TEMPLATE, {
+      count: ownerTeachMomentumCount(state),
+      minimum,
+    });
+  }
+
+  function ownerRevealStatementText(state, copy) {
+    return ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_STATEMENTS_TEMPLATE, {
+      count: ownerTeachMomentumCount(state),
+    });
+  }
+
+  function ownerRevealFactTexts(state, source, copy) {
+    if (source === 'manual_tags') return [ownerRevealStatementText(state, copy)];
+    const meta = state?.centroid_metadata || {};
+    const streams = Array.isArray(meta.streams) ? meta.streams.length : 0;
+    return [
+      ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_STREAMS_TEMPLATE, { count: streams }),
+      ownerTeachTemplateText(copy.SPK_OWNER_REVEAL_EVIDENCE_TEMPLATE, { tier: meta.evidence_tier || '' }),
+    ];
+  }
+
+  function ownerTeachStatementKey(item) {
+    return [
+      item.day || '',
+      item.stream || '',
+      item.segment_key || '',
+      item.source || '',
+      item.id,
+    ].join('/');
+  }
+
+  function ownerTeachEligibleStatements(reviewPayload, declinedKeys) {
+    const declined = declinedKeys || new Set();
+    const sentences = Array.isArray(reviewPayload?.sentences) ? reviewPayload.sentences : [];
+    return sentences.reduce((items, sentence) => {
+      const item = {
+        ...sentence,
+        day: reviewPayload.day || '',
+        stream: reviewPayload.stream || '',
+        segment_key: reviewPayload.segment?.key || reviewPayload.segment_key || '',
+        segment_start: reviewPayload.segment?.start || '',
+        segment_end: reviewPayload.segment?.end || '',
+        source: reviewPayload.source || '',
+        audio_file: reviewPayload.audio_file || '',
+        audio_mimetype: reviewPayload.audio_mimetype || '',
+      };
+      const key = ownerTeachStatementKey(item);
+      if (
+        sentence.has_embedding === true
+        && !sentence.speaker_entity_id
+        && !declined.has(key)
+      ) {
+        items.push({
+          ...item,
+          owner_teach_key: key,
+          duration_s: Number(sentence.duration_s || 0),
+        });
+      }
+      return items;
+    }, []);
+  }
+
+  function ownerTeachOrderStatements(items, manualTagCount) {
+    const sorted = [...items].sort((a, b) => {
+      const durationDiff = Number(b.duration_s || 0) - Number(a.duration_s || 0);
+      if (durationDiff !== 0) return durationDiff;
+      return ownerTeachStatementKey(a).localeCompare(ownerTeachStatementKey(b));
+    });
+    if (sorted.length === 0) return sorted;
+    const count = Number(manualTagCount || 0);
+    const rotation = (Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0) % sorted.length;
+    return sorted.slice(rotation).concat(sorted.slice(0, rotation));
+  }
+
+  function ownerTeachPoolCounts(results) {
+    return results.reduce((counts, result) => ({
+      eligible_count: counts.eligible_count + (result.items || []).length,
+      failed_count: counts.failed_count + Number(result.failed_count || 0),
+    }), { eligible_count: 0, failed_count: 0 });
+  }
+
+  function ownerTeachSegmentsApiUrl(dayKey, limit, offset) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset)
+    });
+    return `/app/speakers/api/segments/${dayKey}?${params.toString()}`;
+  }
+
+  function ownerTeachSegmentPageState(collectedSegments, pageData) {
+    const collected = Array.isArray(collectedSegments) ? collectedSegments : [];
+    const page = Array.isArray(pageData?.segments) ? pageData.segments : [];
+    const total = Number(pageData?.total || 0);
+    const segmentsSoFar = collected.concat(page);
+    const done = page.length === 0 || (Number.isFinite(total) && total > 0 && segmentsSoFar.length >= total);
+    return { segments: segmentsSoFar, nextOffset: segmentsSoFar.length, done };
+  }
+
+  function ownerTeachApplyResult(state, classification, result, copy) {
+    if (!state) return state;
+    const next = { ...state, items: [...(state.items || [])] };
+    if (classification.kind === 'refused') {
+      next.refusalGuidance = result?.owner_bootstrap_guidance || '';
+      return next;
+    }
+    if (classification.copyKey) {
+      next.notice = copy[classification.copyKey] || '';
+      next.noticeKind = classification.kind;
+      return next;
+    }
+    if (classification.advancesMomentum) {
+      next.items.splice(next.index, 1);
+      if (next.index > next.items.length) {
+        next.index = next.items.length;
+      }
+    }
+    return next;
+  }
+
+  function ownerRevealDecision(latchShown, pendingSource, status) {
+    const show = latchShown !== true && Boolean(pendingSource) && status === 'confirmed';
+    return { show, nextLatchShown: latchShown === true || show };
+  }
+
+  function classifyOwnerTeachResult(reasonCode, ownerBootstrapOutcome) {
+    if (ownerBootstrapOutcome === 'built') {
+      return { kind: 'built', copyKey: '', advancesMomentum: false };
+    }
+    if (ownerBootstrapOutcome === 'already_built') {
+      return { kind: 'already_built', copyKey: '', advancesMomentum: false };
+    }
+    if (ownerBootstrapOutcome === 'refused') {
+      return { kind: 'refused', copyKey: '', advancesMomentum: false };
+    }
+    if (ownerBootstrapOutcome === 'busy' || reasonCode === 'speaker_voiceprint_busy') {
+      return { kind: 'busy', copyKey: 'SPK_OWNER_TEACH_BUSY', advancesMomentum: false };
+    }
+    if (ownerBootstrapOutcome === 'failed' || ownerBootstrapOutcome === 'not_attempted' || reasonCode) {
+      return { kind: 'failed', copyKey: 'SPK_OWNER_TEACH_FAILED', advancesMomentum: false };
+    }
+    return { kind: 'assigned', copyKey: '', advancesMomentum: true };
+  }
+
+  function navigateToOwnerHelp() {
+    const today = todayDayKey();
+    if (day !== today) {
+      window.location.href = `/app/speakers/${today}#${OWNER_TEACH_HASH}`;
+      return;
+    }
+    ownerTeachStartRequested = true;
+    beginOwnerTeachHandoff();
+    if (window.location.hash.slice(1) !== OWNER_TEACH_HASH) {
+      window.location.hash = OWNER_TEACH_HASH;
+    }
+    if (ownerStatusData && ownerStatusStartsTeachSession(ownerStatusData)) {
+      startOwnerTeachSession(ownerStatusData);
+    } else {
+      checkOwnerStatus();
+    }
+  }
+
+  function renderOwnerColdStartDiagnostics(data) {
+    return `<details class="spk-owner-diagnostics">
+          <summary class="spk-owner-diagnostics-summary">why not yet?</summary>
+          <div class="spk-owner-diagnostics-body">
+            <div class="spk-owner-diagnostics-line">source: ${escapeHtml(data.source || 'auto')}</div>
+            ${data.low_quality_reason ? `
+              <div class="spk-owner-diagnostics-line">
+                gate: ${escapeHtml(data.low_quality_reason)} — observed ${escapeHtml(formatOwnerMetric(data.observed_value))}, threshold ${escapeHtml(formatOwnerMetric(data.threshold_value))}
+              </div>
+            ` : ''}
+            <div class="spk-owner-diagnostics-line">Manual tags: ${escapeHtml(String(ownerTeachMomentumCount(data)))}</div>
+            <div class="spk-owner-diagnostics-line">Segments with audio: ${escapeHtml(String(data.segments_available || 0))}</div>
+            <div class="spk-owner-diagnostics-line">Embeddings: ${escapeHtml(String(data.embeddings_available || 0))}</div>
+          </div>
+        </details>`;
+  }
+
+  function renderOwnerGateDiagnostics(data) {
+    const rendered = window.GateDrawer.render(data);
+    return rendered || renderOwnerColdStartDiagnostics(data);
+  }
+
+  function renderOwnerNotReady(data) {
+    window.Drawer.preserveOpen(ownerBanner, () => {
+      const diagnostics = renderOwnerGateDiagnostics(data);
+      const minimum = OWNER_MIN || 0;
+      const count = ownerTeachMomentumCount(data);
+      const progress = minimum > 0 ? Math.min(100, Math.max(0, Math.round((count / minimum) * 100))) : 0;
+      ownerBanner.style.display = 'block';
+      ownerBanner.innerHTML = `
+      <div class="spk-owner-panel">
+        <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_TITLE || '')}</div>
+        <div class="spk-owner-copy">
+          ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_BODY || '')}
+        </div>
+        <div class="spk-owner-progress-line">${escapeHtml(ownerTeachProgressText(data, SPK_COPY, minimum))}</div>
+        <div class="spk-owner-progress" aria-hidden="true">
+          <div class="spk-owner-progress-fill" style="width:${progress}%"></div>
+        </div>
+        ${data.ownerTeachPaused ? `<div class="spk-owner-notice">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_PAUSED || '')}</div>` : ''}
+        <div class="spk-owner-actions">
+          <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerHelp">
+            ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_START_LABEL || '')}
+          </button>
+          ${data.can_build_from_tags === true ? `
+            <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerBuildFromTags">
+              ${escapeHtml(SPK_COPY.SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL || '')}
+            </button>
+          ` : ''}
+        </div>
+        ${diagnostics}
+      </div>
+    `;
+    });
+
+    document.getElementById('spkOwnerHelp')?.addEventListener('click', navigateToOwnerHelp);
+    document.getElementById('spkOwnerBuildFromTags')?.addEventListener('click', event => {
+      const btn = event.currentTarget;
+      btn.disabled = true;
+      window.apiJson('/app/speakers/api/owner/build-from-tags', { method: 'POST' })
+        .then(() => {
+          checkOwnerStatus();
+        })
+        .catch((err) => {
+          btn.disabled = false;
+          renderOwnerBanner(`Couldn't build from manual tags — ${err.serverMessage}`);
+          window.logError(err, { context: 'speakers: owner build from tags failed' });
+        });
+    });
+  }
+
+  function renderOwnerTeachProgress(data) {
+    const minimum = OWNER_MIN || 0;
+    const count = ownerTeachMomentumCount(data);
+    const progress = minimum > 0 ? Math.min(100, Math.max(0, Math.round((count / minimum) * 100))) : 0;
+    return `
+      <div class="spk-owner-progress-line">${escapeHtml(ownerTeachProgressText(data, SPK_COPY, minimum))}</div>
+      <div class="spk-owner-progress" aria-hidden="true">
+        <div class="spk-owner-progress-fill" style="width:${progress}%"></div>
+      </div>
+    `;
+  }
+
+  function ownerTeachCurrentItem() {
+    if (!ownerTeachState || ownerTeachState.items.length === 0) return null;
+    if (ownerTeachState.index < 0 || ownerTeachState.index >= ownerTeachState.items.length) return null;
+    return ownerTeachState.items[ownerTeachState.index];
+  }
+
+  function renderOwnerTeachSession() {
+    if (!ownerTeachState) return;
+    const data = ownerTeachState.statusData || ownerStatusData || {};
+    const partial = ownerTeachState.failed_count > 0;
+    const current = ownerTeachCurrentItem();
+    let body = '';
+
+    if (ownerTeachState.loading) {
+      body = `<div class="spk-owner-copy">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_LOADING || '')}</div>`;
+    } else if (ownerTeachState.refusalGuidance) {
+      body = `
+        <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_REFUSED_TITLE || '')}</div>
+        <div class="spk-owner-copy">${escapeHtml(ownerTeachState.refusalGuidance)}</div>
+      `;
+    } else if ((ownerTeachState.noticeKind === 'busy' || ownerTeachState.noticeKind === 'failed') && !current) {
+      body = `<div class="spk-owner-copy">${escapeHtml(ownerTeachState.notice || '')}</div>`;
+    } else if (ownerTeachState.items.length === 0 && !ownerTeachState.startedWithItems) {
+      body = `<div class="spk-owner-copy">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_EMPTY || '')}</div>`;
+    } else if (ownerTeachState.items.length === 0 || !current) {
+      body = `
+        <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_EXHAUSTED_TITLE || '')}</div>
+        <div class="spk-owner-copy">${escapeHtml(ownerTeachExhaustedBody(data, SPK_COPY, OWNER_MIN || 0))}</div>
+      `;
+    } else {
+      const meta = [
+        `${current.segment_start || ''} - ${current.segment_end || ''}`.trim(),
+        formatSource(current.source || ''),
+        formatDuration(current.duration_s || 0),
+      ].filter(Boolean).join(' · ');
+      body = `
+        ${ownerTeachState.notice ? `<div class="spk-owner-notice">${escapeHtml(ownerTeachState.notice)}</div>` : ''}
+        <div class="spk-owner-teach-card" data-owner-teach-key="${escapeHtml(current.owner_teach_key)}">
+          <div class="spk-owner-teach-meta">${escapeHtml(meta)}</div>
+          <div class="spk-owner-teach-text">${escapeHtml(current.text || '')}</div>
+          ${current.audio_file ? `
+            <div class="spk-owner-teach-audio">
+              <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerTeachPlay" type="button">${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}</button>
+              <audio id="spkOwnerTeachAudio" controls preload="metadata" src="${escapeHtml(current.audio_file)}"></audio>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    ownerBanner.style.display = 'block';
+    ownerBanner.innerHTML = `
+      <div class="spk-owner-panel">
+        <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_TITLE || '')}</div>
+        ${renderOwnerTeachProgress(data)}
+        ${partial ? `<div class="spk-owner-notice">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_PARTIAL || '')}</div>` : ''}
+        ${body}
+        <div class="spk-owner-actions">
+          ${current && !ownerTeachState.loading && !ownerTeachState.refusalGuidance ? `
+            <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerTeachMine" type="button">
+              ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_MINE_LABEL || '')}
+            </button>
+            <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerTeachNotMe" type="button">
+              ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_NOT_ME_LABEL || '')}
+            </button>
+            <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerTeachSkip" type="button">
+              ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_SKIP_LABEL || '')}
+            </button>
+          ` : ''}
+          <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerTeachPause" type="button">
+            ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_PAUSE_LABEL || '')}
+          </button>
+        </div>
+      </div>
+    `;
+    attachOwnerTeachHandlers();
+  }
+
+  function attachOwnerTeachHandlers() {
+    document.getElementById('spkOwnerTeachPause')?.addEventListener('click', pauseOwnerTeachSession);
+    document.getElementById('spkOwnerTeachMine')?.addEventListener('click', submitOwnerTeachMine);
+    document.getElementById('spkOwnerTeachNotMe')?.addEventListener('click', declineOwnerTeachStatement);
+    document.getElementById('spkOwnerTeachSkip')?.addEventListener('click', skipOwnerTeachStatement);
+    document.getElementById('spkOwnerTeachPlay')?.addEventListener('click', () => {
+      const current = ownerTeachCurrentItem();
+      const audio = document.getElementById('spkOwnerTeachAudio');
+      if (!current || !audio) return;
+      audio.currentTime = Math.max(0, Number(current.offset || 0));
+      audio.play();
+    });
+  }
+
+  function pauseOwnerTeachSession() {
+    ownerTeachState = null;
+    ownerTeachStartRequested = false;
+    renderOwnerNotReady({ ...(ownerStatusData || {}), ownerTeachPaused: true });
+  }
+
+  function declineOwnerTeachStatement() {
+    const current = ownerTeachCurrentItem();
+    if (!ownerTeachState || !current) return;
+    ownerTeachDeclinedKeys.add(current.owner_teach_key);
+    ownerTeachState.items.splice(ownerTeachState.index, 1);
+    if (ownerTeachState.index > ownerTeachState.items.length) {
+      ownerTeachState.index = ownerTeachState.items.length;
+    }
+    ownerTeachState.notice = SPK_COPY.SPK_OWNER_TEACH_NOT_ME_RESPONSE || '';
+    ownerTeachState.noticeKind = '';
+    renderOwnerTeachSession();
+  }
+
+  function skipOwnerTeachStatement() {
+    if (!ownerTeachState) return;
+    ownerTeachState.index += 1;
+    ownerTeachState.notice = '';
+    ownerTeachState.noticeKind = '';
+    renderOwnerTeachSession();
+  }
+
+  async function ensureOwnerTeachSegments() {
+    let state = { segments: [], nextOffset: 0, done: false };
+    while (!state.done) {
+      const data = await window.apiJson(ownerTeachSegmentsApiUrl(day, 100, state.nextOffset));
+      state = ownerTeachSegmentPageState(state.segments, data);
+    }
+    return state.segments;
+  }
+
+  async function loadOwnerTeachReviews(poolSegments) {
+    const requests = [];
+    poolSegments.forEach(seg => {
+      (seg.sources || []).forEach(source => {
+        requests.push({ seg, source });
+      });
+    });
+    const results = [];
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < requests.length) {
+        const request = requests[nextIndex];
+        nextIndex += 1;
+        try {
+          const data = await window.apiJson(`/app/speakers/api/review/${day}/${request.seg.stream}/${request.seg.key}/${request.source}`);
+          const principal = (data.all_entities || []).find(entity => entity.is_principal);
+          if (principal) ownerTeachPrincipalId = principal.entity_id;
+          const payload = {
+            ...data,
+            day,
+            stream: request.seg.stream,
+            segment_key: request.seg.key,
+          };
+          results.push({
+            items: ownerTeachEligibleStatements(payload, ownerTeachDeclinedKeys),
+            failed_count: 0,
+          });
+        } catch (err) {
+          window.logError?.(err, { context: 'speakers: owner teach review failed' });
+          results.push({ items: [], failed_count: 1 });
+        }
+      }
+    }
+    const workerCount = Math.min(OWNER_TEACH_REVIEW_CONCURRENCY, requests.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
+  }
+
+  async function startOwnerTeachSession(data) {
+    ownerTeachStartRequested = true;
+    ownerTeachPrincipalId = null;
+    ownerTeachState = {
+      active: true,
+      loading: true,
+      statusData: data || ownerStatusData || {},
+      items: [],
+      index: 0,
+      failed_count: 0,
+      notice: '',
+      noticeKind: '',
+      refusalGuidance: '',
+      startedWithItems: false,
+    };
+    const requestId = ownerTeachRequestId + 1;
+    ownerTeachRequestId = requestId;
+    renderOwnerTeachSession();
+    const poolSegments = await ensureOwnerTeachSegments();
+    const results = await loadOwnerTeachReviews(poolSegments);
+    if (!ownerTeachState || ownerTeachRequestId !== requestId) return;
+    const counts = ownerTeachPoolCounts(results);
+    const items = results.flatMap(result => result.items || []);
+    ownerTeachState = {
+      ...ownerTeachState,
+      loading: false,
+      items: ownerTeachOrderStatements(items, ownerTeachMomentumCount(ownerTeachState.statusData)),
+      index: 0,
+      failed_count: counts.failed_count,
+      startedWithItems: items.length > 0,
+    };
+    renderOwnerTeachSession();
+  }
+
+  async function submitOwnerTeachMine() {
+    const current = ownerTeachCurrentItem();
+    const principalId = ownerTeachPrincipalId || principalEntityId();
+    if (!ownerTeachState || !current || !principalId) return;
+    ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+    try {
+      const result = await window.apiJson('/app/speakers/api/assign-attribution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day: current.day,
+          stream: current.stream,
+          segment_key: current.segment_key,
+          source: current.source,
+          sentence_id: current.id,
+          speaker: principalId,
+        }),
+      });
+      const classification = classifyOwnerTeachResult(null, result.owner_bootstrap_outcome);
+      if (classification.kind === 'built') {
+        ownerRevealPendingSource = 'manual_tags';
+        ownerTeachState = null;
+        await checkOwnerStatus();
+        return;
+      }
+      if (classification.kind === 'already_built') {
+        ownerTeachState = null;
+        await checkOwnerStatus();
+        return;
+      }
+      if (classification.advancesMomentum) {
+        await checkOwnerStatus();
+      }
+      if (!ownerTeachState) return;
+      ownerTeachState = ownerTeachApplyResult(ownerTeachState, classification, result, SPK_COPY);
+      renderOwnerTeachSession();
+    } catch (err) {
+      const classification = classifyOwnerTeachResult(err.reasonCode, null);
+      if (ownerTeachState) {
+        ownerTeachState.notice = SPK_COPY[classification.copyKey] || err.serverMessage || '';
+        ownerTeachState.noticeKind = classification.kind;
+      }
+      renderOwnerTeachSession();
+      window.logError(err, { context: 'speakers: owner teach assign failed' });
+    }
+  }
+
+  function renderOwnerReveal(data, source) {
+    const facts = ownerRevealFactTexts(data, source, SPK_COPY);
+    ownerBanner.style.display = 'block';
+    ownerBanner.innerHTML = `
+      <div class="spk-owner-panel spk-owner-reveal">
+        <div class="spk-owner-title">${escapeHtml(SPK_COPY.SPK_OWNER_REVEAL_TITLE || '')}</div>
+        <div class="spk-owner-facts">
+          ${facts.map(fact => `<span class="spk-owner-fact">${escapeHtml(fact)}</span>`).join('')}
+        </div>
+        <div class="spk-owner-actions">
+          <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerRevealClose" type="button">
+            ${escapeHtml(SPK_COPY.SPK_OWNER_REVEAL_CLOSE_LABEL || '')}
+          </button>
+        </div>
+      </div>
+    `;
+    document.getElementById('spkOwnerRevealClose')?.addEventListener('click', () => {
+      hideOwnerBanner();
+      checkDiscovery();
+    });
+  }
+
+  function submitOwnerChoice(path, revealSource = null) {
+    ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+    window.apiJson(path, { method: 'POST' })
+      .then(() => {
+        if (revealSource) ownerRevealPendingSource = revealSource;
+        checkOwnerStatus();
+      })
+      .catch((err) => {
+        ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = false; });
+        renderOwnerBanner(err.serverMessage);
+        window.logError(err, { context: 'speakers: submitOwnerChoice failed' });
+      });
+  }
+
+  function checkDiscovery(options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = dayDiscoveryRequestSeq + 1;
+    dayDiscoveryRequestSeq = requestSeq;
+    discoveryBanner.style.display = 'block';
+    discoveryBanner.innerHTML = '<div class="spk-discovery-panel"><div class="spk-discovery-title"><span class="spk-spinner"></span> Discovering new voices…</div></div>';
+    return window.apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
+      .then(data => {
+        if (requestSeq !== dayDiscoveryRequestSeq) return false;
+        renderDiscoveryPayload(data);
+        return refreshDayDiscoveryScan({ requestSeq, throwOnError });
+      })
+      .catch((err) => {
+        if (requestSeq !== dayDiscoveryRequestSeq) return false;
+        dayDiscoveryNotice = dayDiscoveryErrorNotice();
+        renderDayDiscoveryBanner();
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function renderDiscoveryPayload(data) {
+    dayDiscoveryClusters = discoveryClusters(data);
+    renderDayDiscoveryBanner();
+  }
+
+  function refreshDayDiscoveryScan({ requestSeq, throwOnError } = {}) {
+    const activeSeq = requestSeq || dayDiscoveryRequestSeq + 1;
+    dayDiscoveryRequestSeq = activeSeq;
+    return window.apiJson('/app/speakers/api/discovery/scan', { method: 'POST' })
+      .then(data => {
+        if (activeSeq !== dayDiscoveryRequestSeq) return false;
+        dayDiscoveryClusters = discoveryRefreshClusters(data, dayDiscoveryClusters);
+        dayDiscoveryNotice = discoveryNoticeFromScan(data, SPK_COPY);
+        renderDayDiscoveryBanner();
+        return true;
+      })
+      .catch((err) => {
+        if (activeSeq !== dayDiscoveryRequestSeq) return false;
+        dayDiscoveryNotice = dayDiscoveryErrorNotice();
+        renderDayDiscoveryBanner();
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function discoveryClusters(data) {
+    return Array.isArray(data?.clusters) ? data.clusters : [];
+  }
+
+  function discoveryRefreshClusters(data, currentClusters) {
+    const clusters = discoveryClusters(data);
+    if (data?.status === 'degraded' && !clusters.length && currentClusters.length) {
+      return currentClusters;
+    }
+    return clusters;
+  }
+
+  function discoveryIssueCount(issue) {
+    const count = Number(issue?.count || 0);
+    return Number.isFinite(count) ? count : 0;
+  }
+
+  function discoveryIssueMessage(issue, copy) {
+    const count = discoveryIssueCount(issue);
+    if (count > 0 && copy.SPK_DISCOVERY_DEGRADED_TEMPLATE) {
+      return copy.SPK_DISCOVERY_DEGRADED_TEMPLATE.replace('{count}', String(count));
+    }
+    return issue?.message || (copy.SPK_DISCOVERY_DEGRADED_TEMPLATE || '').replace('{count}', String(count));
+  }
+
+  function discoveryNoticeFromScan(data, copy) {
+    const issues = Array.isArray(data?.issues) ? data.issues : [];
+    if (data?.status !== 'degraded' || !issues.length) return null;
+    return {
+      type: 'degraded',
+      messages: issues.map((issue) => discoveryIssueMessage(issue, copy)).filter(Boolean),
+      retry: false,
+    };
+  }
+
+  function dayDiscoveryErrorNotice() {
+    return {
+      type: 'error',
+      messages: [SPK_COPY.SPK_DISCOVERY_ERROR || ''],
+      retry: true,
+    };
+  }
+
+  function renderDayDiscoveryNotice(notice) {
+    if (!notice) return '';
+    const statusClass = notice.type === 'error' ? 'spk-status-error' : 'spk-status-info';
+    const retry = notice.retry
+      ? `<button id="spkDayDiscoveryRetry" class="spk-discovery-retry" type="button">${escapeHtml(SPK_COPY.SPK_ACTION_RETRY || '')}</button>`
+      : '';
+    return `
+      <div class="spk-status ${statusClass} spk-discovery-notice" role="alert">
+        <div class="spk-discovery-notice-text">
+          ${(notice.messages || []).map((message) => `<div>${escapeHtml(message)}</div>`).join('')}
+        </div>
+        <div class="spk-discovery-notice-actions">
+          ${retry}
+          <button id="spkDayDiscoveryDismiss" class="spk-status-dismiss" type="button" aria-label="dismiss">&times;</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDayDiscoveryBanner() {
+    const clusters = dayDiscoveryClusters;
+    if (!clusters.length && !dayDiscoveryNotice) {
+      hideDiscovery();
+      return;
+    }
+    discoveryBanner.style.display = 'block';
+    discoveryBanner.innerHTML = `
+      <div class="spk-discovery-panel">
+        ${renderDayDiscoveryNotice(dayDiscoveryNotice)}
+        ${clusters.length ? `
+          <div class="spk-discovery-title">new speakers found</div>
+          <div class="spk-discovery-copy">
+            sol found ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} that ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
+          </div>
+          <div class="spk-discovery-clusters">
+            ${clusters.map(cluster => `
+              <div class="spk-discovery-cluster" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
+                <div class="spk-discovery-cluster-title">
+                  Unknown speaker <span style="font-weight: 400">&middot; ${cluster.size} samples &middot; ${cluster.segment_count} segments</span>
+                </div>
+                ${(cluster.samples || []).map(sample => `
+                  <div class="spk-discovery-sample">
+                    <div class="spk-discovery-sample-text">${escapeHtml(sample.text || '(no transcript)')}</div>
+                    ${sample.audio_url ? `<audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>` : ''}
+                  </div>
+                `).join('')}
+                <button type="button" class="spk-discovery-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">
+                  ${escapeHtml(SPK_COPY.SPK_ACTION_WHO_IS_THIS || '')}
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    attachAudioErrorListeners(discoveryBanner);
+    discoveryBanner.querySelectorAll('.spk-who-trigger').forEach((trigger) => {
+      const card = trigger.closest('.spk-discovery-cluster');
+      const cluster = clusters.find(item => String(item.cluster_id) === card?.dataset.clusterId);
+      if (cluster) {
+        trigger.addEventListener('click', () => openWhoIsThis(cluster, trigger));
+      }
+    });
+    document.getElementById('spkDayDiscoveryRetry')?.addEventListener('click', () => {
+      refreshDayDiscoveryScan({ requestSeq: dayDiscoveryRequestSeq + 1, throwOnError: false });
+    });
+    document.getElementById('spkDayDiscoveryDismiss')?.addEventListener('click', () => {
+      dayDiscoveryNotice = null;
+      renderDayDiscoveryBanner();
+    });
+  }
+
+  function hideDiscovery() {
+    dayDiscoveryClusters = [];
+    dayDiscoveryNotice = null;
+    discoveryBanner.style.display = 'none';
+    discoveryBanner.innerHTML = '';
+  }
+
+  function segmentsApiUrl(limit, offset) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset)
+    });
+    if (speakerFilter) {
+      params.set('speaker', speakerFilter);
+    }
+    return `/app/speakers/api/segments/${day}?${params.toString()}`;
+  }
+
+  function updateSpeakerFilterIndicator() {
+    if (!filterIndicator) return;
+    if (!speakerFilter) {
+      filterIndicator.innerHTML = '';
+      return;
+    }
+    const label = speakerFilterName || speakerFilter;
+    filterIndicator.innerHTML = `${escapeHtml(SPK_COPY.SPK_FILTER_BY_PREFIX || '')} ${escapeHtml(label)}`;
+  }
+
+  function segmentHeaderLabel() {
+    return SPK_COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL || '';
+  }
+
+  function loadSegments(options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = segmentsRequestSeq + 1;
+    segmentsRequestSeq = requestSeq;
+    updateSpeakerFilterIndicator();
+    const fetchLimit = Math.max(segments.length, 20);
+    return fetch(segmentsApiUrl(fetchLimit, 0))
+      .then(r => r.json())
+      .then(data => {
+        if (requestSeq !== segmentsRequestSeq) return false;
+        setSegmentsStatus();
+        segments = data.segments || [];
+        segmentTotal = data.total || 0;
+        renderSegmentList();
+        updateLoadMore();
+	        if (window.location.hash && window.location.hash.slice(1) !== OWNER_TEACH_HASH) {
+	          const hashKey = window.location.hash.slice(1);
+	          if (!selectSegmentByKey(hashKey) && segments.length < segmentTotal) {
+	            loadUntilFound(hashKey, requestSeq);
+	          }
+	        }
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== segmentsRequestSeq) return false;
+        segmentList.innerHTML = '<li class="spk-empty">Failed to load segments</li>';
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function loadMoreSegments() {
+    const requestSeq = segmentsRequestSeq + 1;
+    segmentsRequestSeq = requestSeq;
+    const btn = document.getElementById('spkLoadMoreBtn');
+    if (btn) btn.disabled = true;
+    return fetch(segmentsApiUrl(20, segments.length))
+      .then(r => r.json())
+      .then(data => {
+        if (requestSeq !== segmentsRequestSeq) return false;
+        setSegmentsStatus();
+        const newSegments = data.segments || [];
+        segments = segments.concat(newSegments);
+        segmentTotal = data.total || 0;
+        renderSegmentList();
+        updateLoadMore();
+        return true;
+      })
+      .catch(() => {
+        if (requestSeq !== segmentsRequestSeq) return false;
+        if (btn) btn.disabled = false;
+        return false;
+      });
+  }
+
+  function loadUntilFound(key, requestSeq) {
+    const activeSeq = requestSeq || segmentsRequestSeq + 1;
+    segmentsRequestSeq = activeSeq;
+    return window.apiJson(segmentsApiUrl(20, segments.length))
+      .then(data => {
+        if (activeSeq !== segmentsRequestSeq) return false;
+        setSegmentsStatus();
+        const newSegments = data.segments || [];
+        if (newSegments.length === 0) return false;
+        segments = segments.concat(newSegments);
+        segmentTotal = data.total || 0;
+        renderSegmentList();
+        updateLoadMore();
+        if (!selectSegmentByKey(key) && segments.length < segmentTotal) {
+          return loadUntilFound(key, activeSeq);
+        }
+        return true;
+      })
+      .catch((err) => {
+        if (activeSeq !== segmentsRequestSeq) return false;
+        setSegmentsStatus("Couldn't load more segments", err.serverMessage);
+        window.logError(err, { context: 'speakers: loadUntilFound failed' });
+        return false;
+      });
+  }
+
+  function updateLoadMore() {
+    const container = document.getElementById('spkLoadMore');
+    const btn = document.getElementById('spkLoadMoreBtn');
+    if (!container || !btn) return;
+
+    if (segmentTotal > 20 && segments.length < segmentTotal) {
+      container.style.display = '';
+      btn.textContent = `Load more segments (${segments.length} of ${segmentTotal})`;
+      btn.onclick = loadMoreSegments;
+    } else {
+      container.style.display = 'none';
+    }
+  }
+
+  function renderSegmentList() {
+    if (segments.length === 0) {
+      const emptyHeading = speakerFilter
+        ? (SPK_COPY.SPK_FILTER_NO_SEGMENTS_TODAY || '')
+        : 'no speakers discovered today';
+      const emptyDesc = speakerFilter
+        ? ''
+        : 'sol hasn\'t found any speaker segments for this day yet';
+      segmentList.innerHTML = '<li>' + window.SurfaceState.empty({
+        icon: window.ConveyIcons.svg('audio-lines'),
+        heading: emptyHeading,
+        desc: emptyDesc
+      }) + '</li>';
+      const header = document.querySelector('.spk-segments-header');
+      if (header) {
+        header.textContent = segmentHeaderLabel();
+      }
+      return;
+    }
+
+    // Sort segments: by null proportion when needs_review, otherwise by key (chronological)
+    const sorted = [...segments].sort((a, b) => {
+      if (currentFilter === 'needs_review') {
+        const aProp = a.attribution_total ? a.attribution_null / a.attribution_total : 0;
+        const bProp = b.attribution_total ? b.attribution_null / b.attribution_total : 0;
+        if (bProp !== aProp) return bProp - aProp;
+      }
+      return a.key.localeCompare(b.key);
+    });
+
+    const focusKey = (selectedSegment && sorted.some(s => s.key === selectedSegment.key))
+      ? selectedSegment.key
+      : sorted[0].key;
+
+    const hadFocus = segmentList.contains(document.activeElement);
+    const focusedKey = hadFocus ? document.activeElement.dataset?.key : null;
+
+    segmentList.innerHTML = sorted.map(seg => `
+      <li class="spk-segment${selectedSegment?.key === seg.key ? ' active' : ''}"
+          data-key="${seg.key}"
+          role="option"
+          tabindex="${seg.key === focusKey ? '0' : '-1'}"
+          aria-selected="${selectedSegment?.key === seg.key}"
+          aria-label="${seg.start} - ${seg.end}, ${seg.speaker_count} speaker${seg.speaker_count !== 1 ? 's' : ''}${seg.attribution_needs_review > 0 ? ', ' + seg.attribution_needs_review + ' to review' : ''}">
+        <div class="spk-segment-time">
+          ${seg.start} - ${seg.end}
+          ${seg.speaker_count > 0 ? `<span class="spk-speaker-count">${seg.speaker_count} speakers</span>` : ''}
+        </div>
+        <div class="spk-segment-meta">${formatDuration(seg.duration)}</div>
+        <div class="spk-segment-sources">
+          ${seg.sources.map(s => `<span class="spk-source-badge">${formatSource(s)}</span>`).join('')}
+        </div>
+        ${seg.attribution_needs_review > 0 ? `<div class="spk-review-badge">${seg.attribution_needs_review} to review</div>` : ''}
+      </li>
+    `).join('');
+
+    segmentList.querySelectorAll('.spk-segment').forEach(el => {
+      el.addEventListener('click', () => {
+        const seg = segments.find(s => s.key === el.dataset.key);
+        if (seg) {
+          window.location.hash = seg.key;
+          selectSegment(seg);
+        }
+      });
+    });
+
+    if (hadFocus) {
+      const restoreKey = focusedKey || focusKey;
+      const target = segmentList.querySelector(`.spk-segment[data-key="${restoreKey}"]`)
+        || segmentList.querySelector('.spk-segment');
+      if (target) target.focus();
+    }
+
+    const header = document.querySelector('.spk-segments-header');
+    if (header) {
+      if (segmentTotal > 20) {
+        header.innerHTML = `${escapeHtml(segmentHeaderLabel())} <span class="spk-segments-count">${segments.length} of ${segmentTotal}</span>`;
+      } else {
+        header.textContent = segmentHeaderLabel();
+      }
+    }
+  }
+
+  function selectSegmentByKey(key) {
+    const seg = segments.find(s => s.key === key);
+    if (seg) selectSegment(seg);
+    return !!seg;
+  }
+
+  function selectSegment(seg) {
+    const switchingSegment = !selectedSegment || selectedSegment.key !== seg.key;
+    selectedSegment = seg;
+    selectedSource = seg.sources[0] || null;
+    currentFilter = 'all';
+    if (switchingSegment) detailExpanded = false;
+    renderSegmentList();
+    renderDetail(seg);
+  }
+
+  function renderDetail(seg) {
+    if (!seg.sources.length) {
+      detailPanel.innerHTML = window.SurfaceState.empty({
+        icon: window.ConveyIcons.svg('volume-2'),
+        heading: 'no audio sources',
+        desc: 'this segment doesn\'t have any observed audio media'
+      });
+      return;
+    }
+
+    const summaryParts = [];
+    if (seg.speaker_count > 0) {
+      summaryParts.push(`<span>${seg.speaker_count} speaker${seg.speaker_count !== 1 ? 's' : ''}</span>`);
+    }
+    if (seg.attribution_total > 0) {
+      const reviewed = seg.attribution_total - seg.attribution_needs_review;
+      summaryParts.push(`<span>${reviewed}/${seg.attribution_total} attributed</span>`);
+    }
+
+    let html = `
+      <div class="spk-detail-header">
+        <h2 class="spk-detail-title">${seg.start} - ${seg.end}</h2>
+      </div>
+      ${summaryParts.length ? `<div class="spk-detail-summary">${summaryParts.join('')}</div>` : ''}
+    `;
+
+    html += '<div class="spk-speakers" id="spkSpeakers"><div class="spk-empty">Loading speakers...</div></div>';
+
+    if (seg.sources.length > 1) {
+      html += `
+        <div class="spk-source-tabs">
+          ${seg.sources.map(s => `
+            <button class="spk-source-tab${s === selectedSource ? ' active' : ''}" data-source="${s}">
+              ${formatSource(s)}
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    html += '<div class="spk-audio-player" id="spkAudioContainer"></div>';
+
+    if (!detailExpanded) {
+      html += '<button class="spk-expand-btn" id="spkExpandBtn">show sentences and details</button>';
+    }
+
+    html += '<div id="spkReviewStatus" class="spk-review-status" aria-live="polite"></div>';
+    html += '<div class="spk-sentences" id="spkSentences"><div class="spk-empty">loading...</div></div>';
+    detailPanel.innerHTML = html;
+
+    if (!detailExpanded) {
+      detailPanel.classList.add('spk-detail-collapsed');
+    } else {
+      detailPanel.classList.remove('spk-detail-collapsed');
+    }
+
+    const expandBtn = document.getElementById('spkExpandBtn');
+    if (expandBtn) {
+      expandBtn.addEventListener('click', () => {
+        detailExpanded = true;
+        detailPanel.classList.remove('spk-detail-collapsed');
+        expandBtn.remove();
+      });
+    }
+
+    detailPanel.querySelectorAll('.spk-source-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        selectedSource = tab.dataset.source;
+        detailPanel.querySelectorAll('.spk-source-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        loadReview(seg, selectedSource);
+      });
+    });
+
+    loadSpeakers(seg);
+    loadReview(seg, selectedSource);
+  }
+
+  function loadSpeakers(seg, options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = segmentSpeakersRequestSeq + 1;
+    segmentSpeakersRequestSeq = requestSeq;
+    const container = document.getElementById('spkSpeakers');
+    if (!container) return Promise.resolve(false);
+
+    return fetch(`/app/speakers/api/speakers/${day}/${seg.stream}/${seg.key}`)
+      .then(r => r.json())
+      .then(data => {
+        if (requestSeq !== segmentSpeakersRequestSeq) return false;
+        if (
+          selectedSegment
+          && (selectedSegment.key !== seg.key || selectedSegment.stream !== seg.stream)
+        ) {
+          return false;
+        }
+        if (data.error) {
+          container.innerHTML = `<div class="spk-empty">${escapeHtml(data.error)}</div>`;
+          return false;
+        }
+        renderSpeakerCards(data);
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== segmentSpeakersRequestSeq) return false;
+        container.innerHTML = '<div class="spk-empty">Failed to load speakers</div>';
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function renderSpeakerCards(data) {
+    const container = document.getElementById('spkSpeakers');
+    if (!container) return;
+
+    const { matched, unmatched } = data;
+    const hasMatched = matched && matched.length > 0;
+    const hasUnmatched = unmatched && unmatched.length > 0;
+    const matchedCount = matched ? matched.length : 0;
+    const unmatchedCount = unmatched ? unmatched.length : 0;
+
+    if (!hasMatched && !hasUnmatched) {
+      container.innerHTML = window.SurfaceState.empty({
+        icon: window.ConveyIcons.svg('users'),
+        heading: 'no speakers found',
+        desc: 'no speaker voices were detected in this segment'
+      });
+      return;
+    }
+
+    let titleParts = [];
+    if (matchedCount > 0) titleParts.push(`${matchedCount} matched`);
+    if (unmatchedCount > 0) titleParts.push(`${unmatchedCount} unmatched`);
+    const title = `Speakers (${titleParts.join(', ')})`;
+
+    let html = `<h2 class="spk-speakers-title">${title}</h2><ul class="spk-speaker-cards">`;
+    if (hasMatched) {
+      matched.forEach(m => {
+        html += `
+          <li class="spk-speaker-card spk-speaker-matched">
+            <h3 class="spk-speaker-entity">${escapeHtml(m.entity_name)}</h3>
+            ${m.detected_name !== m.entity_name ? `<span class="spk-speaker-detected">(${escapeHtml(m.detected_name)})</span>` : ''}
+          </li>
+        `;
+      });
+    }
+
+    if (hasUnmatched) {
+      unmatched.forEach(name => {
+        html += `<li class="spk-speaker-card spk-speaker-unmatched"><h3 class="spk-speaker-entity">${escapeHtml(name)}</h3></li>`;
+      });
+    }
+
+    html += '</ul>';
+    container.innerHTML = html;
+  }
+
+  function loadReview(seg, source, options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = reviewRequestSeq + 1;
+    reviewRequestSeq = requestSeq;
+    const container = document.getElementById('spkSentences');
+    const isFirstPaint = Boolean(
+      container
+      && container.querySelector('.spk-sentence') === null
+      && container.textContent.trim() === 'Loading...'
+    );
+    if (container && isFirstPaint) {
+      container.innerHTML = '<div class="spk-empty">Loading...</div>';
+    }
+
+    setReviewStatus();
+    return window.apiJson(`/app/speakers/api/review/${day}/${seg.stream}/${seg.key}/${source}`)
+      .then(data => {
+        if (requestSeq !== reviewRequestSeq) return false;
+        if (
+          selectedSegment
+          && (
+            selectedSegment.key !== seg.key
+            || selectedSegment.stream !== seg.stream
+            || selectedSource !== source
+          )
+        ) {
+          return false;
+        }
+        if (data.error) {
+          const err = new Error(data.error);
+          err.serverMessage = data.error;
+          throw err;
+        }
+
+        currentSentences = data.sentences || [];
+        reviewEntities = data.all_entities || [];
+        hasLabels = Boolean(data.has_labels);
+        reviewSummary = data.summary || null;
+        playingSentenceId = null;
+        renderReview(data);
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== reviewRequestSeq) return false;
+        window.logError(err, { context: 'speakers: loadReview failed' });
+        if (container) {
+          if (isFirstPaint) {
+            container.innerHTML = window.SurfaceState.error({
+              heading: "Couldn't load review",
+              desc: window.CONVEY_COPY.RELOAD_HINT,
+              serverMessage: err.serverMessage,
+              detail: err,
+            });
+          } else {
+            setReviewStatus("Couldn't reload review — showing last known state.", err.serverMessage);
+          }
+        }
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function renderReview(data) {
+    const { audio_file, audio_mimetype } = data;
+    const audioContainer = document.getElementById('spkAudioContainer');
+    if (audio_file) {
+      audioContainer.innerHTML = `
+        <div class="spk-player-controls">
+          <button class="spk-skip-back" id="spkSkipBack" title="back 5s">&#8634; 5s</button>
+          <audio id="spkAudio" controls preload="metadata">
+            <source src="${audio_file}" type="${audio_mimetype}">
+          </audio>
+          <button class="spk-speed-toggle" id="spkSpeedToggle" title="playback speed">1x</button>
+        </div>
+      `;
+      audioPlayer = document.getElementById('spkAudio');
+      setupAudioListeners();
+    } else {
+      audioContainer.innerHTML = '<div class="spk-empty">no audio file available</div>';
+      audioPlayer = null;
+    }
+
+    renderReviewList();
+  }
+
+  function renderReviewList() {
+    const container = document.getElementById('spkSentences');
+    if (!container) return;
+
+    const sentences = filteredSentences();
+    const total = currentSentences.length;
+    const countLabel = countLabelForFilter(sentences.length, total);
+
+    if (total === 0) {
+      container.innerHTML = window.SurfaceState.empty({
+        icon: window.ConveyIcons.svg('file-text'),
+        heading: 'no sentences to review',
+        desc: 'this segment doesn\'t have any sentences to work with yet'
+      });
+      return;
+    }
+
+    container.innerHTML = `
+      <h2 class="spk-sentences-title">
+        <span id="spkSentenceCount">${escapeHtml(countLabel)}</span>
+      </h2>
+      <div class="spk-filter-bar">
+        <button class="spk-filter-btn${currentFilter === 'all' ? ' active' : ''}" data-filter="all">all</button>
+        <button class="spk-filter-btn${currentFilter === 'needs_review' ? ' active' : ''}" data-filter="needs_review">needs review</button>
+        <button class="spk-filter-btn${currentFilter === 'corrections' ? ' active' : ''}" data-filter="corrections">corrections</button>
+      </div>
+      ${(() => {
+        const seg = selectedSegment;
+        const nonOwnerTotal = seg?.attribution_non_owner_total || 0;
+        const nullCount = seg?.attribution_null || 0;
+        const showPrompt = seg?.speaker_count > 0 && nonOwnerTotal > 0 && (nullCount / nonOwnerTotal) > 0.5;
+        return showPrompt ? `<div class="spk-seeding-prompt">this meeting has ${seg.speaker_count} named speakers but I can't match voices yet. assigning even a few sentences will help me learn their voices for future meetings.</div>` : '';
+      })()}
+      ${!hasLabels ? '<div class="spk-status spk-status-info">speakers haven\'t been identified yet — assign a few sentences to help sol learn their voices</div>' : ''}
+      ${sentences.length === 0 ? '<div class="spk-empty">no sentences match this filter</div>' : sentences.map(renderSentence).join('')}
+    `;
+
+    container.querySelectorAll('.spk-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentFilter = btn.dataset.filter;
+        renderReviewList();
+        renderSegmentList();
+      });
+    });
+
+    setupSentenceHandlers();
+  }
+
+  function filteredSentences() {
+    if (currentFilter === 'needs_review') {
+      return currentSentences.filter(s => s.needs_review);
+    }
+    if (currentFilter === 'corrections') {
+      return currentSentences.filter(s => s.is_correction);
+    }
+    return currentSentences;
+  }
+
+  function countLabelForFilter(visible, total) {
+    if (currentFilter === 'all') {
+      return `sentences (${total})`;
+    }
+    return `sentences (${visible} of ${total})`;
+  }
+
+  function renderSentence(sentence) {
+    const timeStr = formatOffset(sentence.offset);
+    const speakerHtml = renderSpeakerDisplay(sentence);
+    const actionsHtml = renderActions(sentence);
+
+    return `
+      <div class="spk-sentence" data-id="${sentence.id}" data-offset="${sentence.offset}">
+        <div class="spk-sentence-time">${timeStr}</div>
+        <div class="spk-sentence-content">
+          <div class="spk-sentence-text">${escapeHtml(sentence.text)}</div>
+          <div class="spk-sentence-speaker">${speakerHtml}</div>
+          <div class="spk-status-container" id="status-${sentence.id}" role="status" aria-live="polite"></div>
+        </div>
+        <div class="spk-sentence-actions">
+          <button class="spk-btn spk-btn-icon spk-play-btn" aria-label="${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}" title="${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}">&#9654;</button>
+          ${actionsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSpeakerDisplay(sentence) {
+    if (!sentence.speaker_name) {
+      return '<span class="spk-review-state">unassigned</span>';
+    }
+
+    let dotClass = '';
+    if (sentence.confidence === 'high') {
+      dotClass = ' spk-confidence-high';
+    } else if (sentence.confidence === 'medium') {
+      dotClass = ' spk-confidence-medium';
+    }
+
+    let html = '';
+    if (dotClass) {
+      html += `<span class="spk-confidence-dot${dotClass}" aria-label="${sentence.confidence} confidence"></span>`;
+      html += `<span class="spk-confidence-label">${escapeHtml(sentence.confidence)}</span>`;
+    }
+
+    if (sentence.is_correction && sentence.original_speaker_name) {
+      html += `<span class="spk-correction-original">${escapeHtml(sentence.original_speaker_name)}</span>`;
+    }
+
+    html += `<span>${escapeHtml(sentence.speaker_name)}</span>`;
+
+    if (sentence.needs_review) {
+      html += '<span class="spk-review-state">needs review</span>';
+    } else if (sentence.method) {
+      html += `<span class="spk-review-state">${escapeHtml(METHOD_DISPLAY[sentence.method] || sentence.method)}</span>`;
+    }
+
+    return html;
+  }
+
+  function renderActions(sentence) {
+    if (!hasLabels) {
+      return '<span class="spk-review-state">not yet identified</span>';
+    }
+
+    const options = reviewEntities.map(entity => (
+      `<option value="${escapeHtml(entity.entity_id)}">${escapeHtml(entity.name)}</option>`
+    )).join('');
+
+    if (sentence.speaker_entity_id) {
+      const correctSelect = `
+        <select class="spk-select-small spk-correct-select" aria-label="correct attribution" data-sentence-id="${sentence.id}">
+          <option value="">correct...</option>
+          ${options}
+        </select>
+        <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="correct" style="display:none" aria-label="apply correction">&#10003;</button>
+      `;
+
+      if (sentence.confidence === 'medium') {
+        return `
+          <button class="spk-btn spk-btn-primary spk-confirm-btn" data-sentence-id="${sentence.id}">confirm &#10003;</button>
+          ${correctSelect}
+        `;
+      }
+
+      return correctSelect;
+    }
+
+    return `
+      <select class="spk-select-small spk-assign-select" aria-label="assign speaker" data-sentence-id="${sentence.id}">
+        <option value="">assign...</option>
+        ${options}
+      </select>
+      <button class="spk-btn spk-btn-primary spk-apply-btn" data-sentence-id="${sentence.id}" data-action="assign" style="display:none" aria-label="apply assignment">&#10003;</button>
+    `;
+  }
+
+  function setupSentenceHandlers() {
+    detailPanel.querySelectorAll('.spk-play-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('.spk-sentence');
+        const sentenceId = parseInt(row.dataset.id, 10);
+        const offset = parseFloat(row.dataset.offset);
+
+        if (!audioPlayer) return;
+
+        if (sentenceId === playingSentenceId && !audioPlayer.paused) {
+          audioPlayer.pause();
+        } else {
+          audioPlayer.currentTime = offset;
+          audioPlayer.play();
+        }
+      });
+    });
+
+    detailPanel.querySelectorAll('.spk-confirm-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sentenceId = parseInt(btn.dataset.sentenceId, 10);
+        confirmAttribution(sentenceId);
+      });
+    });
+
+    detailPanel.querySelectorAll('.spk-correct-select').forEach(select => {
+      select.addEventListener('change', () => {
+        const applyBtn = select.nextElementSibling;
+        if (select.value) {
+          applyBtn.dataset.value = select.value;
+          applyBtn.style.display = '';
+        } else {
+          applyBtn.style.display = 'none';
+        }
+      });
+    });
+
+    detailPanel.querySelectorAll('.spk-assign-select').forEach(select => {
+      select.addEventListener('change', () => {
+        const applyBtn = select.nextElementSibling;
+        if (select.value) {
+          applyBtn.dataset.value = select.value;
+          applyBtn.style.display = '';
+        } else {
+          applyBtn.style.display = 'none';
+        }
+      });
+    });
+
+    detailPanel.querySelectorAll('.spk-apply-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sentenceId = parseInt(btn.dataset.sentenceId, 10);
+        const value = btn.dataset.value;
+        if (btn.dataset.action === 'correct') {
+          correctAttribution(sentenceId, value);
+        } else if (btn.dataset.action === 'assign') {
+          assignAttribution(sentenceId, value);
+        }
+      });
+    });
+  }
+
+  async function confirmAttribution(sentenceId) {
+    try {
+      const sentence = currentSentences.find(s => s.id === sentenceId);
+      const isPrincipalAttestation = Boolean(sentence?.is_owner);
+      await window.apiJson('/app/speakers/api/confirm-attribution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day,
+          stream: selectedSegment.stream,
+          segment_key: selectedSegment.key,
+          source: selectedSource,
+          sentence_id: sentenceId,
+        }),
+      });
+      if (sentence) {
+        sentence.confidence = 'high';
+        sentence.method = 'user_confirmed';
+        sentence.needs_review = false;
+        sentence.is_correction = true;
+      }
+      renderReviewList();
+      showStatusBySentence(sentenceId, 'Attribution confirmed', 'success');
+      loadSegments();
+      if (isPrincipalAttestation) {
+        checkOwnerStatus();
+      }
+    } catch (err) {
+      showStatusBySentence(
+        sentenceId,
+        err.serverMessage || 'something went wrong — try again',
+        'error'
+      );
+    }
+  }
+
+  async function correctAttribution(sentenceId, newSpeaker) {
+    try {
+      const result = await window.apiJson('/app/speakers/api/correct-attribution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day,
+          stream: selectedSegment.stream,
+          segment_key: selectedSegment.key,
+          source: selectedSource,
+          sentence_id: sentenceId,
+          new_speaker: newSpeaker,
+        }),
+      });
+      await loadReview(selectedSegment, selectedSource);
+      loadSegments();
+      showPropagationOffer(sentenceId, result.propagation_offer);
+      triggerOwnerStatusIfPrincipal(newSpeaker);
+    } catch (err) {
+      showStatusBySentence(
+        sentenceId,
+        err.serverMessage || 'something went wrong — try again',
+        'error'
+      );
+    }
+  }
+
+  async function propagateCorrection(request, sentenceId) {
+    try {
+      const body = {...request, commit: true};
+      const result = await window.apiJson('/app/speakers/api/propagate-correction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      await loadReview(selectedSegment, selectedSource);
+      loadSegments();
+      const count = result.statement_count || 0;
+      showStatusBySentence(sentenceId, `${count} statement${count === 1 ? '' : 's'} updated`, 'success');
+    } catch (err) {
+      showStatusBySentence(
+        sentenceId,
+        err.serverMessage || 'something went wrong — try again',
+        'error'
+      );
+    }
+  }
+
+  async function assignAttribution(sentenceId, speaker) {
+    try {
+      await window.apiJson('/app/speakers/api/assign-attribution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day,
+          stream: selectedSegment.stream,
+          segment_key: selectedSegment.key,
+          source: selectedSource,
+          sentence_id: sentenceId,
+          speaker,
+        }),
+      });
+      loadReview(selectedSegment, selectedSource);
+      loadSegments();
+      triggerOwnerStatusIfPrincipal(speaker);
+    } catch (err) {
+      showStatusBySentence(
+        sentenceId,
+        err.serverMessage || 'something went wrong — try again',
+        'error'
+      );
+    }
+  }
+
+  function triggerOwnerStatusIfPrincipal(speakerId) {
+    if (!speakerId) return;
+    if (speakerId === principalEntityId()) {
+      checkOwnerStatus();
+    }
+  }
+
+  function showStatusBySentence(sentenceId, message, type) {
+    const container = document.getElementById(`status-${sentenceId}`);
+    if (!container) return;
+    if (statusTimers[sentenceId]) {
+      clearTimeout(statusTimers[sentenceId]);
+      delete statusTimers[sentenceId];
+    }
+    if (type === 'error') {
+      container.setAttribute('aria-live', 'assertive');
+      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}<button class="spk-status-dismiss" aria-label="dismiss" onclick="this.closest('.spk-status-container').innerHTML='';this.closest('.spk-status-container').setAttribute('aria-live','polite')">&times;</button></div>`;
+    } else {
+      container.setAttribute('aria-live', 'polite');
+      container.innerHTML = `<div class="spk-status spk-status-${type}">${escapeHtml(message)}</div>`;
+      statusTimers[sentenceId] = setTimeout(() => {
+        const current = document.getElementById(`status-${sentenceId}`);
+        if (current) {
+          const msg = current.querySelector('.spk-status');
+          if (msg) msg.style.opacity = '0';
+          setTimeout(() => { current.innerHTML = ''; }, 300);
+        }
+        delete statusTimers[sentenceId];
+      }, 3000);
+    }
+  }
+
+  function showPropagationOffer(sentenceId, offer) {
+    const container = document.getElementById(`status-${sentenceId}`);
+    if (!container) return;
+    if (statusTimers[sentenceId]) {
+      clearTimeout(statusTimers[sentenceId]);
+      delete statusTimers[sentenceId];
+    }
+
+    container.setAttribute('aria-live', 'polite');
+    if (!offer || offer.available !== true) {
+      container.innerHTML = `<div class="spk-status spk-status-success">${escapeHtml(SPK_COPY.SPK_CORRECT_SCOPE || '')} ${escapeHtml(SPK_COPY.SPK_CORRECT_PROPAGATE_NONE || '')}</div>`;
+      statusTimers[sentenceId] = setTimeout(() => {
+        const current = document.getElementById(`status-${sentenceId}`);
+        if (current) current.innerHTML = '';
+        delete statusTimers[sentenceId];
+      }, 3000);
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="spk-status spk-status-success">
+        <span>${escapeHtml(SPK_COPY.SPK_CORRECT_SCOPE || '')}</span>
+        <span>${escapeHtml(SPK_COPY.SPK_CORRECT_PROPAGATE_OFFER || '')}</span>
+        <button class="spk-status-action" type="button">${escapeHtml(SPK_COPY.SPK_CORRECT_PROPAGATE_APPLY || '')}</button>
+      </div>
+    `;
+    container.querySelector('.spk-status-action')?.addEventListener('click', () => {
+      propagateCorrection(offer.request || {}, sentenceId);
+    });
+  }
+
+  function setupAudioListeners() {
+    if (!audioPlayer) return;
+
+    audioPlayer.addEventListener('timeupdate', () => {
+      updateActiveSentence(audioPlayer.currentTime);
+    });
+
+    audioPlayer.addEventListener('play', () => {
+      if (playingSentenceId !== null) {
+        const btn = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"] .spk-play-btn`);
+        if (btn) btn.innerHTML = '&#9208;';
+      }
+    });
+
+    audioPlayer.addEventListener('pause', () => {
+      if (playingSentenceId !== null) {
+        const btn = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"] .spk-play-btn`);
+        if (btn) btn.innerHTML = '&#9654;';
+      }
+    });
+
+    audioPlayer.addEventListener('ended', () => {
+      if (playingSentenceId !== null) {
+        const row = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"]`);
+        if (row) {
+          row.classList.remove('spk-playing');
+          row.querySelector('.spk-play-btn').innerHTML = '&#9654;';
+        }
+        playingSentenceId = null;
+      }
+    });
+
+    audioPlayer.addEventListener('error', () => {
+      const container = document.getElementById('spkAudioContainer');
+      if (container) {
+        container.innerHTML = '<div class="spk-status spk-status-error" role="alert">couldn\'t load audio — the file may be missing or in an unsupported format<button class="spk-status-dismiss" aria-label="dismiss">&times;</button></div>';
+        container.querySelector('.spk-status-dismiss')?.addEventListener('click', (e) => {
+          e.target.closest('.spk-status-error').remove();
+        });
+      }
+    });
+
+    const skipBackBtn = document.getElementById('spkSkipBack');
+    if (skipBackBtn) {
+      skipBackBtn.addEventListener('click', () => {
+        audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 5);
+      });
+    }
+
+    const speedToggleBtn = document.getElementById('spkSpeedToggle');
+    if (speedToggleBtn) {
+      const speeds = [1, 1.5, 2];
+      speedToggleBtn.addEventListener('click', () => {
+        const currentIndex = speeds.indexOf(audioPlayer.playbackRate);
+        const nextIndex = (currentIndex + 1) % speeds.length;
+        audioPlayer.playbackRate = speeds[nextIndex];
+        speedToggleBtn.textContent = speeds[nextIndex] + 'x';
+      });
+    }
+  }
+
+  function updateActiveSentence(currentTime) {
+    let activeSentence = null;
+    for (let i = 0; i < currentSentences.length; i++) {
+      const sentence = currentSentences[i];
+      const nextOffset = currentSentences[i + 1]?.offset ?? Infinity;
+      if (currentTime >= sentence.offset && currentTime < nextOffset) {
+        activeSentence = sentence;
+        break;
+      }
+    }
+
+    const newId = activeSentence?.id ?? null;
+    if (newId === playingSentenceId) return;
+
+    if (playingSentenceId !== null) {
+      const prevRow = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"]`);
+      if (prevRow) {
+        prevRow.classList.remove('spk-playing');
+        prevRow.querySelector('.spk-play-btn').innerHTML = '&#9654;';
+      }
+    }
+
+    playingSentenceId = newId;
+    if (playingSentenceId !== null) {
+      const newRow = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"]`);
+      if (newRow) {
+        newRow.classList.add('spk-playing');
+        if (!audioPlayer.paused) {
+          newRow.querySelector('.spk-play-btn').innerHTML = '&#9208;';
+        }
+        newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
+
+  function formatDuration(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins === 0) return `${secs}s`;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  }
+
+  function formatOffset(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function formatSource(source) {
+    return source
+      .replace(/_audio$/, '')
+      .replace(/^sys$/, 'system')
+      .replace(/^mic$/, 'microphone')
+      .replace(/_/g, ' ');
+  }
+
+})();
+</script>
+
+<style>
+.spk-overview {
+  width: min(1120px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 32px 0 56px;
+  color: #111827;
+}
+
+.spk-overview-section {
+  padding: 28px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.spk-overview-section:last-child {
+  border-bottom: 0;
+}
+
+.spk-overview-section[hidden] {
+  display: none;
+}
+
+.spk-day-grid-copy {
+  margin: 6px 0 0;
+  color: var(--ink-soft-paper);
+  font-size: var(--text-sm);
+}
+
+.spk-day-grid-host {
+  min-width: 0;
+}
+
+.spk-day-grid-legend {
+  margin-top: var(--space-2);
+}
+
+.spk-overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.spk-overview-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.spk-overview-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+}
+
+.spk-overview-muted {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.spk-overview-discovery-notice {
+  margin: 0 0 16px;
+}
+
+.spk-overview-discovery-notice[hidden] {
+  display: none;
+}
+
+.spk-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.spk-overview-btn,
+.spk-overview-link,
+.spk-overview-select {
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.spk-overview-btn,
+.spk-overview-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.spk-overview-btn-primary {
+  background: #111827;
+  border-color: #111827;
+  color: #fff;
+}
+
+.spk-overview-select {
+  padding: 7px 10px;
+}
+
+.spk-progress {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 12px 0 8px;
+}
+
+.spk-progress-fill {
+  height: 100%;
+  width: 0;
+  background: #111827;
+}
+
+.spk-owner-samples,
+.spk-known-grid,
+.spk-discovery-clusters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.spk-owner-sample,
+.spk-known-card,
+.spk-discovery-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.spk-known-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.spk-card-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+.spk-card-line {
+  margin: 4px 0;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.spk-cohesion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.spk-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d1d5db;
+}
+
+.spk-dot-filled {
+  background: #111827;
+}
+
+.spk-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.spk-discovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .spk-overview {
+    width: min(100vw - 24px, 1120px);
+    padding-top: 20px;
+  }
+
+  .spk-overview-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .spk-discovery-clusters {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<div id="speakersOverviewView" hidden>
+<div class="spk-overview" data-spk-overview>
+  <section class="spk-overview-section spk-day-grid-card" id="spkDayGridCard" hidden>
+    <div class="spk-overview-header">
+      <div>
+        <h2 class="spk-overview-title" data-copy="SPK_GRID_TITLE"></h2>
+        <p class="spk-day-grid-copy" id="spkDayGridCopy"></p>
+      </div>
+    </div>
+    <div class="spk-day-grid-host" id="spkDayGridHost"></div>
+    <div class="spk-day-grid-legend" id="spkDayGridLegend"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="your-voice" id="spkOverviewYourVoiceSection" tabindex="-1" aria-labelledby="spkOverviewYourVoiceHeader">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_YOUR_VOICE_HEADER" id="spkOverviewYourVoiceHeader"></h2>
+    </div>
+    <div id="spkOverviewOwner" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="quality">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_QUALITY_HEADER"></h2>
+    </div>
+    <div id="spkOverviewQuality" class="spk-overview-panel"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="known-voices">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_KNOWN_VOICES_HEADER"></h2>
+      <select id="spkKnownSort" class="spk-overview-select" aria-label="sort voices"></select>
+    </div>
+    <div id="spkKnownVoices"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="new-voices" id="spkNewVoicesSection">
+    <div class="spk-overview-header">
+      <h2 class="spk-overview-title" data-copy="SPK_OVERVIEW_NEW_VOICES_HEADER"></h2>
+    </div>
+    <div id="spkStatementHandoffNotice" class="spk-overview-muted" hidden></div>
+    <div id="spkOverviewDiscoveryNotice" class="spk-overview-discovery-notice" hidden></div>
+    <div id="spkDiscoveryClusters" class="spk-discovery-clusters"></div>
+  </section>
+
+  <section class="spk-overview-section" data-section="today">
+    <a id="spkTodayReview" class="spk-overview-link" href=""></a>
+  </section>
+</div>
+</div>
+
+<script>
+(() => {
+  let COPY = {};
+  let OWNER_STATUS_ROUTING = {};
+  let NOT_IN_NEW_VOICES_COPY = '';
+  let TODAY = '';
+  let OWNER_MIN = 0;
+  const ownerPanel = document.getElementById('spkOverviewOwner');
+  const qualityPanel = document.getElementById('spkOverviewQuality');
+  const knownContainer = document.getElementById('spkKnownVoices');
+  const sortSelect = document.getElementById('spkKnownSort');
+  const discoverySection = document.getElementById('spkNewVoicesSection');
+  const statementHandoffNotice = document.getElementById('spkStatementHandoffNotice');
+  const overviewDiscoveryNoticeNode = document.getElementById('spkOverviewDiscoveryNotice');
+  const discoveryContainer = document.getElementById('spkDiscoveryClusters');
+  const todayLink = document.getElementById('spkTodayReview');
+  const dayGridCard = document.getElementById('spkDayGridCard');
+  const dayGridCopy = document.getElementById('spkDayGridCopy');
+  const dayGridHost = document.getElementById('spkDayGridHost');
+  const dayGridLegend = document.getElementById('spkDayGridLegend');
+  const escapeHtml = (value) => window.AppServices.escapeHtml(value);
+  let mountedDayGridKey = null;
+  let whoIsThisSheet = null;
+  let discoveryClustersById = new Map();
+  let qualityRequestSeq = 0;
+  let knownRequestSeq = 0;
+  let overviewDiscoveryRequestSeq = 0;
+  let overviewDiscoveryNotice = null;
+  let overviewHandoffSheetOpen = false;
+  const overviewYourVoiceSection = document.getElementById('spkOverviewYourVoiceSection');
+
+  function focusOverviewYourVoiceSection() {
+    overviewYourVoiceSection.focus();
+    overviewYourVoiceSection.scrollIntoView({ block: 'nearest' });
+  }
+
+  function applyOverviewState(payload) {
+    COPY = payload.speaker_copy || {};
+    OWNER_STATUS_ROUTING = payload.owner_status_routing_tokens || {};
+    NOT_IN_NEW_VOICES_COPY = payload.not_in_new_voices_copy || '';
+    TODAY = payload.today || '';
+    OWNER_MIN = payload.owner_min_statements || 0;
+    document.querySelectorAll('[data-copy]').forEach((node) => {
+      node.textContent = COPY[node.dataset.copy] || '';
+    });
+    dayGridCopy.textContent = COPY.SPK_GRID_BODY || '';
+    todayLink.textContent = COPY.SPK_OVERVIEW_TODAY_LINK_LABEL || '';
+    todayLink.href = `/app/speakers/${TODAY}`;
+  }
+
+  function dayGridUnit() {
+    return {
+      one: COPY.SPK_GRID_UNIT_ONE,
+      other: COPY.SPK_GRID_UNIT_OTHER,
+      none: COPY.SPK_GRID_UNIT_NONE,
+    };
+  }
+
+  function dayGridActivityUnit() {
+    return {
+      one: COPY.SPK_GRID_ACTIVITY_ONE,
+      other: COPY.SPK_GRID_ACTIVITY_OTHER,
+    };
+  }
+
+  function relativeTime(value) {
+    if (!value) return '&mdash;';
+    const ms = typeof value === 'number' ? value : Date.parse(value);
+    if (!Number.isFinite(ms)) return '&mdash;';
+    if (window.RelativeTime?.formatTimestamp) return window.RelativeTime.formatTimestamp(ms);
+    const delta = Math.max(0, Date.now() - ms);
+    const hours = Math.floor(delta / 3600000);
+    if (hours < 1) return 'just now';
+    if (hours < 48) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  function cohesionBin(value) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return 0;
+    const n = Number(value);
+    if (n >= 0.50) return 5;
+    if (n >= 0.40) return 4;
+    if (n >= 0.30) return 3;
+    if (n >= 0.20) return 2;
+    if (n >= 0.10) return 1;
+    return 0;
+  }
+
+  function cohesion(value) {
+    const bin = cohesionBin(value);
+    const dots = Array.from({length: 5}, (_, index) => (
+      `<span class="spk-dot${index < bin ? ' spk-dot-filled' : ''}"></span>`
+    )).join('');
+    const label = COPY.SPK_OVERVIEW_COHESION_LABELS[bin] || '';
+    return `<span class="spk-cohesion"><span class="spk-dots">${dots}</span><span>${escapeHtml(label)}</span></span>`;
+  }
+
+  function ownerNotReady(data) {
+    const countValue = Number(data.manual_tags_count || 0);
+    const streamValue = Number(data.streams_represented || 0);
+    const count = Number.isFinite(countValue) ? Math.max(0, countValue) : 0;
+    const streams = Number.isFinite(streamValue) ? Math.max(0, streamValue) : 0;
+    const threshold = Number(OWNER_MIN);
+    const hasProgress = Number.isFinite(threshold) && threshold > 0;
+    const progress = hasProgress
+      ? Math.min(100, Math.max(0, Math.round((count / threshold) * 100)))
+      : null;
+    const progressHtml = hasProgress
+      ? `<div class="spk-progress" aria-hidden="true"><div class="spk-progress-fill" style="width:${progress}%"></div></div>`
+      : '';
+    let diagnostic = '';
+    if (data.low_quality_reason) {
+      diagnostic = `<p class="spk-overview-muted">gate: ${escapeHtml(data.low_quality_reason)}; observed ${escapeHtml(String(data.observed_value ?? ''))}; threshold ${escapeHtml(String(data.threshold_value ?? ''))}</p>`;
+    } else if (!hasProgress) {
+      diagnostic = `<p class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN)}</p>`;
+    } else {
+      diagnostic = `<p class="spk-overview-muted">${count} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX)} · ${streams} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}</p>`;
+    }
+    ownerPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_LEARNING)}</strong>
+      ${progressHtml}
+      ${diagnostic}
+      <div class="spk-overview-actions">
+        <a class="spk-overview-btn spk-overview-btn-primary" href="/app/speakers/${TODAY}">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_HELP_LABEL)}</a>
+        ${data.can_build_from_tags === true ? `<button id="spkBuildOwner" class="spk-overview-btn">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL)}</button>` : ''}
+      </div>
+    `;
+    document.getElementById('spkBuildOwner')?.addEventListener('click', () => {
+      fetch('/app/speakers/api/owner/build-from-tags', {method: 'POST'}).then(loadOwner);
+    });
+  }
+
+  function ownerStatusError() {
+    ownerPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STATUS_ERROR)}</strong>
+      <div class="spk-overview-actions">
+        <a class="spk-overview-btn spk-overview-btn-primary" href="/app/speakers/${TODAY}">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_HELP_LABEL)}</a>
+      </div>
+    `;
+  }
+
+  function ownerCandidate(data) {
+    const samples = data.samples || [];
+    ownerPanel.innerHTML = `
+      <strong>Is this you?</strong>
+      <p class="spk-overview-muted">${escapeHtml(String(data.cluster_size || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}</p>
+      <div class="spk-owner-samples">
+        ${samples.map((sample, index) => `
+          <div class="spk-owner-sample">
+            <div class="spk-card-title">sample ${index + 1}</div>
+            <div class="spk-card-line">${escapeHtml(sample.day)} · ${escapeHtml(sample.stream)} · ${escapeHtml(sample.segment_key)}</div>
+            ${sample.audio_url ? `<audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      <div class="spk-overview-actions">
+        <button id="spkOwnerConfirm" class="spk-overview-btn spk-overview-btn-primary">yes, that's me</button>
+        <button id="spkOwnerReject" class="spk-overview-btn">no, try again</button>
+      </div>
+    `;
+    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
+      fetch('/app/speakers/api/owner/confirm', {method: 'POST'}).then(loadOwner);
+    });
+    document.getElementById('spkOwnerReject')?.addEventListener('click', () => {
+      fetch('/app/speakers/api/owner/reject', {method: 'POST'}).then(loadOwner);
+    });
+  }
+
+  function ownerConfirmed(data) {
+    const meta = data.centroid_metadata || {};
+    const streams = meta.streams || [];
+    const builtAt = meta.created_at ? relativeTime(meta.created_at) : escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_UNKNOWN);
+    ownerPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_CONFIRMED)}</strong>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}: ${escapeHtml(String(meta.cluster_size || 0))}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_STREAMS_LABEL)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_COHESION_LABEL)}: ${cohesion(meta.intra_cosine_p25)}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_BUILT_PREFIX)}: ${builtAt}</p>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_REFRESHED_PREFIX)}: ${relativeTime(meta.last_refreshed_at)}</p>
+    `;
+  }
+
+  function qualityCount(value) {
+    const count = Number(value || 0);
+    return Number.isFinite(count) ? count : 0;
+  }
+
+  function qualityLine(label, value) {
+    return `<p class="spk-card-line">${escapeHtml(label)}: ${escapeHtml(String(qualityCount(value)))}</p>`;
+  }
+
+  function qualityRows(data) {
+    const buckets = data.tier_histogram || {};
+    return [
+      qualityLine(COPY.SPK_OVERVIEW_QUALITY_HIGH_LABEL, buckets.high_statements),
+      qualityLine(COPY.SPK_OVERVIEW_QUALITY_MEDIUM_LABEL, buckets.medium_statements),
+      qualityLine(COPY.SPK_OVERVIEW_QUALITY_MARGIN_LABEL, buckets.margin_declined_statements),
+      qualityLine(COPY.SPK_OVERVIEW_QUALITY_UNLABELED_LABEL, buckets.unlabeled_sentence_statements),
+      qualityLine(COPY.SPK_OVERVIEW_QUALITY_MISSING_LABEL, buckets.no_labels_file_segments),
+      qualityLine(COPY.SPK_OVERVIEW_QUALITY_SKIPPED_LABEL, buckets.skipped_stub_segments),
+    ].join('');
+  }
+
+  function qualityTeachingLine(data) {
+    const count = qualityCount(data.corrections_window_count);
+    if (count === 0) {
+      return `<p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_TEACHING_ZERO)}</p>`;
+    }
+    return `<p class="spk-card-line">${escapeHtml(String(count))} ${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_TEACHING_LABEL)}</p>`;
+  }
+
+  function qualityWarning(data) {
+    const unreadable = data.unreadable_files || {};
+    const count = qualityCount(unreadable.total_window_count);
+    if (count === 0) return '';
+    return `<div class="spk-status spk-status-info">${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_UNREADABLE_WARNING)} (${escapeHtml(String(count))})</div>`;
+  }
+
+  function renderQualityPreBootstrap(data) {
+    const ownerVoice = data.owner_voice || {};
+    qualityPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_PREBOOTSTRAP)}</strong>
+      <p class="spk-overview-muted">${escapeHtml(String(qualityCount(ownerVoice.evidence_count)))} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX)}</p>
+      <div class="spk-overview-actions">
+        <a class="spk-overview-btn spk-overview-btn-primary" href="/app/speakers/${TODAY}">${escapeHtml(COPY.SPK_OVERVIEW_OWNER_HELP_LABEL)}</a>
+      </div>
+    `;
+  }
+
+  function renderQualityReady(data) {
+    qualityPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_QUALITY_READY)}</strong>
+      ${qualityWarning(data)}
+      ${qualityRows(data)}
+      ${qualityTeachingLine(data)}
+    `;
+  }
+
+  function renderQuality(data) {
+    const ownerVoice = data.owner_voice || {};
+    if (ownerVoice.bootstrap_state === 'pre_bootstrap') {
+      renderQualityPreBootstrap(data);
+      return;
+    }
+    renderQualityReady(data);
+  }
+
+  function loadQuality(options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = qualityRequestSeq + 1;
+    qualityRequestSeq = requestSeq;
+    return fetch('/app/speakers/api/quality')
+      .then((response) => response.json())
+      .then((data) => {
+        if (requestSeq !== qualityRequestSeq) return false;
+        renderQuality(data);
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== qualityRequestSeq) return false;
+        window.logError?.(err, { context: 'speakers-quality' });
+        qualityPanel.innerHTML = window.SurfaceState.error({
+          heading: COPY.SPK_OVERVIEW_QUALITY_ERROR_HEADING,
+          desc: window.CONVEY_COPY.RELOAD_HINT,
+          serverMessage: err?.serverMessage || err?.message || '',
+          detail: err,
+        });
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function loadOwner() {
+    fetch('/app/speakers/api/owner/status')
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.status === OWNER_STATUS_ROUTING.candidate) ownerCandidate(data);
+        else if (data.status === OWNER_STATUS_ROUTING.confirmed) ownerConfirmed(data);
+        else ownerNotReady(data);
+      })
+      .catch(ownerStatusError);
+  }
+
+  function renderKnown(data) {
+    const speakers = data.speakers || [];
+    if (speakers.length === 0) {
+      knownContainer.innerHTML = `<div class="spk-overview-muted">${escapeHtml(COPY.SPK_OVERVIEW_KNOWN_VOICES_EMPTY)}</div>`;
+      sortSelect.hidden = true;
+      return;
+    }
+    sortSelect.hidden = false;
+    knownContainer.innerHTML = `<div class="spk-known-grid">${speakers.map((speaker) => {
+      const streams = speaker.streams || [];
+      const href = `/app/speakers/${TODAY}?speaker=${encodeURIComponent(speaker.entity_id)}`;
+      return `
+        <a class="spk-known-card" href="${href}">
+          <h3 class="spk-card-title">${escapeHtml(speaker.name || speaker.entity_id)}</h3>
+          <p class="spk-card-line">${escapeHtml(String(speaker.embedding_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)} · ${escapeHtml(String(speaker.segment_count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL)}</p>
+          <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_LAST_HEARD_PREFIX)}: ${relativeTime(speaker.last_seen_ts)}</p>
+          <p class="spk-card-line">${escapeHtml(COPY.SPK_OVERVIEW_CARD_STREAMS_PREFIX)}: ${escapeHtml(streams.length ? streams.join(' · ') : '—')}</p>
+          ${cohesion(speaker.intra_cosine_p25)}
+        </a>
+      `;
+    }).join('')}</div>`;
+  }
+
+  function loadKnown(options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = knownRequestSeq + 1;
+    knownRequestSeq = requestSeq;
+    const sort = sortSelect.value || COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS[0];
+    return fetch(`/app/speakers/api/speakers/known?sort=${encodeURIComponent(sort)}`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (requestSeq !== knownRequestSeq) return false;
+        renderKnown(data);
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== knownRequestSeq) return false;
+        renderKnown({speakers: []});
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function setupSort() {
+    sortSelect.innerHTML = COPY.SPK_OVERVIEW_KNOWN_VOICES_SORTS.map((sort) => (
+      `<option value="${escapeHtml(sort)}">${escapeHtml(sort)}</option>`
+    )).join('');
+    sortSelect.addEventListener('change', loadKnown);
+  }
+
+  function renderOverviewThisIsMeGuidance() {
+    ownerPanel.replaceChildren();
+    const line = document.createElement('p');
+    line.className = 'spk-overview-muted';
+    line.textContent = COPY.SPK_THIS_IS_ME_GUIDANCE || '';
+    ownerPanel.appendChild(line);
+  }
+
+  function removeOverviewDiscoveryCluster(clusterId) {
+    const card = discoveryContainer.querySelector(`[data-cluster-id="${clusterId}"]`);
+    if (card) card.remove();
+    if (!discoveryContainer.querySelector('.spk-discovery-card')) {
+      discoverySection.hidden = !overviewDiscoveryNotice;
+    }
+  }
+
+  async function refreshOverviewWhoIsThisContext() {
+    await Promise.all([
+      loadDiscovery({ throwOnError: true }),
+      loadKnown({ throwOnError: true }),
+      loadQuality({ throwOnError: true }),
+    ]);
+  }
+
+  function ensureOverviewWhoIsThisSheet() {
+    if (whoIsThisSheet) {
+      whoIsThisSheet.setCopy(COPY);
+      return whoIsThisSheet;
+    }
+    whoIsThisSheet = window.SpeakersWhoIsThis.init({
+      mount: document.body,
+      copy: COPY,
+      context: window.SPEAKERS_CONTEXT || {},
+      apiJson: window.apiJson,
+      logError: window.logError,
+      formatDateShort: window.formatDateShort,
+      onThisIsMe: () => {
+        renderOverviewThisIsMeGuidance();
+        focusOverviewYourVoiceSection();
+      },
+      onIdentified: ({ clusterId }) => {
+        removeOverviewDiscoveryCluster(clusterId);
+        loadKnown();
+        loadQuality();
+      },
+      onDismissed: ({ clusterId }) => {
+        removeOverviewDiscoveryCluster(clusterId);
+      },
+      onFullyRestoredUndo: async () => {
+        await refreshOverviewWhoIsThisContext();
+      },
+    });
+    return whoIsThisSheet;
+  }
+
+  function openOverviewWhoIsThis(cluster, trigger, options) {
+    if (options?.handoff) overviewHandoffSheetOpen = true;
+    ensureOverviewWhoIsThisSheet().open({
+      cluster,
+      clusterId: cluster.cluster_id,
+      trigger,
+    });
+  }
+
+  function openOverviewDiscoveryCluster(clusterId, trigger, options) {
+    const key = String(clusterId || '');
+    const cluster = discoveryClustersById.get(key);
+    if (!cluster) return false;
+    openOverviewWhoIsThis(cluster, trigger || null, options);
+    return true;
+  }
+
+  function hideStatementHandoffNotice() {
+    statementHandoffNotice.hidden = true;
+    statementHandoffNotice.textContent = '';
+  }
+
+  function showStatementHandoffNotice() {
+    statementHandoffNotice.textContent = NOT_IN_NEW_VOICES_COPY;
+    statementHandoffNotice.hidden = false;
+    discoverySection.hidden = false;
+  }
+
+  function discoveryClusters(data) {
+    return Array.isArray(data?.clusters) ? data.clusters : [];
+  }
+
+  function discoveryRefreshClusters(data, currentClusters) {
+    const clusters = discoveryClusters(data);
+    if (data?.status === 'degraded' && !clusters.length && currentClusters.length) {
+      return currentClusters;
+    }
+    return clusters;
+  }
+
+  function discoveryIssueCount(issue) {
+    const count = Number(issue?.count || 0);
+    return Number.isFinite(count) ? count : 0;
+  }
+
+  function discoveryIssueMessage(issue) {
+    const count = discoveryIssueCount(issue);
+    if (count > 0 && COPY.SPK_DISCOVERY_DEGRADED_TEMPLATE) {
+      return COPY.SPK_DISCOVERY_DEGRADED_TEMPLATE.replace('{count}', String(count));
+    }
+    return issue?.message || (COPY.SPK_DISCOVERY_DEGRADED_TEMPLATE || '').replace('{count}', String(count));
+  }
+
+  function discoveryNoticeFromScan(data) {
+    const issues = Array.isArray(data?.issues) ? data.issues : [];
+    if (data?.status !== 'degraded' || !issues.length) return null;
+    return {
+      type: 'degraded',
+      messages: issues.map((issue) => discoveryIssueMessage(issue)).filter(Boolean),
+      retry: false,
+    };
+  }
+
+  function overviewDiscoveryErrorNotice() {
+    return {
+      type: 'error',
+      messages: [COPY.SPK_DISCOVERY_ERROR || ''],
+      retry: true,
+    };
+  }
+
+  function renderOverviewDiscoveryNotice() {
+    if (!overviewDiscoveryNotice) {
+      overviewDiscoveryNoticeNode.hidden = true;
+      overviewDiscoveryNoticeNode.innerHTML = '';
+      return;
+    }
+    const statusClass = overviewDiscoveryNotice.type === 'error' ? 'spk-status-error' : 'spk-status-info';
+    const retry = overviewDiscoveryNotice.retry
+      ? `<button id="spkOverviewDiscoveryRetry" class="spk-discovery-retry" type="button">${escapeHtml(COPY.SPK_ACTION_RETRY || '')}</button>`
+      : '';
+    overviewDiscoveryNoticeNode.hidden = false;
+    overviewDiscoveryNoticeNode.innerHTML = `
+      <div class="spk-status ${statusClass} spk-discovery-notice" role="alert">
+        <div class="spk-discovery-notice-text">
+          ${(overviewDiscoveryNotice.messages || []).map((message) => `<div>${escapeHtml(message)}</div>`).join('')}
+        </div>
+        <div class="spk-discovery-notice-actions">
+          ${retry}
+          <button id="spkOverviewDiscoveryDismiss" class="spk-status-dismiss" type="button" aria-label="dismiss">&times;</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('spkOverviewDiscoveryRetry')?.addEventListener('click', () => {
+      refreshDiscoveryScan({ requestSeq: overviewDiscoveryRequestSeq + 1, throwOnError: false });
+    });
+    document.getElementById('spkOverviewDiscoveryDismiss')?.addEventListener('click', () => {
+      overviewDiscoveryNotice = null;
+      renderOverviewDiscoveryNotice();
+      if (!discoveryContainer.querySelector('.spk-discovery-card') && statementHandoffNotice.hidden) {
+        discoverySection.hidden = true;
+      }
+    });
+  }
+
+  function renderDiscovery(data) {
+    const clusters = discoveryClusters(data);
+    hideStatementHandoffNotice();
+    renderOverviewDiscoveryNotice();
+    discoveryClustersById = new Map(clusters.map((cluster) => [String(cluster.cluster_id), cluster]));
+    if (!clusters.length) {
+      discoveryContainer.innerHTML = '';
+      discoverySection.hidden = !overviewDiscoveryNotice;
+      return;
+    }
+    discoverySection.hidden = false;
+    discoveryContainer.innerHTML = clusters.map((cluster) => `
+      <div class="spk-discovery-card" data-cluster-id="${escapeHtml(cluster.cluster_id)}">
+        <h3 class="spk-card-title">${escapeHtml(cluster.suggested_name || cluster.cluster_id)}</h3>
+        <p class="spk-card-line">${escapeHtml(String(cluster.size || cluster.count || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_CARD_SAMPLES_LABEL)}</p>
+        <div class="spk-discovery-actions">
+          <button type="button" class="spk-overview-btn spk-who-trigger" aria-haspopup="dialog" aria-expanded="false">${escapeHtml(COPY.SPK_ACTION_WHO_IS_THIS || '')}</button>
+        </div>
+      </div>
+    `).join('');
+    discoveryContainer.querySelectorAll('.spk-discovery-card').forEach((card) => {
+      const trigger = card.querySelector('.spk-who-trigger');
+      const cluster = discoveryClustersById.get(card.dataset.clusterId);
+      if (trigger && cluster) {
+        trigger.addEventListener('click', () => openOverviewWhoIsThis(cluster, trigger));
+      }
+    });
+  }
+
+  function loadDiscovery(options) {
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = overviewDiscoveryRequestSeq + 1;
+    overviewDiscoveryRequestSeq = requestSeq;
+    return window.apiJson('/app/speakers/api/discovery/cache', { cache: 'no-store' })
+      .then((data) => {
+        if (requestSeq !== overviewDiscoveryRequestSeq) return false;
+        renderDiscovery(data);
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== overviewDiscoveryRequestSeq) return false;
+        overviewDiscoveryNotice = overviewDiscoveryErrorNotice();
+        renderOverviewDiscoveryNotice();
+        discoverySection.hidden = false;
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function refreshDiscoveryScan(options) {
+    if (overviewHandoffSheetOpen || hasOverviewHandoff()) {
+      return Promise.resolve(false);
+    }
+    const throwOnError = Boolean(options?.throwOnError);
+    const requestSeq = options?.requestSeq || overviewDiscoveryRequestSeq + 1;
+    overviewDiscoveryRequestSeq = requestSeq;
+    return window.apiJson('/app/speakers/api/discovery/scan', { method: 'POST' })
+      .then((data) => {
+        if (requestSeq !== overviewDiscoveryRequestSeq) return false;
+        if (overviewHandoffSheetOpen) return false;
+        overviewDiscoveryNotice = discoveryNoticeFromScan(data);
+        renderDiscovery({
+          ...data,
+          clusters: discoveryRefreshClusters(
+            data,
+            Array.from(discoveryClustersById.values()),
+          ),
+        });
+        return true;
+      })
+      .catch((err) => {
+        if (requestSeq !== overviewDiscoveryRequestSeq) return false;
+        if (overviewHandoffSheetOpen) return false;
+        overviewDiscoveryNotice = overviewDiscoveryErrorNotice();
+        renderOverviewDiscoveryNotice();
+        discoverySection.hidden = false;
+        if (throwOnError) throw err;
+        return false;
+      });
+  }
+
+  function statementHandoffComplete(handoff) {
+    return Boolean(
+      handoff
+      && handoff.day
+      && handoff.stream
+      && handoff.segmentKey
+      && handoff.source
+      && handoff.sentenceId
+    );
+  }
+
+  function resolveStatementHandoff(handoff) {
+    const params = new URLSearchParams({
+      voice_day: handoff.day,
+      voice_stream: handoff.stream,
+      voice_segment_key: handoff.segmentKey,
+      voice_source: handoff.source,
+      voice_sentence_id: handoff.sentenceId,
+    });
+    return window.apiJson(`/app/speakers/api/discovery/resolve-statement?${params}`);
+  }
+
+  function hasOverviewHandoff() {
+    const context = window.SPEAKERS_CONTEXT || {};
+    return Boolean(
+      context.voiceClusterId
+      || statementHandoffComplete(context.statementHandoff || {})
+    );
+  }
+
+  function openOverviewHandoffCluster(clusterId) {
+    if (!openOverviewDiscoveryCluster(clusterId, null, {handoff: true})) {
+      showStatementHandoffNotice();
+      return false;
+    }
+    return true;
+  }
+
+  async function handleOverviewHandoff() {
+    const context = window.SPEAKERS_CONTEXT || {};
+    hideStatementHandoffNotice();
+    if (context.voiceClusterId) {
+      return openOverviewHandoffCluster(context.voiceClusterId);
+    }
+    const handoff = context.statementHandoff || {};
+    if (!statementHandoffComplete(handoff)) return false;
+    try {
+      const result = await resolveStatementHandoff(handoff);
+      if (result.status === 'hit') {
+        return openOverviewHandoffCluster(result.cluster_id);
+      }
+      if (result.status === 'miss' || result.status === 'cache_unavailable') {
+        showStatementHandoffNotice();
+      }
+    } catch (err) {
+      window.logError?.(err, { context: 'speakers-statement-handoff' });
+      showStatementHandoffNotice();
+    }
+    return false;
+  }
+
+  function hideDayGrid() {
+    dayGridCard.hidden = true;
+    mountedDayGridKey = null;
+    if (window.DayGrid) {
+      window.DayGrid.mount(dayGridHost, {
+        data: null,
+        mode: 'navigate',
+        appPath: '/app/speakers',
+        unit: dayGridUnit(),
+      });
+    } else {
+      dayGridHost.replaceChildren();
+    }
+    dayGridLegend.replaceChildren();
+  }
+
+  function renderDayGrid(data) {
+    if (!data || !window.DayGrid) {
+      hideDayGrid();
+      return;
+    }
+
+    const key = JSON.stringify(data);
+    if (key === mountedDayGridKey) return;
+
+    // Gate on activity, not the worklist. A caught-up journal has quiet real
+    // days but still has enough speaker activity to make the grid useful.
+    const gate = window.DayGrid.gate({
+      coverage: data.coverage,
+      days: data.activity || {},
+      pending: {},
+    }, { minSpanDays: 70, minActiveDays: 14 });
+    if (!gate.ok) {
+      hideDayGrid();
+      return;
+    }
+
+    dayGridCard.hidden = false;
+    window.DayGrid.mount(dayGridHost, {
+      data,
+      mode: 'navigate',
+      appPath: '/app/speakers',
+      unit: dayGridUnit(),
+      activityUnit: dayGridActivityUnit(),
+    });
+    window.DayGrid.legend(dayGridLegend, {
+      unit: dayGridUnit(),
+      data,
+    });
+    mountedDayGridKey = key;
+  }
+
+  async function loadDayGrid() {
+    try {
+      const response = await fetch('/app/speakers/api/grid', {cache: 'no-store'});
+      if (!response.ok) throw new Error('speaker grid failed');
+      renderDayGrid(await response.json());
+    } catch (_error) {
+      hideDayGrid();
+    }
+  }
+
+  function init() {
+    setupSort();
+    loadDayGrid();
+    loadOwner();
+    loadQuality();
+    loadKnown();
+    loadDiscovery().then(() => {
+      return handleOverviewHandoff();
+    }).then(() => {
+      refreshDiscoveryScan();
+    });
+  }
+
+  function renderOverviewStateError(err) {
+    window.logError?.(err, { context: 'speakers-overview-state' });
+    ownerPanel.innerHTML = window.SurfaceState.error({
+      heading: "Couldn't load speakers",
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage || err?.message || '',
+      detail: err,
+      retry: true,
+    });
+    ownerPanel.querySelector('.surface-state-retry')?.addEventListener('click', () => {
+      window.SPEAKERS_STATE_PROMISE = window.loadSpeakersState();
+      startOverview();
+    });
+  }
+
+  async function startOverview() {
+    const context = window.SPEAKERS_CONTEXT || {};
+    if (context.isDay) return;
+    document.getElementById('speakersOverviewView').hidden = false;
+    ownerPanel.innerHTML = window.SurfaceState.loading({ text: 'loading speakers...' });
+    try {
+      const payload = await window.SPEAKERS_STATE_PROMISE;
+      applyOverviewState(payload);
+      init();
+    } catch (err) {
+      renderOverviewStateError(err);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startOverview);
+  } else {
+    startOverview();
+  }
+})();
+</script>

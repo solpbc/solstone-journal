@@ -15,11 +15,11 @@ const mountWorkspaceSource = fs.readFileSync(
   'utf8'
 );
 const workspaceHtml = fs.readFileSync(
-  path.join(repoRoot, 'solstone/apps/speakers/workspace.html'),
+  path.join(repoRoot, 'core/crates/solstone-core-convey-shell/assets/speakers/workspace.html'),
   'utf8'
 );
 const whoIsThisSource = fs.readFileSync(
-  path.join(repoRoot, 'solstone/apps/speakers/static/who_is_this.js'),
+  path.join(repoRoot, 'core/crates/solstone-core-convey-shell/assets/speakers/who_is_this.js'),
   'utf8'
 );
 

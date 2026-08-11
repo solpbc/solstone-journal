@@ -34,7 +34,13 @@ CONVERTED_FILES = (
     ROOT / "solstone" / "apps" / "stats" / "static" / "dashboard.js",
     ROOT / "solstone" / "apps" / "activities" / "workspace.html",
     ROOT / "solstone" / "apps" / "transcripts" / "workspace.html",
-    ROOT / "solstone" / "apps" / "speakers" / "workspace.html",
+    ROOT
+    / "core"
+    / "crates"
+    / "solstone-core-convey-shell"
+    / "assets"
+    / "speakers"
+    / "workspace.html",
     ROOT / "solstone" / "apps" / "entities" / "workspace.html",
     ROOT / "solstone" / "apps" / "health" / "workspace.html",
     ROOT / "solstone" / "apps" / "health" / "static" / "health.js",
@@ -191,7 +197,7 @@ CONVERTED_GLYPH_RESIDUE = {
         "icon: '↩️'",
         "icon: '⏱️'",
     ),
-    "solstone/apps/speakers/workspace.html": (
+    "core/crates/solstone-core-convey-shell/assets/speakers/workspace.html": (
         '<div class="surface-state-icon" aria-hidden="true"><svg',
         "segment: '<svg",
         "cursor: '<svg",

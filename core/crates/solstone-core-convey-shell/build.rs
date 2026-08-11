@@ -152,11 +152,11 @@ fn main() {
         .canonicalize()
         .expect("repository root resolves");
     let static_root = root.join("solstone/convey/static");
-    let speakers_root = root.join("solstone/apps/speakers");
+    let speakers_root = manifest.join("assets/speakers");
     let speakers_copy = speakers_root.join("copy.py");
     let favicon = root.join("favicon.ico");
     let workspace = speakers_root.join("workspace.html");
-    let speakers_static = speakers_root.join("static/who_is_this.js");
+    let speakers_static = speakers_root.join("who_is_this.js");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
