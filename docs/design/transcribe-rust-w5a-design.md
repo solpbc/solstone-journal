@@ -82,7 +82,7 @@ Private modules:
 - `backend/parakeet_cpp.rs`: Linux HTTP client, transport classification,
   server health/port/placement reads, and Parakeet response parsing.
 - `backend/confidential.rs`: confidential transport and its reason vocabulary.
-- `model_assets.rs`: the new source/installed/override model resolver.
+- `model_assets.rs`: the four-candidate, digest-verified model resolver.
 - `speakers.rs`: locates and spawns the sibling
   `solstone-core-speakers-analyze` binary, writes one JSON request to stdin,
   reads one JSON response line from stdout, maps its 64/69/75 exits and stderr
