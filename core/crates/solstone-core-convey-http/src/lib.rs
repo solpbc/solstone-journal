@@ -66,7 +66,7 @@
 //! ## D5: request bounds — standard layer plus HTTP/1 parser limits
 //!
 //! Every per-connection router clone will use
-//! `tower_http::limit::RequestBodyLimitLayer::new(10 * 1024 * 1024)`, a 10 MiB
+//! `tower_http::limit::RequestBodyLimitLayer::new(128 * 1024 * 1024)`, a 128 MiB
 //! default. It immediately returns 413 for an oversized `Content-Length` and
 //! wraps streamed bodies with the same limit; a future route may deliberately
 //! choose a narrower limit. For a chunked body with no `Content-Length`, the

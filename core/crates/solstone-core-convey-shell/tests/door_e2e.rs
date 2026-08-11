@@ -421,6 +421,24 @@ async fn request(
     .expect("door request")
 }
 
+async fn loopback_status(address: SocketAddr) -> std::io::Result<u16> {
+    let mut stream = tokio::net::TcpStream::connect(address).await?;
+    stream
+        .write_all(
+            b"GET /api/system/status HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
+        )
+        .await?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await?;
+    std::str::from_utf8(&response)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing status"))?
+        .parse()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
 async fn request_result(
     fixture: &Fixture,
     client: usize,
@@ -440,8 +458,9 @@ async fn request_result(
 
 #[test]
 fn ac3_serve_accepts_only_the_prebuilt_router() {
-    // `__door_test/basis` above is the sole test-only route and lives in this
-    // integration-test crate, which is stronger than a feature-gated library route.
+    // `__door_test/basis` and the test-crate body-echo route are the only test
+    // surfaces. The body-echo route is AC3's permitted exception, and both
+    // live in this integration-test crate, stronger than a feature-gated route.
     let source = include_str!("../src/lib.rs");
     let serve = source
         .split("pub async fn serve")
@@ -487,6 +506,14 @@ async fn ac1_binds_door_beside_loopback() {
         .await
         .expect("loopback bind");
     assert!(handle.loopback_ipv4_addr().ip().is_loopback());
+    assert!(
+        matches!(loopback_status(handle.loopback_ipv4_addr()).await, Ok(200)),
+        "loopback IPv4 accepts a live HTTP request"
+    );
+    assert!(
+        matches!(loopback_status(handle.loopback_ipv6_addr()).await, Ok(200)),
+        "loopback IPv6 accepts a live HTTP request"
+    );
     let port = door_port(handle.door_outcome());
     assert!(
         tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
@@ -567,6 +594,10 @@ async fn ac12_ca_chain_is_the_committed_on_disk_der() {
     let chain = presented_chain(&fixture, door_port(handle.door_outcome())).await;
     assert_eq!(chain.len(), 2);
     assert_eq!(chain[1].as_ref(), fixture.ca_der());
+    let (_, leaf) = x509_parser::parse_x509_certificate(chain[0].as_ref()).expect("leaf parses");
+    let (_, ca) = x509_parser::parse_x509_certificate(fixture.ca_der()).expect("CA parses");
+    leaf.verify_signature(Some(ca.public_key()))
+        .expect("served leaf verifies under the committed CA key");
     assert_eq!(
         std::fs::read(fixture.root.join("link/ca/cert.pem")).expect("CA bytes"),
         before
@@ -659,6 +690,26 @@ async fn ac6_ca_signed_but_unlisted_client_is_refused() {
 }
 
 #[tokio::test]
+async fn ac6_authorized_client_is_admitted() {
+    let fixture = Fixture::established(1);
+    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    assert!(matches!(
+        ledger_posture(&fixture),
+        AuthorizedClientsRead::Present(entries) if entries.iter().any(|entry| entry.fingerprint == did)
+    ));
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    assert!(
+        request_result(&fixture, 0, door_port(handle.door_outcome()))
+            .await
+            .is_ok(),
+        "Present authorization admits the listed client"
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
 async fn ac6_no_client_certificate_fails_at_tls() {
     let fixture = Fixture::established(1);
     assert!(matches!(
@@ -686,6 +737,10 @@ async fn ac6_no_client_certificate_fails_at_tls() {
 #[tokio::test]
 async fn ac6_client_not_signed_by_journal_ca_is_refused() {
     let fixture = Fixture::established(1);
+    assert!(matches!(
+        ledger_posture(&fixture),
+        AuthorizedClientsRead::Present(_)
+    ));
     let foreign_key =
         rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).expect("foreign key");
     let foreign_ca_key =
@@ -977,10 +1032,21 @@ async fn ac21_handshake_touches_native_devices_ledger_and_emits_callosum() {
     assert_eq!(message["tract"], "link");
     assert_eq!(message["event"], "last_seen");
     assert_eq!(message["fingerprint"], did);
+    let devices: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixture.root.join("link/devices.json")).expect("devices ledger"),
+    )
+    .expect("devices ledger JSON");
+    let last_seen_at = devices[&did]["last_seen_at"]
+        .as_str()
+        .expect("accepted device records last_seen_at");
+    let parsed =
+        time::OffsetDateTime::parse(last_seen_at, &time::format_description::well_known::Rfc3339)
+            .expect("last_seen_at is RFC3339");
+    assert_eq!(parsed.offset(), time::UtcOffset::UTC, "last_seen_at is UTC");
+    let now = time::OffsetDateTime::now_utc();
     assert!(
-        std::fs::read_to_string(fixture.root.join("link/devices.json"))
-            .expect("devices ledger")
-            .contains(&did)
+        parsed >= now - time::Duration::minutes(5) && parsed <= now + time::Duration::minutes(1),
+        "last_seen_at is plausibly current"
     );
     handle.shutdown();
 
@@ -1194,9 +1260,8 @@ async fn ac22_door_bind_failure_preserves_live_loopback_and_is_structured() {
         matches!(handle.door_outcome(), DoorOutcome::BindFailed { port: actual, .. } if *actual == port)
     );
     assert!(
-        tokio::net::TcpStream::connect(handle.loopback_ipv4_addr())
-            .await
-            .is_ok()
+        matches!(loopback_status(handle.loopback_ipv4_addr()).await, Ok(200)),
+        "loopback answers a live request after the door bind failure"
     );
     assert_eq!(held.local_addr().expect("holder remains").port(), port);
     handle.shutdown();
