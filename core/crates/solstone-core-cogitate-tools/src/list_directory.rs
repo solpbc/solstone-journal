@@ -123,16 +123,24 @@ mod trailing_slash_tests {
     /// refusal, and could not recover. No oracle vector covered a trailing slash.
     #[test]
     fn a_trailing_slash_resolves_the_same_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "cogitate-trailing-slash-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("cogitate-trailing-slash-{}", std::process::id()));
         let day = root.join("chronicle").join("20260810");
         fs::create_dir_all(&day).expect("fixture tree");
         fs::write(day.join("notes.md"), b"x").expect("fixture file");
 
-        let plain = list_directory(&root, "chronicle/20260810", &ListDirectoryOptions::default(), None);
-        let slashed = list_directory(&root, "chronicle/20260810/", &ListDirectoryOptions::default(), None);
+        let plain = list_directory(
+            &root,
+            "chronicle/20260810",
+            &ListDirectoryOptions::default(),
+            None,
+        );
+        let slashed = list_directory(
+            &root,
+            "chronicle/20260810/",
+            &ListDirectoryOptions::default(),
+            None,
+        );
 
         assert!(plain.ok, "unslashed path should list: {:?}", plain.refusal);
         assert!(
