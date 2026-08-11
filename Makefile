@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -26,6 +26,7 @@ VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
 IOS_TARGET := aarch64-apple-ios
+MACOS_TARGET := aarch64-apple-darwin
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
 
 # bindgen (inside ffmpeg-sys-next, which solstone-core-describe pulls in) asks
@@ -309,6 +310,19 @@ check-rust-clippy:
 check-rust-test:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
+
+# macOS is a core platform with parity to Linux as an acceptance criterion
+# (founder, 2026-08-10), and until this target existed NOTHING compiled the
+# `#[cfg(target_os = "macos")]` paths: check-rust-ios targets aarch64-apple-ios,
+# which does not build macos cfg blocks, and no other gate names a darwin target.
+# Scoped to the crates that actually carry macOS code and cross-compile from
+# Linux; solstone-core-body-ingest is excluded because ring and libsqlite3-sys
+# need a darwin C toolchain, which is an environment limit rather than a defect.
+check-rust-macos:
+	@$(REQUIRE_CARGO)
+	@$(REQUIRE_RUSTUP)
+	@rustup target list --installed 2>/dev/null | grep -qx "$(MACOS_TARGET)" || { echo "Rust target $(MACOS_TARGET) is required for the macOS gate; run rustup target add $(MACOS_TARGET)" >&2; exit 1; }
+	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core-system -p solstone-core-local -p solstone-core-journal-io --lib --target $(MACOS_TARGET) --locked
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)
@@ -832,6 +846,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-test
 	@$(MAKE) check-rust-ios
+	@$(MAKE) check-rust-macos
 	@$(MAKE) check-rust-deny
 	@echo "All CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
 	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement."
