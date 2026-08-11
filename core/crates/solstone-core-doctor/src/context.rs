@@ -9,6 +9,7 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct CheckContext {
     pub home_dir: PathBuf,
+    pub install_bin_dir: PathBuf,
     pub journal_path: PathBuf,
     pub callosum_socket_path: PathBuf,
     pub platform: Platform,
@@ -18,6 +19,16 @@ pub struct CheckContext {
 }
 impl CheckContext {
     pub fn production(port: u16) -> Result<Self, String> {
+        let executable = env::current_exe().map_err(|error| error.to_string())?;
+        let install_bin_dir = executable
+            .parent()
+            .ok_or_else(|| {
+                format!(
+                    "could not determine executable directory: {}",
+                    executable.display()
+                )
+            })?
+            .to_path_buf();
         let home_dir =
             discover_home(env::var_os("HOME").as_deref(), None).map_err(|e| format!("{e:?}"))?;
         let config = read_config_journal(&home_dir).map_err(|e| format!("{e:?}"))?;
@@ -39,6 +50,7 @@ impl CheckContext {
         Ok(Self {
             callosum_socket_path: journal_path.join("health/callosum.sock"),
             home_dir,
+            install_bin_dir,
             journal_path,
             platform,
             port,

@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::{
+    env,
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+};
+
+use nix::unistd::{AccessFlags, access};
+
+use crate::{
+    checks::managed_wrapper::resolve_non_strict,
+    context::CheckContext,
+    vocabulary::{Check, RunnerResult, Status, make_result},
+};
+
+const LOCAL_BIN_SOL_FIX: &str = "Install via `uv tool install solstone` or `pipx install solstone` for the canonical layout, or run `ln -s $(command -v sol) ~/.local/bin/sol` to keep your custom layout.";
+
+pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    // Python's shutil.which reads the process PATH; this check intentionally
+    // does the same rather than adding a one-off field to CheckContext.
+    run_with_path(context, check, env::var_os("PATH"))
+}
+
+fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -> RunnerResult {
+    let local = context.home_dir.join(".local/bin/sol");
+    let which = which_sol(path.as_deref());
+    if local.exists()
+        && local.is_file()
+        && let Some(which) = which.as_deref()
+    {
+        let local_resolved = resolve_non_strict(&local);
+        let which_resolved = resolve_non_strict(which);
+        if which != local && local.is_symlink() && local_resolved == which_resolved {
+            return Ok(make_result(
+                check,
+                Status::Ok,
+                format!(
+                    "~/.local/bin/sol symlinks to PATH sol at {}",
+                    which.display()
+                ),
+                None::<String>,
+            ));
+        }
+        if which_resolved == local_resolved {
+            return Ok(make_result(
+                check,
+                Status::Ok,
+                format!("~/.local/bin/sol is on PATH at {}", local.display()),
+                None::<String>,
+            ));
+        }
+    }
+
+    let mut failures = Vec::new();
+    if !local.exists() {
+        failures.push(format!("{} is missing", local.display()));
+    } else if !local.is_file() {
+        failures.push(format!("{} is not a file", local.display()));
+    }
+    match which {
+        None => failures.push("sol is not on PATH".into()),
+        Some(which) => failures.push(format!(
+            "PATH sol resolves to {}, expected {}",
+            resolve_non_strict(&which).display(),
+            resolve_non_strict(&local).display()
+        )),
+    }
+    Ok(make_result(
+        check,
+        Status::Warn,
+        failures.join("; "),
+        Some(LOCAL_BIN_SOL_FIX),
+    ))
+}
+
+fn which_sol(path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    env::split_paths(path?)
+        .map(|directory| directory.join("sol"))
+        .find(|candidate| is_executable(candidate))
+}
+
+fn is_executable(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+        && access(path, AccessFlags::X_OK).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        os::unix::fs::{PermissionsExt, symlink},
+    };
+
+    use super::*;
+    use crate::{
+        checks::test_support::{check, context},
+        vocabulary::{Severity, Status},
+    };
+
+    fn executable(path: &Path) {
+        fs::write(path, "#!/bin/sh\nexit 0\n").expect("write executable");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make executable");
+    }
+
+    #[test]
+    fn reports_path_symlinks_and_missing_local_aliases() {
+        let staged = context();
+        let bin = staged.home_dir.join("path-bin");
+        fs::create_dir_all(&bin).expect("create PATH fixture");
+        let target = bin.join("sol");
+        executable(&target);
+        let local = staged.home_dir.join(".local/bin/sol");
+        fs::create_dir_all(local.parent().expect("local parent")).expect("create local parent");
+        symlink(&target, &local).expect("link local sol");
+        let check = check("local_bin_sol_reachable", Severity::Advisory);
+        assert_eq!(
+            run_with_path(&staged, check, Some(bin.clone().into()))
+                .unwrap()
+                .status,
+            Status::Ok
+        );
+
+        fs::remove_file(&local).expect("remove local sol");
+        let result = run_with_path(&staged, check, Some(bin.into())).unwrap();
+        assert_eq!(result.status, Status::Warn);
+        assert!(result.detail.contains("is missing"));
+    }
+}

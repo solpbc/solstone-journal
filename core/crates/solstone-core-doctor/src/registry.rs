@@ -80,6 +80,39 @@ fn conflict(c: &CheckContext) -> RunnerResult {
 fn plist(c: &CheckContext) -> RunnerResult {
     checks::launchd_stale_plist::run(c, CHECK_PLIST)
 }
+fn journal_leaf_exclusivity(c: &CheckContext) -> RunnerResult {
+    checks::journal_leaf_exclusivity::run(c, CHECK_JOURNAL_LEAF_EXCLUSIVITY)
+}
+fn journal_package_version(c: &CheckContext) -> RunnerResult {
+    checks::journal_package_version::run(c, CHECK_JOURNAL_PACKAGE_VERSION)
+}
+fn retired_host_shim(c: &CheckContext) -> RunnerResult {
+    checks::retired_host_shim::run(c, CHECK_RETIRED_HOST_SHIM)
+}
+fn host_dependencies(c: &CheckContext) -> RunnerResult {
+    checks::host_dependencies::run(c, CHECK_HOST_DEPENDENCIES)
+}
+fn disk_space(c: &CheckContext) -> RunnerResult {
+    checks::disk_space::run(c, CHECK_DISK_SPACE)
+}
+fn python_version(c: &CheckContext) -> RunnerResult {
+    checks::python_version::run(c, CHECK_PYTHON_VERSION)
+}
+fn service_identity(c: &CheckContext) -> RunnerResult {
+    checks::service_identity::run(c, CHECK_SERVICE_IDENTITY)
+}
+fn stale_alias_journal(c: &CheckContext) -> RunnerResult {
+    checks::stale_alias_symlink::run(c, CHECK_STALE_ALIAS_SYMLINK, "journal")
+}
+fn stale_alias_sol(c: &CheckContext) -> RunnerResult {
+    checks::stale_alias_symlink::run(c, CHECK_STALE_ALIAS_SYMLINK, "sol")
+}
+fn sol_importable(c: &CheckContext) -> RunnerResult {
+    checks::sol_importable::run(c, CHECK_SOL_IMPORTABLE)
+}
+fn local_bin_sol_reachable(c: &CheckContext) -> RunnerResult {
+    checks::local_bin_sol_reachable::run(c, CHECK_LOCAL_BIN_SOL_REACHABLE)
+}
 const CHECK_CONFIG: Check = Check {
     name: "config_dir_readable",
     severity: Severity::Blocker,
@@ -105,6 +138,56 @@ const CHECK_PLIST: Check = Check {
     severity: Severity::Advisory,
     platforms: DARWIN,
 };
+const CHECK_JOURNAL_LEAF_EXCLUSIVITY: Check = Check {
+    name: "journal_leaf_exclusivity",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_JOURNAL_PACKAGE_VERSION: Check = Check {
+    name: "journal_package_version",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_RETIRED_HOST_SHIM: Check = Check {
+    name: "retired_host_shim",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_HOST_DEPENDENCIES: Check = Check {
+    name: "host_dependencies",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_DISK_SPACE: Check = Check {
+    name: "disk_space",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_PYTHON_VERSION: Check = Check {
+    name: "python_version",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_SERVICE_IDENTITY: Check = Check {
+    name: "service_identity",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_STALE_ALIAS_SYMLINK: Check = Check {
+    name: "stale_alias_symlink",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_SOL_IMPORTABLE: Check = Check {
+    name: "sol_importable",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_LOCAL_BIN_SOL_REACHABLE: Check = Check {
+    name: "local_bin_sol_reachable",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
 const fn stub(
     name: &'static str,
     severity: Severity,
@@ -126,31 +209,36 @@ const fn stub(
     }
 }
 pub static JOURNAL: &[RegistryEntry] = &[
-    stub(
-        "journal_leaf_exclusivity",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub(
-        "journal_package_version",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub(
-        "retired_host_shim",
-        Severity::Advisory,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub(
-        "host_dependencies",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub("disk_space", Severity::Advisory, DeferredWave::W3b, None),
+    RegistryEntry {
+        check: CHECK_JOURNAL_LEAF_EXCLUSIVITY,
+        runner: journal_leaf_exclusivity,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_JOURNAL_PACKAGE_VERSION,
+        runner: journal_package_version,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_RETIRED_HOST_SHIM,
+        runner: retired_host_shim,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_HOST_DEPENDENCIES,
+        runner: host_dependencies,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_DISK_SPACE,
+        runner: disk_space,
+        deferred: None,
+        feature: None,
+    },
     RegistryEntry {
         check: CHECK_CONFIG,
         runner: config,
@@ -169,12 +257,12 @@ pub static JOURNAL: &[RegistryEntry] = &[
         deferred: None,
         feature: None,
     },
-    stub(
-        "service_identity",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
+    RegistryEntry {
+        check: CHECK_SERVICE_IDENTITY,
+        runner: service_identity,
+        deferred: None,
+        feature: None,
+    },
     RegistryEntry {
         check: CHECK_SERVICE,
         runner: service,
@@ -226,12 +314,12 @@ pub static JOURNAL: &[RegistryEntry] = &[
         DeferredWave::W3c,
         None,
     ),
-    stub(
-        "stale_alias_symlink",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
+    RegistryEntry {
+        check: CHECK_STALE_ALIAS_SYMLINK,
+        runner: stale_alias_journal,
+        deferred: None,
+        feature: None,
+    },
     RegistryEntry {
         check: CHECK_PLIST,
         runner: plist,
@@ -271,27 +359,42 @@ pub static JOURNAL: &[RegistryEntry] = &[
     ),
 ];
 pub static READINESS: &[RegistryEntry] = &[
-    stub(
-        "host_dependencies",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub("python_version", Severity::Blocker, DeferredWave::W3b, None),
-    stub("sol_importable", Severity::Blocker, DeferredWave::W3b, None),
-    stub(
-        "local_bin_sol_reachable",
-        Severity::Advisory,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub(
-        "stale_alias_symlink",
-        Severity::Blocker,
-        DeferredWave::W3b,
-        None,
-    ),
-    stub("disk_space", Severity::Advisory, DeferredWave::W3b, None),
+    RegistryEntry {
+        check: CHECK_HOST_DEPENDENCIES,
+        runner: host_dependencies,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_PYTHON_VERSION,
+        runner: python_version,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_SOL_IMPORTABLE,
+        runner: sol_importable,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_LOCAL_BIN_SOL_REACHABLE,
+        runner: local_bin_sol_reachable,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_STALE_ALIAS_SYMLINK,
+        runner: stale_alias_sol,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_DISK_SPACE,
+        runner: disk_space,
+        deferred: None,
+        feature: None,
+    },
     RegistryEntry {
         check: CHECK_WRITABLE,
         runner: readiness_writable,
