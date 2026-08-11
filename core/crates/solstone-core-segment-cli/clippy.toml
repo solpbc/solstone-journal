@@ -1,22 +1,24 @@
 # Production code in this crate may read existing segment bytes and enumerate
-# legacy files, but all filesystem writes must pass through journal-io.
+# legacy files, but it never writes them: durable segment writes belong to
+# solstone-core-segment, the native segment write door. This crate must not
+# depend on journal-io directly; cargo-deny bans that edge.
 # The unavailable Tokio and libc namespaces below are a defense-in-depth floor,
 # not live dependency-graph enforcement.
 disallowed-methods = [
-    { path = "std::fs::write", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::create_dir", reason = "journal-io creates writer parents" },
-    { path = "std::fs::create_dir_all", reason = "journal-io creates writer parents" },
+    { path = "std::fs::write", reason = "use solstone-core-segment" },
+    { path = "std::fs::create_dir", reason = "the segment write door creates writer parents" },
+    { path = "std::fs::create_dir_all", reason = "the segment write door creates writer parents" },
     { path = "std::fs::remove_file", reason = "segment CLI never deletes" },
     { path = "std::fs::remove_dir", reason = "segment CLI never deletes" },
     { path = "std::fs::remove_dir_all", reason = "segment CLI never deletes" },
-    { path = "std::fs::rename", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::copy", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::hard_link", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::rename", reason = "use solstone-core-segment" },
+    { path = "std::fs::copy", reason = "use solstone-core-segment" },
+    { path = "std::fs::hard_link", reason = "use solstone-core-segment" },
     { path = "std::fs::set_permissions", reason = "segment CLI never changes permissions" },
-    { path = "std::fs::File::create", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::File::create_new", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::OpenOptions::open", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::DirBuilder::create", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::File::create", reason = "use solstone-core-segment" },
+    { path = "std::fs::File::create_new", reason = "use solstone-core-segment" },
+    { path = "std::fs::OpenOptions::open", reason = "use solstone-core-segment" },
+    { path = "std::fs::DirBuilder::create", reason = "use solstone-core-segment" },
     { path = "std::os::unix::fs::symlink", reason = "segment CLI never creates symlinks" },
     { path = "std::os::unix::fs::chown", reason = "segment CLI never changes ownership" },
     { path = "std::os::unix::fs::lchown", reason = "segment CLI never changes ownership" },
@@ -37,8 +39,8 @@ disallowed-methods = [
     { path = "libc::link", reason = "libc filesystem writes are not permitted here", allow-invalid = true },
 ]
 disallowed-types = [
-    { path = "std::fs::OpenOptions", reason = "use solstone-core-journal-io" },
-    { path = "std::fs::DirBuilder", reason = "use solstone-core-journal-io" },
+    { path = "std::fs::OpenOptions", reason = "use solstone-core-segment" },
+    { path = "std::fs::DirBuilder", reason = "use solstone-core-segment" },
     { path = "tokio::fs::File", reason = "Tokio filesystem I/O is not permitted here", allow-invalid = true },
     { path = "tokio::fs::OpenOptions", reason = "Tokio filesystem I/O is not permitted here", allow-invalid = true },
     { path = "libc::FILE", reason = "libc filesystem I/O is not permitted here", allow-invalid = true },

@@ -13,8 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use solstone_core_journal_io::DEFAULT_STREAM;
-use solstone_core_segment::{SegmentDir, SegmentError};
+use solstone_core_segment::{DEFAULT_STREAM, RelocationEnd, SegmentDir, SegmentError};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SegmentLocation {
@@ -61,5 +60,18 @@ impl SegmentLocation {
 
     pub(crate) fn token(&self) -> String {
         format!("{}/{}/{}", self.day, self.stream, self.segment)
+    }
+
+    /// Project the disk relations the segment write door needs to move this
+    /// segment. The index relation is deliberately left behind: index rows are
+    /// this crate's to prune and rebuild, not the write door's to carry.
+    pub(crate) fn relocation_end(&self) -> RelocationEnd {
+        RelocationEnd {
+            day: self.day.clone(),
+            segment: self.segment.clone(),
+            path: self.path.clone(),
+            disk_rel: self.disk_rel.clone(),
+            parent_rel: self.parent_rel.clone(),
+        }
     }
 }

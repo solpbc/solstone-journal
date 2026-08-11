@@ -8,12 +8,10 @@ use solstone_core_indexer_store::{
     db::StreamPruneCounts,
     scan::{RescanFileStatus, rescan_file},
 };
-use solstone_core_journal_io::{
-    AtomicWriteOptions, JsonWriteOptions, LockOptions, ensure_directory, find_available_segment,
-    list_dir_entries, read_text, rename_within, write_json,
-};
 use solstone_core_segment::{
-    MarkerTail, RepairOutcome, repair_stream_tail_from_markers, touch_stream_health_marker,
+    DEFAULT_STREAM, DirEntryKind, LockOptions, Relocation, RelocationOutcome, RelocationRefusal,
+    RepairOutcome, available_segment_key, list_dir_entries, read_text, relocate_segment,
+    touch_stream_health_marker,
 };
 
 use crate::index::{SegmentIndexStatus, read_segment_index};
@@ -44,34 +42,13 @@ impl MoveRefusal {
     }
 }
 
-pub(crate) enum RenameFailure {
-    DestinationExists,
-    Io(String),
-}
-
+/// The seam this crate orchestrates over.
+///
+/// The four durable journal writes of a move are one call, owned by the segment
+/// write door. What remains here is index work, which this crate owns outright.
 pub(crate) trait SegmentOperations {
-    fn rename(
-        &self,
-        journal: &Path,
-        source: &SegmentLocation,
-        destination: &SegmentLocation,
-    ) -> Result<(), RenameFailure>;
-    fn rewrite_events(&self, destination: &SegmentLocation) -> Result<u64, String>;
-    fn patch_successor(
-        &self,
-        successor: &SegmentLocation,
-        day: &str,
-        segment: &str,
-    ) -> Result<(), String>;
-    fn repair_tail(
-        &self,
-        journal: &Path,
-        stream: &str,
-        day: &str,
-        segment: &str,
-        seq: u64,
-        locks: LockOptions,
-    ) -> RepairOutcome;
+    fn relocate(&self, relocation: &Relocation<'_>)
+    -> Result<RelocationOutcome, RelocationRefusal>;
     fn prune(&self, journal: &Path, rel: &str) -> Result<Option<StreamPruneCounts>, String>;
     fn rescan(&self, journal: &Path, file: &Path) -> Result<RescanFileStatus, String>;
     fn touch_health(&self, journal: &Path, day: &str) -> Result<(), String>;
@@ -80,71 +57,11 @@ pub(crate) trait SegmentOperations {
 pub(crate) struct NativeOperations;
 
 impl SegmentOperations for NativeOperations {
-    fn rename(
+    fn relocate(
         &self,
-        journal: &Path,
-        source: &SegmentLocation,
-        destination: &SegmentLocation,
-    ) -> Result<(), RenameFailure> {
-        ensure_directory(&journal.join(&destination.parent_rel))
-            .map_err(|error| RenameFailure::Io(error.to_string()))?;
-        // The plan's collision check can become stale while it reads markers and
-        // the index. This narrows that window to check-to-syscall, but cannot
-        // make rename atomic: rename(2) has no no-replace mode through this seam.
-        if destination.path.exists() {
-            return Err(RenameFailure::DestinationExists);
-        }
-        rename_within(journal, &source.disk_rel, &destination.disk_rel)
-            .map_err(|error| RenameFailure::Io(error.to_string()))
-    }
-
-    fn rewrite_events(&self, destination: &SegmentLocation) -> Result<u64, String> {
-        rewrite_events(destination)
-    }
-
-    fn patch_successor(
-        &self,
-        successor: &SegmentLocation,
-        day: &str,
-        segment: &str,
-    ) -> Result<(), String> {
-        let Some(mut marker) = read_marker(&successor.path)
-            .map_err(|error| format!("could not read marker: {error}"))?
-        else {
-            return Err("could not read marker".to_owned());
-        };
-        let object = marker
-            .as_object_mut()
-            .ok_or_else(|| "could not read marker".to_owned())?;
-        object.insert("prev_day".to_owned(), Value::String(day.to_owned()));
-        object.insert("prev_segment".to_owned(), Value::String(segment.to_owned()));
-        write_json(
-            successor.path.join("stream.json"),
-            &marker,
-            JsonWriteOptions::default(),
-        )
-        .map_err(|error| error.to_string())
-    }
-
-    fn repair_tail(
-        &self,
-        journal: &Path,
-        stream: &str,
-        day: &str,
-        segment: &str,
-        seq: u64,
-        locks: LockOptions,
-    ) -> RepairOutcome {
-        repair_stream_tail_from_markers(
-            journal,
-            stream,
-            &MarkerTail {
-                last_day: day,
-                last_segment: segment,
-                max_seq: seq,
-            },
-            locks,
-        )
+        relocation: &Relocation<'_>,
+    ) -> Result<RelocationOutcome, RelocationRefusal> {
+        relocate_segment(relocation)
     }
 
     fn prune(&self, journal: &Path, rel: &str) -> Result<Option<StreamPruneCounts>, String> {
@@ -202,7 +119,7 @@ pub(crate) fn build_plan(
             )));
         }
         let parent = journal.join(&destination.parent_rel);
-        let available = find_available_segment(&parent, &destination_segment, 100)
+        let available = available_segment_key(&parent, &destination_segment, 100)
             .map_err(|error| MoveRefusal::Message(error.to_string()))?;
         let Some(available) = available else {
             return Err(MoveRefusal::Message(format!(
@@ -231,7 +148,7 @@ pub(crate) fn build_plan(
             ))
         })?
         .to_owned();
-    if source.stream != solstone_core_journal_io::DEFAULT_STREAM && marker_stream != source.stream {
+    if source.stream != DEFAULT_STREAM && marker_stream != source.stream {
         return Err(MoveRefusal::Message(format!(
             "Stream mismatch: path says '{}' but stream.json says '{marker_stream}'",
             source.stream
@@ -297,9 +214,25 @@ pub(crate) fn execute_plan(
 ) -> MoveExecution {
     let mut stdout = "\nExecuting move...\n".to_owned();
     let mut stderr = String::new();
-    match operations.rename(journal, &plan.source, &plan.destination) {
-        Ok(()) => {}
-        Err(RenameFailure::DestinationExists) => {
+    let source = plan.source.relocation_end();
+    let destination = plan.destination.relocation_end();
+    // An ambiguous chain is a planning verdict, not a write: hand the door only
+    // the successor it should patch and report the ambiguity here.
+    let successor = match plan.successors.as_slice() {
+        [successor] => Some(successor.relocation_end()),
+        _ => None,
+    };
+    let outcome = match operations.relocate(&Relocation {
+        journal,
+        source: &source,
+        destination: &destination,
+        successor: successor.as_ref(),
+        stream: &plan.marker_stream,
+        sequence: plan.marker.get("seq").and_then(Value::as_u64).unwrap_or(0),
+        locks,
+    }) {
+        Ok(outcome) => outcome,
+        Err(RelocationRefusal::DestinationExists) => {
             return MoveExecution {
                 stdout,
                 stderr: format!(
@@ -309,7 +242,7 @@ pub(crate) fn execute_plan(
                 exit_code: 1,
             };
         }
-        Err(RenameFailure::Io(error)) => {
+        Err(RelocationRefusal::Failed(error)) => {
             return MoveExecution {
                 stdout,
                 stderr: format!(
@@ -318,7 +251,7 @@ pub(crate) fn execute_plan(
                 exit_code: 3,
             };
         }
-    }
+    };
     if verbose {
         stdout.push_str(&format!(
             "  created directory: {}\n",
@@ -330,25 +263,21 @@ pub(crate) fn execute_plan(
         plan.source.segment, plan.destination.segment
     ));
     let mut failures = PostMoveFailures::default();
-    match operations.rewrite_events(&plan.destination) {
+    match outcome.events {
         Ok(count) if count > 0 => stdout.push_str(&format!(
             "  rewrote {count} events.jsonl lines (day: {}->{}, segment: {}->{})\n",
             plan.source.day, plan.destination.day, plan.source.segment, plan.destination.segment
         )),
         Ok(_) if verbose => stdout.push_str("  no events.jsonl to rewrite\n"),
         Ok(_) => {}
-        Err(error) => failures.push(&mut stderr, 2, "events rewrite", error),
+        Err(error) => failures.push(&mut stderr, 2, "events rewrite", error.to_string()),
     }
     match plan.successors.as_slice() {
         [] if verbose => stdout.push_str("  no successor to patch (stream tail)\n"),
         [] => {}
-        [successor] => match operations.patch_successor(
-            successor,
-            &plan.destination.day,
-            &plan.destination.segment,
-        ) {
-            Ok(()) => stdout.push_str(&format!("  patched successor {}\n", successor.token())),
-            Err(error) => failures.push(&mut stderr, 3, "successor patch", error),
+        [successor] => match outcome.successor {
+            Some(Err(error)) => failures.push(&mut stderr, 3, "successor patch", error.to_string()),
+            _ => stdout.push_str(&format!("  patched successor {}\n", successor.token())),
         },
         successors => failures.push(
             &mut stderr,
@@ -360,15 +289,7 @@ pub(crate) fn execute_plan(
             ),
         ),
     }
-    let sequence = plan.marker.get("seq").and_then(Value::as_u64).unwrap_or(0);
-    match operations.repair_tail(
-        journal,
-        &plan.marker_stream,
-        &plan.destination.day,
-        &plan.destination.segment,
-        sequence,
-        locks,
-    ) {
+    match outcome.tail {
         RepairOutcome::Repaired | RepairOutcome::Unchanged(_) => {
             stdout.push_str(&format!("  rebuilt stream state: {}\n", plan.marker_stream))
         }
@@ -470,52 +391,6 @@ impl PostMoveFailures {
     }
 }
 
-fn rewrite_events(destination: &SegmentLocation) -> Result<u64, String> {
-    let path = destination.path.join("events.jsonl");
-    let text = read_text(&path, String::new()).map_err(|error| error.to_string())?;
-    if text.is_empty() {
-        return Ok(0);
-    }
-    let mut lines = text.split('\n').collect::<Vec<_>>();
-    if lines.last() == Some(&"") {
-        lines.pop();
-    }
-    let mut rewritten = Vec::with_capacity(lines.len());
-    let mut count = 0;
-    for line in lines {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            rewritten.push(line.to_owned());
-            continue;
-        }
-        match serde_json::from_str::<Value>(trimmed) {
-            Ok(mut value) if value.is_object() => {
-                let object = value.as_object_mut().expect("object checked");
-                object.insert("day".to_owned(), Value::String(destination.day.clone()));
-                object.insert(
-                    "segment".to_owned(),
-                    Value::String(destination.segment.clone()),
-                );
-                rewritten.push(serde_json::to_string(&value).expect("value serializes"));
-                count += 1;
-            }
-            Ok(_) | Err(_) => rewritten.push(line.to_owned()),
-        }
-    }
-    let replacement = if rewritten.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n", rewritten.join("\n"))
-    };
-    solstone_core_journal_io::atomic_replace(
-        path,
-        replacement.as_bytes(),
-        AtomicWriteOptions::default(),
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(count)
-}
-
 fn files_recursive(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     collect_files(root, &mut files);
@@ -526,9 +401,9 @@ fn files_recursive(root: &Path) -> Vec<PathBuf> {
 fn collect_files(root: &Path, files: &mut Vec<PathBuf>) {
     for entry in list_dir_entries(root).unwrap_or_default() {
         match entry.kind {
-            solstone_core_journal_io::DirEntryKind::File => files.push(entry.path),
-            solstone_core_journal_io::DirEntryKind::Directory => collect_files(&entry.path, files),
-            solstone_core_journal_io::DirEntryKind::Other => {}
+            DirEntryKind::File => files.push(entry.path),
+            DirEntryKind::Directory => collect_files(&entry.path, files),
+            DirEntryKind::Other => {}
         }
     }
 }

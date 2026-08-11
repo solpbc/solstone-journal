@@ -5,9 +5,8 @@
 
 use std::path::Path;
 
-use solstone_core_journal_io::LockOptions;
 use solstone_core_segment::{
-    SUPERVISOR_MESSAGE, SupervisorRefusal, is_solstone_up, require_solstone_with,
+    LockOptions, SUPERVISOR_MESSAGE, SupervisorRefusal, is_solstone_up, require_solstone_with,
 };
 
 mod index;
@@ -499,7 +498,9 @@ mod tests {
         db::{StreamPruneCounts, db_path, open_index},
         scan::RescanFileStatus,
     };
-    use solstone_core_segment::RepairOutcome;
+    use solstone_core_segment::{
+        Relocation, RelocationError, RelocationOutcome, RelocationRefusal, RepairOutcome,
+    };
     use tempfile::TempDir;
 
     use super::*;
@@ -523,7 +524,7 @@ mod tests {
         key: &str,
         marker: Option<Value>,
     ) -> PathBuf {
-        let path = if disk_stream == solstone_core_journal_io::DEFAULT_STREAM {
+        let path = if disk_stream == solstone_core_segment::DEFAULT_STREAM {
             root.join("chronicle").join(day).join(key)
         } else {
             root.join("chronicle").join(day).join(disk_stream).join(key)
@@ -648,46 +649,33 @@ mod tests {
     }
 
     impl SegmentOperations for RecordingOperations {
-        fn rename(
+        /// Drive the real write door, then damage only what it reported.
+        ///
+        /// The door's own step failures are proven where the mutation lives.
+        /// What is under test here is this crate's rendering of them, so the
+        /// move really happens and the outcome is rewritten afterwards.
+        fn relocate(
             &self,
-            journal: &Path,
-            source: &SegmentLocation,
-            destination: &SegmentLocation,
-        ) -> Result<(), crate::r#move::RenameFailure> {
-            self.record("rename")
-                .map_err(crate::r#move::RenameFailure::Io)?;
-            NativeOperations.rename(journal, source, destination)
-        }
-
-        fn rewrite_events(&self, destination: &SegmentLocation) -> Result<u64, String> {
-            self.record("rewrite")?;
-            NativeOperations.rewrite_events(destination)
-        }
-
-        fn patch_successor(
-            &self,
-            successor: &SegmentLocation,
-            day: &str,
-            segment: &str,
-        ) -> Result<(), String> {
-            self.record("patch")?;
-            NativeOperations.patch_successor(successor, day, segment)
-        }
-
-        fn repair_tail(
-            &self,
-            journal: &Path,
-            stream: &str,
-            day: &str,
-            segment: &str,
-            seq: u64,
-            locks: LockOptions,
-        ) -> RepairOutcome {
-            self.calls.borrow_mut().push("tail");
-            if self.fail == Some("tail") {
-                return RepairOutcome::WriteFailed;
+            relocation: &Relocation<'_>,
+        ) -> Result<RelocationOutcome, RelocationRefusal> {
+            self.calls.borrow_mut().push("relocate");
+            if self.fail == Some("rename") {
+                return Err(RelocationRefusal::Failed(RelocationError::new(
+                    "forced rename failure",
+                )));
             }
-            NativeOperations.repair_tail(journal, stream, day, segment, seq, locks)
+            let mut outcome = NativeOperations.relocate(relocation)?;
+            match self.fail {
+                Some("rewrite") => {
+                    outcome.events = Err(RelocationError::new("forced rewrite failure"));
+                }
+                Some("patch") => {
+                    outcome.successor = Some(Err(RelocationError::new("forced patch failure")));
+                }
+                Some("tail") => outcome.tail = RepairOutcome::WriteFailed,
+                _ => {}
+            }
+            Ok(outcome)
         }
 
         fn prune(&self, journal: &Path, rel: &str) -> Result<Option<StreamPruneCounts>, String> {
@@ -709,40 +697,19 @@ mod tests {
     struct LateCollisionOperations;
 
     impl SegmentOperations for LateCollisionOperations {
-        fn rename(
+        /// Occupy the destination after planning, then let the real door see it.
+        fn relocate(
             &self,
-            journal: &Path,
-            source: &SegmentLocation,
-            destination: &SegmentLocation,
-        ) -> Result<(), crate::r#move::RenameFailure> {
-            fs::create_dir_all(&destination.path)
-                .map_err(|error| crate::r#move::RenameFailure::Io(error.to_string()))?;
-            fs::write(
-                destination.path.join("stream.json"),
-                "{\"sentinel\":true}\n",
-            )
-            .map_err(|error| crate::r#move::RenameFailure::Io(error.to_string()))?;
-            NativeOperations.rename(journal, source, destination)
-        }
-
-        fn rewrite_events(&self, _: &SegmentLocation) -> Result<u64, String> {
-            unreachable!("late collision returns before post-move work")
-        }
-
-        fn patch_successor(&self, _: &SegmentLocation, _: &str, _: &str) -> Result<(), String> {
-            unreachable!("late collision returns before post-move work")
-        }
-
-        fn repair_tail(
-            &self,
-            _: &Path,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: u64,
-            _: LockOptions,
-        ) -> RepairOutcome {
-            unreachable!("late collision returns before post-move work")
+            relocation: &Relocation<'_>,
+        ) -> Result<RelocationOutcome, RelocationRefusal> {
+            let destination = &relocation.destination.path;
+            fs::create_dir_all(destination).map_err(|error| {
+                RelocationRefusal::Failed(RelocationError::new(error.to_string()))
+            })?;
+            fs::write(destination.join("stream.json"), "{\"sentinel\":true}\n").map_err(
+                |error| RelocationRefusal::Failed(RelocationError::new(error.to_string())),
+            )?;
+            NativeOperations.relocate(relocation)
         }
 
         fn prune(&self, _: &Path, _: &str) -> Result<Option<StreamPruneCounts>, String> {
@@ -1410,7 +1377,7 @@ mod tests {
         );
         assert_eq!(fs::read(state).unwrap(), state_before);
         assert_eq!(index_row_set(root.path()), index_before);
-        assert_eq!(&*directory_failure.calls.borrow(), &["rename"]);
+        assert_eq!(&*directory_failure.calls.borrow(), &["relocate"]);
 
         for (failure, step) in [
             ("rewrite", 2),

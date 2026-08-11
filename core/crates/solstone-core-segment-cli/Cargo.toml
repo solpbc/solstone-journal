@@ -18,7 +18,6 @@ rusqlite.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
 solstone-core-indexer-store.workspace = true
-solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
 
 [dev-dependencies]

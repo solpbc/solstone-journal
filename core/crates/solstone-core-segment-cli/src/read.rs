@@ -6,8 +6,10 @@ use std::path::Path;
 use chrono::{Duration, NaiveDate, NaiveTime};
 use serde_json::{Value, json};
 use solstone_core_format::segment::segment_parse;
-use solstone_core_journal_io::{DirEntryKind, list_dir_entries, read_text};
-use solstone_core_segment::{list_days, list_segments, list_segments_in, read_stream_record};
+use solstone_core_segment::{
+    DirEntryKind, list_days, list_dir_entries, list_segments, list_segments_in, read_stream_record,
+    read_text,
+};
 
 use crate::index::{SegmentIndexStatus, read_segment_index};
 use crate::location::SegmentLocation;
@@ -576,7 +578,7 @@ pub(crate) fn inspect_output(
 }
 
 pub(crate) fn day_segments(journal: &Path, day: &str) -> Vec<SegmentLocation> {
-    let day_path = solstone_core_journal_io::day_path(journal, Some(day), false).ok();
+    let day_path = solstone_core_segment::day_path(journal, Some(day), false).ok();
     let Some(day_path) = day_path else {
         return Vec::new();
     };

@@ -22,6 +22,7 @@ mod error;
 mod identity;
 mod manifest;
 mod projection;
+mod relocate;
 mod segment_dir;
 mod stream_record;
 mod stream_repair;
@@ -43,10 +44,17 @@ pub use identity::{
     load_content_identity,
 };
 pub use projection::project_stream_name;
+pub use relocate::{
+    Relocation, RelocationEnd, RelocationError, RelocationOutcome, RelocationRefusal,
+    available_segment_key, relocate_segment,
+};
 pub use segment_dir::{
     SegmentDir, is_safe_stream_component, list_days, list_segments, list_segments_in,
 };
-pub use solstone_core_journal_io::{PathOrDay, Segment, day_path, iter_segments};
+pub use solstone_core_journal_io::{
+    DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, Segment, day_path, iter_segments,
+    list_dir_entries, read_text,
+};
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
     bind_stream, lookup_stream, resolve_stream,
@@ -75,6 +83,7 @@ mod architecture_tests {
         Identity,
         Manifest,
         Projection,
+        Relocate,
         SegmentDir,
         StreamRepair,
         StreamRecord,
@@ -89,6 +98,7 @@ mod architecture_tests {
         (Source::Identity, include_str!("identity.rs")),
         (Source::Manifest, include_str!("manifest.rs")),
         (Source::Projection, include_str!("projection.rs")),
+        (Source::Relocate, include_str!("relocate.rs")),
         (Source::SegmentDir, include_str!("segment_dir.rs")),
         (Source::StreamRepair, include_str!("stream_repair.rs")),
         (Source::StreamRecord, include_str!("stream_record.rs")),
@@ -139,6 +149,23 @@ mod architecture_tests {
                         assert!(
                             source.contains(primitive),
                             "missing permitted journal-io write primitive {primitive}"
+                        );
+                    }
+                }
+                // A segment move re-authors bytes that already exist. It replaces
+                // and renames; it never opens a new exclusive content file nor
+                // appends to a log.
+                Source::Relocate => {
+                    for primitive in ["rename_within", "atomic_replace", "write_json"] {
+                        assert!(
+                            source.contains(primitive),
+                            "missing permitted journal-io write primitive {primitive}"
+                        );
+                    }
+                    for primitive in ["write_bytes_exclusive", "append_jsonl"] {
+                        assert!(
+                            !source.contains(primitive),
+                            "unexpected journal-io write primitive {primitive}"
                         );
                     }
                 }
