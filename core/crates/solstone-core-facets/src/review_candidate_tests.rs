@@ -4,13 +4,16 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use std::fs;
+use std::time::Duration;
 
 use serde_json::json;
 use solstone_core_entity::{record_merge_candidate, save_entity_identity};
+use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::store_tests::{TempDir, create_test_facet, write_facet_relationship};
 use crate::{
-    accept_candidate, dismiss_candidate, facet_slug, list_scoped_facet_entities, load_candidates,
+    SpeculativeFacetCandidate, SpeculativeFacetSample, accept_candidate, dismiss_candidate,
+    facet_slug, list_scoped_facet_entities, load_candidates, record_facet_candidates,
 };
 
 fn resolved_entity_id(root: &std::path::Path) -> String {
@@ -140,4 +143,166 @@ fn facet_slug_matches_python_create_facet_normalization() {
     assert_eq!(facet_slug("  Work & Home!  "), "work-home");
     assert_eq!(facet_slug("123 start"), "123-start");
     assert_eq!(facet_slug("équipe"), "quipe");
+}
+
+fn candidate(name: &str, name_key: &str, count: usize) -> SpeculativeFacetCandidate {
+    SpeculativeFacetCandidate {
+        name: name.to_owned(),
+        name_key: name_key.to_owned(),
+        count,
+        window_days: 14,
+        samples: vec![SpeculativeFacetSample {
+            day: "20260810".to_owned(),
+            stream: "archon".to_owned(),
+            segment: "090000_300".to_owned(),
+        }],
+    }
+}
+
+#[test]
+fn record_facet_candidates_preserves_owner_decisions_and_unknown_fields() {
+    let temporary = TempDir::new();
+    let path = temporary.path().join("facets/review-candidates.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        concat!(
+            "{\"name\":\"Dismissed\",\"name_key\":\"dismissed\",\"status\":\"dismissed\",\"count\":1,\"window_days\":1,\"evidence\":{\"samples\":[],\"review_note\":\"keep\"},\"first_surfaced\":\"20200101\",\"last_surfaced\":\"20200101\",\"created_at\":\"2020-01-01T00:00:00Z\",\"updated_at\":\"2020-01-01T00:00:00Z\",\"dismissed_count\":1,\"custom_flag\":true}\n",
+            "{\"name\":\"Accepted\",\"name_key\":\"accepted\",\"status\":\"accepted\",\"count\":1,\"window_days\":1,\"evidence\":{\"samples\":[]},\"first_surfaced\":\"20200102\",\"last_surfaced\":\"20200101\",\"created_at\":\"2020-01-02T00:00:00Z\",\"updated_at\":\"2020-01-01T00:00:00Z\"}\n",
+        ),
+    )
+    .unwrap();
+    let before = load_candidates(temporary.path()).unwrap();
+
+    assert_eq!(
+        record_facet_candidates(
+            temporary.path(),
+            "20260810",
+            &[
+                candidate("dismissed", "dismissed", 4),
+                candidate("accepted", "accepted", 5)
+            ],
+        )
+        .unwrap(),
+        2
+    );
+
+    let rows = load_candidates(temporary.path()).unwrap();
+    for name_key in ["dismissed", "accepted"] {
+        let old = before
+            .iter()
+            .find(|row| row["name_key"] == name_key)
+            .unwrap();
+        let updated = rows.iter().find(|row| row["name_key"] == name_key).unwrap();
+        assert_eq!(updated["status"], old["status"]);
+        assert_eq!(updated["first_surfaced"], old["first_surfaced"]);
+        assert_eq!(updated["created_at"], old["created_at"]);
+        assert_ne!(updated["count"], old["count"]);
+        assert_ne!(updated["window_days"], old["window_days"]);
+        assert_ne!(updated["last_surfaced"], old["last_surfaced"]);
+        assert_ne!(updated["updated_at"], old["updated_at"]);
+        assert_eq!(updated["evidence"]["samples"][0]["segment"], "090000_300");
+    }
+    let dismissed = rows
+        .iter()
+        .find(|row| row["name_key"] == "dismissed")
+        .unwrap();
+    let old_dismissed = before
+        .iter()
+        .find(|row| row["name_key"] == "dismissed")
+        .unwrap();
+    assert_eq!(
+        dismissed["dismissed_count"],
+        old_dismissed["dismissed_count"]
+    );
+    assert_eq!(dismissed["custom_flag"], old_dismissed["custom_flag"]);
+    assert_eq!(
+        dismissed["evidence"]["review_note"],
+        old_dismissed["evidence"]["review_note"]
+    );
+}
+
+#[test]
+fn record_facet_candidates_tolerates_bad_rows_without_duplicate_upserts() {
+    let temporary = TempDir::new();
+    let path = temporary.path().join("facets/review-candidates.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        concat!(
+            "\n",
+            "[\"not\",\"an\",\"object\"]\n",
+            "{\"name\":\"Home Reno\",\"name_key\":\"home reno\",\"status\":\"open\",\"count\":3}\n",
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(
+        record_facet_candidates(
+            temporary.path(),
+            "20260810",
+            &[candidate("Home Reno", "home reno", 4)]
+        )
+        .unwrap(),
+        1
+    );
+
+    // [check] The tolerant reader drops blank and non-object rows; this checks
+    // that the surviving keyed row is updated rather than duplicated.
+    let rows = load_candidates(temporary.path()).unwrap();
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row["name_key"] == "home reno")
+            .count(),
+        1
+    );
+    assert_eq!(rows[0]["count"], 4);
+}
+
+#[test]
+fn record_facet_candidates_empty_batch_does_not_touch_the_store() {
+    let temporary = TempDir::new();
+    assert_eq!(
+        record_facet_candidates(temporary.path(), "20260810", &[]).unwrap(),
+        0
+    );
+    assert!(!temporary.path().join("facets").exists());
+
+    let path = temporary.path().join("facets/review-candidates.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"{\"name_key\":\"kept\"}\n").unwrap();
+    let before = fs::read(&path).unwrap();
+
+    assert_eq!(
+        record_facet_candidates(temporary.path(), "20260810", &[]).unwrap(),
+        0
+    );
+    assert_eq!(fs::read(path).unwrap(), before);
+}
+
+#[test]
+fn record_facet_candidates_propagates_lock_contention_without_writing() {
+    let temporary = TempDir::new();
+    let path = temporary.path().join("facets/review-candidates.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"{\"name_key\":\"kept\"}\n").unwrap();
+    let before = fs::read(&path).unwrap();
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            timeout: Duration::from_millis(50),
+            ..LockOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert!(
+        record_facet_candidates(
+            temporary.path(),
+            "20260810",
+            &[candidate("Kept", "kept", 4)]
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(path).unwrap(), before);
 }

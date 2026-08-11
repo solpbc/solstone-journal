@@ -8,13 +8,14 @@ use std::fmt;
 use std::path::Path;
 
 use chrono::{SecondsFormat, Utc};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, MalformedPolicy, hold_lock,
     read_jsonl, write_text,
 };
 
 use crate::{FacetTrustLockError, hold_facet_trust_lock};
+use crate::{SpeculativeFacetCandidate, SpeculativeFacetSample};
 
 use super::error::FacetStoreError;
 use super::paths::review_candidates_path;
@@ -96,6 +97,60 @@ pub fn dismiss_candidate(
     })
 }
 
+/// Record a batch of recurring speculative facet candidates.
+///
+/// Unlike Python's `record_facet_candidate`, this records the complete batch in
+/// one locked read-modify-write cycle rather than acquiring the candidate-file
+/// lock once per candidate.
+///
+/// This native path also holds the facet trust lock in addition to the
+/// review-candidate file lock; the Python reference holds only its
+/// candidate-file lock.
+pub fn record_facet_candidates(
+    journal_root: &Path,
+    day: &str,
+    candidates: &[SpeculativeFacetCandidate],
+) -> Result<usize, FacetReviewCandidateError> {
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    modify_candidates(journal_root, |rows| {
+        let mut touched = 0;
+        for candidate in candidates {
+            let samples = samples_value(&candidate.samples);
+            let now = now_iso();
+            if let Some(row) = rows.iter_mut().find(|row| {
+                row.get("name_key").and_then(Value::as_str) == Some(candidate.name_key.as_str())
+            }) {
+                let object = row
+                    .as_object_mut()
+                    .expect("candidate reader returns objects");
+                update_evidence_samples(object, samples);
+                object.insert("count".to_owned(), Value::from(candidate.count));
+                object.insert("window_days".to_owned(), Value::from(candidate.window_days));
+                object.insert("last_surfaced".to_owned(), Value::String(day.to_owned()));
+                object.insert("updated_at".to_owned(), Value::String(now));
+            } else {
+                rows.push(json!({
+                    "name": candidate.name,
+                    "name_key": candidate.name_key,
+                    "status": "open",
+                    "count": candidate.count,
+                    "window_days": candidate.window_days,
+                    "evidence": {"samples": samples},
+                    "first_surfaced": day,
+                    "last_surfaced": day,
+                    "created_at": now,
+                    "updated_at": now,
+                }));
+            }
+            touched += 1;
+        }
+        touched
+    })
+}
+
 /// Derive the facet directory slug used by the Python facet creator.
 pub fn facet_slug(title: &str) -> String {
     let mut slug = String::new();
@@ -142,4 +197,19 @@ fn modify_candidates<T>(
 
 fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+fn samples_value(samples: &[SpeculativeFacetSample]) -> Value {
+    serde_json::to_value(samples).expect("speculative facet samples serialize")
+}
+
+fn update_evidence_samples(object: &mut Map<String, Value>, samples: Value) {
+    let evidence = object
+        .entry("evidence".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Some(evidence) = evidence.as_object_mut() {
+        evidence.insert("samples".to_owned(), samples);
+    } else {
+        *evidence = json!({"samples": samples});
+    }
 }

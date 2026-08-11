@@ -6,11 +6,16 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod action_log;
+mod speculative_facets;
 mod store;
 mod trust_lock;
 
 pub use action_log::append_journal_action_log;
 pub use solstone_core_journal_io::AppendError;
+pub use speculative_facets::{
+    FACET_CANDIDATE_MIN_SEGMENTS, FACET_CANDIDATE_WINDOW_DAYS, SpeculativeFacetCandidate,
+    SpeculativeFacetSample, aggregate_speculative_facets,
+};
 pub use store::{
     DetectedEntityInput, DetectionUpsertReport, EntityBlockReport, EntityDeleteGuardOutcome,
     EntityDeleteReport, EntityHistoryReference, EntityReferenceBreakdown, FacetDeclarationSnapshot,
@@ -30,12 +35,13 @@ pub use store::{
     load_observations, load_observations_for_query, load_recent_entity_names,
     observation_day_counts, read_activity_file, read_detected_entities, read_facet_declaration,
     read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
-    read_todo_file, record_observation_ops, rename_facet, repair_facet_entity_links,
-    repair_facet_entity_links_journal_wide, resolve_observation_entity_dir, save_detected_entity,
-    save_facet_entity_link, save_observations, scan_facet_relationships, seed_entities,
-    set_facet_entity_link_detached, set_facet_muted, update_detected_entity, update_facet,
-    upsert_detection_segment, write_activity_file, write_facet_entity_observations, write_log_file,
-    write_news_file, write_todo_file,
+    read_todo_file, record_facet_candidates, record_observation_ops, rename_facet,
+    repair_facet_entity_links, repair_facet_entity_links_journal_wide,
+    resolve_observation_entity_dir, save_detected_entity, save_facet_entity_link,
+    save_observations, scan_facet_relationships, seed_entities, set_facet_entity_link_detached,
+    set_facet_muted, update_detected_entity, update_facet, upsert_detection_segment,
+    write_activity_file, write_facet_entity_observations, write_log_file, write_news_file,
+    write_todo_file,
 };
 pub use store::{
     add_entity_aka, attach_or_reactivate_entity, detach_facet_entity,
@@ -66,5 +72,7 @@ mod observation_tests;
 mod relationship_scans_tests;
 #[cfg(test)]
 mod review_candidate_tests;
+#[cfg(test)]
+mod speculative_facets_tests;
 #[cfg(test)]
 mod store_tests;
