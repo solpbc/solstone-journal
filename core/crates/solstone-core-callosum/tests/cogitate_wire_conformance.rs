@@ -31,7 +31,7 @@ fn cogitate_wire_contract_covers_registry_and_actual_native_mapping() {
 
     assert!(native_kinds.is_subset(&registry_kinds));
     assert_eq!(schema_kinds, registry_kinds);
-    for kind in ["warning", "progress", "info", "start"] {
+    for kind in ["progress", "info", "start"] {
         assert!(
             !native_kinds.contains(kind),
             "{kind} must not be claimed native-producible"

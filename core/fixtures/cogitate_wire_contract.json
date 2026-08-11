@@ -146,13 +146,6 @@
       "ts_required": true,
       "terminal_applies": false
     },
-    "warning": {
-      "role": "legacy_registered_not_native_producible",
-      "required_fields": { "event": "string", "ts": "integer" },
-      "optional_fields": {},
-      "ts_required": true,
-      "terminal_applies": false
-    },
     "budget_escalation": {
       "role": "native_producer",
       "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "ladder": "string", "stage": "string", "message": "null_or_string" },

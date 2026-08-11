@@ -75,7 +75,6 @@ CALLOSUM_REGISTRY: dict[str, list[str]] = {
         "progress",
         "text_delta",
         "tool_budget_exhausted",
-        "warning",
         "budget_escalation",
     ],
     "importer": [
