@@ -175,9 +175,12 @@ fn launch_stub(mut args: impl Iterator<Item = String>) {
         .windows(2)
         .find(|window| window[0] == "--port")
         .and_then(|window| window[1].parse::<u16>().ok());
-    match model_path.as_str() {
+    // Lifecycle tests may pass either the historic literal marker or a real
+    // pinned model path whose fixture contents carry that marker.
+    let model = std::fs::read_to_string(&model_path).unwrap_or(model_path);
+    match model.trim() {
         "test-ready" | "test-ready-block-term" => {
-            if model_path == "test-ready-block-term" {
+            if model.trim() == "test-ready-block-term" {
                 let mut signals = nix::sys::signal::SigSet::empty();
                 signals.add(nix::sys::signal::Signal::SIGTERM);
                 signals.thread_block().expect("block SIGTERM");

@@ -87,8 +87,6 @@ fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> C
         .stderr(Stdio::piped())
         .env("SOLSTONE_LOCAL_BINARY", fixture)
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
-        .env("SOLSTONE_PARAKEET_BINARY", fixture)
-        .env("SOLSTONE_PARAKEET_MODEL", "test-ready")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture);
     if let Some(argv) = convey_argv {

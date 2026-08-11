@@ -29,8 +29,8 @@ use crate::process::{SERVICE_SHUTDOWN_TIMEOUT, terminate};
 
 use super::model::{
     LaunchOutcomeStatus, ManagedProcess, ProviderFence, ProviderLaunchOutcome,
-    ProviderProbeOutcome, ProviderRuntimeState, ProviderStopCleanupOutcome, ReasonCode,
-    StopCleanupStatus,
+    ProviderProbeOutcome, ProviderRuntimeState, ProviderStopCleanupOutcome,
+    ProviderTruthObservation, ReasonCode, StopCleanupStatus,
 };
 use super::seams::{LifecycleSeam, ProbeSeam};
 use super::store::{FenceKey, ReadyProcess, ReadyProcessLookup, RuntimeClock};
@@ -72,6 +72,7 @@ impl ParakeetPlacement {
 
 #[derive(Debug, Default)]
 struct ParakeetRuntimeResults {
+    truth: BTreeMap<FenceKey, ProviderTruthObservation>,
     launch: BTreeMap<FenceKey, ProviderLaunchOutcome>,
     stop_cleanup: BTreeMap<FenceKey, ProviderStopCleanupOutcome>,
     probe: BTreeMap<FenceKey, ProviderProbeOutcome>,
@@ -115,6 +116,37 @@ impl ParakeetRuntimeShared {
             .expect("parakeet runtime shared lock")
             .get(desired_fingerprint)
             .cloned()
+    }
+
+    pub fn record_truth_result(&self, fence: &ProviderFence, result: ProviderTruthObservation) {
+        self.results
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .truth
+            .insert(FenceKey::from(fence), result);
+        self.result_available.notify_all();
+    }
+
+    pub fn take_truth_result(&self, fence: &ProviderFence) -> Option<ProviderTruthObservation> {
+        self.results
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .truth
+            .remove(&FenceKey::from(fence))
+    }
+
+    pub fn wait_for_truth_result(&self, fence: &ProviderFence) -> ProviderTruthObservation {
+        let key = FenceKey::from(fence);
+        let mut results = self.results.lock().expect("parakeet runtime shared lock");
+        loop {
+            if let Some(result) = results.truth.remove(&key) {
+                return result;
+            }
+            results = self
+                .result_available
+                .wait(results)
+                .expect("parakeet runtime shared lock");
+        }
     }
 
     pub fn record_launch_result(&self, fence: &ProviderFence, result: ProviderLaunchOutcome) {

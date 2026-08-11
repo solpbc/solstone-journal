@@ -17,8 +17,8 @@ use solstone_core_system::lifecycle::{ShutdownRegime, SupervisorLifecycle, SyncS
 use solstone_core_system::process::{ManagedProcess, RestartPolicy, SpawnError, SpawnOptions};
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
-    LocalTruthSeam, NoopWorkers, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
-    ParakeetProbeSeam, ParakeetRuntimeShared, ProviderName, ProviderRuntimeCoordinator,
+    LocalTruthSeam, ParakeetLifecycleSeam, ParakeetProbeSeam, ParakeetRuntimeShared,
+    ParakeetTruthConfig, ParakeetTruthSeam, ProviderName, ProviderRuntimeCoordinator,
     ProviderRuntimeState, SystemRuntimeClock, WedgeState,
 };
 use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
@@ -30,6 +30,7 @@ use super::tick;
 
 const APP_FIXTURE_ENABLED_ENV: &str = "SOLSTONE_SUPERVISOR_APP_FIXTURE";
 const APP_FIXTURE_BINARY_ENV: &str = "SOLSTONE_SUPERVISOR_APP_BINARY";
+const PARAKEET_FIXTURE_ENV: &str = "SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE";
 /// Fixture Convey argv override; test-constructed paths must not contain spaces.
 const APP_FIXTURE_CONVEY_ARGV_ENV: &str = "SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV";
 const CONVEY_READY_WINDOW: Duration = Duration::from_secs(60);
@@ -306,7 +307,7 @@ pub(crate) struct LocalFixtureLaunch {
 pub(crate) struct ParakeetProvider {
     pub coordinator: ProviderRuntimeCoordinator,
     pub shared: Arc<ParakeetRuntimeShared>,
-    pub truth: NoopWorkers,
+    pub truth: ParakeetTruthSeam,
     pub lifecycle: ParakeetLifecycleSeam,
     pub probe: ParakeetProbeSeam,
     pub store: FileRuntimeStore,
@@ -540,6 +541,7 @@ pub(crate) async fn boot_and_tick(
     });
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
+    let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     let local_shared = Arc::new(LocalRuntimeShared::default());
     let fixture_truth = std::env::var("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE").as_deref() == Ok("1");
     // This pair is a test-only seam. Production must use LocalTruthSeam's
@@ -619,36 +621,25 @@ pub(crate) async fn boot_and_tick(
     //     against the observation function that composes the three items
     //     above into a `ParakeetServerLaunchPlan`.
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
-    let fingerprint = "native-parakeet-seeded".to_owned();
-    parakeet_shared.record_launch_request(
-        Some(fingerprint.clone()),
-        ParakeetLaunchConfig {
-            binary_backend: "cpu".to_owned(),
-            env_updates: Default::default(),
-            gpu_index: None,
-            binary_path: std::env::var_os("SOLSTONE_PARAKEET_BINARY")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("parakeet-server")),
-            model_path: std::env::var_os("SOLSTONE_PARAKEET_MODEL")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("parakeet")),
-            threads: 4,
-            desired_fingerprint_json: "{}".to_owned(),
-            desired_fingerprint_sha256: fingerprint.clone(),
-            placement: ParakeetPlacement::Cpu,
-        },
-    );
-    let mut parakeet_state = ProviderRuntimeState::new(ProviderName::Parakeet);
-    parakeet_state.desired_fingerprint = Some(fingerprint);
-    parakeet_state.has_plan = true;
-    parakeet_state.latest_phase = solstone_core_system::provider_runtime::RuntimePhase::Starting;
-    // No ParakeetTruthSeam exists yet; never dispatch the NoopWorkers truth seam.
-    parakeet_state.next_truth_at = f64::MAX;
-    parakeet_state.next_probe_at = 100.0;
+    let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
+    let parakeet_truth = if parakeet_fixture {
+        ParakeetTruthSeam::with_config(
+            parakeet_shared.clone(),
+            ParakeetTruthConfig {
+                journal_path: journal.clone(),
+                remote_mode: false,
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        )
+    } else {
+        ParakeetTruthSeam::new(parakeet_shared.clone(), journal.clone(), remote)
+    };
     let parakeet = ParakeetProvider {
         coordinator: ProviderRuntimeCoordinator::new(),
         shared: parakeet_shared.clone(),
-        truth: NoopWorkers,
+        truth: parakeet_truth,
         lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone()),
         probe: ParakeetProbeSeam::new(parakeet_shared.clone(), journal.clone()),
         store: FileRuntimeStore::new(
@@ -657,7 +648,7 @@ pub(crate) async fn boot_and_tick(
             parakeet_shared.clone(),
             clock,
         ),
-        state: parakeet_state,
+        state: ProviderRuntimeState::new(ProviderName::Parakeet),
         processes: Vec::new(),
     };
     let wall = chrono::Local::now();
@@ -678,7 +669,6 @@ pub(crate) async fn boot_and_tick(
     };
     let _ = scheduler.catch_up(now, &schedule_sink);
     let fixture_binary = app_fixture_binary();
-    let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     let journal_binary = if fixture_binary.is_none() && !remote {
         match resolve_journal_binary() {
             Ok(binary) => Some(binary),

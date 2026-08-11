@@ -407,6 +407,12 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.local.processes,
         &mut local_context,
     );
+    if let Some(in_flight) = state.parakeet.state.truth.as_mut()
+        && in_flight.result.is_none()
+        && let Some(result) = state.parakeet.shared.take_truth_result(&in_flight.fence)
+    {
+        in_flight.result = Some(result);
+    }
     if let Some(in_flight) = state.parakeet.state.start.as_mut()
         && in_flight.result.is_none()
         && let Some(result) = state.parakeet.shared.take_launch_result(&in_flight.fence)

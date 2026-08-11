@@ -49,6 +49,8 @@ const PROVIDER_RUNTIME_MODEL: &str = include_str!("../src/provider_runtime/model
 const PROVIDER_RUNTIME_PARAKEET: &str = include_str!("../src/provider_runtime/parakeet.rs");
 const PROVIDER_RUNTIME_PARAKEET_TRUTH: &str =
     include_str!("../src/provider_runtime/parakeet_truth.rs");
+const PROVIDER_RUNTIME_PARAKEET_TRUTH_SEAM: &str =
+    include_str!("../src/provider_runtime/parakeet_truth_seam.rs");
 const PROVIDER_RUNTIME_PLACEMENT: &str = include_str!("../src/provider_runtime/placement.rs");
 const PROVIDER_RUNTIME_RECONCILE: &str = include_str!("../src/provider_runtime/reconcile.rs");
 const PROVIDER_RUNTIME_RETRY: &str = include_str!("../src/provider_runtime/retry.rs");
@@ -163,6 +165,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("model", PROVIDER_RUNTIME_MODEL),
         ("parakeet", PROVIDER_RUNTIME_PARAKEET),
         ("parakeet_truth", PROVIDER_RUNTIME_PARAKEET_TRUTH),
+        ("parakeet_truth_seam", PROVIDER_RUNTIME_PARAKEET_TRUTH_SEAM),
         ("placement", PROVIDER_RUNTIME_PLACEMENT),
         ("reconcile", PROVIDER_RUNTIME_RECONCILE),
         ("retry", PROVIDER_RUNTIME_RETRY),

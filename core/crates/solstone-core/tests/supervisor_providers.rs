@@ -4,6 +4,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -13,7 +14,7 @@ use serde_json::{Value, json};
 
 struct TempJournal(PathBuf);
 impl TempJournal {
-    fn new() -> Self {
+    fn new(fixture: &str) -> Self {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
@@ -22,7 +23,7 @@ impl TempJournal {
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
             root.join("config/journal.json"),
-            br#"{"setup":{"completed_at":1}}"#,
+            br#"{"setup":{"completed_at":1},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
         )
         .expect("journal config");
         let snapshot = root.join("cache/providers/local/mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
@@ -41,6 +42,18 @@ impl TempJournal {
             .to_string(),
         )
         .expect("snapshot manifest");
+        let parakeet_paths =
+            solstone_core_local::install::pins::parakeet_paths(&root, "x86_64-unknown-linux-gnu");
+        let binary = PathBuf::from(
+            parakeet_paths["binary_path_cpu"]
+                .as_str()
+                .expect("cpu binary path"),
+        );
+        let model = PathBuf::from(parakeet_paths["model_path"].as_str().expect("model path"));
+        fs::create_dir_all(binary.parent().expect("binary parent")).expect("binary directory");
+        symlink(fixture, &binary).expect("fixture parakeet binary");
+        fs::create_dir_all(model.parent().expect("model parent")).expect("model directory");
+        fs::write(model, b"test-ready").expect("fixture model");
         Self(root)
     }
 }
@@ -71,8 +84,8 @@ impl Drop for ChildGuard {
 
 #[test]
 fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
-    let journal = TempJournal::new();
     let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+    let journal = TempJournal::new(fixture);
     let mut child = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])
@@ -81,8 +94,7 @@ fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
             .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
             .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
             .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)
-            .env("SOLSTONE_PARAKEET_BINARY", fixture)
-            .env("SOLSTONE_PARAKEET_MODEL", "test-ready")
+            .env("SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -93,6 +105,7 @@ fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
     let parakeet = journal.0.join("health/providers/runtime/parakeet.json");
     let mut local_ready = false;
     let mut parakeet_ready = false;
+    let mut parakeet_state = None;
     for _ in 0..1200 {
         if let Ok(bytes) = fs::read(&local)
             && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
@@ -103,6 +116,7 @@ fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
             && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
         {
             parakeet_ready |= value["phase"] == "ready";
+            parakeet_state = Some(value);
         }
         if local_ready && parakeet_ready {
             break;
@@ -118,6 +132,6 @@ fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
     );
     assert!(
         parakeet_ready,
-        "Parakeet did not reach the seeded fixture ready ceiling"
+        "Parakeet did not complete the fixture desired/start/truth/ready cycle: {parakeet_state:?}"
     );
 }

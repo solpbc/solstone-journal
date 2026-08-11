@@ -6,14 +6,10 @@
 //! using the real seams/store (no mocks) exactly like
 //! `local_end_to_end.rs`'s `ac18_real_coordinator_seams_and_store`.
 //!
-//! There is no `ParakeetTruthSeam` yet -- the admission latch and GPU
-//! placement it would depend on are ported separately -- so this seeds
-//! `ProviderRuntimeState` directly the way `reconcile.rs`'s own
-//! `desired_not_running_starts` test does (`latest_phase: Starting`,
-//! `next_truth_at` far in the future) rather than driving a real truth
-//! dispatch. `NoopWorkers` fills the truth slot precisely because it is
-//! never called on this path. Lifecycle, probe, and the durable store are
-//! all real.
+//! `ParakeetTruthSeam` is wired through the native supervisor. This remains a
+//! deliberate lower-level lifecycle regression: it seeds `ProviderRuntimeState`
+//! directly and uses `NoopWorkers` so it can prove lifecycle, probe, and the
+//! durable store reach `Ready` without driving a truth dispatch.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

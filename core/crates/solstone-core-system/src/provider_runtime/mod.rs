@@ -10,6 +10,7 @@ mod launch;
 mod model;
 mod parakeet;
 mod parakeet_truth;
+mod parakeet_truth_seam;
 mod placement;
 mod reconcile;
 mod retry;
@@ -36,6 +37,10 @@ pub use parakeet::{
 pub use parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
     platform_cannot_host_not_desired, remote_mode_not_desired,
+};
+pub use parakeet_truth_seam::{
+    ParakeetTruthConfig, ParakeetTruthSeam, parakeet_physical_thread_count,
+    resolve_parakeet_backend,
 };
 pub use placement::{
     CO_FIT_MARGIN_MIB, PARAKEET_WORST_CASE_MIB, ParakeetPlacementDecision,
