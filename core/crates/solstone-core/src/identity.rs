@@ -16,6 +16,21 @@
 //!
 //! `journal identity health --refresh` is accepted syntactically but refused
 //! until its steward workflow is available here.
+//!
+//! Unknown options, missing option values, and attached boolean spellings use
+//! this binary's shared `error: invalid arguments` diagnostic rather than
+//! Click's token-specific error. This follows the navigate, export, transfer,
+//! and observer parser precedent.
+//!
+//! Click accepts bundled short boolean repeats such as `-ww`; native partner
+//! parsing accepts only exact `-w` and rejects bundled repeats.
+//!
+//! Python translates universal newlines and splits identity text with
+//! `splitlines()`, which also breaks on `\v`, `\f`, `\x1c`–`\x1e`, `\x85`,
+//! U+2028, U+2029, and a lone `\r`; native preserves line separators and uses
+//! `str::lines()`. A lone-CR heading is therefore stripped by the reference and
+//! retained natively. This follows the existing line-splitting divergence
+//! documented in `solstone-core-format/src/briefing.rs:17`.
 
 use std::fs;
 use std::io::{self, Read};

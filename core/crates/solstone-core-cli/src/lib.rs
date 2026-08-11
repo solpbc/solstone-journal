@@ -373,6 +373,7 @@ pub enum Command {
     NavigateHelp,
     Identity(IdentityCommand),
     IdentityUsage,
+    IdentityUnknownCommand(String),
     IdentityHelp,
     IdentityPartnerUsage,
     IdentityPartnerHelp,
@@ -945,7 +946,8 @@ fn parse_identity(args: &[OsString]) -> Result<Command, UsageError> {
         Some("briefing") => {
             Ok(parse_identity_briefing(rest).unwrap_or(Command::IdentityBriefingUsage))
         }
-        _ => Ok(Command::IdentityUsage),
+        Some(command) => Ok(Command::IdentityUnknownCommand(command.to_owned())),
+        None => Ok(Command::IdentityUsage),
     }
 }
 
@@ -3104,7 +3106,10 @@ mod tests {
                 &["identity", "briefing", "-h"][..],
                 Command::IdentityBriefingHelp,
             ),
-            (&["identity", "unknown"][..], Command::IdentityUsage),
+            (
+                &["identity", "unknown"][..],
+                Command::IdentityUnknownCommand("unknown".to_owned()),
+            ),
             (
                 &["identity", "partner", "--value"][..],
                 Command::IdentityPartnerUsage,

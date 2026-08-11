@@ -166,6 +166,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::IdentityUsage) => identity_usage(IDENTITY_USAGE, "journal identity"),
+        Ok(Command::IdentityUnknownCommand(command)) => identity_unknown_command(&command),
         Ok(Command::IdentityPartnerHelp) => {
             print!("{IDENTITY_PARTNER_HELP}");
             ExitCode::SUCCESS
@@ -247,6 +248,12 @@ fn main() -> ExitCode {
 fn identity_usage(usage: &str, command: &str) -> ExitCode {
     eprint!("{usage}");
     eprintln!("{command}: error: invalid arguments");
+    ExitCode::from(2)
+}
+
+fn identity_unknown_command(command: &str) -> ExitCode {
+    eprint!("{IDENTITY_USAGE}");
+    eprintln!("journal identity: error: invalid choice: '{command}'");
     ExitCode::from(2)
 }
 

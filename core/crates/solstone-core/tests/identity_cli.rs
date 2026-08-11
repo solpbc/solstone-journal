@@ -235,12 +235,17 @@ fn partner_precedence_and_content_rules_match_the_reference() {
 #[test]
 fn content_errors_leave_no_history_and_value_wins_over_stdin() {
     let journal = TestJournal::new();
-    write(journal.identity().join("partner.md"), "before\n");
+    let partner = journal.identity().join("partner.md");
+    write(&partner, "before\n");
     write(journal.identity().join("health.md"), "health\n");
+    let history = journal.identity().join("history.jsonl");
+    let before_stdin = fs::read(&partner).unwrap();
+    let history_before_stdin = fs::read(&history).ok();
     let stdin = run_input(&journal, &["identity", "partner", "--write"], b"   \n");
     assert_eq!(stdin.status.code(), Some(1));
     assert_eq!(stdin.stderr, b"Error: no content provided.\n");
-    assert!(!journal.identity().join("history.jsonl").exists());
+    assert_eq!(fs::read(&partner).unwrap(), before_stdin);
+    assert_eq!(fs::read(&history).ok(), history_before_stdin);
 
     let value = run_input(
         &journal,
@@ -248,17 +253,18 @@ fn content_errors_leave_no_history_and_value_wins_over_stdin() {
         b"from-stdin",
     );
     assert_eq!(value.status.code(), Some(0));
-    assert_eq!(
-        fs::read_to_string(journal.identity().join("partner.md")).unwrap(),
-        "from-value"
-    );
+    assert_eq!(fs::read_to_string(&partner).unwrap(), "from-value");
 
+    let before_blank_value = fs::read(&partner).unwrap();
+    let history_before_blank_value = fs::read(&history).ok();
     let blank_value = run_skipped(
         &journal,
         &["identity", "partner", "--write", "--value", "  "],
     );
     assert_eq!(blank_value.status.code(), Some(1));
     assert_eq!(blank_value.stderr, b"Error: no content provided.\n");
+    assert_eq!(fs::read(&partner).unwrap(), before_blank_value);
+    assert_eq!(fs::read(&history).ok(), history_before_blank_value);
 }
 
 #[test]
@@ -276,7 +282,14 @@ fn briefing_and_refresh_have_the_settled_outputs() {
     );
     let briefing = run_skipped(&journal, &["identity", "briefing", "-d20260101"]);
     assert_eq!(briefing.status.code(), Some(0));
-    assert!(briefing.stdout.ends_with(b"Nothing to report.\n"));
+    let expected = concat!(
+        "## Your Day\n\nNothing to report.\n\n",
+        "## Yesterday\n\nNothing to report.\n\n",
+        "## Needs Attention\n\nNothing to report.\n\n",
+        "## Forward Look\n\nNothing to report.\n\n",
+        "## Reading\n\nNothing to report.\n",
+    );
+    assert_eq!(briefing.stdout, expected.as_bytes());
 
     let malformed = run(&journal, &["identity", "briefing", "--day", "bad"]);
     assert_eq!(malformed.status.code(), Some(2));
@@ -291,6 +304,19 @@ fn briefing_and_refresh_have_the_settled_outputs() {
     assert_eq!(
         refresh.stderr,
         b"journal identity health --refresh is not available yet.\n"
+    );
+}
+
+#[test]
+fn unknown_identity_subcommand_names_the_bad_choice() {
+    let journal = TestJournal::new();
+    let output = run(&journal, &["identity", "bogus"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        output.stderr,
+        b"usage: journal identity [-h] {partner,health,briefing} ...\n\
+journal identity: error: invalid choice: 'bogus'\n"
     );
 }
 
@@ -334,6 +360,9 @@ fn native_help_uses_the_reference_capture_as_the_token_source() {
 
 #[test]
 fn identity_never_invokes_a_path_python() {
+    // This is the PATH-shim proof, not the sibling-interpreter proof: the journal
+    // dispatcher resolves python3 beside its own executable and never reads PATH.
+    // The sibling probe belongs to the W3b cut wave.
     let journal = TestJournal::new();
     let shim_dir = tempfile::tempdir().expect("shims");
     let marker = shim_dir.path().join("called");
