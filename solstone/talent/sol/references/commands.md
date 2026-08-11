@@ -36,18 +36,6 @@ Other: `for-range`, `full`, `pipeline`, `summary`
 
 Guidance: `solstone/apps/health/talent/health/SKILL.md`
 
-## speakers — `sol call speakers`
-
-Triggers: `speaker`, `voice`, `who was talking`, `identify speaker`, `voiceprint`, `tag-owner`, `build-from-tags`, `rebuild-owner`, `owner-ready`
-
-Read: `discover`, `keep-separate-list`, `resolve-names`, `status`
-
-Write: `backfill`, `backfill-last-seen`, `bootstrap`, `link-import`, `merge-names`, `rebuild-owner`, `seed-from-imports`
-
-Other: `attribute-segment`, `build-from-tags`, `confirm-owner`, `correct`, `day-segments`, `detect`, `dismiss-cluster`, `dismissals`, `identify`, `identify-operation`, `identify-operations`, `identify-undo`, `owner-ready`, `presence`, `propagate-correction`, `reject-owner`, `sentences`, `suggest`, `tag-owner`, `wipe`
-
-Guidance: `solstone/apps/speakers/talent/speakers/SKILL.md`
-
 ## support — `sol call support`
 
 Triggers: `file bug`, `request feature`, `submit feedback`, `search KB`, `announcements`, `tickets`, `close ticket`, `confirm resolution`, `still need help`, `closed history`

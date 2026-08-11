@@ -268,7 +268,7 @@ Add new fragment modules to `FRAGMENT_MODULES` for:
 | profile | `solstone.convey.profile_contract` |
 | settings | `solstone.apps.settings.contract` |
 | sol | `solstone.apps.sol.contract` |
-| speakers | `solstone.apps.speakers.contract` |
+| speakers | native convey-shell contract surface |
 | thinking | `solstone.apps.thinking.contract` |
 | transcripts | `solstone.apps.transcripts.contract` |
 
@@ -305,7 +305,7 @@ sol-call HTTP leaves plus the existing top-level chat HTTP surface.
 | link | `solstone.apps.network.routes` | `network_bp` |
 | settings | `solstone.apps.settings.routes` | `settings_bp` |
 | sol | `solstone.apps.sol.routes` | `sol_bp` |
-| speakers | `solstone.apps.speakers.routes` | `speakers_bp` |
+| speakers | native convey-shell route surface | native speakers routes |
 | thinking | `solstone.apps.thinking.routes` | `thinking_bp` |
 | transcripts | `solstone.apps.transcripts.routes` | `transcripts_bp` |
 | ledger | `solstone.convey.ledger` | `bp as ledger_bp` |

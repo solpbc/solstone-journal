@@ -21,7 +21,7 @@ use crate::identify_undo_phases::{
     undo_tracker, undo_voiceprints,
 };
 
-const CALLER: &str = "apps.speakers.discovery.identify_cluster";
+const CALLER: &str = "speaker_resolve.identify_cluster";
 
 /// Failure reading the ledger or acquiring the operation-wide trust lock.
 #[derive(Debug, Error)]

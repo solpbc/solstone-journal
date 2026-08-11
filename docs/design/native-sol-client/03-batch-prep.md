@@ -472,7 +472,7 @@ Additional registrations needed to cover this batch:
 | link | `from solstone.apps.network.routes import network_bp` | `network_bp` (`solstone/apps/network/routes.py:128`); register normal `/app/network` prefix for CLI routes; `/app/link` alias is a separate legacy production registration. |
 | settings | `from solstone.apps.settings.routes import settings_bp` | `settings_bp` (`solstone/apps/settings/routes.py:86`) |
 | sol | `from solstone.apps.sol.routes import sol_bp` | `sol_bp` (`solstone/apps/sol/routes.py:55`) |
-| speakers | `from solstone.apps.speakers.routes import speakers_bp` | `speakers_bp` (`solstone/apps/speakers/routes.py:189`) |
+| speakers | native convey-shell route surface | native speakers routes |
 | thinking | `from solstone.apps.thinking.routes import thinking_bp` | `thinking_bp` (`solstone/apps/thinking/routes.py:91`) |
 | transcripts | `from solstone.apps.transcripts.routes import transcripts_bp` | `transcripts_bp` (`solstone/apps/transcripts/routes.py:107`) |
 | ledger | `from solstone.convey.ledger import bp as ledger_bp` | `ledger_bp` (`solstone/convey/ledger.py:39`) |

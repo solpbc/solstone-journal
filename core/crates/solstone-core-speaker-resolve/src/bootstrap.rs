@@ -159,7 +159,7 @@ pub fn bootstrap_voiceprints(
             speaker,
             &resolution_entities,
             json!({"kind": "journal"}),
-            json!({"lane": "apps.speakers.bootstrap", "day": segment.day, "segment_id": segment.key}),
+            json!({"lane": "speaker_resolve.bootstrap", "day": segment.day, "segment_id": segment.key}),
             RESOLUTION_FUZZY_THRESHOLD,
             false,
         )?;
@@ -504,7 +504,7 @@ fn resolve_merge_name(
         name,
         entities,
         json!({"kind": "journal"}),
-        json!({"lane": "apps.speakers.bootstrap.merge_names", "field": field}),
+        json!({"lane": "speaker_resolve.bootstrap.merge_names", "field": field}),
         RESOLUTION_FUZZY_THRESHOLD,
         false,
     )?)

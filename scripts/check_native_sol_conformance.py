@@ -30,7 +30,6 @@ from solstone.apps.news.routes import news_bp
 from solstone.apps.search.routes import search_bp
 from solstone.apps.settings.routes import settings_bp
 from solstone.apps.sol.routes import sol_bp
-from solstone.apps.speakers.routes import speakers_bp
 from solstone.apps.support.routes import support_bp
 from solstone.apps.thinking.routes import thinking_bp
 from solstone.apps.transcripts.routes import transcripts_bp
@@ -58,6 +57,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 import_bp = importlib.import_module("solstone.apps.import.routes").import_bp
+RUST_CONVEY_OPERATION_PREFIXES = ("speakers.",)
 REASON_CODES_BY_NAME = {
     name: value.code
     for name, value in vars(reasons).items()
@@ -109,6 +109,8 @@ def check_conformance(
         errors.append("native sol conformance missing top-level status authority")
 
     for authority in sorted(authorities, key=lambda entry: entry.operation_id):
+        if authority.operation_id.startswith(RUST_CONVEY_OPERATION_PREFIXES):
+            continue
         raw_authority = raw_authority_by_operation.get(authority.operation_id)
         if authority.entry_type == "http":
             errors.extend(check_http_entry(authority, contract_by_operation, route_map))
@@ -309,7 +311,6 @@ def register_native_blueprints(app: Flask) -> None:
         transcripts_bp,
         network_bp,
         settings_bp,
-        speakers_bp,
         thinking_bp,
         search_bp,
         news_bp,

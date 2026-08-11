@@ -148,7 +148,7 @@ pub fn phase_entity(
                 .unwrap_or_default();
             let context = EntityOperationContext {
                 kind: EntityOperationKind::Create,
-                caller: Value::String("apps.speakers.discovery.identify_cluster".to_owned()),
+                caller: Value::String("speaker_resolve.identify_cluster".to_owned()),
                 actor: Value::Null,
                 metadata: json!({"operation_kind":"speaker_identify","operation_id":plan.operation_id}),
             };

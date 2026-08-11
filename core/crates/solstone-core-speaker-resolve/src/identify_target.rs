@@ -141,7 +141,7 @@ pub fn resolve_identify_target(
         &resolution_entities,
         json!({"kind": "journal"}),
         json!({
-            "lane": "apps.speakers.discovery.identify_cluster",
+            "lane": "speaker_resolve.identify_cluster",
             "record_id": request.cluster_id.to_string(),
             "field": "name",
         }),

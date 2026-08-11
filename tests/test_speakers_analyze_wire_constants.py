@@ -10,10 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from solstone.apps.speakers.discovery import (
-    DISCOVERY_CLUSTER_DTYPE,
-    DISCOVERY_CLUSTER_PAYLOAD_FORMAT,
-)
 from solstone.apps.speakers.encoder_config import (
     SPEAKERS_ANALYZE_DTYPE,
     SPEAKERS_ANALYZE_PAYLOAD_FORMAT,
@@ -65,11 +61,8 @@ def _assert_speakers_analyze_wire_constants_match(
     return payload_format, dtype
 
 
-def test_rust_python_and_discovery_speakers_analyze_wire_constants_match() -> None:
-    payload_format, dtype = _assert_speakers_analyze_wire_constants_match(RUST_SOURCE)
-
-    assert DISCOVERY_CLUSTER_PAYLOAD_FORMAT == payload_format
-    assert DISCOVERY_CLUSTER_DTYPE == dtype
+def test_rust_and_python_speakers_analyze_wire_constants_match() -> None:
+    _assert_speakers_analyze_wire_constants_match(RUST_SOURCE)
 
 
 def test_speakers_analyze_wire_constant_pin_rejects_mismatched_source(

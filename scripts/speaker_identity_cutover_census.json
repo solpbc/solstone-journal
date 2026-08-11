@@ -21,6 +21,16 @@
       "target": "entities/<id>/voiceprints.npz"
     },
     {
+      "callee": "save_voiceprints_batch",
+      "classification": "direct_write",
+      "file": "scripts/entity_corpus.py",
+      "fingerprint": "1a5fbd6fa50210f4",
+      "function": "<module>.seed_populated_speakers_journal",
+      "line": 2226,
+      "role": "differential_fixture_oracle_builder",
+      "target": "entities/<id>/voiceprints.npz"
+    },
+    {
       "callee": "atomic_replace",
       "classification": "direct_write",
       "file": "solstone/apps/speakers/attribution.py",
@@ -201,116 +211,6 @@
       "target": "entities/<id>/voiceprints.npz"
     },
     {
-      "callee": "load_npz",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "0088c61eefb820d9",
-      "function": "<module>.confirm_owner_candidate",
-      "line": 2090,
-      "role": "runtime_reader",
-      "target": "awareness/owner_candidate.npz"
-    },
-    {
-      "callee": "load_npz",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "ce0e3a9e3b67d673",
-      "function": "<module>.bootstrap_owner_from_manual_tags",
-      "line": 2153,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load_npz",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "5b1a9691f4ddfa96",
-      "function": "<module>.load_owner_centroid",
-      "line": 1530,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load_npz",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "da2d8d398ad53b3d",
-      "function": "<module>.rebuild_owner_centroid",
-      "line": 2032,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_owner.py",
-      "fingerprint": "9ee23323461480d2",
-      "function": "<module>.test_bootstrap_owner_from_manual_tags_confirms",
-      "line": 1773,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_owner.py",
-      "fingerprint": "97672886657bbf39",
-      "function": "<module>.test_bootstrap_owner_from_manual_tags_strong_boundary_writes_tier",
-      "line": 1827,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_owner.py",
-      "fingerprint": "1b3b386df42f96b9",
-      "function": "<module>.test_bootstrap_owner_from_manual_tags_writes_margin_schema",
-      "line": 2168,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_owner.py",
-      "fingerprint": "a27b962113f93014",
-      "function": "<module>.test_confirm_owner_candidate_writes_margin_schema",
-      "line": 2102,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_owner.py",
-      "fingerprint": "312d9e29db91950e",
-      "function": "<module>.test_expand_owner_candidate_solo_reapplies_admission_trim_before_cap",
-      "line": 867,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "27a767895f062621",
-      "function": "<module>.test_api_owner_bootstrap_full_loop_from_stubbed_labels",
-      "line": 979,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "631cc41985ae3d36",
-      "function": "<module>.test_api_owner_build_from_tags",
-      "line": 766,
-      "role": "runtime_reader",
-      "target": "entities/<id>/owner_centroid.npz"
-    },
-    {
       "callee": "load",
       "classification": "read",
       "file": "scripts/entity_corpus.py",
@@ -453,36 +353,6 @@
     {
       "callee": "load_entity_voiceprints_file",
       "classification": "read",
-      "file": "solstone/apps/speakers/bootstrap.py",
-      "fingerprint": "ec20714bd0c1d002",
-      "function": "<module>.detect_name_variant_candidates",
-      "line": 391,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/bootstrap.py",
-      "fingerprint": "9b5344c1d277349b",
-      "function": "<module>.detect_name_variant_candidates",
-      "line": 401,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/bootstrap.py",
-      "fingerprint": "364014a17ff6fa3d",
-      "function": "<module>.detect_name_variant_candidates",
-      "line": 408,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
       "file": "solstone/apps/speakers/candidate_tracker.py",
       "fingerprint": "dec09cc4521238ab",
       "function": "<module>._entity_voiceprint_snapshot",
@@ -601,126 +471,6 @@
       "target": "entities/<id>/voiceprints.npz"
     },
     {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/discovery.py",
-      "fingerprint": "288992341e087d94",
-      "function": "<module>.discover_unknown_speakers",
-      "line": 545,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/discovery.py",
-      "fingerprint": "7b8d2ecf2b3fb84f",
-      "function": "<module>.discover_unknown_speakers",
-      "line": 619,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "17ed44ecfaf5ebca",
-      "function": "<module>._expand_owner_candidate",
-      "line": 1162,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "3b9b75d971ab64a0",
-      "function": "<module>._load_manual_tag_rows",
-      "line": 399,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "62b8ea5d465494e2",
-      "function": "<module>._load_owner_voiceprint_summary",
-      "line": 1501,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "cd77e1ecd112e083",
-      "function": "<module>.bootstrap_owner_from_manual_tags",
-      "line": 2205,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "aa006cebc2b23608",
-      "function": "<module>.classify_sentences",
-      "line": 1600,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "c639ead0ec16edd5",
-      "function": "<module>.detect_owner_candidate",
-      "line": 1361,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/owner.py",
-      "fingerprint": "98d33fdb0cf63f7c",
-      "function": "<module>.load_owner_provisional_centroid",
-      "line": 931,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/routes.py",
-      "fingerprint": "56539cdaccd37724",
-      "function": "<module>._load_entity_voiceprints_file",
-      "line": 278,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "normalize_embedding",
-      "classification": "read",
-      "file": "solstone/apps/speakers/routes.py",
-      "fingerprint": "e04ee0c05e263a65",
-      "function": "<module>._normalize_embedding",
-      "line": 204,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/status.py",
-      "fingerprint": "c3705d1f92454ec9",
-      "function": "<module>._speakers_section",
-      "line": 158,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
       "callee": "load",
       "classification": "read",
       "file": "solstone/apps/speakers/tests/test_candidate_tracker.py",
@@ -737,96 +487,6 @@
       "fingerprint": "588bddc102c57db6",
       "function": "<module>._voiceprint_entries",
       "line": 148,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_discovery.py",
-      "fingerprint": "f2a36cdd8cb55d62",
-      "function": "<module>._load_voiceprint_count",
-      "line": 216,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "f2bd09945ca6a972",
-      "function": "<module>._voiceprint_row_count",
-      "line": 188,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "0ea2362de1754272",
-      "function": "<module>.test_api_confirm_attribution",
-      "line": 2825,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "784bb1864d7ac8ce",
-      "function": "<module>.test_api_correct_attribution",
-      "line": 3114,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "b359aa984f3b1a82",
-      "function": "<module>.test_correcting_back_restores_original_entity_voiceprint",
-      "line": 3597,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "fe3572f7e6ec5490",
-      "function": "<module>.test_correcting_back_restores_original_entity_voiceprint",
-      "line": 3612,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "read_bytes",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "3a31a311fcf25af8",
-      "function": "<module>.test_correction_offer_and_explicit_propagation_are_scoped_and_idempotent",
-      "line": 3452,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "read_bytes",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "0e32b65fe1d27002",
-      "function": "<module>.test_correction_offer_and_explicit_propagation_are_scoped_and_idempotent",
-      "line": 3467,
-      "role": "runtime_reader",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "load_entity_voiceprints_file",
-      "classification": "read",
-      "file": "solstone/apps/speakers/tests/test_routes.py",
-      "fingerprint": "f86694230b92629b",
-      "function": "<module>.test_remove_voiceprint",
-      "line": 3907,
       "role": "runtime_reader",
       "target": "entities/<id>/voiceprints.npz"
     },
@@ -921,6 +581,36 @@
       "target": "entities/<id>/voiceprints.npz"
     },
     {
+      "callee": "load_entity_voiceprints_file",
+      "classification": "read",
+      "file": "scripts/dump_populated_journal_voiceprints.py",
+      "fingerprint": "3c782d73c489106f",
+      "function": "<module>.main",
+      "line": 30,
+      "role": "runtime_reader",
+      "target": "entities/<id>/voiceprints.npz"
+    },
+    {
+      "callee": "load_entity_voiceprints_file",
+      "classification": "read",
+      "file": "solstone/think/entities/voiceprints.py",
+      "fingerprint": "477ba5eb1afee67a",
+      "function": "<module>._load_owner_voiceprint_summary",
+      "line": 170,
+      "role": "runtime_reader",
+      "target": "entities/<id>/voiceprints.npz"
+    },
+    {
+      "callee": "load_npz",
+      "classification": "read",
+      "file": "solstone/think/entities/voiceprints.py",
+      "fingerprint": "c9551876e46f6437",
+      "function": "<module>.load_owner_centroid",
+      "line": 199,
+      "role": "runtime_reader",
+      "target": "entities/<id>/owner_centroid.npz"
+    },
+    {
       "callee": "save_voiceprints_batch",
       "classification": "direct_write",
       "file": "solstone/apps/speakers/tests/test_voiceprint_refinement.py",
@@ -928,16 +618,6 @@
       "function": "<module>._write_voiceprints",
       "line": 62,
       "role": "test_fixture_setup",
-      "target": "entities/<id>/voiceprints.npz"
-    },
-    {
-      "callee": "save_voiceprints_batch",
-      "classification": "direct_write",
-      "file": "scripts/entity_corpus.py",
-      "fingerprint": "1a5fbd6fa50210f4",
-      "function": "<module>.seed_populated_speakers_journal",
-      "line": 2226,
-      "role": "differential_fixture_oracle_builder",
       "target": "entities/<id>/voiceprints.npz"
     }
   ],

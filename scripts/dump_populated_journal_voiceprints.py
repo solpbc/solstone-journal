@@ -18,8 +18,10 @@ OUTPUT_PATH = REPO_ROOT / "core" / "fixtures" / "populated_journal_voiceprints.j
 def main() -> int:
     import entity_corpus
 
-    from solstone.apps.speakers.owner import compute_intra_cosine_p25
-    from solstone.think.entities.voiceprints import load_entity_voiceprints_file
+    from solstone.think.entities.voiceprints import (
+        compute_intra_cosine_p25,
+        load_entity_voiceprints_file,
+    )
 
     voiceprints: dict[str, list[list[float]]] = {}
     with entity_corpus._temp_journal() as root:

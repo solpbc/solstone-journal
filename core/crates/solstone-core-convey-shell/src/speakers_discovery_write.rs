@@ -264,7 +264,7 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
                     .collect()
             })
             .unwrap_or_default(),
-        caller: "apps.speakers.discovery.identify".to_owned(),
+        caller: "convey_shell.speakers_discovery_write.identify".to_owned(),
         actor: None,
     };
     match solstone_core_speaker_resolve::identify_cluster::identify_cluster(&request, &encoder()) {

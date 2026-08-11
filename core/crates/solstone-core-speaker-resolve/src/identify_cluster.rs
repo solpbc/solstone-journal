@@ -40,7 +40,7 @@ use crate::identify_target::{
 use crate::keep_separate::pair_key;
 use crate::retroactive_confirm::plan_retroactive_confirm;
 
-const CALLER: &str = "apps.speakers.discovery.identify_cluster";
+const CALLER: &str = "speaker_resolve.identify_cluster";
 
 /// Raw inputs accepted by the native identify orchestrator.
 #[derive(Debug, Clone, PartialEq, Eq)]
