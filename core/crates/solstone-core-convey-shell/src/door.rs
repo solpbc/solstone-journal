@@ -244,9 +244,9 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
-    // [check] This refresh adopts the sender created before authorized_router,
-    // so request-time authorization and door admission observe one publication,
-    // never parallel watch channels.
+    // [check] This refresh adopts the sender supplied to bind_with_authorization.
+    // Production (run_convey) and authorization-gate tests share it with the
+    // gate router; serve() callers use the plain router and a disposable channel.
     let authorization = options.authorization_sender.subscribe();
     let refresh_task = spawn_authorization_refresh(
         AuthorizationLedger::new(&options.journal_root),

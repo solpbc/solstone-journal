@@ -234,6 +234,13 @@ async fn ac7_only_boot_assets_are_exempt() {
     let (status, body) = request(app, "/api/shell", Some(linked_device(&fixture, 0))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body, revoked_body());
+
+    let (_, receiver) = watch::channel(posture(&fixture));
+    let app = authorized_router(fixture.root.clone(), receiver);
+    for path in ["/favicon.ico", "/static/shell.html"] {
+        let (status, _) = request(app.clone(), path, Some(linked_device(&fixture, 0))).await;
+        assert_eq!(status, StatusCode::OK, "authorized device: {path}");
+    }
 }
 
 #[tokio::test]
@@ -253,7 +260,7 @@ async fn ac8_unmatched_path_keeps_the_shell_fallback() {
 }
 
 #[tokio::test]
-async fn ac16_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
+async fn ac17_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
     let fixture = Fixture::established(1);
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
@@ -298,6 +305,8 @@ async fn ac9_refusal_body_has_the_reference_shape() {
 
 #[tokio::test]
 async fn ac12_every_composed_shell_route_is_gated() {
+    // router() uses one chained route builder, without a merge/nest boundary;
+    // this proves the layer reaches a route registered deep in that chain.
     let fixture = Fixture::established(1);
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,

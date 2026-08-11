@@ -86,6 +86,7 @@ use axum::{Json, Router};
 use solstone_core_sol_link::DeviceDoorAuthorization;
 
 mod assets;
+#[cfg(feature = "host")]
 pub mod authorization_gate;
 #[cfg(feature = "host")]
 mod door;

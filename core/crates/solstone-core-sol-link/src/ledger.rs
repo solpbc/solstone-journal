@@ -598,6 +598,10 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
                 )),
             });
         };
+        if item.get("kind").is_some_and(|kind| kind != CERT_KIND) {
+            dropped_non_cert = true;
+            continue;
+        }
         let Some(fingerprint) = item.get("fingerprint").and_then(Value::as_str) else {
             return Err(AuthorizedClientsLoadError::Malformed {
                 path: path.to_path_buf(),
@@ -607,10 +611,6 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
                 )),
             });
         };
-        if item.get("kind").is_some_and(|kind| kind != CERT_KIND) {
-            dropped_non_cert = true;
-            continue;
-        }
         let label_ordinal = item
             .get("label_ordinal")
             .and_then(Value::as_u64)
@@ -906,6 +906,24 @@ mod tests {
         .unwrap();
 
         assert_eq!(ledger.read_state(), AuthorizedClientsRead::Malformed);
+    }
+
+    #[test]
+    fn non_cert_entry_without_a_fingerprint_is_tolerated() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        fs::create_dir_all(ledger.authorized_clients_path().parent().unwrap()).unwrap();
+        fs::write(
+            ledger.authorized_clients_path(),
+            br#"[{"fingerprint":"a"},{"kind":"token"}]"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            ledger.read_state(),
+            AuthorizedClientsRead::Present(entries)
+                if entries.len() == 1 && entries[0].fingerprint == "a"
+        ));
     }
 
     #[test]
