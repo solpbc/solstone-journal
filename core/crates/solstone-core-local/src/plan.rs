@@ -31,6 +31,11 @@ pub enum Platform {
 pub struct VulkanDevice {
     pub index: u32,
     pub name: String,
+    /// `None` means the producer omitted the Vulkan device type. It is treated as
+    /// non-hardware and classifies as `"other"`; the check wave must populate it
+    /// from the native enumerator rather than the legacy three-field supervisor payload.
+    #[serde(default)]
+    pub device_type: Option<u32>,
     pub vram_mib: u64,
 }
 
@@ -549,6 +554,7 @@ mod tests {
         input.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         input.vulkan_selected_gpu_index = Some(2);
@@ -568,6 +574,25 @@ mod tests {
             plan.extra_env.get("GGML_VK_VISIBLE_DEVICES"),
             Some(&"2".into())
         );
+    }
+
+    #[test]
+    fn vulkan_device_accepts_legacy_and_typed_json() {
+        let legacy: VulkanDevice = serde_json::from_value(serde_json::json!({
+            "index": 2,
+            "name": "vk",
+            "vram_mib": 16000
+        }))
+        .expect("legacy Vulkan device");
+        assert_eq!(legacy.device_type, None);
+        let typed: VulkanDevice = serde_json::from_value(serde_json::json!({
+            "index": 2,
+            "name": "vk",
+            "device_type": 2,
+            "vram_mib": 16000
+        }))
+        .expect("typed Vulkan device");
+        assert_eq!(typed.device_type, Some(2));
     }
     #[test]
     fn cuda_override_skips_backend_decision_inputs() {
@@ -593,6 +618,7 @@ mod tests {
         input.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         input.vulkan_selected_gpu_index = Some(2);
@@ -683,6 +709,7 @@ mod tests {
         no_selected_index.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         assert_rejected(no_selected_index, "Vulkan selected GPU index is required");
@@ -693,6 +720,7 @@ mod tests {
         unknown_index.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         unknown_index.vulkan_selected_gpu_index = Some(3);
@@ -704,6 +732,7 @@ mod tests {
         mismatched_name.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         mismatched_name.vulkan_selected_gpu_index = Some(2);
@@ -719,6 +748,7 @@ mod tests {
         mismatched_vram.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         mismatched_vram.vulkan_selected_gpu_index = Some(2);
@@ -734,6 +764,7 @@ mod tests {
         missing_binary.vulkan_devices = Some(vec![VulkanDevice {
             index: 2,
             name: "vk".into(),
+            device_type: None,
             vram_mib: 16_000,
         }]);
         missing_binary.vulkan_selected_gpu_index = Some(2);

@@ -2928,6 +2928,7 @@ dependencies = [
  "chrono",
  "flate2",
  "hmac",
+ "libloading",
  "nix",
  "serde",
  "serde_json",

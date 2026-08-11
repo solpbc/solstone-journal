@@ -94,6 +94,13 @@ enum JournalPathError {
 
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.len() == 1 && args[0] == OsStr::new(solstone_core_local::vulkan::VULKAN_PROBE_CHILD_ARG)
+    {
+        return match solstone_core_local::write_vulkan_probe_json(io::stdout().lock()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::from(EXIT_IOERR),
+        };
+    }
     match evaluate_args(&args) {
         Ok(Command::Version) => {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));

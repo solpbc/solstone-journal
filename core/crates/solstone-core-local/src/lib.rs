@@ -14,6 +14,7 @@ pub mod install;
 pub mod nvidia;
 pub mod plan;
 pub(crate) mod tier;
+pub mod vulkan;
 
 pub use bind::LoopbackAddr;
 pub use connect::{ConnectInput, ConnectOutcome, connect};
@@ -42,3 +43,8 @@ pub use nvidia::{
     NvidiaProbe, hardware_backend_rejection, probe_nvidia_gpu, select_local_backend,
 };
 pub use plan::{LaunchPlan, PlanInput, PlanOutcome, Platform, VulkanDevice, plan};
+pub use vulkan::{
+    CPU_PLACEMENT_COPY, VulkanProbeConfig, VulkanProbeProgram, classify, cpu_placement_suffix,
+    detect_gpus, discrete_hardware_gpu_count, enumerate_gpus, gpu_probe_ok, is_discrete,
+    is_hardware_device, select_device, write_vulkan_probe_json,
+};

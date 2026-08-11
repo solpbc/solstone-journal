@@ -184,6 +184,7 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
             devices: vec![VulkanDevice {
                 index: 0,
                 name: "test GPU".into(),
+                device_type: None,
                 vram_mib: 16_000,
             }],
             selected_gpu_index: 0,
