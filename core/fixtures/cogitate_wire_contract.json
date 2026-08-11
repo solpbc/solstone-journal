@@ -120,7 +120,7 @@
     },
     "dry_run": {
       "role": "dry_run_native",
-      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "dry_run": "boolean", "terminal": "boolean" },
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "dry_run": "boolean", "terminal": "boolean", "rendered_prompt": "object" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": true

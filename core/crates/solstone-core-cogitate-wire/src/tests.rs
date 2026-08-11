@@ -793,7 +793,7 @@ fn validator_accepts_every_serialized_native_event() {
 #[test]
 fn validator_rejects_missing_required_fields_for_each_native_kind() {
     let fields = [
-        "delta", "summary", "call_id", "result", "tool", "ladder", "terminal", "error", "dry_run",
+        "delta", "summary", "call_id", "result", "tool", "ladder", "terminal", "error", "rendered_prompt",
     ];
     for (mut value, field) in all_native_values().into_iter().zip(fields) {
         value
@@ -861,6 +861,10 @@ fn dry_run_emits_one_validated_terminal_event_without_provider() {
     assert!(sink.events.is_empty());
     assert_eq!(event["event"], "dry_run");
     assert_eq!(event["terminal"], true);
+    assert_eq!(event["rendered_prompt"]["initial_prompt"], "Do the task.");
+    assert!(event["rendered_prompt"]["system_instruction"]
+        .as_str()
+        .is_some_and(|instruction| instruction.contains("Be concise.")));
     validate_event(&event).expect("dry run validates");
 }
 
