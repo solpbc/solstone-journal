@@ -207,6 +207,29 @@ You are a solstone cogitate talent running inside the live system. This runtime 
 - Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.
 ```
 
+## Failure classifier reconciliation (native cogitate thin client)
+
+The former Python classifier was keyed by exception type names; the native
+runtime emits reason codes instead. Its deterministic vocabulary contains
+`max_turns_exhausted`, `wall_clock_exceeded`, and related native outcomes, while
+provider failures carry their own reason code. This is the exact reconciliation
+against the captured Python classifier surface:
+
+| Python classifier arm | Python result | Native reproduction |
+|---|---|---|
+| `MaxTurnsExhausted` | `max_turns_exhausted` | Yes — native emits `max_turns_exhausted`. |
+| `MaxIterationsReached` | `max_turns_exhausted` | Yes — the native loop has the same terminal reason rather than this SDK exception type. |
+| `QuotaExhaustedError` | `provider_quota_exceeded` | Yes for the reason code: provider-failure events emit `provider_quota_exceeded`, and the thin client recreates the typed Python quota exception. Native provider failures do not retain the raw response body, so a parsed `retryDelayMs` is unavailable. |
+| `ProviderKeyMissingError` | `unknown` | No exact reproduction: native emits the more specific `provider_key_missing`, not `unknown`. |
+| `LocalProviderError` | `unknown` | No exact reproduction: this is a Python wrapper type; native emits the concrete local/provider failure reason instead. |
+| `TimeoutError` | `chat_timeout` | No exact reproduction: native cogitate uses `wall_clock_exceeded`, not `chat_timeout`. |
+| `ValueError` | `unknown` | No: Python's catch-all type arm has no native analog; malformed native requests fail at the CLI boundary. |
+| `RuntimeError` | `unknown` | No: Python's catch-all type arm has no native analog; provider/runtime failures use concrete reason codes. |
+
+The separate quota text parser only recognized `QUOTA_EXHAUSTED` and
+`TerminalQuotaError` markers. The native reason code preserves quota identity,
+but deliberately cannot reconstruct a retry delay from discarded provider text.
+
 ## Where this is wired (for maintainers)
 
 | Concern | Location |

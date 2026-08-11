@@ -1525,17 +1525,12 @@ async def _execute_with_tools(
         config: Prepared config dict
         emit_event: Event emission callback
     """
-    from .providers import PROVIDER_REGISTRY, get_provider_module
+    from . import cogitate_client
 
     provider = config.get("provider", "google")
     output_path = Path(config["output_path"]) if config.get("output_path") else None
 
-    if provider not in PROVIDER_REGISTRY:
-        valid = ", ".join(sorted(PROVIDER_REGISTRY.keys()))
-        raise ValueError(f"Unknown provider: {provider!r}. Valid providers: {valid}")
-
     _raise_if_confidential_unverified(provider)
-    provider_mod = get_provider_module(provider)
     expected_fingerprint_sha256 = _capture_runtime_fingerprint(config)
 
     # Wrapper to intercept finish event for post-processing
@@ -1616,7 +1611,14 @@ async def _execute_with_tools(
         emit_event(data)
 
     try:
-        await provider_mod.run_cogitate(config=config, on_event=talent_emit_event)
+        if provider == "local":
+            # AC4: local keeps its admission lease around the native-client call.
+            from .providers import local
+
+            await local.run_cogitate(config=config, on_event=talent_emit_event)
+        else:
+            # AC1: cogitate dispatch is the native thin client, not a provider loop.
+            await cogitate_client.run_cogitate(config=config, on_event=talent_emit_event)
     except TalentHookError as exc:
         _emit_terminal_hook_error(config, emit_event, exc)
         return

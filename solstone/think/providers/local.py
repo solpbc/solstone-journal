@@ -171,7 +171,8 @@ async def run_cogitate(
     config: dict[str, Any],
     on_event: Callable[[dict], None] | None = None,
 ) -> str:
-    from solstone.think.providers import local_server, openhands
+    from solstone.think import cogitate_client
+    from solstone.think.providers import local_server
     from solstone.think.providers.local_admission import (
         LocalAdmissionTimeout,
         LocalSlotLease,
@@ -212,10 +213,18 @@ async def run_cogitate(
                 deadline=started + timeout,
                 permit=permit,
             )
-        return await openhands.run_cogitate(
+        context_window = None
+        if not endpoint.is_bundled:
+            from solstone.think.providers.local_endpoint import (
+                resolve_endpoint_served_window,
+            )
+
+            context_window = resolve_endpoint_served_window(endpoint)
+        # AC4: the lease remains held by this wrapper for the native-client run.
+        return await cogitate_client.run_cogitate(
             config,
             on_event=on_event,
-            slot_lease=slot_lease,
+            context_window=context_window,
         )
     except asyncio.CancelledError:
         outcome = "cancelled"
