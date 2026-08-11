@@ -9,11 +9,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::{
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
 };
 
-use chrono::Local;
+use chrono::{Local, Utc};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
@@ -138,6 +138,11 @@ fn main() -> ExitCode {
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
+        Ok(Command::Streams(args)) => run_streams(args),
+        Ok(Command::Segment(args)) => run_segment(args),
+        Ok(Command::Reprocess(args)) => run_reprocess(args),
+        Ok(Command::JournalStats(args)) => run_journal_stats(args),
+        Ok(Command::Backfill(args)) => run_backfill(args),
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
         Ok(Command::Convey(options)) => run_convey(options),
@@ -397,6 +402,132 @@ fn run_transcribe(options: TranscribeOptions) -> ExitCode {
             ExitCode::from(error.exit_code() as u8)
         }
     }
+}
+
+fn require_utf8_argv(verb: &str, args: &[OsString]) -> Result<Vec<String>, ExitCode> {
+    match args
+        .iter()
+        .map(|argument| argument.to_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+    {
+        Some(arguments) => Ok(arguments),
+        None => {
+            eprintln!("native solstone-core {verb} failed: arguments are not valid UTF-8");
+            Err(ExitCode::from(EXIT_TEMPFAIL))
+        }
+    }
+}
+
+fn run_storage_ops_verb(
+    verb: &str,
+    args: Vec<OsString>,
+    call: impl FnOnce(&[String], &Path) -> (String, String, i32),
+) -> ExitCode {
+    let arguments = match require_utf8_argv(verb, &args) {
+        Ok(arguments) => arguments,
+        Err(code) => return code,
+    };
+    let is_help = arguments
+        .iter()
+        .any(|argument| argument == "-h" || argument == "--help");
+    let journal_path = if is_help {
+        PathBuf::new()
+    } else {
+        match resolve_process_journal_path() {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error(error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        }
+    };
+    let (stdout, stderr, exit_code) = call(&arguments, &journal_path);
+    print!("{stdout}");
+    eprint!("{stderr}");
+    ExitCode::from(exit_code as u8)
+}
+
+fn run_streams(args: Vec<OsString>) -> ExitCode {
+    run_storage_ops_verb("streams", args, |arguments, journal| {
+        let run = solstone_core_streams_cli::run_cli(arguments, journal);
+        (run.stdout, run.stderr, run.exit_code)
+    })
+}
+
+fn run_segment(args: Vec<OsString>) -> ExitCode {
+    run_storage_ops_verb("segment", args, |arguments, journal| {
+        let run = solstone_core_segment_cli::run_cli(arguments, journal);
+        (run.stdout, run.stderr, run.exit_code)
+    })
+}
+
+fn run_reprocess(args: Vec<OsString>) -> ExitCode {
+    run_storage_ops_verb("reprocess", args, |arguments, journal| {
+        let run = solstone_core_reprocess_cli::run_cli(arguments, journal);
+        (run.stdout, run.stderr, run.exit_code)
+    })
+}
+
+fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
+    let is_help = args
+        .iter()
+        .any(|argument| argument == OsStr::new("-h") || argument == OsStr::new("--help"));
+    let (journal_root, system_talent_root, apps_root) = if is_help {
+        (PathBuf::new(), PathBuf::new(), PathBuf::new())
+    } else {
+        let journal_root = match resolve_process_journal_path() {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error(error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        };
+        let (system_talent_root, apps_root) = discover_package_roots();
+        (journal_root, system_talent_root, apps_root)
+    };
+    let backlog_reader = solstone_core_journal_stats_cli::FilesystemBacklogViewReader;
+    let document_writer = solstone_core_journal_stats_cli::FilesystemDocumentWriter;
+    let run = solstone_core_journal_stats_cli::run_cli(
+        &args,
+        &journal_root,
+        Utc::now(),
+        &system_talent_root,
+        &apps_root,
+        &backlog_reader,
+        &document_writer,
+    );
+    print!("{}", run.stdout);
+    eprint!("{}", run.stderr);
+    ExitCode::from(run.exit_code as u8)
+}
+
+fn run_backfill(args: Vec<OsString>) -> ExitCode {
+    let is_help = args
+        .iter()
+        .any(|argument| argument == OsStr::new("-h") || argument == OsStr::new("--help"));
+    let journal = if is_help {
+        PathBuf::new()
+    } else {
+        match resolve_process_journal_path() {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error(error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        }
+    };
+    let writer = solstone_core_backfill_cli::AtomicWriter;
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+    let exit_code = solstone_core_backfill_cli::run(
+        &args,
+        &journal,
+        Utc::now(),
+        &writer,
+        &mut stdout.lock(),
+        &mut stderr.lock(),
+    );
+    ExitCode::from(exit_code as u8)
 }
 
 fn run_facet_candidates() -> ExitCode {
@@ -4880,6 +5011,25 @@ fn discover_binary_home() -> Result<PathBuf, HomeError> {
     }
     let fallback = env::home_dir();
     discover_home(None, fallback.as_deref())
+}
+
+// Packaged installs may not retain source-package roots and therefore report zero talent configs.
+fn discover_package_roots() -> (PathBuf, PathBuf) {
+    if let Some(start) = env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(Path::to_path_buf))
+    {
+        for ancestor in start.ancestors() {
+            let candidate = ancestor.join("solstone");
+            if candidate.join("talent").is_dir() && candidate.join("apps").is_dir() {
+                return (candidate.join("talent"), candidate.join("apps"));
+            }
+        }
+    }
+    (
+        PathBuf::from("solstone/talent"),
+        PathBuf::from("solstone/apps"),
+    )
 }
 
 fn eprint_journal_path_error(error: JournalPathError) {
