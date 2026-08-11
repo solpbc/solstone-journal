@@ -106,6 +106,19 @@ fn binary_contract_matches_oracle_or_skips_without_staged_pdfium() {
         }),
         false,
     );
+    let inspect_password_after = assert_success(&invoke(&[
+        "inspect",
+        text.to_str().expect("UTF-8 fixture path"),
+        "--password",
+        "unused",
+    ]));
+    let inspect_password_before = assert_success(&invoke(&[
+        "inspect",
+        "--password",
+        "unused",
+        text.to_str().expect("UTF-8 fixture path"),
+    ]));
+    assert_eq!(inspect_password_before, inspect_password_after);
 
     let extract = assert_success(&invoke(&[
         "extract",
@@ -216,6 +229,46 @@ fn binary_contract_matches_oracle_or_skips_without_staged_pdfium() {
     );
     let first_render = image::open(renders.join("page-0001.png")).expect("open rendered PNG");
     assert_eq!(first_render.dimensions(), (1275, 1650));
+
+    let equals_render_dir = test_root("equals-render-flags");
+    let equals_render_dir = equals_render_dir.to_str().expect("UTF-8 temporary path");
+    let equals_flags = assert_success(&invoke(&[
+        "extract",
+        text.to_str().expect("UTF-8 fixture path"),
+        "--dpi=72",
+        "--render-below-chars=10",
+        &format!("--render-dir={equals_render_dir}"),
+    ]));
+    let spaced_flags = assert_success(&invoke(&[
+        "extract",
+        text.to_str().expect("UTF-8 fixture path"),
+        "--dpi",
+        "72",
+        "--render-below-chars",
+        "10",
+        "--render-dir",
+        equals_render_dir,
+    ]));
+    assert_eq!(equals_flags, spaced_flags);
+
+    let nan_render_dir = test_root("nan-render-threshold");
+    let nan = assert_success(&invoke(&[
+        "extract",
+        corpus_path("scan.pdf")
+            .to_str()
+            .expect("UTF-8 fixture path"),
+        "--render-above-image-fraction",
+        "nan",
+        "--render-dir",
+        nan_render_dir.to_str().expect("UTF-8 temporary path"),
+    ]));
+    assert!(
+        nan["pages"]
+            .as_array()
+            .expect("pages")
+            .iter()
+            .all(|page| page["rendered"].is_null())
+    );
 
     let whitespace = assert_success(&invoke(&[
         "extract",

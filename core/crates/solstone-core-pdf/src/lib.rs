@@ -350,19 +350,32 @@ fn parse_arguments(args: &[std::ffi::OsString]) -> Result<Arguments, ContractErr
             ));
         }
     };
-    let pdf_path = args
-        .get(1)
-        .ok_or_else(|| ContractError::usage("the following arguments are required: pdf_path"))?;
+    let mut pdf_path = None;
     let mut password = None;
     let mut render = RenderRequest::none();
-    let mut position = 2;
+    let mut position = 1;
     while position < args.len() {
-        let flag = &args[position];
-        let value = args.get(position + 1).ok_or_else(|| {
-            ContractError::usage(format!("argument {flag}: expected one argument"))
-        })?;
-        match flag.as_str() {
-            "--password" => password = Some(value.clone()),
+        let argument = &args[position];
+        if !argument.starts_with("--") {
+            if pdf_path.replace(PathBuf::from(argument)).is_some() {
+                return Err(ContractError::usage(
+                    "only one pdf_path argument is allowed",
+                ));
+            }
+            position += 1;
+            continue;
+        }
+        let (flag, value) = if let Some((flag, value)) = argument.split_once('=') {
+            (flag, value)
+        } else {
+            let value = args.get(position + 1).ok_or_else(|| {
+                ContractError::usage(format!("argument {argument}: expected one argument"))
+            })?;
+            position += 1;
+            (argument.as_str(), value.as_str())
+        };
+        match flag {
+            "--password" => password = Some(value.to_owned()),
             "--render-below-chars" if command == CommandKind::Extract => {
                 let parsed = value
                     .parse::<i64>()
@@ -379,7 +392,7 @@ fn parse_arguments(args: &[std::ffi::OsString]) -> Result<Arguments, ContractErr
                 let parsed = value
                     .parse::<f64>()
                     .map_err(|_| ContractError::usage(format!("invalid float value: '{value}'")))?;
-                if !parsed.is_finite() || parsed < 0.0 {
+                if parsed < 0.0 {
                     return Err(ContractError::usage(
                         "--render-above-image-fraction must be non-negative",
                     ));
@@ -409,17 +422,15 @@ fn parse_arguments(args: &[std::ffi::OsString]) -> Result<Arguments, ContractErr
                 )));
             }
         }
-        position += 2;
-    }
-    if command == CommandKind::Inspect && args.len() > 2 && password.is_none() {
-        return Err(ContractError::usage("inspect accepts only --password"));
+        position += 1;
     }
     if render.requested && render.render_dir.is_none() {
         return Err(ContractError::usage(
             "--render-dir is required when render selectors are used",
         ));
     }
-    let pdf_path = PathBuf::from(pdf_path);
+    let pdf_path = pdf_path
+        .ok_or_else(|| ContractError::usage("the following arguments are required: pdf_path"))?;
     if !pdf_path.is_file() {
         return Err(ContractError::usage(format!(
             "PDF not found: {}",
