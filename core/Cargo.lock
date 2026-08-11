@@ -2406,6 +2406,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-backfill-cli"
+version = "1.0.22"
+
+[[package]]
 name = "solstone-core-body-ingest"
 version = "1.0.22"
 dependencies = [
@@ -2904,6 +2908,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-journal-stats-cli"
+version = "1.0.22"
+
+[[package]]
 name = "solstone-core-local"
 version = "1.0.22"
 dependencies = [
@@ -2958,6 +2966,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-reprocess-cli"
+version = "1.0.22"
+
+[[package]]
 name = "solstone-core-retention"
 version = "1.0.22"
 dependencies = [
@@ -2992,6 +3004,10 @@ dependencies = [
  "solstone-core-journal-io",
  "unicode-normalization",
 ]
+
+[[package]]
+name = "solstone-core-segment-cli"
+version = "1.0.22"
 
 [[package]]
 name = "solstone-core-serving"
@@ -3179,6 +3195,10 @@ dependencies = [
  "thiserror 2.0.19",
  "x509-parser",
 ]
+
+[[package]]
+name = "solstone-core-streams-cli"
+version = "1.0.22"
 
 [[package]]
 name = "solstone-core-system"

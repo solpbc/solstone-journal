@@ -68,6 +68,11 @@ members = [
     "crates/solstone-core-body-rebuild",
     "crates/solstone-core-body-ingest",
     "crates/solstone-core-system",
+    "crates/solstone-core-streams-cli",
+    "crates/solstone-core-segment-cli",
+    "crates/solstone-core-journal-stats-cli",
+    "crates/solstone-core-reprocess-cli",
+    "crates/solstone-core-backfill-cli",
 ]
 resolver = "3"
 
@@ -126,6 +131,11 @@ solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
+solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
+solstone-core-segment-cli = { path = "crates/solstone-core-segment-cli" }
+solstone-core-journal-stats-cli = { path = "crates/solstone-core-journal-stats-cli" }
+solstone-core-reprocess-cli = { path = "crates/solstone-core-reprocess-cli" }
+solstone-core-backfill-cli = { path = "crates/solstone-core-backfill-cli" }
 axum = { version = "0.8.9", default-features = false, features = ["json", "multipart", "query"] }
 bytes = "1.12.1"
 hyper = { version = "1.11.0", default-features = false, features = ["server", "http1"] }

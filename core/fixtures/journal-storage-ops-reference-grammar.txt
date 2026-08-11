@@ -1,0 +1,158 @@
+# Owner-facing grammar for the journal storage-operations verbs.
+#
+# Captured by running the shipped `journal` entry point against the reference
+# implementation and recording stdout+stderr and the exit status verbatim. The
+# native implementations of these verbs answer identically; the comparison is
+# byte-for-byte, so nothing in this file may be re-wrapped or re-indented.
+#
+# Format: a block begins with `=== <name>` and runs to the next `===` or EOF.
+# Inside a help block the payload is the exact text the verb prints on stdout.
+
+=== streams --help
+usage: journal streams [-h] [--rebuild] [-v] [-d] [name]
+
+Inspect and manage stream identity
+
+positional arguments:
+  name           Stream name to inspect (omit to list all streams)
+
+options:
+  -h, --help     show this help message and exit
+  --rebuild      Reconstruct stream state from per-segment markers
+  -v, --verbose  Enable verbose output
+  -d, --debug    Enable debug logging
+
+=== segment --help
+usage: journal segment <command> [options]
+
+Inspect and manage journal segments
+
+positional arguments:
+  {list,inspect,verify,move}
+    list                List segments for a day
+    inspect             Show segment metadata
+    verify              Verify segment integrity
+    move                Move segment to a different day/time
+
+options:
+  -h, --help            show this help message and exit
+  -v, --verbose         Enable verbose output
+  -d, --debug           Enable debug logging
+
+=== segment list --help
+usage: journal segment <command> [options] list [-h] [--stream STREAM]
+                                                [--json]
+                                                day
+
+positional arguments:
+  day              Day in YYYYMMDD format
+
+options:
+  -h, --help       show this help message and exit
+  --stream STREAM  Filter to a specific stream
+  --json           Output as JSON
+
+=== segment inspect --help
+usage: journal segment <command> [options] inspect [-h] [--json] path
+
+positional arguments:
+  path        Segment path: day/stream/segment (e.g.
+              20260304/default/090000_300)
+
+options:
+  -h, --help  show this help message and exit
+  --json      Output as JSON
+
+=== segment verify --help
+usage: journal segment <command> [options] verify [-h] [--day DAY] [--json]
+                                                  [path]
+
+positional arguments:
+  path        Segment path: day/stream/segment
+
+options:
+  -h, --help  show this help message and exit
+  --day DAY   Verify all segments for a day
+  --json      Output as JSON
+
+=== segment move --help
+usage: journal segment <command> [options] move [-h] --to-day TO_DAY
+                                                [--to-time TO_TIME]
+                                                [--dry-run] [-v]
+                                                path
+
+positional arguments:
+  path               Segment path: day/stream/segment (e.g.
+                     20260304/default/090000_300)
+
+options:
+  -h, --help         show this help message and exit
+  --to-day TO_DAY    Destination day (YYYYMMDD)
+  --to-time TO_TIME  New time (HHMMSS), preserving original duration
+  --dry-run          Show plan without making changes
+  -v, --verbose      Show detailed progress
+
+=== journal-stats --help
+usage: journal journal-stats [-h] [--no-cache] [-v] [-d]
+
+Scan a solstone journal and generate statistics
+
+options:
+  -h, --help     show this help message and exit
+  --no-cache     Disable per-day caching (force re-scan all days)
+  -v, --verbose  Enable verbose output
+  -d, --debug    Enable debug logging
+
+=== reprocess --help
+usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |
+                         --mark-updated] [-v] [-d]
+                         day
+
+Submit a past journal day for reprocessing
+
+positional arguments:
+  day                Past day in YYYYMMDD format
+
+options:
+  -h, --help         show this help message and exit
+  --through THROUGH  Inclusive range end in YYYYMMDD format
+  --yes
+  --from-scratch     Force a full daily re-run, preserving markers (does not
+                     flag the day as updated)
+  --mark-updated     Flag the day as having new raw data so daily processing
+                     re-queues it, then nudge a drain
+  -v, --verbose      Enable verbose output
+  -d, --debug        Enable debug logging
+
+=== reprocess (missing day)
+usage: journal reprocess [-h] [--through THROUGH] [--yes] [--from-scratch |
+                         --mark-updated] [-v] [-d]
+                         day
+journal reprocess: error: the following arguments are required: day
+
+=== backfill-processing-records --help
+usage: journal backfill-processing-records [-h] [--day DAY] [--commit |
+                                           --dry-run] [-v] [-d]
+
+Backfill empty processing records onto stuck header-only native
+describe/transcribe outputs
+
+options:
+  -h, --help     show this help message and exit
+  --day DAY      Day in YYYYMMDD format; defaults to all days
+  --commit       Rewrite eligible JSONL headers with empty processing records
+  --dry-run      Preview eligible outputs without writing changes
+  -v, --verbose  Enable verbose output
+  -d, --debug    Enable debug logging
+
+=== misuse exit codes
+# verb argv -> exit status, stderr shape
+streams --nonsense -> 2, prints `usage: journal streams` then `journal streams: error: unrecognized arguments: --nonsense`
+segment --nonsense -> 2, prints `usage: journal segment <command> [options]` then `journal segment: error: unrecognized arguments: --nonsense`
+journal-stats --nonsense -> 2, prints `usage: journal journal-stats` then `journal journal-stats: error: unrecognized arguments: --nonsense`
+reprocess --nonsense -> 2, prints the reprocess usage then `journal reprocess: error: the following arguments are required: day`
+backfill-processing-records --nonsense -> 2, prints the backfill usage then `journal backfill-processing-records: error: unrecognized arguments: --nonsense`
+# `streams` and `segment` additionally refuse with exit 1 and
+# `sol: solstone isn't running. Start it with 'journal up' and retry.`
+# when the stack is not up and SOL_SKIP_SUPERVISOR_CHECK is not 1. The other
+# three verbs have no such refusal.
