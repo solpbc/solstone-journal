@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[allow(dead_code)]
 #[path = "support/stub_peer.rs"]
 mod stub_peer;
 
@@ -8,7 +9,20 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use sha2::{Digest, Sha256};
-use stub_peer::{CapturedRequest, Fixture, PeerPlan, ResponseAction, StubPeer};
+use stub_peer::{CapturedRequest, Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
+
+fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan {
+    PeerPlan::new([
+        (
+            RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
+            manifest,
+        ),
+        (
+            RequestRoute::post("/app/import/journal/remote-i/ingest/segments/20260203"),
+            ingest,
+        ),
+    ])
+}
 
 fn fixture(peer: &StubPeer) -> Fixture {
     let fixture = peer.fixture();
@@ -107,7 +121,7 @@ fn native_and_python_send_match_normal_dry_run_and_skip() {
             ),
         ),
     ] {
-        let peer = StubPeer::new(PeerPlan::new(
+        let peer = StubPeer::new(plan(
             vec![manifest.clone(), manifest],
             vec![
                 ResponseAction::status(200, Vec::new()),

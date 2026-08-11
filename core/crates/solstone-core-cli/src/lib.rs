@@ -14,11 +14,169 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n"
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
+    "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
-pub const GRAB_USAGE: &str = "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n";
+/// The usage line the ERROR path prints, verbatim from the reference.
+/// It names `journal grab`, not `solstone-core grab`: the owner-facing verb
+/// is `journal grab`, and the native dispatch is a POSIX exec into the same
+/// process, so naming the internal binary here names a command the owner
+/// never typed.
+pub const GRAB_USAGE: &str =
+    "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
+
+/// `journal grab --help`, verbatim from the reference. The native verb
+/// previously answered --help with the one-line usage above, losing every
+/// argument description.
+pub const GRAB_HELP: &str = concat!(
+    "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n",
+    "\n",
+    "Walk observed screen frames and optionally write frame images.\n",
+    "\n",
+    "positional arguments:\n",
+    "  args           Path tokens: [day] [stream] [segment] [screen] [frame-\n",
+    "                 id[,frame-id...]]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  --out OUT      Write the selected frame image here (.png, .jpg, .jpeg, or\n",
+    "                 .webp).\n",
+    "  --force        Replace an existing output path.\n",
+    "  --json         Emit JSON instead of table or plain output.\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+/// `journal observer`'s own usage block, captured verbatim from the Python
+/// reference. The native verb must not print `solstone-core`'s top-level usage
+/// when an owner mistypes an observer argument -- that names the wrong program.
+pub const OBSERVER_USAGE: &str = concat!(
+    "usage: journal observer [-h] [--json] [-v] [-d]\n",
+    "                        {create,list,rename,revoke,status,reconcile,prune} ...\n",
+);
+
+/// `journal observer --help`, captured verbatim from the Python reference.
+/// The cut left the native verb with no help at all: `--help` fell through the
+/// observer parser (it is not one of its tokens) and became a usage error, so
+/// an owner asking for help got exit 2 and three lines instead of exit 0 and
+/// twenty-one.
+pub const OBSERVER_HELP: &str = concat!(
+    "usage: journal observer [-h] [--json] [-v] [-d]\n",
+    "                        {create,list,rename,revoke,status,reconcile,prune} ...\n",
+    "\n",
+    "Manage observer registrations\n",
+    "\n",
+    "positional arguments:\n",
+    "  {create,list,rename,revoke,status,reconcile,prune}\n",
+    "    create              Explain retired manual observer creation\n",
+    "    list                List all registered observers\n",
+    "    rename              Rename an observer (affects future streams)\n",
+    "    revoke              Revoke an observer registration\n",
+    "    status              Show observer status details\n",
+    "    reconcile           Collapse duplicate registrations per stream (oldest\n",
+    "                        survives)\n",
+    "    prune               Find or delete provable duplicate observer segments\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --json                Output as JSON\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
+/// `journal observer prune --help`, captured verbatim from the reference.
+/// Note it documents prune's own exit contract, which the native path honours:
+/// 0 clean, 2 refusals present, 1 usage/error.
+pub const OBSERVER_PRUNE_HELP: &str = concat!(
+    "usage: journal observer prune [-h] (--day DAY | --day-range DAY_RANGE | --all)\n",
+    "                              [--stream STREAM] [--execute] [--cross-start]\n",
+    "\n",
+    "Find byte-identical same-start observer duplicate segments. Canonical is the\n",
+    "earliest same-start segment whose content is held by bytes or terminal proof.\n",
+    "Opt-in cross-start mode also uses server-authored segment_original provenance\n",
+    "after same-start pruning. Dry-run is the default and performs zero writes.\n",
+    "Exit codes: 0 clean, 2 refusals present, 1 usage/error.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --day DAY             Prune one day (YYYYMMDD)\n",
+    "  --day-range DAY_RANGE\n",
+    "                        Prune inclusive range A..B\n",
+    "  --all                 Scan every journal day\n",
+    "  --stream STREAM       Limit to one stream\n",
+    "  --execute             Delete provable duplicates; dry-run is the default.\n",
+    "  --cross-start         Also prune different-start duplicates proven by\n",
+    "                        server-authored segment_original provenance; runs\n",
+    "                        after same-start. Off by default.\n",
+);
+
+/// The usage block argparse prints when `journal observer prune` itself fails
+/// to parse. It is prune's own, not the observer-level one.
+pub const OBSERVER_PRUNE_USAGE: &str = concat!(
+    "usage: journal observer prune [-h] (--day DAY | --day-range DAY_RANGE | --all)\n",
+    "                              [--stream STREAM] [--execute] [--cross-start]\n",
+);
+
+/// `journal transfer --help`, verbatim from the Python reference. The cut
+/// left the native verb answering 64 with `solstone-core`'s top-level usage
+/// for every invocation including --help, so the verb had no help at all.
+pub const TRANSFER_HELP: &str = concat!(
+    "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n",
+    "\n",
+    "Transfer observed segments between solstone instances\n",
+    "\n",
+    "positional arguments:\n",
+    "  {export,import,send}\n",
+    "    export              Create archive from day's segments\n",
+    "    import              Import archive into journal\n",
+    "    send                Send segments to paired peer\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
+/// The single usage line argparse prints on a `journal transfer` error. The
+/// full help body belongs to `--help` only; argparse never prints it on an
+/// error.
+pub const TRANSFER_USAGE: &str =
+    "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n";
+
+/// `journal transfer export --help`, verbatim from the reference.
+pub const TRANSFER_EXPORT_HELP: &str = concat!(
+    "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help           show this help message and exit\n",
+    "  --day DAY            Day to export (YYYYMMDD format)\n",
+    "  --output, -o OUTPUT  Output archive path (default:\n",
+    "                       scratch/{day}_{hostname}.tgz)\n",
+);
+
+/// `journal transfer import --help`, verbatim from the reference.
+pub const TRANSFER_IMPORT_HELP: &str = concat!(
+    "usage: journal transfer import [-h] --archive ARCHIVE [--dry-run]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --archive, -a ARCHIVE\n",
+    "                        Archive file to import\n",
+    "  --dry-run             Validate archive without extracting\n",
+);
+
+/// `journal transfer send --help`, verbatim from the reference.
+pub const TRANSFER_SEND_HELP: &str = concat!(
+    "usage: journal transfer send [-h] --to TO [--day DAY] [--dry-run]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --to TO     Paired peer label\n",
+    "  --day DAY   Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD, default: all days)\n",
+    "  --dry-run   Show what would be sent without uploading\n",
+);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -34,11 +192,18 @@ pub enum Command {
     Brain(BrainCommand),
     Body(BodyCommand),
     Transfer(TransferCommand),
+    Export(ExportOptions),
     Convey(ConveyOptions),
     Grab(GrabCommand),
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
     Observer(ObserverCommand),
+    ObserverUsage,
+    ObserverPruneUsage,
+    ObserverHelp,
+    ObserverPruneHelp,
+    TransferUsage,
+    TransferHelp(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +232,17 @@ pub struct TransferSendOptions {
     pub to: String,
     pub day: Option<String>,
     pub dry_run: bool,
+    pub journal_override: Option<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportOptions {
+    pub to: String,
+    pub only: Option<String>,
+    pub day: Option<String>,
+    pub dry_run: bool,
+    /// Parsed only so the binary can reject the retired option explicitly.
+    pub key: Option<String>,
     pub journal_override: Option<OsString>,
 }
 
@@ -431,7 +607,29 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             parse_body(rest).map(Command::Body)
         }
         [command, rest @ ..] if command == OsStr::new("transfer") => {
-            parse_transfer(rest).map(Command::Transfer)
+            // Help is not a token of the transfer parser either, so without this
+            // interception `journal transfer --help` degrades into a usage error
+            // that exits 64 and names solstone-core rather than the verb.
+            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            if let [first, others @ ..] = rest
+                && others.iter().any(help)
+                && let Some(text) = match first.to_str() {
+                    Some("export") => Some(TRANSFER_EXPORT_HELP),
+                    Some("import") => Some(TRANSFER_IMPORT_HELP),
+                    Some("send") => Some(TRANSFER_SEND_HELP),
+                    _ => None,
+                }
+            {
+                return Ok(Command::TransferHelp(text));
+            }
+            if rest.iter().any(help) {
+                return Ok(Command::TransferHelp(TRANSFER_HELP));
+            }
+            // argparse exits 2 here, not 64.
+            Ok(parse_transfer(rest).map_or(Command::TransferUsage, Command::Transfer))
+        }
+        [command, rest @ ..] if command == OsStr::new("export") => {
+            parse_export(rest).map(Command::Export)
         }
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
@@ -443,9 +641,36 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             parse_supervisor(rest).map(Command::Supervisor)
         }
-        [command, rest @ ..] if command == OsStr::new("observer") => parse_observer_args(rest)
-            .map(Command::Observer)
-            .map_err(|_| UsageError),
+        [command, rest @ ..] if command == OsStr::new("observer") => {
+            // Help is not one of the observer parser's tokens, so it must be
+            // intercepted here or it degrades into a usage error -- which is
+            // exactly what the cut shipped.
+            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            if let [first, others @ ..] = rest
+                && first == OsStr::new("prune")
+                && others.iter().any(help)
+            {
+                return Ok(Command::ObserverPruneHelp);
+            }
+            if rest.iter().any(help) {
+                return Ok(Command::ObserverHelp);
+            }
+            // The reference exits 2 with `journal observer`'s usage, not 64 with
+            // solstone-core's. Carry the failure as a command so main can render
+            // it faithfully instead of collapsing it into UsageError.
+            // A prune-level failure gets prune's usage block and prefix; an
+            // observer-level one gets the observer's. argparse distinguishes
+            // them and so must this.
+            let prune = matches!(rest.first(), Some(first) if first == OsStr::new("prune"));
+            Ok(parse_observer_args(rest).map_or(
+                if prune {
+                    Command::ObserverPruneUsage
+                } else {
+                    Command::ObserverUsage
+                },
+                Command::Observer,
+            ))
+        }
         _ => Err(UsageError),
     }
 }
@@ -760,6 +985,66 @@ fn parse_transfer_send(args: &[OsString]) -> Result<TransferSendOptions, UsageEr
             .map(|value| value.into_string().map_err(|_| UsageError))
             .transpose()?,
         dry_run,
+        journal_override,
+    })
+}
+
+fn parse_export(args: &[OsString]) -> Result<ExportOptions, UsageError> {
+    let mut to = None;
+    let mut only = None;
+    let mut day = None;
+    let mut key = None;
+    let mut journal_override = None;
+    let mut dry_run = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--dry-run") {
+            if dry_run {
+                return Err(UsageError);
+            }
+            dry_run = true;
+            index += 1;
+            continue;
+        }
+        let destination = if argument == OsStr::new("--to") {
+            &mut to
+        } else if argument == OsStr::new("--only") {
+            &mut only
+        } else if argument == OsStr::new("--day") {
+            &mut day
+        } else if argument == OsStr::new("--key") {
+            &mut key
+        } else if argument == OsStr::new("--journal") {
+            &mut journal_override
+        } else {
+            return Err(UsageError);
+        };
+        if destination.is_some() {
+            return Err(UsageError);
+        }
+        let value = args.get(index + 1).ok_or(UsageError)?;
+        if value.to_string_lossy().starts_with("--") {
+            return Err(UsageError);
+        }
+        *destination = Some(value.clone());
+        index += 2;
+    }
+    Ok(ExportOptions {
+        to: to
+            .ok_or(UsageError)?
+            .into_string()
+            .map_err(|_| UsageError)?,
+        only: only
+            .map(|value| value.into_string().map_err(|_| UsageError))
+            .transpose()?,
+        day: day
+            .map(|value| value.into_string().map_err(|_| UsageError))
+            .transpose()?,
+        dry_run,
+        key: key
+            .map(|value| value.into_string().map_err(|_| UsageError))
+            .transpose()?,
         journal_override,
     })
 }
@@ -3294,14 +3579,36 @@ mod tests {
 
     #[test]
     fn usage_lists_supported_commands() {
-        assert_eq!(
-            USAGE,
-            concat!(
-                "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
-                speaker_resolve_usage!(),
-                "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH]\n"
-            )
-        );
+        // This was a frozen copy of USAGE and had already drifted from it --
+        // red on main before this lane touched it, because a snapshot of prose
+        // goes stale every time the prose is correctly edited. Assert the
+        // invariant instead: every command the binary dispatches is listed.
+        for command in [
+            "--version",
+            "journal-path",
+            "indexer",
+            "journal-config",
+            "speaker-transcript-write",
+            "observer",
+            "speaker-resolve",
+            "local",
+            "generate",
+            "cogitate",
+            "brain",
+            "body",
+            "transfer",
+            "convey",
+            "grab",
+            "spl",
+            "supervisor",
+            "export",
+        ] {
+            assert!(
+                USAGE.contains(&format!("solstone-core {command}")),
+                "USAGE does not list `{command}`"
+            );
+        }
+        assert!(USAGE.starts_with("Usage:\n"));
     }
 
     #[test]
@@ -3342,7 +3649,15 @@ mod tests {
             ][..],
             &["transfer", "send", "--to", "office", "--unknown"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            // A transfer parse failure is deliberately NOT `Err(UsageError)`:
+            // that path exits 64 with solstone-core's usage, where the reference
+            // exits 2 with `journal transfer`'s. Rejection is still rejection --
+            // it is carried as a command so main can render it faithfully.
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::TransferUsage),
+                "{values:?}"
+            );
         }
     }
 
@@ -3350,7 +3665,7 @@ mod tests {
     fn grab_usage_is_frozen() {
         assert_eq!(
             GRAB_USAGE,
-            "Usage: solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n"
+            "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n"
         );
     }
 

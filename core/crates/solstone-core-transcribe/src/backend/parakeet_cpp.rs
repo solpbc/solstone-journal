@@ -53,6 +53,18 @@ pub(crate) struct TranscriptionResponse {
     pub(crate) text: String,
 }
 
+/// Violations of the shared OpenAI-compatible verbose JSON word contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum WordContractError {
+    InvalidJson(String),
+    NotObject,
+    MissingWords,
+    TextWithoutTimings,
+    WordNotObject,
+    MissingKey(&'static str),
+    InvalidNumber,
+}
+
 /// Metadata retained in transcript headers for this backend.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ModelInfo {
@@ -164,19 +176,42 @@ fn transcribe_with_timeout(
 }
 
 fn parse_transcription_response(text: &str) -> Result<TranscriptionResponse, TranscribeError> {
-    let payload: Value = serde_json::from_str(text).map_err(|error| {
-        failure(
+    parse_verbose_json(text).map_err(|error| match error {
+        WordContractError::InvalidJson(error) => failure(
             "invalid_json",
             format!("response JSON was invalid: {error}"),
-        )
-    })?;
-    let object = payload
-        .as_object()
-        .ok_or_else(|| failure("invalid_json", "response JSON was not an object"))?;
+        ),
+        WordContractError::NotObject => failure("invalid_json", "response JSON was not an object"),
+        WordContractError::MissingWords => {
+            failure("contract_violation", "response missing top-level words[]")
+        }
+        WordContractError::TextWithoutTimings => failure(
+            "contract_violation",
+            "response has text but no word timings",
+        ),
+        WordContractError::WordNotObject => {
+            failure("contract_violation", "word timing item must be an object")
+        }
+        WordContractError::MissingKey(key) => failure(
+            "contract_violation",
+            format!("word timing missing key: {key}"),
+        ),
+        WordContractError::InvalidNumber => failure(
+            "contract_violation",
+            "word timing contains invalid numeric value",
+        ),
+    })
+}
+
+/// Parse the OpenAI-compatible verbose JSON word-timing response used by hosted STT.
+pub(crate) fn parse_verbose_json(text: &str) -> Result<TranscriptionResponse, WordContractError> {
+    let payload: Value = serde_json::from_str(text)
+        .map_err(|error| WordContractError::InvalidJson(error.to_string()))?;
+    let object = payload.as_object().ok_or(WordContractError::NotObject)?;
     let raw_words = object
         .get("words")
         .and_then(Value::as_array)
-        .ok_or_else(|| failure("contract_violation", "response missing top-level words[]"))?;
+        .ok_or(WordContractError::MissingWords)?;
     let text = match object.get("text") {
         None | Some(Value::Null) => String::new(),
         Some(Value::String(value)) => value.trim().to_owned(),
@@ -189,10 +224,7 @@ fn parse_transcription_response(text: &str) -> Result<TranscriptionResponse, Tra
                 text,
             });
         }
-        return Err(failure(
-            "contract_violation",
-            "response has text but no word timings",
-        ));
+        return Err(WordContractError::TextWithoutTimings);
     }
 
     let words = raw_words
@@ -202,13 +234,11 @@ fn parse_transcription_response(text: &str) -> Result<TranscriptionResponse, Tra
     Ok(TranscriptionResponse { words, text })
 }
 
-fn parse_word(value: &Value) -> Result<TranscriptionWord, TranscribeError> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| failure("contract_violation", "word timing item must be an object"))?;
+fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
+    let object = value.as_object().ok_or(WordContractError::WordNotObject)?;
     let token = object
         .get("word")
-        .ok_or_else(|| failure("contract_violation", "word timing missing key: word"))?
+        .ok_or(WordContractError::MissingKey("word"))?
         .to_string()
         .trim_matches('"')
         .trim()
@@ -221,12 +251,7 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, TranscribeError> {
             value
                 .as_f64()
                 .filter(|value| value.is_finite())
-                .ok_or_else(|| {
-                    failure(
-                        "contract_violation",
-                        "word timing contains invalid numeric value",
-                    )
-                })
+                .ok_or(WordContractError::InvalidNumber)
         })
         .transpose()?
         .unwrap_or(1.0);
@@ -241,17 +266,12 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, TranscribeError> {
 fn finite_word_number(
     object: &serde_json::Map<String, Value>,
     key: &str,
-) -> Result<f64, TranscribeError> {
+) -> Result<f64, WordContractError> {
     object
         .get(key)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite())
-        .ok_or_else(|| {
-            failure(
-                "contract_violation",
-                "word timing contains invalid numeric value",
-            )
-        })
+        .ok_or(WordContractError::InvalidNumber)
 }
 
 fn require_linux() -> Result<(), TranscribeError> {
@@ -353,9 +373,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        COMPUTE_TYPE, HealthState, MODEL_FILENAME, ParakeetServer, connect, get_model_info,
-        map_ureq_error, parse_transcription_response, probe_health, read_placement, read_port,
-        transcribe_with_timeout,
+        COMPUTE_TYPE, HealthState, MODEL_FILENAME, ParakeetServer, WordContractError, connect,
+        get_model_info, map_ureq_error, parse_transcription_response, parse_verbose_json,
+        probe_health, read_placement, read_port, transcribe_with_timeout,
     };
     use crate::TranscribeError;
     use crate::config::{parakeet_cpp_device, read_transcribe_config};
@@ -604,6 +624,40 @@ mod tests {
 
         assert!(response.words.is_empty());
         assert_eq!(response.text, "");
+    }
+
+    #[test]
+    fn shared_verbose_parser_marks_each_contract_failure_and_cpp_maps_it_hard() {
+        let cases = [
+            ("{", "invalid_json"),
+            ("[]", "invalid_json"),
+            ("{}", "contract_violation"),
+            (r#"{"words":[],"text":"hello"}"#, "contract_violation"),
+            (r#"{"words":[1]}"#, "contract_violation"),
+            (r#"{"words":[{}]}"#, "contract_violation"),
+            (
+                r#"{"words":[{"word":"hello","start":"bad","end":1.0}]}"#,
+                "contract_violation",
+            ),
+        ];
+
+        for (index, (payload, expected_reason)) in cases.into_iter().enumerate() {
+            let marker = parse_verbose_json(payload).unwrap_err();
+            match (index, marker) {
+                (0, WordContractError::InvalidJson(_))
+                | (1, WordContractError::NotObject)
+                | (2, WordContractError::MissingWords)
+                | (3, WordContractError::TextWithoutTimings)
+                | (4, WordContractError::WordNotObject)
+                | (5, WordContractError::MissingKey("word"))
+                | (6, WordContractError::InvalidNumber) => {}
+                (_, marker) => panic!("unexpected contract marker: {marker:?}"),
+            }
+            assert_failure_reason(
+                parse_transcription_response(payload).unwrap_err(),
+                expected_reason,
+            );
+        }
     }
 
     #[test]

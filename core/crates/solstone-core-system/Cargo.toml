@@ -40,6 +40,11 @@ test = false
 bench = false
 
 [[test]]
+name = "partition_differential"
+path = "tests/partition_differential.rs"
+required-features = ["differential"]
+
+[[test]]
 name = "stt_backend_choice_differential"
 path = "tests/stt_backend_choice_differential.rs"
 required-features = ["differential"]

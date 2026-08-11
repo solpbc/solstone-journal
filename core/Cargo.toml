@@ -31,6 +31,8 @@ members = [
     "crates/solstone-core-retention-cli",
     "crates/solstone-core-transcribe",
     "crates/solstone-core-transcribe-cli",
+    "crates/solstone-core-ced-sys",
+    "crates/solstone-core-sound-tags",
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",
     "crates/solstone-core-sol-bin",
@@ -112,6 +114,8 @@ solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }
 solstone-core-transcribe = { path = "crates/solstone-core-transcribe" }
 solstone-core-transcribe-cli = { path = "crates/solstone-core-transcribe-cli" }
+solstone-core-ced-sys = { path = "crates/solstone-core-ced-sys" }
+solstone-core-sound-tags = { path = "crates/solstone-core-sound-tags" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
@@ -145,6 +149,7 @@ hdbscan = { version = "0.12.0", default-features = false, features = ["serial"] 
 image = { version = "0.25.9", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 imageproc = { version = "0.27.0", default-features = false }
 log = "0.4.29"
+libloading = "=0.8.9"
 md5 = "0.8.1"
 nix = { version = "0.30.1", default-features = false, features = ["fs"] }
 ort = { version = "=2.0.0-rc.12", default-features = false }

@@ -15,11 +15,14 @@ axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 futures-core = "0.3.33"
 ndarray = "=0.17.2"
+nix = { workspace = true, features = ["signal"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-speaker-id.workspace = true

@@ -46,6 +46,11 @@ name = "transfer_send_differential"
 path = "tests/transfer_send_differential.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "export_differential"
+path = "tests/export_differential.rs"
+required-features = ["differential"]
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"

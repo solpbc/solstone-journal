@@ -1,0 +1,1168 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Native speaker-attribution writes and their owner-contamination admission gate.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::sync::Arc;
+
+use axum::body::to_bytes;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
+use chrono::Utc;
+use serde_json::{Map, Value, json};
+use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_entity::{EncoderIdentity, normalize_embedding, read_journal_principal};
+use solstone_core_speaker_resolve::owner_contamination_screen::{
+    ContaminationProbe, ContaminationScreen, screen_owner_contamination,
+};
+use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
+
+use crate::JournalRoot;
+
+const OWNER_TOO_CLOSE: (&str, &str, StatusCode) = (
+    "speaker_owner_voice_too_close",
+    "I couldn't save that voice because it sounds too much like yours.",
+    StatusCode::BAD_REQUEST,
+);
+const OWNER_NOT_ENOUGH: (&str, &str, StatusCode) = (
+    "speaker_owner_centroid_required",
+    "I couldn't run that speaker command until your owner voice is set up.",
+    StatusCode::CONFLICT,
+);
+const OWNER_DAMAGED: (&str, &str, StatusCode) = (
+    "speaker_owner_voice_reference_invalid",
+    "I couldn't save that voice because your owner voice reference needs attention.",
+    StatusCode::CONFLICT,
+);
+
+pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match request_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let fields = match assign_fields(&body) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
+        Ok(lock) => lock,
+        Err(error) => return write_error(error.to_string(), true),
+    };
+    let segment = segment(&root.0, &fields.day, &fields.stream, &fields.segment_key);
+    let labels = match labels(&segment) {
+        Some(value) => value,
+        None => return review_unavailable(),
+    };
+    let current = label(&labels, fields.sentence_id);
+    if current.is_some_and(|row| {
+        row.get("speaker").and_then(Value::as_str) == Some(fields.speaker.as_str())
+            && row.get("method").and_then(Value::as_str) == Some("user_assigned")
+    }) {
+        let principal = read_journal_principal(&root.0)
+            .ok()
+            .flatten()
+            .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+        let mut response = json!({"success":true,"status":"already_assigned"});
+        if principal.as_deref() == Some(fields.speaker.as_str()) {
+            response["owner_bootstrap_outcome"] = json!("not_attempted");
+        }
+        return Json(response).into_response();
+    }
+    if current
+        .and_then(|row| row.get("speaker").and_then(Value::as_str))
+        .is_some()
+    {
+        return err(
+            "speaker_attribution_state_invalid",
+            "I couldn't apply that change because the sentence isn't in the right state.",
+            "Pick a sentence without a speaker.",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    if !sentence_exists(&segment, &fields.source, fields.sentence_id) {
+        return sentence_missing("Pick a different sentence with an embedding.");
+    }
+    if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
+        return response;
+    }
+    let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
+        Some(value) => value,
+        None => return sentence_missing("Pick a different sentence with an embedding."),
+    };
+    if let Err(response) = contamination_allowed(&root.0, &fields, &embedding) {
+        return response;
+    }
+    let old_method = current
+        .and_then(|row| row.get("method").and_then(Value::as_str))
+        .map(str::to_owned);
+    if let Err(error) = write_voiceprint(&root.0, &fields, embedding) {
+        return write_error(error, false);
+    }
+    if let Err(error) = patch(
+        &segment,
+        fields.sentence_id,
+        &fields.speaker,
+        "user_assigned",
+        true,
+    ) {
+        return write_error(error, true);
+    }
+    if let Err(error) = correction(
+        &segment,
+        fields.sentence_id,
+        None,
+        &fields.speaker,
+        old_method.as_deref(),
+    ) {
+        return write_error(error, true);
+    }
+    if let Err(error) = action(
+        &root.0,
+        "attribution_assign",
+        json!({"day":fields.day,"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"speaker":fields.speaker}),
+    ) {
+        return write_error(error, true);
+    }
+    let principal = read_journal_principal(&root.0)
+        .ok()
+        .flatten()
+        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+    let mut response = json!({"success":true,"status":"assigned","speaker":fields.speaker});
+    if principal.as_deref() == Some(fields.speaker.as_str()) {
+        owner_bootstrap_response(
+            &mut response,
+            crate::speakers_owner_write::bootstrap_owner_from_manual_tags(&root.0),
+        );
+    }
+    Json(response).into_response()
+}
+
+pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match request_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let fields = match common_fields(&body, false) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
+        Ok(lock) => lock,
+        Err(error) => return write_error(error.to_string(), true),
+    };
+    let segment = segment(&root.0, &fields.day, &fields.stream, &fields.segment_key);
+    let labels = match labels(&segment) {
+        Some(value) => value,
+        None => return review_unavailable(),
+    };
+    let Some(current) = label(&labels, fields.sentence_id) else {
+        return sentence_missing("Sentence not found in labels");
+    };
+    let Some(speaker) = current.get("speaker").and_then(Value::as_str) else {
+        return err(
+            "speaker_attribution_state_invalid",
+            "I couldn't apply that change because the sentence isn't in the right state.",
+            "sentence has no speaker assignment yet",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    let speaker = speaker.to_owned();
+    if let Err(response) = entity_allowed(&root.0, &speaker) {
+        return response;
+    }
+    if current.get("confidence").and_then(Value::as_str) == Some("high")
+        && current.get("method").and_then(Value::as_str) == Some("user_confirmed")
+    {
+        return Json(json!({"success":true,"status":"already_confirmed"})).into_response();
+    }
+    if current.get("confidence").and_then(Value::as_str) != Some("medium") {
+        return err(
+            "speaker_attribution_state_invalid",
+            "I couldn't apply that change because the sentence isn't in the right state.",
+            "attribution is not medium confidence",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
+        Some(value) => value,
+        None => return sentence_missing("Sentence embedding not found"),
+    };
+    let target = Fields {
+        speaker,
+        ..fields.clone()
+    };
+    if let Err(response) = contamination_allowed(&root.0, &target, &embedding) {
+        return response;
+    }
+    if let Err(error) = write_voiceprint(&root.0, &target, embedding) {
+        return write_error(error, false);
+    }
+    let old_method = current.get("method").and_then(Value::as_str);
+    if let Err(error) = patch(
+        &segment,
+        target.sentence_id,
+        &target.speaker,
+        "user_confirmed",
+        false,
+    ) {
+        return write_error(error, true);
+    }
+    if let Err(error) = correction(
+        &segment,
+        target.sentence_id,
+        Some(&target.speaker),
+        &target.speaker,
+        old_method,
+    ) {
+        return write_error(error, true);
+    }
+    if let Err(error) = action(
+        &root.0,
+        "attribution_confirm",
+        json!({"day":target.day,"stream":target.stream,"segment_key":target.segment_key,"source":target.source,"sentence_id":target.sentence_id,"speaker":target.speaker}),
+    ) {
+        return write_error(error, true);
+    }
+    maybe_bootstrap_owner(&root.0, &target.speaker);
+    Json(json!({"success":true,"status":"confirmed","speaker":target.speaker})).into_response()
+}
+
+pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match request_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let fields = match common_fields(&body, true) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    let _trust = match solstone_core_entity::hold_entity_trust_lock(&root.0) {
+        Ok(lock) => lock,
+        Err(error) => return write_error(error.to_string(), true),
+    };
+    if let Err(response) = entity_allowed(&root.0, &fields.speaker) {
+        return response;
+    }
+    let segment = segment(&root.0, &fields.day, &fields.stream, &fields.segment_key);
+    let labels = match labels(&segment) {
+        Some(value) => value,
+        None => return review_unavailable(),
+    };
+    let Some(current) = label(&labels, fields.sentence_id) else {
+        return sentence_missing("Sentence not found in labels");
+    };
+    let old_speaker = current
+        .get("speaker")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let old_method = current
+        .get("method")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    if old_speaker.as_deref() == Some(fields.speaker.as_str()) {
+        return Json(json!({"success":true,"status":"already_correct"})).into_response();
+    }
+    let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
+        Some(value) => value,
+        None => return sentence_missing("Sentence embedding not found"),
+    };
+    if let Err(response) = contamination_allowed(&root.0, &fields, &embedding) {
+        return response;
+    }
+    let removal = if let Some(old) = old_speaker.as_deref() {
+        let key = json!({"day":fields.day,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id});
+        let rendered_key = format!(
+            "{}/{}/{}#{}",
+            fields.day, fields.segment_key, fields.source, fields.sentence_id
+        );
+        match solstone_core_speaker_resolve::direct_voiceprints::remove_voiceprint(
+            &root.0,
+            old,
+            key,
+            &encoder(),
+        ) {
+            Ok(report) => json!({
+                "outcome": if report.removed_count == 0 { "not_found" } else if report.file_removed { "unlinked" } else { "removed" },
+                "entity_id": old,
+                "keys_removed": if report.removed_count == 0 { Vec::new() } else { vec![rendered_key] },
+                "file_deleted": report.file_removed,
+                "path": format!("entities/{old}/voiceprints.npz"),
+            }),
+            Err(error) => return write_error(error.to_string(), false),
+        }
+    } else {
+        json!({"outcome":"not_found","entity_id":"","keys_removed":[],"file_deleted":false,"path":Value::Null})
+    };
+    if let Err(error) = write_voiceprint(&root.0, &fields, embedding) {
+        return write_error(error, false);
+    }
+    if let Err(error) = patch(
+        &segment,
+        fields.sentence_id,
+        &fields.speaker,
+        "user_corrected",
+        false,
+    ) {
+        return write_error(error, true);
+    }
+    if let Err(error) = correction(
+        &segment,
+        fields.sentence_id,
+        old_speaker.as_deref(),
+        &fields.speaker,
+        old_method.as_deref(),
+    ) {
+        return write_error(error, true);
+    }
+    if let Err(error) = action(
+        &root.0,
+        "attribution_correct",
+        json!({"day":fields.day,"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id,"old_speaker":old_speaker,"new_speaker":fields.speaker,"voiceprint_removal":removal}),
+    ) {
+        return write_error(error, true);
+    }
+    maybe_bootstrap_owner(&root.0, &fields.speaker);
+    let propagation_offer = propagation_offer(&root.0, old_speaker.as_deref(), &fields.speaker);
+    Json(json!({"success":true,"status":"corrected","old_speaker":old_speaker,"new_speaker":fields.speaker,"voiceprint_removal":removal,"propagation_offer":propagation_offer})).into_response()
+}
+
+fn propagation_offer(
+    root: &std::path::Path,
+    old_speaker: Option<&str>,
+    new_speaker: &str,
+) -> Value {
+    let Some(old_speaker) = old_speaker else {
+        return json!({
+            "available":false,
+            "reason":"no_old_speaker",
+            "statement_count":0,
+            "segment_count":0,
+        });
+    };
+    let Ok(result) = propagate_speaker_correction(root, old_speaker, new_speaker, false) else {
+        return json!({
+            "available":false,
+            "reason":"preview_failed",
+            "statement_count":0,
+            "segment_count":0,
+        });
+    };
+    let statement_count = result["statement_count"].as_u64().unwrap_or(0);
+    let segment_count = result["segment_count"].as_u64().unwrap_or(0);
+    if statement_count == 0 {
+        return json!({
+            "available":false,
+            "reason":"no_changes",
+            "statement_count":0,
+            "segment_count":0,
+        });
+    }
+    json!({
+        "available":true,
+        "statement_count":statement_count,
+        "segment_count":segment_count,
+        "route":"/app/speakers/api/propagate-correction",
+        "request":{"old_speaker":old_speaker,"new_speaker":new_speaker,"commit":false},
+    })
+}
+
+fn maybe_bootstrap_owner(root: &std::path::Path, speaker: &str) {
+    if read_journal_principal(root)
+        .ok()
+        .flatten()
+        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned))
+        .as_deref()
+        == Some(speaker)
+    {
+        let _ = crate::speakers_owner_write::bootstrap_owner_from_manual_tags(root);
+    }
+}
+
+fn owner_bootstrap_response(response: &mut Value, result: Result<Value, String>) {
+    let fields = match result {
+        Ok(value)
+            if value["status"] == "confirmed"
+                && value.as_object().is_some_and(|object| {
+                    object.len() == 4
+                        && object.contains_key("status")
+                        && object.contains_key("principal_id")
+                        && object.contains_key("cluster_size")
+                        && object.contains_key("evidence_tier")
+                }) =>
+        {
+            json!({"owner_bootstrap_outcome":"built"})
+        }
+        Ok(value) if value["status"] == "confirmed" && value["next_step"] == "rebuild_owner" => {
+            json!({"owner_bootstrap_outcome":"already_built"})
+        }
+        Ok(value) if value["status"] == "low_quality" => {
+            let mut fields = json!({"owner_bootstrap_outcome":"refused"});
+            if let Some(guidance) = value.get("guidance").and_then(Value::as_str) {
+                fields["owner_bootstrap_guidance"] = json!(guidance);
+            }
+            fields
+        }
+        Ok(value) if value["error_kind"] == "voiceprint_busy" => {
+            json!({"owner_bootstrap_outcome":"busy"})
+        }
+        _ => json!({"owner_bootstrap_outcome":"failed"}),
+    };
+    response
+        .as_object_mut()
+        .expect("attribution response is an object")
+        .extend(
+            fields
+                .as_object()
+                .expect("bootstrap fields are an object")
+                .clone(),
+        );
+}
+
+/// Native propagation keeps the existing resolver and accumulation primitive; the full
+/// segment-reprocessing policy is deliberately kept here rather than reopening the Python path.
+pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match request_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Some(old_speaker) = body
+        .get("old_speaker")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    else {
+        return required("Missing required fields");
+    };
+    let Some(new_speaker) = body
+        .get("new_speaker")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    else {
+        return required("Missing required fields");
+    };
+    if old_speaker == new_speaker {
+        return err(
+            "invalid_request_value",
+            "I couldn't use one of those values.",
+            "Choose two different speakers.",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    if let Err(response) = entity_allowed(&root.0, old_speaker) {
+        return response;
+    }
+    if let Err(response) = entity_allowed(&root.0, new_speaker) {
+        return response;
+    }
+    let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let result = match propagate_speaker_correction(&root.0, old_speaker, new_speaker, commit) {
+        Ok(result) => result,
+        Err(error) => return write_error(error, true),
+    };
+    let statement_count = result["statement_count"].as_u64().unwrap_or(0);
+    if commit
+        && statement_count > 0
+        && let Err(error) = action(
+            &root.0,
+            "attribution_propagate_correction",
+            json!({"old_speaker":old_speaker,"new_speaker":new_speaker,"statement_count":statement_count,"segment_count":result["segment_count"]}),
+        )
+    {
+        return write_error(error, true);
+    }
+    Json(result).into_response()
+}
+
+fn propagate_speaker_correction(
+    root: &std::path::Path,
+    old_speaker: &str,
+    new_speaker: &str,
+    commit: bool,
+) -> Result<Value, String> {
+    let mut results = Vec::new();
+    let mut changes = Vec::new();
+    let mut errors = Vec::new();
+    let chronicle = root.join("chronicle");
+    for day in fs::read_dir(&chronicle).into_iter().flatten().flatten() {
+        let day_name = day.file_name().to_string_lossy().into_owned();
+        for stream in fs::read_dir(day.path()).into_iter().flatten().flatten() {
+            let stream_name = stream.file_name().to_string_lossy().into_owned();
+            for entry in fs::read_dir(stream.path()).into_iter().flatten().flatten() {
+                let segment_key = entry.file_name().to_string_lossy().into_owned();
+                let labels_path = entry.path().join("talents/speaker_labels.json");
+                let current = fs::read(&labels_path)
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .and_then(|value| value.get("labels").and_then(Value::as_array).cloned());
+                let Some(current) = current else {
+                    continue;
+                };
+                if !current.iter().any(|label| {
+                    label.get("speaker").and_then(Value::as_str) == Some(old_speaker)
+                        || label.get("speaker").and_then(Value::as_str) == Some(new_speaker)
+                }) {
+                    continue;
+                }
+                let outcome = solstone_core_speaker_resolve::resolve::resolve(
+                    root,
+                    &day_name,
+                    &stream_name,
+                    &segment_key,
+                    !commit,
+                    Utc::now().timestamp_millis(),
+                );
+                match outcome {
+                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(
+                        output,
+                    )) => {
+                        let updated = crate::speakers_cli_maintenance::labels(&output);
+                        let segment_changes = propagation_changes(
+                            &current,
+                            &updated,
+                            &day_name,
+                            &stream_name,
+                            &segment_key,
+                            output.source.as_deref(),
+                        );
+                        let accumulated = if commit && !segment_changes.is_empty() {
+                            let metadata = crate::speakers_cli_maintenance::metadata(&output);
+                            solstone_core_speaker_id::labels::write_full_labels(
+                                &entry.path(),
+                                updated,
+                                &metadata,
+                            )
+                            .map_err(|error| error.to_string())?;
+                            crate::speakers_cli_maintenance::accumulate(
+                                root,
+                                &day_name,
+                                &stream_name,
+                                &segment_key,
+                                &output,
+                                Utc::now().timestamp_millis(),
+                            )
+                            .map_err(|error| error.to_string())?
+                        } else {
+                            json!({})
+                        };
+                        let changed_count = segment_changes.len();
+                        changes.extend(segment_changes.clone());
+                        results.push(json!({
+                            "status": if changed_count > 0 { "changed" } else { "unchanged" },
+                            "day":day_name,
+                            "stream":stream_name,
+                            "segment_key":segment_key,
+                            "source":output.source,
+                            "changes":segment_changes,
+                            "changed_count":changed_count,
+                            "accumulated":accumulated,
+                            "error":Value::Null,
+                        }));
+                    }
+                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing) => {
+                        results.push(json!({"status":"skipped","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"segment_missing"}));
+                    }
+                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty {
+                        source,
+                    }) => {
+                        results.push(json!({"status":"skipped","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
+                    }
+                    Ok(solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid) => {
+                        let error = "owner centroid unavailable".to_owned();
+                        errors.push(format!("{day_name}/{stream_name}/{segment_key}: {error}"));
+                        results.push(json!({"status":"error","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
+                    }
+                    Err(error) => {
+                        let error = error.to_string();
+                        errors.push(format!("{day_name}/{stream_name}/{segment_key}: {error}"));
+                        results.push(json!({"status":"error","day":day_name,"stream":stream_name,"segment_key":segment_key,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
+                    }
+                }
+            }
+        }
+    }
+    let statement_count = changes.len();
+    let segment_count = changes
+        .iter()
+        .filter_map(|change| {
+            Some((
+                change.get("day")?.as_str()?,
+                change.get("stream")?.as_str()?,
+                change.get("segment_key")?.as_str()?,
+            ))
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    Ok(json!({
+        "status":if commit { "applied" } else { "preview" },
+        "commit":commit,
+        "old_speaker":old_speaker,
+        "new_speaker":new_speaker,
+        "segments_scanned":results.len(),
+        "segments_considered":results.len(),
+        "segment_count":segment_count,
+        "statement_count":statement_count,
+        "changes":changes,
+        "segments":results,
+        "errors":errors,
+    }))
+}
+
+fn propagation_changes(
+    current: &[Value],
+    updated: &[Value],
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    source: Option<&str>,
+) -> Vec<Value> {
+    let current = labels_by_sentence(current);
+    let updated = labels_by_sentence(updated);
+    current
+        .keys()
+        .chain(updated.keys())
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|sentence_id| {
+            let before = current.get(&sentence_id);
+            let after = updated.get(&sentence_id);
+            let (from_speaker, from_method, from_confidence) = label_fields(before.copied());
+            let (to_speaker, to_method, to_confidence) = label_fields(after.copied());
+            ((from_speaker, from_method, from_confidence) != (to_speaker, to_method, to_confidence))
+                .then(|| {
+                    json!({
+                        "day":day,
+                        "stream":stream,
+                        "segment_key":segment_key,
+                        "source":source,
+                        "sentence_id":sentence_id,
+                        "from_speaker":from_speaker,
+                        "to_speaker":to_speaker,
+                        "from_method":from_method,
+                        "to_method":to_method,
+                        "from_confidence":from_confidence,
+                        "to_confidence":to_confidence,
+                    })
+                })
+        })
+        .collect()
+}
+
+fn labels_by_sentence(labels: &[Value]) -> BTreeMap<i64, &Value> {
+    labels
+        .iter()
+        .filter_map(|label| {
+            label
+                .get("sentence_id")
+                .and_then(Value::as_i64)
+                .map(|sentence_id| (sentence_id, label))
+        })
+        .collect()
+}
+
+fn label_fields(label: Option<&Value>) -> (Option<&str>, Option<&str>, Option<&str>) {
+    label.map_or((None, None, None), |label| {
+        (
+            label.get("speaker").and_then(Value::as_str),
+            label.get("method").and_then(Value::as_str),
+            label.get("confidence").and_then(Value::as_str),
+        )
+    })
+}
+
+#[derive(Clone)]
+struct Fields {
+    day: String,
+    stream: String,
+    segment_key: String,
+    source: String,
+    sentence_id: i64,
+    speaker: String,
+}
+
+#[allow(clippy::result_large_err)]
+fn assign_fields(value: &Value) -> Result<Fields, Response> {
+    let object = value.as_object().ok_or_else(missing_body)?;
+    let day = object
+        .get("day")
+        .ok_or_else(|| required("Missing required fields"))?;
+    let stream = object
+        .get("stream")
+        .ok_or_else(|| required("Missing required fields"))?;
+    let segment_key = object
+        .get("segment_key")
+        .ok_or_else(|| required("Missing required fields"))?;
+    let source = object
+        .get("source")
+        .ok_or_else(|| required("Missing required fields"))?;
+    let sentence_id = object
+        .get("sentence_id")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| required("Missing required fields"))?;
+    let speaker = object
+        .get("speaker")
+        .map(ToString::to_string)
+        .map(|value| value.trim_matches('"').to_owned())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| required("Missing required fields"))?;
+    let Some(day) = day.as_str() else {
+        return Err(invalid_day(
+            "Use a valid day, stream, and segment, then pick a sentence.",
+        ));
+    };
+    let Some(segment_key) = segment_key.as_str() else {
+        return Err(invalid_segment_or_stream(
+            "Use a valid day, stream, and segment, then pick a sentence.",
+        ));
+    };
+    let Some(stream) = stream.as_str() else {
+        return Err(invalid_segment_or_stream(
+            "Use a valid day, stream, and segment, then pick a sentence.",
+        ));
+    };
+    let Some(source) = source.as_str() else {
+        return Err(err(
+            "internal_error",
+            "I couldn't complete that request.",
+            "source was not a string",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    };
+    if !valid_day(day) {
+        return Err(invalid_day(
+            "Use a valid day, stream, and segment, then pick a sentence.",
+        ));
+    }
+    if !valid_segment(segment_key) || !valid_stream(stream) {
+        return Err(invalid_segment_or_stream(
+            "Use a valid day, stream, and segment, then pick a sentence.",
+        ));
+    }
+    Ok(Fields {
+        day: day.to_owned(),
+        stream: stream.to_owned(),
+        segment_key: segment_key.to_owned(),
+        source: source.to_owned(),
+        sentence_id,
+        speaker,
+    })
+}
+#[allow(clippy::result_large_err)]
+fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
+    let object = value.as_object().ok_or_else(missing_body)?;
+    let day = object
+        .get("day")
+        .cloned()
+        .ok_or_else(|| required("Missing required fields"))?;
+    let stream = object
+        .get("stream")
+        .cloned()
+        .ok_or_else(|| required("Missing required fields"))?;
+    let segment_key = object
+        .get("segment_key")
+        .cloned()
+        .ok_or_else(|| required("Missing required fields"))?;
+    let source = object
+        .get("source")
+        .cloned()
+        .ok_or_else(|| required("Missing required fields"))?;
+    let sentence_id = object
+        .get("sentence_id")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| required("Missing required fields"))?;
+    // Python's confirm/correct regex calls on non-strings raise; retain the 500 class rather than
+    // converting those malformed values into a normal validation refusal.
+    let (Some(day), Some(stream), Some(segment_key), Some(source)) = (
+        day.as_str(),
+        stream.as_str(),
+        segment_key.as_str(),
+        source.as_str(),
+    ) else {
+        return Err(err(
+            "internal_error",
+            "I couldn't complete that request.",
+            "regex input was not a string",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    };
+    if !valid_day(day) {
+        return Err(invalid_day("Invalid day format"));
+    }
+    if !valid_segment(segment_key) {
+        return Err(invalid_segment_or_stream("Invalid segment key"));
+    }
+    if !valid_stream(stream) {
+        return Err(invalid_segment_or_stream("Invalid stream"));
+    }
+    let speaker = if correction {
+        object
+            .get("new_speaker")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| required("Missing required fields"))?
+            .to_owned()
+    } else {
+        String::new()
+    };
+    Ok(Fields {
+        day: day.to_owned(),
+        stream: stream.to_owned(),
+        segment_key: segment_key.to_owned(),
+        source: source.to_owned(),
+        sentence_id,
+        speaker,
+    })
+}
+
+#[allow(clippy::result_large_err)]
+fn contamination_allowed(
+    root: &std::path::Path,
+    fields: &Fields,
+    embedding: &[f32],
+) -> Result<(), Response> {
+    let owner = read_journal_principal(root)
+        .ok()
+        .flatten()
+        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
+    if owner.as_deref() == Some(fields.speaker.as_str()) {
+        return Ok(());
+    }
+    if normalize_embedding(embedding).is_none() {
+        return Err(sentence_missing("Sentence embedding not found"));
+    }
+    let probe = ContaminationProbe {
+        day: fields.day.clone(),
+        stream: fields.stream.clone(),
+        segment_key: fields.segment_key.clone(),
+        source: fields.source.clone(),
+        sentence_id: fields.sentence_id,
+    };
+    match screen_owner_contamination(root, &probe, &encoder()) {
+        Ok(ContaminationScreen::Clear { .. }) => Ok(()),
+        Ok(ContaminationScreen::Contaminated { .. }) => Err(owner_refusal(
+            OWNER_TOO_CLOSE,
+            "Embedding too similar to owner voice; cannot save",
+        )),
+        Ok(ContaminationScreen::Indeterminate { reason }) => {
+            match classify_indeterminate(&reason) {
+                Ok(class) => Err(owner_refusal(class, &reason)),
+                Err(response) => Err(response),
+            }
+        }
+        Err(error) => Err(owner_refusal(OWNER_DAMAGED, &error.to_string())),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn classify_indeterminate(
+    reason: &str,
+) -> Result<(&'static str, &'static str, StatusCode), Response> {
+    if let Some(tier_reason) = OwnerTierReason::ALL
+        .iter()
+        .copied()
+        .find(|tier_reason| tier_reason.wire_str() == reason)
+    {
+        return Ok(classify_owner_tier(tier_reason));
+    }
+    match reason {
+        // The sentence lookup and normalization checks run before the screen, so these
+        // responses should be unreachable unless the sidecar changed underneath us.
+        "probe_not_found" | "probe_zero_norm" => Ok(OWNER_DAMAGED),
+        _ => Err(err(
+            "internal_error",
+            "I couldn't complete that request.",
+            &format!("unknown owner-contamination reason: {reason}"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
+    }
+}
+
+fn classify_owner_tier(reason: OwnerTierReason) -> (&'static str, &'static str, StatusCode) {
+    match reason {
+        OwnerTierReason::NoPrincipal
+        | OwnerTierReason::ConfirmedAbsent
+        | OwnerTierReason::VoiceprintsAbsent
+        | OwnerTierReason::BelowRowFloor
+        | OwnerTierReason::BelowEmbeddingFloor => OWNER_NOT_ENOUGH,
+        OwnerTierReason::ConfirmedUnreadable
+        | OwnerTierReason::ConfirmedIncomplete
+        | OwnerTierReason::ConfirmedZeroNorm
+        | OwnerTierReason::VoiceprintsUnreadable
+        | OwnerTierReason::ProvisionalZeroNorm => OWNER_DAMAGED,
+    }
+}
+
+fn write_voiceprint(
+    root: &std::path::Path,
+    fields: &Fields,
+    embedding: Vec<f32>,
+) -> Result<(), String> {
+    solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(root, &fields.speaker, embedding, json!({"day":fields.day,"stream":fields.stream,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id}), &encoder()).map_err(|error| error.to_string())
+}
+fn patch(
+    segment: &std::path::Path,
+    sentence_id: i64,
+    speaker: &str,
+    method: &str,
+    allow_insert: bool,
+) -> Result<(), String> {
+    let mut patch = Map::new();
+    patch.insert("speaker".to_owned(), json!(speaker));
+    patch.insert("confidence".to_owned(), json!("high"));
+    patch.insert("method".to_owned(), json!(method));
+    solstone_core_speaker_id::labels::patch_labels(segment, &[(sentence_id, patch)], allow_insert)
+        .map_err(|error| error.to_string())
+}
+fn correction(
+    segment: &std::path::Path,
+    sentence_id: i64,
+    original_speaker: Option<&str>,
+    corrected_speaker: &str,
+    original_method: Option<&str>,
+) -> Result<(), String> {
+    solstone_core_speaker_id::corrections::append_correction(segment, json!({"sentence_id":sentence_id,"original_speaker":original_speaker,"corrected_speaker":corrected_speaker,"original_method":original_method,"timestamp":Utc::now().timestamp_millis()}).as_object().expect("correction is object").clone()).map_err(|error| error.to_string())
+}
+#[allow(clippy::result_large_err)]
+fn entity_allowed(root: &std::path::Path, speaker: &str) -> Result<(), Response> {
+    let entity = solstone_core_entity::load_all_journal_entities(root)
+        .ok()
+        .into_iter()
+        .flatten()
+        .find(|entity| entity.id == speaker);
+    match entity {
+        Some(entity) if entity.is_blocked() => Err(err(
+            "entity_blocked",
+            "I couldn't use that speaker because it's blocked.",
+            &format!("Entity '{speaker}' is blocked"),
+            StatusCode::BAD_REQUEST,
+        )),
+        Some(_) => Ok(()),
+        None => Err(err(
+            "speaker_not_found",
+            "I couldn't find that speaker.",
+            &format!("Entity '{speaker}' not found"),
+            StatusCode::NOT_FOUND,
+        )),
+    }
+}
+fn labels(segment: &std::path::Path) -> Option<Vec<Value>> {
+    fs::read(segment.join("talents/speaker_labels.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| value.get("labels").and_then(Value::as_array).cloned())
+}
+fn label(rows: &[Value], sentence_id: i64) -> Option<&Value> {
+    rows.iter()
+        .find(|row| row.get("sentence_id").and_then(Value::as_i64) == Some(sentence_id))
+}
+fn sentence_exists(segment: &std::path::Path, source: &str, sentence_id: i64) -> bool {
+    fs::read_to_string(segment.join(format!("{source}.jsonl")))
+        .ok()
+        .is_some_and(|body| {
+            body.lines().any(|line| {
+                serde_json::from_str::<Value>(line)
+                    .ok()
+                    .and_then(|value| value.get("id").and_then(Value::as_i64))
+                    .is_some_and(|id| id == sentence_id)
+            })
+        })
+}
+fn sentence_embedding(
+    segment: &std::path::Path,
+    source: &str,
+    sentence_id: i64,
+) -> Option<Vec<f32>> {
+    solstone_core_speaker_id::embeddings::load_embeddings_file(
+        &segment.join(format!("{source}.npz")),
+    )
+    .ok()
+    .flatten()
+    .and_then(|file| {
+        file.statements
+            .into_iter()
+            .find_map(|(id, embedding)| (id == sentence_id).then_some(embedding))
+    })
+    .filter(|embedding| normalize_embedding(embedding).is_some())
+}
+fn segment(root: &std::path::Path, day: &str, stream: &str, key: &str) -> std::path::PathBuf {
+    root.join("chronicle").join(day).join(stream).join(key)
+}
+fn valid_day(value: &str) -> bool {
+    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+fn valid_segment(value: &str) -> bool {
+    let mut pieces = value.split('_');
+    pieces
+        .next()
+        .is_some_and(|piece| !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit()))
+        && pieces.next().is_some_and(|piece| {
+            !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        && pieces.next().is_none()
+}
+fn valid_stream(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    (first.is_ascii_lowercase() || first.is_ascii_digit())
+        && bytes.all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+        })
+}
+fn invalid_day(detail: &str) -> Response {
+    err(
+        "invalid_day",
+        "I couldn't use that day.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn invalid_segment_or_stream(detail: &str) -> Response {
+    err(
+        "invalid_segment_or_stream",
+        "I couldn't use that segment or stream.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
+}
+pub(crate) fn action(root: &std::path::Path, action: &str, params: Value) -> Result<(), String> {
+    solstone_core_facets::append_journal_action_log(root, "app", "speakers", action, params)
+        .map_err(|error| error.to_string())
+}
+async fn request_json(request: Request) -> Result<Value, Response> {
+    let bytes = to_bytes(request.into_body(), usize::MAX)
+        .await
+        .map_err(|_| missing_body())?;
+    if bytes.is_empty() {
+        return Err(missing_body());
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        err(
+            "invalid_json_request",
+            "I couldn't read that JSON request.",
+            "request body must be a JSON object",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
+    if value.is_null() {
+        Err(missing_body())
+    } else {
+        Ok(value)
+    }
+}
+fn owner_refusal(reason: (&str, &str, StatusCode), detail: &str) -> Response {
+    err(reason.0, reason.1, detail, reason.2)
+}
+fn sentence_missing(detail: &str) -> Response {
+    err(
+        "speaker_sentence_missing",
+        "I couldn't find that sentence. Try refreshing the page.",
+        detail,
+        StatusCode::NOT_FOUND,
+    )
+}
+fn review_unavailable() -> Response {
+    err(
+        "speaker_review_unavailable",
+        "I couldn't load that speaker review.",
+        "No speaker labels found",
+        StatusCode::NOT_FOUND,
+    )
+}
+fn missing_body() -> Response {
+    err(
+        "missing_request_body",
+        "I couldn't find any data in that request.",
+        "No data provided",
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn required(detail: &str) -> Response {
+    err(
+        "missing_required_field",
+        "I couldn't find a required field.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn write_error(detail: String, labels: bool) -> Response {
+    if detail.contains("busy") || detail.contains("lock") {
+        let (code, message) = if labels {
+            (
+                "speaker_labels_busy",
+                "I couldn't update those speaker attributions right now because they were busy. Try again in a moment.",
+            )
+        } else {
+            (
+                "speaker_voiceprint_busy",
+                "I couldn't update that voice right now because it was busy. Try again in a moment.",
+            )
+        };
+        err(code, message, &detail, StatusCode::SERVICE_UNAVAILABLE)
+    } else {
+        err(
+            "speaker_command_failed",
+            "I couldn't finish that speaker command.",
+            &detail,
+            StatusCode::BAD_REQUEST,
+        )
+    }
+}
+fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {
+    error_envelope(code, message, detail, status).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OWNER_DAMAGED, OWNER_NOT_ENOUGH, classify_indeterminate, classify_owner_tier};
+    use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
+
+    #[test]
+    fn every_indeterminate_owner_tier_is_refused_by_an_exhaustive_mapping() {
+        let expected = [
+            OWNER_NOT_ENOUGH,
+            OWNER_NOT_ENOUGH,
+            OWNER_DAMAGED,
+            OWNER_DAMAGED,
+            OWNER_DAMAGED,
+            OWNER_NOT_ENOUGH,
+            OWNER_DAMAGED,
+            OWNER_NOT_ENOUGH,
+            OWNER_NOT_ENOUGH,
+            OWNER_DAMAGED,
+        ];
+        assert_eq!(
+            OwnerTierReason::ALL.map(classify_owner_tier),
+            expected,
+            "a new tier reason must be deliberately assigned to a refusal class"
+        );
+        for reason in [
+            "no_principal",
+            "confirmed_absent",
+            "confirmed_unreadable",
+            "confirmed_incomplete",
+            "confirmed_zero_norm",
+            "voiceprints_absent",
+            "voiceprints_unreadable",
+            "below_row_floor",
+            "below_embedding_floor",
+            "provisional_zero_norm",
+        ] {
+            let class = classify_indeterminate(reason).expect("known reason maps");
+            assert!(class == OWNER_NOT_ENOUGH || class == OWNER_DAMAGED);
+            assert_ne!(class.0, "speaker_owner_voice_too_close");
+        }
+        assert!(classify_indeterminate("unknown_reason").is_err());
+    }
+}

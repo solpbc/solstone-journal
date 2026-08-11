@@ -22,8 +22,14 @@ name = "transcribe_vad_differential"
 path = "tests/transcribe_vad_differential.rs"
 required-features = ["differential"]
 
+[[test]]
+name = "transcribe_sound_tags_differential"
+path = "tests/transcribe_sound_tags_differential.rs"
+required-features = ["differential"]
+
 [dependencies]
 chrono = { workspace = true }
+getrandom = { workspace = true }
 nix = { workspace = true, features = ["process", "signal"] }
 serde_json = { workspace = true }
 solstone-core-observe-audio = { workspace = true }
@@ -33,8 +39,14 @@ solstone-core-processing-record = { workspace = true }
 solstone-core-callosum = { workspace = true }
 solstone-core-journal-config = { workspace = true }
 solstone-core-journal-io = { workspace = true }
+solstone-core-sound-tags = { workspace = true }
+solstone-core-local = { workspace = true }
+solstone-core-spp-ratls = { workspace = true }
 tempfile = "3.24.0"
 ureq = { workspace = true, features = ["multipart"] }
+
+[dev-dependencies]
+solstone-core-spp-attest = { workspace = true }
 
 [lints]
 workspace = true

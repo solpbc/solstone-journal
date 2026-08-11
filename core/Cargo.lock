@@ -2497,6 +2497,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-ced-sys"
+version = "1.0.22"
+dependencies = [
+ "libloading",
+]
+
+[[package]]
 name = "solstone-core-cli"
 version = "1.0.22"
 dependencies = [
@@ -2575,12 +2582,14 @@ dependencies = [
  "chrono",
  "futures-core",
  "ndarray",
+ "nix",
  "serde",
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
  "solstone-core-entity",
  "solstone-core-entity-matching",
+ "solstone-core-facets",
  "solstone-core-journal-io",
  "solstone-core-npy",
  "solstone-core-speaker-id",
@@ -3064,6 +3073,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-sound-tags"
+version = "1.0.22"
+dependencies = [
+ "log",
+ "serde_json",
+ "solstone-core-ced-sys",
+ "tempfile",
+]
+
+[[package]]
 name = "solstone-core-speaker-id"
 version = "1.0.22"
 dependencies = [
@@ -3192,14 +3211,19 @@ name = "solstone-core-transcribe"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "getrandom 0.3.4",
  "nix",
  "serde_json",
  "solstone-core-callosum",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-observe-audio",
  "solstone-core-processing-record",
+ "solstone-core-sound-tags",
  "solstone-core-speaker-id",
+ "solstone-core-spp-attest",
+ "solstone-core-spp-ratls",
  "solstone-core-system",
  "tempfile",
  "ureq",
@@ -3226,6 +3250,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-callosum",
+ "solstone-core-entity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "spl-core",

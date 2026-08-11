@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
 use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
@@ -20,14 +20,15 @@ use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand,
-    GrabOptions, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
-    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, ServiceOptions, SpeakerResolveCommand, SplCommand,
-    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
-    evaluate_args, version_line,
+    Command, ConveyOptions, ExportOptions, GRAB_HELP, GRAB_USAGE, GenerateCommand,
+    GenerateSessionOptions, GrabCommand, GrabOptions, IndexerCommand, IndexerCountsOptions,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP,
+    OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions, SpeakerResolveCommand, SplCommand,
+    TRANSFER_USAGE, TransferCommand, TransferExportOptions, TransferImportOptions,
+    TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -115,11 +116,40 @@ fn main() -> ExitCode {
         Ok(Command::Brain(command)) => run_brain(command),
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
+        Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::Observer(command)) => run_observer(command),
+        Ok(Command::TransferHelp(text)) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::TransferUsage) => {
+            eprint!("{TRANSFER_USAGE}");
+            eprintln!("journal transfer: error: invalid arguments");
+            ExitCode::from(2)
+        }
+        Ok(Command::ObserverHelp) => {
+            print!("{OBSERVER_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ObserverPruneHelp) => {
+            print!("{OBSERVER_PRUNE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ObserverPruneUsage) => {
+            eprint!("{OBSERVER_PRUNE_USAGE}");
+            eprintln!("journal observer prune: error: invalid arguments");
+            ExitCode::from(2)
+        }
+        Ok(Command::ObserverUsage) => {
+            // argparse's usage-error exit code, matching the reference.
+            eprint!("{OBSERVER_USAGE}");
+            eprintln!("journal observer: error: invalid arguments");
+            ExitCode::from(2)
+        }
         Err(_) => {
             eprint!("{USAGE}");
             ExitCode::from(EXIT_USAGE)
@@ -152,12 +182,13 @@ impl solstone_core_grab::GrabDiagnostics for StderrGrabDiagnostics {
 fn run_grab(command: GrabCommand) -> ExitCode {
     match command {
         GrabCommand::Help => {
-            print!("{GRAB_USAGE}");
+            print!("{GRAB_HELP}");
             ExitCode::SUCCESS
         }
         GrabCommand::ParseError(message) => {
             eprint!("{GRAB_USAGE}");
-            eprintln!("error: {message}");
+            // argparse prefixes the verb; the bare `error:` named no command.
+            eprintln!("journal grab: error: {message}");
             ExitCode::from(2)
         }
         GrabCommand::Run(options) => run_grab_request(options),
@@ -203,6 +234,130 @@ fn run_grab_request(options: GrabOptions) -> ExitCode {
                 solstone_core_grab::GrabFailureClass::Runtime => ExitCode::from(1),
             }
         }
+    }
+}
+
+fn run_export(options: ExportOptions) -> ExitCode {
+    if options.to.starts_with("http://") || options.to.starts_with("https://") {
+        eprintln!(
+            "journal export: error: Sending to a URL with a key is retired. Use '--to <label>' to send to a paired peer."
+        );
+        return ExitCode::from(2);
+    }
+    if options.key.is_some() {
+        eprintln!("journal export: error: '--key' is retired; use '--to <label>' without '--key'");
+        return ExitCode::from(2);
+    }
+    let journal = match resolve_indexer_journal_path(options.journal_override) {
+        Ok(line) => line.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let requested_all = requested_export_areas_are_full(options.only.as_deref());
+    let to = options.to.clone();
+    match solstone_core_transfer::peer_export(
+        &journal,
+        solstone_core_transfer::PeerExportRequest {
+            to,
+            only: options.only,
+            day: options.day,
+            dry_run: options.dry_run,
+        },
+    ) {
+        Ok(report) => {
+            print_export_summary(&report);
+            if !options.dry_run
+                && requested_all
+                && !report.any_failed
+                && io::stdin().is_terminal()
+                && let Ok(peer) = solstone_core_transfer::resolve_peer(&journal, &options.to)
+            {
+                print!("Unpair \"{}\" now? (y/N) ", peer.label);
+                let _ = io::stdout().flush();
+                let mut answer = String::new();
+                if io::stdin().read_line(&mut answer).is_ok()
+                    && answer.trim().eq_ignore_ascii_case("y")
+                {
+                    match solstone_core_transfer::unpair_peer(&journal, &peer) {
+                        Ok(solstone_core_transfer::UnpairOutcome::Unpaired) => {
+                            println!("Unpaired \"{}\".", peer.label)
+                        }
+                        Ok(solstone_core_transfer::UnpairOutcome::Rejected { status, body }) => {
+                            println!(
+                                "Failed to unpair \"{}\": HTTP {status}: {}",
+                                peer.label,
+                                String::from_utf8_lossy(&body[..body.len().min(200)])
+                            )
+                        }
+                        Err(error) => println!("Failed to unpair \"{}\": {error}", peer.label),
+                    }
+                } else {
+                    println!("Keeping peer \"{}\".", peer.label);
+                }
+            }
+            if report.any_failed {
+                ExitCode::from(1)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(error) => {
+            let exit = match &error {
+                solstone_core_transfer::TransferError::Bridge(_)
+                | solstone_core_transfer::TransferError::Transport(_) => 1,
+                _ => 2,
+            };
+            let message = match error {
+                solstone_core_transfer::TransferError::InvalidExportAreas => "--only must contain one or more of: config, entities, facets, imports, segments".to_string(),
+                _ => error.to_string(),
+            };
+            eprintln!("journal export: error: {message}");
+            ExitCode::from(exit)
+        }
+    }
+}
+
+fn requested_export_areas_are_full(only: Option<&str>) -> bool {
+    let Some(only) = only else {
+        return true;
+    };
+    let areas = only
+        .split(',')
+        .map(str::trim)
+        .filter(|area| !area.is_empty())
+        .collect::<std::collections::BTreeSet<_>>();
+    areas
+        == ["config", "entities", "facets", "imports", "segments"]
+            .into_iter()
+            .collect()
+}
+
+fn print_export_summary(report: &solstone_core_transfer::PeerExportReport) {
+    println!("\n--- Export Summary ---");
+    for result in &report.results {
+        if let Some(error) = &result.error {
+            println!("  {}: FAILED ({error})", result.area);
+            continue;
+        }
+        let mut parts = Vec::new();
+        if result.sent != 0 {
+            parts.push(format!("{} sent", result.sent));
+        }
+        if result.skipped != 0 {
+            parts.push(format!("{} skipped", result.skipped));
+        }
+        if result.staged != 0 {
+            parts.push(format!("{} staged", result.staged));
+        }
+        if result.failed != 0 {
+            parts.push(format!("{} failed", result.failed));
+        }
+        if !result.errors.is_empty() {
+            parts.push(format!("{} error(s)", result.errors.len()));
+        }
+        if parts.is_empty() {
+            parts.push("nothing to send".to_string());
+        }
+        println!("  {}: {}", result.area, parts.join(", "));
     }
 }
 
@@ -4569,6 +4724,23 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn export_prompt_requires_the_full_area_set() {
+        assert!(requested_export_areas_are_full(None));
+        assert!(requested_export_areas_are_full(Some(
+            "segments,imports,entities,facets,config"
+        )));
+        assert!(requested_export_areas_are_full(Some(
+            " config , entities , facets , imports , segments "
+        )));
+        assert!(!requested_export_areas_are_full(Some(
+            "segments,imports,entities,facets"
+        )));
+        assert!(requested_export_areas_are_full(Some(
+            "segments,segments,imports,entities,facets,config"
+        )));
+    }
 
     struct FailingWriter;
 

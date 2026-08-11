@@ -6,7 +6,6 @@
 // Config extraction is implemented before the stage machine that consumes it.
 #[allow(dead_code)]
 mod args;
-#[allow(dead_code)]
 mod audio;
 #[allow(dead_code)]
 mod backend;
@@ -35,6 +34,7 @@ pub use speakers::SpeakerAnalyzeError;
 use std::path::{Path, PathBuf};
 
 use solstone_core_speaker_id::writer::SpeakerTranscriptWriteError;
+use solstone_core_spp_ratls::AttestationStateStore;
 
 /// The standalone binary's completed result, including Python-compatible batch summary text.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -101,8 +101,15 @@ pub fn run_cli(
     )
     .map_err(CliRunError::Transcribe)?;
     args::check_speakers_analyze_installation().map_err(CliRunError::Cli)?;
+    let attestation_state = AttestationStateStore::new();
     if parsed.all {
-        return run_all(journal_path, parsed.redo, &backend.backend, &config);
+        return run_all(
+            journal_path,
+            parsed.redo,
+            &backend.backend,
+            &config,
+            &attestation_state,
+        );
     }
     let audio_path = args::resolve_single_audio_path(
         parsed
@@ -118,6 +125,7 @@ pub fn run_cli(
         parsed.redo,
         Some(&backend.backend),
         &config,
+        &attestation_state,
     )
     .map_err(CliRunError::Transcribe)?;
     Ok(CliRun::default())
@@ -128,9 +136,17 @@ fn run_all(
     redo: bool,
     backend: &str,
     config: &solstone_core_journal_config::JournalConfigRead,
+    attestation_state: &AttestationStateStore,
 ) -> Result<CliRun, CliRunError> {
     run_all_with(discover_audio_files(journal_path), redo, |audio_path| {
-        stage::process_one(audio_path, journal_path, redo, Some(backend), config)
+        stage::process_one(
+            audio_path,
+            journal_path,
+            redo,
+            Some(backend),
+            config,
+            attestation_state,
+        )
     })
 }
 
@@ -265,13 +281,17 @@ pub enum TranscribeError {
     ParakeetCppDeferred { reason: String, detail: String },
     /// The parakeet.cpp service or client contract failed permanently.
     ParakeetCppFailure { reason: String, detail: String },
+    /// The CoreML Parakeet helper is unavailable for retryable work.
+    ParakeetCoremlDeferred { reason: String, detail: String },
+    /// The CoreML Parakeet helper or its contract failed permanently.
+    ParakeetCoremlFailure { reason: String, detail: String },
     /// Confidential transcription was refused or unavailable for retryable work.
     ConfidentialDeferred { reason: String, detail: String },
     /// The native speaker-analysis helper could not produce a usable result.
     SpeakerAnalysis(SpeakerAnalyzeError),
     /// Audio decoding failed before a terminal failure record was written.
     Decode { detail: String },
-    /// This wave deliberately has no CoreML or confidential STT dispatch implementation.
+    /// The resolved backend is unavailable on this host platform.
     BackendNotImplemented { backend: String },
 }
 
@@ -316,6 +336,8 @@ impl TranscribeError {
             Self::SttSurface { .. } => 1,
             Self::ParakeetCppDeferred { .. } => 69,
             Self::ParakeetCppFailure { .. } => 1,
+            Self::ParakeetCoremlDeferred { .. } => 69,
+            Self::ParakeetCoremlFailure { .. } => 1,
             Self::ConfidentialDeferred { .. } => 69,
             Self::SpeakerAnalysis(_) => 1,
             Self::Decode { .. } | Self::BackendNotImplemented { .. } => 1,
@@ -407,6 +429,10 @@ impl std::fmt::Display for TranscribeError {
             | Self::ParakeetCppFailure { reason, detail } => {
                 write!(formatter, "parakeet.cpp {reason}: {detail}")
             }
+            Self::ParakeetCoremlDeferred { reason, detail }
+            | Self::ParakeetCoremlFailure { reason, detail } => {
+                write!(formatter, "parakeet CoreML {reason}: {detail}")
+            }
             Self::ConfidentialDeferred { reason, detail } => {
                 write!(formatter, "confidential transcription {reason}: {detail}")
             }
@@ -415,7 +441,7 @@ impl std::fmt::Display for TranscribeError {
             Self::BackendNotImplemented { backend } => {
                 write!(
                     formatter,
-                    "STT backend is not implemented in this wave: {backend}"
+                    "STT backend is unavailable on this host platform: {backend}"
                 )
             }
         }
@@ -443,6 +469,8 @@ impl std::error::Error for TranscribeError {
             | Self::SttSurface { .. }
             | Self::ParakeetCppDeferred { .. }
             | Self::ParakeetCppFailure { .. }
+            | Self::ParakeetCoremlDeferred { .. }
+            | Self::ParakeetCoremlFailure { .. }
             | Self::ConfidentialDeferred { .. } => None,
             Self::Decode { .. } | Self::BackendNotImplemented { .. } => None,
         }

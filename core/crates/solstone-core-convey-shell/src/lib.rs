@@ -60,6 +60,8 @@ pub mod registry;
 pub mod session;
 pub mod session_gate;
 mod speakers;
+mod speakers_analyze_client;
+mod speakers_attribution;
 mod speakers_calendar;
 mod speakers_cli_discovery;
 mod speakers_cli_entities;
@@ -67,10 +69,12 @@ mod speakers_cli_maintenance;
 mod speakers_cli_owner;
 mod speakers_cli_reads;
 mod speakers_discovery;
+mod speakers_discovery_write;
 mod speakers_known;
 mod speakers_media;
 mod speakers_npz;
 mod speakers_owner;
+mod speakers_owner_write;
 mod speakers_quality;
 mod speakers_review;
 mod sse;
@@ -277,6 +281,66 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route(
             "/app/speakers/api/attribute-segment",
             post(speakers_cli_maintenance::attribute),
+        )
+        .route(
+            "/app/speakers/api/assign-attribution",
+            post(speakers_attribution::assign),
+        )
+        .route(
+            "/app/speakers/api/confirm-attribution",
+            post(speakers_attribution::confirm),
+        )
+        .route(
+            "/app/speakers/api/correct-attribution",
+            post(speakers_attribution::correct),
+        )
+        .route(
+            "/app/speakers/api/propagate-correction",
+            post(speakers_attribution::propagate),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify",
+            post(speakers_discovery_write::identify),
+        )
+        .route(
+            "/app/speakers/api/discovery/identify/undo",
+            post(speakers_discovery_write::undo),
+        )
+        .route(
+            "/app/speakers/api/discovery/dismiss",
+            post(speakers_discovery_write::dismiss),
+        )
+        .route(
+            "/app/speakers/api/discovery/scan",
+            post(speakers_discovery_write::scan),
+        )
+        .route(
+            "/app/speakers/api/owner/detect",
+            post(speakers_owner_write::detect),
+        )
+        .route(
+            "/app/speakers/api/owner/build-from-tags",
+            post(speakers_owner_write::build_from_tags),
+        )
+        .route(
+            "/app/speakers/api/owner/rebuild",
+            post(speakers_owner_write::rebuild),
+        )
+        .route(
+            "/app/speakers/api/owner/confirm",
+            post(speakers_owner_write::confirm),
+        )
+        .route(
+            "/app/speakers/api/owner/reject",
+            post(speakers_owner_write::reject),
+        )
+        .route(
+            "/app/speakers/api/owner/classify",
+            post(speakers_owner_write::classify),
+        )
+        .route(
+            "/app/speakers/api/owner/ready",
+            post(speakers_owner_write::ready),
         )
         .route(
             "/app/speakers/api/merge-names",

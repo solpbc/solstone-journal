@@ -88,9 +88,9 @@ pub(crate) fn reduce_audio_if_needed(
         .flatten()
 }
 
-/// W5c owns the sound-tagging engine; absence is intentionally best-effort.
-pub(crate) fn tag_audio(_audio: &[f32]) -> Option<Value> {
-    None
+/// Sound tagging is intentionally best-effort.
+pub(crate) fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
+    solstone_core_sound_tags::tag_audio(audio, journal_path)
 }
 
 fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
@@ -352,8 +352,7 @@ mod tests {
 
     use super::{
         ERROR_SCHEMA, RESPONSE_SCHEMA, VAD_BINARY_ENV, VAD_BINARY_NAME, parse_vad_error,
-        parse_vad_response, should_skip_reduction, speech_ratio, tag_audio,
-        vad_binary_candidate_from,
+        parse_vad_response, should_skip_reduction, speech_ratio, vad_binary_candidate_from,
     };
     use crate::TranscribeError;
 
@@ -476,11 +475,6 @@ mod tests {
         let error = helper_error(75);
 
         assert_eq!(error.exit_code(), 75);
-    }
-
-    #[test]
-    fn sound_tags_are_absent_until_w5c() {
-        assert_eq!(tag_audio(&[0.0, 1.0]), None);
     }
 
     fn helper_error(exit_code: i32) -> TranscribeError {

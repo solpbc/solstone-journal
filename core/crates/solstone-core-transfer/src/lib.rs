@@ -8,6 +8,8 @@
 mod export;
 mod import;
 mod manifest;
+mod peer;
+mod peer_export;
 mod rescan;
 mod send;
 
@@ -17,10 +19,10 @@ use thiserror::Error;
 
 pub use export::export;
 pub use import::import;
+pub use peer::{ResolvedPeer, UnpairOutcome, resolve_peer, unpair_peer};
+pub use peer_export::{PeerExportAreaResult, PeerExportReport, PeerExportRequest, peer_export};
 pub use rescan::{RescanOutcome, send_indexer_rescan};
-pub use send::{
-    RESERVED_SEGMENT_FILENAMES, ResolvedPeer, SendReport, SendRequest, SendTerminal, send,
-};
+pub use send::{RESERVED_SEGMENT_FILENAMES, SendReport, SendRequest, SendTerminal, send};
 
 /// Input to [`export`].
 #[derive(Debug, Clone)]
@@ -135,6 +137,9 @@ pub enum TransferError {
     /// The supplied day is invalid.
     #[error("day must be YYYYMMDD")]
     InvalidDay,
+    /// `journal export --only` named no valid export area.
+    #[error("invalid export area selection")]
+    InvalidExportAreas,
     #[error("refusing symlinked journal day directory: {0}")]
     PoisonedDayDirectory(PathBuf),
     /// The day directory does not exist.
@@ -181,6 +186,9 @@ pub enum TransferError {
     /// Manifest JSON or shape is invalid.
     #[error("invalid transfer manifest: {0}")]
     Manifest(String),
+    /// A peer export manifest query was rejected by the remote journal.
+    #[error("{0}")]
+    ManifestQuery(String),
     /// A tar member is invalid for this archive format.
     #[error("invalid archive member: {0}")]
     ArchiveMember(String),
