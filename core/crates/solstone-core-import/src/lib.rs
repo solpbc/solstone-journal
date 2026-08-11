@@ -22,6 +22,7 @@ pub mod events;
 pub mod metadata;
 pub mod publish;
 pub mod staging;
+pub mod stream_name;
 pub mod sync_audio;
 pub mod sync_obsidian;
 pub mod sync_plaud;
@@ -36,6 +37,10 @@ pub use contract::{
 pub use dedupe::{
     ManifestMatch, ManifestScan, ManifestSkip, ManifestSkipReason, ManifestWriteRequest,
     find_manifest_by_hash, hash_source, windowed_source_hash, write_manifest,
+};
+pub use detect::{
+    ManifestSummary, RegistrySource, ResolutionError, ResolutionOptions, ResolutionOutcome,
+    ResolutionSeams, ResolvedSource, SkipReason,
 };
 pub use events::{
     EnrichmentReady, EventEmitter, FileImported, ImporterCompleted, ImporterError, ImporterStarted,
@@ -53,6 +58,9 @@ pub use publish::{
 pub use staging::{
     SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
     stage_source,
+};
+pub use timestamp::{
+    AutoTimestamp, DetectedTimestamp, Timestamp, TimestampError, validate_timestamp,
 };
 
 /// Error returned by an importer seam that has no implementation yet.

@@ -2870,6 +2870,7 @@ name = "solstone-core-import"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
