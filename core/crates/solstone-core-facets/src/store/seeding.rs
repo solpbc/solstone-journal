@@ -741,6 +741,22 @@ mod tests {
     }
 
     #[test]
+    fn seed_entities_skips_high_confidence_ambiguity_without_a_durable_id() {
+        let temporary = TempDir::new();
+        create_entity(temporary.path(), "sam_one", "Sam Person");
+        create_entity(temporary.path(), "sam_two", "Sam Person");
+
+        let results =
+            seed_entities(temporary.path(), "work", "20260806", &[input("Sam Person")]).unwrap();
+
+        assert_eq!(entity_count(temporary.path()), 2);
+        assert!(matches!(
+            results[0].outcome,
+            SeedEntityOutcome::SkippedAmbiguous { ambiguity_id: None }
+        ));
+    }
+
+    #[test]
     fn seed_entities_reports_lock_timeout_without_aborting_the_batch() {
         let temporary = TempDir::new();
         let mut observed = input("Observed Person");

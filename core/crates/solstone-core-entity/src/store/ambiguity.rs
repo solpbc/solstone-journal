@@ -404,6 +404,16 @@ fn invalid_row(path: &Path, line: usize, detail: impl Into<String>) -> EntitySto
     }
 }
 
+/// Validate the shared `entities/ambiguities.jsonl` schema.
+///
+/// `observed_tier` intentionally remains limited to low-confidence tiers 5
+/// through 8. Three live Python surfaces strictly validate this artifact
+/// (`solstone/apps/entities/routes.py:1105`, `:1125`, and
+/// `solstone/think/curation.py:331`), while
+/// `solstone/think/entities/ambiguities.py:341` strictly loads it before every
+/// write. Accepting a high-confidence row here would therefore not merely make
+/// that row unreadable to Python; it would wedge every later Python ambiguity
+/// write for the journal.
 pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str> {
     let schema_version = row.get("schema_version");
     if !is_integer(schema_version)
@@ -451,8 +461,8 @@ pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str>
     }
 
     let observed_tier = row.get("observed_tier");
-    if !is_integer(observed_tier) || !matches!(observed_tier.and_then(Value::as_i64), Some(1..=8)) {
-        return Err("observed_tier is not a match tier");
+    if !is_integer(observed_tier) || !matches!(observed_tier.and_then(Value::as_i64), Some(5..=8)) {
+        return Err("observed_tier is not a low-confidence tier");
     }
     let observed_tier = observed_tier
         .and_then(Value::as_i64)

@@ -242,7 +242,7 @@ fn ac3_name_resolution_excludes_non_person_and_resolves_person() {
 }
 
 #[test]
-fn ac20_ambiguous_name_returns_ambiguity_id_and_visible_candidates() {
+fn low_confidence_ambiguous_name_returns_visible_candidates() {
     let temporary = Temp::new();
     entity(temporary.path(), "alex-one", "Alex One", "Person");
     entity(temporary.path(), "alex-two", "Alex Two", "Person");
@@ -250,17 +250,43 @@ fn ac20_ambiguous_name_returns_ambiguity_id_and_visible_candidates() {
     target_request.name = Some("Alex".to_owned());
 
     let IdentifyTargetOutcome::Ambiguous {
-        ambiguity_id: _,
+        ambiguity_id,
         candidates,
     } = resolve_identify_target(&target_request).unwrap()
     else {
         panic!("Alex should retain the two low-confidence Person candidates");
     };
+    assert_eq!(ambiguity_id.as_deref(), Some(""));
     assert_eq!(
         candidates
             .iter()
             .map(|candidate| candidate.id.as_str())
             .collect::<Vec<_>>(),
         vec!["alex-one", "alex-two"]
+    );
+}
+
+#[test]
+fn high_confidence_ambiguous_name_has_no_durable_ambiguity_id() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "sam-one", "Sam Person", "Person");
+    entity(temporary.path(), "sam-two", "Sam Person", "Person");
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("Sam Person".to_owned());
+
+    let IdentifyTargetOutcome::Ambiguous {
+        ambiguity_id,
+        candidates,
+    } = resolve_identify_target(&target_request).unwrap()
+    else {
+        panic!("Sam Person should retain the two high-confidence Person candidates");
+    };
+    assert_eq!(ambiguity_id, None);
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["sam-one", "sam-two"]
     );
 }

@@ -148,7 +148,7 @@ fn high_confidence_tiers_resolve_without_creating_ambiguities() {
 }
 
 #[test]
-fn high_confidence_same_name_collision_records_exact_ambiguity() {
+fn high_confidence_same_name_collision_reports_exact_ambiguity_without_recording() {
     let temporary = TempDir::new();
     let result = resolve(
         temporary.path(),
@@ -179,13 +179,12 @@ fn high_confidence_same_name_collision_records_exact_ambiguity() {
             .windows(2)
             .all(|pair| pair[0].score == pair[1].score)
     );
-    let row = single_ambiguity_row(temporary.path());
-    assert_eq!(row["observed_tier"], 1);
-    assert_eq!(row["ranked_candidates"].as_array().map(Vec::len), Some(2));
+    assert_eq!(result.ambiguity_id, None);
+    assert!(!ambiguities_path(temporary.path()).exists());
 }
 
 #[test]
-fn high_confidence_shared_email_collision_records_email_ambiguity() {
+fn high_confidence_shared_email_collision_reports_email_ambiguity_without_recording() {
     let temporary = TempDir::new();
     let result = resolve(
         temporary.path(),
@@ -216,9 +215,8 @@ fn high_confidence_shared_email_collision_records_email_ambiguity() {
             .windows(2)
             .all(|pair| pair[0].score == pair[1].score)
     );
-    let row = single_ambiguity_row(temporary.path());
-    assert_eq!(row["observed_tier"], 3);
-    assert_eq!(row["ranked_candidates"].as_array().map(Vec::len), Some(2));
+    assert_eq!(result.ambiguity_id, None);
+    assert!(!ambiguities_path(temporary.path()).exists());
 }
 
 #[test]

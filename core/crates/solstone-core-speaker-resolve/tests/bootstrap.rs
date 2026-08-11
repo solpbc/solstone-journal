@@ -8,9 +8,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, MalformedPolicy, VoiceprintItem, load_entity_voiceprints_file,
-    read_ambiguities, read_entity_identity, save_voiceprints_batch,
+    EncoderIdentity, EntityResolutionEntity, EntityResolutionOutcome, VoiceprintItem,
+    load_entity_voiceprints_file, read_entity_identity,
+    record_entity_resolution_from_name_evidence, save_voiceprints_batch,
 };
+use solstone_core_entity_matching::MatchTier;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
     BootstrapOutcome, BootstrapRequest, BootstrapStats, MergeNamesOutcome, SeedFromImportsOutcome,
@@ -397,7 +399,7 @@ fn ac19_bootstrap_keeps_ambiguous_single_speaker_names_unmatched() {
 }
 
 #[test]
-fn bootstrap_keeps_same_named_persons_unmatched_and_records_ambiguity() {
+fn bootstrap_keeps_same_named_persons_unmatched_without_recording_ambiguity() {
     let temporary = Temp::new();
     entity(temporary.path(), "principal", "Principal", "Person", true);
     entity(temporary.path(), "sam-one", "Sam Person", "Person", false);
@@ -424,15 +426,46 @@ fn bootstrap_keeps_same_named_persons_unmatched_and_records_ambiguity() {
             .join("entities/sam-two/voiceprints.npz")
             .exists()
     );
-    let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
-    assert_eq!(rows.len(), 1);
-    let ids = rows[0]["ranked_candidates"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|candidate| candidate["id"].as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(ids, ["sam-one", "sam-two"]);
+    assert!(!temporary.path().join("entities/ambiguities.jsonl").exists());
+
+    let entities = [
+        EntityResolutionEntity {
+            id: Some("sam-one".to_owned()),
+            name: "Sam Person".to_owned(),
+            aka: Vec::new(),
+            emails: Vec::new(),
+            blocked: false,
+        },
+        EntityResolutionEntity {
+            id: Some("sam-two".to_owned()),
+            name: "Sam Person".to_owned(),
+            aka: Vec::new(),
+            emails: Vec::new(),
+            blocked: false,
+        },
+    ];
+    let resolution = record_entity_resolution_from_name_evidence(
+        temporary.path(),
+        "Sam Person",
+        &entities,
+        json!({"kind": "journal"}),
+        json!({"lane": "speaker_resolve.bootstrap", "segment_id": "120000_300"}),
+        90.0,
+        false,
+    )
+    .unwrap();
+    assert_eq!(resolution.outcome, EntityResolutionOutcome::Ambiguous);
+    assert_eq!(resolution.tier, Some(MatchTier::Exact));
+    assert_eq!(resolution.ambiguity_id, None);
+    assert_eq!(
+        resolution
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        ["sam-one", "sam-two"]
+    );
+    assert!(!temporary.path().join("entities/ambiguities.jsonl").exists());
 }
 
 #[test]

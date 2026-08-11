@@ -607,15 +607,11 @@ fn ambiguity_fixture_rows_obey_strict_validation_in_order() {
             "entities/ambiguities.jsonl",
             &fixture_row["row"],
         );
-        // High-confidence ambiguity rows are now valid. This frozen legacy row
-        // remains invalid because its candidates retain tier 5.
-        let expected_refusal =
-            if fixture_row["rule"] == "observed_tier is one of the low-confidence tiers 5-8" {
-                "ranked candidate has an invalid tier"
-            } else {
-                fixture_row["refusal"].as_str().unwrap()
-            };
-        assert_ambiguity_refusal(temporary.path(), expected_refusal, 1);
+        assert_ambiguity_refusal(
+            temporary.path(),
+            fixture_row["refusal"].as_str().unwrap(),
+            1,
+        );
     }
 }
 

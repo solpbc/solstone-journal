@@ -36,7 +36,7 @@ pub struct IdentifyTargetRequest {
     pub reviewed_near_match_entity_ids: Vec<String>,
 }
 
-/// A visible low-confidence name-resolution candidate.
+/// A visible ambiguous name-resolution candidate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentifyCandidateRow {
     pub id: String,
@@ -67,7 +67,7 @@ pub enum IdentifyTargetOutcome {
         has_voice: bool,
     },
     Ambiguous {
-        ambiguity_id: String,
+        ambiguity_id: Option<String>,
         candidates: Vec<IdentifyCandidateRow>,
     },
     NoMatch {
@@ -176,7 +176,7 @@ pub fn resolve_identify_target(
     if request.resolve_only || !request.create_new {
         return Ok(match resolution.outcome {
             EntityResolutionOutcome::Ambiguous => IdentifyTargetOutcome::Ambiguous {
-                ambiguity_id: resolution.ambiguity_id.unwrap_or_default(),
+                ambiguity_id: resolution.ambiguity_id,
                 candidates,
             },
             EntityResolutionOutcome::NoMatch => IdentifyTargetOutcome::NoMatch { candidates },

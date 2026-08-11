@@ -21,7 +21,7 @@
 //! case-insensitive, email, slug, and fuzzy tiers. When two or more distinct
 //! candidate records satisfy the same deciding key, this module reports
 //! ambiguity instead of copying `solstone.think.entities.matching.find_matching_entity`'s
-//! last-write-wins or first-tie behavior. The public compatibility wrapper maps
+//! last-write-wins or first-tie behavior. The public wrapper maps
 //! that ambiguity to no match, so callers that do not need candidate detail
 //! remain conservative. This matters for speaker bootstrap: two same-named
 //! `Person` entities must not silently cross-attach voiceprints through

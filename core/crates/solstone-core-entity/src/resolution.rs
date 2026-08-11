@@ -319,6 +319,12 @@ pub fn record_entity_resolution_from_name_evidence(
     )
 }
 
+/// Resolve a query against the supplied entity slice.
+///
+/// A high-confidence collision is returned with `ambiguity_id: None`: it is
+/// reported in-process but deliberately not recorded, because the shared
+/// ambiguity artifact cannot carry high-confidence tiers. Low-confidence
+/// ambiguities keep their existing durable-recording behavior.
 #[allow(clippy::too_many_arguments)]
 fn record_entity_resolution_impl(
     journal_root: &Path,
@@ -418,18 +424,13 @@ fn record_entity_resolution_impl(
                 tier,
                 &colliding_entities,
             ));
-            return record_resolution_ambiguity(
-                AmbiguityRecordContext {
-                    journal_root,
-                    query,
-                    normalized_query,
-                    scope,
-                    origin,
-                    read_only,
-                },
-                tier,
+            return Ok(EntityResolution {
+                outcome: EntityResolutionOutcome::Ambiguous,
+                entity_index: None,
+                tier: Some(tier),
                 candidates,
-            );
+                ambiguity_id: None,
+            });
         }
         EntityNameMatchOutcome::Matched { .. }
         | EntityNameMatchOutcome::Ambiguous { .. }

@@ -97,7 +97,7 @@ pub enum BootstrapError {
 pub enum MergeNamesOutcome {
     Ambiguous {
         field: &'static str,
-        ambiguity_id: String,
+        ambiguity_id: Option<String>,
         candidates: Vec<solstone_core_entity::ResolutionCandidate>,
     },
     AliasNotFound,
@@ -516,7 +516,7 @@ fn ambiguous(
 ) -> MergeNamesOutcome {
     MergeNamesOutcome::Ambiguous {
         field,
-        ambiguity_id: resolution.ambiguity_id.unwrap_or_default(),
+        ambiguity_id: resolution.ambiguity_id,
         candidates: resolution.candidates,
     }
 }
