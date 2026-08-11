@@ -176,7 +176,7 @@ fn process_alive(pid: i32) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn process_alive(pid: i32) -> bool {
+pub(crate) fn process_alive(pid: i32) -> bool {
     std::process::Command::new("/bin/ps")
         .args(["-p", &pid.to_string(), "-o", "pid="])
         .output()
@@ -268,7 +268,7 @@ fn nix_signal(kind: SignalKind) -> nix::sys::signal::Signal {
 ///
 /// Lifecycle orphan cleanup owns candidate selection and deliberately uses this
 /// narrow crate-private seam rather than widening the public process API.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn signal_pid(pid: i32, signal: nix::sys::signal::Signal) -> nix::Result<()> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal)
 }
