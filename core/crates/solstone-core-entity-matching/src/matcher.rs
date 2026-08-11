@@ -17,10 +17,19 @@
 //! Slug generation is scoped to the `entity_slug(name)` call path and does not
 //! implement general slugify features: `allow_unicode`, custom `replacements`,
 //! `stopwords`, or word-boundary truncation.
+//! Native matching deliberately refuses ambiguous decisions at the exact,
+//! case-insensitive, email, slug, and fuzzy tiers. When two or more distinct
+//! candidate records satisfy the same deciding key, this module reports
+//! ambiguity instead of copying `solstone.think.entities.matching.find_matching_entity`'s
+//! last-write-wins or first-tie behavior. The public compatibility wrapper maps
+//! that ambiguity to no match, so callers that do not need candidate detail
+//! remain conservative. This matters for speaker bootstrap: two same-named
+//! `Person` entities must not silently cross-attach voiceprints through
+//! `bootstrap_voiceprints`.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::normalize_resolution_query;
 use crate::slug::entity_slug;
@@ -58,24 +67,56 @@ pub struct EntityNameMatch {
     pub tier: MatchTier,
 }
 
+/// Detailed result of one tiered entity-name match attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntityNameMatchOutcome {
+    Matched {
+        candidate_index: usize,
+        tier: MatchTier,
+    },
+    Ambiguous {
+        tier: MatchTier,
+        candidate_indices: Vec<usize>,
+    },
+    NoMatch,
+}
+
 pub fn find_matching_entity(
     detected_name: &str,
     candidates: &[EntityNameCandidate],
     fuzzy_threshold: f64,
 ) -> Option<EntityNameMatch> {
+    match find_matching_entity_detailed(detected_name, candidates, fuzzy_threshold) {
+        EntityNameMatchOutcome::Matched {
+            candidate_index,
+            tier,
+        } => Some(EntityNameMatch {
+            candidate_index,
+            tier,
+        }),
+        EntityNameMatchOutcome::Ambiguous { .. } | EntityNameMatchOutcome::NoMatch => None,
+    }
+}
+
+/// Find one entity name match, retaining collisions at deciding tiers.
+pub fn find_matching_entity_detailed(
+    detected_name: &str,
+    candidates: &[EntityNameCandidate],
+    fuzzy_threshold: f64,
+) -> EntityNameMatchOutcome {
     if detected_name.is_empty() || candidates.is_empty() {
-        return None;
+        return EntityNameMatchOutcome::NoMatch;
     }
 
     let detected_lower = normalize_resolution_query(detected_name);
     let detected_slug = entity_slug(detected_name);
 
-    let mut exact_case_map: BTreeMap<String, usize> = BTreeMap::new();
-    let mut lower_map: BTreeMap<String, usize> = BTreeMap::new();
-    let mut id_map: BTreeMap<String, usize> = BTreeMap::new();
+    let mut exact_case_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    let mut lower_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    let mut id_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut first_word_map: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     let mut fuzzy_candidates = OrderedFuzzyCandidates::default();
-    let mut email_map: BTreeMap<String, usize> = BTreeMap::new();
+    let mut email_map: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
 
     for (candidate_index, candidate) in candidates.iter().enumerate() {
         let name = candidate.name.as_str();
@@ -84,30 +125,46 @@ pub fn find_matching_entity(
             continue;
         }
 
-        exact_case_map.insert(name.to_string(), candidate_index);
-        lower_map.insert(normalize_resolution_query(name), candidate_index);
+        insert_candidate(&mut exact_case_map, name.to_string(), candidate_index);
+        insert_candidate(
+            &mut lower_map,
+            normalize_resolution_query(name),
+            candidate_index,
+        );
 
         if entity_id.is_empty() {
             let name_slug = entity_slug(name);
             if !name_slug.is_empty() {
-                id_map.insert(name_slug, candidate_index);
+                insert_candidate(&mut id_map, name_slug, candidate_index);
             }
         } else {
-            exact_case_map.insert(entity_id.to_string(), candidate_index);
-            lower_map.insert(normalize_resolution_query(entity_id), candidate_index);
-            id_map.insert(entity_id.to_string(), candidate_index);
+            insert_candidate(&mut exact_case_map, entity_id.to_string(), candidate_index);
+            insert_candidate(
+                &mut lower_map,
+                normalize_resolution_query(entity_id),
+                candidate_index,
+            );
+            insert_candidate(&mut id_map, entity_id.to_string(), candidate_index);
         }
 
         for aka in &candidate.aka {
             if !aka.is_empty() {
-                exact_case_map.insert(aka.clone(), candidate_index);
-                lower_map.insert(normalize_resolution_query(aka), candidate_index);
+                insert_candidate(&mut exact_case_map, aka.clone(), candidate_index);
+                insert_candidate(
+                    &mut lower_map,
+                    normalize_resolution_query(aka),
+                    candidate_index,
+                );
             }
         }
 
         for email in &candidate.emails {
             if !email.is_empty() {
-                email_map.insert(normalize_resolution_query(email), candidate_index);
+                insert_candidate(
+                    &mut email_map,
+                    normalize_resolution_query(email),
+                    candidate_index,
+                );
             }
         }
 
@@ -126,31 +183,31 @@ pub fn find_matching_entity(
         }
     }
 
-    if let Some(candidate_index) = exact_case_map.get(detected_name) {
-        return Some(entity_match(*candidate_index, MatchTier::Exact));
+    if let Some(outcome) = map_outcome(&exact_case_map, detected_name, MatchTier::Exact) {
+        return outcome;
     }
 
-    if let Some(candidate_index) = lower_map.get(&detected_lower) {
-        return Some(entity_match(*candidate_index, MatchTier::CaseInsensitive));
+    if let Some(outcome) = map_outcome(&lower_map, &detected_lower, MatchTier::CaseInsensitive) {
+        return outcome;
     }
 
     if detected_name.contains('@')
-        && let Some(candidate_index) = email_map.get(&detected_lower)
+        && let Some(outcome) = map_outcome(&email_map, &detected_lower, MatchTier::Email)
     {
-        return Some(entity_match(*candidate_index, MatchTier::Email));
+        return outcome;
     }
 
     if !detected_slug.is_empty()
-        && let Some(candidate_index) = id_map.get(&detected_slug)
+        && let Some(outcome) = map_outcome(&id_map, &detected_slug, MatchTier::Slug)
     {
-        return Some(entity_match(*candidate_index, MatchTier::Slug));
+        return outcome;
     }
 
     if char_len(detected_name) >= 3 {
         if let Some(matches) = first_word_map.get(&detected_lower)
             && matches.len() == 1
         {
-            return Some(entity_match(matches[0], MatchTier::FirstWord));
+            return matched_outcome(matches[0], MatchTier::FirstWord);
         }
 
         if let Some(detected_first) = detected_name.split_whitespace().next() {
@@ -162,7 +219,7 @@ pub fn find_matching_entity(
             {
                 let matched_name = candidates[matches[0]].name.as_str();
                 if single_token_first_word_match(&detected_first, matched_name) {
-                    return Some(entity_match(matches[0], MatchTier::FirstWord));
+                    return matched_outcome(matches[0], MatchTier::FirstWord);
                 }
             }
         }
@@ -183,7 +240,7 @@ pub fn find_matching_entity(
         })
         .collect();
     if subset_matches.len() == 1 {
-        return Some(entity_match(subset_matches[0], MatchTier::TokenSubset));
+        return matched_outcome(subset_matches[0], MatchTier::TokenSubset);
     }
 
     let prefix_matches: Vec<usize> = candidates
@@ -201,21 +258,50 @@ pub fn find_matching_entity(
         })
         .collect();
     if prefix_matches.len() == 1 {
-        return Some(entity_match(prefix_matches[0], MatchTier::Prefix));
+        return matched_outcome(prefix_matches[0], MatchTier::Prefix);
     }
 
     if char_len(detected_name) >= 4
-        && let Some(candidate_index) =
-            extract_one_fuzzy(detected_name, &fuzzy_candidates, fuzzy_threshold)
+        && let Some(outcome) = extract_one_fuzzy(detected_name, &fuzzy_candidates, fuzzy_threshold)
     {
-        return Some(entity_match(candidate_index, MatchTier::Fuzzy));
+        return outcome;
     }
 
-    None
+    EntityNameMatchOutcome::NoMatch
 }
 
-fn entity_match(candidate_index: usize, tier: MatchTier) -> EntityNameMatch {
-    EntityNameMatch {
+fn insert_candidate(
+    map: &mut BTreeMap<String, BTreeSet<usize>>,
+    key: String,
+    candidate_index: usize,
+) {
+    map.entry(key).or_default().insert(candidate_index);
+}
+
+fn map_outcome(
+    map: &BTreeMap<String, BTreeSet<usize>>,
+    key: &str,
+    tier: MatchTier,
+) -> Option<EntityNameMatchOutcome> {
+    map.get(key).map(|candidate_indices| {
+        if candidate_indices.len() == 1 {
+            matched_outcome(
+                *candidate_indices
+                    .first()
+                    .expect("one candidate index exists"),
+                tier,
+            )
+        } else {
+            EntityNameMatchOutcome::Ambiguous {
+                tier,
+                candidate_indices: candidate_indices.iter().copied().collect(),
+            }
+        }
+    })
+}
+
+fn matched_outcome(candidate_index: usize, tier: MatchTier) -> EntityNameMatchOutcome {
+    EntityNameMatchOutcome::Matched {
         candidate_index,
         tier,
     }
@@ -281,20 +367,41 @@ fn extract_one_fuzzy(
     query: &str,
     fuzzy_candidates: &OrderedFuzzyCandidates,
     fuzzy_threshold: f64,
-) -> Option<usize> {
+) -> Option<EntityNameMatchOutcome> {
     let sorted_query = token_sort(query);
-    let mut best: Option<(f64, usize)> = None;
-    for (candidate, candidate_index) in fuzzy_candidates.iter() {
+    let mut best_score = None;
+    let mut best_indices = BTreeSet::new();
+    for (candidate, candidate_indices) in fuzzy_candidates.iter() {
         let sorted_candidate = token_sort(candidate);
         let score = rapidfuzz::fuzz::ratio(sorted_query.chars(), sorted_candidate.chars()) * 100.0;
         if score >= fuzzy_threshold {
-            match best {
-                Some((best_score, _)) if score <= best_score => {}
-                _ => best = Some((score, candidate_index)),
+            match best_score {
+                Some(current_score) if score < current_score => {}
+                Some(current_score) if score == current_score => {
+                    best_indices.extend(candidate_indices.iter().copied());
+                }
+                _ => {
+                    best_score = Some(score);
+                    best_indices = candidate_indices.clone();
+                }
             }
         }
     }
-    best.map(|(_score, candidate_index)| candidate_index)
+    (!best_indices.is_empty()).then(|| {
+        if best_indices.len() == 1 {
+            matched_outcome(
+                *best_indices
+                    .first()
+                    .expect("one fuzzy candidate index exists"),
+                MatchTier::Fuzzy,
+            )
+        } else {
+            EntityNameMatchOutcome::Ambiguous {
+                tier: MatchTier::Fuzzy,
+                candidate_indices: best_indices.into_iter().collect(),
+            }
+        }
+    })
 }
 
 pub fn char_len(text: &str) -> usize {
@@ -304,7 +411,7 @@ pub fn char_len(text: &str) -> usize {
 #[derive(Debug, Default)]
 struct OrderedFuzzyCandidates {
     keys: Vec<String>,
-    values: BTreeMap<String, usize>,
+    values: BTreeMap<String, BTreeSet<usize>>,
 }
 
 impl OrderedFuzzyCandidates {
@@ -312,19 +419,19 @@ impl OrderedFuzzyCandidates {
         match self.values.entry(key.to_string()) {
             Entry::Vacant(entry) => {
                 self.keys.push(entry.key().clone());
-                entry.insert(candidate_index);
+                entry.insert(BTreeSet::from([candidate_index]));
             }
-            Entry::Occupied(mut entry) => {
-                entry.insert(candidate_index);
+            Entry::Occupied(entry) => {
+                entry.into_mut().insert(candidate_index);
             }
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&str, usize)> {
+    fn iter(&self) -> impl Iterator<Item = (&str, &BTreeSet<usize>)> {
         self.keys.iter().filter_map(|key| {
             self.values
                 .get(key)
-                .map(|candidate_index| (key.as_str(), *candidate_index))
+                .map(|candidate_indices| (key.as_str(), candidate_indices))
         })
     }
 }
@@ -369,6 +476,38 @@ mod tests {
         assert_eq!(
             find_matching_entity(query, candidates, fuzzy_threshold),
             None
+        );
+    }
+
+    fn assert_ambiguous(
+        query: &str,
+        candidates: &[EntityNameCandidate],
+        fuzzy_threshold: f64,
+        tier: MatchTier,
+        candidate_indices: Vec<usize>,
+    ) {
+        assert_eq!(
+            find_matching_entity_detailed(query, candidates, fuzzy_threshold),
+            EntityNameMatchOutcome::Ambiguous {
+                tier,
+                candidate_indices,
+            }
+        );
+    }
+
+    fn assert_detailed_match(
+        query: &str,
+        candidates: &[EntityNameCandidate],
+        fuzzy_threshold: f64,
+        candidate_index: usize,
+        tier: MatchTier,
+    ) {
+        assert_eq!(
+            find_matching_entity_detailed(query, candidates, fuzzy_threshold),
+            EntityNameMatchOutcome::Matched {
+                candidate_index,
+                tier,
+            }
         );
     }
 
@@ -748,6 +887,7 @@ mod tests {
         // Python solstone/think/entities/matching.py keeps the first tied fuzzy
         // key; native must refuse to choose between distinct entities.
         assert_no_match("Alicia", &candidates, 50.0);
+        assert_ambiguous("Alicia", &candidates, 50.0, MatchTier::Fuzzy, vec![0, 1]);
     }
 
     #[test]
@@ -892,6 +1032,7 @@ mod tests {
         // Python solstone/think/entities/matching.py last-writes duplicate exact
         // keys; native must refuse to choose between distinct entities.
         assert_no_match("Alex Doe", &candidates, 90.0);
+        assert_ambiguous("Alex Doe", &candidates, 90.0, MatchTier::Exact, vec![0, 1]);
     }
 
     #[test]
@@ -903,6 +1044,13 @@ mod tests {
         // Python solstone/think/entities/matching.py last-writes duplicate
         // folded keys; native must refuse to choose between distinct entities.
         assert_no_match("ALEX DOE", &candidates, 90.0);
+        assert_ambiguous(
+            "ALEX DOE",
+            &candidates,
+            90.0,
+            MatchTier::CaseInsensitive,
+            vec![0, 1],
+        );
     }
 
     #[test]
@@ -914,6 +1062,13 @@ mod tests {
         // Python solstone/think/entities/matching.py last-writes duplicate ID
         // keys; native must refuse to choose between distinct entities.
         assert_no_match("shared slug", &candidates, 90.0);
+        assert_ambiguous(
+            "shared slug",
+            &candidates,
+            90.0,
+            MatchTier::Slug,
+            vec![0, 1],
+        );
     }
 
     #[test]
@@ -925,6 +1080,13 @@ mod tests {
         // Python solstone/think/entities/matching.py last-writes duplicate email
         // keys; native must refuse to choose between distinct entities.
         assert_no_match("SHARED@EXAMPLE.COM", &candidates, 90.0);
+        assert_ambiguous(
+            "SHARED@EXAMPLE.COM",
+            &candidates,
+            90.0,
+            MatchTier::Email,
+            vec![0, 1],
+        );
     }
 
     #[test]
@@ -936,6 +1098,7 @@ mod tests {
         // Python solstone/think/entities/matching.py last-writes duplicate fuzzy
         // keys; native must refuse to choose between distinct entities.
         assert_no_match("Alce Doe", &candidates, 80.0);
+        assert_ambiguous("Alce Doe", &candidates, 80.0, MatchTier::Fuzzy, vec![0, 1]);
     }
 
     #[test]
@@ -943,6 +1106,7 @@ mod tests {
         // Regression guard: ambiguity deduplicates by candidate index, not key contribution.
         let candidates = [candidate(Some("Alex"), "Alex", &["Alex"], &[])];
         assert_match("Alex", &candidates, 90.0, 0, Some("Alex"), MatchTier::Exact);
+        assert_detailed_match("Alex", &candidates, 90.0, 0, MatchTier::Exact);
     }
 
     #[test]
@@ -954,7 +1118,15 @@ mod tests {
             &["Alicia X", "Alicia Y"],
             &[],
         )];
-        assert_match("Alicia", &candidates, 50.0, 0, Some("first"), MatchTier::Fuzzy);
+        assert_match(
+            "Alicia",
+            &candidates,
+            50.0,
+            0,
+            Some("first"),
+            MatchTier::Fuzzy,
+        );
+        assert_detailed_match("Alicia", &candidates, 50.0, 0, MatchTier::Fuzzy);
     }
 
     #[test]

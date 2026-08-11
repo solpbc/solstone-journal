@@ -173,7 +173,12 @@ fn high_confidence_same_name_collision_records_exact_ambiguity() {
             .collect::<Vec<_>>(),
         ["sarah_lee_one", "sarah_lee_two"]
     );
-    assert!(result.candidates.windows(2).all(|pair| pair[0].score == pair[1].score));
+    assert!(
+        result
+            .candidates
+            .windows(2)
+            .all(|pair| pair[0].score == pair[1].score)
+    );
     let row = single_ambiguity_row(temporary.path());
     assert_eq!(row["observed_tier"], 1);
     assert_eq!(row["ranked_candidates"].as_array().map(Vec::len), Some(2));
@@ -205,7 +210,12 @@ fn high_confidence_shared_email_collision_records_email_ambiguity() {
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
-    assert!(result.candidates.windows(2).all(|pair| pair[0].score == pair[1].score));
+    assert!(
+        result
+            .candidates
+            .windows(2)
+            .all(|pair| pair[0].score == pair[1].score)
+    );
     let row = single_ambiguity_row(temporary.path());
     assert_eq!(row["observed_tier"], 3);
     assert_eq!(row["ranked_candidates"].as_array().map(Vec::len), Some(2));

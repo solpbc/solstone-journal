@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Resolution boundary that records low-confidence entity-name ambiguities.
+//! Resolution boundary that records entity-name ambiguities.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -11,9 +11,10 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use solstone_core_entity_matching::{
-    EntityNameCandidate, MatchTier, char_len, find_matching_entity, first_word_match,
-    matchable_resolution_query, normalize_resolution_query, prefix_token_match,
-    single_token_first_word_match, token_sort, token_subset_match,
+    EntityNameCandidate, EntityNameMatchOutcome, MatchTier, char_len,
+    find_matching_entity_detailed, first_word_match, matchable_resolution_query,
+    normalize_resolution_query, prefix_token_match, single_token_first_word_match, token_sort,
+    token_subset_match,
 };
 
 use crate::{
@@ -31,7 +32,7 @@ pub struct EntityResolutionEntity {
     pub blocked: bool,
 }
 
-/// One ranked candidate retained in a low-confidence resolution result.
+/// One ranked candidate retained in an ambiguous resolution result.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolutionCandidate {
     pub id: String,
@@ -69,7 +70,7 @@ pub struct EntityResolution {
     pub ambiguity_id: Option<String>,
 }
 
-/// Failure while resolving an entity name or recording a low-confidence result.
+/// Failure while resolving an entity name or recording an ambiguous result.
 #[derive(Debug)]
 pub enum EntityResolutionError {
     TrustLock(EntityTrustLockError),
@@ -270,7 +271,7 @@ pub(crate) fn collect_low_confidence_candidates(
     (None, Vec::new())
 }
 
-/// Resolve a query, recording a low-confidence ambiguity in mutation mode.
+/// Resolve a query, recording an ambiguity in mutation mode.
 pub fn record_entity_resolution(
     journal_root: &Path,
     query: &str,
@@ -391,16 +392,48 @@ fn record_entity_resolution_impl(
             emails: entity.emails.clone(),
         })
         .collect();
-    if let Some(entity_match) = find_matching_entity(&match_query, &candidates, fuzzy_threshold)
-        && entity_match.tier.is_high_confidence()
-    {
-        return Ok(EntityResolution {
-            outcome: EntityResolutionOutcome::Resolved,
-            entity_index: Some(entity_match.candidate_index),
-            tier: Some(entity_match.tier),
-            candidates: Vec::new(),
-            ambiguity_id: None,
-        });
+    match find_matching_entity_detailed(&match_query, &candidates, fuzzy_threshold) {
+        EntityNameMatchOutcome::Matched {
+            candidate_index,
+            tier,
+        } if tier.is_high_confidence() => {
+            return Ok(EntityResolution {
+                outcome: EntityResolutionOutcome::Resolved,
+                entity_index: Some(candidate_index),
+                tier: Some(tier),
+                candidates: Vec::new(),
+                ambiguity_id: None,
+            });
+        }
+        EntityNameMatchOutcome::Ambiguous {
+            tier,
+            candidate_indices,
+        } if tier.is_high_confidence() => {
+            let colliding_entities = candidate_indices
+                .iter()
+                .map(|index| &entities[*index])
+                .collect::<Vec<_>>();
+            let candidates = equalize_ambiguous_candidate_scores(rank_resolution_candidates(
+                &match_query,
+                tier,
+                &colliding_entities,
+            ));
+            return record_resolution_ambiguity(
+                AmbiguityRecordContext {
+                    journal_root,
+                    query,
+                    normalized_query,
+                    scope,
+                    origin,
+                    read_only,
+                },
+                tier,
+                candidates,
+            );
+        }
+        EntityNameMatchOutcome::Matched { .. }
+        | EntityNameMatchOutcome::Ambiguous { .. }
+        | EntityNameMatchOutcome::NoMatch => {}
     }
 
     let (tier, candidates) =
@@ -408,36 +441,87 @@ fn record_entity_resolution_impl(
     if let Some(tier) = tier
         && !candidates.is_empty()
     {
-        let ambiguity_id = if read_only {
-            String::new()
-        } else {
-            let observation = AmbiguityObservation {
-                scope,
-                query: query.to_owned(),
+        return record_resolution_ambiguity(
+            AmbiguityRecordContext {
+                journal_root,
+                query,
                 normalized_query,
-                observed_tier: i64::from(tier as u8),
-                ranked_candidates: candidates
-                    .iter()
-                    .map(ResolutionCandidate::to_value)
-                    .collect(),
+                scope,
                 origin,
-            };
-            record_ambiguity_observation(journal_root, &observation)?
-                .get("ambiguity_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned()
-        };
-        return Ok(EntityResolution {
-            outcome: EntityResolutionOutcome::Ambiguous,
-            entity_index: None,
-            tier: Some(tier),
+                read_only,
+            },
+            tier,
             candidates,
-            ambiguity_id: Some(ambiguity_id),
-        });
+        );
     }
 
     Ok(no_match())
+}
+
+struct AmbiguityRecordContext<'a> {
+    journal_root: &'a Path,
+    query: &'a str,
+    normalized_query: String,
+    scope: Value,
+    origin: Value,
+    read_only: bool,
+}
+
+fn record_resolution_ambiguity(
+    context: AmbiguityRecordContext<'_>,
+    tier: MatchTier,
+    candidates: Vec<ResolutionCandidate>,
+) -> Result<EntityResolution, EntityResolutionError> {
+    let ambiguity_id = if context.read_only {
+        String::new()
+    } else {
+        let observation = AmbiguityObservation {
+            scope: context.scope,
+            query: context.query.to_owned(),
+            normalized_query: context.normalized_query,
+            observed_tier: i64::from(tier as u8),
+            ranked_candidates: candidates
+                .iter()
+                .map(ResolutionCandidate::to_value)
+                .collect(),
+            origin: context.origin,
+        };
+        record_ambiguity_observation(context.journal_root, &observation)?
+            .get("ambiguity_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    Ok(EntityResolution {
+        outcome: EntityResolutionOutcome::Ambiguous,
+        entity_index: None,
+        tier: Some(tier),
+        candidates,
+        ambiguity_id: Some(ambiguity_id),
+    })
+}
+
+fn equalize_ambiguous_candidate_scores(
+    mut candidates: Vec<ResolutionCandidate>,
+) -> Vec<ResolutionCandidate> {
+    // The matcher refused to rank these candidates, so differing similarity scores
+    // would re-assert a ranking it deliberately declined to make.
+    let Some(max_score) = candidates
+        .iter()
+        .map(|candidate| candidate.score)
+        .max_by(f64::total_cmp)
+    else {
+        return candidates;
+    };
+    for candidate in &mut candidates {
+        candidate.score = max_score;
+    }
+    candidates.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    candidates
 }
 
 fn candidate_similarity_score(query: &str, entity: &EntityResolutionEntity) -> f64 {

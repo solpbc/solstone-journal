@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, MalformedPolicy, VoiceprintItem, load_entity_voiceprints_file, read_ambiguities,
-    read_entity_identity, save_voiceprints_batch,
+    EncoderIdentity, MalformedPolicy, VoiceprintItem, load_entity_voiceprints_file,
+    read_ambiguities, read_entity_identity, save_voiceprints_batch,
 };
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
@@ -412,8 +412,18 @@ fn bootstrap_keeps_same_named_persons_unmatched_and_records_ambiguity() {
     };
     assert_eq!(stats.speakers_unmatched, ["Sam Person"]);
     assert_eq!(stats.embeddings_saved, 0);
-    assert!(!temporary.path().join("entities/sam-one/voiceprints.npz").exists());
-    assert!(!temporary.path().join("entities/sam-two/voiceprints.npz").exists());
+    assert!(
+        !temporary
+            .path()
+            .join("entities/sam-one/voiceprints.npz")
+            .exists()
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("entities/sam-two/voiceprints.npz")
+            .exists()
+    );
     let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
     assert_eq!(rows.len(), 1);
     let ids = rows[0]["ranked_candidates"]

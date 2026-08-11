@@ -10,7 +10,9 @@ use chrono::{Local, NaiveDate, TimeDelta};
 use serde_json::{Map, Value};
 #[cfg(test)]
 use solstone_core_entity_matching::MatchTier;
-use solstone_core_entity_matching::{EntityNameCandidate, find_matching_entity};
+use solstone_core_entity_matching::{
+    EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
+};
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries};
 
 use super::detected_entities::read_detected_entities;
@@ -42,7 +44,11 @@ pub fn load_detected_entities_recent(
                 .unwrap_or_default()
                 .to_owned();
             let excluded = *exclusion_cache.entry(name.clone()).or_insert_with(|| {
-                find_matching_entity(&name, &candidates, FUZZY_THRESHOLD).is_some()
+                matches!(
+                    find_matching_entity_detailed(&name, &candidates, FUZZY_THRESHOLD),
+                    EntityNameMatchOutcome::Matched { .. }
+                        | EntityNameMatchOutcome::Ambiguous { .. }
+                )
             });
             if excluded {
                 continue;
@@ -123,12 +129,17 @@ pub(crate) fn exclusion_tier(
     facet_dir: &str,
     detected_name: &str,
 ) -> Result<Option<MatchTier>, FacetEntityWriteError> {
-    Ok(find_matching_entity(
-        detected_name,
-        &exclusion_candidates(journal_root, facet_dir)?,
-        FUZZY_THRESHOLD,
+    Ok(
+        match find_matching_entity_detailed(
+            detected_name,
+            &exclusion_candidates(journal_root, facet_dir)?,
+            FUZZY_THRESHOLD,
+        ) {
+            EntityNameMatchOutcome::Matched { tier, .. }
+            | EntityNameMatchOutcome::Ambiguous { tier, .. } => Some(tier),
+            EntityNameMatchOutcome::NoMatch => None,
+        },
     )
-    .map(|entity_match| entity_match.tier))
 }
 
 pub(crate) fn cutoff_day(local_today: NaiveDate, days: i64) -> String {

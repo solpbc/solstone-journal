@@ -184,7 +184,11 @@ pub async fn link_import(
             },
         )
         .collect::<Vec<_>>();
-    if solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0).is_some() {
+    if matches!(
+        solstone_core_entity_matching::find_matching_entity_detailed(name, &candidates, 90.0),
+        solstone_core_entity_matching::EntityNameMatchOutcome::Matched { .. }
+            | solstone_core_entity_matching::EntityNameMatchOutcome::Ambiguous { .. }
+    ) {
         return err("entity_alias_conflict", name, StatusCode::CONFLICT);
     }
     let mut identity = target.value.clone();
