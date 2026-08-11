@@ -58,13 +58,8 @@ def run_service(
 
 def main() -> None:
     """Main CLI entry point for convey command."""
-    from solstone.think.utils import (
-        get_journal,
-        setup_cli,
-        write_service_port,
-    )
-
-    from . import create_app
+    from solstone.think import core_handshake
+    from solstone.think.utils import setup_cli
 
     parser = argparse.ArgumentParser(description="Convey web interface")
     parser.add_argument(
@@ -74,15 +69,6 @@ def main() -> None:
         help="Port to serve on",
     )
     args = setup_cli(parser)
-    journal = get_journal()
 
-    app = create_app(journal)
-
-    # Write port to health directory for discovery by other tools
-    write_service_port("convey", args.port)
-    app.config["SECURE_LISTENER_ENABLED"] = True
-    start_secure_listener(app)
-    bind_host = _resolve_bind_host()
-    logger.info("Convey starting on %s:%s", bind_host, args.port)
-
-    run_service(app, host=bind_host, port=args.port, debug=args.debug)
+    core_binary = str(core_handshake.helper_path_for_executable())
+    os.execv(core_binary, [core_binary, "convey", "--port", str(args.port)])
