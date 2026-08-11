@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::speakers::speakers_analyze_binary_path;
-use crate::{TranscribeError, resolve_model_asset};
+use crate::{TranscribeError, backend::KNOWN_BACKENDS, resolve_model_asset};
 
 const SUPERVISOR_MESSAGE: &str =
     "sol: solstone isn't running. Start it with 'journal up' and retry.";
@@ -79,6 +79,12 @@ pub fn parse_arguments(
                 let backend = arguments
                     .next()
                     .ok_or_else(|| usage("argument --backend: expected one argument"))?;
+                if !KNOWN_BACKENDS.contains(&backend.as_str()) {
+                    return Err(usage(&format!(
+                        "argument --backend: invalid choice: '{backend}' (choose from {})",
+                        KNOWN_BACKENDS.join(", ")
+                    )));
+                }
                 if parsed.backend.replace(backend).is_some() {
                     return Err(usage("argument --backend: may only be specified once"));
                 }
@@ -432,6 +438,16 @@ mod tests {
             validate_selection(&parsed).unwrap_err(),
             CliError::Usage {
                 message: "provide audio_path or --all".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_backend_is_usage_error() {
+        assert_eq!(
+            parse_arguments(args(&["--backend", "not-a-backend", "--all"])).unwrap_err(),
+            CliError::Usage {
+                message: "argument --backend: invalid choice: 'not-a-backend' (choose from parakeet, parakeet-cpp, confidential)".to_owned()
             }
         );
     }
