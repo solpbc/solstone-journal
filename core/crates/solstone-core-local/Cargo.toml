@@ -28,10 +28,10 @@ tar.workspace = true
 flate2.workspace = true
 thiserror.workspace = true
 solstone-core-brain.workspace = true
+solstone-core-assets.workspace = true
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-solstone-core-assets.workspace = true
 tempfile = "3.24.0"
 
 [[test]]

@@ -28,6 +28,77 @@ fn temp(name: &str) -> PathBuf {
     path
 }
 
+const HELLO_SHA256: &str = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+fn test_artifact(
+    upstream_url: String,
+    sha256: &'static str,
+    size_bytes: u64,
+) -> solstone_core_assets::Artifact {
+    let mut artifact = catalog()[0].clone();
+    artifact.upstream_url = Box::leak(upstream_url.into_boxed_str());
+    artifact.sha256 = sha256;
+    artifact.size_bytes = size_bytes;
+    artifact
+}
+
+fn test_download_policy(hosts: &[&str], max_redirects: u8) -> archive::DownloadPolicy {
+    archive::DownloadPolicy::for_test(hosts, &["http"], max_redirects)
+}
+
+fn http_response(status: u16, location: Option<&str>, body: &[u8]) -> Vec<u8> {
+    let reason = match status {
+        200 => "OK",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        _ => "Test Response",
+    };
+    let mut response = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        body.len()
+    );
+    if let Some(location) = location {
+        response.push_str(&format!("Location: {location}\r\n"));
+    }
+    response.push_str("\r\n");
+    let mut bytes = response.into_bytes();
+    bytes.extend_from_slice(body);
+    bytes
+}
+
+fn serve_responses(build: impl FnOnce(&str) -> Vec<Vec<u8>>) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let responses = build(&base);
+    let server = thread::spawn(move || {
+        for response in responses {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(&response).unwrap();
+        }
+    });
+    (base, server)
+}
+
+fn download_verified_test_call(
+    artifact: &solstone_core_assets::Artifact,
+    destination: &std::path::Path,
+    policy: &archive::DownloadPolicy,
+) -> Result<(), archive::ArchiveError> {
+    archive::download_verified(artifact, destination, policy, |_received, _total| {})
+}
+
+fn assert_catalog_download_artifact(
+    policy: &archive::DownloadPolicy,
+    artifact: &solstone_core_assets::Artifact,
+    expected_sha256: &str,
+) {
+    assert_eq!(artifact.sha256, expected_sha256);
+    policy.permits(artifact.upstream_url).unwrap();
+}
+
 const PARAKEET_TEST_KEY: &str = "x86_64-unknown-linux-gnu";
 
 struct ParakeetFixture {
@@ -1060,27 +1131,249 @@ fn digest_mismatch_leaves_destination_unchanged() {
 #[test]
 fn download_digest_mismatch_removes_destination_and_partial_file() {
     let root = temp("download-mismatch");
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello")
-            .unwrap();
-    });
+    let (base, server) = serve_responses(|_| vec![http_response(200, None, b"hello")]);
     let destination = root.join("artifact.tar.gz");
+    let artifact = test_artifact(base, "00", 5);
     assert!(matches!(
-        archive::download(
-            &format!("http://{address}"),
+        download_verified_test_call(
+            &artifact,
             &destination,
-            "00",
-            |_received, _total| {}
+            &test_download_policy(&["127.0.0.1"], 3)
         ),
         Err(archive::ArchiveError::DigestMismatch)
     ));
     server.join().unwrap();
     assert!(!destination.exists());
     assert!(!root.join(".artifact.tar.gz.part").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_policy_accepts_uppercased_allowed_host() {
+    archive::DownloadPolicy::for_test(&["allowed.test"], &["https"], 3)
+        .permits("HTTPS://ALLOWED.TEST/runtimes/test")
+        .unwrap();
+}
+
+#[test]
+fn download_verified_policy_refuses_userinfo_by_actual_host() {
+    assert!(matches!(
+        archive::DownloadPolicy::for_test(&["allowed.test"], &["https"], 3)
+            .permits("https://allowed.test@evil.example/x"),
+        Err(archive::ArchiveError::HostRefused { host }) if host == "evil.example"
+    ));
+}
+
+#[test]
+fn download_verified_policy_refuses_scheme_downgrade() {
+    assert!(matches!(
+        archive::DownloadPolicy::for_test(&["allowed.test"], &["https"], 3)
+            .permits("http://allowed.test/updates"),
+        Err(archive::ArchiveError::HostRefused { host }) if host == "allowed.test"
+    ));
+}
+
+#[test]
+fn download_verified_refuses_unapproved_initial_host() {
+    let root = temp("unapproved-initial-host");
+    let artifact = test_artifact("http://evil.example/payload".to_owned(), HELLO_SHA256, 5);
+    let error = download_verified_test_call(
+        &artifact,
+        &root.join("payload"),
+        &test_download_policy(&["127.0.0.1"], 3),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        archive::ArchiveError::HostRefused { host } if host == "evil.example"
+    ));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_refuses_second_redirect_target() {
+    let root = temp("second-redirect-host");
+    let (base, server) = serve_responses(|_| {
+        vec![
+            http_response(302, Some("/second"), b""),
+            http_response(302, Some("http://evil.example/third"), b""),
+        ]
+    });
+    let artifact = test_artifact(format!("{base}/first"), HELLO_SHA256, 5);
+    let error = download_verified_test_call(
+        &artifact,
+        &root.join("payload"),
+        &test_download_policy(&["127.0.0.1"], 3),
+    )
+    .unwrap_err();
+    server.join().unwrap();
+    assert!(matches!(
+        error,
+        archive::ArchiveError::HostRefused { host } if host == "evil.example"
+    ));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_follows_root_relative_redirect() {
+    let root = temp("root-relative-redirect");
+    let (base, server) = serve_responses(|_| {
+        vec![
+            http_response(302, Some("/second"), b""),
+            http_response(200, None, b"hello"),
+        ]
+    });
+    let destination = root.join("payload");
+    let artifact = test_artifact(format!("{base}/first"), HELLO_SHA256, 5);
+    download_verified_test_call(
+        &artifact,
+        &destination,
+        &test_download_policy(&["127.0.0.1"], 3),
+    )
+    .unwrap();
+    server.join().unwrap();
+    assert_eq!(fs::read(&destination).unwrap(), b"hello");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_resolves_all_supported_relative_location_shapes() {
+    for shape in [
+        "absolute",
+        "scheme-relative",
+        "query-relative",
+        "path-relative",
+    ] {
+        let root = temp(&format!("redirect-shape-{shape}"));
+        let (base, server) = serve_responses(|base| {
+            let location = match shape {
+                "absolute" => format!("{base}/second"),
+                "scheme-relative" => base.strip_prefix("http:").unwrap().to_owned() + "/second",
+                "query-relative" => "?download=1".to_owned(),
+                "path-relative" => "nested/../second".to_owned(),
+                _ => unreachable!(),
+            };
+            vec![
+                http_response(302, Some(&location), b""),
+                http_response(200, None, b"hello"),
+            ]
+        });
+        let destination = root.join("payload");
+        let artifact = test_artifact(format!("{base}/directory/first"), HELLO_SHA256, 5);
+        download_verified_test_call(
+            &artifact,
+            &destination,
+            &test_download_policy(&["127.0.0.1"], 3),
+        )
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"hello", "shape={shape}");
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn download_verified_treats_redirect_statuses_identically() {
+    for status in [301, 302, 303, 307, 308] {
+        let root = temp(&format!("redirect-status-{status}"));
+        let (base, server) = serve_responses(|_| {
+            vec![
+                http_response(status, Some("/second"), b""),
+                http_response(200, None, b"hello"),
+            ]
+        });
+        let destination = root.join("payload");
+        let artifact = test_artifact(format!("{base}/first"), HELLO_SHA256, 5);
+        download_verified_test_call(
+            &artifact,
+            &destination,
+            &test_download_policy(&["127.0.0.1"], 3),
+        )
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"hello", "status={status}");
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn download_verified_enforces_redirect_limit() {
+    let root = temp("redirect-limit");
+    let (base, server) = serve_responses(|_| {
+        vec![
+            http_response(302, Some("/second"), b""),
+            http_response(302, Some("/third"), b""),
+        ]
+    });
+    let artifact = test_artifact(format!("{base}/first"), HELLO_SHA256, 5);
+    assert!(matches!(
+        download_verified_test_call(
+            &artifact,
+            &root.join("payload"),
+            &test_download_policy(&["127.0.0.1"], 1),
+        ),
+        Err(archive::ArchiveError::RedirectLimitExceeded { limit: 1 })
+    ));
+    server.join().unwrap();
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_rejects_missing_empty_and_malformed_locations() {
+    for (name, location) in [
+        ("missing", None),
+        ("empty", Some("   ")),
+        ("malformed", Some("http://")),
+    ] {
+        let root = temp(&format!("redirect-location-{name}"));
+        let (base, server) = serve_responses(|_| vec![http_response(302, location, b"")]);
+        let artifact = test_artifact(format!("{base}/first"), HELLO_SHA256, 5);
+        assert!(matches!(
+            download_verified_test_call(
+                &artifact,
+                &root.join("payload"),
+                &test_download_policy(&["127.0.0.1"], 3),
+            ),
+            Err(archive::ArchiveError::Download(_))
+        ));
+        server.join().unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn download_verified_size_mismatch_removes_destination_and_partial_file() {
+    let root = temp("download-size-mismatch");
+    let (base, server) = serve_responses(|_| vec![http_response(200, None, b"hello")]);
+    let destination = root.join("artifact.tar.gz");
+    let artifact = test_artifact(base, HELLO_SHA256, 6);
+    assert!(matches!(
+        download_verified_test_call(
+            &artifact,
+            &destination,
+            &test_download_policy(&["127.0.0.1"], 3),
+        ),
+        Err(archive::ArchiveError::SizeMismatch {
+            expected: 6,
+            received: 5
+        })
+    ));
+    server.join().unwrap();
+    assert!(!destination.exists());
+    assert!(!root.join(".artifact.tar.gz.part").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn dispatch_run_local_surfaces_download_host_refusal() {
+    let root = temp("dispatch-download-host-refusal");
+    let policy = archive::DownloadPolicy::for_test(&[], &["http"], 3);
+    let _guard = super::override_download_policy_for_test(policy);
+    let error = dispatch(InstallVerb::RunLocal, json!({"journal": root})).unwrap_err();
+    let body = error.envelope.error.unwrap();
+    assert_eq!(body.kind, "download");
+    assert_eq!(body.reason_code, "download_host_refused");
+    assert!(body.message.starts_with("download host refused: "));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1413,7 +1706,7 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
 }
 
 #[test]
-fn registry_binds_local_model_identity_without_changing_main_revision() {
+fn local_model_identity_remains_unchanged() {
     let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
     let rows = resolve("local-model", None, None);
     assert_eq!(rows.len(), 2);
@@ -1442,6 +1735,98 @@ fn registry_binds_local_model_identity_without_changing_main_revision() {
 }
 
 #[test]
+fn local_model_catalog_urls_use_pinned_revision() {
+    for filename in ["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"] {
+        let artifact = super::resolve_catalog_artifact("local-model", filename).unwrap();
+        assert!(
+            artifact
+                .upstream_url
+                .contains("e87f176479d0855a907a41277aca2f8ee7a09523"),
+            "{filename}: {}",
+            artifact.upstream_url
+        );
+        assert!(
+            !artifact.upstream_url.contains("/main/"),
+            "{filename}: {}",
+            artifact.upstream_url
+        );
+    }
+}
+
+#[test]
+fn every_download_call_site_resolves_its_catalog_row() {
+    let policy = archive::DownloadPolicy::production();
+    let mut resolved = 0;
+
+    for (key, _url, sha256, size_bytes) in pins::CUDA_ARTIFACTS {
+        let artifact = super::resolve_catalog_artifact_by_key("llama-server-cuda", key).unwrap();
+        assert_catalog_download_artifact(&policy, artifact, sha256);
+        assert_eq!(artifact.size_bytes, *size_bytes);
+        resolved += 1;
+    }
+    for (_key, _release, filename, sha256, _binary) in pins::LLAMA_SERVER_PINS {
+        let artifact = super::resolve_catalog_artifact("llama-server-vulkan", filename).unwrap();
+        assert_catalog_download_artifact(&policy, artifact, sha256);
+        resolved += 1;
+    }
+    for entries in [pins::PARAKEET_CPU_PINS, pins::PARAKEET_VULKAN_PINS] {
+        for (_key, _release, filename, sha256, _binary) in entries {
+            let artifact = super::resolve_catalog_artifact("parakeet-server", filename).unwrap();
+            assert_catalog_download_artifact(&policy, artifact, sha256);
+            resolved += 1;
+        }
+    }
+    let (_repo, filename, _revision, sha256, _size_bytes) = pins::PARAKEET_MODEL;
+    let artifact = super::resolve_catalog_artifact("parakeet-model", filename).unwrap();
+    assert_catalog_download_artifact(&policy, artifact, sha256);
+    resolved += 1;
+
+    let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    for (filename, sha256) in [
+        (
+            identity["filename"].as_str().unwrap(),
+            identity["sha256"].as_str().unwrap(),
+        ),
+        (
+            identity["mmproj_filename"].as_str().unwrap(),
+            identity["mmproj_sha256"].as_str().unwrap(),
+        ),
+    ] {
+        let artifact = super::resolve_catalog_artifact("local-model", filename).unwrap();
+        assert_catalog_download_artifact(&policy, artifact, sha256);
+        resolved += 1;
+    }
+    assert_eq!(resolved, 12);
+}
+
+#[test]
+fn prechange_local_model_manifest_still_proves_ready() {
+    let root = temp("prechange-local-model-manifest");
+    let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    fs::write(root.join(identity["filename"].as_str().unwrap()), b"model").unwrap();
+    fs::write(
+        root.join(identity["mmproj_filename"].as_str().unwrap()),
+        b"projector",
+    )
+    .unwrap();
+    let manifest_path = manifest::artifact_manifest_path(&root);
+    dispatch(
+        InstallVerb::ManifestModel,
+        json!({
+            "root": root,
+            "manifest_path": manifest_path,
+            "target_fingerprint_sha256": "prechange-target",
+            "pin_identity": identity,
+        }),
+    )
+    .unwrap();
+    let proof = manifest::prove_manifest(&manifest_path, &identity);
+    assert_eq!(proof["status"], "ready");
+    assert_eq!(proof["reason_code"], "ready");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn parakeet_artifact_key_matches_every_python_alias() {
     for (arch, expected) in [
         ("amd64", "x86_64-unknown-linux-gnu"),
@@ -1458,6 +1843,74 @@ fn parakeet_artifact_key_matches_every_python_alias() {
             "arch={arch}"
         );
     }
+}
+
+fn download_verified_callers(source: &str) -> Result<Vec<String>, String> {
+    let needle = ["archive::download_verified", "("].concat();
+    let mut callers = Vec::new();
+    let mut remainder = source;
+    while let Some(offset) = remainder.find(&needle) {
+        let before = &remainder[..offset];
+        let function_start = before
+            .rfind("\nfn ")
+            .map(|index| index + 4)
+            .ok_or_else(|| "download call has no enclosing function".to_owned())?;
+        let function = before[function_start..]
+            .split('(')
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if function.is_empty() {
+            return Err("download call has an unclassifiable enclosing function".to_owned());
+        }
+        callers.push(function.to_owned());
+        remainder = &remainder[offset + needle.len()..];
+    }
+    Ok(callers)
+}
+
+fn check_download_verified_inventory(source_name: &str, source: &str) -> Result<(), String> {
+    let expected: &[&str] = match source_name {
+        "install.rs" => &[
+            "run_local_install",
+            "run_parakeet_install",
+            "install_parakeet_model",
+            "install_model",
+        ],
+        "install/tests.rs" => &["download_verified_test_call"],
+        _ => {
+            return Err(format!(
+                "unknown download-call inventory source: {source_name}"
+            ));
+        }
+    };
+    let callers = download_verified_callers(source)?;
+    let actual = callers.iter().cloned().collect::<BTreeSet<_>>();
+    let expected = expected
+        .iter()
+        .map(|caller| (*caller).to_owned())
+        .collect::<BTreeSet<_>>();
+    if callers.len() != expected.len() || actual != expected {
+        return Err(format!(
+            "download-call inventory drift in {source_name}: callers={callers:?} expected={expected:?}"
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn download_verified_call_inventory_is_closed() {
+    for (source_name, source) in [
+        ("install.rs", include_str!("../install.rs")),
+        ("install/tests.rs", include_str!("tests.rs")),
+    ] {
+        check_download_verified_inventory(source_name, source).unwrap();
+    }
+
+    let needle = ["archive::download_verified", "("].concat();
+    let synthetic = format!("\nfn unclassified() {{ {needle} }}");
+    assert!(check_download_verified_inventory("install.rs", &synthetic).is_err());
+    assert!(check_download_verified_inventory("unexpected.rs", "").is_err());
 }
 
 #[test]
