@@ -560,6 +560,21 @@ mod tests {
     }
 
     #[test]
+    fn native_process_specs_pin_five_storage_ops_rows_to_core_argv() {
+        for (token, expected_argv) in [
+            ("streams", "streams"),
+            ("segment", "segment"),
+            ("journal-stats", "journal-stats"),
+            ("reprocess", "reprocess"),
+            ("backfill-processing-records", "backfill-processing-records"),
+        ] {
+            let spec = native_process_spec_for(token).expect("storage operation must be native");
+            assert_eq!(spec.binary, "solstone-core", "{token}");
+            assert_eq!(spec.preset_argv, &[expected_argv], "{token}");
+        }
+    }
+
+    #[test]
     fn non_process_categories_never_invoke_the_spawner() {
         let spawner = PanicSpawner;
         for token in ["--path", "path", "status", "root"] {

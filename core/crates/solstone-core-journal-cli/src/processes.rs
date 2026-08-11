@@ -120,6 +120,31 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         binary: "solstone-core",
         preset_argv: &["settings"],
     },
+    NativeProcessSpec {
+        token: "streams",
+        binary: "solstone-core",
+        preset_argv: &["streams"],
+    },
+    NativeProcessSpec {
+        token: "segment",
+        binary: "solstone-core",
+        preset_argv: &["segment"],
+    },
+    NativeProcessSpec {
+        token: "journal-stats",
+        binary: "solstone-core",
+        preset_argv: &["journal-stats"],
+    },
+    NativeProcessSpec {
+        token: "reprocess",
+        binary: "solstone-core",
+        preset_argv: &["reprocess"],
+    },
+    NativeProcessSpec {
+        token: "backfill-processing-records",
+        binary: "solstone-core",
+        preset_argv: &["backfill-processing-records"],
+    },
 ];
 
 pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
