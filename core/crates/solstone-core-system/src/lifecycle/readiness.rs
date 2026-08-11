@@ -2,10 +2,13 @@
 // Copyright (c) 2026 sol pbc
 
 use serde::{Deserialize, Serialize};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::Path;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::Duration;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::LifecycleError;
 
 /// Shared with Python readiness validation.
 pub const START_TIME_TOLERANCE_SECONDS: f64 = 1.5;
@@ -19,7 +22,7 @@ pub struct ReadinessMarker {
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn parse_marker(bytes: &[u8]) -> Option<ReadinessMarker> {
     serde_json::from_slice(bytes)
         .ok()
@@ -28,16 +31,33 @@ pub fn parse_marker(bytes: &[u8]) -> Option<ReadinessMarker> {
         })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn wait_ready_with(
     journal: &Path,
     timeout: Duration,
     now: impl Fn() -> Duration,
+    poll: impl FnMut(),
+) -> Option<ReadinessMarker> {
+    wait_ready_with_start_time(
+        journal,
+        timeout,
+        now,
+        poll,
+        super::state::process_start_time_epoch_seconds,
+    )
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn wait_ready_with_start_time(
+    journal: &Path,
+    timeout: Duration,
+    now: impl Fn() -> Duration,
     mut poll: impl FnMut(),
+    process_start_time: impl Fn(u32) -> Result<f64, LifecycleError>,
 ) -> Option<ReadinessMarker> {
     let start = now();
     loop {
-        if readiness_is_valid(journal) {
+        if readiness_is_valid_with_start_time(journal, &process_start_time) {
             return std::fs::read(journal.join("health/supervisor.ready"))
                 .ok()
                 .and_then(|bytes| parse_marker(&bytes));
@@ -49,7 +69,7 @@ pub fn wait_ready_with(
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn wait_ready(
     journal: &Path,
     timeout: Duration,
@@ -64,8 +84,16 @@ pub fn wait_ready(
     )
 }
 
-#[cfg(target_os = "linux")]
-pub fn readiness_is_valid(journal: impl AsRef<std::path::Path>) -> bool {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub fn readiness_is_valid(journal: impl AsRef<Path>) -> bool {
+    readiness_is_valid_with_start_time(journal, super::state::process_start_time_epoch_seconds)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn readiness_is_valid_with_start_time(
+    journal: impl AsRef<Path>,
+    process_start_time: impl Fn(u32) -> Result<f64, LifecycleError>,
+) -> bool {
     let health = journal.as_ref().join("health");
     let Ok(marker_bytes) = std::fs::read(health.join("supervisor.ready")) else {
         return false;
@@ -92,9 +120,49 @@ pub fn readiness_is_valid(journal: impl AsRef<std::path::Path>) -> bool {
     else {
         return false;
     };
-    let Ok(actual) = super::state::process_start_time_epoch_seconds(pid) else {
+    let Ok(actual) = process_start_time(pid) else {
         return false;
     };
     // Marker start_time is schema-only; pid-file identity is authoritative.
     (recorded - actual).abs() <= START_TIME_TOLERANCE_SECONDS
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    use super::{ReadinessMarker, readiness_is_valid_with_start_time, wait_ready_with_start_time};
+
+    #[test]
+    fn ac3_ac8_injected_start_time_rejects_reused_pid() {
+        let pid = std::process::id();
+        let marker = ReadinessMarker {
+            pid,
+            ready_at: 1.0,
+            start_time: 100.0,
+            extra: serde_json::Map::new(),
+        };
+        let root = super::super::state::test_supervisor_journal(
+            "readiness-probe",
+            pid,
+            100.0,
+            Some(&marker),
+        );
+        assert!(readiness_is_valid_with_start_time(&root, |_| Ok(100.0)));
+        assert!(!readiness_is_valid_with_start_time(&root, |_| Ok(101.6)));
+
+        let ticks = Cell::new(0_u64);
+        assert!(
+            wait_ready_with_start_time(
+                &root,
+                Duration::from_secs(1),
+                || Duration::from_secs(ticks.get()),
+                || ticks.set(ticks.get() + 1),
+                |_| Ok(101.6),
+            )
+            .is_none()
+        );
+        super::super::state::remove_test_supervisor_journal(root);
+    }
 }

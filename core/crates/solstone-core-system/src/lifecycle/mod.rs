@@ -18,7 +18,7 @@ use thiserror::Error;
 
 pub use admission::SupervisorLease;
 pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
 pub use shutdown::{ShutdownDriver, ShutdownPhase, ShutdownRegime, ShutdownReport, shutdown};
 pub use state::{
@@ -77,7 +77,7 @@ impl SupervisorLifecycle {
 
     /// Acquire admission, reject live foreign writers, record identity, sweep
     /// matching orphans, and publish this process's self-heartbeat.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn boot(journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
         let journal = journal.as_ref().to_path_buf();
         let lock = state::open_supervisor_lock(&journal)?;
@@ -120,13 +120,12 @@ impl SupervisorLifecycle {
         })
     }
 
-    /// The native start-time identity reader is intentionally Linux-only.
-    /// macOS requires `proc_pidinfo`, for which this dependency set has no safe
-    /// wrapper; iOS has no supported equivalent.
-    #[cfg(not(target_os = "linux"))]
+    /// iOS and other unsupported targets have no supported process-start-time
+    /// identity reader.
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     pub fn boot(_journal: impl AsRef<Path>) -> Result<Self, LifecycleError> {
         Err(LifecycleError::Identity(
-            "supervisor lifecycle is Linux-only",
+            "supervisor lifecycle is unsupported on this platform",
         ))
     }
 
@@ -161,24 +160,18 @@ impl SupervisorLifecycle {
     }
 }
 
-/// Gated to match its callers. Both `SupervisorLifecycle::boot` and
-/// `self_heartbeat_filename` are Linux-only, so an ungated definition here was
-/// dead code everywhere else. The macOS and fallback acquisition arms this
-/// carried were unreachable for the same reason — every platform that could
-/// have run them reaches the stub `boot` instead — so they are removed rather
-/// than silenced. Restore them from history alongside a non-Linux `boot`.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn hostname() -> String {
-    let raw = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default();
-    sync::sanitize_hostname(raw.trim())
+    let raw = nix::unistd::gethostname().unwrap_or_default();
+    sync::sanitize_hostname(&raw.to_string_lossy())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn self_heartbeat_filename() -> String {
     format!("{}.check", hostname())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn epoch_seconds() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -186,8 +179,16 @@ fn epoch_seconds() -> f64 {
 }
 
 /// Preserve Python's conservative pid-file status contract.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn is_supervisor_up(journal: impl AsRef<Path>) -> bool {
+    is_supervisor_up_with_start_time(journal, state::process_start_time_epoch_seconds)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn is_supervisor_up_with_start_time(
+    journal: impl AsRef<Path>,
+    process_start_time: impl Fn(u32) -> Result<f64, LifecycleError>,
+) -> bool {
     let health = journal.as_ref().join("health");
     let Ok(pid) = std::fs::read_to_string(health.join("supervisor.pid")).and_then(|text| {
         text.trim()
@@ -210,7 +211,7 @@ pub fn is_supervisor_up(journal: impl AsRef<Path>) -> bool {
     else {
         return false;
     };
-    let Ok(actual) = state::process_start_time_epoch_seconds(pid) else {
+    let Ok(actual) = process_start_time(pid) else {
         return false;
     };
     (recorded - actual).abs() <= START_TIME_TOLERANCE_SECONDS
@@ -242,4 +243,19 @@ pub fn sd_notify(state_value: &str) {
     }
     #[cfg(not(unix))]
     let _ = state_value;
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::{is_supervisor_up_with_start_time, state};
+
+    #[test]
+    fn ac3_injected_start_time_rejects_reused_pid() {
+        let root =
+            state::test_supervisor_journal("supervisor-probe", std::process::id(), 100.0, None);
+
+        assert!(is_supervisor_up_with_start_time(&root, |_| Ok(100.0)));
+        assert!(!is_supervisor_up_with_start_time(&root, |_| Ok(101.6)));
+        state::remove_test_supervisor_journal(root);
+    }
 }
