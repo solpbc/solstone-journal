@@ -38,6 +38,7 @@ members = [
     "crates/solstone-core-sound-tags",
     "crates/solstone-core-segment",
     "crates/solstone-core-sol",
+    "crates/solstone-core-skill-state",
     "crates/solstone-core-sol-bin",
     "crates/solstone-core-cli-boundary",
     "crates/solstone-core-sol-client",
@@ -121,6 +122,7 @@ solstone-core-doctor = { path = "crates/solstone-core-doctor" }
 solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
+solstone-core-system-health = { path = "crates/solstone-core-system-health" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
 solstone-core-cogitate-tools = { path = "crates/solstone-core-cogitate-tools" }
 solstone-core-cogitate-runtime = { path = "crates/solstone-core-cogitate-runtime" }
@@ -135,6 +137,7 @@ solstone-core-sound-tags = { path = "crates/solstone-core-sound-tags" }
 solstone-core-segment = { path = "crates/solstone-core-segment" }
 solstone-core-sol = { path = "crates/solstone-core-sol" }
 solstone-core-sol-client = { path = "crates/solstone-core-sol-client" }
+solstone-core-skill-state = { path = "crates/solstone-core-skill-state" }
 solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }

@@ -162,13 +162,15 @@ fn read_convey_port(journal_path: &Path) -> Option<u16> {
 }
 
 /// Check the runtime pieces Python validates before it opens any input audio.
-pub(crate) fn check_speakers_analyze_installation() -> Result<(), CliError> {
+/// Check the native speakers-analyze helper and its two required model assets.
+/// Consumed by the W3c doctor speakers-analyze installation check.
+pub fn check_speakers_analyze_installation() -> Result<(), CliError> {
     check_speakers_analyze_installation_with(speakers_analyze_binary_path, |asset| {
         resolve_model_asset(asset).map_err(TranscribeError::from)
     })
 }
 
-fn check_speakers_analyze_installation_with<B, M>(binary: B, model: M) -> Result<(), CliError>
+pub fn check_speakers_analyze_installation_with<B, M>(binary: B, model: M) -> Result<(), CliError>
 where
     B: FnOnce() -> Result<PathBuf, String>,
     M: Fn(&str) -> Result<PathBuf, TranscribeError>,
@@ -187,6 +189,11 @@ where
         model(asset).map_err(|error| installation_error(format!("asset-missing: {error}")))?;
     }
     Ok(())
+}
+
+/// The repair guidance paired with speakers-analyze installation failures.
+pub fn speakers_analyze_repair_text() -> &'static str {
+    "reinstall the journal host stack and restart the journal"
 }
 
 #[cfg(unix)]
@@ -336,8 +343,9 @@ fn is_segment_directory(value: &str) -> bool {
 fn installation_error(detail: impl Into<String>) -> CliError {
     CliError::SpeakersInstallation {
         message: format!(
-            "Speakers-analyze installation is incomplete ({}). Repair: reinstall the journal host stack and restart the journal.",
-            detail.into()
+            "Speakers-analyze installation is incomplete ({}). Repair: {}.",
+            detail.into(),
+            speakers_analyze_repair_text()
         ),
     }
 }

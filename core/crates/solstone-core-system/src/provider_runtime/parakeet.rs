@@ -429,6 +429,30 @@ fn probe_parakeet(journal_path: &std::path::Path) -> ProviderProbeOutcome {
     }
 }
 
+/// Read the durable Parakeet port and perform a bounded `/health` state read.
+/// This is the doctor-facing sibling of the lifecycle's one-second probe.
+pub fn probe_parakeet_cpp_server(
+    journal_path: &std::path::Path,
+    timeout: Duration,
+) -> Result<(), String> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let port = std::fs::read_to_string(journal_path.join("health/parakeet-cpp.port"))
+            .map_err(|error| error.to_string())?
+            .trim()
+            .parse::<u16>()
+            .map_err(|error| error.to_string())?;
+        probe_health_with_timeout(port, timeout)
+            .then_some(())
+            .ok_or_else(|| "health endpoint did not return HTTP 200".to_owned())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (journal_path, timeout);
+        Err("parakeet-cpp health probe is unsupported on this platform".to_owned())
+    }
+}
+
 fn probe_unavailable() -> ProviderProbeOutcome {
     ProviderProbeOutcome {
         status: super::model::ProbeStatus::Unavailable,
@@ -572,15 +596,18 @@ fn spawn_parakeet(
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn probe_health(port: u16) -> bool {
+    probe_health_with_timeout(port, HEALTH_PROBE_TIMEOUT)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn probe_health_with_timeout(port: u16, timeout: Duration) -> bool {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = match TcpStream::connect_timeout(&address, HEALTH_PROBE_TIMEOUT) {
+    let mut stream = match TcpStream::connect_timeout(&address, timeout) {
         Ok(stream) => stream,
         Err(_) => return false,
     };
-    if stream.set_read_timeout(Some(HEALTH_PROBE_TIMEOUT)).is_err()
-        || stream
-            .set_write_timeout(Some(HEALTH_PROBE_TIMEOUT))
-            .is_err()
+    if stream.set_read_timeout(Some(timeout)).is_err()
+        || stream.set_write_timeout(Some(timeout)).is_err()
         || stream
             .write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
             .is_err()

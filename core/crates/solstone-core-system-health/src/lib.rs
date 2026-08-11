@@ -9,6 +9,7 @@ mod completion;
 mod data_state;
 mod error;
 mod event;
+mod maint;
 mod progress;
 mod read;
 mod scan;
@@ -28,6 +29,7 @@ pub use completion::{
 pub use data_state::derive_modality_state;
 pub use error::HealthError;
 pub use event::{EventPayload, HealthEvent, RunLogRecord};
+pub use maint::{MaintTaskState, MaintTaskStatus, read_maint_task_state, read_maint_task_states};
 pub use progress::read_segment_progress;
 pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
 pub use source::{

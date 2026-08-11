@@ -15,6 +15,13 @@ serde_json.workspace = true
 chrono.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-journal.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-system.workspace = true
+solstone-core-system-health.workspace = true
+solstone-core-brain.workspace = true
+solstone-core-observer.workspace = true
+solstone-core-transcribe.workspace = true
+solstone-core-skill-state.workspace = true
 nix.workspace = true
 plist.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }

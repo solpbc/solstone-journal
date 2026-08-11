@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use chrono::TimeZone;
 use std::{
     fs,
     ops::Deref,
@@ -51,9 +52,17 @@ pub(crate) fn context() -> StagedContext {
             journal_path: root.join("journal"),
             callosum_socket_path: root.join("journal/health/callosum.sock"),
             platform: Platform::Linux,
+            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            host_arch: "x86_64".into(),
+            hostname: "test-host".into(),
+            machine_id: Some("test-machine".into()),
+            checkout_root: None,
+            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
         },
         _root: TempRoot(root),
     }

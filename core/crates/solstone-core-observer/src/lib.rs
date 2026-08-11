@@ -11,3 +11,6 @@ pub use command::{ObserverCommand, parse_observer_args};
 pub use service::{
     CREATE_RETIRED_MESSAGE, ObserverError, PruneOutcome, execute, execute_prune, system_now_ms,
 };
+pub use store::delivery::{
+    DeliveryDivergence, OBSERVER_DELIVERY_STALL_MS, OBSERVER_STALE_MS, delivery_divergence,
+};

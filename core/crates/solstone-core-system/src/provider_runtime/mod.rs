@@ -12,6 +12,7 @@ mod parakeet;
 mod parakeet_truth;
 mod parakeet_truth_seam;
 mod placement;
+mod readiness;
 mod reconcile;
 mod retry;
 mod seams;
@@ -32,7 +33,7 @@ pub use launch::{
 pub use model::*;
 pub use parakeet::{
     PARAKEET_SERVER_PROCESS_NAME, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
-    ParakeetProbeSeam, ParakeetRuntimeShared,
+    ParakeetProbeSeam, ParakeetRuntimeShared, probe_parakeet_cpp_server,
 };
 pub use parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
@@ -45,6 +46,11 @@ pub use parakeet_truth_seam::{
 pub use placement::{
     CO_FIT_MARGIN_MIB, PARAKEET_WORST_CASE_MIB, ParakeetPlacementDecision,
     decide_parakeet_auto_placement,
+};
+pub use readiness::{
+    PARAKEET_CPP_PROBE_TIMEOUT, ParakeetCppArtifacts, ParakeetCppReadiness,
+    check_parakeet_coreml_cache, check_parakeet_cpp_files, classify_parakeet_cpp_probe_failure,
+    parakeet_cpp_artifacts, probe_parakeet_cpp_binary,
 };
 pub use reconcile::{ProviderRuntimeCoordinator, ReconcileContext};
 pub use retry::{schedule_cleanup_retry, schedule_launch_retry};

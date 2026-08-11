@@ -3,6 +3,7 @@
 pub mod args;
 pub mod checks;
 pub mod context;
+pub mod features;
 pub mod output;
 pub mod registry;
 pub mod vocabulary;
@@ -31,6 +32,9 @@ pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> 
     apply_conflict_policy(&mut results);
     results
 }
+
+#[cfg(test)]
+mod w3c_tests;
 fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResult> {
     if !entry.check.platforms.contains(&context.platform) {
         let mut r = make_result(
@@ -94,6 +98,7 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use std::{
         fs,
         os::unix::fs::{PermissionsExt, symlink},
@@ -121,9 +126,17 @@ exit 97
             journal_path: root.join("journal"),
             callosum_socket_path: root.join("journal/health/callosum.sock"),
             platform: Platform::Linux,
+            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            host_arch: "x86_64".into(),
+            hostname: "test-host".into(),
+            machine_id: Some("test-machine".into()),
+            checkout_root: None,
+            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
         }
     }
     #[test]
@@ -148,7 +161,7 @@ exit 97
                         .is_some()
                 })
                 .count(),
-            16
+            0
         )
     }
     #[test]
@@ -929,9 +942,17 @@ exit 97
             journal_path: root.join("journal"),
             callosum_socket_path: root.join("journal/health/callosum.sock"),
             platform: Platform::Linux,
+            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            host_arch: "x86_64".into(),
+            hostname: "test-host".into(),
+            machine_id: Some("test-machine".into()),
+            checkout_root: None,
+            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
         };
         for readiness in [false, true] {
             let results = run(

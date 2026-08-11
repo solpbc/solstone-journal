@@ -2724,8 +2724,15 @@ dependencies = [
  "plist",
  "serde",
  "serde_json",
+ "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-observer",
+ "solstone-core-skill-state",
+ "solstone-core-system",
+ "solstone-core-system-health",
+ "solstone-core-transcribe",
  "tokio",
 ]
 
@@ -3193,6 +3200,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-skill-state"
+version = "1.0.22"
+
+[[package]]
 name = "solstone-core-sol"
 version = "1.0.22"
 dependencies = [
@@ -3200,6 +3211,7 @@ dependencies = [
  "nix",
  "serde_json",
  "solstone-core-cli-boundary",
+ "solstone-core-skill-state",
  "solstone-core-sol-client",
  "solstone-core-sol-client-cli",
  "solstone-core-sol-link",
@@ -3391,6 +3403,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "tempfile",
  "thiserror 2.0.20",
 ]
 

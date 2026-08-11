@@ -3,7 +3,7 @@
 use crate::{
     checks,
     context::CheckContext,
-    vocabulary::{Check, Platform, RunnerResult, Severity, Status, make_result},
+    vocabulary::{Check, Platform, RunnerResult, Severity},
 };
 use std::collections::BTreeSet;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,30 +38,6 @@ pub struct RegistryEntry {
 }
 const BOTH: &[Platform] = &[Platform::Linux, Platform::Darwin];
 const DARWIN: &[Platform] = &[Platform::Darwin];
-fn stub_w3b(_context: &CheckContext) -> RunnerResult {
-    Ok(make_result(
-        Check {
-            name: "stub",
-            severity: Severity::Advisory,
-            platforms: BOTH,
-        },
-        Status::Skip,
-        "deferred to wave W3b",
-        None::<String>,
-    ))
-}
-fn stub_w3c(_context: &CheckContext) -> RunnerResult {
-    Ok(make_result(
-        Check {
-            name: "stub",
-            severity: Severity::Advisory,
-            platforms: BOTH,
-        },
-        Status::Skip,
-        "deferred to wave W3c",
-        None::<String>,
-    ))
-}
 fn config(c: &CheckContext) -> RunnerResult {
     checks::config_dir_readable::run(c, CHECK_CONFIG)
 }
@@ -112,6 +88,54 @@ fn sol_importable(c: &CheckContext) -> RunnerResult {
 }
 fn local_bin_sol_reachable(c: &CheckContext) -> RunnerResult {
     checks::local_bin_sol_reachable::run(c, CHECK_LOCAL_BIN_SOL_REACHABLE)
+}
+fn journal_sync(c: &CheckContext) -> RunnerResult {
+    checks::journal_sync::run(c, CHECK_SYNC)
+}
+fn caught_up(c: &CheckContext) -> RunnerResult {
+    checks::journal_caught_up::run(c, CHECK_CAUGHT_UP)
+}
+fn maint(c: &CheckContext) -> RunnerResult {
+    checks::journal_maint_tasks::run(c, CHECK_MAINT)
+}
+fn task_pace(c: &CheckContext) -> RunnerResult {
+    checks::task_pace::run(c, CHECK_TASK_PACE)
+}
+fn brain(c: &CheckContext) -> RunnerResult {
+    checks::brain::run(c, CHECK_BRAIN)
+}
+fn capture(c: &CheckContext) -> RunnerResult {
+    checks::capture_health::run(c, CHECK_CAPTURE)
+}
+fn binding(c: &CheckContext) -> RunnerResult {
+    checks::observer_binding::run(c, CHECK_BINDING)
+}
+fn delivery(c: &CheckContext) -> RunnerResult {
+    checks::observer_delivery_stall::run(c, CHECK_DELIVERY)
+}
+fn ingest(c: &CheckContext) -> RunnerResult {
+    checks::observer_ingest_health::run(c, CHECK_INGEST)
+}
+fn orphan(c: &CheckContext) -> RunnerResult {
+    checks::orphan_segment_pdf::run(c, CHECK_ORPHAN)
+}
+fn default_stt(c: &CheckContext) -> RunnerResult {
+    checks::default_stt_ready::run(c, CHECK_DEFAULT_STT)
+}
+fn cpp_stt(c: &CheckContext) -> RunnerResult {
+    checks::parakeet_cpp_stt_ready::run(c, CHECK_CPP_STT)
+}
+fn speakers(c: &CheckContext) -> RunnerResult {
+    checks::speakers_analyze_installation::run(c, CHECK_SPEAKERS)
+}
+fn skills(c: &CheckContext) -> RunnerResult {
+    checks::skill_state::run(c, CHECK_SKILLS)
+}
+fn pdf_import(c: &CheckContext) -> RunnerResult {
+    checks::feature::run("pdf-import", c, CHECK_PDF_IMPORT)
+}
+fn pdf_export(c: &CheckContext) -> RunnerResult {
+    checks::feature::run("pdf-export", c, CHECK_PDF_EXPORT)
 }
 const CHECK_CONFIG: Check = Check {
     name: "config_dir_readable",
@@ -188,26 +212,86 @@ const CHECK_LOCAL_BIN_SOL_REACHABLE: Check = Check {
     severity: Severity::Advisory,
     platforms: BOTH,
 };
-const fn stub(
-    name: &'static str,
-    severity: Severity,
-    wave: DeferredWave,
-    feature: Option<&'static str>,
-) -> RegistryEntry {
-    RegistryEntry {
-        check: Check {
-            name,
-            severity,
-            platforms: BOTH,
-        },
-        runner: match wave {
-            DeferredWave::W3b => stub_w3b,
-            DeferredWave::W3c => stub_w3c,
-        },
-        deferred: Some(wave),
-        feature,
-    }
-}
+const CHECK_SYNC: Check = Check {
+    name: "journal_sync",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_CAUGHT_UP: Check = Check {
+    name: "journal_caught_up",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_MAINT: Check = Check {
+    name: "journal_maint_tasks",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_TASK_PACE: Check = Check {
+    name: "task_pace",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_BRAIN: Check = Check {
+    name: "brain",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_CAPTURE: Check = Check {
+    name: "capture_health",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_BINDING: Check = Check {
+    name: "observer_binding",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_DELIVERY: Check = Check {
+    name: "observer_delivery_stall",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_INGEST: Check = Check {
+    name: "observer_ingest_health",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_ORPHAN: Check = Check {
+    name: "orphan_segment_pdf",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_DEFAULT_STT: Check = Check {
+    name: "default_stt_ready",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_CPP_STT: Check = Check {
+    name: "parakeet_cpp_stt_ready",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_SPEAKERS: Check = Check {
+    name: "speakers_analyze_installation",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_SKILLS: Check = Check {
+    name: "skill_state",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_PDF_IMPORT: Check = Check {
+    name: "feature:pdf-import",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_PDF_EXPORT: Check = Check {
+    name: "feature:pdf-export",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
 pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_JOURNAL_LEAF_EXCLUSIVITY,
@@ -269,51 +353,66 @@ pub static JOURNAL: &[RegistryEntry] = &[
         deferred: None,
         feature: None,
     },
-    stub("journal_sync", Severity::Blocker, DeferredWave::W3c, None),
-    stub(
-        "journal_caught_up",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "journal_maint_tasks",
-        Severity::Blocker,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub("task_pace", Severity::Advisory, DeferredWave::W3c, None),
-    stub("brain", Severity::Advisory, DeferredWave::W3c, None),
-    stub(
-        "capture_health",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "observer_binding",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "observer_delivery_stall",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "observer_ingest_health",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "orphan_segment_pdf",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
+    RegistryEntry {
+        check: CHECK_SYNC,
+        runner: journal_sync,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_CAUGHT_UP,
+        runner: caught_up,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_MAINT,
+        runner: maint,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_TASK_PACE,
+        runner: task_pace,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_BRAIN,
+        runner: brain,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_CAPTURE,
+        runner: capture,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_BINDING,
+        runner: binding,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_DELIVERY,
+        runner: delivery,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_INGEST,
+        runner: ingest,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_ORPHAN,
+        runner: orphan,
+        deferred: None,
+        feature: None,
+    },
     RegistryEntry {
         check: CHECK_STALE_ALIAS_SYMLINK,
         runner: stale_alias_journal,
@@ -326,37 +425,42 @@ pub static JOURNAL: &[RegistryEntry] = &[
         deferred: None,
         feature: None,
     },
-    stub(
-        "default_stt_ready",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "parakeet_cpp_stt_ready",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "speakers_analyze_installation",
-        Severity::Blocker,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub("skill_state", Severity::Advisory, DeferredWave::W3c, None),
-    stub(
-        "feature:pdf-import",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        Some("pdf-import"),
-    ),
-    stub(
-        "feature:pdf-export",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        Some("pdf-export"),
-    ),
+    RegistryEntry {
+        check: CHECK_DEFAULT_STT,
+        runner: default_stt,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_CPP_STT,
+        runner: cpp_stt,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_SPEAKERS,
+        runner: speakers,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_SKILLS,
+        runner: skills,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_PDF_IMPORT,
+        runner: pdf_import,
+        deferred: None,
+        feature: Some("pdf-import"),
+    },
+    RegistryEntry {
+        check: CHECK_PDF_EXPORT,
+        runner: pdf_export,
+        deferred: None,
+        feature: Some("pdf-export"),
+    },
 ];
 pub static READINESS: &[RegistryEntry] = &[
     RegistryEntry {
@@ -401,36 +505,36 @@ pub static READINESS: &[RegistryEntry] = &[
         deferred: None,
         feature: None,
     },
-    stub(
-        "default_stt_ready",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "parakeet_cpp_stt_ready",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "speakers_analyze_installation",
-        Severity::Blocker,
-        DeferredWave::W3c,
-        None,
-    ),
-    stub(
-        "feature:pdf-import",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        Some("pdf-import"),
-    ),
-    stub(
-        "feature:pdf-export",
-        Severity::Advisory,
-        DeferredWave::W3c,
-        Some("pdf-export"),
-    ),
+    RegistryEntry {
+        check: CHECK_DEFAULT_STT,
+        runner: default_stt,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_CPP_STT,
+        runner: cpp_stt,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_SPEAKERS,
+        runner: speakers,
+        deferred: None,
+        feature: None,
+    },
+    RegistryEntry {
+        check: CHECK_PDF_IMPORT,
+        runner: pdf_import,
+        deferred: None,
+        feature: Some("pdf-import"),
+    },
+    RegistryEntry {
+        check: CHECK_PDF_EXPORT,
+        runner: pdf_export,
+        deferred: None,
+        feature: Some("pdf-export"),
+    },
 ];
 pub fn entries(battery: Battery) -> &'static [RegistryEntry] {
     match battery {
