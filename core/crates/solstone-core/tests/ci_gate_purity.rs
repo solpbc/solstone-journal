@@ -392,6 +392,24 @@ fn make_ci_builds_and_exercises_every_host_packaged_binary() {
 }
 
 #[test]
+fn make_ci_serializes_workspace_tests_that_compete_for_host_resources() {
+    let makefile = makefile_text(&repo_root());
+    let rust_test = target_body(&makefile, "check-rust-test");
+    let cargo_test = rust_test
+        .lines()
+        .find(|line| line.trim_start().starts_with("cargo test "))
+        .expect("check-rust-test must execute cargo test");
+    let arguments = cargo_test.split_whitespace().collect::<Vec<_>>();
+
+    assert!(
+        arguments
+            .windows(2)
+            .any(|pair| pair[0] == "--" && pair[1] == "--test-threads=1"),
+        "the full workspace suite must not make process and lock timeouts measure host contention"
+    );
+}
+
+#[test]
 fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
     let makefile = makefile_text(&repo_root());
     let ci = target_body(&makefile, "ci-under-poison");

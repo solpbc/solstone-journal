@@ -309,7 +309,7 @@ check-rust-clippy:
 
 check-rust-test:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked -- --test-threads=1
 
 # macOS is a core platform with parity to Linux as an acceptance criterion
 # (founder, 2026-08-10), and until this target existed NOTHING compiled the
