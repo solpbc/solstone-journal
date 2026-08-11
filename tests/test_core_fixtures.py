@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 from pathlib import Path
 
@@ -13,14 +12,6 @@ import numpy as np
 from scripts import build_core_fixtures
 from solstone.convey.contract.assemble import CALLOSUM_REGISTRY
 from solstone.think import markdown as markdown_formatter
-from solstone.think.cogitate_contract import (
-    COGITATE_ACCESS_TIERS,
-    COGITATE_READ_TOOL_NAMES,
-    COGITATE_RUNTIME_PREAMBLE,
-    FUTURE_ACCESS_TIERS,
-    TALENT_FINALIZATION_MODES,
-    capabilities_for_access_tier,
-)
 
 
 def test_callosum_core_fixture_matches_registry() -> None:
@@ -31,31 +22,24 @@ def test_callosum_core_fixture_matches_registry() -> None:
         assert events == CALLOSUM_REGISTRY[tract]
 
 
-def test_cogitate_core_fixture_matches_public_contract() -> None:
-    fixture = build_core_fixtures.build_cogitate_contract_fixture()
-    preamble_bytes = COGITATE_RUNTIME_PREAMBLE.encode("utf-8")
+def test_cogitate_core_fixture_is_frozen_native_conformance_data() -> None:
+    fixture_path = Path(__file__).parents[1] / "core" / "fixtures" / "cogitate_contract.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
 
-    assert fixture["access_tiers"] == list(COGITATE_ACCESS_TIERS)
-    assert fixture["future_access_tiers"] == list(FUTURE_ACCESS_TIERS)
-    assert fixture["read_tools"] == list(COGITATE_READ_TOOL_NAMES)
-    assert fixture["finalization_modes"] == list(TALENT_FINALIZATION_MODES)
-    assert set(fixture["capabilities"]) == set(COGITATE_ACCESS_TIERS)
-    assert not set(fixture["capabilities"]) & set(FUTURE_ACCESS_TIERS)
+    assert fixture["provenance"]["status"] == "frozen"
+    assert fixture["provenance"]["native_divergence_ledger"] == (
+        "core/crates/solstone-core-cogitate/src/divergence.rs"
+    )
+    assert fixture["finish_description"]["text"].startswith(
+        "Terminal tool for ending the run"
+    )
 
-    for tier in COGITATE_ACCESS_TIERS:
-        caps = capabilities_for_access_tier(tier)
-        assert fixture["capabilities"][tier] == {
-            "sol": caps.sol,
-            "reads": caps.reads,
-            "submit": caps.submit,
-        }
 
-    assert fixture["runtime_preamble"] == {
-        "algorithm": "sha256",
-        "encoding": "utf-8",
-        "digest": hashlib.sha256(preamble_bytes).hexdigest(),
-        "byte_length": len(preamble_bytes),
-    }
+def _redirect_fixture_outputs(monkeypatch, fixture_dir: Path) -> None:
+    """Redirect every managed fixture path into one test root."""
+    for name, path in vars(build_core_fixtures).items():
+        if name.endswith("_ARTIFACT_PATH") and isinstance(path, Path):
+            monkeypatch.setattr(build_core_fixtures, name, fixture_dir / path.name)
 
 
 def test_markdown_core_fixture_matches_formatter_contract() -> None:
@@ -108,33 +92,10 @@ def test_core_fixtures_check_reports_stale_paths(
 ) -> None:
     root = tmp_path
     fixture_dir = root / "core" / "fixtures"
-    callosum_path = fixture_dir / "callosum_registry.json"
-    cogitate_path = fixture_dir / "cogitate_contract.json"
-    edge_schema_path = fixture_dir / "edge_schema.json"
-    markdown_chunks_path = fixture_dir / "markdown_chunks.json"
-    speaker_filterbank_path = fixture_dir / "speaker_filterbank.json"
-    speaker_stage_boundaries_path = fixture_dir / "speaker_stage_boundaries.json"
-
     monkeypatch.setattr(build_core_fixtures, "ROOT", root)
     monkeypatch.setattr(build_core_fixtures, "FIXTURE_DIR", fixture_dir)
-    monkeypatch.setattr(build_core_fixtures, "CALLOSUM_ARTIFACT_PATH", callosum_path)
-    monkeypatch.setattr(build_core_fixtures, "COGITATE_ARTIFACT_PATH", cogitate_path)
-    monkeypatch.setattr(
-        build_core_fixtures, "EDGE_SCHEMA_ARTIFACT_PATH", edge_schema_path
-    )
-    monkeypatch.setattr(
-        build_core_fixtures, "MARKDOWN_CHUNKS_ARTIFACT_PATH", markdown_chunks_path
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "SPEAKER_FILTERBANK_ARTIFACT_PATH",
-        speaker_filterbank_path,
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "SPEAKER_STAGE_BOUNDARIES_ARTIFACT_PATH",
-        speaker_stage_boundaries_path,
-    )
+    _redirect_fixture_outputs(monkeypatch, fixture_dir)
+    callosum_path = build_core_fixtures.CALLOSUM_ARTIFACT_PATH
 
     build_core_fixtures.write_outputs()
     assert build_core_fixtures.check_outputs() == 0
@@ -246,40 +207,10 @@ def test_float_fixture_tolerance_reports_red_and_green(
 ) -> None:
     root = tmp_path
     fixture_dir = root / "core" / "fixtures"
-    speaker_filterbank_path = fixture_dir / "speaker_filterbank.json"
-
     monkeypatch.setattr(build_core_fixtures, "ROOT", root)
     monkeypatch.setattr(build_core_fixtures, "FIXTURE_DIR", fixture_dir)
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "SPEAKER_FILTERBANK_ARTIFACT_PATH",
-        speaker_filterbank_path,
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "CALLOSUM_ARTIFACT_PATH",
-        fixture_dir / "callosum_registry.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "COGITATE_ARTIFACT_PATH",
-        fixture_dir / "cogitate_contract.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "EDGE_SCHEMA_ARTIFACT_PATH",
-        fixture_dir / "edge_schema.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "MARKDOWN_CHUNKS_ARTIFACT_PATH",
-        fixture_dir / "markdown_chunks.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "SPEAKER_STAGE_BOUNDARIES_ARTIFACT_PATH",
-        fixture_dir / "speaker_stage_boundaries.json",
-    )
+    _redirect_fixture_outputs(monkeypatch, fixture_dir)
+    speaker_filterbank_path = build_core_fixtures.SPEAKER_FILTERBANK_ARTIFACT_PATH
 
     build_core_fixtures.write_outputs()
     payload = json.loads(speaker_filterbank_path.read_text(encoding="utf-8"))
@@ -322,40 +253,10 @@ def test_speaker_platform_is_diagnostic_but_kaldi_version_is_identity(
 ) -> None:
     root = tmp_path
     fixture_dir = root / "core" / "fixtures"
-    speaker_filterbank_path = fixture_dir / "speaker_filterbank.json"
-
     monkeypatch.setattr(build_core_fixtures, "ROOT", root)
     monkeypatch.setattr(build_core_fixtures, "FIXTURE_DIR", fixture_dir)
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "SPEAKER_FILTERBANK_ARTIFACT_PATH",
-        speaker_filterbank_path,
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "CALLOSUM_ARTIFACT_PATH",
-        fixture_dir / "callosum_registry.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "COGITATE_ARTIFACT_PATH",
-        fixture_dir / "cogitate_contract.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "EDGE_SCHEMA_ARTIFACT_PATH",
-        fixture_dir / "edge_schema.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "MARKDOWN_CHUNKS_ARTIFACT_PATH",
-        fixture_dir / "markdown_chunks.json",
-    )
-    monkeypatch.setattr(
-        build_core_fixtures,
-        "SPEAKER_STAGE_BOUNDARIES_ARTIFACT_PATH",
-        fixture_dir / "speaker_stage_boundaries.json",
-    )
+    _redirect_fixture_outputs(monkeypatch, fixture_dir)
+    speaker_filterbank_path = build_core_fixtures.SPEAKER_FILTERBANK_ARTIFACT_PATH
 
     build_core_fixtures.write_outputs()
     payload = json.loads(speaker_filterbank_path.read_text(encoding="utf-8"))

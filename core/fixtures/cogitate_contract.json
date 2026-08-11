@@ -57,7 +57,11 @@
   "future_access_tiers": [
     "code-agent"
   ],
-  "generated_by": "make core-fixtures",
+  "provenance": {
+    "status": "frozen",
+    "final_python_reference_commit": "f848b1fca",
+    "native_divergence_ledger": "core/crates/solstone-core-cogitate/src/divergence.rs"
+  },
   "read_tools": [
     "read_file",
     "list_directory",

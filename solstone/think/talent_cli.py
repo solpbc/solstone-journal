@@ -38,14 +38,7 @@ from typing import Any
 
 import frontmatter
 
-from solstone.think.cogitate_contract import (
-    COGITATE_ACCESS_TIERS,
-    COGITATE_JOURNAL_COMMANDS,
-    COGITATE_READ_TOOL_NAMES,
-    capabilities_for_access_tier,
-    expects_emit_final,
-)
-from solstone.think.providers.cli import assemble_prompt
+from solstone.think import cogitate_client
 from solstone.think.talent import (
     APPS_DIR,
     TALENT_DIR,
@@ -393,29 +386,27 @@ def _tier_summary(*, reads: bool, submit: bool) -> str:
     return f"{base}, no submit"
 
 
-def _tool_names_for_row(row: dict[str, Any]) -> list[str]:
-    """Build display tool names from row capability booleans."""
-    tools: list[str] = []
-    if row.get("sol"):
-        tools.append("sol")
-    if row.get("reads"):
-        tools.extend(COGITATE_READ_TOOL_NAMES)
-    return tools
+def _tier_entry(access_tier: str) -> dict[str, Any]:
+    """Return one native contract tier by name."""
+    for tier in cogitate_client.load_talent_contract()["tiers"]:
+        if tier["name"] == access_tier:
+            return tier
+    raise ValueError(f"unknown native cogitate access tier: {access_tier}")
 
 
-def _tool_surface_line(config: dict[str, Any]) -> str:
+def _tool_surface_line(
+    config: dict[str, Any], details: dict[str, str | bool | None] | None = None
+) -> str:
     """Build the per-talent tool/finalizer/tier summary line."""
     access_tier = str(config.get("access_tier", "normal"))
-    caps = capabilities_for_access_tier(access_tier)
-    row = {
-        "sol": caps.sol,
-        "reads": caps.reads,
-    }
-    tools = ", ".join(_tool_names_for_row(row))
-    finalize = "emit_final" if expects_emit_final(config) else "FinishTool"
+    tier = _tier_entry(access_tier)
+    if details is None:
+        details = cogitate_client.render_dry_run_details(config)
+    tools = ", ".join(tier["tools"])
+    finalize = "emit_final" if details["expects_emit_final"] else "FinishTool"
     return (
         f"tools: {tools}; finalize: {finalize}; tier: {access_tier} "
-        f"({_tier_summary(reads=caps.reads, submit=caps.submit)})"
+        f"({_tier_summary(reads=tier['reads'], submit=tier['submit'])})"
     )
 
 
@@ -436,12 +427,12 @@ def show_effective_prompt(
         sys.exit(1)
 
     access_tier = str(config.get("access_tier", "normal"))
-    prompt_body, system_instruction = assemble_prompt(config, sol_tool_name="sol")
+    details = cogitate_client.render_dry_run_details(config)
 
     print(f"\n  Effective prompt for: {name}  tier: {access_tier}")
-    _format_section("SYSTEM INSTRUCTION", system_instruction or "", full=full)
-    _format_section("INSTRUCTION", prompt_body, full=full)
-    print(_tool_surface_line(config))
+    _format_section("SYSTEM INSTRUCTION", details["system_instruction"] or "", full=full)
+    _format_section("INSTRUCTION", details["initial_prompt"], full=full)
+    print(_tool_surface_line(config, details))
     print()
 
 
@@ -472,7 +463,9 @@ def _discover_cogitate_keys() -> list[str]:
 
 def _scan_command_examples(body: str, *, cap: int = 6) -> list[str]:
     """Scan prompt body text for command examples."""
-    journal_alternation = "|".join(COGITATE_JOURNAL_COMMANDS)
+    journal_alternation = "|".join(
+        cogitate_client.load_talent_contract()["journal_commands"]
+    )
     pattern = re.compile(
         r"`(?P<cmd>(?:sol\s+call\s+[^\n`]+|journal\s+"
         rf"(?:{journal_alternation})\b[^\n`]*))`"
@@ -504,7 +497,8 @@ def _build_inventory_rows() -> list[dict[str, Any]]:
         try:
             config = get_talent(key)
             access_tier = str(config.get("access_tier", "normal"))
-            caps = capabilities_for_access_tier(access_tier)
+            tier = _tier_entry(access_tier)
+            details = cogitate_client.render_dry_run_details(config)
             rows.append(
                 {
                     "name": key,
@@ -514,11 +508,13 @@ def _build_inventory_rows() -> list[dict[str, Any]]:
                     "output": str(config.get("output") or "-"),
                     "access_tier": access_tier,
                     "finalize": (
-                        "emit_final" if expects_emit_final(config) else "FinishTool"
+                        "emit_final"
+                        if details["expects_emit_final"]
+                        else "FinishTool"
                     ),
-                    "sol": caps.sol,
-                    "reads": caps.reads,
-                    "submit": caps.submit,
+                    "sol": tier["sol"],
+                    "reads": tier["reads"],
+                    "submit": tier["submit"],
                     "command_examples": _scan_command_examples(
                         config.get("user_instruction", "")
                     ),
@@ -547,16 +543,15 @@ def _build_inventory_rows() -> list[dict[str, Any]]:
 
 def _tier_inventory() -> dict[str, dict[str, Any]]:
     """Build access-tier capability inventory."""
-    tiers: dict[str, dict[str, Any]] = {}
-    for tier in COGITATE_ACCESS_TIERS:
-        caps = capabilities_for_access_tier(tier)
-        tiers[tier] = {
-            "sol": caps.sol,
-            "reads": caps.reads,
-            "submit": caps.submit,
-            "tools": _tool_names_for_row({"sol": caps.sol, "reads": caps.reads}),
+    return {
+        tier["name"]: {
+            "sol": tier["sol"],
+            "reads": tier["reads"],
+            "submit": tier["submit"],
+            "tools": tier["tools"],
         }
-    return tiers
+        for tier in cogitate_client.load_talent_contract()["tiers"]
+    }
 
 
 def _render_inventory_table(rows: list[dict[str, Any]]) -> None:

@@ -136,10 +136,10 @@ def load_talent_contract() -> dict[str, Any]:
     return contract
 
 
-def render_dry_run_prompt(
+def render_dry_run_details(
     config: dict[str, Any], *, context_window: int | None = None
-) -> dict[str, str | None]:
-    """Return the native-composed prompt from a one-shot dry-run event."""
+) -> dict[str, str | bool | None]:
+    """Return native-composed prompt and finalization details from a dry run."""
     request = _request({**config, "dry_run": True}, context_window=context_window)
     output = _run_native_command(
         ["--one-shot"], input_text=f"{json.dumps(request, allow_nan=False)}\n"
@@ -157,6 +157,7 @@ def render_dry_run_prompt(
         or event.get("terminal") is not True
         or not isinstance(rendered_prompt, dict)
         or not isinstance(rendered_prompt.get("initial_prompt"), str)
+        or not isinstance(event.get("expects_emit_final"), bool)
         or (
             rendered_prompt.get("system_instruction") is not None
             and not isinstance(rendered_prompt.get("system_instruction"), str)
@@ -166,6 +167,7 @@ def render_dry_run_prompt(
     return {
         "initial_prompt": rendered_prompt["initial_prompt"],
         "system_instruction": rendered_prompt["system_instruction"],
+        "expects_emit_final": event["expects_emit_final"],
     }
 
 

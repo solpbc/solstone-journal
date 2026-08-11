@@ -194,6 +194,10 @@ pub fn serialize_dry_run(request: &CogitateRequest) -> Result<Value, ValidationE
                     "system_instruction": input.system_instruction,
                 }),
             ),
+            (
+                "expects_emit_final",
+                Value::Bool(input.config.expects_emit_final),
+            ),
         ],
     );
     validate_event(&value)?;
