@@ -35,6 +35,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+use solstone_core_assets::{Artifact, Backend as ArtifactBackend, Platform, resolve};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallVerb {
@@ -500,6 +501,99 @@ fn resolved_fingerprint(target: Value) -> Result<Value, DispatchError> {
     }))
 }
 
+#[derive(Debug)]
+enum ArtifactSelectionError {
+    Missing {
+        unit: String,
+        platform: Option<Platform>,
+        backend: Option<ArtifactBackend>,
+        filename: Option<String>,
+    },
+    Ambiguous {
+        unit: String,
+        platform: Option<Platform>,
+        backend: Option<ArtifactBackend>,
+        filename: Option<String>,
+        count: usize,
+    },
+}
+
+impl std::fmt::Display for ArtifactSelectionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing {
+                unit,
+                platform,
+                backend,
+                filename,
+            } => write!(
+                formatter,
+                "no artifact for unit={unit}, platform={platform:?}, backend={backend:?}, filename={filename:?}"
+            ),
+            Self::Ambiguous {
+                unit,
+                platform,
+                backend,
+                filename,
+                count,
+            } => write!(
+                formatter,
+                "{count} artifacts for unit={unit}, platform={platform:?}, backend={backend:?}, filename={filename:?}"
+            ),
+        }
+    }
+}
+
+fn select_artifact(
+    unit: &str,
+    platform: Option<Platform>,
+    backend: Option<ArtifactBackend>,
+    filename: Option<&str>,
+) -> Result<&'static Artifact, ArtifactSelectionError> {
+    let rows = resolve(unit, platform, backend)
+        .into_iter()
+        .filter(|artifact| filename.is_none_or(|name| artifact.filename == name))
+        .collect::<Vec<_>>();
+    match rows.as_slice() {
+        [artifact] => Ok(*artifact),
+        [] => Err(ArtifactSelectionError::Missing {
+            unit: unit.to_owned(),
+            platform,
+            backend,
+            filename: filename.map(ToOwned::to_owned),
+        }),
+        _ => Err(ArtifactSelectionError::Ambiguous {
+            unit: unit.to_owned(),
+            platform,
+            backend,
+            filename: filename.map(ToOwned::to_owned),
+            count: rows.len(),
+        }),
+    }
+}
+
+fn download_reason_code(error: &archive::ArchiveError, model: bool) -> &'static str {
+    match error {
+        archive::ArchiveError::HostRefused { .. } => "download_host_refused",
+        archive::ArchiveError::RedirectLimit => "download_redirect_limit",
+        archive::ArchiveError::RedirectMissingLocation => "download_redirect_missing_location",
+        archive::ArchiveError::RedirectInvalidLocation(_) => "download_redirect_invalid_location",
+        archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
+        archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
+        archive::ArchiveError::RedirectUnsupportedStatus(_)
+        | archive::ArchiveError::InvalidUrl(_)
+        | archive::ArchiveError::Download(_)
+        | archive::ArchiveError::Io(_) => {
+            if model {
+                "model_download_failed"
+            } else {
+                "download_failed"
+            }
+        }
+        archive::ArchiveError::PathEscape(_) => "download_failed",
+    }
+}
+
 fn run_local_install(
     object: &Map<String, Value>,
     status_value: &mut status::InstallStatus,
@@ -525,39 +619,38 @@ fn run_local_install(
     let backend = target["backend"]
         .as_str()
         .ok_or_else(|| failure("state", "fingerprint_malformed", "backend missing", 74))?;
+    let platform = pins::platform_for_key(&key)
+        .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
     let root = pins::cache_root(&journal);
-    let (url, digest, filename, install_dir, pin_identity, exclude_names, cuda) =
-        if backend == "cuda" {
-            let (url, digest, _) = pins::cuda_pin(&key)
-                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
-            let install_dir = root.join("cuda").join(&key).join(digest);
-            (
-                url,
-                digest,
-                format!("llama-{digest}.tar.gz"),
-                install_dir,
-                pins::cuda_identity(&key).unwrap(),
-                Vec::new(),
-                true,
-            )
-        } else {
-            let (release, filename, digest, _) = pins::vulkan_pin(&key)
-                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
-            (
-            Box::leak(
-                format!(
-                    "https://github.com/ggml-org/llama.cpp/releases/download/{release}/{filename}"
-                )
-                .into_boxed_str(),
-            ) as &str,
-            digest,
-            filename.to_owned(),
+    let (artifact, filename, install_dir, pin_identity, exclude_names, cuda) = if backend == "cuda"
+    {
+        let (_, digest, _) = pins::cuda_pin(&key)
+            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let artifact = select_artifact("llama-server-cuda", Some(platform), None, None)
+            .map_err(|error| failure("download", "artifact_selection_failed", error, 74))?;
+        let install_dir = root.join("cuda").join(&key).join(digest);
+        (
+            artifact,
+            artifact.filename.to_owned(),
+            install_dir,
+            pins::cuda_identity(&key).unwrap(),
+            Vec::new(),
+            true,
+        )
+    } else {
+        let (release, filename, _digest, _) = pins::vulkan_pin(&key)
+            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let artifact = select_artifact("llama-server-vulkan", Some(platform), None, Some(filename))
+            .map_err(|error| failure("download", "artifact_selection_failed", error, 74))?;
+        (
+            artifact,
+            artifact.filename.to_owned(),
             root.join("bin").join(&key).join(release),
             pins::vulkan_identity(&key).unwrap(),
             vec![filename.to_owned()],
             false,
         )
-        };
+    };
     let staging = install_dir.parent().unwrap().join(format!(
         ".{}.staging",
         install_dir.file_name().unwrap().to_string_lossy()
@@ -573,7 +666,7 @@ fn run_local_install(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-    archive::download(url, &archive_path, digest, |received, total| {
+    archive::download_verified(artifact, &archive_path, |received, total| {
         if let Ok(Some(next)) = status::bump_progress(
             status_value.clone(),
             Some(received),
@@ -584,7 +677,7 @@ fn run_local_install(
             *status_value = written;
         }
     })
-    .map_err(|error| failure("download", "download_failed", error, 74))?;
+    .map_err(|error| failure("download", download_reason_code(&error, false), error, 74))?;
     archive::extract_tar_gz(&archive_path, &staging)
         .map_err(|error| failure("archive", "extract_failed", error, 65))?;
     let binary = find_file(&staging, "llama-server").ok_or_else(|| {
@@ -743,10 +836,25 @@ fn run_parakeet_install(
         .as_str()
         .ok_or_else(|| failure("state", "fingerprint_malformed", "artifact_key missing", 74))?
         .to_owned();
+    let platform = pins::platform_for_key(&key)
+        .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
     let mut binaries = Vec::new();
     for backend in ["cpu", "vulkan"] {
-        let (release, filename, digest, binary_name) = pins::parakeet_backend_pin(&key, backend)
-            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let (release, filename, _digest, binary_name) =
+            pins::parakeet_backend_pin(&key, backend)
+                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let artifact_backend = match backend {
+            "cpu" => ArtifactBackend::Cpu,
+            "vulkan" => ArtifactBackend::Vulkan,
+            _ => unreachable!("the parakeet backend loop is fixed"),
+        };
+        let artifact = select_artifact(
+            "parakeet-server",
+            Some(platform),
+            Some(artifact_backend),
+            Some(filename),
+        )
+        .map_err(|error| failure("download", "artifact_selection_failed", error, 74))?;
         let install_dir = pins::parakeet_cache_root(journal)
             .join("bin")
             .join(&key)
@@ -759,7 +867,7 @@ fn run_parakeet_install(
         let _ = fs::remove_dir_all(&staging);
         fs::create_dir_all(&staging)
             .map_err(|error| failure("io", "staging_create_failed", error, 74))?;
-        let archive_path = staging.join(filename);
+        let archive_path = staging.join(artifact.filename);
         let mut progress_at = Instant::now();
         *status_value = status::write_status(
             journal,
@@ -767,10 +875,7 @@ fn run_parakeet_install(
                 .map_err(|error| failure("state", "transition_failed", error, 74))?,
         )
         .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-        let url = format!(
-            "https://github.com/mudler/parakeet.cpp/releases/download/{release}/{filename}"
-        );
-        archive::download(&url, &archive_path, digest, |received, total| {
+        archive::download_verified(artifact, &archive_path, |received, total| {
             if let Ok(Some(next)) = status::bump_progress(
                 status_value.clone(),
                 Some(received),
@@ -781,7 +886,7 @@ fn run_parakeet_install(
                 *status_value = written;
             }
         })
-        .map_err(|error| failure("download", "download_failed", error, 74))?;
+        .map_err(|error| failure("download", download_reason_code(&error, false), error, 74))?;
         archive::extract_tar_gz(&archive_path, &staging)
             .map_err(|error| failure("archive", "extract_failed", error, 65))?;
         let binary = find_file(&staging, binary_name).ok_or_else(|| {
@@ -827,7 +932,7 @@ fn install_parakeet_model(
     journal: &Path,
     status_value: &mut status::InstallStatus,
 ) -> Result<PathBuf, DispatchError> {
-    let (repo, filename, revision, sha256, ..) = pins::PARAKEET_MODEL;
+    let (repo, filename, revision, _sha256, ..) = pins::PARAKEET_MODEL;
     let model_dir = pins::parakeet_cache_root(journal)
         .join("models")
         .join(repo.replace('/', "__"))
@@ -841,13 +946,10 @@ fn install_parakeet_model(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-    archive::download(
-        &format!("https://huggingface.co/{repo}/resolve/{revision}/{filename}"),
-        &dest,
-        sha256,
-        |_received, _total| {},
-    )
-    .map_err(|error| failure("download", "model_download_failed", error, 74))?;
+    let artifact = select_artifact("parakeet-model", None, None, Some(filename))
+        .map_err(|error| failure("download", "artifact_selection_failed", error, 74))?;
+    archive::download_verified(artifact, &dest, |_received, _total| {})
+        .map_err(|error| failure("download", download_reason_code(&error, true), error, 74))?;
     *status_value = status::write_status(
         journal,
         status::transition(status_value.clone(), "verifying", None, None)
@@ -915,26 +1017,18 @@ fn install_model(
         .join(model_id.replace('/', "__"));
     fs::create_dir_all(&root)
         .map_err(|error| failure("io", "model_dir_create_failed", error, 74))?;
-    let repo = identity["repo"].as_str().unwrap();
-    let revision = identity["revision"].as_str().unwrap();
-    let mut files = vec![(
-        identity["filename"].as_str().unwrap(),
-        identity["sha256"].as_str().unwrap(),
-    )];
-    if let (Some(name), Some(hash)) = (
-        identity["mmproj_filename"].as_str(),
-        identity["mmproj_sha256"].as_str(),
-    ) {
-        files.push((name, hash));
+    // Fetches use immutable catalog rows, while this identity intentionally retains
+    // revision "main": prove_manifest compares it structurally, and changing it would
+    // invalidate every existing roughly-3.4-GB local-model cache.
+    let mut files = vec![identity["filename"].as_str().unwrap()];
+    if let Some(name) = identity["mmproj_filename"].as_str() {
+        files.push(name);
     }
-    for (name, hash) in files {
-        archive::download(
-            &format!("https://huggingface.co/{repo}/resolve/{revision}/{name}"),
-            &root.join(name),
-            hash,
-            |_received, _total| {},
-        )
-        .map_err(|error| failure("download", "model_download_failed", error, 74))?;
+    for name in files {
+        let artifact = select_artifact("local-model", None, None, Some(name))
+            .map_err(|error| failure("download", "artifact_selection_failed", error, 74))?;
+        archive::download_verified(artifact, &root.join(name), |_received, _total| {})
+            .map_err(|error| failure("download", download_reason_code(&error, true), error, 74))?;
     }
     *status_value = status::write_status(
         journal,

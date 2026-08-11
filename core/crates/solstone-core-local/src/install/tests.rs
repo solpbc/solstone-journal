@@ -30,6 +30,14 @@ fn temp(name: &str) -> PathBuf {
 }
 
 const PARAKEET_TEST_KEY: &str = "x86_64-unknown-linux-gnu";
+const LOOPBACK_HOST_RULES: [archive::HostRule; 1] = [archive::HostRule::Exact {
+    scheme: archive::UrlScheme::Http,
+    host: "127.0.0.1",
+}];
+const LOOPBACK_HOST_POLICY: archive::HostPolicy = archive::HostPolicy {
+    rules: &LOOPBACK_HOST_RULES,
+    max_hops: 4,
+};
 
 struct ParakeetFixture {
     cpu_path: PathBuf,
@@ -1148,10 +1156,12 @@ fn download_digest_mismatch_removes_destination_and_partial_file() {
     });
     let destination = root.join("artifact.tar.gz");
     assert!(matches!(
-        archive::download(
+        archive::download_verified_with(
             &format!("http://{address}"),
-            &destination,
             "00",
+            5,
+            &destination,
+            &LOOPBACK_HOST_POLICY,
             |_received, _total| {}
         ),
         Err(archive::ArchiveError::DigestMismatch)
@@ -1160,6 +1170,23 @@ fn download_digest_mismatch_removes_destination_and_partial_file() {
     assert!(!destination.exists());
     assert!(!root.join(".artifact.tar.gz.part").exists());
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn host_refusal_reason_code_reaches_install_envelope() {
+    let refused_host = "regional-cdn.example";
+    let error = archive::ArchiveError::HostRefused {
+        host: refused_host.to_owned(),
+    };
+    let dispatch_error = super::failure(
+        "download",
+        super::download_reason_code(&error, false),
+        &error,
+        74,
+    );
+    let envelope_error = dispatch_error.envelope.error.unwrap();
+    assert_eq!(envelope_error.reason_code, "download_host_refused");
+    assert!(envelope_error.message.contains(refused_host));
 }
 
 #[test]
@@ -1309,6 +1336,7 @@ fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
     let row = resolve("parakeet-model", None, None);
     assert_eq!(row.len(), 1);
     assert_eq!(row[0].sha256, expected);
+    assert_eq!(row[0].size_bytes, pins::PARAKEET_MODEL.4);
     assert_eq!(pins::PARAKEET_MODEL.3, expected);
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = manifest_dir
@@ -1323,6 +1351,72 @@ fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
         source.contains(expected),
         "Python parakeet model digest drifted"
     );
+}
+
+#[test]
+fn catalog_fetch_rows_match_all_legacy_fetch_pins() {
+    for (key, _release, filename, sha256, _) in pins::LLAMA_SERVER_PINS {
+        let artifact = super::select_artifact(
+            "llama-server-vulkan",
+            pins::platform_for_key(key),
+            None,
+            Some(filename),
+        )
+        .unwrap();
+        assert_eq!(artifact.sha256, *sha256);
+    }
+    for (key, _url, sha256, size_bytes) in pins::CUDA_ARTIFACTS {
+        let artifact =
+            super::select_artifact("llama-server-cuda", pins::platform_for_key(key), None, None)
+                .unwrap();
+        assert_eq!(artifact.sha256, *sha256);
+        assert_eq!(artifact.size_bytes, *size_bytes);
+    }
+    for (backend, table) in [
+        (Backend::Vulkan, pins::PARAKEET_VULKAN_PINS),
+        (Backend::Cpu, pins::PARAKEET_CPU_PINS),
+    ] {
+        for (key, _release, filename, sha256, _) in table {
+            let artifact = super::select_artifact(
+                "parakeet-server",
+                pins::platform_for_key(key),
+                Some(backend),
+                Some(filename),
+            )
+            .unwrap();
+            assert_eq!(artifact.sha256, *sha256);
+        }
+    }
+    let artifact =
+        super::select_artifact("parakeet-model", None, None, Some(pins::PARAKEET_MODEL.1)).unwrap();
+    assert_eq!(artifact.sha256, pins::PARAKEET_MODEL.3);
+    assert_eq!(artifact.size_bytes, pins::PARAKEET_MODEL.4);
+    let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    for (filename, sha256) in [
+        (
+            identity["filename"].as_str().unwrap(),
+            identity["sha256"].as_str().unwrap(),
+        ),
+        (
+            identity["mmproj_filename"].as_str().unwrap(),
+            identity["mmproj_sha256"].as_str().unwrap(),
+        ),
+    ] {
+        let artifact = super::select_artifact("local-model", None, None, Some(filename)).unwrap();
+        assert_eq!(artifact.sha256, sha256);
+    }
+}
+
+#[test]
+fn artifact_selection_is_specific_about_missing_and_ambiguous_rows() {
+    assert!(matches!(
+        super::select_artifact("not-a-unit", None, None, None),
+        Err(super::ArtifactSelectionError::Missing { .. })
+    ));
+    assert!(matches!(
+        super::select_artifact("local-model", None, None, None),
+        Err(super::ArtifactSelectionError::Ambiguous { count: 2, .. })
+    ));
 }
 
 #[test]
@@ -1491,7 +1585,7 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
 }
 
 #[test]
-fn registry_binds_local_model_identity_without_changing_main_revision() {
+fn registry_binds_local_model_fetch_rows_while_preserving_main_identity() {
     let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
     let rows = resolve("local-model", None, None);
     assert_eq!(rows.len(), 2);
@@ -1517,6 +1611,13 @@ fn registry_binds_local_model_identity_without_changing_main_revision() {
             .count(),
         2
     );
+    for row in rows {
+        assert!(
+            row.upstream_url
+                .contains("e87f176479d0855a907a41277aca2f8ee7a09523")
+        );
+        assert!(!row.upstream_url.contains("/main/"));
+    }
 }
 
 #[test]

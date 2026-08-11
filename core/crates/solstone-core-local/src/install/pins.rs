@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Value, json};
+use solstone_core_assets::Platform;
 use std::path::{Path, PathBuf};
 
 pub const LLAMA_SERVER_PINS: &[(&str, &str, &str, &str, &str)] = &[
@@ -189,6 +190,9 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
     )
 }
 pub fn model_identity(model_id: &str) -> Option<Value> {
+    // Fetches resolve catalog rows pinned by SHA-256, but this identity deliberately
+    // retains revision "main": prove_manifest compares canonical identity structurally,
+    // and changing it would invalidate every existing roughly-3.4-GB local-model cache.
     (model_id == "local/qwen3.5-4b").then(|| json!({"unit":"local-model","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","filename":"Qwen3.5-4B-Q4_K_M.gguf","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"}))
 }
 
@@ -241,6 +245,15 @@ pub fn platform_key() -> String {
         "macos" => format!("{arch}-apple-darwin"),
         "linux" => format!("{arch}-unknown-linux-gnu"),
         other => format!("{arch}-{other}"),
+    }
+}
+
+pub(crate) fn platform_for_key(key: &str) -> Option<Platform> {
+    match key {
+        "aarch64-apple-darwin" => Some(Platform::MacosArm64),
+        "x86_64-unknown-linux-gnu" => Some(Platform::LinuxX64),
+        "aarch64-unknown-linux-gnu" => Some(Platform::LinuxArm64),
+        _ => None,
     }
 }
 

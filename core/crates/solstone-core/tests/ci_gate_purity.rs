@@ -148,6 +148,18 @@ fn explicit_binary_names(manifest: &str) -> BTreeSet<String> {
     names
 }
 
+fn contains_ureq_token(source: &str) -> bool {
+    source.match_indices("ureq").any(|(offset, _)| {
+        let before = source[..offset].chars().next_back();
+        let after = source[offset + "ureq".len()..].chars().next();
+        !before.is_some_and(is_rust_identifier_char) && !after.is_some_and(is_rust_identifier_char)
+    })
+}
+
+fn is_rust_identifier_char(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
 fn makefile_text(root: &Path) -> String {
     fs::read_to_string(root.join("Makefile")).expect("read Makefile")
 }
@@ -672,4 +684,96 @@ fn rust_host_excludes_match_the_workspace_onnx_closure() {
             "{target} must use RUST_HOST_EXCLUDES"
         );
     }
+}
+
+/// This is call-site scoped by design: host-literal scanning is deliberately
+/// avoided because URL-like literals are also data, schemas, and documentation.
+#[test]
+fn outbound_http_client_calls_are_classified() {
+    let root = repo_root();
+    let scan_root = root.join("core/crates");
+    assert!(
+        scan_root.is_dir(),
+        "scan root must exist: {}",
+        scan_root.display()
+    );
+    let output = Command::new("git")
+        .args(["ls-files", "-z", "--", "core/crates"])
+        .current_dir(&root)
+        .output()
+        .expect("enumerate tracked Rust sources");
+    assert!(
+        output.status.success(),
+        "git ls-files for the scan root failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let classified = BTreeSet::from([
+        // Oura API transport.
+        "core/crates/solstone-core-body-ingest/src/oura_sync.rs",
+        // Loopback peer transport.
+        "core/crates/solstone-core-transfer/src/peer.rs",
+        // Archive architecture test checks its dependency boundary by name.
+        "core/crates/solstone-core-journal-archive/tests/architecture.rs",
+        // Local Parakeet inference transport.
+        "core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs",
+        // Provider transports.
+        "core/crates/solstone-core-generate-wire/src/anthropic.rs",
+        "core/crates/solstone-core-generate-wire/src/endpoint.rs",
+        "core/crates/solstone-core-generate-wire/src/google.rs",
+        "core/crates/solstone-core-generate-wire/src/openai.rs",
+        // Local inference transports.
+        "core/crates/solstone-core-local/src/connect.rs",
+        "core/crates/solstone-core-local/src/generate.rs",
+        // This wave's verified artifact-fetch primitive.
+        "core/crates/solstone-core-local/src/install/archive.rs",
+        // Sol client transport.
+        "core/crates/solstone-core-sol-client/src/transport.rs",
+    ]);
+    let fixture = "core/crates/solstone-core-local/src/install/tests.rs";
+    let scanner = "core/crates/solstone-core/tests/ci_gate_purity.rs";
+    let mut local_non_test = BTreeSet::new();
+
+    for bytes in output.stdout.split(|byte| *byte == 0) {
+        if bytes.is_empty() {
+            continue;
+        }
+        let relative = std::str::from_utf8(bytes).expect("tracked path must be UTF-8");
+        if !relative.ends_with(".rs") {
+            continue;
+        }
+        let source_path = root.join(relative);
+        let source = fs::read_to_string(&source_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", source_path.display()));
+        if !contains_ureq_token(&source) {
+            continue;
+        }
+        if relative == fixture {
+            // Fixture caller for the install archive tests.
+            continue;
+        }
+        if relative == scanner {
+            // This file is the scanner, not a call site.
+            continue;
+        }
+        assert!(
+            classified.contains(relative),
+            "unclassified outbound HTTP-client call site: {relative}"
+        );
+        if relative.starts_with("core/crates/solstone-core-local/") {
+            local_non_test.insert(relative.to_owned());
+        }
+    }
+
+    // `archive.rs` is the only outbound artifact fetch; `connect.rs` and
+    // `generate.rs` are loopback local-inference transports.
+    assert_eq!(
+        local_non_test,
+        BTreeSet::from([
+            "core/crates/solstone-core-local/src/connect.rs".to_owned(),
+            "core/crates/solstone-core-local/src/generate.rs".to_owned(),
+            "core/crates/solstone-core-local/src/install/archive.rs".to_owned(),
+        ]),
+        "solstone-core-local HTTP-client call sites changed without classification"
+    );
 }
