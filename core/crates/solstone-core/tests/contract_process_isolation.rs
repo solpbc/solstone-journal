@@ -53,7 +53,7 @@ fn command(binary: &Path, cwd: &Path, root: Option<&Path>) -> Command {
 }
 
 #[test]
-fn contract_process_isolation_and_missing_layout_diagnostics() {
+fn contract_build_and_check_against_a_staged_root() {
     let root = staged_root();
     let outside = TempDir::new().unwrap();
     let marker = root.path().join("poisoned");
