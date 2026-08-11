@@ -19,8 +19,7 @@ The invariants are:
   3. Root `[journal]` and `[journal-cuda]` are tombstones pinned exactly to
      `solstone-journal-host==0.7.0`.
   4. `[journal-host]` stays in root, folds in the `[pdf]` building block, pins
-     `solstone-journal-models==<models leaf version>`, and pins the tested
-     LiteLLM runtime used by OpenHands.
+     `solstone-journal-models==<models leaf version>`.
   5. The CPU leaf depends on `solstone[journal-host]==<root version>`, pulls
      CPU `onnxruntime`, and does not pull `onnxruntime-gpu`.
   6. The CUDA leaf depends on `solstone[journal-host]==<root version>`, pulls
@@ -73,7 +72,6 @@ HOST_SCRIPTS = {
     "mlx-vlm-server": "solstone.think.providers.mlx_server:main",
 }
 TOMBSTONE_PIN = "solstone-journal-host==0.7.0"
-LITELLM_PIN = "litellm==1.86.1"
 PDF_META_EXTRA = [
     "solstone[pdf-import]",
     "solstone[pdf-export]",
@@ -613,9 +611,7 @@ def main(root: Path | None = None) -> int:
         if extras.get(name) != [TOMBSTONE_PIN]:
             errors.append(f"[{name}] must be exactly [{TOMBSTONE_PIN!r}]")
 
-    # 4. journal-host folds pdf and pins models plus the tested OpenHands
-    # runtime. OpenHands leaves LiteLLM broad, so an unconstrained fresh install
-    # can drift beyond the version exercised by this repository's lockfile.
+    # 4. journal-host folds pdf and pins models.
     if "journal-host" in extras:
         host = extras["journal-host"]
         if "solstone[pdf]" not in host:
@@ -635,17 +631,6 @@ def main(root: Path | None = None) -> int:
                 "[journal-host] must not contain native-core platform pins; "
                 f"found {host_core_pins}"
             )
-        litellm_requirements = [
-            dep
-            for dep in host
-            if dep.split(";", 1)[0].strip().lower().startswith("litellm")
-        ]
-        if litellm_requirements != [LITELLM_PIN]:
-            errors.append(
-                f"[journal-host] must contain exactly {LITELLM_PIN!r}; "
-                f"found {litellm_requirements}"
-            )
-
     if "scripts" in project:
         errors.append(
             f"root [project.scripts] must be absent; found {project['scripts']}"

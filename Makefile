@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-cutover check-cogitate-cutover-tests check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -774,6 +774,10 @@ install-checks: .installed
 	@echo ""
 	@echo "=== Checking conversion-wave retirements ==="
 	@$(MAKE) check-conversion-retirements
+	@echo "=== Checking cogitate runtime cutover ==="
+	@$(MAKE) check-cogitate-cutover
+	@echo "=== Checking cogitate runtime cutover coverage ==="
+	@$(MAKE) check-cogitate-cutover-tests
 	@echo "=== Checking local-server argv ownership ==="
 	@$(MAKE) check-local-server-argv-owner
 	@echo "=== Checking local generate cutover ==="
@@ -795,9 +799,6 @@ install-checks: .installed
 	@echo ""
 	@echo "=== Running convey-bind-imports-clean check ==="
 	@$(MAKE) check-convey-bind-imports-clean
-	@echo ""
-	@echo "=== Running cogitate-prompt check ==="
-	@$(MAKE) check-cogitate-prompts
 	@echo ""
 	@echo "=== Checking native sol grammar oracle ==="
 	@$(MAKE) check-native-sol-grammar-oracle
@@ -1017,6 +1018,12 @@ check-spl-dependency-pin:
 check-conversion-retirements:
 	python3 scripts/check_conversion_retirements.py
 
+check-cogitate-cutover: .installed
+	$(VENV_BIN)/python scripts/check_cogitate_cutover.py
+
+check-cogitate-cutover-tests: .installed
+	$(VENV_BIN)/python -m pytest tests/test_check_cogitate_cutover.py tests/test_talents.py tests/test_talent_provenance.py tests/test_cogitate_client.py tests/test_cortex.py tests/test_provider_validation.py tests/test_talent.py tests/test_talent_cli.py tests/test_brain_cli.py
+
 # Local-model server argv is rendered only by solstone-core local plan.
 check-local-server-argv-owner:
 	python3 scripts/check_local_server_argv_owner.py
@@ -1077,10 +1084,6 @@ check-convey-bind-imports-clean: .installed
 # NOT part of `make ci` (which uses the fast simulation above).
 check-thin-base-install:
 	python3 scripts/check_access_imports_clean.py --real-install
-
-# Cogitate-prompt static gate (prompts use only on-contract command forms)
-check-cogitate-prompts: .installed
-	$(VENV_BIN)/python scripts/check_cogitate_prompts.py
 
 # Generated router skill references gate
 check-skill-references: .installed
@@ -1185,19 +1188,6 @@ check-core-fixtures: .installed
 
 check-release-advisory-liveness: .installed
 	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py
-
-# Re-run the live four-backend integrated-façade cogitate smoke. Spawns an
-# external runner script against this venv so the real openhands-sdk Agent path
-# is exercised end-to-end. Requires real API keys in env (`ANTHROPIC_API_KEY`,
-# `OPENAI_API_KEY`, `GOOGLE_API_KEY`) and `llama-server` on PATH for the `local`
-# backend. Catches v1.23-style Agent schema regressions that the openhands-fake
-# unit tests cannot. Set COGITATE_SMOKE_RUNNER=/path/to/script to point at the
-# runner; there is no default.
-COGITATE_SMOKE_RUNNER ?=
-
-smoke-cogitate: .installed
-	@test -f "$(COGITATE_SMOKE_RUNNER)" || { echo "cogitate smoke runner not found: $(COGITATE_SMOKE_RUNNER)" >&2; echo "set COGITATE_SMOKE_RUNNER=/path/to/script to override" >&2; exit 1; }
-	$(VENV_PY) "$(COGITATE_SMOKE_RUNNER)"
 
 # Operator-opt-in install-state smoke: drives the real install primitives
 # (real uv Popen for bundled providers, real httpx for local llama-server +

@@ -73,21 +73,21 @@ def _is_reference_artifact(rel: Path) -> bool:
     )
 
 
-def _tracked_python_files() -> list[Path]:
+def _tracked_python_files(*, root: Path = ROOT) -> list[Path]:
     out = subprocess.run(
         ["git", "ls-files", "*.py"],
-        cwd=ROOT,
+        cwd=root,
         capture_output=True,
         text=True,
         check=True,
     ).stdout.split()
-    return [ROOT / line for line in out]
+    return [root / line for line in out]
 
 
-def _all_python_files() -> list[Path]:
+def _all_python_files(*, root: Path = ROOT) -> list[Path]:
     return [
         path
-        for path in ROOT.rglob("*.py")
+        for path in root.rglob("*.py")
         if ".venv" not in path.parts and "target" not in path.parts
     ]
 
@@ -120,10 +120,10 @@ def _definitions(tree: ast.AST) -> set[str]:
     return names
 
 
-def scan(paths: list[Path]) -> list[dict[str, object]]:
+def scan(paths: list[Path], *, root: Path = ROOT) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
     for path in sorted(paths):
-        rel = path.relative_to(ROOT)
+        rel = path.relative_to(root)
         if _is_reference_artifact(rel):
             continue
         try:
@@ -161,9 +161,9 @@ def scan(paths: list[Path]) -> list[dict[str, object]]:
     return findings
 
 
-def dependency_findings() -> list[dict[str, object]]:
+def dependency_findings(*, root: Path = ROOT) -> list[dict[str, object]]:
     """The wheel must stop declaring the agent SDK and its transport."""
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     out: list[dict[str, object]] = []
     for name in sorted(FORBIDDEN_IMPORT_ROOTS):
         for line in pyproject.splitlines():
@@ -185,14 +185,18 @@ def dependency_findings() -> list[dict[str, object]]:
     return out
 
 
-def main() -> int:
+def main(*, root: Path = ROOT, paths: list[Path] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--all", action="store_true", help="scan every file on disk")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
 
-    paths = _all_python_files() if args.all else _tracked_python_files()
-    findings = scan(paths) + dependency_findings()
+    selected_paths = paths or (
+        _all_python_files(root=root)
+        if args.all
+        else _tracked_python_files(root=root)
+    )
+    findings = scan(selected_paths, root=root) + dependency_findings(root=root)
 
     if args.json:
         print(json.dumps({"findings": findings, "count": len(findings)}, indent=2))
