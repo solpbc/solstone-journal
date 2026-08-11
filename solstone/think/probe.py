@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -87,6 +88,16 @@ DISK_SPACE_CHECK = Check("disk_space", "advisory", ("linux", "darwin"))
 CONFIG_DIR_READABLE_CHECK = Check("config_dir_readable", "blocker", ("linux", "darwin"))
 SOLSTONE_CORE_RUST_TOOLCHAIN_CHECK = Check(
     "solstone_core_rust_toolchain", "blocker", ("linux", "darwin")
+)
+SOLSTONE_CORE_NATIVE_BUILD_DEPENDENCIES_CHECK = Check(
+    "solstone_core_native_build_dependencies", "blocker", ("linux",)
+)
+
+CLANG_BUILTIN_INCLUDE_PATTERNS = (
+    "/usr/lib/clang/*/include",
+    "/usr/lib64/clang/*/include",
+    "/usr/lib/llvm-*/lib/clang/*/include",
+    "/usr/local/lib/clang/*/include",
 )
 
 SOLSTONE_CORE_COVERED_PLATFORMS: tuple[CorePlatform, ...] = (
@@ -555,6 +566,84 @@ def solstone_core_rust_toolchain_check(args: object) -> CheckResult:
         "ok",
         f"Rust toolchain available for solstone-core on {system}/{machine}: "
         f"{cargo_output.stdout.strip()}; {rustc_output.stdout.strip()}",
+        platform=system,
+    )
+
+
+def _bindgen_include_dirs() -> tuple[Path, ...]:
+    tokens = shlex.split(os.environ.get("BINDGEN_EXTRA_CLANG_ARGS", ""))
+    paths: list[Path] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"-I", "-isystem"} and index + 1 < len(tokens):
+            index += 1
+            paths.append(Path(tokens[index]))
+        elif token.startswith("-I") and len(token) > 2:
+            paths.append(Path(token[2:]))
+        index += 1
+    return tuple(paths)
+
+
+def clang_builtin_include_dir() -> Path | None:
+    candidates = list(_bindgen_include_dirs())
+    for pattern in CLANG_BUILTIN_INCLUDE_PATTERNS:
+        pattern_path = Path(pattern)
+        anchor = Path(pattern_path.anchor)
+        candidates.extend(anchor.glob(str(pattern_path.relative_to(anchor))))
+    for candidate in candidates:
+        if (candidate / "limits.h").is_file():
+            return candidate
+    return None
+
+
+def solstone_core_native_build_dependencies_check(args: object) -> CheckResult:
+    del args
+    check = SOLSTONE_CORE_NATIVE_BUILD_DEPENDENCIES_CHECK
+    if not _is_source_checkout():
+        return make_result(
+            check,
+            "skip",
+            "native build dependencies are only required for source development",
+        )
+
+    system, machine = current_solstone_core_platform()
+    if system != "linux" or not is_solstone_core_covered_platform(system, machine):
+        return make_result(
+            check,
+            "skip",
+            f"Linux native build dependencies are not required on {system}/{machine}",
+            platform=system,
+        )
+
+    nasm_path = shutil.which("nasm") if machine == "x86_64" else None
+    clang_include = clang_builtin_include_dir()
+    missing: list[str] = []
+    if machine == "x86_64" and nasm_path is None:
+        missing.append("NASM")
+    if clang_include is None:
+        missing.append("Clang builtin headers (limits.h)")
+    if missing:
+        packages = (
+            "NASM and Clang development headers"
+            if machine == "x86_64"
+            else "Clang development headers"
+        )
+        return make_result(
+            check,
+            "fail",
+            f"missing native Rust build dependencies: {', '.join(missing)}",
+            f"install {packages}; see CONTRIBUTING.md platform prerequisites",
+            platform=system,
+        )
+
+    details = [f"Clang builtin headers at {clang_include}"]
+    if nasm_path is not None:
+        details.insert(0, f"NASM at {nasm_path}")
+    return make_result(
+        check,
+        "ok",
+        "; ".join(details),
         platform=system,
     )
 

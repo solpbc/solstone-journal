@@ -8,33 +8,41 @@ solstone development uses a source checkout, a repo-local Python environment, an
 
 Required everywhere:
 
-- Python 3.11 or later
+- Python 3.12 or later, as declared in `pyproject.toml`
 - [uv](https://docs.astral.sh/uv/)
 - Git
 - ripgrep (`rg`)
 - ffmpeg for audio processing
-- minisign 0.12 for transparency signing checks
+- minisign 0.12 exactly; `scripts/transparency_signing.py` enforces this version
 
-Linux is the primary development platform. macOS is supported. Source-checkout installs on Apple Silicon need Xcode command line tools to build the CoreML parakeet helper; packaged host installs (`uv tool install solstone-journal && uv tool install solstone`) on macOS 14 or newer ship the helper as a pre-built binary.
+Linux is the primary development platform. macOS is supported. Source-checkout installs on Apple Silicon need Xcode command line tools to build the CoreML parakeet helper; packaged host installs (`uv tool install solstone-journal && uv tool install solstone`) on macOS 14 or newer ship the helper as a pre-built binary. The `parakeet-helper` and `wheel-macos` targets in the Makefile define these two paths, and `scripts/check_wheel_contents.py` rejects a macOS wheel that lacks the executable arm64 helper.
+
+Linux source builds additionally require Clang development headers. Linux/x86_64
+also requires NASM; omit `nasm` from the commands below on Linux/aarch64.
+`make preflight` enforces this architecture split before compilation.
+Install the exact minisign 0.12 binary from the
+[upstream 0.12 release](https://github.com/jedisct1/minisign/releases/tag/0.12)
+rather than relying on an unpinned distro package, then confirm `minisign -v`
+prints `minisign 0.12`.
 
 Fedora/RHEL:
 
 ```bash
-sudo dnf install python3 git ripgrep ffmpeg minisign libgomp pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils
+sudo dnf install python3 git ripgrep ffmpeg nasm clang-devel libgomp pipewire gstreamer1-plugins-base gstreamer1-plugin-pipewire pulseaudio-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Ubuntu/Debian:
 
 ```bash
-sudo apt install python3 git ripgrep ffmpeg minisign libgomp1 pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils
+sudo apt install python3 git ripgrep ffmpeg nasm libclang-dev libgomp1 pipewire gstreamer1.0-tools gstreamer1.0-pipewire pulseaudio-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Arch:
 
 ```bash
-sudo pacman -S python git ripgrep ffmpeg minisign libgomp pipewire gstreamer gst-plugin-pipewire libpulse
+sudo pacman -S python git ripgrep ffmpeg nasm clang libgomp pipewire gstreamer gst-plugin-pipewire libpulse
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
@@ -42,7 +50,7 @@ macOS:
 
 ```bash
 xcode-select --install
-brew install python git ripgrep ffmpeg minisign uv
+brew install python git ripgrep ffmpeg uv
 ```
 
 ## Source-checkout install
@@ -112,23 +120,30 @@ For app work, read [docs/APPS.md](docs/APPS.md) before changing `solstone/apps/`
 Use the Makefile targets. The high-signal commands are:
 
 ```bash
-make test-only TEST=tests/test_utils.py::test_foo
-make test-app APP=settings
 make test
 make ci
+make check-differentials  # when changing a Python/Rust seam
 ```
 
-Use `make test-only` and `make test-app` as the development loop. `make test`
-runs all unit tests — `tests/` plus every `solstone/apps/*/tests/`, in one
-parallel run — after a format check. `make ci` is the canonical full gate:
-install checks plus the full unit suite. Run it once on the settled final tree
-before submitting, merging, or releasing, not before every intermediate commit.
+During the Rust-conversion freeze, `make test` runs the Rust workspace tests and
+`make ci` is the Rust-only CI gate. It runs formatting, MSRV, clippy, Rust
+tests, shipped-binary checks, applicable cross-target checks, and dependency
+policy. Run `make check-differentials` when a change touches behavior shared by
+the Python and Rust implementations; it installs the repo-local Python
+environment before running those comparison tests.
+
+The former focused Python Make targets, including `make test-only` and
+`make test-app`, are frozen and fail immediately. Run focused Python tests
+directly instead:
 
 ```bash
-make test-only TEST="-k test_foo"              # one test by name/pattern
+pytest tests/test_utils.py::test_foo
+pytest solstone/apps/settings/tests/
 ```
 
-All tests are fast unit/component tests (no real browser, live network, or API keys). For user-visible web changes, use the API verification target and review the live UI in a sandbox when relevant:
+The Python suite uses unit/component tests without a real browser, live network,
+or API keys. For user-visible web changes, use the API verification target and
+review the live UI in a sandbox when relevant:
 
 ```bash
 make verify-api    # check API baselines against a sandbox

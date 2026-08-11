@@ -92,6 +92,17 @@ def patch_green_environment(probe, monkeypatch, home_root, repo: Path) -> None:
         "disk_usage",
         Mock(return_value=SimpleNamespace(total=100, used=80, free=20 * 1024**3)),
     )
+    real_which = probe.shutil.which
+    monkeypatch.setattr(
+        probe.shutil,
+        "which",
+        lambda name: "/usr/bin/nasm" if name == "nasm" else real_which(name),
+    )
+    monkeypatch.setattr(
+        probe,
+        "clang_builtin_include_dir",
+        lambda: Path("/usr/lib/clang/18/include"),
+    )
     config_dir = home_root / ".config"
     config_dir.mkdir()
 
@@ -304,6 +315,85 @@ def test_solstone_core_rust_toolchain_failure_names_rust_toolchain(
     assert "Rust" in result.fix
     assert "cargo" in result.fix
     assert "rustc" in result.fix
+
+
+def test_solstone_core_native_build_dependencies_ok(preflight, probe, monkeypatch):
+    monkeypatch.setattr(probe, "_is_source_checkout", lambda: True)
+    monkeypatch.setattr(
+        probe,
+        "current_solstone_core_platform",
+        lambda: ("linux", "x86_64"),
+    )
+    monkeypatch.setattr(probe.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        probe,
+        "clang_builtin_include_dir",
+        lambda: Path("/usr/lib/llvm-18/lib/clang/18/include"),
+    )
+
+    result = preflight.solstone_core_native_build_dependencies_check(args(preflight))
+
+    assert result.status == "ok"
+    assert "NASM" in result.detail
+    assert "Clang builtin headers" in result.detail
+
+
+def test_solstone_core_native_build_dependencies_reports_every_missing_input(
+    preflight, probe, monkeypatch
+):
+    monkeypatch.setattr(probe, "_is_source_checkout", lambda: True)
+    monkeypatch.setattr(
+        probe,
+        "current_solstone_core_platform",
+        lambda: ("linux", "x86_64"),
+    )
+    monkeypatch.setattr(probe.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(probe, "clang_builtin_include_dir", lambda: None)
+
+    result = preflight.solstone_core_native_build_dependencies_check(args(preflight))
+
+    assert result.status == "fail"
+    assert "NASM" in result.detail
+    assert "Clang builtin headers" in result.detail
+    assert result.fix is not None
+    assert "CONTRIBUTING.md" in result.fix
+
+
+def test_clang_builtin_include_dir_honors_bindgen_include_args(
+    probe, monkeypatch, tmp_path
+):
+    include_dir = tmp_path / "clang resource dir" / "include"
+    include_dir.mkdir(parents=True)
+    (include_dir / "limits.h").write_text("", encoding="utf-8")
+    monkeypatch.setenv(
+        "BINDGEN_EXTRA_CLANG_ARGS",
+        f"-nostdinc -isystem '{include_dir}'",
+    )
+    monkeypatch.setattr(probe, "CLANG_BUILTIN_INCLUDE_PATTERNS", ())
+
+    assert probe.clang_builtin_include_dir() == include_dir
+
+
+def test_solstone_core_native_build_dependencies_do_not_require_nasm_on_aarch64(
+    preflight, probe, monkeypatch
+):
+    monkeypatch.setattr(probe, "_is_source_checkout", lambda: True)
+    monkeypatch.setattr(
+        probe,
+        "current_solstone_core_platform",
+        lambda: ("linux", "aarch64"),
+    )
+    monkeypatch.setattr(probe.shutil, "which", Mock(side_effect=AssertionError))
+    monkeypatch.setattr(
+        probe,
+        "clang_builtin_include_dir",
+        lambda: Path("/usr/lib/llvm-18/lib/clang/18/include"),
+    )
+
+    result = preflight.solstone_core_native_build_dependencies_check(args(preflight))
+
+    assert result.status == "ok"
+    assert "NASM" not in result.detail
 
 
 def test_venv_consistent_ok(preflight, probe, monkeypatch, tmp_path):
