@@ -25,9 +25,9 @@ from typing import Any, Dict, List
 # ---------------------------------------------------------------------------
 
 PROVIDER_REGISTRY: Dict[str, str] = {
-    "google": "solstone.think.providers.openhands",
-    "openai": "solstone.think.providers.openhands",
-    "anthropic": "solstone.think.providers.openhands",
+    "google": "solstone.think.cogitate_client",
+    "openai": "solstone.think.cogitate_client",
+    "anthropic": "solstone.think.cogitate_client",
     "local": "solstone.think.providers.local",
 }
 
