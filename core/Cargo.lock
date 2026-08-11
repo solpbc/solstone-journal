@@ -3254,6 +3254,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-system",
  "tempfile",
  "thiserror 2.0.19",
 ]

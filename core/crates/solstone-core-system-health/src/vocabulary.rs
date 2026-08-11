@@ -36,6 +36,33 @@ pub const SEGMENT_SUPERSEDED_TALENTS: &[(&str, &str)] = &[("entities", "entities
 pub const SEGMENT_NO_PROCESSING_MODALITIES: &[&str] = &["markdown", "browser"];
 pub const CAP: usize = 5;
 pub const MIN_SPAN_MS: i64 = 7_200_000;
+pub const STUCK_FAIL_THRESHOLD: usize = 3;
+pub const BACKLOG_DEFAULT_WINDOW: usize = 30;
+pub const NO_SENSE_COMPLETE_AGED_MS: i64 = 3 * 24 * 60 * 60 * 1000;
+
+pub const WHY_FAILED: &str = "failed";
+pub const WHY_CORRUPT_RAW: &str = "corrupt_raw";
+pub const WHY_NEVER_ATTEMPTED: &str = "never_attempted";
+pub const WHY_NO_SENSE_COMPLETE_AGED: &str = "no_sense_complete_aged";
+pub const WHY_SENSED_NOT_THOUGHT: &str = "sensed_not_thought";
+
+pub const REASON_CORRUPT_RAW: &str = "corrupt_raw";
+pub const REASON_FAILING_STEP: &str = "failing_step";
+pub const REASON_CATCHUP_BACKOFF: &str = "catchup_backoff";
+pub const REASON_SEGMENT_REPAIR_DEGRADED: &str = "segment_repair_degraded";
+pub const REASON_SEGMENT_REPAIR_PROGRESSING: &str = "segment_repair_progressing";
+pub const REASON_SEGMENT_REPAIR_STUCK: &str = "segment_repair_stuck";
+pub const REASON_SEGMENT_REPAIR_UNKNOWN: &str = "segment_repair_unknown";
+
+pub const BACKLOG_STATE_COMPLETE: &str = "complete";
+pub const BACKLOG_STATE_PENDING: &str = "pending";
+pub const BACKLOG_STATE_STUCK: &str = "stuck";
+pub const BACKLOG_STATE_UNKNOWN: &str = "unknown";
+
+pub const SEGMENT_REPAIR_STATUS_DEGRADED: &str = "degraded";
+pub const SEGMENT_REPAIR_STATUS_PROGRESSING: &str = "progressing";
+pub const SEGMENT_REPAIR_STATUS_STUCK: &str = "stuck";
+pub const SEGMENT_REPAIR_STATUS_UNKNOWN: &str = "unknown";
 
 /// Terminal subset (analyzed, purged, empty, failed-final) of Python's
 /// eight-member `DataState` enum in `solstone/think/data_state.py`:
