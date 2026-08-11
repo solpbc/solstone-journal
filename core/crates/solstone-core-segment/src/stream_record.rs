@@ -301,10 +301,36 @@ fn advance_stream(
 }
 
 fn read_registry_records(journal: &Path) -> Result<BTreeMap<String, StreamRecord>, SegmentError> {
+    let paths = registry_json_paths(journal)?;
+    let mut records = BTreeMap::new();
+    for path in paths {
+        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let record =
+            read_stream_record(&path)?.ok_or_else(|| SegmentError::MalformedStreamRecord {
+                path: path.clone(),
+                source: ReadError::Malformed(solstone_core_journal_io::MalformedDataError {
+                    path: path.clone(),
+                    line: None,
+                    source: serde_json::Error::io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "empty stream record",
+                    )),
+                }),
+            })?;
+        records.insert(name.to_owned(), record);
+    }
+    Ok(records)
+}
+
+/// Return the sorted regular `*.json` registry entries without creating the
+/// registry directory. Strict and tolerant registry readers share this filter.
+pub(crate) fn registry_json_paths(journal: &Path) -> Result<Vec<PathBuf>, SegmentError> {
     let directory = journal.join("streams");
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => {
             return Err(SegmentError::Io {
                 path: directory,
@@ -334,29 +360,10 @@ fn read_registry_records(journal: &Path) -> Result<BTreeMap<String, StreamRecord
         }
     }
     paths.sort();
-    let mut records = BTreeMap::new();
-    for path in paths {
-        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            continue;
-        };
-        let record =
-            read_stream_record(&path)?.ok_or_else(|| SegmentError::MalformedStreamRecord {
-                path: path.clone(),
-                source: ReadError::Malformed(solstone_core_journal_io::MalformedDataError {
-                    path: path.clone(),
-                    line: None,
-                    source: serde_json::Error::io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "empty stream record",
-                    )),
-                }),
-            })?;
-        records.insert(name.to_owned(), record);
-    }
-    Ok(records)
+    Ok(paths)
 }
 
-fn stream_record_path(journal: &Path, name: &str) -> PathBuf {
+pub(crate) fn stream_record_path(journal: &Path, name: &str) -> PathBuf {
     journal.join("streams").join(format!("{name}.json"))
 }
 
@@ -371,7 +378,10 @@ fn read_stream_record(path: &Path) -> Result<Option<StreamRecord>, SegmentError>
     }
 }
 
-fn write_stream_record(path: &Path, record: &StreamRecord) -> Result<(), SegmentError> {
+pub(crate) fn write_stream_record<T: Serialize>(
+    path: &Path,
+    record: &T,
+) -> Result<(), SegmentError> {
     write_json(path, record, JsonWriteOptions::default())?;
     Ok(())
 }

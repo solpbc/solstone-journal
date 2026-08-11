@@ -24,6 +24,8 @@ mod manifest;
 mod projection;
 mod segment_dir;
 mod stream_record;
+mod stream_repair;
+mod supervisor;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod tombstone;
@@ -47,6 +49,15 @@ pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
     bind_stream, lookup_stream, resolve_stream,
 };
+pub use stream_repair::{
+    MarkerTail, RepairOutcome, TolerantStreamRecords, UnchangedReason,
+    list_stream_records_tolerant, read_stream_record, repair_stream_tail_from_markers,
+    set_stream_tail_unconditionally, touch_stream_health_marker,
+};
+pub use supervisor::{
+    SUPERVISOR_MESSAGE, SupervisorRefusal, is_solstone_up, read_convey_port, require_solstone,
+    require_solstone_with,
+};
 pub use tombstone::write_tombstone;
 pub use write::{ContentDescriptor, ContentWriteOutcome, write_content};
 
@@ -63,7 +74,9 @@ mod architecture_tests {
         Manifest,
         Projection,
         SegmentDir,
+        StreamRepair,
         StreamRecord,
+        Supervisor,
         Write,
     }
 
@@ -75,7 +88,9 @@ mod architecture_tests {
         (Source::Manifest, include_str!("manifest.rs")),
         (Source::Projection, include_str!("projection.rs")),
         (Source::SegmentDir, include_str!("segment_dir.rs")),
+        (Source::StreamRepair, include_str!("stream_repair.rs")),
         (Source::StreamRecord, include_str!("stream_record.rs")),
+        (Source::Supervisor, include_str!("supervisor.rs")),
         (Source::Write, include_str!("write.rs")),
     ];
 
@@ -117,12 +132,21 @@ mod architecture_tests {
                     assert!(source.contains("hold_lock"));
                     assert!(source.contains("write_json"));
                 }
+                Source::StreamRepair => {
+                    for primitive in ["hold_lock", "write_stream_record", "atomic_replace"] {
+                        assert!(
+                            source.contains(primitive),
+                            "missing permitted journal-io write primitive {primitive}"
+                        );
+                    }
+                }
                 Source::ContentName
                 | Source::Error
                 | Source::Identity
                 | Source::Manifest
                 | Source::Projection
-                | Source::SegmentDir => {
+                | Source::SegmentDir
+                | Source::Supervisor => {
                     for primitive in [
                         "write_bytes_exclusive",
                         "hold_lock",
