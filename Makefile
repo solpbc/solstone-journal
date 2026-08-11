@@ -1020,9 +1020,10 @@ check-conversion-retirements:
 
 check-cogitate-cutover: .installed
 	$(VENV_BIN)/python scripts/check_cogitate_cutover.py
+	$(VENV_BIN)/python scripts/report_cogitate_cutover_coverage.py
 
 check-cogitate-cutover-tests: .installed
-	$(VENV_BIN)/python -m pytest tests/test_check_cogitate_cutover.py tests/test_talents.py tests/test_talent_provenance.py tests/test_cogitate_client.py tests/test_cortex.py tests/test_provider_validation.py tests/test_talent.py tests/test_talent_cli.py tests/test_brain_cli.py
+	$(VENV_BIN)/python -m pytest tests/test_check_cogitate_cutover.py tests/test_cogitate_runtime_fully_retired.py tests/test_talents.py tests/test_talent_provenance.py tests/test_cogitate_client.py tests/test_cortex.py tests/test_provider_validation.py tests/test_talent.py tests/test_talent_cli.py tests/test_brain_cli.py
 
 # Local-model server argv is rendered only by solstone-core local plan.
 check-local-server-argv-owner:
