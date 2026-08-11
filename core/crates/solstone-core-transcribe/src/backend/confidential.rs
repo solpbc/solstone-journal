@@ -873,6 +873,7 @@ mod tests {
             credential: Some("secret".to_owned()),
             parallel_slots: None,
             is_confidential: true,
+            is_bundled: false,
         }
     }
 

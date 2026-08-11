@@ -616,10 +616,10 @@ fn assert_preflight_error(journal: &TempJournal, expected_reason_code: &str) {
 }
 
 #[test]
-fn bundled_local_without_a_cogitate_arm_streams_a_named_error() {
+fn bundled_local_selects_the_cogitate_converse_arm_and_reports_server_state() {
     let journal = TempJournal::new("bundled-local");
     journal.write_config(json!({"providers": {"active": {"provider": "local"}}}));
-    assert_preflight_error(&journal, "bundled_local_unavailable");
+    assert_preflight_error(&journal, "local_model_not_ready");
 }
 
 #[test]

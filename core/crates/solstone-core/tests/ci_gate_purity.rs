@@ -350,6 +350,7 @@ fn make_ci_never_executes_forbidden_interpreters() {
     if cfg!(target_os = "macos") {
         expected.push("check");
     }
+    expected.push("check");
     expected.extend(["fetch", "deny"]);
     assert_eq!(
         cargo_subcommands, expected,
@@ -395,6 +396,7 @@ fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
     let makefile = makefile_text(&repo_root());
     let ci = target_body(&makefile, "ci-under-poison");
     let ios = target_body(&makefile, "check-rust-ios");
+    let macos = target_body(&makefile, "check-rust-macos");
 
     assert!(
         ci.contains("$(MAKE) check-rust-ios"),
@@ -408,6 +410,20 @@ fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
         assert!(
             ios.contains(protected),
             "check-rust-ios lost its native-host assertion: {protected}"
+        );
+    }
+    assert!(
+        ci.contains("$(MAKE) check-rust-macos"),
+        "make ci must retain the macOS cfg gate"
+    );
+    for protected in [
+        "-p solstone-core-system",
+        "-p solstone-core-local",
+        "--target $(MACOS_TARGET)",
+    ] {
+        assert!(
+            macos.contains(protected),
+            "check-rust-macos lost its cfg-path assertion: {protected}"
         );
     }
 }
