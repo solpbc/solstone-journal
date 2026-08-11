@@ -74,6 +74,8 @@ pub fn scan_day<S: SegmentSource>(
             u64::from(times.hour) * 3_600 + u64::from(times.minute) * 60 + u64::from(times.second);
         let start = format_time(start_seconds);
         let end = segment_end(start_seconds, length_seconds);
+        // The card check uses the path parent, which differs from Segment.stream
+        // for direct day children; do not replace this with segment.stream.
         let parent_name = segment
             .path
             .parent()
