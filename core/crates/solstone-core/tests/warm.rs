@@ -3,7 +3,7 @@
 
 #![cfg(unix)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -18,7 +18,8 @@ mod maturin_leaves;
 mod warm;
 
 use warm::{
-    Classification, InventoryRow, PlatformApplicability, collect_for_executable, inventory_rows,
+    Classification, Host, InventoryRow, PlatformApplicability, collect_for_executable,
+    inventory_rows,
 };
 
 const FIXTURE_ROW: InventoryRow = InventoryRow {
@@ -127,7 +128,7 @@ fn linked_fixture_runs_then_reports_missing_library() {
     let temp = TempDir::new();
     build_linked_fixture(temp.path());
     let executable = executable_in(temp.path());
-    let report = collect_for_executable(&executable, &[FIXTURE_ROW]);
+    let report = collect_for_executable(&executable, &[FIXTURE_ROW], Host::Linux);
     assert_eq!(report.records[0].classification, Classification::Ran);
     assert_eq!(report.records[0].reason_code, "reached-own-code");
 
@@ -136,7 +137,7 @@ fn linked_fixture_runs_then_reports_missing_library() {
         temp.path().join("libwarm_fixture.so.hidden"),
     )
     .expect("hide fixture library");
-    let report = collect_for_executable(&executable, &[FIXTURE_ROW]);
+    let report = collect_for_executable(&executable, &[FIXTURE_ROW], Host::Linux);
     let record = &report.records[0];
     assert_eq!(record.classification, Classification::CannotLoad);
     assert_eq!(record.reason_code, "loader-library-missing");
@@ -154,7 +155,7 @@ fn signal_death_is_cannot_load() {
         &temp.path().join(FIXTURE_ROW.binary_name),
         "#!/bin/sh\nkill -TERM $$\n",
     );
-    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW]);
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW], Host::Linux);
     let record = &report.records[0];
     assert_eq!(record.classification, Classification::CannotLoad);
     assert_eq!(record.reason_code, "terminated-by-signal");
@@ -171,7 +172,7 @@ fn loader_failure_json_has_reason_library_and_house_fields() {
         temp.path().join("libwarm_fixture.so.hidden"),
     )
     .expect("hide fixture library");
-    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW]);
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW], Host::Linux);
     let value = report.as_json();
     let row = &value["binaries"][0];
     assert_eq!(row["classification"], "cannot-load");
@@ -193,7 +194,7 @@ fn oversized_loader_stderr_still_classifies_cannot_load() {
             "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt \"{noise_bytes}\" ]; do\n  printf x >&2\n  i=$((i + 1))\ndone\nprintf '%s: error while loading shared libraries: libwarm-oversize.so: cannot open shared object file: No such file or directory\\n' \"$0\" >&2\nexit 127\n"
         ),
     );
-    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW]);
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW], Host::Linux);
     let record = &report.records[0];
     assert_eq!(record.classification, Classification::CannotLoad);
     assert_eq!(record.reason_code, "loader-library-missing");
@@ -215,7 +216,7 @@ fn cargo_marker_makes_absent_sibling_a_named_gap() {
         "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n",
     )
     .expect("write Cargo target marker");
-    let report = collect_for_executable(&debug.join("solstone-core"), &[FIXTURE_ROW]);
+    let report = collect_for_executable(&debug.join("solstone-core"), &[FIXTURE_ROW], Host::Linux);
     let record = &report.records[0];
     assert_eq!(record.classification, Classification::Unexercised);
     assert_eq!(record.reason_code, "development-sibling-not-built");
@@ -246,6 +247,95 @@ fn inventory_and_maturin_leaf_derivation_are_equal_both_directions() {
         derived.is_subset(&inventory),
         "maturin leaves are absent from inventory"
     );
+}
+
+#[test]
+fn inventory_applicability_matches_packaged_target_families() {
+    let root = repo_root();
+    let macos_families = maturin_leaves::macos_native_target_families(&root);
+    let packaging_source = root.join("scripts/release_package_inventory.py");
+    let leaves = maturin_leaves::host_packaged_leaves(&root);
+    let inventory = inventory_rows()
+        .iter()
+        .map(|row| ((row.crate_name.to_owned(), row.binary_name.to_owned()), row))
+        .collect::<BTreeMap<_, _>>();
+    let mut derived = BTreeSet::new();
+
+    // This treats a family outside the macOS set as Linux-only. That remains valid only because
+    // release_candidate_driver.py builds every current family for both Linux architectures.
+    for leaf in leaves {
+        let family = leaf.target_family.as_deref().unwrap_or_else(|| {
+            panic!(
+                "{}: missing [tool.solstone-release].target-family for {} ({})",
+                leaf.pyproject.display(),
+                leaf.crate_name,
+                leaf.binary_name
+            )
+        });
+        let key = (leaf.crate_name.clone(), leaf.binary_name.clone());
+        let row = inventory.get(&key).unwrap_or_else(|| {
+            panic!(
+                "{}: leaf {} ({family}) is absent from warm INVENTORY",
+                leaf.pyproject.display(),
+                leaf.binary_name
+            )
+        });
+        let expected = if macos_families.contains(family) {
+            PlatformApplicability::All
+        } else {
+            PlatformApplicability::Linux
+        };
+        assert_eq!(
+            row.applicability,
+            expected,
+            "{}: warm row {} ({}) in target-family {family} disagrees with {}: expected {expected:?}, got {:?}",
+            leaf.pyproject.display(),
+            leaf.crate_name,
+            leaf.binary_name,
+            packaging_source.display(),
+            row.applicability,
+        );
+        derived.insert(key);
+    }
+
+    for (crate_name, binary_name) in inventory.keys() {
+        assert!(
+            derived.contains(&(crate_name.clone(), binary_name.clone())),
+            "warm INVENTORY row {binary_name} ({crate_name}) is absent from packages/*/pyproject.toml target-family derivation",
+        );
+    }
+}
+
+fn describe_row() -> InventoryRow {
+    inventory_rows()
+        .iter()
+        .copied()
+        .find(|row| row.binary_name == "solstone-core-describe")
+        .expect("describe must be a warm inventory row")
+}
+
+#[test]
+fn linux_only_row_is_named_and_non_failing_on_simulated_macos() {
+    let temp = TempDir::new();
+    let report =
+        collect_for_executable(&executable_in(temp.path()), &[describe_row()], Host::MacOs);
+    let record = &report.records[0];
+
+    assert_eq!(record.classification, Classification::NotApplicable);
+    assert_eq!(record.reason_code, "platform-not-applicable");
+    assert!(!report.failed());
+}
+
+#[test]
+fn linux_only_row_is_missing_and_failing_on_simulated_linux() {
+    let temp = TempDir::new();
+    let report =
+        collect_for_executable(&executable_in(temp.path()), &[describe_row()], Host::Linux);
+    let record = &report.records[0];
+
+    assert_eq!(record.classification, Classification::Missing);
+    assert_eq!(record.reason_code, "binary-missing");
+    assert!(report.failed());
 }
 
 #[test]

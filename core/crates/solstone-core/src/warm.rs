@@ -52,11 +52,34 @@ pub(crate) enum PlatformApplicability {
     Linux,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Host {
+    Linux,
+    MacOs,
+}
+
+impl Host {
+    fn current() -> Self {
+        if cfg!(target_os = "linux") {
+            Self::Linux
+        } else {
+            Self::MacOs
+        }
+    }
+}
+
 impl PlatformApplicability {
-    fn applies_to_host(self) -> bool {
+    fn applies_to(self, host: Host) -> bool {
         match self {
             Self::All => true,
-            Self::Linux => cfg!(target_os = "linux"),
+            Self::Linux => host == Host::Linux,
+        }
+    }
+
+    fn platform_name(self) -> &'static str {
+        match self {
+            Self::All => "all supported platforms",
+            Self::Linux => "Linux",
         }
     }
 }
@@ -88,7 +111,7 @@ const INVENTORY: [InventoryRow; 9] = [
         crate_name: "solstone-core-describe",
         argv: &["--version"],
         expected: "--version exits 0",
-        applicability: PlatformApplicability::All,
+        applicability: PlatformApplicability::Linux,
     },
     InventoryRow {
         binary_name: "solstone-core-journal",
@@ -272,9 +295,10 @@ pub(crate) fn inventory_rows() -> &'static [InventoryRow] {
 
 /// Run warm output and return whether a shipped binary is missing or cannot load.
 pub(crate) fn run(json_output: bool) -> bool {
+    let host = Host::current();
     let report = match env::current_exe() {
-        Ok(executable) => collect_for_executable(&executable, inventory_rows()),
-        Err(error) => unavailable_report(error),
+        Ok(executable) => collect_for_executable(&executable, inventory_rows(), host),
+        Err(error) => unavailable_report(error, host),
     };
     if json_output {
         println!("{}", report.as_json());
@@ -284,7 +308,11 @@ pub(crate) fn run(json_output: bool) -> bool {
     report.failed()
 }
 
-pub(crate) fn collect_for_executable(executable: &Path, inventory: &[InventoryRow]) -> WarmReport {
+pub(crate) fn collect_for_executable(
+    executable: &Path,
+    inventory: &[InventoryRow],
+    host: Host,
+) -> WarmReport {
     let sibling_dir = executable.parent().unwrap_or_else(|| Path::new("."));
     let cargo_tree = verified_cargo_target_tree(executable);
     WarmReport {
@@ -292,7 +320,7 @@ pub(crate) fn collect_for_executable(executable: &Path, inventory: &[InventoryRo
             .iter()
             .copied()
             .map(|row| {
-                if row.applicability.applies_to_host() {
+                if row.applicability.applies_to(host) {
                     probe(sibling_dir.join(row.binary_name), row, cargo_tree)
                 } else {
                     not_applicable_record(row)
@@ -302,13 +330,13 @@ pub(crate) fn collect_for_executable(executable: &Path, inventory: &[InventoryRo
     }
 }
 
-fn unavailable_report(error: io::Error) -> WarmReport {
+fn unavailable_report(error: io::Error, host: Host) -> WarmReport {
     WarmReport {
         records: inventory_rows()
             .iter()
             .copied()
             .map(|row| {
-                if row.applicability.applies_to_host() {
+                if row.applicability.applies_to(host) {
                     unavailable_record(row, format!("cannot resolve current executable: {error}"))
                 } else {
                     not_applicable_record(row)
@@ -533,7 +561,26 @@ fn print_human(report: &WarmReport) {
         "On Linux, solstone-core-speakers-analyze and solstone-core-vad-analyze dynamically load the bundled ONNX Runtime, and solstone-core-vulkan-probe dynamically loads the host Vulkan loader. Warm proves their loader resolution as well as their start-up. solstone-core-describe is asserted neither static nor dynamic here; wheel validation only forbids dynamically linked FFmpeg."
     );
     println!(
-        "On macOS every Mach-O links libSystem. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and dyld failures there. The Linux-only Vulkan probe row is NOT APPLICABLE on macOS and does not fail warm."
+        "On macOS every Mach-O links libSystem. The property is non-empty but differs from Linux: warm exposes signing, quarantine, and dyld failures there."
+    );
+    let mut restricted_rows = Vec::new();
+    for record in &report.records {
+        let row = record.row;
+        if row.applicability == PlatformApplicability::All {
+            continue;
+        }
+        let description = format!(
+            "{} ({})",
+            row.binary_name,
+            row.applicability.platform_name()
+        );
+        if !restricted_rows.contains(&description) {
+            restricted_rows.push(description);
+        }
+    }
+    let restricted_rows = restricted_rows.join(", ");
+    println!(
+        "Platform-restricted warm rows: {restricted_rows}. They report NOT APPLICABLE when their applicability does not include this host and do not fail warm."
     );
     println!(
         "A GAP is a development-layout sibling that was not built and therefore was not exercised; it is reported by name but does not fail warm."
