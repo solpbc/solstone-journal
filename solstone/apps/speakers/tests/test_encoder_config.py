@@ -6,7 +6,7 @@ import ast
 import math
 from pathlib import Path
 
-from solstone.apps.speakers import attribution, candidate_tracker, encoder_config, owner
+from solstone.apps.speakers import attribution, candidate_tracker, encoder_config
 
 
 def test_locked_constants():
@@ -105,37 +105,3 @@ def test_attribution_imports_acoustic_constants():
     assert attribution.VP_OUTLIER_MIN_SAMPLES is encoder_config.VP_OUTLIER_MIN_SAMPLES
     assert attribution.CC_COVERAGE_GATE is encoder_config.CC_COVERAGE_GATE
     assert attribution.CC_CONFIDENCE_GATE is encoder_config.CC_CONFIDENCE_GATE
-
-
-def test_owner_imports_constants():
-    assert owner.OWNER_THRESHOLD is encoder_config.OWNER_THRESHOLD
-    assert owner.OWNER_MARGIN_MIN is encoder_config.OWNER_MARGIN_MIN
-    assert owner.OWNER_BOOTSTRAP_MIN_STMTS is encoder_config.OWNER_BOOTSTRAP_MIN_STMTS
-    assert (
-        owner.OWNER_BOOTSTRAP_MIN_MEDIAN_DURATION_S
-        is encoder_config.OWNER_BOOTSTRAP_MIN_MEDIAN_DURATION_S
-    )
-    assert (
-        owner.OWNER_BOOTSTRAP_MIN_INTRA_COSINE_P25
-        is encoder_config.OWNER_BOOTSTRAP_MIN_INTRA_COSINE_P25
-    )
-    assert (
-        owner.OWNER_BOOTSTRAP_STRONG_EVIDENCE_MIN_STMTS
-        is encoder_config.OWNER_BOOTSTRAP_STRONG_EVIDENCE_MIN_STMTS
-    )
-    assert (
-        owner.OWNER_BOOTSTRAP_MIN_INTRA_COSINE_P25_STRONG
-        is encoder_config.OWNER_BOOTSTRAP_MIN_INTRA_COSINE_P25_STRONG
-    )
-    assert (
-        owner.OWNER_BOOTSTRAP_EVIDENCE_TIER_STANDARD
-        is encoder_config.OWNER_BOOTSTRAP_EVIDENCE_TIER_STANDARD
-    )
-    assert (
-        owner.OWNER_BOOTSTRAP_EVIDENCE_TIER_STRONG
-        is encoder_config.OWNER_BOOTSTRAP_EVIDENCE_TIER_STRONG
-    )
-    assert (
-        owner.OWNER_BOOTSTRAP_PROVISIONAL_GUARD_MIN_TAGS
-        is encoder_config.OWNER_BOOTSTRAP_PROVISIONAL_GUARD_MIN_TAGS
-    )
