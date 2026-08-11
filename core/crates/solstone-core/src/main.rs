@@ -22,18 +22,21 @@ use solstone_core_cli::{
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
     Command, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP,
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
-    GrabCommand, GrabOptions, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
-    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
-    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions,
+    GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE,
+    IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP,
+    IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, IndexerCommand, IndexerCountsOptions,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions,
     SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE,
     TranscribeOptions, TransferCommand, TransferExportOptions, TransferImportOptions,
     TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod facet_candidates;
+mod identity;
 mod navigate;
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -157,6 +160,33 @@ fn main() -> ExitCode {
             eprintln!("journal navigate: error: invalid arguments");
             ExitCode::from(2)
         }
+        Ok(Command::Identity(command)) => identity::run(command),
+        Ok(Command::IdentityHelp) => {
+            print!("{IDENTITY_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::IdentityUsage) => identity_usage(IDENTITY_USAGE, "journal identity"),
+        Ok(Command::IdentityPartnerHelp) => {
+            print!("{IDENTITY_PARTNER_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::IdentityPartnerUsage) => {
+            identity_usage(IDENTITY_PARTNER_USAGE, "journal identity partner")
+        }
+        Ok(Command::IdentityHealthHelp) => {
+            print!("{IDENTITY_HEALTH_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::IdentityHealthUsage) => {
+            identity_usage(IDENTITY_HEALTH_USAGE, "journal identity health")
+        }
+        Ok(Command::IdentityBriefingHelp) => {
+            print!("{IDENTITY_BRIEFING_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::IdentityBriefingUsage) => {
+            identity_usage(IDENTITY_BRIEFING_USAGE, "journal identity briefing")
+        }
         Ok(Command::TransferHelp(text)) => {
             print!("{text}");
             ExitCode::SUCCESS
@@ -212,6 +242,12 @@ fn main() -> ExitCode {
             ExitCode::from(EXIT_USAGE)
         }
     }
+}
+
+fn identity_usage(usage: &str, command: &str) -> ExitCode {
+    eprint!("{usage}");
+    eprintln!("{command}: error: invalid arguments");
+    ExitCode::from(2)
 }
 
 struct StderrGrabDiagnostics {

@@ -16,6 +16,7 @@ pub const USAGE: &str = concat!(
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
+    "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
     "  solstone-core facet-candidates [-h] [-v] [-d]\n"
@@ -50,6 +51,64 @@ pub const NAVIGATE_HELP: &str = concat!(
     "  -h, --help            show this help message and exit\n",
     "  -f FACET, --facet FACET\n",
     "                        Facet to switch to.\n",
+);
+
+pub const IDENTITY_USAGE: &str = "usage: journal identity [-h] {partner,health,briefing} ...\n";
+
+pub const IDENTITY_HELP: &str = concat!(
+    "usage: journal identity [-h] {partner,health,briefing} ...\n",
+    "\n",
+    "Journal identity directory — partner.md and health.md.\n",
+    "\n",
+    "positional arguments:\n",
+    "  {partner,health,briefing}\n",
+    "    partner             Read or write identity/partner.md.\n",
+    "    health              Read or regenerate the steward health surface.\n",
+    "    briefing            Read the morning briefing.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+);
+
+pub const IDENTITY_PARTNER_USAGE: &str =
+    "usage: journal identity partner [-h] [-w] [--update-section HEADING] [--value VALUE]\n";
+
+pub const IDENTITY_PARTNER_HELP: &str = concat!(
+    "usage: journal identity partner [-h] [-w] [--update-section HEADING] [--value VALUE]\n",
+    "\n",
+    "Read or write identity/partner.md.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -w, --write           Overwrite partner.md (content via --value or stdin).\n",
+    "  --update-section HEADING\n",
+    "                        Update a specific ## section of partner.md (content via\n",
+    "                        --value or stdin).\n",
+    "  --value VALUE         Content to write (alternative to stdin).\n",
+);
+
+pub const IDENTITY_HEALTH_USAGE: &str = "usage: journal identity health [-h] [--refresh]\n";
+
+pub const IDENTITY_HEALTH_HELP: &str = concat!(
+    "usage: journal identity health [-h] [--refresh]\n",
+    "\n",
+    "Read or regenerate the steward health surface.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --refresh             Regenerate identity/health.md through the steward talent.\n",
+);
+
+pub const IDENTITY_BRIEFING_USAGE: &str = "usage: journal identity briefing [-h] [-d DAY]\n";
+
+pub const IDENTITY_BRIEFING_HELP: &str = concat!(
+    "usage: journal identity briefing [-h] [-d DAY]\n",
+    "\n",
+    "Read the morning briefing.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -d DAY, --day DAY     Specific day YYYYMMDD.\n",
 );
 
 /// `journal grab --help`, verbatim from the reference. The native verb
@@ -312,6 +371,15 @@ pub enum Command {
     },
     NavigateUsage,
     NavigateHelp,
+    Identity(IdentityCommand),
+    IdentityUsage,
+    IdentityHelp,
+    IdentityPartnerUsage,
+    IdentityPartnerHelp,
+    IdentityHealthUsage,
+    IdentityHealthHelp,
+    IdentityBriefingUsage,
+    IdentityBriefingHelp,
     ObserverUsage,
     ObserverPruneUsage,
     ObserverHelp,
@@ -323,6 +391,31 @@ pub enum Command {
     FacetCandidatesHelp,
     FacetCandidatesUsage,
     TransferHelp(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdentityCommand {
+    Hydrate,
+    Partner(IdentityPartnerOptions),
+    Health(IdentityHealthOptions),
+    Briefing(IdentityBriefingOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityPartnerOptions {
+    pub write: bool,
+    pub update_section: Option<String>,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityHealthOptions {
+    pub refresh: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityBriefingOptions {
+    pub day: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -781,6 +874,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             }
             Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
         }
+        [command, rest @ ..] if command == OsStr::new("identity") => parse_identity(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("facet-candidates") => {
             let help = |argument: &OsString| {
@@ -834,6 +928,152 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         _ => Err(UsageError),
     }
+}
+
+fn parse_identity(args: &[OsString]) -> Result<Command, UsageError> {
+    let Some((subcommand, rest)) = args.split_first() else {
+        return Ok(Command::Identity(IdentityCommand::Hydrate));
+    };
+    if is_help(subcommand) {
+        return Ok(Command::IdentityHelp);
+    }
+    match subcommand.to_str() {
+        Some("partner") => {
+            Ok(parse_identity_partner(rest).unwrap_or(Command::IdentityPartnerUsage))
+        }
+        Some("health") => Ok(parse_identity_health(rest).unwrap_or(Command::IdentityHealthUsage)),
+        Some("briefing") => {
+            Ok(parse_identity_briefing(rest).unwrap_or(Command::IdentityBriefingUsage))
+        }
+        _ => Ok(Command::IdentityUsage),
+    }
+}
+
+fn parse_identity_partner(args: &[OsString]) -> Result<Command, UsageError> {
+    if args.iter().any(is_help) {
+        return Ok(Command::IdentityPartnerHelp);
+    }
+    let mut write = false;
+    let mut update_section = None;
+    let mut value = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if let Some(attached) = attached_value(argument, "--update-section=") {
+            update_section = Some(attached.to_owned());
+            index += 1;
+            continue;
+        }
+        if let Some(attached) = attached_value(argument, "--value=") {
+            value = Some(attached.to_owned());
+            index += 1;
+            continue;
+        }
+        if argument == OsStr::new("--write") || argument == OsStr::new("-w") {
+            write = true;
+            index += 1;
+            continue;
+        }
+        if argument == OsStr::new("--update-section") {
+            let (next, next_index) = identity_option_value(args, index)?;
+            update_section = Some(next);
+            index = next_index;
+            continue;
+        }
+        if argument == OsStr::new("--value") {
+            let (next, next_index) = identity_option_value(args, index)?;
+            value = Some(next);
+            index = next_index;
+            continue;
+        }
+        return Ok(Command::IdentityPartnerUsage);
+    }
+    Ok(Command::Identity(IdentityCommand::Partner(
+        IdentityPartnerOptions {
+            write,
+            update_section,
+            value,
+        },
+    )))
+}
+
+fn parse_identity_health(args: &[OsString]) -> Result<Command, UsageError> {
+    if args.iter().any(is_help) {
+        return Ok(Command::IdentityHealthHelp);
+    }
+    let mut refresh = false;
+    for argument in args {
+        if argument == OsStr::new("--refresh") {
+            refresh = true;
+        } else {
+            return Ok(Command::IdentityHealthUsage);
+        }
+    }
+    Ok(Command::Identity(IdentityCommand::Health(
+        IdentityHealthOptions { refresh },
+    )))
+}
+
+fn parse_identity_briefing(args: &[OsString]) -> Result<Command, UsageError> {
+    if args.iter().any(is_help) {
+        return Ok(Command::IdentityBriefingHelp);
+    }
+    let mut day = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if let Some(attached) = attached_value(argument, "--day=") {
+            day = Some(attached.to_owned());
+            index += 1;
+            continue;
+        }
+        if let Some(attached) = attached_short_value(argument, "-d") {
+            day = Some(attached.to_owned());
+            index += 1;
+            continue;
+        }
+        if argument == OsStr::new("--day") || argument == OsStr::new("-d") {
+            let (next, next_index) = identity_option_value(args, index)?;
+            day = Some(next);
+            index = next_index;
+            continue;
+        }
+        return Ok(Command::IdentityBriefingUsage);
+    }
+    if day.as_deref().is_some_and(|value| !is_identity_day(value)) {
+        return Ok(Command::IdentityBriefingUsage);
+    }
+    Ok(Command::Identity(IdentityCommand::Briefing(
+        IdentityBriefingOptions { day },
+    )))
+}
+
+fn is_help(argument: &OsString) -> bool {
+    argument == OsStr::new("--help") || argument == OsStr::new("-h")
+}
+
+fn attached_value<'a>(argument: &'a OsString, prefix: &str) -> Option<&'a str> {
+    argument.to_str()?.strip_prefix(prefix)
+}
+
+fn attached_short_value<'a>(argument: &'a OsString, option: &str) -> Option<&'a str> {
+    argument
+        .to_str()?
+        .strip_prefix(option)
+        .filter(|value| !value.is_empty())
+}
+
+fn identity_option_value(args: &[OsString], index: usize) -> Result<(String, usize), UsageError> {
+    let value = args.get(index + 1).ok_or(UsageError)?;
+    let value = value
+        .to_str()
+        .filter(|value| !value.starts_with('-'))
+        .ok_or(UsageError)?;
+    Ok((value.to_owned(), index + 2))
+}
+
+fn is_identity_day(value: &str) -> bool {
+    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn parse_navigate(args: &[OsString]) -> Result<Command, UsageError> {
@@ -2801,6 +3041,88 @@ mod tests {
     }
 
     #[test]
+    fn parses_identity_grammar_with_click_value_spellings() {
+        assert_eq!(
+            evaluate_args(&args(&["identity"])),
+            Ok(Command::Identity(IdentityCommand::Hydrate))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "identity",
+                "partner",
+                "--write",
+                "--value=first",
+                "--value",
+                "last",
+            ])),
+            Ok(Command::Identity(IdentityCommand::Partner(
+                IdentityPartnerOptions {
+                    write: true,
+                    update_section: None,
+                    value: Some("last".to_owned()),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "identity",
+                "partner",
+                "--update-section=H",
+                "--value=-x",
+            ])),
+            Ok(Command::Identity(IdentityCommand::Partner(
+                IdentityPartnerOptions {
+                    write: false,
+                    update_section: Some("H".to_owned()),
+                    value: Some("-x".to_owned()),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["identity", "briefing", "-d20260101"])),
+            Ok(Command::Identity(IdentityCommand::Briefing(
+                IdentityBriefingOptions {
+                    day: Some("20260101".to_owned()),
+                }
+            )))
+        );
+    }
+
+    #[test]
+    fn identity_help_and_usage_are_scope_specific_carriers() {
+        for (values, expected) in [
+            (&["identity", "--help"][..], Command::IdentityHelp),
+            (
+                &["identity", "partner", "-h"][..],
+                Command::IdentityPartnerHelp,
+            ),
+            (
+                &["identity", "health", "--help"][..],
+                Command::IdentityHealthHelp,
+            ),
+            (
+                &["identity", "briefing", "-h"][..],
+                Command::IdentityBriefingHelp,
+            ),
+            (&["identity", "unknown"][..], Command::IdentityUsage),
+            (
+                &["identity", "partner", "--value"][..],
+                Command::IdentityPartnerUsage,
+            ),
+            (
+                &["identity", "health", "--refresh=yes"][..],
+                Command::IdentityHealthUsage,
+            ),
+            (
+                &["identity", "briefing", "--day", "bad"][..],
+                Command::IdentityBriefingUsage,
+            ),
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Ok(expected), "{values:?}");
+        }
+    }
+
+    #[test]
     fn rejects_unknown_args() {
         assert_eq!(evaluate_args(&args(&["--unknown"])), Err(UsageError));
     }
@@ -4063,6 +4385,7 @@ mod tests {
             "spl",
             "supervisor",
             "navigate",
+            "identity",
             "export",
             "facet-candidates",
         ] {

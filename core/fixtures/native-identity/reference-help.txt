@@ -1,0 +1,41 @@
+Usage: sol.py [OPTIONS] COMMAND [ARGS]...
+
+ Journal identity directory — partner.md and health.md.
+
+Options:
+  --install-completion  Install completion for the current shell.
+  --show-completion     Show completion for the current shell, to copy it or customize the
+                        installation.
+  --help                Show this message and exit.
+
+Commands:
+  briefing  Read the morning briefing from YYYYMMDD/talents/morning_briefing.json.
+  health    Read or regenerate the steward health surface.
+  partner   Read or write identity/partner.md.
+
+Usage: sol.py partner [OPTIONS]
+
+ Read or write identity/partner.md.
+
+Options:
+  -w, --write                    Overwrite partner.md (content via --value or stdin).
+  --update-section TEXT          Update a specific ## section of partner.md (content via
+                                 --value or stdin).
+  --value TEXT                   Content to write (alternative to stdin).
+  --help                         Show this message and exit.
+
+Usage: sol.py health [OPTIONS]
+
+ Read or regenerate the steward health surface.
+
+Options:
+  --refresh  Regenerate identity/health.md through the steward talent.
+  --help     Show this message and exit.
+
+Usage: sol.py briefing [OPTIONS]
+
+ Read the morning briefing from YYYYMMDD/talents/morning_briefing.json.
+
+Options:
+  -d, --day TEXT  Specific day YYYYMMDD.
+  --help          Show this message and exit.
