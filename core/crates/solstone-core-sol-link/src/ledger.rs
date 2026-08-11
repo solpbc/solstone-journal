@@ -590,10 +590,22 @@ fn read_authorized(path: &Path) -> Result<Option<Clients>, AuthorizedClientsLoad
     let mut dropped_non_cert = false;
     for item in raw {
         let Some(item) = item.as_object() else {
-            continue;
+            return Err(AuthorizedClientsLoadError::Malformed {
+                path: path.to_path_buf(),
+                source: Box::new(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "authorized client entry must be an object",
+                )),
+            });
         };
         let Some(fingerprint) = item.get("fingerprint").and_then(Value::as_str) else {
-            continue;
+            return Err(AuthorizedClientsLoadError::Malformed {
+                path: path.to_path_buf(),
+                source: Box::new(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "authorized client entry must contain a string fingerprint",
+                )),
+            });
         };
         if item.get("kind").is_some_and(|kind| kind != CERT_KIND) {
             dropped_non_cert = true;
@@ -880,6 +892,20 @@ mod tests {
             AuthorizedClientsRead::Malformed
         ));
         assert!(!ledger.is_authorized("a"));
+    }
+
+    #[test]
+    fn malformed_individual_entry_makes_the_whole_read_malformed() {
+        let temporary = TempDir::new();
+        let mut ledger = AuthorizationLedger::new(temporary.path());
+        fs::create_dir_all(ledger.authorized_clients_path().parent().unwrap()).unwrap();
+        fs::write(
+            ledger.authorized_clients_path(),
+            br#"[{"fingerprint":"a"},{"device_label":"missing fingerprint"}]"#,
+        )
+        .unwrap();
+
+        assert_eq!(ledger.read_state(), AuthorizedClientsRead::Malformed);
     }
 
     #[test]
