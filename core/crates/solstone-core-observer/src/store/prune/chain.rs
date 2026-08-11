@@ -5,11 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_segment::{list_days, list_segments};
+use solstone_core_segment::{list_days, list_segments, set_stream_tail_unconditionally};
 
 use super::history::pruned_records_by_stream;
 use super::marker::{StreamMarker, read_segment_marker, write_segment_marker};
-use super::stream_state::repair_stream_state_tail;
 use super::types::Refusal;
 
 type SegmentKey = (String, String);
@@ -171,7 +170,10 @@ pub fn repair_stream_chain(
 /// with the highest `seq` and never regresses the stored `seq`.
 pub fn repair_stream_registry_state(journal: &Path, stream: &str) {
     let segments = stream_segments(journal, stream);
-    if let Some(state) = super::stream_state::read_stream_state(journal, stream)
+    if let Some(state) = solstone_core_segment::read_stream_record(journal, stream)
+        .ok()
+        .flatten()
+        .and_then(|value| serde_json::from_value::<solstone_core_segment::StreamRecord>(value).ok())
         && let (Some(last_day), Some(last_segment)) = (&state.last_day, &state.last_segment)
         && segments.contains_key(&(last_day.clone(), last_segment.clone()))
     {
@@ -188,7 +190,7 @@ pub fn repair_stream_registry_state(journal: &Path, stream: &str) {
             tail = Some(key.clone());
         }
     }
-    repair_stream_state_tail(
+    set_stream_tail_unconditionally(
         journal,
         stream,
         tail.as_ref().map(|key| key.0.as_str()),

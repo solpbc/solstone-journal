@@ -6,6 +6,7 @@ use std::path::Path;
 
 use solstone_core_indexer_store::db::prune_by_paths;
 use solstone_core_journal_io::remove_dir_all;
+use solstone_core_segment::touch_stream_health_marker;
 
 use super::attribution::observer_prefix_for_stream;
 use super::chain::{repair_stream_chain, repair_stream_registry_state};
@@ -112,18 +113,6 @@ pub fn execute_plan(
         repair_stream_registry_state(journal, stream);
     }
     for day in &affected_days {
-        touch_stream_health_marker(journal, day);
+        let _ = touch_stream_health_marker(journal, day);
     }
-}
-
-fn touch_stream_health_marker(journal: &Path, day: &str) {
-    let path = journal
-        .join("chronicle")
-        .join(day)
-        .join("health")
-        .join("stream.updated");
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&path, b"");
 }

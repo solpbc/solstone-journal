@@ -221,6 +221,51 @@ fn pruning_the_tail_segment_repairs_the_registry_state_to_the_new_survivor() {
 }
 
 #[test]
+fn pruning_a_non_tail_segment_leaves_the_registry_state_byte_identical() {
+    let fixture = fixture("tail-still-present");
+    seed_observer(&fixture.root, "abcdefgh", STREAM);
+    write_segment(
+        &fixture.root,
+        DAY,
+        STREAM,
+        "090000_300",
+        1,
+        None,
+        b"same bytes",
+    );
+    write_segment(
+        &fixture.root,
+        DAY,
+        STREAM,
+        "090000_301",
+        2,
+        Some("090000_300"),
+        b"same bytes",
+    );
+    write_segment(
+        &fixture.root,
+        DAY,
+        STREAM,
+        "100000_300",
+        3,
+        Some("090000_301"),
+        b"downstream",
+    );
+    write_stream_state(&fixture.root, STREAM, DAY, "100000_300", 3);
+    let state_path = fixture.root.join("streams").join(format!("{STREAM}.json"));
+    let before = fs::read(&state_path).expect("state before prune");
+
+    let result = run_prune(&fixture.root, &[DAY.to_owned()], Some(STREAM), true, 1_000);
+    assert!(
+        result.refusals.is_empty(),
+        "refusals: {:?}",
+        result.refusals
+    );
+    assert_eq!(result.deleted.len(), 1);
+    assert_eq!(fs::read(state_path).expect("state after prune"), before);
+}
+
+#[test]
 fn recognized_derived_outputs_do_not_refuse_and_one_stray_file_does() {
     let recognized = fixture("derived-recognized");
     seed_observer(&recognized.root, "abcdefgh", STREAM);

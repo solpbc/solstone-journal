@@ -13,7 +13,6 @@ mod history;
 mod identity;
 mod marker;
 mod plan;
-mod stream_state;
 mod types;
 
 use std::collections::BTreeSet;
