@@ -90,6 +90,7 @@ solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
 solstone-core-transfer.workspace = true
+solstone-core-transcribe.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 serde_json.workspace = true
 nix = { workspace = true, features = ["process", "signal"] }
