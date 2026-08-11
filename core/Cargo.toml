@@ -57,6 +57,7 @@ members = [
     "crates/solstone-core-speakers-analyze",
     "crates/solstone-core-vad-analyze",
     "crates/solstone-core-vulkan-probe",
+    "crates/solstone-core-pdf",
     "crates/solstone-core-describe",
     "crates/solstone-core-grab",
     "crates/solstone-core-observe-audio",
@@ -174,6 +175,7 @@ imageproc = { version = "0.27.0", default-features = false }
 log = "0.4.29"
 socket2 = "0.6.5"
 libloading = "=0.8.9"
+libc = "0.2.189"
 md5 = "0.8.1"
 nix = { version = "0.30.1", default-features = false, features = ["fs", "user"] }
 plist = "1.8.0"

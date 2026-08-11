@@ -3094,6 +3094,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-pdf"
+version = "1.0.22"
+dependencies = [
+ "image",
+ "libc",
+ "libloading",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "solstone-core-processing-record"
 version = "1.0.22"
 dependencies = [
