@@ -437,6 +437,7 @@ mod tests {
             credential: Some("token".into()),
             parallel_slots: None,
             is_confidential: true,
+            is_bundled: false,
         }
     }
 

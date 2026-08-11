@@ -92,6 +92,7 @@ mod tests {
                     credential: None,
                     parallel_slots: None,
                     is_confidential: true,
+                    is_bundled: false,
                 }),
             ),
             (
@@ -103,6 +104,7 @@ mod tests {
                     credential: None,
                     parallel_slots: Some(2),
                     is_confidential: false,
+                    is_bundled: false,
                 }),
             ),
             (

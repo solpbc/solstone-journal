@@ -20,6 +20,7 @@ pub struct ByoEndpoint {
     pub credential: Option<String>,
     pub parallel_slots: Option<u32>,
     pub is_confidential: bool,
+    pub is_bundled: bool,
 }
 
 pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResolution {
@@ -62,6 +63,7 @@ pub fn resolve_local_endpoint(config: &Map<String, Value>) -> LocalEndpointResol
             .map(ToOwned::to_owned),
         parallel_slots,
         is_confidential,
+        is_bundled: false,
     })
 }
 
