@@ -99,9 +99,12 @@ with a compiled-in registry.
    terminal named Apple-detector refusal. It neither launches a binary nor owns
    filesystem authority.
 2. The model detector is a generic
-   `FnMut(&Path, Option<&str>) -> Result<Option<DetectedTimestamp>, E>` seam.
-   `FnMut` permits exact invocation counting. Its error is retained as a typed
-   source but never interpolated into owner-facing output.
+   `FnMut(&Path, Option<&str>) -> Result<Option<DetectedTimestamp>, ModelDetectionError<E>>`
+   seam. `Unavailable` represents the reference's no-engine, validation, and
+   parse failures and becomes no detection; `Failed(E)` is retained as a typed
+   source but never interpolated into owner-facing output. A no-detection result
+   on the non-deterministic-only path is the reference's timestamp refusal, not
+   a successful skip.
 3. `AutoTimestamp` has four variants: `Absent`, `Bare`,
    `Guidance(NonEmptyGuidance)`, and `EmptyGuidance`. Its only raw constructor
    maps `None`, bare presence, non-empty text, and `""` respectively. `adopts()`
@@ -113,7 +116,7 @@ with a compiled-in registry.
    `solstone-core-segment::projection::project_stream_name`, which projects an
    existing name to a filesystem location rather than deriving an import label.
    The three-extension detection-skip set (`.m4a`, `.txt`, `.md`) and the
-   two-extension text-stream set (`.txt`, `.md`) remain separately named.
+   two-extension text-stream set (`.txt`, `.md`) remain separate named constants.
    Canonicalisation strips before validation. A comment cites
    `streams.py:98-116` and records the probe result: Rust `regex` rejects a raw
    trailing newline where Python's `$` accepts it; stripping keeps the public
@@ -136,7 +139,7 @@ with a compiled-in registry.
      refusal above. This deliberately diverges from
      `detect_created.py:268-288`, which otherwise leaks such errors; the design
      and implementation comment must name the divergence.
-7. `registry.rs` is the precedent for partial completion: it already exposes
+7. `registry.rs` is the precedent for partial completion: it exposes
    `ORDERED_FILE_IMPORTER_NAMES` and `first_claimed` while retaining
    `reserved_seam()` (`core/crates/solstone-core-import-sources/src/registry.rs:12-36`).
    W1b retains the `registry` stub row and its convention. It removes no
@@ -151,15 +154,14 @@ All new source files receive the repository SPDX header.
 
 | Module | Public surface |
 |---|---|
-| `detect.rs` | `resolve_import(options: &ResolutionOptions<'_>, seams: &mut ResolutionSeams<A, C, D, M, L>) -> Result<ResolutionOutcome, ResolutionError<AE, ME>>`, where `A: FnMut(&Path) -> Result<bool, AE>`, `C: FnMut(RegistrySource, &Path) -> bool`, `D: FnMut(&Path, Option<&str>) -> Option<DetectedTimestamp>`, `M: FnMut(&Path, Option<&str>) -> Result<Option<DetectedTimestamp>, ME>`, and `L: FnMut(&SourceHash) -> Option<ManifestSummary>`. `AE` and `ME` remain generic typed causes. |
-| `detect.rs` seams | `ResolutionSeams<A, C, D, M, L> { apple_detector: A, claims: C, deterministic_detector: D, model_detector: M, manifest_lookup: L }`. Each field has a one-line doc contract: Apple runs only at the source-absent directory/ZIP pre-empt and its error is terminal; claims runs during ordered sweeps and `false` is a non-match; deterministic detection receives the path and Python-equivalent optional original filename; model detection runs once only after deterministic no-match and receives optional guidance; manifest lookup runs only for non-dry-run generic dedup and `None` is no prior manifest. Named fields prevent positional seam mix-ups. Deterministic detection is injected because this wave ports resolution, not `resolve_created_deterministic`'s filename/Exif extraction implementation; its reference inputs are `path` and `original_filename` (`detect_created.py:205-227`, called at `cli.py:621-624`). |
+| `detect.rs` | `resolve_import(options: &ResolutionOptions<'_>, seams: &mut ResolutionSeams<A, C, D, M, L, T>) -> Result<ResolutionOutcome, ResolutionError<AE, ME>>`, where `A: FnMut(&Path) -> Result<bool, AE>`, `C: FnMut(RegistrySource, &Path) -> Result<bool, CE>`, `D: FnMut(&Path, Option<&str>) -> Option<DetectedTimestamp>`, `M: FnMut(&Path, Option<&str>) -> Result<Option<DetectedTimestamp>, ModelDetectionError<ME>>`, `L: FnMut(&SourceHash) -> Option<ManifestSummary>`, and `T: FnMut() -> Timestamp`. `AE` and `ME` remain generic typed causes. |
+| `detect.rs` seams | `ResolutionSeams<A, C, D, M, L, T> { apple_detector: A, claims: C, deterministic_detector: D, model_detector: M, manifest_lookup: L, generated_timestamp: T }`. Each field has a one-line doc contract: Apple runs only at the source-absent directory/ZIP pre-empt and its error is terminal; claims runs during ordered sweeps and an error is a swallowed non-answer; deterministic detection receives the path and Python-equivalent optional original filename; model detection runs once only after deterministic no-match and receives optional guidance; manifest lookup runs only for non-dry-run generic dedup and `None` is no prior manifest; generated timestamp runs only for a selected source with no explicit timestamp. Named fields prevent positional seam mix-ups and ambient-clock reads. Deterministic detection is injected because this wave ports resolution, not `resolve_created_deterministic`'s filename/Exif extraction implementation; its reference inputs are `path` and `original_filename` (`detect_created.py:205-227`, called at `cli.py:621-624`). |
 | `detect.rs` types | `ResolutionOptions { media: &Path, source: Option<&str>, timestamp: Option<&str>, auto: AutoTimestamp, dry_run: bool, deterministic_only: bool, force: bool }`; `ResolutionOutcome::{RouteAppleHealth, Skipped { reason, detected_timestamp }, Resolved { source, timestamp, stream }}`; `ManifestSummary { entry_count: u64 }`; `SkipReason::{AlreadyImported, NoDeterministicMatch, TimestampRequired}`; `ResolvedSource::{Registry(RegistrySource), GenericAudio, GenericText}`. Every refusal is `Err(ResolutionError::...)`; no outcome variant represents a refusal. |
-| `timestamp.rs` | `AutoTimestamp::from_raw(raw: Option<Option<&str>>) -> AutoTimestamp`; `validate_timestamp(raw: &str) -> Result<Timestamp, TimestampError>`; `DetectedTimestamp { timestamp: Timestamp, source: DeterministicSource }`; pure helpers for timestamp candidate handling. The deterministic seam supplies an already-resolved deterministic answer because metadata/Exif extraction is outside this wave. |
+| `timestamp.rs` | `AutoTimestamp::from_raw(raw: Option<Option<&str>>) -> AutoTimestamp`; `validate_timestamp(raw: &str) -> Result<Timestamp, TimestampError>`; `DetectedTimestamp { timestamp: Timestamp }`; pure helpers for timestamp candidate handling. The deterministic seam supplies an already-resolved deterministic answer because metadata/Exif extraction is outside this wave. |
 | `dedupe.rs` | `hash_source(path: &Path) -> Result<SourceHash, HashSourceError>`. It constructs the existing `SourceHash` with its current `new(String)` API; W1b does not redesign that type. |
 | `stream_name.rs` | `import_stream_name(import_source: &str) -> Result<String, StreamNameError>` and `canonicalize_stream_name(base: &str, qualifier: Option<&str>) -> Result<String, StreamNameError>`. The resolver calls the former only after final source selection. |
-| `registry.rs` | Retain `ORDERED_FILE_IMPORTER_NAMES` and `first_claimed`; add `RegistrySource` plus `registry_source(name: &str) -> Option<RegistrySource>`. The fixed order remains the fixture order. |
-| `apple_health.rs` | `APPLE_HEALTH_SOURCE` and a small route marker used by `ResolutionOutcome::RouteAppleHealth`; no reader or native-process call is added. |
-| `oura.rs` | `oura_file_source_refusal() -> ImportSourceRefusal`, with the byte-exact sync-remedy message. |
+| `registry.rs` | Retain `first_claimed`; the resolver-owned order and source type live in `solstone-core-import` because this crate depends on it. |
+| `apple_health.rs` / `oura.rs` | Retain only future-body `reserved_seam()`s. The Apple routing verdict and Oura refusal live in `solstone-core-import`, where the resolver can use the single truth source. This is a scope deviation: putting them here would require inverting the crate dependency direction. |
 
 `ResolutionOptions` intentionally carries the owner-facing fields requested by
 this wave. Staging, journal path creation, and all mutation options do not
@@ -198,7 +200,7 @@ belong in it.
    path and look up its manifest. `force` still computes the source hash but
    suppresses only the duplicate skip. Skip only when `entry_count > 0`.
    Reference: `cli.py:590-614`.
-8. **Timestamp and stream:** selected file importers get an import-time
+8. **Timestamp and stream:** selected file importers receive a caller-supplied local import-time
    timestamp if absent; generic sources use deterministic then model detection.
    Validate every supplied/adopted timestamp, then derive registry source or
    `.txt`/`.md` text, otherwise audio, and form the stream. Reference:
@@ -258,7 +260,7 @@ First vendor the supplied file verbatim from
 | 6 | `resolution.rs`; corpus `bare::zip_generic` with real no-claim predicate table. |
 | 7 | `resolution.rs`; constructed Apple source tree, recursive byte snapshot before/after an injected-Apple-yes resolution, then assert `RouteAppleHealth` and identical trees. This directly proves no staging, lock, manifest, stream, or index artifact. |
 | 8 | `resolution.rs`; corpus `source=oura::plain.txt`, exact remedy. |
-| 9 | `resolution.rs`; constructed original file plus injected lookup records with positive and zero entry counts; verify original-path hash and force behavior. |
+| 9 | `resolution.rs`; constructed original and staged-lookalike files plus injected lookup records with positive and zero entry counts; verify original-path hashing and `force` suppression. |
 | 10 | `resolution.rs`; constructed generic source with panic-on-call lookup and `dry_run=true`. |
 | 11 | `timestamp.rs` unit tests; corpus timestamp rows, split shape and calendar variants. |
 | 11a | `resolution.rs`; registry source plus impossible-day timestamp. |
@@ -266,11 +268,11 @@ First vendor the supplied file verbatim from
 | 12 | `resolution.rs`; corpus `auto=*::dated.m4a`. |
 | 12a | `resolution.rs`; constructed non-detectable source, deterministic closure returns none, model closure captures guidance for non-empty and empty variants. |
 | 12b | `resolution.rs`; same non-detectable source and a call-counting model closure, asserted once. |
-| 12c | `resolution.rs`; model closure returns a typed non-swallow error; assert named-remedy refusal and no raw cause text. |
+| 12c | `resolution.rs`; `Unavailable` model error reaches the reference no-detection refusal, while `Failed(cause)` reaches the named-remedy refusal with no raw cause text. |
 | 13 | `resolution.rs`; corpus `bare::audio.m4a` and `auto=absent::audio.m4a_undetectable`; panic-on-call model closure. |
 | 14 | New `solstone-core-import/tests/stream_name_oracle.rs`; vendored seven-case fixture. |
 | 15 | `stream_name_oracle.rs`; constructed separator, double-dot, and invalid-name inputs. |
-| 16 | `resolution.rs`; corpus boundary rows and constructed fixture trees where filesystem predicates are needed. |
+| 16 | `resolution.rs`; corpus boundary rows and constructed fixture trees using documented document/Obsidian predicate stand-ins. This certifies resolver dispatch and ordering given faithful predicates; source-body discrimination remains later work. |
 | 17 | `resolution.rs`; constructed unclaimed directory, assert the named refusal after generic resolution; a `.pdf` directory asserts the earlier PDF refusal. |
 | 18 | Implement-stage written finding, not a test: W1b libraries perform no writes. The caller-owned reference `get_journal()` auto-create is conditional; `_setup_import` is the first real write, reached at `cli.py:825` and `:865`, outside W1b. |
 | 19 | After implementation only, run `make ci` through `hop check --allow-capture` and report its actual result. |

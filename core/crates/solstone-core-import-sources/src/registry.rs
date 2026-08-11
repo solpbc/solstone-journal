@@ -2,27 +2,18 @@
 // Copyright (c) 2026 sol pbc
 
 //! Ordered source registry; real detector signatures are defined by a later wave.
+//!
+//! The module is named `archive`, while the owner-facing registry name is
+//! `journal_archive`; the latter intentionally matches the fixture contract.
 
 use crate::ImportSourcesError;
 
-pub use solstone_core_import::detect::{ORDERED_FILE_IMPORTER_NAMES, RegistrySource};
-
-/// Ordered names for file importer routing.
-///
-/// The module is named `archive`, while the owner-facing registry name is
-/// `journal_archive`; the latter intentionally matches the fixture contract.
 /// Return the first ordered source claimed by the injected predicate.
 pub fn first_claimed<'a>(
     order: &'a [&'a str],
     mut claims: impl FnMut(&str) -> bool,
 ) -> Option<&'a str> {
     order.iter().copied().find(|name| claims(name))
-}
-
-/// Resolve one compiled-in registry name.
-#[must_use]
-pub fn registry_source(name: &str) -> Option<RegistrySource> {
-    RegistrySource::from_name(name)
 }
 
 /// Reserved registry seam; its real operation signature is defined by a later wave.

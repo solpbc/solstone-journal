@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use serde_json::Value;
-use solstone_core_import_sources::registry::ORDERED_FILE_IMPORTER_NAMES;
+use solstone_core_import::detect::ORDERED_FILE_IMPORTER_NAMES;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/import_reference_grammar.json");
 const DETECTION: &str = include_str!("../../../fixtures/import_detection_corpus.json");
