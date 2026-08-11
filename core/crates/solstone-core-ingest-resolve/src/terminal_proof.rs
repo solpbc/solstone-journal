@@ -5,10 +5,8 @@ use std::fs::File;
 use std::io::Read;
 
 use serde_json::Value;
-use solstone_core_processing_record::{TerminalProofOutcome, evaluate_terminal_proof};
+use solstone_core_processing_record::{TerminalProofOutcome, evaluate_terminal_proof, vocab};
 use solstone_core_segment::{ContentName, SegmentDir, TerminalProofVerifier};
-
-const MAX_FIRST_ROW_BYTES: usize = 64 * 1024;
 
 /// Read-only terminal-processing verifier bound to one resolved segment.
 pub struct SegmentTerminalProof<'a> {
@@ -33,10 +31,10 @@ impl TerminalProofVerifier for SegmentTerminalProof<'_> {
             Ok(file) => file,
             Err(_) => return false,
         };
-        let mut first_window = Vec::with_capacity(MAX_FIRST_ROW_BYTES);
+        let mut first_window = Vec::with_capacity(vocab::MAX_FIRST_ROW_BYTES);
         if sidecar
             .by_ref()
-            .take(MAX_FIRST_ROW_BYTES as u64)
+            .take(vocab::MAX_FIRST_ROW_BYTES as u64)
             .read_to_end(&mut first_window)
             .is_err()
         {
