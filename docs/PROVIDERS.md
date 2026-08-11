@@ -178,4 +178,9 @@ without promotion and is repaired by the provider installer under the provider
 lease. Unreadable proof exits successfully without promotion and is preserved
 until the owner fixes the underlying access or I/O problem.
 
+`solstone-core assets` emits an additive declarative registry of downloadable
+artifacts. The installer pin tables remain the operational source in this wave,
+and no fetch path reads the registry yet. Its rows resolve upstream, so no URL
+an owner's machine fetches from changes.
+
 There are no runtime compatibility shims for the retired shapes.
