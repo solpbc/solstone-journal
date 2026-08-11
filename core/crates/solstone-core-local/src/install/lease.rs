@@ -22,16 +22,21 @@ pub fn lease_path(journal: &Path, provider: &str) -> PathBuf {
         .join(format!("{provider}.lease"))
 }
 
-/// Return whether an existing lease is held without creating any filesystem state.
+/// Return whether an existing lease is held by taking a momentary shared lock
+/// without creating any filesystem state.
+///
+/// While the shared probe lock is held, a concurrent `acquire()` can observe
+/// `EWOULDBLOCK`; the lock drops immediately and acquire retries within its
+/// five-attempt, 250 ms window.
 #[allow(deprecated)]
 pub fn is_held(journal: &Path, provider: &str) -> std::io::Result<bool> {
     let path = lease_path(journal, provider);
-    let file = match OpenOptions::new().read(true).write(true).open(path) {
+    let file = match OpenOptions::new().read(true).open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    match flock(file.as_raw_fd(), FlockArg::LockExclusiveNonblock) {
+    match flock(file.as_raw_fd(), FlockArg::LockSharedNonblock) {
         Ok(()) => Ok(false),
         Err(nix::errno::Errno::EWOULDBLOCK) => Ok(true),
         Err(error) => Err(std::io::Error::other(error)),

@@ -616,6 +616,24 @@ fn run_parakeet_returns_exit_75_when_the_lease_is_held() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(unix)]
+#[test]
+fn is_held_reports_read_only_held_lease() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp("read-only-held-lease");
+    let held = lease::acquire(&root, "parakeet").unwrap().unwrap();
+    let path = lease::lease_path(&root, "parakeet");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+
+    let observed = lease::is_held(&root, "parakeet");
+
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(observed.unwrap());
+    drop(held);
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn inspect_local_resolves_backend_and_exposes_supervisor_host_fields() {
     let root = temp("inspect-local-host");

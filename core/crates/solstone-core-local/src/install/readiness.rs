@@ -218,10 +218,13 @@ pub fn inspect_parakeet(input: Map<String, Value>) -> Value {
         runnable = probe["runnable"].as_bool().unwrap_or(false);
         let probe_reason = probe["reason_code"].as_str().unwrap_or("ready");
         let detail = probe.get("message").cloned().unwrap_or_else(|| {
-            probe
-                .get("exit_code")
-                .map(|code| Value::String(format!("exited with status {code}")))
-                .unwrap_or(Value::Null)
+            match probe.get("exit_code").and_then(Value::as_i64) {
+                Some(code) => Value::String(format!("exited with status {code}")),
+                None if probe.get("exit_code").is_some() => {
+                    Value::String("terminated by signal".to_owned())
+                }
+                None => Value::Null,
+            }
         });
         host.insert(
             "binary_runtime".to_owned(),
