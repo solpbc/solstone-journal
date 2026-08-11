@@ -453,6 +453,13 @@ fn settings_creates_journal_only_after_successful_parsing() {
     let harness = Harness::new();
     for (name, args, exit, should_create) in [
         ("root-help", &["settings", "-h"][..], 0, false),
+        ("convey-help", &["settings", "convey", "-h"][..], 0, false),
+        (
+            "status-help",
+            &["settings", "convey", "status", "-h"][..],
+            0,
+            false,
+        ),
         ("argument-error", &["settings", "--nonsense"][..], 2, false),
         ("root-fallback", &["settings"][..], 1, true),
         ("convey-fallback", &["settings", "convey"][..], 1, true),

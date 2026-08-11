@@ -1030,9 +1030,6 @@ fn parse_settings(args: &[OsString]) -> Result<Command, UsageError> {
 
     let mut index = 0;
     while let Some(argument) = args.get(index) {
-        if is_help(argument) {
-            return Ok(Command::SettingsHelp);
-        }
         if matches!(
             argument.as_os_str(),
             value if value == OsStr::new("-v")
@@ -1074,9 +1071,6 @@ fn parse_settings_convey(args: &[OsString]) -> Result<Command, UsageError> {
             SettingsConveyCommand::FallbackHelp,
         )));
     };
-    if is_help(argument) {
-        return Ok(Command::SettingsConveyHelp);
-    }
     if argument == OsStr::new("status") {
         return parse_settings_status(rest);
     }
