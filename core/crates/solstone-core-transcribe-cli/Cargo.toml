@@ -9,6 +9,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[package.metadata.solstone-release]
+skip = "standalone transcription integration bed; production transcribe ships through solstone-core"
+
 [[bin]]
 name = "solstone-transcribe"
 path = "src/main.rs"
