@@ -24,7 +24,9 @@ pub(crate) fn contained_path(root: &Path, rel: &str) -> Result<PathBuf, Containe
     if root_alias(rel) {
         return journal_root_real(root).map_err(|_| ContainedPathError::Io);
     }
-    let lexical = resolve_journal_path(root, rel).map_err(|_| ContainedPathError::Invalid)?;
+    let normalized = pathlib_normalize(rel);
+    let lexical =
+        resolve_journal_path(root, &normalized).map_err(|_| ContainedPathError::Invalid)?;
     let root_real = journal_root_real(root).map_err(|_| ContainedPathError::Io)?;
     let candidate = realpath_non_strict(&lexical).map_err(|_| ContainedPathError::Io)?;
     if candidate.starts_with(&root_real) {
@@ -36,6 +38,31 @@ pub(crate) fn contained_path(root: &Path, rel: &str) -> Result<PathBuf, Containe
 
 pub(crate) fn resolve_target(root: &Path, rel: &str) -> Result<PathBuf, ContainedPathError> {
     contained_path(root, rel)
+}
+
+/// Normalise a journal-relative path the way `pathlib.Path(rel).parts` does.
+///
+/// The reference validates `Path(rel).parts`, and pathlib drops trailing
+/// slashes, repeated separators and leading `./` before the guard ever runs --
+/// so `chronicle/` reaches it as `("chronicle",)` and is accepted. Splitting the
+/// string literally instead sees an empty final component and refuses with
+/// bad_path, which is a different refusal carrying different repair guidance.
+///
+/// This matters against a live model, not just in theory: a real provider asked
+/// for `chronicle/` on the first tool call, as models routinely do for
+/// directories. `..` is deliberately preserved so the guard still rejects it.
+fn pathlib_normalize(rel: &str) -> String {
+    if rel.contains('\\') || Path::new(rel).is_absolute() {
+        return rel.to_owned();
+    }
+    let parts: Vec<&str> = rel
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    if parts.is_empty() {
+        return rel.to_owned();
+    }
+    parts.join("/")
 }
 
 fn root_alias(rel: &str) -> bool {

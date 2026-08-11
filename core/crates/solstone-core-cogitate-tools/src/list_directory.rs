@@ -105,3 +105,46 @@ pub fn list_directory(
         NOTICE_LIST_DIRECTORY_TRUNCATED,
     )
 }
+
+#[cfg(test)]
+mod trailing_slash_tests {
+    use super::*;
+    use std::fs;
+
+    /// A directory path with a trailing slash must behave as the reference does.
+    ///
+    /// Python validates `Path(rel).parts`, and pathlib drops the trailing slash
+    /// before the guard runs, so `chronicle/` arrives as `("chronicle",)`. Splitting
+    /// the string literally instead sees an empty final component and refuses with
+    /// bad_path -- a different refusal carrying different repair guidance.
+    ///
+    /// Found against a live provider 2026-08-10: the model asked for `chronicle/`
+    /// on its first tool call, as models routinely do for directories, got the wrong
+    /// refusal, and could not recover. No oracle vector covered a trailing slash.
+    #[test]
+    fn a_trailing_slash_resolves_the_same_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "cogitate-trailing-slash-{}",
+            std::process::id()
+        ));
+        let day = root.join("chronicle").join("20260810");
+        fs::create_dir_all(&day).expect("fixture tree");
+        fs::write(day.join("notes.md"), b"x").expect("fixture file");
+
+        let plain = list_directory(&root, "chronicle/20260810", &ListDirectoryOptions::default(), None);
+        let slashed = list_directory(&root, "chronicle/20260810/", &ListDirectoryOptions::default(), None);
+
+        assert!(plain.ok, "unslashed path should list: {:?}", plain.refusal);
+        assert!(
+            slashed.ok,
+            "a trailing slash must not become bad_path: {:?}",
+            slashed.refusal
+        );
+        assert_eq!(
+            plain.payload, slashed.payload,
+            "both spellings name the same directory"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+}
