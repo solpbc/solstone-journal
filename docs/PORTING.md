@@ -111,6 +111,7 @@ for the helper release lanes.
 | Helper coverage | Status | Evidence |
 |-----------------|--------|----------|
 | `solstone/think/probe.py:SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS` | Platform coverage authority. | Build, content check, install into a bare venv, and real-inference smoke using the shipped `pyannote-segmentation-3.0.onnx` and `wespeaker-resnet34-256.onnx` assets for each covered helper platform. Linux helper lanes use zig GNU cross-link artifacts; macOS evidence is produced by the macOS build/proof hosts. Do not provision an emulator for the aarch64 Linux lane. |
+| `solstone-core-pdf` (`sol-pdf/1`) | Separately packaged inspect/extract helper; it runtime-`dlopen`s its bundled PDFium shared library rather than build-time-linking an ONNX-style runtime. | `scripts/stage_pdfium_runtime.py` pins and verifies PDFium `chromium/7920` (archive digest plus GitHub attestation) and carries its full notice bundle; `target-family = "pdf"` ships on Linux x86_64/aarch64. macOS arm64/x86_64 archives are pinned but remain an explicit unvalidated gap this wave: no macOS proof host was reachable, so no macOS PDF wheel is attempted. |
 
 | Evidence | Repository command | Class | Notes |
 |----------|--------------------|-------|-------|

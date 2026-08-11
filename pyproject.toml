@@ -199,10 +199,11 @@ override-dependencies = [
     "solstone-core-speakers-analyze==1.0.22; python_version < '3.12'",
     "solstone-core-vad-analyze==1.0.22; python_version < '3.12'",
     "solstone-core-vulkan-probe==1.0.22; python_version < '3.12'",
+    "solstone-core-pdf==1.0.22; python_version < '3.12'",
 ]
 
 [tool.uv.workspace]
-members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-sol", "packages/solstone-core-journal", "packages/solstone-core-retention", "packages/solstone-core-speakers-analyze", "packages/solstone-core-vad-analyze", "packages/solstone-core-vulkan-probe", "packages/solstone-core-describe", "packages/solstone-core-depict"]
+members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-sol", "packages/solstone-core-journal", "packages/solstone-core-retention", "packages/solstone-core-speakers-analyze", "packages/solstone-core-vad-analyze", "packages/solstone-core-vulkan-probe", "packages/solstone-core-pdf", "packages/solstone-core-describe", "packages/solstone-core-depict"]
 
 [tool.uv.sources]
 solstone-journal = {workspace = true}
@@ -215,6 +216,7 @@ solstone-core-retention = {workspace = true}
 solstone-core-speakers-analyze = {workspace = true}
 solstone-core-vad-analyze = {workspace = true}
 solstone-core-vulkan-probe = {workspace = true}
+solstone-core-pdf = {workspace = true}
 solstone-core-describe = {workspace = true}
 solstone-core-depict = {workspace = true}
 
