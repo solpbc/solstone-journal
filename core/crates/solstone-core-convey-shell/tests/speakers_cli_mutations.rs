@@ -282,3 +282,21 @@ async fn merge_names_ready_path_returns_native_counts() {
     assert!(value["voiceprints_merged"].is_number());
     assert!(value["segments_scanned"].is_number());
 }
+
+#[tokio::test]
+async fn link_import_rejects_ambiguous_alias_conflict() {
+    // Polarity guard — green before and after the wave; reddens if this caller is
+    // moved to the public find_matching_entity wrapper instead of the detailed entry point.
+    let journal = Journal::new();
+    journal.named_entity("target", "Target Person", false);
+    journal.named_entity("sam-one", "Sam Person", false);
+    journal.named_entity("sam-two", "Sam Person", false);
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/link-import",
+        json!({"entity_id":"target","name":"Sam Person"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{value}");
+    assert_eq!(value["reason_code"], "entity_alias_conflict");
+}

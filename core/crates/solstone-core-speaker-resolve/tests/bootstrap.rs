@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, VoiceprintItem, load_entity_voiceprints_file, read_entity_identity,
-    save_voiceprints_batch,
+    EncoderIdentity, MalformedPolicy, VoiceprintItem, load_entity_voiceprints_file, read_ambiguities,
+    read_entity_identity, save_voiceprints_batch,
 };
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::bootstrap::{
@@ -394,6 +394,35 @@ fn ac19_bootstrap_keeps_ambiguous_single_speaker_names_unmatched() {
     };
     assert_eq!(stats.speakers_unmatched, ["Alex"]);
     assert_eq!(stats.embeddings_saved, 0);
+}
+
+#[test]
+fn bootstrap_keeps_same_named_persons_unmatched_and_records_ambiguity() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "sam-one", "Sam Person", "Person", false);
+    entity(temporary.path(), "sam-two", "Sam Person", "Person", false);
+    write_owner(temporary.path());
+    segment(temporary.path(), "120000_300", "Sam Person");
+
+    let BootstrapOutcome::Completed(stats) =
+        bootstrap_voiceprints(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.speakers_unmatched, ["Sam Person"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert!(!temporary.path().join("entities/sam-one/voiceprints.npz").exists());
+    assert!(!temporary.path().join("entities/sam-two/voiceprints.npz").exists());
+    let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+    assert_eq!(rows.len(), 1);
+    let ids = rows[0]["ranked_candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|candidate| candidate["id"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["sam-one", "sam-two"]);
 }
 
 #[test]

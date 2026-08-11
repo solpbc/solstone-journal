@@ -148,6 +148,70 @@ fn high_confidence_tiers_resolve_without_creating_ambiguities() {
 }
 
 #[test]
+fn high_confidence_same_name_collision_records_exact_ambiguity() {
+    let temporary = TempDir::new();
+    let result = resolve(
+        temporary.path(),
+        "Sarah Lee",
+        &[
+            entity(Some("sarah_lee_one"), "Sarah Lee", false),
+            entity(Some("sarah_lee_two"), "Sarah Lee", false),
+        ],
+        journal_scope(),
+        origin("same-name-collision"),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(result.outcome, EntityResolutionOutcome::Ambiguous);
+    assert_eq!(result.tier, Some(MatchTier::Exact));
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        ["sarah_lee_one", "sarah_lee_two"]
+    );
+    assert!(result.candidates.windows(2).all(|pair| pair[0].score == pair[1].score));
+    let row = single_ambiguity_row(temporary.path());
+    assert_eq!(row["observed_tier"], 1);
+    assert_eq!(row["ranked_candidates"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn high_confidence_shared_email_collision_records_email_ambiguity() {
+    let temporary = TempDir::new();
+    let result = resolve(
+        temporary.path(),
+        "shared@example.com",
+        &[
+            entity_with_email("first", "First Person", "shared@example.com"),
+            entity_with_email("second", "Second Person", "shared@example.com"),
+        ],
+        journal_scope(),
+        origin("shared-email-collision"),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(result.outcome, EntityResolutionOutcome::Ambiguous);
+    assert_eq!(result.tier, Some(MatchTier::Email));
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
+    assert!(result.candidates.windows(2).all(|pair| pair[0].score == pair[1].score));
+    let row = single_ambiguity_row(temporary.path());
+    assert_eq!(row["observed_tier"], 3);
+    assert_eq!(row["ranked_candidates"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
 fn name_evidence_resolution_ignores_written_id_slug_collisions() {
     let temporary = TempDir::new();
     let entities = [entity(Some("new_person"), "Someone Else", false)];

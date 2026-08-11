@@ -6,7 +6,7 @@ use std::fs;
 use chrono::{FixedOffset, TimeZone};
 use serde_json::{Value, json};
 
-use crate::store::cutoff_day;
+use crate::store::{cutoff_day, exclusion_tier};
 use crate::store_tests::{
     TempDir, create_test_facet, write_facet_relationship, write_journal_entity,
 };
@@ -226,6 +226,47 @@ fn recent_detections_exclude_matched_attached_twins() {
         load_detected_entities_recent(temporary.path(), "scope", 36500)
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn recent_detections_exclude_ambiguous_attached_name_and_keep_its_tier() {
+    // Polarity guard — green before and after the wave; reddens if this caller is
+    // moved to the public find_matching_entity wrapper instead of the detailed entry point.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    attach_entity(
+        temporary.path(),
+        "scope",
+        "sam-one",
+        "Sam Person",
+        false,
+        false,
+        json!({}),
+    );
+    attach_entity(
+        temporary.path(),
+        "scope",
+        "sam-two",
+        "Sam Person",
+        false,
+        false,
+        json!({}),
+    );
+    write_detected(
+        temporary.path(),
+        "scope",
+        "20260101",
+        &[json!({"type":"Person","name":"Sam Person","description":"seen"})],
+    );
+    assert!(
+        load_detected_entities_recent(temporary.path(), "scope", 36500)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        exclusion_tier(temporary.path(), "scope", "Sam Person").unwrap(),
+        Some(solstone_core_entity_matching::MatchTier::Exact)
     );
 }
 

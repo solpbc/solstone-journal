@@ -740,19 +740,14 @@ mod tests {
     }
 
     #[test]
-    fn fuzzy_tie_keeps_first_in_order() {
+    fn fuzzy_tie_reports_ambiguous_candidate_indices() {
         let candidates = [
             candidate(Some("first"), "Alicia X", &[], &[]),
             candidate(Some("second"), "Alicia Y", &[], &[]),
         ];
-        assert_match(
-            "Alicia",
-            &candidates,
-            50.0,
-            0,
-            Some("first"),
-            MatchTier::Fuzzy,
-        );
+        // Python solstone/think/entities/matching.py keeps the first tied fuzzy
+        // key; native must refuse to choose between distinct entities.
+        assert_no_match("Alicia", &candidates, 50.0);
     }
 
     #[test]
@@ -889,85 +884,77 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_exact_last_write_wins() {
+    fn duplicate_exact_key_reports_ambiguous_candidate_indices() {
         let candidates = [
             candidate(Some("a"), "Alex Doe", &[], &[]),
             candidate(Some("b"), "Alex Doe", &[], &[]),
         ];
-        assert_match(
-            "Alex Doe",
-            &candidates,
-            90.0,
-            1,
-            Some("b"),
-            MatchTier::Exact,
-        );
+        // Python solstone/think/entities/matching.py last-writes duplicate exact
+        // keys; native must refuse to choose between distinct entities.
+        assert_no_match("Alex Doe", &candidates, 90.0);
     }
 
     #[test]
-    fn duplicate_case_insensitive_last_write_wins() {
+    fn duplicate_case_insensitive_key_reports_ambiguous_candidate_indices() {
         let candidates = [
             candidate(Some("first"), "Alex Doe", &[], &[]),
             candidate(Some("second"), "alex doe", &[], &[]),
         ];
-        assert_match(
-            "ALEX DOE",
-            &candidates,
-            90.0,
-            1,
-            Some("second"),
-            MatchTier::CaseInsensitive,
-        );
+        // Python solstone/think/entities/matching.py last-writes duplicate
+        // folded keys; native must refuse to choose between distinct entities.
+        assert_no_match("ALEX DOE", &candidates, 90.0);
     }
 
     #[test]
-    fn duplicate_id_map_last_write_wins() {
+    fn duplicate_id_key_reports_ambiguous_candidate_indices() {
         let candidates = [
             candidate(Some("shared_slug"), "First", &[], &[]),
             candidate(Some("shared_slug"), "Second", &[], &[]),
         ];
-        assert_match(
-            "shared slug",
-            &candidates,
-            90.0,
-            1,
-            Some("shared_slug"),
-            MatchTier::Slug,
-        );
+        // Python solstone/think/entities/matching.py last-writes duplicate ID
+        // keys; native must refuse to choose between distinct entities.
+        assert_no_match("shared slug", &candidates, 90.0);
     }
 
     #[test]
-    fn duplicate_email_map_last_write_wins() {
+    fn duplicate_email_key_reports_ambiguous_candidate_indices() {
         let candidates = [
             candidate(Some("first"), "First", &[], &["shared@example.com"]),
             candidate(Some("second"), "Second", &[], &["shared@example.com"]),
         ];
-        assert_match(
-            "SHARED@EXAMPLE.COM",
-            &candidates,
-            90.0,
-            1,
-            Some("second"),
-            MatchTier::Email,
-        );
+        // Python solstone/think/entities/matching.py last-writes duplicate email
+        // keys; native must refuse to choose between distinct entities.
+        assert_no_match("SHARED@EXAMPLE.COM", &candidates, 90.0);
     }
 
     #[test]
-    fn duplicate_fuzzy_key_last_write_wins() {
+    fn duplicate_fuzzy_key_reports_ambiguous_candidate_indices() {
         let candidates = [
             candidate(Some("first"), "Alice Doe", &[], &[]),
             candidate(Some("second"), "Alice Doe", &[], &[]),
         ];
-        // Non-default threshold is deliberate: it isolates tier 8 from earlier
-        // tiers while preserving Python's duplicate-key last-write behavior.
-        assert_match(
-            "Alce Doe",
-            &candidates,
-            80.0,
-            1,
-            Some("second"),
-            MatchTier::Fuzzy,
-        );
+        // Python solstone/think/entities/matching.py last-writes duplicate fuzzy
+        // keys; native must refuse to choose between distinct entities.
+        assert_no_match("Alce Doe", &candidates, 80.0);
+    }
+
+    #[test]
+    fn repeated_exact_key_contributions_from_one_candidate_still_match() {
+        // Regression guard: ambiguity deduplicates by candidate index, not key contribution.
+        let candidates = [candidate(Some("Alex"), "Alex", &["Alex"], &[])];
+        assert_match("Alex", &candidates, 90.0, 0, Some("Alex"), MatchTier::Exact);
+    }
+
+    #[test]
+    fn fuzzy_tied_contributions_from_one_candidate_still_match() {
+        // Regression guard: ambiguity deduplicates by candidate index, not key contribution.
+        let candidates = [candidate(
+            Some("first"),
+            "Completely Different",
+            &["Alicia X", "Alicia Y"],
+            &[],
+        )];
+        assert_match("Alicia", &candidates, 50.0, 0, Some("first"), MatchTier::Fuzzy);
     }
 
     #[test]
