@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use solstone_core_system_health::{BACKLOG_DEFAULT_WINDOW, BacklogView, HealthError};
 use tempfile::TempDir;
 
-use crate::document::assemble_document;
+use crate::document::{TokenUsage, assemble_document};
 use crate::{
     ActivityTotals, BacklogViewReader, DayScan, DayStats, DocumentWriter, JournalStatsError,
     StatsDocument, run_cli,
@@ -22,6 +22,7 @@ use crate::{
 
 const FIXTURE: &str = include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 const DAY: &str = "20260105";
+const OTHER_DAY: &str = "20260104";
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 6, 12, 0, 0).unwrap()
@@ -49,6 +50,14 @@ fn empty_backlog() -> BacklogView {
         errors: Vec::new(),
         degraded: false,
         malformed_line_count: 0,
+    }
+}
+
+fn populated_backlog() -> BacklogView {
+    BacklogView {
+        pending_days: 15,
+        stuck_days: 16,
+        ..empty_backlog()
     }
 }
 
@@ -169,65 +178,123 @@ fn ac1_help_matches_real_reference_fixture() {
 
 #[test]
 fn ac2_run_builds_full_expected_document() {
-    let (temporary, system, apps) = setup();
-    let root = temporary.path();
-    let reader = EmptyBacklog;
-    let writer = RecordingWriter::default();
+    let mut scan = DayScan {
+        stats: DayStats {
+            transcript_sessions: 1,
+            transcript_segments: 2,
+            transcript_duration: 3.125,
+            transcript_ranges: 4,
+            percept_sessions: 5,
+            percept_frames: 6,
+            percept_duration: 7.25,
+            percept_ranges: 8,
+            browser_segments: 9,
+            pending_segments: 10,
+            segments_pending_think: 11,
+            outputs_processed: 12,
+            outputs_pending: 13,
+            day_bytes: 14,
+            segment_fold_failed: false,
+        },
+        ..DayScan::default()
+    };
+    scan.agent_data.insert(
+        "focus".to_owned(),
+        ActivityTotals {
+            count: 2,
+            minutes: 1.125,
+        },
+    );
+    scan.facet_data.insert(
+        "work".to_owned(),
+        ActivityTotals {
+            count: 3,
+            minutes: 2.675,
+        },
+    );
+    scan.heatmap_data.weekday = 2;
+    scan.heatmap_data.hours.insert(3, 4.5);
+    scan.heatmap_data.hours.insert(4, 1.25);
+    let mut scans = std::collections::BTreeMap::new();
+    scans.insert(DAY.to_owned(), scan);
+    let mut tokens = TokenUsage::default();
+    tokens
+        .by_day
+        .entry(DAY.to_owned())
+        .or_default()
+        .entry("model".to_owned())
+        .or_default()
+        .insert("input".to_owned(), 17);
+    tokens
+        .by_model
+        .entry("model".to_owned())
+        .or_default()
+        .insert("input".to_owned(), 17);
 
-    let result = run_with(root, &system, &apps, &[], &reader, &writer);
-
-    assert_eq!(result.exit_code, 0);
     assert_eq!(
-        value(writer.document()),
+        value(assemble_document(
+            &scans,
+            tokens,
+            populated_backlog(),
+            now()
+        )),
         json!({
             "schema_version": 8,
             "generated_at": "2026-01-06T12:00:00.000000+00:00",
             "day_count": 1,
             "days": {DAY: {
-                "transcript_sessions": 0,
-                "transcript_segments": 0,
-                "transcript_duration": 0.0,
-                "transcript_ranges": 0,
-                "percept_sessions": 0,
-                "percept_frames": 0,
-                "percept_duration": 0.0,
-                "percept_ranges": 0,
-                "browser_segments": 0,
-                "pending_segments": 0,
-                "segments_pending_think": 0,
-                "outputs_processed": 0,
-                "outputs_pending": 0,
-                "day_bytes": 0
+                "transcript_sessions": 1,
+                "transcript_segments": 2,
+                "transcript_duration": 3.125,
+                "transcript_ranges": 4,
+                "percept_sessions": 5,
+                "percept_frames": 6,
+                "percept_duration": 7.25,
+                "percept_ranges": 8,
+                "browser_segments": 9,
+                "pending_segments": 10,
+                "segments_pending_think": 11,
+                "outputs_processed": 12,
+                "outputs_pending": 13,
+                "day_bytes": 14
             }},
             "totals": {
-                "transcript_sessions": 0,
-                "transcript_segments": 0,
-                "transcript_duration": 0.0,
-                "transcript_ranges": 0,
-                "percept_sessions": 0,
-                "percept_frames": 0,
-                "percept_duration": 0.0,
-                "percept_ranges": 0,
-                "browser_segments": 0,
-                "pending_segments": 0,
-                "segments_pending_think": 0,
-                "outputs_processed": 0,
-                "outputs_pending": 0,
-                "day_bytes": 0,
-                "total_transcript_duration": 0.0,
-                "total_percept_duration": 0.0,
-                "backlog_pending_days": 0,
-                "backlog_stuck_days": 0
+                "transcript_sessions": 1,
+                "transcript_segments": 2,
+                "transcript_duration": 3.125,
+                "transcript_ranges": 4,
+                "percept_sessions": 5,
+                "percept_frames": 6,
+                "percept_duration": 7.25,
+                "percept_ranges": 8,
+                "browser_segments": 9,
+                "pending_segments": 10,
+                "segments_pending_think": 11,
+                "outputs_processed": 12,
+                "outputs_pending": 13,
+                "day_bytes": 14,
+                "total_transcript_duration": 3.125,
+                "total_percept_duration": 7.25,
+                "backlog_pending_days": 15,
+                "backlog_stuck_days": 16
             },
-            "heatmap": vec![vec![0.0; 24]; 7],
-            "tokens": {"by_day": {}, "by_model": {}},
-            "talents": {"counts": {}, "minutes": {}, "counts_by_day": {}},
-            "facets": {"counts": {}, "minutes": {}, "counts_by_day": {}},
+            "heatmap": [
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 4.5, 1.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            ],
+            "tokens": {"by_day": {DAY: {"model": {"input": 17}}}, "by_model": {"model": {"input": 17}}},
+            "talents": {"counts": {"focus": 2}, "minutes": {"focus": 1.12}, "counts_by_day": {DAY: {"focus": 2}}},
+            "facets": {"counts": {"work": 3}, "minutes": {"work": 2.67}, "counts_by_day": {DAY: {"work": 3}}},
             "backlog": {
                 "window": 30,
                 "days": [],
-                "pending_days": 0,
-                "stuck_days": 0,
+                "pending_days": 15,
+                "stuck_days": 16,
                 "oldest_pending_day": null,
                 "errors": [],
                 "degraded": false,
@@ -236,6 +303,18 @@ fn ac2_run_builds_full_expected_document() {
             "segment_fold_failed_days": []
         })
     );
+}
+
+#[test]
+fn ac2_run_cli_writes_a_document() {
+    let (temporary, system, apps) = setup();
+    let reader = EmptyBacklog;
+    let writer = RecordingWriter::default();
+
+    let result = run_with(temporary.path(), &system, &apps, &[], &reader, &writer);
+
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(value(writer.document())["day_count"], 1);
 }
 
 #[test]
@@ -272,8 +351,9 @@ fn ac4_token_miss_uses_record_utc_day_and_tolerates_bad_entries() {
     fs::write(
         tokens.join("20260105.jsonl"),
         format!(
-            "{{\"timestamp\":{timestamp},\"model\":\"model\",\"usage\":{{\"input\":3,\"skip\":\"x\"}}}}\n\
+            "{{\"timestamp\":{timestamp},\"model\":\"model\",\"usage\":{{\"input\":3,\"skip\":\"x\",\"true_value\":true,\"false_value\":false,\"float_value\":1.0,\"string_value\":\"4\"}}}}\n\
              {{\"timestamp\":{timestamp},\"usage\":{{\"output\":2}}}}\n\
+             {{\"timestamp\":0,\"model\":\"epoch\",\"usage\":{{\"input\":9}}}}\n\
              not-json\n"
         ),
     )
@@ -294,6 +374,19 @@ fn ac4_token_miss_uses_record_utc_day_and_tolerates_bad_entries() {
     );
     assert_eq!(document["tokens"]["by_day"][DAY]["unknown"]["output"], 2);
     assert_eq!(document["tokens"]["by_model"]["model"]["input"], 3);
+    assert_eq!(document["tokens"]["by_day"][DAY]["model"]["true_value"], 1);
+    assert_eq!(document["tokens"]["by_day"][DAY]["model"]["false_value"], 0);
+    assert!(
+        document["tokens"]["by_day"][DAY]["model"]
+            .get("float_value")
+            .is_none()
+    );
+    assert!(
+        document["tokens"]["by_day"][DAY]["model"]
+            .get("string_value")
+            .is_none()
+    );
+    assert!(document["tokens"]["by_day"].get("19700101").is_none());
 }
 
 #[test]
@@ -409,6 +502,22 @@ fn ac7_no_cache_bypasses_day_and_token_caches() {
         run_with(root, &system, &apps, &[], &reader, &cached_writer).exit_code,
         0
     );
+    let day_cache_bytes = fs::read(&day_cache).unwrap();
+    let day_cache_mtime = fs::metadata(&day_cache).unwrap().modified().unwrap();
+    let token_cache_bytes = fs::read(&cache).unwrap();
+    let token_cache_mtime = fs::metadata(&cache).unwrap().modified().unwrap();
+    let uncached_day_cache = root.join("chronicle").join(OTHER_DAY).join("stats.json");
+    fs::create_dir_all(uncached_day_cache.parent().unwrap()).unwrap();
+    let uncached_token = tokens.join(format!("{OTHER_DAY}.jsonl"));
+    fs::write(
+        &uncached_token,
+        format!(
+            "{{\"timestamp\":{},\"model\":\"other\",\"usage\":{{\"input\":2}}}}\n",
+            timestamp - 86_400
+        ),
+    )
+    .unwrap();
+    let uncached_token_cache = tokens.join(format!("{OTHER_DAY}.tokens_cache.json"));
     assert_eq!(
         run_with(
             root,
@@ -427,6 +536,87 @@ fn ac7_no_cache_bypasses_day_and_token_caches() {
     assert_eq!(uncached["days"][DAY]["transcript_sessions"], 0);
     assert_eq!(cached["tokens"]["by_day"][DAY]["model"]["input"], 99);
     assert_eq!(uncached["tokens"]["by_day"][DAY]["model"]["input"], 1);
+    assert_eq!(fs::read(&day_cache).unwrap(), day_cache_bytes);
+    assert_eq!(
+        fs::metadata(&day_cache).unwrap().modified().unwrap(),
+        day_cache_mtime
+    );
+    assert_eq!(fs::read(&cache).unwrap(), token_cache_bytes);
+    assert_eq!(
+        fs::metadata(&cache).unwrap().modified().unwrap(),
+        token_cache_mtime
+    );
+    assert!(!uncached_day_cache.exists());
+    assert!(!uncached_token_cache.exists());
+}
+
+#[test]
+fn rounded_minutes_match_python_half_even_behavior() {
+    let mut scan = DayScan::default();
+    for (name, minutes) in [
+        ("exact_even", 1.125),
+        ("exact_odd", 1.375),
+        ("above_tie", 1.135),
+        ("below_tie", 2.675),
+        ("small", 0.005),
+    ] {
+        scan.agent_data
+            .insert(name.to_owned(), ActivityTotals { count: 1, minutes });
+        scan.facet_data
+            .insert(name.to_owned(), ActivityTotals { count: 1, minutes });
+    }
+    let mut scans = std::collections::BTreeMap::new();
+    scans.insert(DAY.to_owned(), scan);
+
+    let document = value(assemble_document(
+        &scans,
+        TokenUsage::default(),
+        empty_backlog(),
+        now(),
+    ));
+    let expected = json!({
+        "above_tie": 1.14,
+        "below_tie": 2.67,
+        "exact_even": 1.12,
+        "exact_odd": 1.38,
+        "small": 0.01,
+    });
+
+    assert_eq!(document["talents"]["minutes"], expected);
+    assert_eq!(document["facets"]["minutes"], expected);
+}
+
+#[test]
+fn day_cache_save_failure_is_debug_only() {
+    let (temporary, system, apps) = setup();
+    let root = temporary.path();
+    fs::create_dir(root.join("chronicle").join(DAY).join("stats.json")).unwrap();
+    let reader = EmptyBacklog;
+    let normal_writer = RecordingWriter::default();
+    let debug_writer = RecordingWriter::default();
+
+    let normal = run_with(root, &system, &apps, &[], &reader, &normal_writer);
+    let debug = run_with(root, &system, &apps, &["--debug"], &reader, &debug_writer);
+
+    assert_eq!(normal.exit_code, 0);
+    assert!(!normal.stderr.contains("Day cache save failed"));
+    assert_eq!(debug.exit_code, 0);
+    assert!(debug.stderr.contains("Day cache save failed for 20260105"));
+}
+
+#[test]
+fn run_errors_identify_the_failed_operation() {
+    let (temporary, system, apps) = setup();
+    fs::create_dir_all(&system).unwrap();
+    fs::write(system.join("invalid.md"), "{\n").unwrap();
+    let reader = EmptyBacklog;
+    let writer = RecordingWriter::default();
+
+    let result = run_with(temporary.path(), &system, &apps, &[], &reader, &writer);
+
+    assert_eq!(result.exit_code, 1);
+    assert!(result.stderr.starts_with("Error scanning 20260105:"));
+    assert!(!result.stderr.starts_with("Error writing stats.json:"));
 }
 
 #[test]
@@ -519,6 +709,10 @@ fn ac11_document_writer_failure_preserves_existing_bytes() {
     let result = run_with(root, &system, &apps, &[], &reader, &writer);
 
     assert_eq!(result.exit_code, 1);
+    assert_eq!(
+        result.stderr,
+        "Error writing stats.json: stats validation failed: injected writer failure\n"
+    );
     assert_eq!(writer.calls.get(), 1);
     assert_eq!(fs::read(&existing).unwrap(), b"existing document\n");
 }

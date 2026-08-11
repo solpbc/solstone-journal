@@ -241,6 +241,39 @@ fn apply_activity(
 fn rounded_minutes(minutes: BTreeMap<String, f64>) -> BTreeMap<String, f64> {
     minutes
         .into_iter()
-        .map(|(name, value)| (name, (value * 100.0).round() / 100.0))
+        .map(|(name, value)| (name, round_half_even_hundredths(value)))
         .collect()
+}
+
+fn round_half_even_hundredths(value: f64) -> f64 {
+    if !value.is_finite() || value == 0.0 {
+        return value;
+    }
+
+    let bits = value.to_bits();
+    let negative = bits >> 63 != 0;
+    let exponent = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & ((1_u64 << 52) - 1);
+    let (significand, exponent) = if exponent == 0 {
+        (fraction, -1074)
+    } else {
+        (fraction | (1_u64 << 52), exponent - 1023 - 52)
+    };
+
+    if exponent >= 0 {
+        return value;
+    }
+
+    let scaled = significand * 100;
+    let shift = (-exponent) as u32;
+    let rounded = if shift >= 64 {
+        0
+    } else {
+        let whole = scaled >> shift;
+        let remainder = scaled & ((1_u64 << shift) - 1);
+        let halfway = 1_u64 << (shift - 1);
+        whole + u64::from(remainder > halfway || (remainder == halfway && whole % 2 == 1))
+    };
+    let result = rounded as f64 / 100.0;
+    if negative { -result } else { result }
 }
