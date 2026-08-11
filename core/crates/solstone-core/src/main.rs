@@ -20,9 +20,9 @@ use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, ExportOptions, GRAB_HELP, GRAB_USAGE, GenerateCommand,
-    GenerateSessionOptions, GrabCommand, GrabOptions, IndexerCommand, IndexerCountsOptions,
-    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    Command, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions, GRAB_HELP, GRAB_USAGE,
+    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, IndexerCommand,
+    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP,
@@ -125,6 +125,15 @@ fn main() -> ExitCode {
         Ok(Command::TransferHelp(text)) => {
             print!("{text}");
             ExitCode::SUCCESS
+        }
+        Ok(Command::ExportHelp) => {
+            print!("{EXPORT_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ExportUsage) => {
+            eprint!("{EXPORT_USAGE}");
+            eprintln!("journal export: error: invalid arguments");
+            ExitCode::from(2)
         }
         Ok(Command::TransferUsage) => {
             eprint!("{TRANSFER_USAGE}");

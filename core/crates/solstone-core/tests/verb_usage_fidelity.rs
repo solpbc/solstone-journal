@@ -199,3 +199,71 @@ fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
         );
     }
 }
+
+// --- export ---------------------------------------------------------------
+//
+// export reproduced the identical defect one wave later: W6b's cut was already
+// in flight when grab/transfer/observer were repaired, and its scope never
+// named this surface. That recurrence is why the coverage is here rather than
+// left to each wave to remember.
+
+#[test]
+fn malformed_export_invocations_exit_2_not_64() {
+    for args in [
+        ["export", "--nonsense"].as_slice(),
+        ["export", "bogus"].as_slice(),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .output()
+            .expect("run solstone-core");
+        let code = output.status.code().expect("exit code");
+        assert_eq!(
+            code,
+            2,
+            "`{}` exited {code}; the reference exits 2 (argparse usage error)",
+            args.join(" ")
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("usage: journal export"),
+            "`{}` did not print journal export's usage; got:\n{stderr}",
+            args.join(" ")
+        );
+        assert!(
+            !stderr.contains("solstone-core --version"),
+            "`{}` printed solstone-core's top-level usage instead of the verb's; \
+             got:\n{stderr}",
+            args.join(" ")
+        );
+    }
+}
+
+#[test]
+fn export_help_is_served_and_keeps_the_references_flag_list() {
+    for args in [["export", "--help"].as_slice(), ["export", "-h"].as_slice()] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .output()
+            .expect("run solstone-core");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "`{}` did not exit 0; the reference serves help here",
+            args.join(" ")
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.starts_with("usage: journal export"),
+            "`{}` did not print export's own help; got:\n{stdout}",
+            args.join(" ")
+        );
+        // The reference advertises --key, the retired url-plus-key mode's flag,
+        // and refuses it at runtime. Dropping it from help would diverge from
+        // what an owner sees today; the refusal is a separate concern.
+        assert!(
+            stdout.contains("--key KEY"),
+            "export help dropped the reference's --key line; got:\n{stdout}"
+        );
+    }
+}

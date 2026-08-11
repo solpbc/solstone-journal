@@ -145,6 +145,36 @@ pub const TRANSFER_HELP: &str = concat!(
 pub const TRANSFER_USAGE: &str =
     "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n";
 
+/// `journal export --help`, verbatim from the Python reference.
+/// It advertises `--key`, which belongs to the RETIRED url-plus-key
+/// destination mode. That is faithful, not a mistake: the reference still
+/// lists the flag and refuses it at runtime, so this is the text an owner
+/// sees today and matching it is the fidelity bar.
+pub const EXPORT_HELP: &str = concat!(
+    "usage: journal export [-h] --to TO [--key KEY] [--only ONLY] [--dry-run]\n",
+    "                      [--day DAY] [-v] [-d]\n",
+    "\n",
+    "Export journal data to a remote solstone instance\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  --to TO        Remote URL (http:// or https://) or paired peer label\n",
+    "  --key KEY      API key for URL mode\n",
+    "  --only ONLY    Export only specific area (segments, entities, facets,\n",
+    "                 imports, config)\n",
+    "  --dry-run      Show what would be exported without sending\n",
+    "  --day DAY      Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD)\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+/// The wrapped usage lines argparse prints on a `journal export` error.
+/// argparse never prints the help body on an error.
+pub const EXPORT_USAGE: &str = concat!(
+    "usage: journal export [-h] --to TO [--key KEY] [--only ONLY] [--dry-run]\n",
+    "                      [--day DAY] [-v] [-d]\n",
+);
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -203,6 +233,8 @@ pub enum Command {
     ObserverHelp,
     ObserverPruneHelp,
     TransferUsage,
+    ExportUsage,
+    ExportHelp,
     TransferHelp(&'static str),
 }
 
@@ -629,7 +661,16 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(parse_transfer(rest).map_or(Command::TransferUsage, Command::Transfer))
         }
         [command, rest @ ..] if command == OsStr::new("export") => {
-            parse_export(rest).map(Command::Export)
+            // Help is not a token of the export parser; without this it degrades
+            // into a usage error exiting 64 with solstone-core's usage -- the
+            // defect three sibling verbs in this lane already shipped and had
+            // to have repaired.
+            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            if rest.iter().any(help) {
+                return Ok(Command::ExportHelp);
+            }
+            // argparse exits 2 here, not 64.
+            Ok(parse_export(rest).map_or(Command::ExportUsage, Command::Export))
         }
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
