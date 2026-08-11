@@ -267,3 +267,107 @@ fn export_help_is_served_and_keeps_the_references_flag_list() {
         );
     }
 }
+
+// --- transcribe -----------------------------------------------------------
+
+const TRANSCRIBE_USAGE: &str = concat!(
+    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
+    "                          [-v] [-d]\n",
+    "                          [audio_path]\n",
+);
+
+const TRANSCRIBE_HELP: &str = concat!(
+    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
+    "                          [-v] [-d]\n",
+    "                          [audio_path]\n",
+    "\n",
+    "Transcribe audio files using pluggable STT and native speaker analysis\n",
+    "\n",
+    "positional arguments:\n",
+    "  audio_path            Path to audio file in journal segment directory, e.g.\n",
+    "                        HHMMSS_LEN/audio.flac\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --all                 Batch-transcribe all unprocessed audio segments in the\n",
+    "                        journal\n",
+    "  --redo                Reprocess file, overwriting existing outputs\n",
+    "  --backend {parakeet,parakeet-cpp,confidential}\n",
+    "                        STT backend to use (overrides config and resource-\n",
+    "                        aware auto default)\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
+fn run_transcribe(args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["transcribe"])
+        .args(args)
+        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
+        .output()
+        .expect("run solstone-core transcribe")
+}
+
+fn expected_transcribe_error(message: &str) -> String {
+    format!("{TRANSCRIBE_USAGE}journal transcribe: error: {message}\n")
+}
+
+#[test]
+fn malformed_transcribe_invocation_exits_2_with_its_own_usage() {
+    let output = run_transcribe(&["--nonsense"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_transcribe_error("unrecognized arguments: --nonsense")
+    );
+}
+
+#[test]
+fn transcribe_help_is_byte_identical_for_both_spellings() {
+    for args in [["--help"].as_slice(), ["-h"].as_slice()] {
+        let output = run_transcribe(args);
+        assert_eq!(output.status.code(), Some(0), "{args:?}");
+        assert_eq!(output.stderr, b"", "{args:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).expect("UTF-8 stdout"),
+            TRANSCRIBE_HELP,
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn invalid_transcribe_backend_exits_2_with_argparse_choice_error() {
+    let output = run_transcribe(&["--backend", "not-a-backend", "--all"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_transcribe_error(
+            "argument --backend: invalid choice: 'not-a-backend' (choose from parakeet, parakeet-cpp, confidential)"
+        )
+    );
+}
+
+#[test]
+fn transcribe_selection_errors_match_the_reference() {
+    for (args, message) in [
+        (
+            ["--all", "some/audio.wav"].as_slice(),
+            "--all and audio_path are mutually exclusive",
+        ),
+        ([].as_slice(), "provide audio_path or --all"),
+    ] {
+        let output = run_transcribe(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        assert_eq!(
+            String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+            expected_transcribe_error(message),
+            "{args:?}"
+        );
+    }
+}
