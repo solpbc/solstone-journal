@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 
 use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
@@ -17,6 +18,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
+    "  solstone-core contract <build|check> ...\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
     "  solstone-core facet-candidates [-h] [-v] [-d]\n"
@@ -109,6 +111,34 @@ pub const IDENTITY_BRIEFING_HELP: &str = concat!(
     "options:\n",
     "  -h, --help            show this help message and exit\n",
     "  -d DAY, --day DAY     Specific day YYYYMMDD.\n",
+);
+
+pub const CONTRACT_USAGE: &str = "usage: journal contract [-h] {build,check} ...\n";
+pub const CONTRACT_HELP: &str = concat!(
+    "usage: journal contract [-h] {build,check} ...\n\n",
+    "Build and validate the journal contract bundle.\n\n",
+    "positional arguments:\n  {build,check}\n",
+    "    build               Build the contract bundle.\n",
+    "    check               Check the bundle and journal files.\n\n",
+    "options:\n  -h, --help            show this help message and exit\n",
+);
+pub const CONTRACT_BUILD_USAGE: &str =
+    "usage: journal contract build [-h] [--check] [--root PATH]\n";
+pub const CONTRACT_BUILD_HELP: &str = concat!(
+    "usage: journal contract build [-h] [--check] [--root PATH]\n\n",
+    "Build the journal contract bundle.\n\n",
+    "options:\n  -h, --help            show this help message and exit\n",
+    "  --check               Check whether the bundle is current without writing.\n",
+    "  --root PATH           Contract checkout or installed-package root.\n",
+);
+pub const CONTRACT_CHECK_USAGE: &str =
+    "usage: journal contract check [-h] [--journal PATH]... [--root PATH]\n";
+pub const CONTRACT_CHECK_HELP: &str = concat!(
+    "usage: journal contract check [-h] [--journal PATH]... [--root PATH]\n\n",
+    "Check the bundle and journal files against their schemas.\n\n",
+    "options:\n  -h, --help            show this help message and exit\n",
+    "  --journal PATH        Additional journal root to validate (repeatable).\n",
+    "  --root PATH           Contract checkout or installed-package root.\n",
 );
 
 /// `journal grab --help`, verbatim from the reference. The native verb
@@ -382,6 +412,13 @@ pub enum Command {
     IdentityHealthHelp,
     IdentityBriefingUsage,
     IdentityBriefingHelp,
+    Contract(ContractCommand),
+    ContractUsage,
+    ContractHelp,
+    ContractBuildUsage,
+    ContractBuildHelp,
+    ContractCheckUsage,
+    ContractCheckHelp,
     ObserverUsage,
     ObserverPruneUsage,
     ObserverHelp,
@@ -401,6 +438,18 @@ pub enum IdentityCommand {
     Partner(IdentityPartnerOptions),
     Health(IdentityHealthOptions),
     Briefing(IdentityBriefingOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractCommand {
+    Build {
+        check: bool,
+        root: Option<PathBuf>,
+    },
+    Check {
+        journals: Vec<PathBuf>,
+        root: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -879,6 +928,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
         }
         [command, rest @ ..] if command == OsStr::new("identity") => parse_identity(rest),
+        [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("facet-candidates") => {
             let help = |argument: &OsString| {
@@ -952,6 +1002,109 @@ fn parse_identity(args: &[OsString]) -> Result<Command, UsageError> {
         Some(command) => Ok(Command::IdentityUnknownCommand(command.to_owned())),
         None => Ok(Command::IdentityUsage),
     }
+}
+
+fn parse_contract(args: &[OsString]) -> Result<Command, UsageError> {
+    let Some((verb, rest)) = args.split_first() else {
+        return Ok(Command::ContractUsage);
+    };
+    if verb == OsStr::new("--help") || verb == OsStr::new("-h") {
+        return Ok(Command::ContractHelp);
+    }
+    match verb.to_str() {
+        Some("build") => parse_contract_build(rest),
+        Some("check") => parse_contract_check(rest),
+        _ => Ok(Command::ContractUsage),
+    }
+}
+
+fn parse_contract_build(args: &[OsString]) -> Result<Command, UsageError> {
+    if args
+        .iter()
+        .any(|arg| arg == OsStr::new("--help") || arg == OsStr::new("-h"))
+    {
+        return Ok(Command::ContractBuildHelp);
+    }
+    let mut check = false;
+    let mut root = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--check") {
+            check = true;
+            index += 1;
+        } else if argument == OsStr::new("--root") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_string_lossy().starts_with('-') || root.is_some() {
+                return Ok(Command::ContractBuildUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 2;
+        } else if let Some(value) = argument
+            .to_str()
+            .and_then(|value| value.strip_prefix("--root="))
+        {
+            if value.is_empty() || root.is_some() {
+                return Ok(Command::ContractBuildUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 1;
+        } else {
+            return Ok(Command::ContractBuildUsage);
+        }
+    }
+    Ok(Command::Contract(ContractCommand::Build { check, root }))
+}
+
+fn parse_contract_check(args: &[OsString]) -> Result<Command, UsageError> {
+    if args
+        .iter()
+        .any(|arg| arg == OsStr::new("--help") || arg == OsStr::new("-h"))
+    {
+        return Ok(Command::ContractCheckHelp);
+    }
+    let mut journals = Vec::new();
+    let mut root = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--journal") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_string_lossy().starts_with('-') {
+                return Ok(Command::ContractCheckUsage);
+            }
+            journals.push(PathBuf::from(value));
+            index += 2;
+        } else if argument == OsStr::new("--root") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_string_lossy().starts_with('-') || root.is_some() {
+                return Ok(Command::ContractCheckUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 2;
+        } else if let Some(value) = argument
+            .to_str()
+            .and_then(|value| value.strip_prefix("--journal="))
+        {
+            if value.is_empty() {
+                return Ok(Command::ContractCheckUsage);
+            }
+            journals.push(PathBuf::from(value));
+            index += 1;
+        } else if let Some(value) = argument
+            .to_str()
+            .and_then(|value| value.strip_prefix("--root="))
+        {
+            if value.is_empty() || root.is_some() {
+                return Ok(Command::ContractCheckUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 1;
+        } else {
+            return Ok(Command::ContractCheckUsage);
+        }
+    }
+    Ok(Command::Contract(ContractCommand::Check { journals, root }))
 }
 
 fn parse_identity_partner(args: &[OsString]) -> Result<Command, UsageError> {
@@ -4411,6 +4564,7 @@ mod tests {
             "supervisor",
             "navigate",
             "identity",
+            "contract",
             "export",
             "facet-candidates",
         ] {
@@ -4420,6 +4574,44 @@ mod tests {
             );
         }
         assert!(USAGE.starts_with("Usage:\n"));
+    }
+
+    #[test]
+    fn parses_contract_leaves_before_execution() {
+        assert_eq!(
+            evaluate_args(&args(&["contract", "build", "--check", "--root=/tmp/root"])),
+            Ok(Command::Contract(ContractCommand::Build {
+                check: true,
+                root: Some(PathBuf::from("/tmp/root")),
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "contract",
+                "check",
+                "--journal",
+                "/one",
+                "--journal=/two",
+                "--root",
+                "/root",
+            ])),
+            Ok(Command::Contract(ContractCommand::Check {
+                journals: vec![PathBuf::from("/one"), PathBuf::from("/two")],
+                root: Some(PathBuf::from("/root")),
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["contract", "--nonsense"])),
+            Ok(Command::ContractUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["contract", "build", "--nonsense"])),
+            Ok(Command::ContractBuildUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["contract", "check", "--nonsense"])),
+            Ok(Command::ContractCheckUsage)
+        );
     }
 
     #[test]
