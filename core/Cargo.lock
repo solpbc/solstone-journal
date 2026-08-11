@@ -2374,6 +2374,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-assets",
  "solstone-core-body-ingest",
  "solstone-core-body-rebuild",
  "solstone-core-brain",
@@ -2412,6 +2413,14 @@ dependencies = [
  "tokio-rustls",
  "tokio-tungstenite",
  "zip",
+]
+
+[[package]]
+name = "solstone-core-assets"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2972,6 +2981,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-assets",
  "solstone-core-brain",
  "tar",
  "tempfile",

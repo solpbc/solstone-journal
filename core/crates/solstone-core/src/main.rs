@@ -105,6 +105,7 @@ fn main() -> ExitCode {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));
             ExitCode::SUCCESS
         }
+        Ok(Command::Assets) => run_assets(),
         Ok(Command::Warm { json }) => {
             if warm::run(json) {
                 ExitCode::from(EXIT_UNAVAILABLE)
@@ -1795,6 +1796,19 @@ fn run_local(command: LocalCommand) -> ExitCode {
         LocalCommand::Install(command) => run_local_install(command),
         LocalCommand::Generate => run_local_generate_json(solstone_core_local::generate),
     }
+}
+
+fn run_assets() -> ExitCode {
+    let mut stdout = io::stdout().lock();
+    if stdout
+        .write_all(solstone_core_assets::assets_json().as_bytes())
+        .and_then(|()| stdout.write_all(b"\n"))
+        .and_then(|()| stdout.flush())
+        .is_err()
+    {
+        return ExitCode::from(EXIT_IOERR);
+    }
+    ExitCode::SUCCESS
 }
 
 fn run_generate(command: GenerateCommand) -> ExitCode {

@@ -4,7 +4,7 @@
 use serde_json::{Map, Value, json};
 use std::path::PathBuf;
 
-use super::{lease, local_backend_choice, manifest, pins, status};
+use super::{MLX_SNAPSHOT_MANIFEST_FILENAME, lease, local_backend_choice, manifest, pins, status};
 
 pub fn inspect_local(input: Map<String, Value>) -> Value {
     let journal = input
@@ -106,7 +106,7 @@ pub fn inspect_mlx(input: Map<String, Value>) -> Value {
         .join(model.2);
     let snapshot = base.join("snapshot");
     let identity = json!({"unit":"mlx-snapshot","model_id":model.0,"repo":model.1,"revision":model.2,"size_bytes":model.3});
-    let proof = manifest::prove_manifest(&base.join("snapshot.manifest.json"), &identity);
+    let proof = manifest::prove_manifest(&base.join(MLX_SNAPSHOT_MANIFEST_FILENAME), &identity);
     let package_available = input
         .get("mlx_vlm_importable")
         .and_then(Value::as_bool)

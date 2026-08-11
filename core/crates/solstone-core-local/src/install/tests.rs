@@ -17,6 +17,7 @@ use super::{
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::{Value, json};
+use solstone_core_assets::{Backend, Platform, catalog, resolve};
 
 use crate::nvidia::NVIDIA_PROBE_SCHEMA;
 
@@ -1170,6 +1171,274 @@ fn parakeet_backend_pin_is_none_for_an_unknown_backend_or_key() {
     assert!(pins::parakeet_backend_pin("x86_64-unknown-linux-gnu", "cuda").is_none());
     assert!(pins::parakeet_backend_pin("aarch64-apple-darwin", "vulkan").is_none());
     assert!(pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cuda").is_none());
+}
+
+#[test]
+fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
+    for (key, release, filename, sha256, _) in pins::LLAMA_SERVER_PINS {
+        let row = resolve(
+            "llama-server-vulkan",
+            match *key {
+                "aarch64-apple-darwin" => Some(Platform::MacosArm64),
+                "x86_64-unknown-linux-gnu" => Some(Platform::LinuxX64),
+                "aarch64-unknown-linux-gnu" => Some(Platform::LinuxArm64),
+                _ => unreachable!(),
+            },
+            None,
+        );
+        assert_eq!(row.len(), 1);
+        assert_eq!(row[0].artifact_key, Some(*key));
+        assert_eq!(row[0].version, *release);
+        assert_eq!(row[0].filename, *filename);
+        assert_eq!(row[0].sha256, *sha256);
+    }
+    for (key, url, sha256, size_bytes) in pins::CUDA_ARTIFACTS {
+        let row = resolve(
+            "llama-server-cuda",
+            if key.starts_with("x86_64") {
+                Some(Platform::LinuxX64)
+            } else {
+                Some(Platform::LinuxArm64)
+            },
+            None,
+        );
+        assert_eq!(row.len(), 1);
+        assert_eq!(row[0].artifact_key, Some(*key));
+        assert_eq!(row[0].upstream_url, *url);
+        assert_eq!(row[0].sha256, *sha256);
+        assert_eq!(row[0].size_bytes, *size_bytes);
+    }
+    for (backend, table) in [
+        (Backend::Vulkan, pins::PARAKEET_VULKAN_PINS),
+        (Backend::Cpu, pins::PARAKEET_CPU_PINS),
+    ] {
+        for (key, release, filename, sha256, _) in table {
+            let platform = if key.starts_with("x86_64") {
+                Platform::LinuxX64
+            } else {
+                Platform::LinuxArm64
+            };
+            let row = resolve("parakeet-server", Some(platform), Some(backend));
+            assert_eq!(row.len(), 1);
+            assert_eq!(row[0].artifact_key, Some(*key));
+            assert_eq!(row[0].version, *release);
+            assert_eq!(row[0].filename, *filename);
+            assert_eq!(row[0].sha256, *sha256);
+        }
+    }
+
+    let expected = "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757";
+    let row = resolve("parakeet-model", None, None);
+    assert_eq!(row.len(), 1);
+    assert_eq!(row[0].sha256, expected);
+    assert_eq!(pins::PARAKEET_MODEL.3, expected);
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir
+        .ancestors()
+        .nth(3)
+        .expect("local crate has repository-root ancestor")
+        .to_path_buf();
+    let python_pin = repo_root.join("solstone/think/providers/parakeet_install.py");
+    let source = fs::read_to_string(&python_pin)
+        .unwrap_or_else(|error| panic!("read {}: {error}", python_pin.display()));
+    assert!(
+        source.contains(expected),
+        "Python parakeet model digest drifted"
+    );
+}
+
+#[test]
+fn registry_preserves_prechange_identity_literals() {
+    let literals = [
+        (fingerprint::canonical(pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap(), "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3\",\"unit\":\"llama-server-vulkan\"}"),
+        (fingerprint::canonical(pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap(), "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}"),
+        (fingerprint::canonical(pins::model_identity("local/qwen3.5-4b").unwrap()).unwrap(), "{\"filename\":\"Qwen3.5-4B-Q4_K_M.gguf\",\"mmproj_filename\":\"mmproj-F16.gguf\",\"mmproj_sha256\":\"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864\",\"model_id\":\"local/qwen3.5-4b\",\"repo\":\"unsloth/Qwen3.5-4B-GGUF\",\"revision\":\"main\",\"sha256\":\"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4\",\"unit\":\"local-model\"}"),
+        (fingerprint::canonical(pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cpu").unwrap()).unwrap(), "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"backend\":\"cpu\",\"binary_name\":\"parakeet-server\",\"filename\":\"parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz\",\"release_tag\":\"v0.5.0\",\"sha256\":\"636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9\",\"unit\":\"parakeet-server\"}"),
+        (fingerprint::canonical(pins::parakeet_model_identity()).unwrap(), "{\"filename\":\"tdt-0.6b-v3-q8_0.gguf\",\"repo\":\"mudler/parakeet-cpp-gguf\",\"revision\":\"bf0af9f425fa01809cadec671b3cb672709d13e9\",\"sha256\":\"4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757\",\"size_bytes\":940663680,\"unit\":\"parakeet-model\"}"),
+        (fingerprint::canonical(json!({"unit":"mlx-snapshot","model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","size_bytes":10453446077_u64})).unwrap(), "{\"model_id\":\"qwen3.5:9b\",\"repo\":\"mlx-community/Qwen3.5-9B-MLX-8bit\",\"revision\":\"84f7c2deea248d8df56240f88102def51c7ed5d6\",\"size_bytes\":10453446077,\"unit\":\"mlx-snapshot\"}"),
+    ];
+    for (actual, expected) in literals {
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
+    let journal = std::path::Path::new("/journal");
+    let key = "x86_64-unknown-linux-gnu";
+    let local_paths = pins::paths(journal, key, Some("local/qwen3.5-4b"));
+    assert_eq!(
+        local_paths["binary_path"],
+        "/journal/cache/providers/local/bin/x86_64-unknown-linux-gnu/b10068/llama-server"
+    );
+    assert_eq!(
+        local_paths["cuda_binary_path"],
+        "/journal/cache/providers/local/cuda/x86_64-unknown-linux-gnu/3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea/llama-server"
+    );
+    let model_dir = PathBuf::from(local_paths["model_dir"].as_str().unwrap());
+    assert_eq!(
+        model_dir,
+        PathBuf::from("/journal/cache/providers/local/models/local__qwen3.5-4b")
+    );
+    let local_readiness = readiness::inspect_local(
+        serde_json::from_value(json!({
+            "journal": journal,
+            "model_id": "local/qwen3.5-4b",
+            "artifact_key": key,
+            "nvidia_probe": {
+                "schema": NVIDIA_PROBE_SCHEMA,
+                "detected": false,
+                "gpu_index": null,
+                "gpu_name": null,
+                "compute_cap": null,
+                "arch": null,
+                "driver_cuda_major": null,
+                "vram_mib": null,
+                "unified_memory_mib": null,
+                "probe_error": "test override"
+            }
+        }))
+        .unwrap(),
+    );
+    assert_eq!(
+        local_readiness["artifacts"]["binary_path"],
+        "/journal/cache/providers/local/bin/x86_64-unknown-linux-gnu/b10068/llama-server"
+    );
+    assert_eq!(
+        local_readiness["artifacts"]["model_path"],
+        "/journal/cache/providers/local/models/local__qwen3.5-4b"
+    );
+    // `install_model` joins each pin filename inline immediately before its
+    // network fetch; `pins::paths` above is its production root derivation.
+    let local_identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    assert_eq!(
+        model_dir.join(local_identity["filename"].as_str().unwrap()),
+        PathBuf::from(
+            "/journal/cache/providers/local/models/local__qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf"
+        )
+    );
+    assert_eq!(
+        model_dir.join(local_identity["mmproj_filename"].as_str().unwrap()),
+        PathBuf::from("/journal/cache/providers/local/models/local__qwen3.5-4b/mmproj-F16.gguf")
+    );
+    let parakeet = pins::parakeet_paths(journal, key);
+    assert_eq!(
+        parakeet["binary_path_cpu"],
+        "/journal/cache/providers/parakeet/bin/x86_64-unknown-linux-gnu/cpu/v0.5.0/parakeet-server"
+    );
+    assert_eq!(
+        parakeet["model_path"],
+        "/journal/cache/providers/parakeet/models/mudler__parakeet-cpp-gguf/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf"
+    );
+
+    assert_eq!(
+        super::MLX_SNAPSHOT_MANIFEST_FILENAME,
+        "snapshot.manifest.json"
+    );
+    assert_eq!(
+        super::MLX_VARIANT_MANIFEST_FILENAME,
+        "variant-solstone-budget1120.manifest.json"
+    );
+    assert_ne!(
+        super::MLX_SNAPSHOT_MANIFEST_FILENAME,
+        super::MLX_VARIANT_MANIFEST_FILENAME
+    );
+
+    let mlx_root = temp("registry-mlx-paths");
+    let qwen_source = temp("registry-mlx-qwen-source");
+    let qwen_request = json!({
+        "journal": mlx_root,
+        "model_id": "qwen3.5:9b",
+        "source_snapshot": qwen_source,
+        "lfs_sha256": {}
+    });
+    let qwen_install = super::run_mlx_install(qwen_request.as_object().unwrap()).unwrap();
+    let qwen_base = pins::cache_root(&mlx_root)
+        .join("mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
+    let qwen_snapshot_dir = qwen_base.join("snapshot");
+    assert_eq!(
+        qwen_install["snapshot_path"].as_str(),
+        qwen_snapshot_dir.to_str()
+    );
+    assert!(
+        qwen_base
+            .join(super::MLX_SNAPSHOT_MANIFEST_FILENAME)
+            .is_file()
+    );
+    let qwen_readiness = readiness::inspect_mlx(
+        serde_json::from_value(json!({
+            "journal": mlx_root,
+            "model_id": "qwen3.5:9b",
+        }))
+        .unwrap(),
+    );
+    assert_eq!(
+        qwen_readiness["artifacts"]["snapshot_dir"].as_str(),
+        qwen_snapshot_dir.to_str()
+    );
+    assert_eq!(qwen_readiness["proof"]["snapshot"]["status"], "ready");
+
+    let gemma_source = temp("registry-mlx-gemma-source");
+    let gemma_request = json!({
+        "journal": mlx_root,
+        "model_id": "gemma-4-26b-a4b-it-mlx-4bit",
+        "source_snapshot": gemma_source,
+        "lfs_sha256": {}
+    });
+    let gemma_install = super::run_mlx_install(gemma_request.as_object().unwrap()).unwrap();
+    let mlx_base = pins::cache_root(&mlx_root).join(
+        "mlx/mlx-community--gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+    );
+    let snapshot_dir = mlx_base.join("snapshot");
+    let snapshot_manifest = mlx_base.join(super::MLX_SNAPSHOT_MANIFEST_FILENAME);
+    let variant_manifest = mlx_base.join(super::MLX_VARIANT_MANIFEST_FILENAME);
+    assert_eq!(
+        snapshot_dir,
+        pins::cache_root(&mlx_root).join(
+            "mlx/mlx-community--gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/snapshot"
+        )
+    );
+    assert_eq!(
+        gemma_install["snapshot_path"].as_str(),
+        snapshot_dir.to_str()
+    );
+    let variant_dir = mlx_base.join("variant-solstone-budget1120");
+    assert_eq!(gemma_install["variant_path"].as_str(), variant_dir.to_str());
+    assert!(snapshot_manifest.is_file());
+    assert!(variant_manifest.is_file());
+    assert_ne!(snapshot_manifest.file_name(), variant_manifest.file_name());
+    let _ = fs::remove_dir_all(mlx_root);
+    let _ = fs::remove_dir_all(qwen_source);
+    let _ = fs::remove_dir_all(gemma_source);
+}
+
+#[test]
+fn registry_binds_local_model_identity_without_changing_main_revision() {
+    let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    let rows = resolve("local-model", None, None);
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().any(|row| {
+        identity["filename"].as_str() == Some(row.filename)
+            && identity["sha256"].as_str() == Some(row.sha256)
+    }));
+    assert!(rows.iter().any(|row| {
+        identity["mmproj_filename"].as_str() == Some(row.filename)
+            && identity["mmproj_sha256"].as_str() == Some(row.sha256)
+    }));
+    assert_eq!(identity["revision"], "main");
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.size_bytes)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([672423616, 2740937888])
+    );
+    assert_eq!(
+        catalog()
+            .iter()
+            .filter(|row| row.unit == "local-model")
+            .count(),
+        2
+    );
 }
 
 #[test]

@@ -22,6 +22,9 @@ pub mod status;
 
 static PUBLISH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+pub(crate) const MLX_SNAPSHOT_MANIFEST_FILENAME: &str = "snapshot.manifest.json";
+pub(crate) const MLX_VARIANT_MANIFEST_FILENAME: &str = "variant-solstone-budget1120.manifest.json";
+
 #[cfg(test)]
 mod tests;
 
@@ -648,18 +651,15 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
         None,
     )
     .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-    manifest::write_manifest(&manifest_dir.join("snapshot.manifest.json"), &built)
+    manifest::write_manifest(&manifest_dir.join(MLX_SNAPSHOT_MANIFEST_FILENAME), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
     let variant = if model.0 == "gemma-4-26b-a4b-it-mlx-4bit" {
         let path = manifest_dir.join("variant-solstone-budget1120");
         mlx::create_gemma4_variant(&destination, &path)
             .map_err(|error| failure("io", "variant_create_failed", error, 74))?;
         let built = manifest::build_manifest("local", "mlx-variant", &target_sha, json!({"pin_identity":{"unit":"mlx-variant","model_id":model.0,"repo":model.1,"revision":model.2,"size_bytes":model.3,"variant":"solstone-budget1120"}}), manifest::inventory_for_tree(&path, "variant_file").map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?, Some(&path), None).map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-        manifest::write_manifest(
-            &manifest_dir.join("variant-solstone-budget1120.manifest.json"),
-            &built,
-        )
-        .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
+        manifest::write_manifest(&manifest_dir.join(MLX_VARIANT_MANIFEST_FILENAME), &built)
+            .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
         Some(path)
     } else {
         None
