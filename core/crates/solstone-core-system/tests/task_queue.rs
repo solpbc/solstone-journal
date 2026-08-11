@@ -522,7 +522,28 @@ fn panicking_stopped_sink_does_not_skip_later_coalesced_ref() {
     queue.submit(request("queued-a", &queued, None, None));
     queue.submit(request("queued-b", &queued, None, None));
     wait_for_history(&queue, 2);
-    assert!(sink.events.lock().expect("panic sink events").iter().any(|event| matches!(event, TaskQueueEvent::Stopped { reference, .. } if reference == "queued-b")));
+    // History reaching 2 is a PROXY for the thing under test, not the thing
+    // itself: history and sink fan-out are separate paths, so the `Stopped`
+    // event for `queued-b` can still be in flight when history is complete.
+    // Asserting once on that proxy failed roughly one whole-crate run in four.
+    // Poll instead — a sink that never receives the event still fails, just
+    // after a bounded wait rather than on a race.
+    let saw_queued_b = || {
+        sink.events
+            .lock()
+            .expect("panic sink events")
+            .iter()
+            .any(|event| {
+                matches!(event, TaskQueueEvent::Stopped { reference, .. } if reference == "queued-b")
+            })
+    };
+    for _ in 0..2_000 {
+        if saw_queued_b() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("panicking stopped sink never received the coalesced ref queued-b");
 }
 
 #[test]
