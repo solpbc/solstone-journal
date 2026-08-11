@@ -80,6 +80,29 @@ fn main() {
             std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
             std::thread::sleep(Duration::from_millis(millis));
         }
+        "ready-sleep-crash-once" => {
+            let ready_path = args.next().expect("ready path");
+            let state_path = args.next().expect("state path");
+            let port_path = args.next().expect("port path");
+            std::fs::write(&ready_path, fixture_ready_marker()).expect("signal readiness");
+            write_fixture_port_file(std::path::Path::new(&port_path));
+            match std::fs::read_to_string(&state_path).ok().as_deref() {
+                None => {
+                    std::fs::write(&state_path, "initial").expect("record initial fixture run");
+                    loop {
+                        std::thread::park();
+                    }
+                }
+                Some("initial") => {
+                    std::fs::write(&state_path, "crashed").expect("record fixture crash");
+                    std::process::exit(1);
+                }
+                Some("crashed") => loop {
+                    std::thread::park();
+                },
+                Some(_) => panic!("unexpected crash-once fixture state"),
+            }
+        }
         "continuous-lines" => {
             let ready_path = args.next().expect("ready path");
             std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
@@ -166,6 +189,12 @@ fn fixture_ready_marker() -> String {
         std::env::var("SOL_SUPERVISOR_SPAWNED").unwrap_or_default(),
         std::process::id()
     )
+}
+
+fn write_fixture_port_file(port_path: &std::path::Path) {
+    let temporary = port_path.with_extension(format!("{}.tmp", std::process::id()));
+    std::fs::write(&temporary, "5015").expect("write fixture port");
+    std::fs::rename(temporary, port_path).expect("replace fixture port");
 }
 
 fn launch_stub(mut args: impl Iterator<Item = String>) {
