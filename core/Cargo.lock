@@ -3001,6 +3001,19 @@ dependencies = [
 [[package]]
 name = "solstone-core-reprocess-cli"
 version = "1.0.22"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "iana-time-zone",
+ "serde",
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-journal-io",
+ "solstone-core-segment",
+ "solstone-core-system",
+ "solstone-core-system-health",
+ "tempfile",
+]
 
 [[package]]
 name = "solstone-core-retention"
