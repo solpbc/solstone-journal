@@ -17,7 +17,7 @@ use crate::TranscribeError;
 const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
-const KNOWN_BACKENDS: [&str; 3] = ["parakeet", "parakeet-cpp", "confidential"];
+pub(crate) const KNOWN_BACKENDS: [&str; 3] = ["parakeet", "parakeet-cpp", "confidential"];
 
 /// Non-fatal backend-selection information for the caller to log.
 #[derive(Clone, Debug, PartialEq, Eq)]
