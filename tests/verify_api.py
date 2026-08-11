@@ -279,7 +279,7 @@ ENDPOINTS = [
         "params": {},
         "status": 200,
     },
-    # apps/speakers/routes.py
+    # Native speakers routes (core/crates/solstone-core-convey-shell/src/lib.rs)
     {
         "app": "speakers",
         "name": "stats-month",

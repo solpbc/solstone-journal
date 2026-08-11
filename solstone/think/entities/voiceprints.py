@@ -240,6 +240,7 @@ def load_owner_centroid() -> OwnerCentroid | None:
         logger.warning("Failed to load owner centroid %s: %s", centroid_path, exc)
         return None
 
+
 def load_existing_voiceprint_keys(entity_id: str) -> set[tuple]:
     """Return saved voiceprint identity keys for idempotency checks."""
     result = load_entity_voiceprints_file(entity_id)
