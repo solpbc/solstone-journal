@@ -35,6 +35,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+use solstone_core_assets::{Artifact, Backend as AssetBackend, Platform as AssetPlatform, resolve};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallVerb {
@@ -104,6 +105,14 @@ impl InstallEnvelope {
 }
 
 pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, DispatchError> {
+    dispatch_with_download_policy(verb, request, &archive::PRODUCTION_DOWNLOAD_POLICY)
+}
+
+fn dispatch_with_download_policy(
+    verb: InstallVerb,
+    request: Value,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<InstallEnvelope, DispatchError> {
     let object = request.as_object().cloned().ok_or_else(|| {
         failure(
             "input",
@@ -152,8 +161,8 @@ pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, Di
         InstallVerb::InspectMlx => readiness::inspect_mlx(object),
         InstallVerb::InspectParakeet => readiness::inspect_parakeet(object),
         InstallVerb::ProbeBinary => readiness::probe_binary(&object),
-        InstallVerb::RunLocal => run_local(&object)?,
-        InstallVerb::RunMlx => run_mlx(&object)?,
+        InstallVerb::RunLocal => run_local(&object, policy)?,
+        InstallVerb::RunMlx => run_mlx(&object, policy)?,
         InstallVerb::PinsParakeet => pins::parakeet_pins_json(),
         InstallVerb::PathsParakeet => {
             let journal = journal(&object)?;
@@ -164,7 +173,7 @@ pub fn dispatch(verb: InstallVerb, request: Value) -> Result<InstallEnvelope, Di
             let target = parakeet_target(&journal)?;
             resolved_fingerprint(target)?
         }
-        InstallVerb::RunParakeet => run_parakeet(&object)?,
+        InstallVerb::RunParakeet => run_parakeet(&object, policy)?,
     };
     Ok(InstallEnvelope::ok(result))
 }
@@ -175,6 +184,76 @@ fn parakeet_key(object: &Map<String, Value>) -> Result<String, DispatchError> {
         None => pins::parakeet_host_artifact_key()
             .map_err(|error| failure("platform", "unsupported_platform", error, 65)),
     }
+}
+
+fn artifact_platform(key: &str) -> Result<AssetPlatform, DispatchError> {
+    match key {
+        "aarch64-apple-darwin" => Ok(AssetPlatform::MacosArm64),
+        "x86_64-unknown-linux-gnu" => Ok(AssetPlatform::LinuxX64),
+        "aarch64-unknown-linux-gnu" => Ok(AssetPlatform::LinuxArm64),
+        _ => Err(failure(
+            "registry",
+            "artifact_registry_mismatch",
+            format!("no catalog platform mapping for {key}"),
+            65,
+        )),
+    }
+}
+
+fn select_artifact(
+    unit: &str,
+    platform: Option<AssetPlatform>,
+    backend: Option<AssetBackend>,
+    artifact_key: Option<&str>,
+    filename: Option<&str>,
+) -> Result<&'static Artifact, DispatchError> {
+    let mut matches = resolve(unit, platform, backend)
+        .into_iter()
+        .filter(|artifact| artifact_key.is_none_or(|key| artifact.artifact_key == Some(key)))
+        .filter(|artifact| filename.is_none_or(|name| artifact.filename == name));
+    let Some(artifact) = matches.next() else {
+        return Err(failure(
+            "registry",
+            "artifact_registry_mismatch",
+            format!("catalog has no matching {unit} artifact"),
+            65,
+        ));
+    };
+    if matches.next().is_some() {
+        return Err(failure(
+            "registry",
+            "artifact_registry_mismatch",
+            format!("catalog has multiple matching {unit} artifacts"),
+            65,
+        ));
+    }
+    Ok(artifact)
+}
+
+fn download_artifact(
+    artifact: &Artifact,
+    destination: &Path,
+    policy: &archive::DownloadHostPolicy<'_>,
+    progress: impl FnMut(u64, Option<u64>),
+    fallback_reason_code: &str,
+) -> Result<(), DispatchError> {
+    archive::download_verified(artifact, destination, policy, progress).map_err(|error| {
+        let reason_code = match &error {
+            archive::ArchiveError::HostRefused { .. } => "download_host_refused",
+            archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
+            archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
+            archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
+            archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
+            archive::ArchiveError::RedirectHopLimitExceeded { .. } => {
+                "download_redirect_hop_limit_exceeded"
+            }
+            archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => {
+                fallback_reason_code
+            }
+            archive::ArchiveError::PathEscape(_) => fallback_reason_code,
+        };
+        failure("download", reason_code, error, 74)
+    })
 }
 
 fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, DispatchError> {
@@ -234,14 +313,23 @@ impl RunKind {
     }
 }
 
-fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    run(object, RunKind::Local)
+fn run_local(
+    object: &Map<String, Value>,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<Value, DispatchError> {
+    run(object, RunKind::Local, policy)
 }
-fn run_mlx(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    run(object, RunKind::Mlx)
+fn run_mlx(
+    object: &Map<String, Value>,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<Value, DispatchError> {
+    run(object, RunKind::Mlx, policy)
 }
-fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {
-    run(object, RunKind::Parakeet)
+fn run_parakeet(
+    object: &Map<String, Value>,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<Value, DispatchError> {
+    run(object, RunKind::Parakeet, policy)
 }
 
 pub fn install_parakeet_with_lease(
@@ -261,10 +349,15 @@ pub fn install_parakeet_with_lease(
         journal.to_path_buf(),
         lease,
         Some((os_name, arch)),
+        &archive::PRODUCTION_DOWNLOAD_POLICY,
     )
 }
 
-fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchError> {
+fn run(
+    object: &Map<String, Value>,
+    kind: RunKind,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let provider = kind.status_provider();
     let Some(lease) = lease::acquire(&journal, provider)
@@ -277,7 +370,7 @@ fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchErro
             lease::BUSY_EXIT_CODE,
         ));
     };
-    run_with_lease(object, kind, journal, lease, None)
+    run_with_lease(object, kind, journal, lease, None, policy)
 }
 
 fn run_with_lease(
@@ -286,6 +379,7 @@ fn run_with_lease(
     journal: PathBuf,
     _lease: lease::InstallLease,
     parakeet_platform: Option<(&str, &str)>,
+    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     let provider = kind.status_provider();
     let fingerprint = match kind {
@@ -320,8 +414,8 @@ fn run_with_lease(
     let start = Instant::now();
     let result = match kind {
         RunKind::Mlx => run_mlx_install(object),
-        RunKind::Local => run_local_install(object, &mut state, start),
-        RunKind::Parakeet => run_parakeet_install(&journal, &mut state),
+        RunKind::Local => run_local_install(object, &mut state, start, policy),
+        RunKind::Parakeet => run_parakeet_install(&journal, &mut state, policy),
     };
     match result {
         Ok(result) => {
@@ -504,6 +598,7 @@ fn run_local_install(
     object: &Map<String, Value>,
     status_value: &mut status::InstallStatus,
     _start: Instant,
+    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let model_id = string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned());
@@ -526,38 +621,39 @@ fn run_local_install(
         .as_str()
         .ok_or_else(|| failure("state", "fingerprint_malformed", "backend missing", 74))?;
     let root = pins::cache_root(&journal);
-    let (url, digest, filename, install_dir, pin_identity, exclude_names, cuda) =
-        if backend == "cuda" {
-            let (url, digest, _) = pins::cuda_pin(&key)
-                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
-            let install_dir = root.join("cuda").join(&key).join(digest);
-            (
-                url,
-                digest,
-                format!("llama-{digest}.tar.gz"),
-                install_dir,
-                pins::cuda_identity(&key).unwrap(),
-                Vec::new(),
-                true,
-            )
-        } else {
-            let (release, filename, digest, _) = pins::vulkan_pin(&key)
-                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
-            (
-            Box::leak(
-                format!(
-                    "https://github.com/ggml-org/llama.cpp/releases/download/{release}/{filename}"
-                )
-                .into_boxed_str(),
-            ) as &str,
-            digest,
+    let (filename, install_dir, pin_identity, exclude_names, cuda) = if backend == "cuda" {
+        let (_, digest, _) = pins::cuda_pin(&key)
+            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let install_dir = root.join("cuda").join(&key).join(digest);
+        (
+            format!("llama-{digest}.tar.gz"),
+            install_dir,
+            pins::cuda_identity(&key).unwrap(),
+            Vec::new(),
+            true,
+        )
+    } else {
+        let (release, filename, _digest, _) = pins::vulkan_pin(&key)
+            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        (
             filename.to_owned(),
             root.join("bin").join(&key).join(release),
             pins::vulkan_identity(&key).unwrap(),
             vec![filename.to_owned()],
             false,
         )
-        };
+    };
+    let artifact = select_artifact(
+        if cuda {
+            "llama-server-cuda"
+        } else {
+            "llama-server-vulkan"
+        },
+        Some(artifact_platform(&key)?),
+        None,
+        Some(&key),
+        None,
+    )?;
     let staging = install_dir.parent().unwrap().join(format!(
         ".{}.staging",
         install_dir.file_name().unwrap().to_string_lossy()
@@ -573,18 +669,23 @@ fn run_local_install(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-    archive::download(url, &archive_path, digest, |received, total| {
-        if let Ok(Some(next)) = status::bump_progress(
-            status_value.clone(),
-            Some(received),
-            total,
-            &mut progress_at,
-        ) && let Ok(written) = status::write_status(&journal, next)
-        {
-            *status_value = written;
-        }
-    })
-    .map_err(|error| failure("download", "download_failed", error, 74))?;
+    download_artifact(
+        artifact,
+        &archive_path,
+        policy,
+        |received, total| {
+            if let Ok(Some(next)) = status::bump_progress(
+                status_value.clone(),
+                Some(received),
+                total,
+                &mut progress_at,
+            ) && let Ok(written) = status::write_status(&journal, next)
+            {
+                *status_value = written;
+            }
+        },
+        "download_failed",
+    )?;
     archive::extract_tar_gz(&archive_path, &staging)
         .map_err(|error| failure("archive", "extract_failed", error, 65))?;
     let binary = find_file(&staging, "llama-server").ok_or_else(|| {
@@ -633,7 +734,7 @@ fn run_local_install(
     }
     publish_staged_tree(&staging, &install_dir)
         .map_err(|error| failure("io", "publish_failed", error, 74))?;
-    install_model(&journal, &model_id, status_value)?;
+    install_model(&journal, &model_id, status_value, policy)?;
     Ok(
         json!({"backend":backend,"binary_path":install_dir.join("llama-server"),"model_id":model_id}),
     )
@@ -724,6 +825,7 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
 fn run_parakeet_install(
     journal: &Path,
     status_value: &mut status::InstallStatus,
+    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     let target: Value = serde_json::from_str(
         status_value
@@ -745,8 +847,20 @@ fn run_parakeet_install(
         .to_owned();
     let mut binaries = Vec::new();
     for backend in ["cpu", "vulkan"] {
-        let (release, filename, digest, binary_name) = pins::parakeet_backend_pin(&key, backend)
-            .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let (release, filename, _digest, binary_name) =
+            pins::parakeet_backend_pin(&key, backend)
+                .ok_or_else(|| failure("platform", "unsupported_platform", &key, 65))?;
+        let artifact = select_artifact(
+            "parakeet-server",
+            Some(artifact_platform(&key)?),
+            Some(if backend == "cpu" {
+                AssetBackend::Cpu
+            } else {
+                AssetBackend::Vulkan
+            }),
+            Some(&key),
+            Some(filename),
+        )?;
         let install_dir = pins::parakeet_cache_root(journal)
             .join("bin")
             .join(&key)
@@ -767,21 +881,23 @@ fn run_parakeet_install(
                 .map_err(|error| failure("state", "transition_failed", error, 74))?,
         )
         .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-        let url = format!(
-            "https://github.com/mudler/parakeet.cpp/releases/download/{release}/{filename}"
-        );
-        archive::download(&url, &archive_path, digest, |received, total| {
-            if let Ok(Some(next)) = status::bump_progress(
-                status_value.clone(),
-                Some(received),
-                total,
-                &mut progress_at,
-            ) && let Ok(written) = status::write_status(journal, next)
-            {
-                *status_value = written;
-            }
-        })
-        .map_err(|error| failure("download", "download_failed", error, 74))?;
+        download_artifact(
+            artifact,
+            &archive_path,
+            policy,
+            |received, total| {
+                if let Ok(Some(next)) = status::bump_progress(
+                    status_value.clone(),
+                    Some(received),
+                    total,
+                    &mut progress_at,
+                ) && let Ok(written) = status::write_status(journal, next)
+                {
+                    *status_value = written;
+                }
+            },
+            "download_failed",
+        )?;
         archive::extract_tar_gz(&archive_path, &staging)
             .map_err(|error| failure("archive", "extract_failed", error, 65))?;
         let binary = find_file(&staging, binary_name).ok_or_else(|| {
@@ -819,15 +935,17 @@ fn run_parakeet_install(
             .map_err(|error| failure("io", "publish_failed", error, 74))?;
         binaries.push(json!({"backend": backend, "binary_path": install_dir.join(binary_name)}));
     }
-    let model_path = install_parakeet_model(journal, status_value)?;
+    let model_path = install_parakeet_model(journal, status_value, policy)?;
     Ok(json!({"artifact_key": key, "binaries": binaries, "model_path": model_path}))
 }
 
 fn install_parakeet_model(
     journal: &Path,
     status_value: &mut status::InstallStatus,
+    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<PathBuf, DispatchError> {
-    let (repo, filename, revision, sha256, ..) = pins::PARAKEET_MODEL;
+    let (repo, filename, revision, ..) = pins::PARAKEET_MODEL;
+    let artifact = select_artifact("parakeet-model", None, None, None, Some(filename))?;
     let model_dir = pins::parakeet_cache_root(journal)
         .join("models")
         .join(repo.replace('/', "__"))
@@ -841,13 +959,13 @@ fn install_parakeet_model(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
-    archive::download(
-        &format!("https://huggingface.co/{repo}/resolve/{revision}/{filename}"),
+    download_artifact(
+        artifact,
         &dest,
-        sha256,
+        policy,
         |_received, _total| {},
-    )
-    .map_err(|error| failure("download", "model_download_failed", error, 74))?;
+        "model_download_failed",
+    )?;
     *status_value = status::write_status(
         journal,
         status::transition(status_value.clone(), "verifying", None, None)
@@ -907,6 +1025,7 @@ fn install_model(
     journal: &Path,
     model_id: &str,
     status_value: &mut status::InstallStatus,
+    policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<(), DispatchError> {
     let identity = pins::model_identity(model_id)
         .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
@@ -915,26 +1034,22 @@ fn install_model(
         .join(model_id.replace('/', "__"));
     fs::create_dir_all(&root)
         .map_err(|error| failure("io", "model_dir_create_failed", error, 74))?;
-    let repo = identity["repo"].as_str().unwrap();
-    let revision = identity["revision"].as_str().unwrap();
-    let mut files = vec![(
-        identity["filename"].as_str().unwrap(),
-        identity["sha256"].as_str().unwrap(),
-    )];
-    if let (Some(name), Some(hash)) = (
+    let mut files = vec![identity["filename"].as_str().unwrap()];
+    if let (Some(name), Some(_hash)) = (
         identity["mmproj_filename"].as_str(),
         identity["mmproj_sha256"].as_str(),
     ) {
-        files.push((name, hash));
+        files.push(name);
     }
-    for (name, hash) in files {
-        archive::download(
-            &format!("https://huggingface.co/{repo}/resolve/{revision}/{name}"),
+    for name in files {
+        let artifact = select_artifact("local-model", None, None, None, Some(name))?;
+        download_artifact(
+            artifact,
             &root.join(name),
-            hash,
+            policy,
             |_received, _total| {},
-        )
-        .map_err(|error| failure("download", "model_download_failed", error, 74))?;
+            "model_download_failed",
+        )?;
     }
     *status_value = status::write_status(
         journal,

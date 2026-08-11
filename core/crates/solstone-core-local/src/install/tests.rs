@@ -11,14 +11,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::{
-    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, fingerprint, lease,
-    local_backend_choice, manifest, parakeet_target_for_install, pins, publish_staged_tree_with,
-    readiness, status, write_parakeet_model_manifest,
+    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
+    lease, local_backend_choice, manifest, parakeet_target_for_install, pins,
+    publish_staged_tree_with, readiness, status, write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::{Value, json};
-use solstone_core_assets::{Backend, Platform, catalog, resolve};
+use sha2::{Digest, Sha256};
+use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
 
 use crate::nvidia::NVIDIA_PROBE_SCHEMA;
 
@@ -30,6 +31,34 @@ fn temp(name: &str) -> PathBuf {
 }
 
 const PARAKEET_TEST_KEY: &str = "x86_64-unknown-linux-gnu";
+const LOOPBACK_DOWNLOAD_HOSTS: &[&str] = &["127.0.0.1"];
+
+fn loopback_download_policy() -> archive::DownloadHostPolicy<'static> {
+    archive::DownloadHostPolicy {
+        allowed_hosts: LOOPBACK_DOWNLOAD_HOSTS,
+        allow_http: true,
+    }
+}
+
+fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifact {
+    let sha256: String = Sha256::digest(body)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Artifact {
+        unit: "test-artifact",
+        version: "test",
+        filename,
+        sha256: Box::leak(sha256.into_boxed_str()),
+        size_bytes: body.len() as u64,
+        upstream_url: Box::leak(url.into_boxed_str()),
+        origin_key: "test-origin",
+        artifact_key: None,
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    }
+}
 
 struct ParakeetFixture {
     cpu_path: PathBuf,
@@ -1147,18 +1176,248 @@ fn download_digest_mismatch_removes_destination_and_partial_file() {
             .unwrap();
     });
     let destination = root.join("artifact.tar.gz");
+    let mut artifact = fixture_artifact(format!("http://{address}"), "artifact.tar.gz", b"hello");
+    artifact.sha256 = "00";
     assert!(matches!(
-        archive::download(
-            &format!("http://{address}"),
+        archive::download_verified(
+            &artifact,
             &destination,
-            "00",
-            |_received, _total| {}
+            &loopback_download_policy(),
+            |_received, _total| {},
         ),
         Err(archive::ArchiveError::DigestMismatch)
     ));
     server.join().unwrap();
     assert!(!destination.exists());
     assert!(!root.join(".artifact.tar.gz.part").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_artifact_refuses_disallowed_redirect_target_in_envelope() {
+    let root = temp("download-refused-redirect");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .write_all(
+                b"HTTP/1.1 302 Found\r\nLocation: https://evil.example/file\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+        listener.set_nonblocking(true).unwrap();
+        thread::sleep(Duration::from_millis(50));
+        usize::from(listener.accept().is_ok()) + 1
+    });
+    let destination = root.join("artifact");
+    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"");
+    let error = download_artifact(
+        &artifact,
+        &destination,
+        &loopback_download_policy(),
+        |_received, _total| {},
+        "download_failed",
+    )
+    .unwrap_err();
+    let error = error.envelope.error.unwrap();
+    assert_eq!(error.reason_code, "download_host_refused");
+    assert!(error.message.contains("evil.example"));
+    assert_eq!(server.join().unwrap(), 1);
+    assert!(!destination.exists());
+    assert!(!root.join(".artifact.part").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_follows_allowlisted_redirect_chain_and_commits_verified_bytes() {
+    let root = temp("download-redirect-chain");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for response in [
+            format!(
+                "HTTP/1.1 302 Found\r\nLocation: http://{address}/middle\r\nConnection: close\r\n\r\n"
+            ),
+            format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://{address}/final\r\nConnection: close\r\n\r\n"
+            ),
+            "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello".to_owned(),
+        ] {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+    });
+    let destination = root.join("artifact");
+    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"hello");
+    let mut progress = Vec::new();
+    archive::download_verified(
+        &artifact,
+        &destination,
+        &loopback_download_policy(),
+        |received, total| progress.push((received, total)),
+    )
+    .unwrap();
+    server.join().unwrap();
+    assert_eq!(fs::read(&destination).unwrap(), b"hello");
+    assert!(!root.join(".artifact.part").exists());
+    assert_eq!(progress.last(), Some(&(5, Some(5))));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_resolves_relative_locations_for_redirect_statuses() {
+    for status in [301, 303, 307, 308] {
+        let root = temp(&format!("download-relative-{status}"));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 {status} Redirect\r\nLocation: ../final\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .unwrap();
+        });
+        let destination = root.join("artifact");
+        let artifact =
+            fixture_artifact(format!("http://{address}/nested/start"), "artifact", b"ok");
+        archive::download_verified(
+            &artifact,
+            &destination,
+            &loopback_download_policy(),
+            |_received, _total| {},
+        )
+        .unwrap();
+        server.join().unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"ok", "status={status}");
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn download_artifact_reports_redirect_hop_limit() {
+    let root = temp("download-hop-limit");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for index in 0..6 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 302 Found\r\nLocation: http://{address}/hop-{index}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+        }
+        6
+    });
+    let destination = root.join("artifact");
+    let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"");
+    let error = download_artifact(
+        &artifact,
+        &destination,
+        &loopback_download_policy(),
+        |_received, _total| {},
+        "download_failed",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.envelope.error.unwrap().reason_code,
+        "download_redirect_hop_limit_exceeded"
+    );
+    assert_eq!(server.join().unwrap(), 6);
+    assert!(!destination.exists());
+    assert!(!root.join(".artifact.part").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_reports_size_mismatch_before_digest_mismatch() {
+    let root = temp("download-size-mismatch");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello")
+            .unwrap();
+    });
+    let destination = root.join("artifact");
+    let mut artifact = fixture_artifact(format!("http://{address}"), "artifact", b"hello");
+    artifact.size_bytes = 4;
+    assert!(matches!(
+        archive::download_verified(
+            &artifact,
+            &destination,
+            &loopback_download_policy(),
+            |_received, _total| {},
+        ),
+        Err(archive::ArchiveError::SizeMismatch {
+            expected: 4,
+            actual: 5
+        })
+    ));
+    server.join().unwrap();
+    assert!(!destination.exists());
+    assert!(!root.join(".artifact.part").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_accepts_case_insensitive_allowed_host() {
+    let root = temp("download-upper-host");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            .unwrap();
+    });
+    let destination = root.join("artifact");
+    let artifact = fixture_artifact(format!("HTTP://{address}/x"), "artifact", b"ok");
+    archive::download_verified(
+        &artifact,
+        &destination,
+        &loopback_download_policy(),
+        |_received, _total| {},
+    )
+    .unwrap();
+    server.join().unwrap();
+    assert_eq!(fs::read(&destination).unwrap(), b"ok");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_artifact_refuses_userinfo_url_with_distinct_envelope_reason() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let artifact = fixture_artifact(format!("http://{address}@evil.example/x"), "artifact", b"");
+    let root = temp("download-userinfo");
+    let destination = root.join("artifact");
+    let error = download_artifact(
+        &artifact,
+        &destination,
+        &loopback_download_policy(),
+        |_received, _total| {},
+        "download_failed",
+    )
+    .unwrap_err();
+    let error = error.envelope.error.unwrap();
+    assert_eq!(error.reason_code, "download_url_userinfo_refused");
+    assert!(error.message.contains("userinfo"));
+    assert!(listener.accept().is_err());
+    assert!(!destination.exists());
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1323,6 +1582,80 @@ fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
         source.contains(expected),
         "Python parakeet model digest drifted"
     );
+
+    for (key, _, _, _) in pins::CUDA_ARTIFACTS {
+        assert_eq!(
+            super::select_artifact(
+                "llama-server-cuda",
+                Some(super::artifact_platform(key).unwrap()),
+                None,
+                Some(key),
+                None,
+            )
+            .unwrap()
+            .artifact_key,
+            Some(*key)
+        );
+    }
+    for (key, _, _, _, _) in pins::LLAMA_SERVER_PINS {
+        assert_eq!(
+            super::select_artifact(
+                "llama-server-vulkan",
+                Some(super::artifact_platform(key).unwrap()),
+                None,
+                Some(key),
+                None,
+            )
+            .unwrap()
+            .artifact_key,
+            Some(*key)
+        );
+    }
+    for (backend, table) in [
+        (Backend::Vulkan, pins::PARAKEET_VULKAN_PINS),
+        (Backend::Cpu, pins::PARAKEET_CPU_PINS),
+    ] {
+        for (key, _, filename, _, _) in table {
+            assert_eq!(
+                super::select_artifact(
+                    "parakeet-server",
+                    Some(super::artifact_platform(key).unwrap()),
+                    Some(backend),
+                    Some(key),
+                    Some(filename),
+                )
+                .unwrap()
+                .filename,
+                *filename
+            );
+        }
+    }
+    assert_eq!(
+        super::select_artifact(
+            "parakeet-model",
+            None,
+            None,
+            None,
+            Some(pins::PARAKEET_MODEL.1),
+        )
+        .unwrap()
+        .filename,
+        pins::PARAKEET_MODEL.1
+    );
+    let local_identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    for filename in [
+        local_identity["filename"].as_str().unwrap(),
+        local_identity["mmproj_filename"].as_str().unwrap(),
+    ] {
+        let artifact =
+            super::select_artifact("local-model", None, None, None, Some(filename)).unwrap();
+        assert!(
+            artifact
+                .upstream_url
+                .contains("e87f176479d0855a907a41277aca2f8ee7a09523")
+        );
+        assert!(!artifact.upstream_url.contains("/main/"));
+    }
 }
 
 #[test]
@@ -1491,7 +1824,7 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
 }
 
 #[test]
-fn registry_binds_local_model_identity_without_changing_main_revision() {
+fn registry_binds_local_model_artifacts_without_mutating_manifest_identity() {
     let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
     let rows = resolve("local-model", None, None);
     assert_eq!(rows.len(), 2);
@@ -1517,6 +1850,30 @@ fn registry_binds_local_model_identity_without_changing_main_revision() {
             .count(),
         2
     );
+}
+
+#[test]
+fn prechange_local_model_manifest_still_proves_ready() {
+    let root = temp("prechange-local-model-manifest");
+    fs::write(root.join("Qwen3.5-4B-Q4_K_M.gguf"), b"fixture model").unwrap();
+    let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    let built = manifest::build_manifest(
+        "local",
+        "local-model",
+        "target",
+        json!({"pin_identity": identity}),
+        manifest::inventory_for_tree(&root, "model").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    let path = manifest::artifact_manifest_path(&root);
+    manifest::write_manifest(&path, &built).unwrap();
+    assert_eq!(
+        manifest::prove_manifest(&path, &identity)["status"],
+        "ready"
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

@@ -167,8 +167,10 @@ lease. Unreadable proof exits successfully without promotion and is preserved
 until the owner fixes the underlying access or I/O problem.
 
 `solstone-core assets` emits an additive declarative registry of downloadable
-artifacts. The installer pin tables remain the operational source in this wave,
-and no fetch path reads the registry yet. Its rows resolve upstream, so no URL
-an owner's machine fetches from changes.
+artifacts. The installer pin tables remain the operational source for manifest
+identity and cache layout; the four native Rust fetch call sites (llama-server,
+parakeet-server, parakeet-model, and local-model) now resolve their download
+URLs through this registry. The remaining catalog rows stay declarative until
+their owners adopt the registry.
 
 There are no runtime compatibility shims for the retired shapes.
