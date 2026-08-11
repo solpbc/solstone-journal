@@ -14,7 +14,6 @@ workspace = true
 
 [dependencies]
 serde_json.workspace = true
-solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
 
 [dev-dependencies]

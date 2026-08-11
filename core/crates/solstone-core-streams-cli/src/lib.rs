@@ -8,9 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_journal_io::LockOptions;
 use solstone_core_segment::{
-    MarkerTail, RepairOutcome, SUPERVISOR_MESSAGE, SupervisorRefusal, UnchangedReason,
+    LockOptions, MarkerTail, RepairOutcome, SUPERVISOR_MESSAGE, SupervisorRefusal, UnchangedReason,
     is_safe_stream_component, is_solstone_up, list_days, list_segments,
     list_stream_records_tolerant, repair_stream_tail_from_markers, require_solstone_with,
 };
@@ -469,7 +468,7 @@ mod tests {
     use std::time::Duration;
 
     use serde_json::{Value, json};
-    use solstone_core_journal_io::{LockOptions, hold_lock};
+    use solstone_core_segment::{LockOptions, hold_lock};
     use tempfile::TempDir;
 
     use super::*;

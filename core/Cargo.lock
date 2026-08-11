@@ -3267,7 +3267,6 @@ name = "solstone-core-streams-cli"
 version = "1.0.22"
 dependencies = [
  "serde_json",
- "solstone-core-journal-io",
  "solstone-core-segment",
  "tempfile",
 ]

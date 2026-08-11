@@ -52,8 +52,8 @@ pub use segment_dir::{
     SegmentDir, is_safe_stream_component, list_days, list_segments, list_segments_in,
 };
 pub use solstone_core_journal_io::{
-    DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, Segment, day_path, iter_segments,
-    list_dir_entries, read_text,
+    DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, Segment, day_path, hold_lock,
+    iter_segments, list_dir_entries, read_text,
 };
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
