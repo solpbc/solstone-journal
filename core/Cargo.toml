@@ -74,6 +74,8 @@ members = [
     "crates/solstone-core-body-ingest",
     "crates/solstone-core-system",
     "crates/solstone-core-streams-cli",
+    "crates/solstone-core-import",
+    "crates/solstone-core-import-sources",
     "crates/solstone-core-segment-cli",
     "crates/solstone-core-journal-stats-cli",
     "crates/solstone-core-reprocess-cli",
@@ -140,6 +142,8 @@ solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
 solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
+solstone-core-import = { path = "crates/solstone-core-import" }
+solstone-core-import-sources = { path = "crates/solstone-core-import-sources" }
 solstone-core-segment-cli = { path = "crates/solstone-core-segment-cli" }
 solstone-core-journal-stats-cli = { path = "crates/solstone-core-journal-stats-cli" }
 solstone-core-reprocess-cli = { path = "crates/solstone-core-reprocess-cli" }
