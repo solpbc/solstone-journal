@@ -23,6 +23,8 @@ const POISON_INTERPRETER: &str = r#"#!/bin/sh
 printf '%s\n' "$0" > "$POISON_MARKER"
 exit 97
 "#;
+const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
+    include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
 
@@ -111,6 +113,31 @@ const PROBES: &[Probe] = &[
     },
     Probe {
         token: "settings",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
+        token: "streams",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
+        token: "segment",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
+        token: "journal-stats",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
+        token: "reprocess",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
+        token: "backfill-processing-records",
         argv: &["--nonsense"],
         expected_exit: 2,
     },
@@ -376,6 +403,33 @@ fn run_dispatcher(
     wait_for_child(&mut child, Instant::now() + PROBE_TIMEOUT)
 }
 
+fn run_dispatcher_with_output(
+    context: &VerdictContext<'_>,
+    token: &str,
+    argv: &[&str],
+) -> io::Result<std::process::Output> {
+    Command::new(context.dispatcher)
+        .arg(token)
+        .args(argv)
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        .env("PATH", context.sibling_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+}
+
+fn reference_block(name: &str) -> &str {
+    let header = format!("=== {name}\n");
+    let start = STORAGE_OPS_REFERENCE_GRAMMAR
+        .find(&header)
+        .expect("reference grammar block")
+        + header.len();
+    let rest = &STORAGE_OPS_REFERENCE_GRAMMAR[start..];
+    &rest[..rest.find("\n=== ").unwrap_or(rest.len())]
+}
+
 fn verdict_for(
     spec: &NativeProcessSpec,
     probe: Option<&Probe>,
@@ -504,6 +558,77 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         context.poison_marker.exists(),
         "{token}: poison-liveness expected the poisoned interpreter marker"
     );
+}
+
+#[test]
+fn native_storage_ops_help_matches_reference_grammar_through_dispatcher() {
+    let harness = Harness::new();
+    let context = harness.context();
+    for token in [
+        "streams",
+        "segment",
+        "journal-stats",
+        "reprocess",
+        "backfill-processing-records",
+    ] {
+        let output = run_dispatcher_with_output(&context, token, &["--help"])
+            .expect("run native storage operation help through dispatcher");
+        assert_eq!(output.status.code(), Some(0), "{token}");
+        assert_eq!(output.stderr, b"", "{token}");
+        assert_eq!(
+            output.stdout,
+            reference_block(&format!("{token} --help")).as_bytes(),
+            "{token}"
+        );
+    }
+}
+
+#[test]
+fn native_backfill_commit_dispatches_without_python_and_is_idempotent() {
+    let harness = Harness::new();
+    let context = harness.context();
+    let _ = fs::remove_file(context.poison_marker);
+
+    fs::create_dir_all(context.home).expect("create home directory");
+    let segment = context.journal.join("chronicle/20990101/090000_300");
+    fs::create_dir_all(&segment).expect("create future journal segment");
+    fs::write(segment.join("audio.flac"), b"audio").expect("write audio");
+    let sidecar = segment.join("audio.jsonl");
+    fs::write(&sidecar, b"{\"raw\":\"audio.flac\"}\n").expect("write sidecar");
+
+    let python_status = run_dispatcher(&context, "backup", &[])
+        .expect("run retained Python process")
+        .and_then(|status| status.code());
+    assert_eq!(python_status, Some(97));
+    assert!(context.poison_marker.exists());
+    fs::remove_file(context.poison_marker).expect("clear Python poison marker");
+
+    let output = run_dispatcher_with_output(&context, "backfill-processing-records", &["--commit"])
+        .expect("run native backfill through dispatcher");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).expect("backfill stdout is UTF-8");
+    let total = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("total: "))
+        .expect("backfill total")
+        .parse::<u64>()
+        .expect("backfill total is numeric");
+    assert!(total > 0);
+    assert!(stdout.contains("stamp_empty: 1\n"));
+    let header: serde_json::Value =
+        serde_json::from_slice(&fs::read(&sidecar).expect("read stamped sidecar"))
+            .expect("stamped sidecar is JSON");
+    assert_eq!(header["_solstone_processing"]["source"], "backfill");
+    assert!(!context.poison_marker.exists());
+
+    let output = run_dispatcher_with_output(&context, "backfill-processing-records", &["--commit"])
+        .expect("rerun native backfill through dispatcher");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).expect("backfill stdout is UTF-8");
+    assert!(stdout.contains("skip_has_record: 1\n"));
+    assert!(stdout.contains("stamp_empty: 0\n"));
 }
 
 #[test]
