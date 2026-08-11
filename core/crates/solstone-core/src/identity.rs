@@ -14,9 +14,6 @@
 //! A malformed `--day` is rejected with `journal identity briefing` usage and
 //! exit 2 instead of reaching Python's uncaught `ValueError` traceback.
 //!
-//! `journal identity health --refresh` is accepted syntactically but refused
-//! until its steward workflow is available here.
-//!
 //! Unknown options, missing option values, and attached boolean spellings use
 //! this binary's shared `error: invalid arguments` diagnostic rather than
 //! Click's token-specific error. This follows the navigate, export, transfer,
@@ -46,6 +43,8 @@ use solstone_core_identity::{ensure_identity_directory, update_identity_section,
 use solstone_core_transcribe::require_solstone;
 
 use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
+
+mod steward;
 
 const SPECIES_PREAMBLE: &str =
     include_str!("../../../fixtures/native-identity/species-preamble.md");
@@ -151,8 +150,7 @@ fn health(journal: &Path, options: IdentityHealthOptions) -> ExitCode {
         Err(error) => return print_identity_error(error),
     };
     if options.refresh {
-        eprintln!("journal identity health --refresh is not available yet.");
-        return ExitCode::from(EXIT_FAILURE);
+        return steward::refresh(journal, &identity_dir.join("health.md"));
     }
     print_file_with_echo(&identity_dir.join("health.md"), "health.md")
 }

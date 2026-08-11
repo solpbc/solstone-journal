@@ -4,11 +4,17 @@
 #![cfg(unix)]
 
 use std::collections::BTreeSet;
-use std::fs;
-use std::io::Write;
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::thread;
+
+use chrono::{Local, Utc};
+use nix::fcntl::{Flock, FlockArg};
+use serde_json::Value;
 
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
 const SPECIES: &str = include_str!("../../../fixtures/native-identity/species-preamble.md");
@@ -79,6 +85,42 @@ fn write(path: impl AsRef<Path>, text: &str) {
     let path = path.as_ref();
     fs::create_dir_all(path.parent().expect("parent")).expect("parent");
     fs::write(path, text).expect("write");
+}
+
+fn health_body(stamp: &str) -> String {
+    format!(
+        "## Status\n<!-- generated_at: {stamp} -->\nsol is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n"
+    )
+}
+
+fn start_refresh_server(journal: &TestJournal) -> thread::JoinHandle<Value> {
+    let journal_path = journal.path().to_path_buf();
+    let socket_path = journal_path.join("health/callosum.sock");
+    fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
+    let listener = UnixListener::bind(socket_path).expect("bind Callosum socket");
+    thread::spawn(move || {
+        let (request_stream, _) = listener.accept().expect("accept request sender");
+        let mut request_line = String::new();
+        BufReader::new(request_stream)
+            .read_line(&mut request_line)
+            .expect("read request");
+        let request: Value = serde_json::from_str(&request_line).expect("request JSON");
+        let use_id = request["use_id"].as_str().expect("use id");
+        let active = journal_path
+            .join("talents/steward")
+            .join(format!("{use_id}_active.jsonl"));
+        write(&active, "{\"event\":\"request\"}\n");
+
+        let (mut subscriber, _) = listener.accept().expect("accept outcome subscriber");
+        let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        fs::write(journal_path.join("identity/health.md"), health_body(&stamp)).unwrap();
+        writeln!(
+            subscriber,
+            "{{\"tract\":\"cortex\",\"event\":\"finish\",\"use_id\":\"{use_id}\"}}"
+        )
+        .expect("send finish");
+        request
+    })
 }
 
 #[test]
@@ -268,7 +310,7 @@ fn content_errors_leave_no_history_and_value_wins_over_stdin() {
 }
 
 #[test]
-fn briefing_and_refresh_have_the_settled_outputs() {
+fn briefing_has_the_settled_outputs() {
     let journal = TestJournal::new();
     let absent = run_skipped(&journal, &["identity", "briefing"]);
     assert_eq!(absent.status.code(), Some(1));
@@ -298,13 +340,168 @@ fn briefing_and_refresh_have_the_settled_outputs() {
         malformed.stderr,
         b"usage: journal identity briefing [-h] [-d DAY]\njournal identity briefing: error: invalid arguments\n"
     );
+}
 
-    let refresh = run_skipped(&journal, &["identity", "health", "--refresh"]);
-    assert_eq!(refresh.status.code(), Some(1));
+#[test]
+fn refresh_uses_native_callosum_request_and_reports_regeneration() {
+    let journal = TestJournal::new();
+    let server = start_refresh_server(&journal);
+
+    let output = run_skipped(&journal, &["identity", "health", "--refresh"]);
+    let request = server.join().expect("refresh server");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.starts_with(&format!(
+        "regenerated {} (generated_at: ",
+        journal.identity().join("health.md").display()
+    )));
+    assert!(stdout.ends_with(" bytes)\n"));
+    assert_eq!(request.as_object().unwrap().len(), 9);
     assert_eq!(
-        refresh.stderr,
-        b"journal identity health --refresh is not available yet.\n"
+        request
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "day".to_owned(),
+            "event".to_owned(),
+            "name".to_owned(),
+            "output".to_owned(),
+            "prompt".to_owned(),
+            "refresh".to_owned(),
+            "tract".to_owned(),
+            "ts".to_owned(),
+            "use_id".to_owned(),
+        ])
     );
+    assert_eq!(request["tract"], "cortex");
+    assert_eq!(request["event"], "request");
+    assert!(request["ts"].is_i64() || request["ts"].is_u64());
+    assert!(
+        request["use_id"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .all(char::is_numeric)
+    );
+    assert_eq!(request["prompt"], "");
+    assert_eq!(request["name"], "steward");
+    assert_eq!(request["day"].as_str().unwrap().len(), 8);
+    assert_eq!(request["output"], "md");
+    assert_eq!(request["refresh"], true);
+}
+
+#[test]
+fn refresh_short_circuits_when_the_existing_health_is_fresh() {
+    let journal = TestJournal::new();
+    let today = Local::now().format("%Y%m%d").to_string();
+    let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    write(journal.identity().join("health.md"), &health_body(&stamp));
+    write(
+        journal
+            .path()
+            .join(format!("chronicle/{today}/health/today_daily.jsonl")),
+        "{\"event\":\"run.complete\",\"ts\":0}\n",
+    );
+
+    let output = run_skipped(&journal, &["identity", "health", "--refresh"]);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        output.stdout,
+        format!("already fresh (generated_at: {stamp})\n").as_bytes()
+    );
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
+fn refresh_refuses_a_contended_steward_lock_without_owner_writes() {
+    let journal = TestJournal::new();
+    let lock_path = journal.path().join("health/.steward.lock");
+    fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    let _lock = Flock::lock(file, FlockArg::LockExclusiveNonblock).unwrap();
+
+    let output = run_skipped(&journal, &["identity", "health", "--refresh"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stderr, b"Error: steward already in flight.\n");
+    assert!(!journal.path().join("talents").exists());
+}
+
+#[test]
+fn refresh_checks_the_steward_lock_before_freshness() {
+    let journal = TestJournal::new();
+    let today = Local::now().format("%Y%m%d").to_string();
+    let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    write(journal.identity().join("health.md"), &health_body(&stamp));
+    write(
+        journal
+            .path()
+            .join(format!("chronicle/{today}/health/today_daily.jsonl")),
+        "{\"event\":\"run.complete\",\"ts\":0}\n",
+    );
+    let lock_path = journal.path().join("health/.steward.lock");
+    fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    let _lock = Flock::lock(file, FlockArg::LockExclusiveNonblock).unwrap();
+
+    let output = run_skipped(&journal, &["identity", "health", "--refresh"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(output.stderr, b"Error: steward already in flight.\n");
+}
+
+#[test]
+fn refresh_is_gated_before_it_can_send_to_a_bound_socket() {
+    let journal = TestJournal::new();
+    let socket_path = journal.path().join("health/callosum.sock");
+    fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
+    let listener = UnixListener::bind(socket_path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+
+    let output = run(&journal, &["identity", "health", "--refresh"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        output.stderr,
+        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+    );
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert!(!journal.path().join("talents").exists());
+}
+
+#[test]
+fn refresh_failure_does_not_create_chronicle_days() {
+    let journal = TestJournal::new();
+
+    let output = run_skipped(&journal, &["identity", "health", "--refresh"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        output.stderr,
+        b"Error: failed to send steward request to cortex.\n"
+    );
+    assert!(!journal.path().join("chronicle").exists());
 }
 
 #[test]
