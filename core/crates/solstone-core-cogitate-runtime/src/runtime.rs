@@ -19,9 +19,9 @@ use crate::usage::Usage;
 /// Run a prepared cogitate conversation until it reaches a terminal outcome.
 ///
 /// The native scope has no async provider task to race with a deadline. It
-/// consequently checks the Python-equivalent deadline cooperatively between
-/// turns and tool dispatches; this changes interruption mechanics, not the
-/// deadline calculation or terminal meaning (`openhands.py:1262-1276`).
+/// consequently checks the deadline cooperatively between turns and tool
+/// dispatches; this changes interruption mechanics, not the deadline
+/// calculation or terminal meaning.
 pub fn run_cogitate(
     provider: &mut dyn ConverseProvider,
     tools: &mut dyn ToolExecutor,
@@ -38,8 +38,8 @@ pub fn run_cogitate(
             );
         }
     };
-    // The OpenHands condenser is explicitly not ported in R5a. Messages are
-    // never summarized or dropped, so this history accumulates for the full
+    // Conversation compaction is intentionally outside this runtime. Messages
+    // are never summarized or dropped, so this history accumulates for the full
     // run; only MAX_TURNS (default 60) and the cost/context ladder's stage-3
     // force-stop bound it. This is a deliberate scope cut, to revisit in R6
     // or later if long runs make that accumulation a practical cost/context

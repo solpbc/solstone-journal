@@ -51,7 +51,7 @@ impl RunConfig {
     /// Match Python's in-process deadline: leave 30 seconds for teardown, or
     /// use half a too-small timeout so the deadline remains strictly inside it.
     /// This permits a clean outcome before Cortex's SIGTERM timer fires rather
-    /// than killing the run mid-flight without an outcome (`openhands.py:1262-1276`).
+    /// than killing the run mid-flight without an outcome.
     pub fn wall_clock_deadline(&self) -> Duration {
         const GRACE: Duration = Duration::from_secs(30);
         self.timeout

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Stuck detection ported from pinned `openhands-sdk==1.27.1`.
+//! Stuck detection preserves the retired runtime's bounded-history rules.
 //!
 //! It examines the last 20 history entries, retaining only entries after the
 //! last user-role entry when one occurs in that window. The four live patterns
 //! are repeating action→observation (4), repeating action→error (3), agent
 //! monologue (3), and alternating action/observation (6). The fifth
-//! context-window-error loop is dead code in the pinned SDK because
-//! `_is_stuck_context_window_error` unconditionally returns `False`; it is not
+//! context-window-error loop was disabled in the retired runtime; it is not
 //! ported beyond preserving that fact.
 //!
 //! Equality is defined over this crate's types, rather than SDK event classes:
@@ -114,8 +113,8 @@ impl StuckDetector {
         {
             return true;
         }
-        // The pinned OpenHands SDK's fifth context-window-error pattern is an
-        // unconditional `return False`; preserve that disabled behavior.
+        // The retired runtime's fifth context-window-error pattern was
+        // disabled; preserve that behavior.
         false
     }
 

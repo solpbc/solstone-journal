@@ -8,9 +8,8 @@
 //! This crate deliberately builds no conversation-persistence format. The
 //! reason is not that nothing would read one: the retention crate will
 //! eventually read a persistence directory in order to delete it under
-//! retention policy, and OpenHands has a create-or-resume path which is inert
-//! today only because no solstone caller sets `session_id`. The retention read
-//! is real deferred R6 work, not evidence that persistence has no consumers.
+//! retention policy. The retention read is real deferred R6 work, not evidence
+//! that persistence has no consumers.
 //! This wave creates no such directory, so retention has nothing to dangle
 //! over yet. When this crate or R5b begins persisting conversations, retention
 //! must be updated in lockstep.

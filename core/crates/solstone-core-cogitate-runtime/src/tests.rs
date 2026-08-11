@@ -496,7 +496,7 @@ fn turn_ladder_counts_off_by_one_and_dedupes_before_armed_check() {
     let armed = ladder.check("r58", 60, "finish").unwrap();
     assert_eq!(armed.stage, BudgetStage::FinalTurn);
     assert_eq!(ladder.observed_turns, 59);
-    // `openhands.py:806-813`: duplicate response ids are a total no-op before arming.
+    // Duplicate response ids are a total no-op before arming.
     assert!(ladder.check("r58", 60, "finish").is_none());
     assert_eq!(ladder.observed_turns, 59);
     assert!(!ladder.force_stopped);
@@ -526,7 +526,7 @@ fn two_calls_in_one_response_show_resource_turn_dedupe_asymmetry() {
     let mut tools = ScriptedTools::default();
     let mut sink = RecordingEventSink::default();
     let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
-    // `openhands.py:726` resource checks have no response-id dedupe, while :806-813 turn checks do.
+    // Resource checks have no response-id dedupe, while turn checks do.
     assert_eq!(
         outcome.reason_code.as_deref(),
         Some("token_budget_exceeded")

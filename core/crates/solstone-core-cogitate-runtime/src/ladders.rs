@@ -25,9 +25,9 @@ pub(crate) struct ResourceLadder {
 }
 
 impl ResourceLadder {
-    /// This intentionally has no response-id argument or dedupe. Python checks
-    /// resource limits on every nonterminal action (openhands.py:726), unlike
-    /// the turn ladder's response-id dedupe (openhands.py:806-813).
+    /// This intentionally has no response-id argument or dedupe. Resource
+    /// limits apply to every nonterminal action, unlike the turn ladder's
+    /// response-id dedupe.
     pub(crate) fn check(
         &mut self,
         cost: f64,

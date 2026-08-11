@@ -1833,7 +1833,7 @@ fn run_generate(command: GenerateCommand) -> ExitCode {
 /// `_active.jsonl` to `.jsonl` rename (`cortex.py:707-733,1379-1384`). This
 /// subcommand only streams its NDJSON boundary. It replaces the in-process
 /// loop, policy, prompt assembly, and provider resolution formerly performed
-/// by `talents.py`/`openhands.py`; Python still owns post-hooks, output files,
+/// by the retired Python tool-using runtime; Python still owns post-hooks, output files,
 /// provenance, no-output gating, and reuse (`talents.py:1518-1619`).
 fn run_cogitate(command: CogitateCommand) -> ExitCode {
     match command {
