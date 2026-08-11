@@ -21,6 +21,7 @@ members = [
     "crates/solstone-core-system-health",
     "crates/solstone-core-brain",
     "crates/solstone-core-brain-cli",
+    "crates/solstone-core-identity",
     "crates/solstone-core-callosum",
     "crates/solstone-core-cogitate",
     "crates/solstone-core-cogitate-tools",
@@ -108,6 +109,7 @@ solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
+solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
