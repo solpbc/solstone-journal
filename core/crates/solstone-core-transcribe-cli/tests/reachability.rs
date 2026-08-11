@@ -35,7 +35,7 @@ fn standalone_binary_reaches_transcript_publication_with_stubbed_onnx_helpers() 
         "wespeaker-resnet34-256.onnx",
         "pyannote-segmentation-3.0.onnx",
     ] {
-        fs::write(assets.join(name), b"stub-model").expect("placeholder asset");
+        fs::copy(model_asset(name), assets.join(name)).expect("copy model asset");
     }
 
     let server = ParakeetStub::start();
@@ -81,11 +81,21 @@ fn standalone_binary_reaches_transcript_publication_with_stubbed_onnx_helpers() 
 }
 
 fn fixture_audio() -> PathBuf {
+    repository_root().join("solstone/observe/transcribe/_fixtures/parakeet_sample.wav")
+}
+
+fn model_asset(name: &str) -> PathBuf {
+    repository_root()
+        .join("packages/solstone-journal-models/solstone_journal_models/assets")
+        .join(name)
+}
+
+fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(3)
         .expect("repository root")
-        .join("solstone/observe/transcribe/_fixtures/parakeet_sample.wav")
+        .to_path_buf()
 }
 
 struct ParakeetStub {

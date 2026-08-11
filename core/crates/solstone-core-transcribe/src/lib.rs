@@ -28,7 +28,10 @@ mod terminal;
 mod transcript;
 
 pub use args::{CliError, ParsedArgs, parse_arguments, require_solstone};
-pub use model_assets::{ModelAssetError, resolve_model_asset};
+pub use model_assets::{
+    ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SILERO_VAD_V6_SHA256, WESPEAKER_RESNET34_SHA256,
+    resolve_model_asset,
+};
 pub use speakers::SpeakerAnalyzeError;
 
 use std::path::{Path, PathBuf};

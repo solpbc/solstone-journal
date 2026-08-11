@@ -137,9 +137,10 @@ configuration.
 
 ## 3. Model assets
 
-`model_assets.rs` is new production code. It resolves an **asset directory**,
-then verifies the requested named regular file is nonempty. It never asks
-Python or executes a subprocess.
+`model_assets.rs` resolves an **asset directory**, then verifies the requested
+named regular file is nonempty and matches its pinned sha256 digest. It never
+asks Python or executes a subprocess. A digest mismatch is a typed, immediate
+configuration failure; it never falls through to another candidate root.
 
 Resolution order is fixed:
 
@@ -151,6 +152,10 @@ Resolution order is fixed:
    `packages/solstone-journal-models/solstone_journal_models/assets`. This is
    the cargo-test/source-build route only.
 3. Installed journal environment: obtain `current_exe()`, iterate it and its
+   ancestors, and for each candidate environment root test
+   `lib/solstone_journal_models/assets`. This executable-relative data layout
+   supports staged package data without a Python package layout.
+4. Installed Python environment: obtain `current_exe()`, iterate it and its
    ancestors, and for each candidate environment root test every child matching
    `lib/python3.*/site-packages/solstone_journal_models/assets`. The expected
    normal venv layout is
@@ -160,11 +165,11 @@ Resolution order is fixed:
    hard-coding one. The package manifest explicitly installs
    `assets/*.onnx` as `solstone_journal_models` package data.
 
-The error type records `OverrideInvalid`, `CurrentExecutable`, and
-`AssetNotFound { asset, searched }`. It is a hard configuration failure
-(exit 78) because selecting an STT/VAD model cannot honestly defer work. The
-existing `CARGO_MANIFEST_DIR` examples are test-only references, not a
-production precedent.
+The error type records `OverrideInvalid`, `CurrentExecutable`,
+`AssetNotFound { asset, searched }`, and `DigestMismatch`. It is a hard
+configuration failure (exit 78) because selecting an STT/VAD model cannot
+honestly defer work. The existing `CARGO_MANIFEST_DIR` examples are test-only
+references, not a production precedent.
 
 ## 4. Stage machine and terminal records
 

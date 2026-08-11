@@ -1223,6 +1223,14 @@ mod tests {
     }
 
     #[test]
+    fn silero_digest_matches_transcribe_canonical_digest() {
+        assert_eq!(
+            SILERO_VAD_V6_SHA256,
+            solstone_core_transcribe::SILERO_VAD_V6_SHA256
+        );
+    }
+
+    #[test]
     fn exact_multiple_audio_length_pads_a_full_extra_window() {
         let audio = vec![1.0_f32; 2 * WINDOW_SIZE_SAMPLES];
 

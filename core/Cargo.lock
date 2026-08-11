@@ -3248,6 +3248,7 @@ dependencies = [
  "getrandom 0.3.4",
  "nix",
  "serde_json",
+ "sha2",
  "solstone-core-callosum",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
@@ -3303,6 +3304,7 @@ dependencies = [
  "ort",
  "serde_json",
  "sha2",
+ "solstone-core-transcribe",
 ]
 
 [[package]]
