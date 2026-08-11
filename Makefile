@@ -62,6 +62,13 @@ ONNX_HOST_TEST_PACKAGES := -p solstone-core-speakers-analyze -p solstone-core-sp
 #
 # ⛔ Do not widen this back to a global export. The wheel recipes must NOT
 # inherit it.
+#
+# ⚠ EVERY host Rust target that compiles the workspace belongs on the list below,
+# and a missing one fails as `ffmpeg-sys-next` exit 101 -- which reads exactly
+# like a test failure. check-rust-onnx-test was added to ci without being added
+# here and died that way on Fedora; the falsification that "proved" the target
+# worked had exported this variable in its own shell, so it measured the shell
+# rather than the recipe.
 CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include))
 ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # install builds the solstone-core wheel through maturin, and solstone-core now
@@ -70,7 +77,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and check-differentials inherits it when it
 # shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-test check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-test check-rust-onnx-test check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
