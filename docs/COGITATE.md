@@ -5,8 +5,8 @@ read and update the journal (chat, the entity / activity / import talents, and
 the rest). It is the single place a talent
 author can point at and say what a fresh cogitate run's working directory,
 context, tools, finalization, and persistence are — instead of reverse-engineering
-the runtime from `solstone/think/talents.py`, the providers, the policy, and the
-installed OpenHands SDK.
+the runtime from `solstone/think/talents.py`, `solstone/think/cogitate_client.py`,
+and the native cogitate crates.
 
 This contract **names capabilities and access classes.** It does not define the
 HTTP API shape (that is convey's — see `docs/CONVEY.md` and `docs/SOLCLI.md`) and
@@ -14,37 +14,35 @@ it is not a per-talent prompt. Every talent prompt is written against this
 contract.
 
 > **Source of truth for the in-context part:** the short runtime preamble every
-> cogitate talent receives is the constant `COGITATE_RUNTIME_PREAMBLE` in
-> `solstone/think/cogitate_contract.py`. The locked access-tier and finalization
-> vocabularies live in the same module (`COGITATE_ACCESS_TIERS`,
-> `FUTURE_ACCESS_TIERS`, `TALENT_FINALIZATION_MODES`). Reference those by path; do
-> not paraphrase them.
+> cogitate talent receives is `COGITATE_RUNTIME_PREAMBLE` in
+> `core/crates/solstone-core-cogitate/src/preambles.rs`. The locked access-tier
+> and finalization vocabularies live in the native cogitate crate. Reference
+> those by path; do not paraphrase them.
 
 ---
 
 ## What a cogitate run is
 
 A cogitate run is **not** a coding agent (Claude / Codex / Gemini) launched in the
-journal. It is a Python talent subprocess spawned by Cortex, inside which the
-OpenHands SDK builds an `Agent` and a `Conversation` and runs the model against a
-small, explicit tool set.
+journal. It is a Python talent subprocess spawned by Cortex, which invokes the
+native `solstone-core cogitate --one-shot` runtime against a small, explicit tool
+set.
 
 ```
 Cortex (cortex/request)
    |- spawns: python -m solstone.think.talents      (cwd = journal root)
         |- prepare_config()                          (talents.py)
-             |- run_cogitate()                        (providers/openhands.py)
-                  |- assemble_prompt()                (providers/cli.py)
-                  |- build the `sol` tool + CogitatePolicy
-                  |- OpenHands Agent (system_prompt = preamble + instruction)
-                  |- OpenHands Conversation -> model loop -> finalization
+             |- _execute_with_tools()                 (talents.py)
+                  |- run_cogitate()                   (cogitate_client.py)
+                       |- solstone-core cogitate --one-shot
+                            |- native request/prompt/tool/finalization runtime
 ```
 
-The model's initial context is **solstone-assembled prompt material plus the
-OpenHands tool schemas** — not a snapshot of the cwd. Files that merely sit in the
+The model's initial context is the native request's **initial prompt plus native
+tool schemas** — not a snapshot of the cwd. Files that merely sit in the
 working directory are not in context (see "What is *not* in a talent's context").
 
-## Working directory and OpenHands workspace
+## Working directory and native runtime
 
 These are two different things; conflating them is the most common debugging
 misread.
@@ -52,8 +50,7 @@ misread.
 | | Value | What it governs |
 |---|---|---|
 | **Talent subprocess cwd** | the **journal root** (resolved from `cwd: journal`) | the cwd the `sol` tool inherits — i.e. where `sol` / `sol call` commands run |
-| **OpenHands `Conversation` workspace** | the **repo root** (`get_project_root()`) | SDK bookkeeping and file-based subagent discovery — **not** automatic model context |
-| **Conversation persistence** | `journal/.cache/cogitate-history/<session_id>` | the SDK event/state store for the run |
+| **Native request `journal_root`** | the **journal root** | the native tool executor's journal path and `sol` command cwd |
 
 The journal-root cwd matters operationally because the `sol` tool inherits it, but
 **cwd contents are never automatically loaded into the model's context.**
@@ -126,7 +123,7 @@ does not happen.
 
 A talent's access class is one of the following. The tier vocabulary is locked
 (`COGITATE_ACCESS_TIERS` / `FUTURE_ACCESS_TIERS` in
-`solstone/think/cogitate_contract.py`); the per-talent assignment and its
+`core/crates/solstone-core-cogitate/src/access_tiers.rs`); the per-talent assignment and its
 enforcement are layered on top of it.
 
 | Tier | Purpose | Surface |
@@ -159,12 +156,12 @@ keys enforcement off it today.
 ## Finalization
 
 Every talent has exactly one finalization mode (`TALENT_FINALIZATION_MODES` in
-`solstone/think/cogitate_contract.py`):
+`core/crates/solstone-core-cogitate/src/preambles.rs`):
 
 | Mode | When | Behavior |
 |---|---|---|
 | `emit_final` | scheduled / output talents (an `output_path` is set, or the schedule is `daily` / `weekly` / `activity`) | the run is accepted **only** from the `emit_final` tool; `FinishTool` is disabled; a finish with no emitted final is an error |
-| `FinishTool` | manual / no-output talents | the run signals completion through OpenHands' built-in finish tool |
+| `FinishTool` | manual / no-output talents | the run signals completion through the native built-in finish tool |
 | `quiet` | side-effect-only talents | the talent has already persisted its work through approved journal commands and finishes with no output |
 
 A manual talent's prompt should state which of these it expects so the behavior is
@@ -191,10 +188,10 @@ prompts can be checked against them:
 ## The in-context preamble (named source constant)
 
 Every cogitate run receives the contract's essential preamble as the head of its
-system prompt. It is the constant `COGITATE_RUNTIME_PREAMBLE` in
-`solstone/think/cogitate_contract.py`, prepended in `assemble_prompt`
-(`solstone/think/providers/cli.py`) ahead of the talent's own instruction. The
-verbatim text:
+system prompt. Native `compose_system_instruction`
+(`core/crates/solstone-core-cogitate/src/prompt.rs`) prepends
+`COGITATE_RUNTIME_PREAMBLE` ahead of the talent's own instruction. The verbatim
+text:
 
 ```
 You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.
@@ -234,10 +231,10 @@ but deliberately cannot reconstruct a retry delay from discarded provider text.
 
 | Concern | Location |
 |---|---|
-| The contract preamble + locked vocabularies | `solstone/think/cogitate_contract.py` |
-| Preamble injection into the system prompt | `assemble_prompt` in `solstone/think/providers/cli.py` |
-| Cogitate run assembly (tools, policy, workspace, finalization) | `run_cogitate` in `solstone/think/providers/openhands.py` |
-| Command / write policy | `CogitatePolicy` in `solstone/think/cogitate_policy.py` |
-| Finalization tool | `solstone/think/providers/emit_final_tool.py` |
+| The contract preamble + locked vocabularies | `core/crates/solstone-core-cogitate/src/preambles.rs` |
+| Preamble injection into the system prompt | `compose_system_instruction` in `core/crates/solstone-core-cogitate/src/prompt.rs` |
+| Cogitate run assembly | `run_cogitate` in `solstone/think/cogitate_client.py`, then `solstone-core cogitate --one-shot` |
+| Command / write policy | `core/crates/solstone-core-cogitate/src/policy.rs` and `core/crates/solstone-core-cogitate-tools/` |
+| Finalization | `core/crates/solstone-core-cogitate/src/finalization.rs` and the native cogitate tools |
 | Talent configs (prompts + frontmatter) | `solstone/talent/*.md`, `solstone/apps/*/talent/*.md` |
 | Talent execution lifecycle | `docs/CORTEX.md`, `docs/THINK.md` |

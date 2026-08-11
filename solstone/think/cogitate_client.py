@@ -217,12 +217,24 @@ async def run_cogitate(
             error = RuntimeError(message)
             setattr(error, "_evented", True)
             raise error
-        payload = json.dumps(
-            _request(config, context_window=context_window), allow_nan=False
-        )
-        process.stdin.write((payload + "\n").encode("utf-8"))
-        await process.stdin.drain()
-        process.stdin.close()
+        try:
+            payload = json.dumps(
+                _request(config, context_window=context_window), allow_nan=False
+            )
+            process.stdin.write((payload + "\n").encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+        except Exception as exc:
+            detail = str(exc) or type(exc).__name__
+            message = f"cogitate native command could not send request: {detail}"
+            _emit_terminal_error(
+                on_event,
+                error=message,
+                provider=provider,
+                reason_code="native_runtime_incomplete",
+            )
+            setattr(exc, "_evented", True)
+            raise
 
         if process.stdout is not None:
             async for raw_line in process.stdout:
@@ -241,7 +253,7 @@ async def run_cogitate(
                 event_kind = event.get("event")
                 if (
                     event_kind == "error"
-                    and event.get("terminal", True)
+                    and event.get("terminal") is True
                     and event.get("reason_code") == "provider_quota_exceeded"
                 ):
                     terminal_seen = True
@@ -253,9 +265,7 @@ async def run_cogitate(
                 if isinstance(event_kind, str):
                     if on_event is not None:
                         on_event(event)
-                    if event_kind == "finish" or (
-                        event_kind == "error" and event.get("terminal", True)
-                    ):
+                    if event.get("terminal") is True:
                         terminal_seen = True
                     if event_kind == "finish" and isinstance(event.get("result"), str):
                         result = event["result"]

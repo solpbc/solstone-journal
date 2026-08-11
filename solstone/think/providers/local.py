@@ -170,7 +170,7 @@ def _remaining_timeout(started: float, timeout_s: float) -> float:
 async def run_cogitate(
     config: dict[str, Any],
     on_event: Callable[[dict], None] | None = None,
-) -> str:
+) -> str | None:
     from solstone.think import cogitate_client
     from solstone.think.providers import local_server
     from solstone.think.providers.local_admission import (
