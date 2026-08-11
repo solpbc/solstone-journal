@@ -306,11 +306,6 @@ fn resolve_location(current: &AbsoluteUrl, location: &str) -> Result<AbsoluteUrl
     if location.starts_with("//") {
         return parse_absolute_url(&format!("{}:{location}", current.scheme));
     }
-    if looks_like_opaque_url(location) {
-        return Err(ArchiveError::Download(
-            "redirect Location has unsupported scheme".to_owned(),
-        ));
-    }
     let path_and_query =
         if location.starts_with('/') {
             location.to_owned()
@@ -355,12 +350,6 @@ fn normalize_path(path: &str) -> String {
 }
 
 fn has_scheme_prefix(value: &str) -> bool {
-    value
-        .split_once(':')
-        .is_some_and(|(scheme, _)| is_scheme(scheme))
-}
-
-fn looks_like_opaque_url(value: &str) -> bool {
     value
         .split_once(':')
         .is_some_and(|(scheme, _)| is_scheme(scheme))
