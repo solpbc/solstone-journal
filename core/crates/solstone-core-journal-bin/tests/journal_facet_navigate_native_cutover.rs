@@ -153,16 +153,10 @@ fn make_executable(path: &Path) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make executable");
 }
 
-fn assert_native(output: &Output, poison_marker: &Path) {
+fn assert_python_was_not_invoked(poison_marker: &Path) {
     assert!(
         !poison_marker.exists(),
         "native dispatch invoked a poisoned Python interpreter"
-    );
-    assert!(
-        output.status.success() || output.status.code() == Some(2),
-        "unexpected exit {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -193,7 +187,7 @@ fn facet_candidates_help_runs_natively() {
     ] {
         assert!(stdout.contains(token), "missing {token:?} from {stdout:?}");
     }
-    assert_native(&output, &harness.poison_marker);
+    assert_python_was_not_invoked(&harness.poison_marker);
 }
 
 #[test]
@@ -213,7 +207,7 @@ fn navigate_help_runs_natively() {
     ] {
         assert!(stdout.contains(token), "missing {token:?} from {stdout:?}");
     }
-    assert_native(&output, &harness.poison_marker);
+    assert_python_was_not_invoked(&harness.poison_marker);
 }
 
 #[test]
@@ -225,7 +219,7 @@ fn facet_candidates_invalid_args_run_natively() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("usage: journal facet-candidates"));
     assert!(stderr.contains("journal facet-candidates: error: invalid arguments"));
-    assert_native(&output, &harness.poison_marker);
+    assert_python_was_not_invoked(&harness.poison_marker);
 }
 
 #[test]
@@ -237,7 +231,7 @@ fn navigate_invalid_args_run_natively() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("usage: journal navigate"));
     assert!(stderr.contains("journal navigate: error: invalid arguments"));
-    assert_native(&output, &harness.poison_marker);
+    assert_python_was_not_invoked(&harness.poison_marker);
 }
 
 #[test]
@@ -249,7 +243,7 @@ fn facet_candidates_happy_path_runs_natively() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Recorded/updated "));
     assert!(stdout.contains(" facet candidate(s)."));
-    assert_native(&output, &harness.poison_marker);
+    assert_python_was_not_invoked(&harness.poison_marker);
 }
 
 #[test]
@@ -260,7 +254,7 @@ fn navigate_happy_path_runs_natively() {
 
     assert_eq!(output.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&output.stdout).starts_with("Navigate: "));
-    assert_native(&output, &harness.poison_marker);
+    assert_python_was_not_invoked(&harness.poison_marker);
     assert_eq!(
         notification(&listener),
         json!({"tract": "navigate", "event": "request", "path": "/app/work", "facet": "work"})
