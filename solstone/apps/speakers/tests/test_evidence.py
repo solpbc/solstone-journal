@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from solstone.apps.speakers._overlap import (
+from solstone.apps.speakers.evidence import (
     UNKNOWN_SPEAKER_EVIDENCE,
     _read_segment_overlap_fraction,
     _read_segment_speaker_evidence,

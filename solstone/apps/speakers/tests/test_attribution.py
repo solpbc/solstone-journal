@@ -17,8 +17,8 @@ from solstone.apps.speakers.encoder_config import (
     ENCODER_ID,
     OVERLAP_DETECTOR_ID,
     OWNER_MARGIN_MIN,
+    OWNER_THRESHOLD,
 )
-from solstone.apps.speakers.owner import OWNER_THRESHOLD
 from solstone.apps.speakers.tests.conftest import journal_tree_hash
 
 # Test stream name (matches conftest.STREAM)
@@ -522,7 +522,7 @@ def test_attribute_segment_metadata_uses_same_loaded_centroid_timestamp(
 ):
     from solstone.apps.speakers import attribution
     from solstone.apps.speakers.attribution import attribute_segment
-    from solstone.apps.speakers.owner import OwnerCentroid
+    from solstone.think.entities.voiceprints import OwnerCentroid
 
     env = speakers_env()
     env.create_entity("Self Person", is_principal=True)
@@ -1086,42 +1086,6 @@ def test_l3_acoustic_cluster_downgrades_margin_declined_high_match_to_medium(
     assert result["unmatched"] == []
 
 
-def test_rebuild_resnapshots_current_owner_threshold_without_changing_read_paths(
-    speakers_env,
-):
-    from solstone.apps.speakers.attribution import attribute_segment
-    from solstone.apps.speakers.encoder_config import OWNER_THRESHOLD
-    from solstone.apps.speakers.owner import load_owner_centroid, rebuild_owner_centroid
-    from solstone.apps.speakers.tests.test_owner import (
-        _seed_rebuild_evidence,
-        _write_rebuild_owner_centroid,
-    )
-
-    env = speakers_env()
-    _write_rebuild_owner_centroid(
-        env,
-        threshold=0.99,
-        evidence_hash=None,
-    )
-    _seed_rebuild_evidence(env)
-    owner_emb = _normalized([0.6, 0.8])
-    _write_controlled_segment(
-        env,
-        "20240102",
-        "100000_300",
-        owner_emb.reshape(1, -1),
-    )
-
-    before = attribute_segment("20240102", STREAM, "100000_300")
-    rebuild = rebuild_owner_centroid()
-    after = attribute_segment("20240102", STREAM, "100000_300")
-
-    assert np.isclose(load_owner_centroid().threshold, OWNER_THRESHOLD)
-    assert before["labels"][0]["speaker"] is None
-    assert rebuild["status"] == "rebuilt"
-    assert after["labels"][0]["method"] == "owner_centroid"
-
-
 def test_layer3_hybrid_engages_and_assigns_clusters_one_to_one(speakers_env):
     from solstone.apps.speakers.attribution import attribute_segment
 
@@ -1288,7 +1252,6 @@ def test_candidate_evidence_persisted_for_resolved_entities_only(speakers_env):
 
 def test_legacy_speaker_labels_without_candidate_evidence_still_load(speakers_env):
     from solstone.apps.speakers.attribution import _read_speaker_labels
-    from solstone.apps.speakers.routes import _load_speaker_labels
 
     env = speakers_env()
     labels = [
@@ -1308,11 +1271,6 @@ def test_legacy_speaker_labels_without_candidate_evidence_still_load(speakers_en
     seg_dir = env.journal / "chronicle" / "20240101" / STREAM / "100000_300"
 
     assert _read_speaker_labels(seg_dir) == {
-        "labels": labels,
-        "owner_centroid_last_refreshed_at": None,
-        "voiceprint_versions": {},
-    }
-    assert _load_speaker_labels(seg_dir) == {
         "labels": labels,
         "owner_centroid_last_refreshed_at": None,
         "voiceprint_versions": {},

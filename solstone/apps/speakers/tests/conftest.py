@@ -45,13 +45,13 @@ def _skip_supervisor_check(monkeypatch):
 @pytest.fixture(autouse=True)
 def _native_speaker_write_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
     """Use the checked-out native writer for speaker app integration tests."""
-    from solstone.apps.speakers import native
+    from solstone.apps.speakers import speaker_resolve_transport
     from solstone.think import core_handshake
 
     helper = ROOT / "core" / "target" / "debug" / "solstone-core"
     if not helper.is_file():
         return
-    real_run = native._run_speaker_resolve
+    real_run = speaker_resolve_transport._run_speaker_resolve
 
     def run(verb, request, **kwargs):
         kwargs.setdefault(
@@ -61,7 +61,7 @@ def _native_speaker_write_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
         kwargs.setdefault("platform_covered", lambda: True)
         return real_run(verb, request, **kwargs)
 
-    monkeypatch.setattr(native, "_run_speaker_resolve", run)
+    monkeypatch.setattr(speaker_resolve_transport, "_run_speaker_resolve", run)
 
 
 @pytest.fixture
@@ -94,9 +94,6 @@ def speakers_env(tmp_path, monkeypatch):
             import solstone.think.utils as think_utils
 
             think_utils._journal_path_cache = None
-            from solstone.apps.speakers.owner import clear_owner_provisional_cache
-
-            clear_owner_provisional_cache()
 
         def set_identity(self, **identity: object) -> None:
             """Set identity config while preserving existing journal setup."""

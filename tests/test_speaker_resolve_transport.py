@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from solstone.apps.speakers import native
+from solstone.apps.speakers import speaker_resolve_transport
 from solstone.think import core_handshake
 
 
@@ -47,44 +47,21 @@ def _runner(returncode: int, *, stdout: str = '{"status":"written"}', stderr: st
     ("invoke", "returncode", "message"),
     [
         (
-            lambda kwargs: native.append_correction(
+            lambda kwargs: speaker_resolve_transport.append_correction(
                 "/tmp/journal",
                 Path("/tmp/journal/chronicle/20260101/audio/segment"),
                 {"sentence_id": 1, "speaker": "person"},
                 **kwargs,
             ),
             64,
-            native.NATIVE_USAGE_MESSAGE,
-        ),
-        (
-            lambda kwargs: native.write_voiceprint(
-                "/tmp/journal",
-                entity_id="person",
-                embedding=[0.1],
-                metadata={"sentence_id": 1},
-                encoder={"id": "encoder", "sha256": "digest", "width": 1},
-                **kwargs,
-            ),
-            69,
-            native.NATIVE_UNAVAILABLE_MESSAGE,
-        ),
-        (
-            lambda kwargs: native.bootstrap_voiceprints(
-                "/tmp/journal",
-                encoder={"id": "encoder", "sha256": "digest", "width": 1},
-                added_at=1,
-                dry_run=False,
-                **kwargs,
-            ),
-            75,
-            native.NATIVE_TEMPFAIL_MESSAGE,
+            speaker_resolve_transport.NATIVE_USAGE_MESSAGE,
         ),
     ],
 )
 def test_exit_codes_raise_owner_facing_errors(
     invoke, returncode: int, message: str
 ) -> None:
-    with pytest.raises(native.NativeSpeakerResolveError) as exc_info:
+    with pytest.raises(speaker_resolve_transport.NativeSpeakerResolveError) as exc_info:
         invoke(
             _transport_kwargs(_runner(returncode, stderr='{"detail":"native detail"}'))
         )
@@ -97,15 +74,15 @@ def test_exit_codes_raise_owner_facing_errors(
 def test_composed_failure_warns_that_prior_operations_may_have_run(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(native.NativeSpeakerResolveError):
-        native._run_speaker_resolve(
-            "identify",
+    with pytest.raises(speaker_resolve_transport.NativeSpeakerResolveError):
+        speaker_resolve_transport._run_speaker_resolve(
+            "write-full-labels",
             {"schema": "test"},
             operation_count=2,
             **_transport_kwargs(_runner(75)),
         )
 
-    assert native.COMPOSED_COMMAND_WARNING in capsys.readouterr().err
+    assert speaker_resolve_transport.COMPOSED_COMMAND_WARNING in capsys.readouterr().err
 
 
 def test_handshake_skip_and_fail_have_distinct_messages() -> None:
@@ -115,9 +92,9 @@ def test_handshake_skip_and_fail_have_distinct_messages() -> None:
             "skip", "source"
         ),
     }
-    with pytest.raises(native.NativeSpeakerResolveError) as skip:
-        native._run_speaker_resolve("clear-owner-candidate", {}, **skipped)
-    assert skip.value.message == native.HANDSHAKE_SKIP_MESSAGE
+    with pytest.raises(speaker_resolve_transport.NativeSpeakerResolveError) as skip:
+        speaker_resolve_transport._run_speaker_resolve("write-full-labels", {}, **skipped)
+    assert skip.value.message == speaker_resolve_transport.HANDSHAKE_SKIP_MESSAGE
 
     failed = {
         **_transport_kwargs(_runner(0)),
@@ -125,18 +102,18 @@ def test_handshake_skip_and_fail_have_distinct_messages() -> None:
             "fail", "repair"
         ),
     }
-    with pytest.raises(native.NativeSpeakerResolveError) as fail:
-        native._run_speaker_resolve("clear-owner-candidate", {}, **failed)
-    assert fail.value.message == native.HANDSHAKE_FAIL_MESSAGE.format(message="repair")
+    with pytest.raises(speaker_resolve_transport.NativeSpeakerResolveError) as fail:
+        speaker_resolve_transport._run_speaker_resolve("write-full-labels", {}, **failed)
+    assert fail.value.message == speaker_resolve_transport.HANDSHAKE_FAIL_MESSAGE.format(message="repair")
 
 
 def test_unsupported_platform_raises_named_error_without_launch() -> None:
     def unexpected_runner(*_args, **_kwargs):
         raise AssertionError("native runner should not be called")
 
-    with pytest.raises(native.NativeSpeakerResolveError) as exc_info:
-        native._run_speaker_resolve(
-            "clear-owner-candidate",
+    with pytest.raises(speaker_resolve_transport.NativeSpeakerResolveError) as exc_info:
+        speaker_resolve_transport._run_speaker_resolve(
+            "write-full-labels",
             {},
             **{
                 **_transport_kwargs(unexpected_runner),
@@ -144,7 +121,7 @@ def test_unsupported_platform_raises_named_error_without_launch() -> None:
             },
         )
 
-    assert exc_info.value.message == native.UNSUPPORTED_HOST_MESSAGE
+    assert exc_info.value.message == speaker_resolve_transport.UNSUPPORTED_HOST_MESSAGE
     assert exc_info.value.reason == "unsupported-host"
 
 
@@ -163,7 +140,7 @@ def test_label_wrapper_derives_segment_and_builds_exact_request() -> None:
         requests.append(json.loads(input))
         return subprocess.CompletedProcess(argv, 0, stdout='{"status":"written"}')
 
-    response = native.write_full_labels(
+    response = speaker_resolve_transport.write_full_labels(
         "/tmp/journal",
         Path("/tmp/journal/chronicle/20260101/audio/segment/talents"),
         [{"sentence_id": 1, "speaker": "person"}],
@@ -194,7 +171,7 @@ def test_native_label_write_creates_fixture_segment_artifact(
     segment_dir = journal_copy / "chronicle" / "20240101" / "default" / "123456_300"
     labels_path = segment_dir / "talents" / "speaker_labels.json"
 
-    response = native.write_full_labels(
+    response = speaker_resolve_transport.write_full_labels(
         journal_copy,
         segment_dir,
         [

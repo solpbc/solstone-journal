@@ -29,8 +29,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from solstone.apps.speakers import native as native_speakers
-from solstone.apps.speakers._overlap import _read_segment_overlap_fraction
+from solstone.apps.speakers import speaker_resolve_transport as native_speakers
+from solstone.apps.speakers.evidence import _read_segment_overlap_fraction
 from solstone.apps.speakers.encoder_config import (
     ACOUSTIC_HIGH,
     ACOUSTIC_MARGIN_MIN,
@@ -45,14 +45,19 @@ from solstone.apps.speakers.encoder_config import (
     WESPEAKER_EMBEDDING_WIDTH,
     WESPEAKER_MODEL_SHA256,
 )
-from solstone.apps.speakers.owner import load_owner_centroid
 from solstone.think.entities import (
     EntityResolutionError,
     EntityResolutionOutcome,
     ResolutionOrigin,
     ResolutionScope,
     get_identity_names,
+    load_entity_voiceprints_file,
+    normalize_embedding,
     record_entity_resolution,
+)
+from solstone.think.entities.voiceprints import (
+    load_embeddings_file,
+    load_owner_centroid,
 )
 from solstone.think.entities.journal import (
     get_journal_principal,
@@ -95,21 +100,6 @@ def _speaker_encoder_identity() -> dict[str, Any]:
         "sha256": WESPEAKER_MODEL_SHA256,
         "width": WESPEAKER_EMBEDDING_WIDTH,
     }
-
-
-def _routes_helpers():
-    """Load route helpers lazily to avoid import cycles."""
-    from solstone.apps.speakers.routes import (
-        _load_embeddings_file,
-        _load_entity_voiceprints_file,
-        _normalize_embedding,
-    )
-
-    return (
-        _load_embeddings_file,
-        _normalize_embedding,
-        _load_entity_voiceprints_file,
-    )
 
 
 def _decay_weighted_centroid(
@@ -506,12 +496,6 @@ def attribute_segment(
         metadata         - owner centroid refresh timestamp + voiceprint counts
     """
     import numpy as np
-
-    (
-        load_embeddings_file,
-        normalize_embedding,
-        load_entity_voiceprints_file,
-    ) = _routes_helpers()
 
     seg_dir = segment_path(day, segment_key, stream, create=not read_only)
     if read_only and not seg_dir.is_dir():
@@ -1627,12 +1611,6 @@ def accumulate_voiceprints(
     Returns dict mapping entity_id -> number of new embeddings saved.
     """
     import numpy as np
-
-    (
-        load_embeddings_file,
-        normalize_embedding,
-        load_entity_voiceprints_file,
-    ) = _routes_helpers()
 
     centroid_data = load_owner_centroid()
     if centroid_data is None:

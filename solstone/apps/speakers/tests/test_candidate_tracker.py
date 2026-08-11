@@ -34,8 +34,8 @@ from solstone.apps.speakers.encoder_config import (
     SPEAKER_EVIDENCE_VERSION,
     SPLIT_THRESHOLD,
     STABILITY_THRESHOLD,
+    OWNER_THRESHOLD,
 )
-from solstone.apps.speakers.owner import OWNER_THRESHOLD
 from solstone.apps.speakers.tests.conftest import journal_tree_hash
 
 STREAM = "test"
@@ -1041,45 +1041,6 @@ def test_plan_retroactive_confirm_writes_nothing(speakers_env, tmp_path):
     candidate = _only_candidate(tracker)
     assert candidate.status == "pending"
     assert candidate.confirmed_entity is None
-
-
-def test_owner_selection_and_expansion_use_consolidated_survivor(speakers_env):
-    from solstone.apps.speakers.owner import (
-        _expand_owner_candidate,
-        _select_owner_candidate,
-    )
-
-    env = speakers_env()
-    a = _unit([0.0, 1.0, 0.0])
-    b = _unit([0.0, 0.70, np.sqrt(1.0 - 0.70**2)])
-    first_dir = _write_labeled_segment(
-        env,
-        "20260101",
-        "090000_300",
-        {1: np.stack([a] * CONSOLIDATE_MIN_INTERVALS)},
-    )
-    second_dir = _write_labeled_segment(
-        env,
-        "20260102",
-        "090000_300",
-        {1: np.stack([b] * CONSOLIDATE_MIN_INTERVALS)},
-    )
-
-    CandidateTracker().process_segment(
-        "20260101", "090000_300", STREAM, "mic_audio", first_dir
-    )
-    CandidateTracker().process_segment(
-        "20260102", "090000_300", STREAM, "mic_audio", second_dir
-    )
-
-    tracker = CandidateTracker()
-    assert sorted(tracker._candidates) == [1]
-    candidate, missing_reason = _select_owner_candidate(None)
-    assert missing_reason is None
-    assert candidate is not None
-    assert candidate.cand_id == 1
-    expansion = _expand_owner_candidate(candidate)
-    assert expansion.embeddings.shape[0] == CONSOLIDATE_MIN_INTERVALS * 2
 
 
 def test_process_segment_idempotent_for_same_source_segment(speakers_env, tmp_path):

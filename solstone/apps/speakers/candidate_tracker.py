@@ -16,7 +16,10 @@ from typing import Any, TypeVar
 
 import numpy as np
 
-from solstone.apps.speakers._overlap import _read_segment_speaker_evidence
+from solstone.apps.speakers.evidence import (
+    _read_segment_overlap_fraction,
+    _read_segment_speaker_evidence,
+)
 from solstone.apps.speakers.attribution import (
     _load_integer_speaker_labels,
     segment_path,
@@ -33,6 +36,8 @@ from solstone.apps.speakers.encoder_config import (
     SPLIT_THRESHOLD,
     STABILITY_THRESHOLD,
 )
+from solstone.think.entities import normalize_embedding
+from solstone.think.entities.voiceprints import load_embeddings_file, load_owner_centroid
 from solstone.think.journal_io import (
     LockTimeout,
     MalformedPolicy,
@@ -147,15 +152,6 @@ class RetroactiveConfirmPlan:
     )
 
 
-def _routes_helpers():
-    from solstone.apps.speakers.routes import (
-        _load_embeddings_file,
-        _normalize_embedding,
-    )
-
-    return _load_embeddings_file, _normalize_embedding
-
-
 def _empty_retroactive_plan(
     entity_id: str,
     *,
@@ -211,8 +207,6 @@ def _entity_voiceprint_snapshot(
 
 
 def _retroactive_owner_context() -> tuple[np.ndarray, float] | None:
-    from solstone.apps.speakers.attribution import load_owner_centroid
-
     centroid_data = load_owner_centroid()
     if centroid_data is None:
         return None
@@ -227,10 +221,7 @@ def _is_principal_entity(entity_id: str) -> bool:
 
 
 def _retroactive_segment_noisy(seg_dir: Path, source: str) -> bool:
-    from solstone.apps.speakers.attribution import (
-        NOISY_FLYWHEEL_OVERLAP_MAX,
-        _read_segment_overlap_fraction,
-    )
+    from solstone.apps.speakers.attribution import NOISY_FLYWHEEL_OVERLAP_MAX
 
     jsonl_path = seg_dir / f"{source}.jsonl"
     return _read_segment_overlap_fraction(jsonl_path) > NOISY_FLYWHEEL_OVERLAP_MAX
@@ -321,7 +312,6 @@ def recover_source_segment_sentence_ids(
     seg_dir = segment_path(day, segment_key, stream, create=False)
     if not seg_dir.exists():
         return None
-    load_embeddings_file, normalize_embedding = _routes_helpers()
     emb_data = load_embeddings_file(seg_dir / f"{source}.npz")
     if emb_data is None:
         return None
@@ -591,7 +581,6 @@ class CandidateTracker:
         absorbed: CandidateProfile,
         score: float,
     ) -> dict[str, Any]:
-        _load_embeddings_file, normalize_embedding = _routes_helpers()
         combined = survivor.centroid * float(survivor.n_intervals)
         combined += absorbed.centroid * float(absorbed.n_intervals)
         merged = normalize_embedding(combined)
@@ -737,7 +726,6 @@ class CandidateTracker:
         source: str,
         seg_dir: Path,
     ) -> None:
-        load_embeddings_file, normalize_embedding = _routes_helpers()
         integer_labels = _load_integer_speaker_labels(seg_dir, source)
         if not integer_labels:
             evidence = _read_segment_speaker_evidence(seg_dir / f"{source}.jsonl")
@@ -937,7 +925,6 @@ class CandidateTracker:
         entity_id: str,
     ) -> RetroactiveConfirmPlan:
         """Plan retroactive confirmation without mutating tracker or voiceprints."""
-        load_embeddings_file, normalize_embedding = _routes_helpers()
         normalized_centroid = normalize_embedding(centroid)
         if normalized_centroid is None:
             return _empty_retroactive_plan(entity_id)
