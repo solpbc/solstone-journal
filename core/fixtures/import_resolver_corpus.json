@@ -1,0 +1,896 @@
+{
+  "how_to_read": "Two passes; see the note in the source. Each row is one invocation. 'result' is the verb's return value (None means it proceeded past resolution); 'raised' is a refusal, and the refusal message is part of the contract; 'stdout' is what the owner sees.",
+  "passes": {
+    "native_detector_answers_no": {
+      "auto=absent::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=absent::dated.m4a": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a --timestamp 20260311_120000\n"
+      },
+      "auto=bare::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=bare::dated.m4a": {
+        "result": {
+          "dry_run": true,
+          "source": "/tmp/resolver-corpus-5p781tqb/20260311_120000.m4a",
+          "source_type": "audio",
+          "timestamp": "20260311_120000"
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM) \u2014 auto-importing\n\n  File:       /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a\n  Size:       12.0B\n  Timestamp:  20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n  Source:     audio\n  Stream:     import.audio\n  Target day: 20260311\n\n  Duration:   unknown (ffprobe failed)\n\n"
+      },
+      "auto=empty::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=empty::dated.m4a": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a --timestamp 20260311_120000\n"
+      },
+      "auto=text::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=text::dated.m4a": {
+        "result": {
+          "dry_run": true,
+          "source": "/tmp/resolver-corpus-5p781tqb/20260311_120000.m4a",
+          "source_type": "audio",
+          "timestamp": "20260311_120000"
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM) \u2014 auto-importing\n\n  File:       /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a\n  Size:       12.0B\n  Timestamp:  20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n  Source:     audio\n  Stream:     import.audio\n  Target day: 20260311\n\n  Duration:   unknown (ffprobe failed)\n\n"
+      },
+      "bare::UPPER.PDF": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/UPPER.PDF"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/UPPER.PDF\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (UPPER.PDF: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "bare::audio.m4a": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::cal.ics": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/cal.ics"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/cal.ics\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "bare::clippings.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::dated.m4a": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a --timestamp 20260311_120000\n"
+      },
+      "bare::dated.txt": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.txt --timestamp 20260311_120000\n"
+      },
+      "bare::dir_apple_AND_pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/apple_export_and_pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/apple_export_and_pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (ecg.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "bare::dir_only_images": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::dir_pdf_in_subdir": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::dir_vault_1md": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::dir_vault_3md": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "obsidian",
+          "item_count": 3,
+          "source": "/tmp/resolver-corpus-5p781tqb/vault_3md"
+        },
+        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_3md\n  Date range: 20260811 \u2014 20260811\n  Items:      3\n  Entities:   0\n  Summary:    3 knowledge notes\n\n"
+      },
+      "bare::dir_vault_3md_AND_pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "obsidian",
+          "item_count": 3,
+          "source": "/tmp/resolver-corpus-5p781tqb/vault_3md_and_pdf"
+        },
+        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_3md_and_pdf\n  Date range: 20260811 \u2014 20260811\n  Items:      3\n  Entities:   0\n  Summary:    3 knowledge notes\n\n"
+      },
+      "bare::dir_vault_3md_hidden": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::dir_vault_3md_nested": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "obsidian",
+          "item_count": 3,
+          "source": "/tmp/resolver-corpus-5p781tqb/vault_3md_nested"
+        },
+        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_3md_nested\n  Date range: 20260811 \u2014 20260811\n  Items:      3\n  Entities:   0\n  Summary:    3 knowledge notes\n\n"
+      },
+      "bare::dir_vault_logseq": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "obsidian",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/vault_logseq"
+        },
+        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_logseq\n  Date range: 20260811 \u2014 20260811\n  Items:      1\n  Entities:   0\n  Summary:    1 knowledge notes\n\n"
+      },
+      "bare::doc.pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/doc.pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/doc.pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (doc.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "bare::note.md": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::pic.png": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "image",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/pic.png"
+        },
+        "stdout": "\n  Importer:   Image\n  Source:     /tmp/resolver-corpus-5p781tqb/pic.png\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No readable image found\n\n"
+      },
+      "bare::plain.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::zip_apple": {
+        "raised": {
+          "message": "native Apple body import failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent A",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_archive": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "journal_archive",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/archive.zip"
+        },
+        "stdout": "\n  Importer:   Journal Archive\n  Source:     /tmp/resolver-corpus-5p781tqb/archive.zip\n  Date range: 20260101 \u2014 20260101\n  Items:      1\n  Entities:   0\n  Summary:    Journal archive: 1 days, 0 entities, 0 facets (1 warnings)\n\n"
+      },
+      "bare::zip_chatgpt": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "chatgpt",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/chatgpt.zip"
+        },
+        "stdout": "\n  Importer:   ChatGPT History\n  Source:     /tmp/resolver-corpus-5p781tqb/chatgpt.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    0 conversations from ChatGPT export\n\n"
+      },
+      "bare::zip_claude": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "claude",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/claude.zip"
+        },
+        "stdout": "\n  Importer:   Claude Chat History\n  Source:     /tmp/resolver-corpus-5p781tqb/claude.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    0 messages from Claude chat export\n\n"
+      },
+      "bare::zip_claude_AND_ics": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/claude_ics.zip"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/claude_ics.zip\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "bare::zip_gemini": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "gemini",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/gemini.zip"
+        },
+        "stdout": "\n  Importer:   Gemini Activity History\n  Source:     /tmp/resolver-corpus-5p781tqb/gemini.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    Empty export \u2014 no Gemini activity found\n\n"
+      },
+      "bare::zip_generic": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::zip_ics": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/ics.zip"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/ics.zip\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "bare::zip_takeout_ics_AND_gemini": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/takeout.zip"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/takeout.zip\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "missing_path": {
+        "raised": {
+          "message": "Import source not found: /nonexistent/does-not-exist.m4a",
+          "type": "FileNotFoundError"
+        },
+        "stdout": ""
+      },
+      "source=document::doc.pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/doc.pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/doc.pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (doc.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "source=ics::zip_apple": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/apple.zip"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/apple.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No ICS data found\n\n"
+      },
+      "source=kindle::plain.txt": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "kindle",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/plain.txt"
+        },
+        "stdout": "\n  Importer:   Kindle Highlights\n  Source:     /tmp/resolver-corpus-5p781tqb/plain.txt\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No parseable clippings found\n\n"
+      },
+      "source=nosuch::plain.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "source=obsidian::dir_apple_AND_pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "obsidian",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/apple_export_and_pdf"
+        },
+        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/apple_export_and_pdf\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    Empty vault\n\n"
+      },
+      "source=oura::plain.txt": {
+        "raised": {
+          "message": "Oura body data imports through sync; use journal importer --sync oura",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "source=recording::audio.m4a": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "source=recording::cal.ics": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/cal.ics"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/cal.ics\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "source=recording::doc.pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/doc.pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/doc.pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (doc.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "source=recording::pic.png": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "image",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/pic.png"
+        },
+        "stdout": "\n  Importer:   Image\n  Source:     /tmp/resolver-corpus-5p781tqb/pic.png\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No readable image found\n\n"
+      },
+      "source=recording::plain.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "timestamp=00000000_000000::audio.m4a": {
+        "raised": {
+          "message": "time data '00000000_000000' does not match format '%Y%m%d_%H%M%S'",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20260230_120000::audio.m4a": {
+        "raised": {
+          "message": "day is out of range for month",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20260311_1200000::audio.m4a": {
+        "raised": {
+          "message": "timestamp must be in YYYYMMDD_HHMMSS format",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20260311_120000::audio.m4a": {
+        "result": {
+          "dry_run": true,
+          "source": "/tmp/resolver-corpus-5p781tqb/audio.m4a",
+          "source_type": "audio",
+          "timestamp": "20260311_120000"
+        },
+        "stdout": "\n  File:       /tmp/resolver-corpus-5p781tqb/audio.m4a\n  Size:       12.0B\n  Timestamp:  20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n  Source:     audio\n  Stream:     import.audio\n  Target day: 20260311\n\n  Duration:   unknown (ffprobe failed)\n\n"
+      },
+      "timestamp=2026031_120000::audio.m4a": {
+        "raised": {
+          "message": "timestamp must be in YYYYMMDD_HHMMSS format",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20261345_996060::audio.m4a": {
+        "raised": {
+          "message": "time data '20261345_996060' does not match format '%Y%m%d_%H%M%S'",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      }
+    },
+    "native_detector_live": {
+      "auto=absent::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=absent::dated.m4a": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a --timestamp 20260311_120000\n"
+      },
+      "auto=bare::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=bare::dated.m4a": {
+        "result": {
+          "dry_run": true,
+          "source": "/tmp/resolver-corpus-5p781tqb/20260311_120000.m4a",
+          "source_type": "audio",
+          "timestamp": "20260311_120000"
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM) \u2014 auto-importing\n\n  File:       /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a\n  Size:       12.0B\n  Timestamp:  20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n  Source:     audio\n  Stream:     import.audio\n  Target day: 20260311\n\n  Duration:   unknown (ffprobe failed)\n\n"
+      },
+      "auto=empty::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=empty::dated.m4a": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a --timestamp 20260311_120000\n"
+      },
+      "auto=text::audio.m4a_undetectable": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "auto=text::dated.m4a": {
+        "result": {
+          "dry_run": true,
+          "source": "/tmp/resolver-corpus-5p781tqb/20260311_120000.m4a",
+          "source_type": "audio",
+          "timestamp": "20260311_120000"
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM) \u2014 auto-importing\n\n  File:       /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a\n  Size:       12.0B\n  Timestamp:  20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n  Source:     audio\n  Stream:     import.audio\n  Target day: 20260311\n\n  Duration:   unknown (ffprobe failed)\n\n"
+      },
+      "bare::UPPER.PDF": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/UPPER.PDF"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/UPPER.PDF\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (UPPER.PDF: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "bare::audio.m4a": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::cal.ics": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/cal.ics"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/cal.ics\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "bare::clippings.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::dated.m4a": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.m4a --timestamp 20260311_120000\n"
+      },
+      "bare::dated.txt": {
+        "result": {
+          "detected_timestamp": "20260311_120000",
+          "reason": "timestamp_required",
+          "skipped": true
+        },
+        "stdout": "Detected timestamp: 20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n\nRun:\n  journal importer /tmp/resolver-corpus-5p781tqb/20260311_120000.txt --timestamp 20260311_120000\n"
+      },
+      "bare::dir_apple_AND_pdf": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_only_images": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_pdf_in_subdir": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_vault_1md": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_vault_3md": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_vault_3md_AND_pdf": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_vault_3md_hidden": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_vault_3md_nested": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::dir_vault_logseq": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::doc.pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/doc.pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/doc.pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (doc.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "bare::note.md": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::pic.png": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "image",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/pic.png"
+        },
+        "stdout": "\n  Importer:   Image\n  Source:     /tmp/resolver-corpus-5p781tqb/pic.png\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No readable image found\n\n"
+      },
+      "bare::plain.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "bare::zip_apple": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_archive": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_chatgpt": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_claude": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_claude_AND_ics": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_gemini": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_generic": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_ics": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "bare::zip_takeout_ics_AND_gemini": {
+        "raised": {
+          "message": "native Apple body source detection failed: Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] ",
+          "type": "BodyNativeError"
+        },
+        "stdout": ""
+      },
+      "missing_path": {
+        "raised": {
+          "message": "Import source not found: /nonexistent/does-not-exist.m4a",
+          "type": "FileNotFoundError"
+        },
+        "stdout": ""
+      },
+      "source=document::doc.pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/doc.pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/doc.pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (doc.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "source=ics::zip_apple": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/apple.zip"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/apple.zip\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No ICS data found\n\n"
+      },
+      "source=kindle::plain.txt": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "kindle",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/plain.txt"
+        },
+        "stdout": "\n  Importer:   Kindle Highlights\n  Source:     /tmp/resolver-corpus-5p781tqb/plain.txt\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No parseable clippings found\n\n"
+      },
+      "source=nosuch::plain.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "source=obsidian::dir_apple_AND_pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "obsidian",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/apple_export_and_pdf"
+        },
+        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/apple_export_and_pdf\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    Empty vault\n\n"
+      },
+      "source=oura::plain.txt": {
+        "raised": {
+          "message": "Oura body data imports through sync; use journal importer --sync oura",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "source=recording::audio.m4a": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "source=recording::cal.ics": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "ics",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/cal.ics"
+        },
+        "stdout": "\n  Importer:   Google Calendar (ICS)\n  Source:     /tmp/resolver-corpus-5p781tqb/cal.ics\n  Date range: 20260311 \u2014 20260311\n  Items:      1\n  Entities:   0\n  Summary:    1 events, 0 unique attendees\n\n"
+      },
+      "source=recording::doc.pdf": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "document",
+          "item_count": 1,
+          "source": "/tmp/resolver-corpus-5p781tqb/doc.pdf"
+        },
+        "stdout": "\n  Importer:   Documents\n  Source:     /tmp/resolver-corpus-5p781tqb/doc.pdf\n  Date range:  \u2014 \n  Items:      1\n  Entities:   0\n  Summary:    1 PDF documents, 0 total pages; 1 unreadable (doc.pdf: corrupt PDF (Failed to load document (PDFium: Data format error).))\n\n"
+      },
+      "source=recording::pic.png": {
+        "result": {
+          "dry_run": true,
+          "entity_count": 0,
+          "importer": "image",
+          "item_count": 0,
+          "source": "/tmp/resolver-corpus-5p781tqb/pic.png"
+        },
+        "stdout": "\n  Importer:   Image\n  Source:     /tmp/resolver-corpus-5p781tqb/pic.png\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    No readable image found\n\n"
+      },
+      "source=recording::plain.txt": {
+        "result": {
+          "reason": "no_deterministic_match",
+          "skipped": true
+        },
+        "stdout": "No deterministic timestamp found. Provide --timestamp YYYYMMDD_HHMMSS, or omit --deterministic-only to use model detection.\n"
+      },
+      "timestamp=00000000_000000::audio.m4a": {
+        "raised": {
+          "message": "time data '00000000_000000' does not match format '%Y%m%d_%H%M%S'",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20260230_120000::audio.m4a": {
+        "raised": {
+          "message": "day is out of range for month",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20260311_1200000::audio.m4a": {
+        "raised": {
+          "message": "timestamp must be in YYYYMMDD_HHMMSS format",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20260311_120000::audio.m4a": {
+        "result": {
+          "dry_run": true,
+          "source": "/tmp/resolver-corpus-5p781tqb/audio.m4a",
+          "source_type": "audio",
+          "timestamp": "20260311_120000"
+        },
+        "stdout": "\n  File:       /tmp/resolver-corpus-5p781tqb/audio.m4a\n  Size:       12.0B\n  Timestamp:  20260311_120000 (Wed Mar 11 2026, 12:00 PM)\n  Source:     audio\n  Stream:     import.audio\n  Target day: 20260311\n\n  Duration:   unknown (ffprobe failed)\n\n"
+      },
+      "timestamp=2026031_120000::audio.m4a": {
+        "raised": {
+          "message": "timestamp must be in YYYYMMDD_HHMMSS format",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      },
+      "timestamp=20261345_996060::audio.m4a": {
+        "raised": {
+          "message": "time data '20261345_996060' does not match format '%Y%m%d_%H%M%S'",
+          "type": "ValueError"
+        },
+        "stdout": ""
+      }
+    }
+  },
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "native_binary": "<checkout>/.venv/bin/solstone-core (build output; may lag the tree)",
+    "python": "3.13.14",
+    "seam": "_import_one_from_args \u2014 the OWNER-FACING path, not detect_file_importer or any other helper. Captured at --dry-run --deterministic-only so no model runs and the journal is not mutated.",
+    "tree_dirty_files": 0,
+    "why_here": "a build worktree has no Python environment and cannot run the reference"
+  },
+  "schema": "import-resolver-corpus/2"
+}

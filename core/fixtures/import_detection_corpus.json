@@ -1,0 +1,90 @@
+{
+  "schema": "import-detection-corpus/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "ran the reference detect_file_importer over a synthetic corpus",
+    "why_here": "a build worktree has no Python environment and cannot run the reference"
+  },
+  "routing_contract": {
+    "rule": "detect_file_importer iterates the registry in insertion order and returns the FIRST importer whose detect() returns True",
+    "detection_order": [
+      "ics",
+      "obsidian",
+      "claude",
+      "chatgpt",
+      "kindle",
+      "gemini",
+      "document",
+      "image",
+      "journal_archive",
+      "apple_health",
+      "oura"
+    ],
+    "file_patterns_are_NOT_the_predicate": "file_patterns is DISPLAY metadata shown by --list-importers. detect() is the predicate and they disagree: six importers advertise *.zip but discriminate by ARCHIVE CONTENT, and obsidian advertises *.md but detect() returns False for any FILE \u2014 it requires a DIRECTORY plus .obsidian/, logseq/, or >=3 non-hidden .md files. A native port that built detection from file_patterns would be wrong for every importer.",
+    "zip_claimants": [
+      "ics",
+      "claude",
+      "chatgpt",
+      "gemini",
+      "journal_archive",
+      "apple_health"
+    ]
+  },
+  "cases": {
+    "My Clippings.txt": {
+      "detected": "kindle"
+    },
+    "apple_health.zip": {
+      "detected": "apple_health"
+    },
+    "apple_health_export/": {
+      "detected": "apple_health"
+    },
+    "audio.m4a": {
+      "detected": null
+    },
+    "cal.ics": {
+      "detected": "ics"
+    },
+    "chatgpt_like.zip": {
+      "detected": "chatgpt"
+    },
+    "claude_like.zip": {
+      "detected": "claude"
+    },
+    "doc.pdf": {
+      "detected": "document"
+    },
+    "empty.zip": {
+      "detected": null
+    },
+    "gemini_like.zip": {
+      "detected": "gemini"
+    },
+    "ics_zip.zip": {
+      "detected": "ics"
+    },
+    "journal_archive.zip": {
+      "detected": "journal_archive"
+    },
+    "note.md": {
+      "detected": null
+    },
+    "pic.png": {
+      "detected": "image"
+    },
+    "plain.txt": {
+      "detected": null
+    },
+    "vault_dot_obsidian/": {
+      "detected": "obsidian"
+    },
+    "vault_one_md/": {
+      "detected": null
+    },
+    "vault_three_md/": {
+      "detected": "obsidian"
+    }
+  }
+}

@@ -1,0 +1,296 @@
+{
+  "schema": "import-reference-grammar/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "tree_dirty_files": 0,
+    "python": "3.13.14",
+    "method": "executed the reference package in a source checkout with a Python environment; a build worktree has none and cannot reproduce this",
+    "env": {
+      "SOLSTONE_JOURNAL": "/tmp/claude-1001/scratch-journal",
+      "note": "SOLSTONE_JOURNAL pinned to a scratch path because get_journal() AUTO-CREATES the journal directory"
+    },
+    "guard": "capture refuses non-zero on any importer-loader warning or any count mismatch; get_file_importers() otherwise drops rows silently at exit 0"
+  },
+  "routing_contract": {
+    "rule": "detect_file_importer iterates the registry in insertion order and returns the FIRST importer whose detect() matches",
+    "detection_order": [
+      "ics",
+      "obsidian",
+      "claude",
+      "chatgpt",
+      "kindle",
+      "gemini",
+      "document",
+      "image",
+      "journal_archive",
+      "apple_health",
+      "oura"
+    ],
+    "why_it_matters": "six importers claim *.zip, so insertion order decides which one receives an owner's archive. A hash-ordered native registry routes zips nondeterministically.",
+    "patterns_claimed_by_more_than_one": {
+      "*.zip": [
+        "ics",
+        "claude",
+        "chatgpt",
+        "gemini",
+        "journal_archive",
+        "apple_health"
+      ]
+    }
+  },
+  "unknown_option_exit_codes": {
+    "note": "MEASURED IN FOUR ENVIRONMENTS. The exit is a property of whether solstone is running, NOT of the grammar. --nonsense reaching the parser yields 2 from the missing required positional, so the native probe's expected exit 2 is a MATCH, not a divergence.",
+    "solstone_down": {
+      "exit": 1,
+      "cause": "require_solstone() gate fires before argument validation"
+    },
+    "supervisor_spawned": {
+      "exit": 75,
+      "cause": "EXIT_TEMPFAIL"
+    },
+    "supervisor_gate_passed": {
+      "exit": 2,
+      "cause": "parser.error on the missing required positional 'media'"
+    },
+    "help": {
+      "exit": 0,
+      "cause": "argparse intercepts inside parse_known_args"
+    }
+  },
+  "file_importer_registry_ordered": [
+    [
+      "ics",
+      "solstone.think.importers.ics"
+    ],
+    [
+      "obsidian",
+      "solstone.think.importers.obsidian"
+    ],
+    [
+      "claude",
+      "solstone.think.importers.claude_chat"
+    ],
+    [
+      "chatgpt",
+      "solstone.think.importers.chatgpt"
+    ],
+    [
+      "kindle",
+      "solstone.think.importers.kindle"
+    ],
+    [
+      "gemini",
+      "solstone.think.importers.gemini"
+    ],
+    [
+      "document",
+      "solstone.think.importers.documents"
+    ],
+    [
+      "image",
+      "solstone.think.importers.images"
+    ],
+    [
+      "journal_archive",
+      "solstone.think.importers.journal_archive"
+    ],
+    [
+      "apple_health",
+      "solstone.think.importers.apple_health"
+    ],
+    [
+      "oura",
+      "solstone.think.importers.oura"
+    ]
+  ],
+  "importers": [
+    {
+      "name": "ics",
+      "display_name": "Google Calendar (ICS)",
+      "file_patterns": [
+        "*.ics",
+        "*.zip"
+      ],
+      "description": "Import events from ICS calendar files or Google Calendar export ZIP"
+    },
+    {
+      "name": "obsidian",
+      "display_name": "Obsidian / Logseq Vault",
+      "file_patterns": [
+        "*.md"
+      ],
+      "description": "Import notes from an Obsidian or Logseq vault"
+    },
+    {
+      "name": "claude",
+      "display_name": "Claude Chat History",
+      "file_patterns": [
+        "*.zip",
+        "*.dms"
+      ],
+      "description": "Import conversations from Claude chat export"
+    },
+    {
+      "name": "chatgpt",
+      "display_name": "ChatGPT History",
+      "file_patterns": [
+        "*.zip"
+      ],
+      "description": "Import conversations from ChatGPT export"
+    },
+    {
+      "name": "kindle",
+      "display_name": "Kindle Highlights",
+      "file_patterns": [
+        "*.txt"
+      ],
+      "description": "Import highlights and notes from Kindle's My Clippings.txt"
+    },
+    {
+      "name": "gemini",
+      "display_name": "Gemini Activity History",
+      "file_patterns": [
+        "*.zip",
+        "*.json"
+      ],
+      "description": "Import activity from Google Takeout Gemini/Bard export"
+    },
+    {
+      "name": "document",
+      "display_name": "Documents",
+      "file_patterns": [
+        "*.pdf"
+      ],
+      "description": "Import PDF documents with worker-backed text and raster extraction"
+    },
+    {
+      "name": "image",
+      "display_name": "Image",
+      "file_patterns": [
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.webp",
+        "*.gif",
+        "*.tiff"
+      ],
+      "description": "Import a single image and describe its contents with vision"
+    },
+    {
+      "name": "journal_archive",
+      "display_name": "Journal Archive",
+      "file_patterns": [
+        "*.zip"
+      ],
+      "description": "Merge an exported journal archive into the current journal"
+    },
+    {
+      "name": "apple_health",
+      "display_name": "Apple Health",
+      "file_patterns": [
+        "apple_health_export/",
+        "export.xml",
+        "*.zip"
+      ],
+      "description": "Preview Apple Health export.xml data without writing to the journal"
+    },
+    {
+      "name": "oura",
+      "display_name": "Oura",
+      "file_patterns": [
+        "daily_sleep.json",
+        "daily_readiness.json",
+        "sleep.json"
+      ],
+      "description": "Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)"
+    }
+  ],
+  "syncable_registry_ordered": [
+    [
+      "plaud",
+      "solstone.think.importers.plaud"
+    ],
+    [
+      "obsidian",
+      "solstone.think.importers.obsidian"
+    ],
+    [
+      "audio",
+      "solstone.think.importers.audio"
+    ]
+  ],
+  "syncable_backends_instantiated": [
+    "plaud",
+    "obsidian",
+    "audio"
+  ],
+  "native_sync_backends": [
+    "oura"
+  ],
+  "native_body_result_schema": "solstone.body.ingest.result.v1",
+  "import_result_fields": [
+    "entries_written",
+    "entities_seeded",
+    "files_created",
+    "errors",
+    "summary",
+    "hard_failures",
+    "segments",
+    "date_range",
+    "merge_summary",
+    "principal_collision",
+    "merge_log_path",
+    "merge_staging_path",
+    "raw_retention"
+  ],
+  "import_preview_fields": [
+    "date_range",
+    "item_count",
+    "entity_count",
+    "summary"
+  ],
+  "timestamp_pattern": "\\d{8}_\\d{6}",
+  "pdf_extensions": [
+    ".pdf"
+  ],
+  "generic_text_extensions": [
+    ".txt",
+    ".md"
+  ],
+  "detection_skip_extensions": [
+    ".m4a",
+    ".txt",
+    ".md"
+  ],
+  "option_aliases": {
+    "confirm_health_save": [
+      "--confirm-body-save",
+      "--confirm-health-save"
+    ],
+    "note": "one dest, two spellings; --confirm-health-save is argparse.SUPPRESS'd. Build ONE flag with an alias, not two."
+  },
+  "suppressed_options": [
+    "--with-day-summaries",
+    "--confirm-health-save"
+  ],
+  "setup_cli_options": [
+    "-v/--verbose",
+    "-d/--debug"
+  ],
+  "journal_source": {
+    "subcommands": [
+      "create",
+      "list",
+      "status",
+      "revoke"
+    ],
+    "top_level_flag": "--json",
+    "list_mode_choices": [
+      "dl",
+      "pl"
+    ],
+    "parses_with_parse_known": false,
+    "stale_prog_string": "sol import journal-source",
+    "note": "reached by the POSITIONAL 'journal-source', not a flag. Its prog string is a stale spelling that does not match 'journal importer' \u2014 record as an observed oddity, not a target."
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "schema": "w1a-reference-oracles/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "ran the reference hash_source in a source-checkout venv",
+    "why_here": "a build worktree has no Python environment and cannot run the reference, so it cannot produce these",
+    "recaptured_at_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542"
+  },
+  "hash_source_file": {
+    "note": "FILE: sha256 of the file's CONTENTS",
+    "content_ascii": "the owner's words\n",
+    "bytes": 18,
+    "expected_digest": "db7360d06318e2d1f9148fb25cb2922faee93eb0954bee2a3c3600ce283a85f0"
+  },
+  "hash_source_directory": {
+    "note": "DIRECTORY: NOT a content hash. sha256 of newline-joined sorted 'relpath:size' over rglob files. A deliberate speed tradeoff; an implementation that 'improves' it to a content hash silently stops matching every manifest already on an owner's disk.",
+    "algorithm": "sha256('\\n'.join(f'{rel}:{size}' for f in sorted(path.rglob('*')) if f.is_file()))",
+    "tree": [
+      {
+        "rel": "a.md",
+        "bytes": 8,
+        "sha256": "a6098732ccd311fb1f4cf46a2e05389ac24f7207f9be513a0d1d423d8109b2c7"
+      },
+      {
+        "rel": "sub/b.md",
+        "bytes": 10,
+        "sha256": "77e4ae400f6bd4ea22d74a712cb25af0e1ef2d15fc06561817af047677afa7fc"
+      },
+      {
+        "rel": "sub/c.bin",
+        "bytes": 256,
+        "sha256": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880"
+      }
+    ],
+    "expected_digest": "4584c2bd1e437650ec375ae4d773ccb5114465bb0bb6b243bd04b8897c824c50",
+    "falsification": {
+      "note": "the property a content-hash port would break; BOTH must hold",
+      "same_size_different_bytes_same_digest": true,
+      "different_size_different_digest": true
+    }
+  },
+  "reference_written_manifest": {
+    "note": "written by the reference write_manifest(). READ-OLD fixture: the native scanner must find this by its source_hash. Field set and value shapes are the compatibility contract.",
+    "relative_path": "imports/20260311_140000/manifest.json",
+    "file_mode_octal": "0o600",
+    "dir_mode_octal": "0o700",
+    "content": {
+      "import_id": "20260311_140000",
+      "source_type": "audio",
+      "source_hash": "4584c2bd1e437650ec375ae4d773ccb5114465bb0bb6b243bd04b8897c824c50",
+      "entry_count": 3,
+      "days_affected": [],
+      "files_created": [
+        "20260311/import.audio/140000_0/a_transcript.md"
+      ],
+      "imported_at": "2026-08-11T10:58:31.029858",
+      "imported_via": "cli",
+      "link_id": null,
+      "observer_handle": null
+    },
+    "reference_lookup_by_hash_found_it": true,
+    "days_affected_note": "derived by the reference from PATH POSITION (two directory levels up, kept if digits). Rule 4a forbids that in a writer; the native writer takes days from the caller. Read-compat still applies to manifests already written this way."
+  },
+  "hash_source_directory_discriminating": {
+    "note": "THE case the first oracle could not see. sorted(path.rglob('*')) orders Path objects by their PARTS TUPLE; collecting relpaths as strings and sorting is the obvious Rust port and gives a DIFFERENT digest. An Obsidian folder-note layout (Note.md beside Note/) is exactly this shape.",
+    "tree": [
+      {
+        "rel": "sub.txt",
+        "bytes": 1
+      },
+      {
+        "rel": "sub/a.txt",
+        "bytes": 2
+      }
+    ],
+    "reference_iteration_order": [
+      "sub/a.txt",
+      "sub.txt"
+    ],
+    "naive_string_sort_order": [
+      "sub.txt",
+      "sub/a.txt"
+    ],
+    "expected_digest": "b4c867b6d93347e772bb59b59be1619e56d895f251b573465b58457677ed572a",
+    "digest_a_string_sorting_port_would_produce": "4275603c89922b93599951b34776e1400755fd535a93ca0a5d51557e61bd0cc8",
+    "must_differ": true
+  },
+  "hash_source_directory_symlinks": {
+    "note": "is_file() FOLLOWS links: a symlink to a file is INCLUDED at its target's size; a symlinked DIRECTORY is NOT recursed. Rust walkdir defaults (follow_links(false) + file_type().is_file()) EXCLUDE the symlink-to-file and give a different digest.",
+    "entries_included": [
+      "f.md",
+      "link_to_file",
+      "real/big.bin"
+    ],
+    "expected_digest": "4a1c562fade8961abbc2834ed9d1c01989b64ef28fcca998dd3b49b446d0ceb9"
+  },
+  "windowed_source_hash": {
+    "note": "source_hash carries a #window: suffix whenever --date-from/--date-to are set. Owner journals already contain these. A native source_hash typed as a digest, or hex-validated on read, FAILS read-old.",
+    "examples": [
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824#window:20260101:20260630",
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824#window:open:20260630",
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824#window:20260101:open",
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    ],
+    "bare_digest_for_comparison": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+  },
+  "reference_written_manifest_with_raw_retention": {
+    "note": "write_manifest emits raw_retention ONLY when non-None, so the manifest has 10 OR 11 keys. A struct reader built from the 10-key sample breaks on the body-source variant. Also: imported_at is datetime.now().isoformat() \u2014 NAIVE LOCAL TIME, no offset \u2014 so a reader demanding RFC3339-with-offset rejects every existing manifest.",
+    "keys": [
+      "days_affected",
+      "entry_count",
+      "files_created",
+      "import_id",
+      "imported_at",
+      "imported_via",
+      "link_id",
+      "observer_handle",
+      "raw_retention",
+      "source_hash",
+      "source_type"
+    ],
+    "key_count": 11,
+    "imported_at_sample": "2026-08-11T12:22:55.124046",
+    "imported_at_has_offset": false,
+    "content": {
+      "import_id": "20260311_140000",
+      "source_type": "audio",
+      "source_hash": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      "entry_count": 1,
+      "days_affected": [],
+      "files_created": [
+        "20260311/import.audio/140000_0/a.md"
+      ],
+      "imported_at": "2026-08-11T12:22:55.124046",
+      "imported_via": "cli",
+      "link_id": null,
+      "observer_handle": null,
+      "raw_retention": "delete_after_processing"
+    }
+  }
+}
