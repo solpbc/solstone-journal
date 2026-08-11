@@ -152,6 +152,8 @@ segment --nonsense -> 2, prints `usage: journal segment <command> [options]` the
 journal-stats --nonsense -> 2, prints `usage: journal journal-stats` then `journal journal-stats: error: unrecognized arguments: --nonsense`
 reprocess --nonsense -> 2, prints the reprocess usage then `journal reprocess: error: the following arguments are required: day`
 backfill-processing-records --nonsense -> 2, prints the backfill usage then `journal backfill-processing-records: error: unrecognized arguments: --nonsense`
+backfill-processing-records --commit --dry-run -> 2, prints the backfill usage then `journal backfill-processing-records: error: argument --dry-run: not allowed with argument --commit`
+reprocess DAY --from-scratch --mark-updated -> 2, prints the reprocess usage then `journal reprocess: error: argument --mark-updated: not allowed with argument --from-scratch`
 # `streams` and `segment` additionally refuse with exit 1 and
 # `sol: solstone isn't running. Start it with 'journal up' and retry.`
 # when the stack is not up and SOL_SKIP_SUPERVISOR_CHECK is not 1. The other
