@@ -692,6 +692,48 @@ fn manifest_proof_rejects_malformed_json_and_escaping_inventory_paths() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn inventory_for_tree_excludes_provider_manifest() {
+    let root = temp("inventory-excludes-manifest");
+    fs::write(root.join("payload.bin"), b"payload").unwrap();
+    fs::write(
+        root.join(manifest::MANIFEST_NAME),
+        b"existing provider manifest",
+    )
+    .unwrap();
+
+    let inventory = manifest::inventory_for_tree(&root, "model").unwrap();
+    assert_eq!(inventory.len(), 1);
+    assert_eq!(inventory[0]["relative_path"], "payload.bin");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn manifest_model_rewrite_proves_after_existing_manifest() {
+    let root = temp("manifest-model-rewrite");
+    let manifest_path = manifest::artifact_manifest_path(&root);
+    let identity = json!({"unit":"local-model","model_id":"test"});
+    fs::write(root.join("payload.bin"), b"payload").unwrap();
+    let request = || {
+        json!({
+            "root": root,
+            "manifest_path": manifest_path,
+            "target_fingerprint_sha256": "target",
+            "pin_identity": identity,
+        })
+    };
+
+    dispatch(InstallVerb::ManifestModel, request()).unwrap();
+    dispatch(InstallVerb::ManifestModel, request()).unwrap();
+
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &identity)["reason_code"],
+        "ready"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 fn write_unsafe_tar(path: &std::path::Path, member: &str) {
     let file = fs::File::create(path).unwrap();
     let mut encoder = GzEncoder::new(file, Compression::default());

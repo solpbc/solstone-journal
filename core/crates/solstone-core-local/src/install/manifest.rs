@@ -20,7 +20,7 @@ pub fn artifact_manifest_path(root: &Path) -> PathBuf {
 pub fn runtime_inventory(root: &Path, exclude_names: &[String]) -> Result<Vec<Value>, String> {
     let mut output = Vec::new();
     walk_files(root, &mut |path| {
-        if path.file_name().is_some_and(|name| name == MANIFEST_NAME)
+        if is_provider_manifest(path)
             || path.file_name().is_some_and(|name| {
                 exclude_names
                     .iter()
@@ -48,6 +48,9 @@ pub fn runtime_inventory(root: &Path, exclude_names: &[String]) -> Result<Vec<Va
 pub fn inventory_for_tree(root: &Path, role: &str) -> Result<Vec<Value>, String> {
     let mut output = Vec::new();
     walk_files(root, &mut |path| {
+        if is_provider_manifest(path) {
+            return Ok(());
+        }
         let relative = path
             .strip_prefix(root)
             .map_err(|error| error.to_string())?
@@ -219,6 +222,9 @@ fn normalize_pin_identity(identity: &Value) -> Result<Value, String> {
 }
 fn proof(status: &str, reason_code: &str) -> Value {
     json!({"status":status,"reason_code":reason_code,"cache_hit":false})
+}
+fn is_provider_manifest(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == MANIFEST_NAME)
 }
 fn walk_files(
     root: &Path,
