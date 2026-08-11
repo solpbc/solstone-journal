@@ -254,7 +254,7 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ⚠ **Four near-identical entry points, three error semantics.** `generate` / `generate_with_result` / `agenerate` / `agenerate_with_result` each repeat the same nine-step policy sequence; the two `_with_result` forms make schema validation advisory while the two plain forms raise on it. Only `generate_with_result` accepts `num_retries`, `inference_retry_index`, `local_exclusive_admission` and `enforce_responsiveness`. One boundary, four doors, differing on what a schema failure means.
 
-⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate`; `run_generate` and `run_agenerate` never touch it. It is a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture** (re-verified 2026-08-09), so today the digest detects only Python-source-versus-fixture drift.
+⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate`; `run_generate` and `run_agenerate` never touch it. It is a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture **— ⛔ FALSE AT HEAD since R1/R2: `solstone-core-cogitate` and `-cogitate-tools` both `include_str!` it**** (re-verified 2026-08-09), so today the digest detects only Python-source-versus-fixture drift.
 
 🆕 ⛔ **CORRECTED 2026-08-09 — "not reconstructible" was FALSE, and the correction changes what the fixture is for.** The text *is* recoverable from the repo: `docs/COGITATE.md` carries a **byte-identical** copy — extracted from its fence and hashed, 1,989 bytes, `6614e3fd…`, identical to the constant and to the fixture. 🔴 **But nothing checks that copy.** Grepping every `.py`, `.rs` and `Makefile` for `COGITATE.md` finds one reader, and it reads the doc for an unrelated assertion. So the text is reproducible **by luck of maintenance**, and the doc copy is a live drift hazard rather than a mitigation. ✅ **Disposition: the text goes INTO the fixture beside the digest**, the house style `core/fixtures/local_contract.json` already uses so a divergence *"fails on the string rather than on a hex value that says only 'different'."* 📌 **A digest is the right instrument for one implementation and the wrong one for two** — it can tell the second implementation that it is wrong while being structurally unable to tell it what right is. ⚠ **`COGITATE_DIAGNOSTIC_PREAMBLE` — the second runtime contract, the one the brain readiness probe runs against — is in NEITHER the fixture nor `COGITATE.md`**, and gets the same treatment.
 
@@ -312,7 +312,24 @@ talent can do to the journal" is already on the far side of a process boundary.
 
 ⚠ **Two tool-call protocols behind one contract.** `native_tool_calling=True` for the three cloud
 providers; **`False` for every local/BYO-endpoint lane**, so those tool calls are prompt-synthesised
-by the SDK and parsed by it. ⚠ **And the condenser is local-only** —
+by the SDK and parsed by it.
+
+🆕 🔒 **DECIDED 2026-08-10 — the conversion does NOT port the second protocol.** The native runtime
+sends a native `tools` array and parses native `tool_calls` on **every** lane, including bundled
+local and BYO endpoint. `native_tool_calling=False` is a **compatibility workaround** for a library
+that must work against any model; the bundled lane is `llama-server` running `qwen3.5-4b`, both of
+which sol pbc ships, and llama.cpp exposes an OpenAI-compatible tools interface. Porting the
+synthesis path would mean reimplementing a third-party parser whose format is undocumented as a
+contract — the same class of dependency the cut removes.
+⛔ **The divergence is only safe if its failure mode is loud**, so it carries three obligations: an
+endpoint that rejects a tool-bearing request produces a **named reason code** (⛔ never a silent
+fallback), a synthesised tool call arriving as prose under `finish_reason: "stop"` must **not** be
+finalized as an answer, and the bundled lane must be **exercised against the real runtime** before
+the cut. Full reasoning:
+[`records/decisions/260810-vpe-the-native-runtime-speaks-native-tool-calls-on-every-lane.md`](../../records/decisions/260810-vpe-the-native-runtime-speaks-native-tool-calls-on-every-lane.md).
+📌 **This paragraph was written at wave 0 and three later wave scopes were authored without
+re-reading it** — the divergence was taken implicitly in landed work and recorded only afterwards.
+⛔ A conversion dictionary is only worth what re-reading it costs. ⚠ **And the condenser is local-only** —
 `LLMSummarizingCondenser(keep_first=4)`, whose `max_tokens` divides by a `1.125` factor its own
 docstring sources to **one production observation** (12,437 served vs 11,237 estimated tokens).
 📌 A measurement written down as a constant; carry the provenance, not just the number.
