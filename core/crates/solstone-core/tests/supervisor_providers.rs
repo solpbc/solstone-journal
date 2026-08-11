@@ -72,7 +72,7 @@ impl Drop for ChildGuard {
 #[test]
 fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
     let journal = TempJournal::new();
-    let fixture = env!("CARGO_BIN_EXE_solstone-system-test-child");
+    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
     let mut child = ChildGuard(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])

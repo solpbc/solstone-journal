@@ -157,6 +157,7 @@ def _record_behavior_vectors() -> tuple[list[dict[str, Any]], list[dict[str, Any
         with _recording_env(journal):
             from solstone.apps.observer import routes as observer_routes
             from solstone.convey import bridge as convey_bridge
+            from solstone.convey import chat_stream as convey_chat_stream
             from solstone.convey import create_app
             from solstone.convey import root as convey_root
 
@@ -165,6 +166,15 @@ def _record_behavior_vectors() -> tuple[list[dict[str, Any]], list[dict[str, Any
                 _temporary_attr(observer_routes, "now_ms", lambda: 1700000000000),
                 _temporary_attr(
                     convey_root, "get_authorized_clients", lambda: authorized
+                ),
+                # Fixture recording owns a temporary journal and needs only the
+                # endpoint's wire response. Production finalization would try
+                # to index and broadcast the synthetic chat event, making the
+                # deterministic generator depend on a running native install.
+                _temporary_attr(
+                    convey_chat_stream,
+                    "_finalize_chat_event_appends",
+                    lambda _events: None,
                 ),
             ):
                 app = create_app(journal=str(journal.resolve()))

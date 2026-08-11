@@ -66,13 +66,13 @@ fn start(journal: &TempJournal) -> ChildGuard {
             .stderr(Stdio::piped())
             .env(
                 "SOLSTONE_LOCAL_BINARY",
-                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
             )
             .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
             .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
             .env(
                 "SOLSTONE_SUPERVISOR_APP_BINARY",
-                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
             )
             .spawn()
             .expect("supervisor starts"),
@@ -136,7 +136,7 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     let task_pid = request_and_started(
         &socket,
         vec![
-            env!("CARGO_BIN_EXE_solstone-system-test-child").into(),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child").into(),
             "ready-sleep".into(),
             ready_path.display().to_string(),
             "30000".into(),

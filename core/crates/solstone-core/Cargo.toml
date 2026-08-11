@@ -57,7 +57,7 @@ path = "tests/bin/generate_session_kill_helper.rs"
 test = false
 
 [[bin]]
-name = "solstone-system-test-child"
+name = "solstone-core-system-test-child"
 path = "../solstone-core-system/src/bin/solstone_system_test_child.rs"
 test = false
 

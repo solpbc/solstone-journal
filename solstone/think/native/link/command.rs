@@ -1264,7 +1264,7 @@ mod tests {
 
     #[cfg(unix)]
     impl UmaskGuard {
-        fn set(mask: u32) -> Self {
+        fn set(mask: nix::libc::mode_t) -> Self {
             let previous = nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(mask));
             Self { previous }
         }

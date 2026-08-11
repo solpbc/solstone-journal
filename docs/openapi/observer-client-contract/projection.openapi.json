@@ -67,6 +67,7 @@
               "health_report_failed",
               "host_not_allowed",
               "http_error",
+              "idempotency_conflict",
               "identity_busy",
               "identity_not_locked",
               "import_client_id_conflict",
@@ -88,13 +89,17 @@
               "invalid_path",
               "invalid_request_value",
               "invalid_segment_or_stream",
+              "invalid_state",
               "journal_source_problem",
               "ledger_item_not_found",
               "local_request_only",
               "missing_request_body",
               "missing_required_field",
               "observer_restart_failed",
+              "operation_erased",
+              "operation_in_progress",
               "operation_no_longer_available",
+              "operation_retired",
               "paired_device_not_found",
               "pairing_key_invalid",
               "pairing_relay_unavailable",
@@ -134,6 +139,7 @@
               "talent_run_malformed",
               "talent_run_pending",
               "timeline_month_not_found",
+              "tos_changed",
               "unknown_service",
               "voice_unavailable"
             ],
@@ -1387,13 +1393,27 @@
       "error",
       "talent_updated",
       "info",
-      "status"
+      "status",
+      "cancel",
+      "dry_run",
+      "progress",
+      "text_delta",
+      "tool_budget_exhausted",
+      "warning",
+      "budget_escalation"
     ],
     "importer": [
       "started",
       "status",
       "completed",
-      "error"
+      "error",
+      "file_imported",
+      "enrichment_ready"
+    ],
+    "link": [
+      "pair_complete",
+      "last_seen",
+      "stream_reset"
     ],
     "logs": [
       "exec",
@@ -1412,17 +1432,29 @@
       "detected",
       "described",
       "transcribed",
-      "observed"
+      "observed",
+      "memory_throttle_started",
+      "memory_throttle_completed"
+    ],
+    "storage": [
+      "warning"
     ],
     "supervisor": [
       "started",
       "stopped",
       "restarting",
       "status",
-      "queue"
+      "queue",
+      "scheduled",
+      "provider_runtime",
+      "request",
+      "restart",
+      "drain",
+      "skipped",
+      "sync_conflict"
     ],
-    "sync": [
-      "status"
+    "support": [
+      "proactive_suggestion"
     ],
     "think": [
       "started",
@@ -1433,7 +1465,10 @@
       "talent_completed",
       "completed",
       "segments_started",
-      "segments_completed"
+      "segments_completed",
+      "memory_throttle_started",
+      "memory_throttle_completed",
+      "daily_complete"
     ]
   },
   "x-vocabularies": {
@@ -1472,13 +1507,27 @@
           "error",
           "talent_updated",
           "info",
-          "status"
+          "status",
+          "cancel",
+          "dry_run",
+          "progress",
+          "text_delta",
+          "tool_budget_exhausted",
+          "warning",
+          "budget_escalation"
         ],
         "importer": [
           "started",
           "status",
           "completed",
-          "error"
+          "error",
+          "file_imported",
+          "enrichment_ready"
+        ],
+        "link": [
+          "pair_complete",
+          "last_seen",
+          "stream_reset"
         ],
         "logs": [
           "exec",
@@ -1497,17 +1546,29 @@
           "detected",
           "described",
           "transcribed",
-          "observed"
+          "observed",
+          "memory_throttle_started",
+          "memory_throttle_completed"
+        ],
+        "storage": [
+          "warning"
         ],
         "supervisor": [
           "started",
           "stopped",
           "restarting",
           "status",
-          "queue"
+          "queue",
+          "scheduled",
+          "provider_runtime",
+          "request",
+          "restart",
+          "drain",
+          "skipped",
+          "sync_conflict"
         ],
-        "sync": [
-          "status"
+        "support": [
+          "proactive_suggestion"
         ],
         "think": [
           "started",
@@ -1518,7 +1579,10 @@
           "talent_completed",
           "completed",
           "segments_started",
-          "segments_completed"
+          "segments_completed",
+          "memory_throttle_started",
+          "memory_throttle_completed",
+          "daily_complete"
         ]
       },
       "unknown_value_behavior": "preserve"

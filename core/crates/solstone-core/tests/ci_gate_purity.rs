@@ -58,7 +58,7 @@ fn write_forbidden_shim(path: &Path) {
 }
 
 fn write_recording_cargo_shim(path: &Path) {
-    let script = "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CI_CARGO_LOG\"\n";
+    let script = "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CI_CARGO_LOG\"\ncase \"$*\" in\n  *'--bin solstone-core-depict'*)\n    printf '%s\\n' '{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 1\n    ;;\n  *'--bin solstone-core-speakers-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-speaker-analyze-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\n  *'--bin solstone-core-vad-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-vad-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\nesac\n";
     fs::write(path, script).expect("write recording Cargo shim");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
         .expect("make recording Cargo shim executable");
@@ -141,6 +141,93 @@ fn package_name(manifest: &str) -> String {
     panic!("manifest has no package name")
 }
 
+fn explicit_binary_names(manifest: &str) -> BTreeSet<String> {
+    let mut in_bin = false;
+    let mut names = BTreeSet::new();
+
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_bin = trimmed == "[[bin]]";
+            continue;
+        }
+        if in_bin && let Some(value) = trimmed.strip_prefix("name = ") {
+            names.insert(value.trim().trim_matches('"').to_owned());
+        }
+    }
+    names
+}
+
+fn default_main_binary(manifest: &str) -> String {
+    let mut in_bin = false;
+    let mut name = None;
+    let mut path = None;
+
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            if in_bin && path.as_deref() == Some("src/main.rs") {
+                return name.expect("src/main.rs binary must have a name");
+            }
+            in_bin = trimmed == "[[bin]]";
+            name = None;
+            path = None;
+            continue;
+        }
+        if !in_bin {
+            continue;
+        }
+        if let Some(value) = trimmed.strip_prefix("name = ") {
+            name = Some(value.trim().trim_matches('"').to_owned());
+        } else if let Some(value) = trimmed.strip_prefix("path = ") {
+            path = Some(value.trim().trim_matches('"').to_owned());
+        }
+    }
+    if in_bin && path.as_deref() == Some("src/main.rs") {
+        return name.expect("src/main.rs binary must have a name");
+    }
+    package_name(manifest)
+}
+
+fn toml_string(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(&format!("{key} = "))
+            .map(|value| value.trim().trim_matches('"').to_owned())
+    })
+}
+
+fn host_packaged_binaries(root: &Path) -> BTreeSet<(String, String)> {
+    let mut binaries = BTreeSet::new();
+
+    for entry in fs::read_dir(root.join("packages")).expect("read packages directory") {
+        let pyproject = entry
+            .expect("read package entry")
+            .path()
+            .join("pyproject.toml");
+        if !pyproject.is_file() {
+            continue;
+        }
+        let package = fs::read_to_string(&pyproject).expect("read package pyproject");
+        if toml_string(&package, "build-backend").as_deref() != Some("maturin") {
+            continue;
+        }
+        if toml_string(&package, "bindings").as_deref() != Some("bin") {
+            continue;
+        }
+        let manifest = pyproject
+            .parent()
+            .expect("package directory")
+            .join(toml_string(&package, "manifest-path").expect("maturin manifest path"))
+            .canonicalize()
+            .expect("canonical Cargo manifest path");
+        let manifest_text = fs::read_to_string(manifest).expect("read packaged Cargo manifest");
+        let crate_name = package_name(&manifest_text);
+        binaries.insert((crate_name, default_main_binary(&manifest_text)));
+    }
+    binaries
+}
+
 fn makefile_text(root: &Path) -> String {
     fs::read_to_string(root.join("Makefile")).expect("read Makefile")
 }
@@ -202,8 +289,11 @@ fn make_ci_never_executes_forbidden_interpreters() {
     let venv_bin = venv_dir.join("bin");
     let sentinel = temp.path.join("sentinel.log");
     let cargo_log = temp.path.join("cargo.log");
+    let onnx_link_dir = temp.path.join("onnx-link");
     fs::create_dir(&shim_dir).expect("create shim directory");
     fs::create_dir_all(&venv_bin).expect("create poison virtualenv bin directory");
+    fs::create_dir(&onnx_link_dir).expect("create fake ONNX link directory");
+    fs::write(onnx_link_dir.join("libonnxruntime.so.1"), []).expect("write fake ONNX runtime");
     for name in ["python", "python3", "pytest", "ruff", "uv"] {
         write_forbidden_shim(&shim_dir.join(name));
         write_forbidden_shim(&venv_bin.join(name));
@@ -222,6 +312,10 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .arg(format!("VENV={}", venv_dir.display()))
         .arg(format!("VENV_BIN={}", venv_bin.display()))
         .arg(format!("PYTHON={}", venv_bin.join("python").display()))
+        .arg(format!(
+            "ONNX_RUNTIME_HOST_LINK_DIR={}",
+            onnx_link_dir.display()
+        ))
         .current_dir(root)
         .env("PATH", path)
         .env("SOLSTONE_CI_SENTINEL", &sentinel)
@@ -251,10 +345,99 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .lines()
         .filter_map(|invocation| invocation.split_whitespace().next())
         .collect::<Vec<_>>();
+    let mut expected = vec!["fmt", "check", "clippy", "test", "build"];
+    expected.extend(["run"; if cfg!(target_os = "linux") { 8 } else { 6 }]);
+    if cfg!(target_os = "macos") {
+        expected.push("check");
+    }
+    expected.extend(["fetch", "deny"]);
     assert_eq!(
-        cargo_subcommands,
-        vec!["fmt", "check", "clippy", "test", "check", "fetch", "deny"],
+        cargo_subcommands, expected,
         "nested make ci did not traverse the complete Cargo command graph:\n{cargo_invocations}",
+    );
+}
+
+#[test]
+fn make_ci_builds_and_exercises_every_host_packaged_binary() {
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let expected = host_packaged_binaries(&root);
+    let smoke = target_body(&makefile, "check-rust-shipped-binaries");
+    let exercised = smoke
+        .lines()
+        .filter(|line| line.contains("cargo run"))
+        .map(|line| {
+            let words = line.split_whitespace().collect::<Vec<_>>();
+            let package = words
+                .windows(2)
+                .find_map(|pair| (pair[0] == "-p").then_some(pair[1]))
+                .expect("cargo run smoke must name its package");
+            let binary = words
+                .windows(2)
+                .find_map(|pair| (pair[0] == "--bin").then_some(pair[1]))
+                .expect("cargo run smoke must name its binary");
+            (package.to_owned(), binary.to_owned())
+        })
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        exercised, expected,
+        "the shipped-binary smoke gate must exactly match host-native maturin packaging leaves"
+    );
+    assert!(
+        target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-shipped-binaries"),
+        "make ci must retain the shipped-binary build and smoke gate"
+    );
+}
+
+#[test]
+fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
+    let makefile = makefile_text(&repo_root());
+    let ci = target_body(&makefile, "ci-under-poison");
+    let ios = target_body(&makefile, "check-rust-ios");
+
+    assert!(
+        ci.contains("$(MAKE) check-rust-ios"),
+        "make ci must retain the iOS gate"
+    );
+    for protected in [
+        "uname -s",
+        "xcrun --sdk iphoneos --show-sdk-path",
+        "--target $(IOS_TARGET)",
+    ] {
+        assert!(
+            ios.contains(protected),
+            "check-rust-ios lost its native-host assertion: {protected}"
+        );
+    }
+}
+
+#[test]
+fn explicit_workspace_binary_artifact_names_are_unique() {
+    let crates = repo_root().join("core/crates");
+    let mut owners = BTreeMap::<String, Vec<String>>::new();
+
+    for entry in fs::read_dir(crates).expect("read workspace crates") {
+        let manifest = entry
+            .expect("read workspace crate entry")
+            .path()
+            .join("Cargo.toml");
+        if !manifest.is_file() {
+            continue;
+        }
+        let text = fs::read_to_string(&manifest).expect("read workspace crate manifest");
+        for name in explicit_binary_names(&text) {
+            owners.entry(name).or_default().push(package_name(&text));
+        }
+    }
+
+    let duplicates = owners
+        .into_iter()
+        .filter(|(_name, packages)| packages.len() > 1)
+        .collect::<BTreeMap<_, _>>();
+    assert!(
+        duplicates.is_empty(),
+        "workspace packages must not race to write the same binary artifact: {duplicates:?}"
     );
 }
 

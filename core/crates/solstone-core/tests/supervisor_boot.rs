@@ -65,13 +65,13 @@ fn start(journal: &TempJournal) -> ChildGuard {
             .stderr(Stdio::piped())
             .env(
                 "SOLSTONE_LOCAL_BINARY",
-                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
             )
             .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
             .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
             .env(
                 "SOLSTONE_SUPERVISOR_APP_BINARY",
-                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
             )
             .spawn()
             .expect("supervisor starts"),
@@ -106,7 +106,7 @@ fn foreign_heartbeat(journal: &TempJournal) {
 
 #[test]
 fn ac6_boot_order_is_identity_then_socket_then_ready() {
-    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_solstone-system-test-child")).exists());
+    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_solstone-core-system-test-child")).exists());
     let journal = TempJournal::new();
     let mut child = start(&journal);
     let socket = journal.0.join("health/callosum.sock");
@@ -168,13 +168,13 @@ fn ac7_second_instance_refused_first_survives() {
         .stderr(Stdio::null())
         .env(
             "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-system-test-child"),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
         )
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-system-test-child"),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
         )
         .status()
         .expect("second supervisor runs");
@@ -195,13 +195,13 @@ fn ac8_live_foreign_writer_blocks_boot_without_pid() {
         .stderr(Stdio::null())
         .env(
             "SOLSTONE_LOCAL_BINARY",
-            env!("CARGO_BIN_EXE_solstone-system-test-child"),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
         )
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
-            env!("CARGO_BIN_EXE_solstone-system-test-child"),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
         )
         .status()
         .expect("supervisor runs");

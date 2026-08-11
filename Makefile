@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-no-legacy-chat check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -56,7 +56,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and check-differentials inherits it when it
 # shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-test check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-test check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -312,10 +312,17 @@ check-rust-test:
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)
-	@$(REQUIRE_RUSTUP)
-	@rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }
-	# Host-only process/server crates, including Convey, are not iOS target concerns in this wave.
-	cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-transcribe --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --exclude solstone-core-vad-analyze --lib --target $(IOS_TARGET) --locked
+	@set -eu; \
+	if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "check-rust-ios: not run on $$(uname -s); the Apple SDK is a native macOS-host gate"; \
+	else \
+		$(REQUIRE_RUSTUP); \
+		command -v xcrun >/dev/null 2>&1 || { echo "xcrun is required for the iOS gate; install Xcode and retry" >&2; exit 1; }; \
+		xcrun --sdk iphoneos --show-sdk-path >/dev/null || { echo "the iPhoneOS SDK is required for the iOS gate; select a complete Xcode installation and retry" >&2; exit 1; }; \
+		rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }; \
+		# Host-only process/server crates, including Convey, are not iOS target concerns in this wave. \
+		cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-transcribe --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --exclude solstone-core-vad-analyze --lib --target $(IOS_TARGET) --locked; \
+	fi
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)
@@ -391,6 +398,63 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR)
 build:
 	@$(REQUIRE_CARGO)
 	cargo build --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
+
+# Build is necessary but not sufficient: these are the binaries delivered by
+# maturin packaging leaves, and each must start successfully after the workspace
+# build. ci_gate_purity derives the inventory from those leaves, so adding a
+# package without adding its smoke command makes the Rust gate red.
+check-rust-shipped-binaries: build
+	@$(REQUIRE_CARGO)
+	@if [ "$$(uname -s)" = "Linux" ]; then test -f "$(ONNX_RUNTIME_HOST_LINK_DIR)/libonnxruntime.so.1" || { echo "the pinned host ONNX Runtime is required to build shipped analysis helpers; run 'make check-rust-vad-analyze-test' once outside make ci, then retry" >&2; exit 1; }; fi
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- --version >/dev/null
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-journal-bin --bin solstone-core-journal --locked -- --version >/dev/null
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-retention-cli --bin solstone-retention --locked -- --help >/dev/null
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-sol-bin --bin solstone-core-sol --locked -- --version >/dev/null
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --bin solstone-core-describe --locked -- --version >/dev/null
+	@set -eu; \
+	if output=$$(cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-depict --bin solstone-core-depict --locked 2>&1); then \
+		echo "solstone-core-depict unexpectedly accepted an empty invocation" >&2; \
+		exit 1; \
+	else \
+		run_status=$$?; \
+	fi; \
+	[ "$$run_status" -eq 1 ] || { echo "solstone-core-depict smoke exited $$run_status, expected usage exit 1" >&2; echo "$$output" >&2; exit 1; }; \
+	case "$$output" in \
+		*'"schema":"solstone-depict-error-v1"'*'"reason":"malformed-request"'*) ;; \
+		*) echo "solstone-core-depict smoke did not emit its malformed-request usage record" >&2; echo "$$output" >&2; exit 1 ;; \
+	esac
+	@set -eu; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "analysis-helper smoke: not run on $$(uname -s); these wheels ship on Linux"; \
+	elif output=$$($(VAD_ANALYZE_HOST_ORT_ENV) cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-speakers-analyze --bin solstone-core-speakers-analyze --locked </dev/null 2>&1); then \
+		echo "solstone-core-speakers-analyze unexpectedly accepted an empty request" >&2; \
+		exit 1; \
+	else \
+		run_status=$$?; \
+	fi; \
+	if [ "$$(uname -s)" = "Linux" ]; then \
+		[ "$$run_status" -eq 64 ] || { echo "solstone-core-speakers-analyze smoke exited $$run_status, expected usage exit 64" >&2; echo "$$output" >&2; exit 1; }; \
+		case "$$output" in \
+			*'"schema":"solstone-speaker-analyze-error-v1"'*'"reason":"malformed-request"'*) ;; \
+			*) echo "solstone-core-speakers-analyze did not emit its malformed-request record" >&2; echo "$$output" >&2; exit 1 ;; \
+		esac; \
+	fi
+	@set -eu; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		:; \
+	elif output=$$($(VAD_ANALYZE_HOST_ORT_ENV) cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-vad-analyze --bin solstone-core-vad-analyze --locked </dev/null 2>&1); then \
+		echo "solstone-core-vad-analyze unexpectedly accepted an empty request" >&2; \
+		exit 1; \
+	else \
+		run_status=$$?; \
+	fi; \
+	if [ "$$(uname -s)" = "Linux" ]; then \
+		[ "$$run_status" -eq 64 ] || { echo "solstone-core-vad-analyze smoke exited $$run_status, expected usage exit 64" >&2; echo "$$output" >&2; exit 1; }; \
+		case "$$output" in \
+			*'"schema":"solstone-vad-error-v1"'*'"reason":"malformed-request"'*) ;; \
+			*) echo "solstone-core-vad-analyze did not emit its malformed-request record" >&2; echo "$$output" >&2; exit 1 ;; \
+		esac; \
+	fi
 
 audit:
 	@$(REQUIRE_CARGO)
@@ -831,6 +895,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-test
+	@$(MAKE) check-rust-shipped-binaries
 	@$(MAKE) check-rust-ios
 	@$(MAKE) check-rust-deny
 	@echo "All CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"

@@ -14,7 +14,7 @@
     }
   ],
   "bundle_schema_identity": "solstone.observer-client-contract-bundle.schema.v1",
-  "bundle_semver": "5.0.11",
+  "bundle_semver": "6.0.0",
   "component_closure": [
     "CallosumEvent",
     "Error",
@@ -42,7 +42,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "03cb9bc5a987e601d1ba164a51364b191b51c532419444eb02c189be2529ba1c"
+      "sha256": "82082baa78f2926aebe15c8b3df1994f50ff0e3f12519253aa45f1353974f59c"
     },
     {
       "path": "vectors.json",
@@ -55,13 +55,13 @@
       "id": "bundle.projection_builder",
       "path": "solstone/convey/contract/observer_bundle.py",
       "role": "projection_builder",
-      "sha256": "93398de6f63ea8cb62a3b40d655b87dfd4683225a99053c8e4472612cc65b181"
+      "sha256": "a033e1b577e2ff7f019c5ab1bdb537bfe9507863d682cc7be202328a46076a0f"
     },
     {
       "id": "bundle.recording",
       "path": "solstone/convey/contract/observer_bundle_recording.py",
       "role": "fixture_vector_builder",
-      "sha256": "546e5efcd22c93f22556a9f228ef74a72535ff7bcc2fd1f7b2ff12bd14a67b5d"
+      "sha256": "37b44cf50b8e8fd791be330d86282f2fa59a93367925e9abd6d06683deaa78a3"
     },
     {
       "id": "extension.observer_sse_error_frame",
@@ -103,13 +103,13 @@
       "id": "openapi.assembler",
       "path": "solstone/convey/contract/assemble.py",
       "role": "openapi_source",
-      "sha256": "51d81a69009f4b7d4da43877874d00fcfa7a07a195655ef820551f0e0f94f8d8"
+      "sha256": "96ccc955adebc6e27b2da751ff6cbfe17518962a8566abe6cf6368779f4cd7b7"
     },
     {
       "id": "producer.chat_routes",
       "path": "solstone/convey/chat.py",
       "role": "producer",
-      "sha256": "968f8937a2fe5778b3d410c0dd41b7b0b67d600018cf8163d1fd1c5a3d104cd9"
+      "sha256": "5970c56b0b718bf50c48d09a1f4fc9067198aff8771dc2c3899f918d05a36302"
     },
     {
       "id": "producer.chat_sol_initiated_copy",
@@ -127,7 +127,7 @@
       "id": "producer.chat_stream",
       "path": "solstone/convey/chat_stream.py",
       "role": "producer",
-      "sha256": "a94a810a1a64f080e7632165fe864a084a3e2d725f90e870c3ed277b4ccdf45b"
+      "sha256": "9945f3615b6b7a44fb9049b4946ed8d5a28f6056c46ba60726fc79ff1c8b64b3"
     },
     {
       "id": "producer.observer_routes",
@@ -157,7 +157,7 @@
       "id": "reason_codes",
       "path": "solstone/convey/reasons.py",
       "role": "vocabulary_source",
-      "sha256": "1d7ff83dfaf41b11198b8987f3ea774ade7e4da08fe1888087a6541b44cdabab"
+      "sha256": "9959ecbaf168a157f20c71f80a90ad3de46bcd2297e11b29ee5c5e8166de9a63"
     }
   ],
   "observer_protocol_version": 2,
@@ -260,13 +260,27 @@
           "error",
           "talent_updated",
           "info",
-          "status"
+          "status",
+          "cancel",
+          "dry_run",
+          "progress",
+          "text_delta",
+          "tool_budget_exhausted",
+          "warning",
+          "budget_escalation"
         ],
         "importer": [
           "started",
           "status",
           "completed",
-          "error"
+          "error",
+          "file_imported",
+          "enrichment_ready"
+        ],
+        "link": [
+          "pair_complete",
+          "last_seen",
+          "stream_reset"
         ],
         "logs": [
           "exec",
@@ -285,17 +299,29 @@
           "detected",
           "described",
           "transcribed",
-          "observed"
+          "observed",
+          "memory_throttle_started",
+          "memory_throttle_completed"
+        ],
+        "storage": [
+          "warning"
         ],
         "supervisor": [
           "started",
           "stopped",
           "restarting",
           "status",
-          "queue"
+          "queue",
+          "scheduled",
+          "provider_runtime",
+          "request",
+          "restart",
+          "drain",
+          "skipped",
+          "sync_conflict"
         ],
-        "sync": [
-          "status"
+        "support": [
+          "proactive_suggestion"
         ],
         "think": [
           "started",
@@ -306,7 +332,10 @@
           "talent_completed",
           "completed",
           "segments_started",
-          "segments_completed"
+          "segments_completed",
+          "memory_throttle_started",
+          "memory_throttle_completed",
+          "daily_complete"
         ]
       },
       "source_pointer": "/",

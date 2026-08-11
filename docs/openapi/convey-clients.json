@@ -67,6 +67,7 @@
               "health_report_failed",
               "host_not_allowed",
               "http_error",
+              "idempotency_conflict",
               "identity_busy",
               "identity_not_locked",
               "import_client_id_conflict",
@@ -88,13 +89,17 @@
               "invalid_path",
               "invalid_request_value",
               "invalid_segment_or_stream",
+              "invalid_state",
               "journal_source_problem",
               "ledger_item_not_found",
               "local_request_only",
               "missing_request_body",
               "missing_required_field",
               "observer_restart_failed",
+              "operation_erased",
+              "operation_in_progress",
               "operation_no_longer_available",
+              "operation_retired",
               "paired_device_not_found",
               "pairing_key_invalid",
               "pairing_relay_unavailable",
@@ -134,6 +139,7 @@
               "talent_run_malformed",
               "talent_run_pending",
               "timeline_month_not_found",
+              "tos_changed",
               "unknown_service",
               "voice_unavailable"
             ],
@@ -7888,6 +7894,8 @@
                   "instance_id": "4d1f3d57-4f39-4930-b8f8-5e6f2a84d51a",
                   "lan_accessible": true,
                   "last_link_event_at": null,
+                  "last_relay_listener_ack_at": null,
+                  "last_relay_listener_ack_generation": null,
                   "last_relay_tunnel_error": null,
                   "last_relay_tunnel_error_at": null,
                   "last_successful_relay_tunnel_at": null,
@@ -7980,6 +7988,18 @@
                         "null"
                       ]
                     },
+                    "last_relay_listener_ack_at": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "last_relay_listener_ack_generation": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
                     "last_relay_tunnel_error": {
                       "type": [
                         "string",
@@ -8050,6 +8070,8 @@
                     "last_successful_relay_tunnel_at",
                     "last_relay_tunnel_error",
                     "last_relay_tunnel_error_at",
+                    "last_relay_listener_ack_at",
+                    "last_relay_listener_ack_generation",
                     "home_address",
                     "vpn",
                     "home_candidates",
@@ -11020,1381 +11042,6 @@
         ]
       }
     },
-    "/app/speakers/api/attribute-segment": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.attribute-segment",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_day",
-              "invalid_segment_or_stream",
-              "missing_required_field",
-              "speaker_labels_busy",
-              "speaker_owner_centroid_required",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers attribute-segment",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/backfill": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.backfill",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers backfill",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/backfill-last-seen": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.backfill-last-seen",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers backfill-last-seen",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/bootstrap": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.bootstrap",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_owner_centroid_required"
-            ]
-          }
-        },
-        "summary": "Speakers bootstrap",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/correct-attribution": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.correct",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "entity_blocked",
-              "invalid_day",
-              "invalid_segment_or_stream",
-              "missing_request_body",
-              "missing_required_field",
-              "speaker_labels_busy",
-              "speaker_not_found",
-              "speaker_owner_voice_too_close",
-              "speaker_review_unavailable",
-              "speaker_sentence_missing",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers correct",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/cluster/{cluster_id}/presence": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.presence",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "cluster_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_review_unavailable"
-            ]
-          }
-        },
-        "summary": "Speakers presence",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/dismiss": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.dismiss-cluster",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_request_value",
-              "missing_required_field",
-              "speaker_command_failed",
-              "speaker_review_unavailable"
-            ]
-          }
-        },
-        "summary": "Speakers dismiss-cluster",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/dismissals": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.dismissals",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers dismissals",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/identify-cli": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.identify",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_entity_type",
-              "invalid_request_value",
-              "missing_required_field",
-              "speaker_command_failed",
-              "speaker_identify_conflict",
-              "speaker_identify_operation_not_found",
-              "speaker_identify_recoverable",
-              "speaker_identify_repair_required",
-              "speaker_labels_busy",
-              "speaker_not_found",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers identify",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/identify/operations": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.identify-operations",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers identify-operations",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/identify/operations/{operation_id}": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.identify-operation",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "operation_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_identify_operation_not_found"
-            ]
-          }
-        },
-        "summary": "Speakers identify-operation",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/identify/undo": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.identify-undo",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_entity_type",
-              "invalid_request_value",
-              "missing_required_field",
-              "speaker_command_failed",
-              "speaker_identify_conflict",
-              "speaker_identify_operation_not_found",
-              "speaker_identify_recoverable",
-              "speaker_identify_repair_required",
-              "speaker_labels_busy",
-              "speaker_not_found",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers identify-undo",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/discovery/scan": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.discover",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker discovery scan failed.",
-            "x-reason-codes": [
-              "speaker_discovery_failed"
-            ]
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker discovery scan failed.",
-            "x-reason-codes": [
-              "speaker_discovery_failed"
-            ]
-          }
-        },
-        "summary": "Speakers discover",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/link-import": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.link-import",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_command_failed"
-            ]
-          }
-        },
-        "summary": "Speakers link-import",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/merge-names": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.merge-names",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_command_failed"
-            ]
-          }
-        },
-        "summary": "Speakers merge-names",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/name-variants/keep-separate": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.keep-separate-list",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers keep-separate-list",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/build-from-tags": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.build-from-tags",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "entity_not_found",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers build-from-tags",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/confirm-cli": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.confirm-owner",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_command_failed",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers confirm-owner",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/detect": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.detect",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers detect",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/ready": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.owner-ready",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers owner-ready",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/rebuild": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.rebuild-owner",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers rebuild-owner",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/reject-cli": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.reject-owner",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers reject-owner",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/owner/tag-cli": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.tag-owner",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "entity_blocked",
-              "invalid_day",
-              "invalid_request_value",
-              "invalid_segment_or_stream",
-              "missing_request_body",
-              "missing_required_field",
-              "speaker_attribution_state_invalid",
-              "speaker_labels_busy",
-              "speaker_not_found",
-              "speaker_owner_identity_required",
-              "speaker_owner_voice_too_close",
-              "speaker_review_unavailable",
-              "speaker_sentence_missing",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers tag-owner",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/propagate-correction": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.propagate-correction",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "entity_blocked",
-              "invalid_request_value",
-              "missing_required_field",
-              "speaker_labels_busy",
-              "speaker_not_found",
-              "speaker_voiceprint_busy"
-            ]
-          }
-        },
-        "summary": "Speakers propagate-correction",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/resolve-names": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.resolve-names",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers resolve-names",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/review-cli/{day}/{stream}/{segment_key}/{source}": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.sentences",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "day",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "stream",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "segment_key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "source",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_day",
-              "invalid_segment_or_stream",
-              "speaker_review_unavailable"
-            ]
-          }
-        },
-        "summary": "Speakers sentences",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/seed-from-imports": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.seed-from-imports",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "speaker_owner_centroid_required"
-            ]
-          }
-        },
-        "summary": "Speakers seed-from-imports",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/segments-cli/{day}": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.day-segments",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "day",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_day",
-              "invalid_request_value"
-            ]
-          }
-        },
-        "summary": "Speakers day-segments",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/status": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.status",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers status",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/suggest": {
-      "get": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.suggest",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Speaker command rejected.",
-            "x-reason-codes": [
-              "invalid_request_value"
-            ]
-          }
-        },
-        "summary": "Speakers suggest",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
-    "/app/speakers/api/wipe": {
-      "post": {
-        "description": "Native speakers CLI route.",
-        "operationId": "speakers.wipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Speaker command result."
-          }
-        },
-        "summary": "Speakers wipe",
-        "tags": [
-          "speakers"
-        ]
-      }
-    },
     "/app/support/api/announcements": {
       "get": {
         "description": "Return active product announcements and known issues.",
@@ -12727,6 +11374,17 @@
       "post": {
         "description": "Submit lower-friction product feedback.",
         "operationId": "support.feedback",
+        "parameters": [
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12779,9 +11437,22 @@
                 }
               }
             },
-            "description": "body was missing.",
+            "description": "The parent Idempotency-Key header was missing.",
             "x-reason-codes": [
               "missing_required_field"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
             ]
           },
           "403": {
@@ -12795,6 +11466,35 @@
             "description": "The support agent is disabled.",
             "x-reason-codes": [
               "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
             ]
           },
           "500": {
@@ -12939,6 +11639,17 @@
       "post": {
         "description": "Create a support ticket after the CLI consent flow.",
         "operationId": "support.create",
+        "parameters": [
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13010,10 +11721,144 @@
                 }
               }
             },
-            "description": "subject or description was missing.",
+            "description": "The parent Idempotency-Key header was missing.",
             "x-reason-codes": [
               "missing_required_field"
             ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support agent is disabled.",
+            "x-reason-codes": [
+              "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support portal request failed.",
+            "x-reason-codes": [
+              "support_portal_failed"
+            ]
+          }
+        },
+        "summary": "Create a support ticket",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/app/support/api/tickets/closed": {
+      "get": {
+        "description": "List closed-ticket tombstones with an opaque server cursor.",
+        "operationId": "support.history",
+        "parameters": [
+          {
+            "description": "Opaque server cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "next_cursor": {
+                      "type": "string"
+                    },
+                    "tickets": {
+                      "items": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "close_scheduled_at": {
+                            "type": "string"
+                          },
+                          "closed_at": {
+                            "type": "string"
+                          },
+                          "reason_code": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "ticket_id": {
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "tickets"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Closed-ticket tombstones and the next opaque cursor."
           },
           "403": {
             "content": {
@@ -13042,7 +11887,7 @@
             ]
           }
         },
-        "summary": "Create a support ticket",
+        "summary": "List closed support tickets",
         "tags": [
           "support"
         ]
@@ -13119,6 +11964,15 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -13168,6 +12022,19 @@
               "missing_required_field"
             ]
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
+            ]
+          },
           "403": {
             "content": {
               "application/json": {
@@ -13179,6 +12046,35 @@
             "description": "The support agent is disabled.",
             "x-reason-codes": [
               "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
             ]
           },
           "500": {
@@ -13201,6 +12097,146 @@
         ]
       }
     },
+    "/app/support/api/tickets/{ticket_id}/close": {
+      "post": {
+        "description": "Close a ticket after the caller supplies a parent action id.",
+        "operationId": "support.close",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "close_scheduled_at": {
+                      "type": "string"
+                    },
+                    "closed_at": {
+                      "type": "string"
+                    },
+                    "reason_code": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "ticket_id": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Closed-ticket tombstone."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The parent Idempotency-Key header was missing.",
+            "x-reason-codes": [
+              "missing_required_field"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support agent is disabled.",
+            "x-reason-codes": [
+              "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support portal request failed.",
+            "x-reason-codes": [
+              "support_portal_failed"
+            ]
+          }
+        },
+        "summary": "Close a support ticket",
+        "tags": [
+          "support"
+        ]
+      }
+    },
     "/app/support/api/tickets/{ticket_id}/reply": {
       "post": {
         "description": "Append a reply to an existing support ticket.",
@@ -13212,6 +12248,15 @@
             "required": true,
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -13257,9 +12302,22 @@
                 }
               }
             },
-            "description": "content was missing.",
+            "description": "The parent Idempotency-Key header was missing.",
             "x-reason-codes": [
               "missing_required_field"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
             ]
           },
           "403": {
@@ -13273,6 +12331,35 @@
             "description": "The support agent is disabled.",
             "x-reason-codes": [
               "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
             ]
           },
           "500": {
@@ -13290,6 +12377,269 @@
           }
         },
         "summary": "Reply to a support ticket",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/app/support/api/tickets/{ticket_id}/resolution/confirm": {
+      "post": {
+        "description": "Confirm a proposed resolution and close the ticket.",
+        "operationId": "support.resolved",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "close_scheduled_at": {
+                      "type": "string"
+                    },
+                    "closed_at": {
+                      "type": "string"
+                    },
+                    "reason_code": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "ticket_id": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Closed-ticket tombstone."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The parent Idempotency-Key header was missing.",
+            "x-reason-codes": [
+              "missing_required_field"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support agent is disabled.",
+            "x-reason-codes": [
+              "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support portal request failed.",
+            "x-reason-codes": [
+              "support_portal_failed"
+            ]
+          }
+        },
+        "summary": "Confirm a support resolution",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/app/support/api/tickets/{ticket_id}/resolution/still-need-help": {
+      "post": {
+        "description": "Keep the ticket open after rejecting a proposed resolution.",
+        "operationId": "support.still_need_help",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Caller-owned parent action id for this mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Active support ticket detail."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The parent Idempotency-Key header was missing.",
+            "x-reason-codes": [
+              "missing_required_field"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support agent is disabled.",
+            "x-reason-codes": [
+              "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support portal request failed.",
+            "x-reason-codes": [
+              "support_portal_failed"
+            ]
+          }
+        },
+        "summary": "Reject a support resolution",
         "tags": [
           "support"
         ]
@@ -14687,13 +14037,27 @@
       "error",
       "talent_updated",
       "info",
-      "status"
+      "status",
+      "cancel",
+      "dry_run",
+      "progress",
+      "text_delta",
+      "tool_budget_exhausted",
+      "warning",
+      "budget_escalation"
     ],
     "importer": [
       "started",
       "status",
       "completed",
-      "error"
+      "error",
+      "file_imported",
+      "enrichment_ready"
+    ],
+    "link": [
+      "pair_complete",
+      "last_seen",
+      "stream_reset"
     ],
     "logs": [
       "exec",
@@ -14712,17 +14076,29 @@
       "detected",
       "described",
       "transcribed",
-      "observed"
+      "observed",
+      "memory_throttle_started",
+      "memory_throttle_completed"
+    ],
+    "storage": [
+      "warning"
     ],
     "supervisor": [
       "started",
       "stopped",
       "restarting",
       "status",
-      "queue"
+      "queue",
+      "scheduled",
+      "provider_runtime",
+      "request",
+      "restart",
+      "drain",
+      "skipped",
+      "sync_conflict"
     ],
-    "sync": [
-      "status"
+    "support": [
+      "proactive_suggestion"
     ],
     "think": [
       "started",
@@ -14733,7 +14109,10 @@
       "talent_completed",
       "completed",
       "segments_started",
-      "segments_completed"
+      "segments_completed",
+      "memory_throttle_started",
+      "memory_throttle_completed",
+      "daily_complete"
     ]
   },
   "x-vocabularies": {
@@ -14772,13 +14151,27 @@
           "error",
           "talent_updated",
           "info",
-          "status"
+          "status",
+          "cancel",
+          "dry_run",
+          "progress",
+          "text_delta",
+          "tool_budget_exhausted",
+          "warning",
+          "budget_escalation"
         ],
         "importer": [
           "started",
           "status",
           "completed",
-          "error"
+          "error",
+          "file_imported",
+          "enrichment_ready"
+        ],
+        "link": [
+          "pair_complete",
+          "last_seen",
+          "stream_reset"
         ],
         "logs": [
           "exec",
@@ -14797,17 +14190,29 @@
           "detected",
           "described",
           "transcribed",
-          "observed"
+          "observed",
+          "memory_throttle_started",
+          "memory_throttle_completed"
+        ],
+        "storage": [
+          "warning"
         ],
         "supervisor": [
           "started",
           "stopped",
           "restarting",
           "status",
-          "queue"
+          "queue",
+          "scheduled",
+          "provider_runtime",
+          "request",
+          "restart",
+          "drain",
+          "skipped",
+          "sync_conflict"
         ],
-        "sync": [
-          "status"
+        "support": [
+          "proactive_suggestion"
         ],
         "think": [
           "started",
@@ -14818,7 +14223,10 @@
           "talent_completed",
           "completed",
           "segments_started",
-          "segments_completed"
+          "segments_completed",
+          "memory_throttle_started",
+          "memory_throttle_completed",
+          "daily_complete"
         ]
       },
       "unknown_value_behavior": "preserve"

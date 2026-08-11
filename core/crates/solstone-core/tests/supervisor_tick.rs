@@ -56,7 +56,7 @@ impl TempJournal {
             &path,
             format!(
                 "#!/bin/sh\nexec {} ready-sleep {} 30000\n",
-                env!("CARGO_BIN_EXE_solstone-system-test-child"),
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
                 marker.display(),
             ),
         )
@@ -112,13 +112,13 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> ChildGuard {
         .stderr(Stdio::piped());
     command.env(
         "SOLSTONE_LOCAL_BINARY",
-        env!("CARGO_BIN_EXE_solstone-system-test-child"),
+        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
     );
     command.env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1");
     command.env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1");
     command.env(
         "SOLSTONE_SUPERVISOR_APP_BINARY",
-        env!("CARGO_BIN_EXE_solstone-system-test-child"),
+        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
     );
     let journal_stub_dir = journal.0.join("test-bin");
     if journal_stub_dir.is_dir() {
@@ -290,7 +290,7 @@ async fn ac9_real_task_over_real_socket_runs_and_reports_back() {
     send_request(
         &mut write,
         vec![
-            env!("CARGO_BIN_EXE_solstone-system-test-child").into(),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child").into(),
             "lines".into(),
         ],
         "ac9-task",
@@ -307,7 +307,7 @@ fn ac10_due_schedule_entry_runs_through_real_engine() {
     fs::write(
         journal.0.join("config/schedules.json"),
         serde_json::to_vec(&json!({"ac10": {
-            "cmd": [env!("CARGO_BIN_EXE_solstone-system-test-child"), "lines"],
+            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
             "every": "1m"
         }}))
         .expect("schedule JSON"),
@@ -334,7 +334,7 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
     fs::write(
         journal.0.join("config/schedules.json"),
         serde_json::to_vec(&json!({"ac13": {
-            "cmd": [env!("CARGO_BIN_EXE_solstone-system-test-child"), "lines"],
+            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
             "every": "1m"
         }}))
         .expect("schedule JSON"),
@@ -384,7 +384,7 @@ async fn ac11_capped_task_is_terminated_with_timeout_exit() {
     send_request(
         &mut write,
         vec![
-            env!("CARGO_BIN_EXE_solstone-system-test-child").into(),
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child").into(),
             "ready-sleep".into(),
             ready.display().to_string(),
             "10000".into(),

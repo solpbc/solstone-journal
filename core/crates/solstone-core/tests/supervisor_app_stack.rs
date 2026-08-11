@@ -76,7 +76,7 @@ impl Drop for ChildGuard {
 }
 
 fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> ChildGuard {
-    let fixture = env!("CARGO_BIN_EXE_solstone-system-test-child");
+    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])

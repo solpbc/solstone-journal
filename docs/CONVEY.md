@@ -156,15 +156,17 @@ facet or scope set before forwarding any event.
 |---|---|
 | `activity` | `live`, `recorded` |
 | `chat` | `owner_message`, `sol_message`, `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `reflection_ready`, `chat_queue_depth`, `chat_error`, `sol_chat_request`, `sol_chat_request_superseded`, `owner_chat_open`, `owner_chat_dismissed`, `support_draft`, `result`, `support_submit_claim` |
-| `cortex` | `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status` |
-| `importer` | `started`, `status`, `completed`, `error` |
+| `cortex` | `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `warning`, `budget_escalation` |
+| `importer` | `started`, `status`, `completed`, `error`, `file_imported`, `enrichment_ready` |
+| `link` | `pair_complete`, `last_seen`, `stream_reset` |
 | `logs` | `exec`, `line`, `exit` |
 | `navigate` | `request` |
 | `notification` | `*` |
-| `observe` | `status`, `observing`, `detected`, `described`, `transcribed`, `observed` |
-| `supervisor` | `started`, `stopped`, `restarting`, `status`, `queue` |
-| `sync` | `status` |
-| `think` | `started`, `status`, `group_started`, `group_completed`, `talent_started`, `talent_completed`, `completed`, `segments_started`, `segments_completed` |
+| `observe` | `status`, `observing`, `detected`, `described`, `transcribed`, `observed`, `memory_throttle_started`, `memory_throttle_completed` |
+| `storage` | `warning` |
+| `supervisor` | `started`, `stopped`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `request`, `restart`, `drain`, `skipped`, `sync_conflict` |
+| `support` | `proactive_suggestion` |
+| `think` | `started`, `status`, `group_started`, `group_completed`, `talent_started`, `talent_completed`, `completed`, `segments_started`, `segments_completed`, `memory_throttle_started`, `memory_throttle_completed`, `daily_complete` |
 <!-- END GENERATED callosum-registry -->
 
 The observer SSE feed is exercised by the `apps/observer` SSE tests; a
