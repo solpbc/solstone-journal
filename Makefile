@@ -1218,11 +1218,17 @@ check-removed-time-parser-ready:
 	python3 scripts/check_removed_time_parser_ready.py
 
 contract:
-	$(VENV_BIN)/python -m solstone.think.contract_cli build
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build
 
 check-contract: .installed
-	$(VENV_BIN)/python -m solstone.think.contract_cli check
-	$(VENV_BIN)/python -m solstone.think.contract_cli build --check
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract check
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --check
+
+check-contract-parity: .installed
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; cp -R solstone "$$scratch/solstone"; \
+	$(VENV_BIN)/python -c 'from pathlib import Path; import sys; from solstone.think.contract.journal import build_bundle, render_bundle_json; print(render_bundle_json(build_bundle(Path(sys.argv[1]))), end="")' "$$scratch" > "$$scratch/python.json"; \
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --root "$$scratch" >/dev/null; \
+	cmp "$$scratch/python.json" "$$scratch/solstone/talent/journal/contract/bundle.json"
 
 core-fixtures:
 	$(VENV_BIN)/python scripts/build_core_fixtures.py
