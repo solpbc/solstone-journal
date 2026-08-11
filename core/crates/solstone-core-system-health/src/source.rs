@@ -8,6 +8,30 @@ use chrono::NaiveDate;
 
 use crate::HealthError;
 
+pub trait SegmentSource {
+    fn segments(
+        &self,
+        journal: &std::path::Path,
+        day: &str,
+    ) -> Result<Vec<solstone_core_journal_io::Segment>, HealthError>;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FilesystemSegmentSource;
+
+impl SegmentSource for FilesystemSegmentSource {
+    fn segments(
+        &self,
+        journal: &std::path::Path,
+        day: &str,
+    ) -> Result<Vec<solstone_core_journal_io::Segment>, HealthError> {
+        Ok(solstone_core_journal_io::iter_segments(
+            journal,
+            solstone_core_journal_io::PathOrDay::Day(day),
+        )?)
+    }
+}
+
 pub trait HealthLogSource {
     fn health_log_paths(&self, day: &str) -> Result<Vec<PathBuf>, HealthError>;
 }
@@ -53,5 +77,68 @@ impl HealthLogSource for FilesystemHealthLogSource {
             .collect::<Vec<_>>();
         paths.sort();
         Ok(paths)
+    }
+}
+
+pub fn day_is_complete(journal: &std::path::Path, day: &str) -> Result<bool, HealthError> {
+    day_is_complete_with_metadata(journal, day, modified)
+}
+
+fn day_is_complete_with_metadata<F>(
+    journal: &std::path::Path,
+    day: &str,
+    metadata: F,
+) -> Result<bool, HealthError>
+where
+    F: Fn(&std::path::Path) -> Result<std::time::SystemTime, HealthError>,
+{
+    let day_path = solstone_core_journal_io::day_path(journal, Some(day), false)?;
+    let stream = day_path.join("health/stream.updated");
+    if !stream.is_file() {
+        return Ok(true);
+    }
+    let daily = day_path.join("health/daily.updated");
+    if !daily.is_file() {
+        return Ok(false);
+    }
+    let stream_modified = metadata(&stream)?;
+    let daily_modified = metadata(&daily)?;
+    Ok(stream_modified <= daily_modified)
+}
+
+fn modified(path: &std::path::Path) -> Result<std::time::SystemTime, HealthError> {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| HealthError::Metadata {
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::day_is_complete_with_metadata;
+    use crate::HealthError;
+
+    #[test]
+    fn metadata_errors_after_marker_presence_propagate() {
+        let temporary = tempdir().unwrap();
+        let health = temporary.path().join("chronicle/20990202/health");
+        fs::create_dir_all(&health).unwrap();
+        fs::write(health.join("stream.updated"), "stream\n").unwrap();
+        fs::write(health.join("daily.updated"), "daily\n").unwrap();
+
+        let error = day_is_complete_with_metadata(temporary.path(), "20990202", |path| {
+            Err(HealthError::Metadata {
+                path: path.to_path_buf(),
+                message: "metadata unavailable".to_owned(),
+            })
+        })
+        .unwrap_err();
+        assert!(matches!(error, HealthError::Metadata { .. }));
     }
 }

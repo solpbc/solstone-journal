@@ -13,6 +13,10 @@ pub enum HealthError {
     InvalidDay(String),
     #[error("journal I/O error: {0}")]
     JournalIo(#[from] solstone_core_journal_io::ReadError),
-    #[error("cannot read health directory {path}: {message}")]
+    #[error("journal path error: {0}")]
+    JournalPath(#[from] solstone_core_journal_io::PathError),
+    #[error("cannot read directory {path}: {message}")]
     Directory { path: PathBuf, message: String },
+    #[error("cannot read file metadata {path}: {message}")]
+    Metadata { path: PathBuf, message: String },
 }

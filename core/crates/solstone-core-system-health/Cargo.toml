@@ -18,6 +18,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-format.workspace = true
+solstone-core-processing-record.workspace = true
 
 [[test]]
 name = "pipeline_health_oracle"
@@ -26,6 +28,7 @@ required-features = ["differential"]
 
 [dev-dependencies]
 solstone-core-cogitate.workspace = true
+tempfile = "3.24.0"
 
 [lints]
 workspace = true

@@ -3242,7 +3242,10 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-cogitate",
+ "solstone-core-format",
  "solstone-core-journal-io",
+ "solstone-core-processing-record",
+ "tempfile",
  "thiserror 2.0.19",
 ]
 
