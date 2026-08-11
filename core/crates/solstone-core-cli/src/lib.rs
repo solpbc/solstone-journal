@@ -19,7 +19,12 @@ pub const USAGE: &str = concat!(
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
-    "  solstone-core facet-candidates [-h] [-v] [-d]\n"
+    "  solstone-core facet-candidates [-h] [-v] [-d]\n",
+    "  solstone-core streams [args...]\n",
+    "  solstone-core segment [args...]\n",
+    "  solstone-core journal-stats [args...]\n",
+    "  solstone-core reprocess [args...]\n",
+    "  solstone-core backfill-processing-records [args...]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -359,6 +364,11 @@ pub enum Command {
     Transfer(TransferCommand),
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
+    Streams(Vec<OsString>),
+    Segment(Vec<OsString>),
+    Reprocess(Vec<OsString>),
+    JournalStats(Vec<OsString>),
+    Backfill(Vec<OsString>),
     FacetCandidates,
     Convey(ConveyOptions),
     Grab(GrabCommand),
@@ -878,6 +888,21 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("identity") => parse_identity(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
+        [command, rest @ ..] if command == OsStr::new("streams") => {
+            Ok(Command::Streams(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("segment") => {
+            Ok(Command::Segment(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("reprocess") => {
+            Ok(Command::Reprocess(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("journal-stats") => {
+            Ok(Command::JournalStats(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("backfill-processing-records") => {
+            Ok(Command::Backfill(rest.to_vec()))
+        }
         [command, rest @ ..] if command == OsStr::new("facet-candidates") => {
             let help = |argument: &OsString| {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")
@@ -4401,6 +4426,11 @@ mod tests {
             "identity",
             "export",
             "facet-candidates",
+            "streams",
+            "segment",
+            "journal-stats",
+            "reprocess",
+            "backfill-processing-records",
         ] {
             assert!(
                 USAGE.contains(&format!("solstone-core {command}")),
