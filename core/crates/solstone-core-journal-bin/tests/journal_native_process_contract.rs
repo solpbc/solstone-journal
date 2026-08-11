@@ -90,11 +90,6 @@ enum Verdict {
     TimedOut {
         token: &'static str,
     },
-    SiblingStale {
-        token: &'static str,
-        sibling: PathBuf,
-        dispatcher: PathBuf,
-    },
     LaunchFailure {
         token: &'static str,
         error: String,
@@ -126,9 +121,12 @@ impl Drop for TempDir {
     }
 }
 
+/// Records that cargo produced this artifact during THIS test run, which is
+/// what makes the probe below evidence about the current tree rather than
+/// about whatever was last left in `target/`.
 struct Artifact {
+    #[allow(dead_code)]
     path: PathBuf,
-    modified: SystemTime,
 }
 
 struct Harness {
@@ -145,6 +143,7 @@ struct Harness {
 struct VerdictContext<'a> {
     dispatcher: &'a Path,
     sibling_dir: &'a Path,
+    #[allow(dead_code)]
     dispatcher_artifact: &'a Artifact,
     sibling_artifacts: &'a BTreeMap<&'static str, Artifact>,
     home: &'a Path,
@@ -208,9 +207,6 @@ impl Harness {
 fn artifact(path: &Path) -> Artifact {
     Artifact {
         path: path.to_path_buf(),
-        modified: fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .expect("read build artifact modification time"),
     }
 }
 
@@ -338,13 +334,20 @@ fn verdict_for(
             error: format!("no source artifact recorded for {}", spec.binary),
         };
     };
-    if sibling_artifact.modified < context.dispatcher_artifact.modified {
-        return Verdict::SiblingStale {
-            token: spec.token,
-            sibling: sibling_artifact.path.clone(),
-            dispatcher: context.dispatcher_artifact.path.clone(),
-        };
-    }
+    // Freshness is guaranteed by CONSTRUCTION, not by comparing mtimes:
+    // locate_workspace_binary runs `cargo build -p <pkg> --bin <bin>` for this
+    // sibling in this very test run, so cargo has either rebuilt it or proven
+    // it up to date.
+    //
+    // An mtime comparison against the dispatcher looks like a stronger check
+    // and is actually a WRONG one: cargo does not touch an artifact it finds
+    // up to date, so a perfectly current binary keeps an old mtime. Measured
+    // here -- solstone-core-depict sat at 18:06 against a 19:59 dispatcher,
+    // `cargo build -p solstone-core-depict` finished in 0.14s with nothing to
+    // do, and no source file was newer than the binary. The comparison
+    // reported a stale sibling on a binary that was current, which is a false
+    // red on the instrument the rest of the lane's cuts are gated by.
+    let _ = sibling_artifact;
     let status = match run_dispatcher(context, spec.token, probe.argv) {
         Ok(status) => status,
         Err(error) => {
@@ -445,7 +448,6 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
     let empty_artifacts = BTreeMap::new();
     let dispatcher_artifact = Artifact {
         path: dispatcher.clone(),
-        modified: SystemTime::now(),
     };
     let poison_marker = temp.path.join("poison-not-run");
     let home = temp.path.join("home");
