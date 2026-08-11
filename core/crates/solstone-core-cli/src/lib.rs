@@ -813,12 +813,38 @@ fn parse_navigate(args: &[OsString]) -> Result<Command, UsageError> {
             index += 1;
             continue;
         }
+        if !literal
+            && let Some(value) = argument
+                .to_str()
+                .and_then(|argument| argument.strip_prefix("--facet="))
+        {
+            if facet.is_some() {
+                return Err(UsageError);
+            }
+            facet = Some(value.to_owned());
+            index += 1;
+            continue;
+        }
+        if !literal
+            && let Some(value) = argument
+                .to_str()
+                .and_then(|argument| argument.strip_prefix("-f"))
+                .filter(|value| !value.is_empty())
+        {
+            if facet.is_some() {
+                return Err(UsageError);
+            }
+            facet = Some(value.to_owned());
+            index += 1;
+            continue;
+        }
         if !literal && (argument == OsStr::new("--facet") || argument == OsStr::new("-f")) {
             if facet.is_some() {
                 return Err(UsageError);
             }
             let value = args.get(index + 1).ok_or(UsageError)?;
-            // An option value cannot be another dash-leading option token.
+            // Only separate option values reject dash-leading tokens; attached
+            // forms (`--facet=-x` and `-f-x`) take their suffix literally.
             let value = value
                 .to_str()
                 .filter(|value| !value.starts_with('-'))
@@ -2615,32 +2641,51 @@ mod tests {
         for (values, expected_path, expected_facet) in [
             (
                 &["navigate", "/home", "--facet", "work"][..],
-                "/home",
+                Some("/home"),
                 Some("work"),
             ),
             (
                 &["navigate", "--facet", "work", "/home"][..],
-                "/home",
+                Some("/home"),
                 Some("work"),
             ),
             (
                 &["navigate", "-f", "work", "/home"][..],
-                "/home",
+                Some("/home"),
                 Some("work"),
             ),
-            (&["navigate", "--", "-weird"][..], "-weird", None),
-            (&["navigate", "--", "--help"][..], "--help", None),
-            (&["navigate", "--", "-h"][..], "-h", None),
+            (
+                &["navigate", "--facet=work", "/a"][..],
+                Some("/a"),
+                Some("work"),
+            ),
+            (
+                &["navigate", "/a", "--facet=work"][..],
+                Some("/a"),
+                Some("work"),
+            ),
+            (&["navigate", "-fwork", "/a"][..], Some("/a"), Some("work")),
+            (&["navigate", "--facet=-x"][..], None, Some("-x")),
+            (&["navigate", "--facet="][..], None, Some("")),
+            (&["navigate", "-f=work"][..], None, Some("=work")),
+            (&["navigate", "--", "-weird"][..], Some("-weird"), None),
+            (&["navigate", "--", "--help"][..], Some("--help"), None),
+            (&["navigate", "--", "-h"][..], Some("-h"), None),
+            (
+                &["navigate", "--", "--facet=work"][..],
+                Some("--facet=work"),
+                None,
+            ),
             (
                 &["navigate", "-f", "work", "--", "-weird"][..],
-                "-weird",
+                Some("-weird"),
                 Some("work"),
             ),
         ] {
             assert_eq!(
                 evaluate_args(&args(values)),
                 Ok(Command::Navigate {
-                    path: Some(expected_path.to_owned()),
+                    path: expected_path.map(str::to_owned),
                     facet: expected_facet.map(str::to_owned),
                 }),
                 "{values:?}"
@@ -2686,6 +2731,9 @@ mod tests {
             &["navigate", "--facet", "--nonsense"][..],
             &["navigate", "--facet", "--"][..],
             &["navigate", "-f", "-x"][..],
+            &["navigate", "--facet=a", "--facet=b"][..],
+            &["navigate", "--facet=a", "-f", "b"][..],
+            &["navigate", "-fa", "--facet", "b"][..],
         ] {
             assert_eq!(
                 evaluate_args(&args(values)),

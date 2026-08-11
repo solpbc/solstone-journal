@@ -20,7 +20,7 @@
 //!
 //! A successful socket write means the navigation request was sent to
 //! Callosum; it does not claim that navigation happened. Callosum fans out
-//! only to connected clients, and a first write to a closed peer can succeed.
+//! only to connected clients, and a first write to a closed peer typically succeeds.
 
 use std::process::ExitCode;
 use std::time::Duration;

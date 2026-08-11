@@ -115,17 +115,24 @@ fn navigate_preserves_gate_and_parser_ordering() {
     assert_eq!(malformed.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&malformed.stderr).starts_with("usage: journal navigate"));
 
-    for args in [
-        ["--facet", "work", "/app/work"].as_slice(),
-        ["/app/work", "--facet", "work"].as_slice(),
+    for (args, path) in [
+        (["--facet", "work", "/app/work"].as_slice(), "/app/work"),
+        (["/app/work", "--facet", "work"].as_slice(), "/app/work"),
+        (["--facet=work", "/a"].as_slice(), "/a"),
+        (["-fwork", "/a"].as_slice(), "/a"),
     ] {
         let journal = tempfile::tempdir().expect("journal");
         let listener = notification_listener(journal.path());
         let output = navigate(journal.path(), args);
         assert_eq!(output.status.code(), Some(0), "{args:?}");
         assert_eq!(
+            output.stdout,
+            format!("Navigate: {path} [work]\n").as_bytes(),
+            "{args:?}"
+        );
+        assert_eq!(
             notification(&listener),
-            json!({"tract": "navigate", "event": "request", "path": "/app/work", "facet": "work"}),
+            json!({"tract": "navigate", "event": "request", "path": path, "facet": "work"}),
             "{args:?}"
         );
     }

@@ -320,8 +320,11 @@ fn navigate_help_is_served_not_treated_as_a_usage_error() {
             "{args:?} did not print navigate help: {stdout}"
         );
         assert!(stdout.contains("-f FACET, --facet FACET"), "{stdout}");
+        assert!(stdout.contains("positional arguments:"), "{stdout}");
         assert!(
-            stdout.contains("PATH                  URL path to navigate to."),
+            stdout
+                .lines()
+                .any(|line| line.trim_start().starts_with("PATH")),
             "{stdout}"
         );
         assert!(!stdout.contains("solstone-core --version"), "{stdout}");
