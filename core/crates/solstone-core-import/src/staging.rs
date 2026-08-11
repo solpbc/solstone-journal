@@ -87,6 +87,7 @@ pub fn stage_source(
     }
 
     let import_dir = import_directory(request.journal_root, request.import_id)?;
+    let mut force_audit_recorded = false;
     let exists =
         path_lexists(&import_dir).map_err(|error| path_error(&import_dir, error.to_string()))?;
     if exists {
@@ -103,6 +104,7 @@ pub fn stage_source(
         {
             return Err(ImportError::ImportDirectoryIsSymlink { path: import_dir });
         }
+        verify_force_containment(request.journal_root, &import_dir)?;
         verify_force_metadata(request, &import_dir)?;
         let inventory = build_import_inventory(&import_dir)?;
         effects
@@ -117,6 +119,7 @@ pub fn stage_source(
                 dry_run: request.dry_run,
             })
             .map_err(audit_error)?;
+        force_audit_recorded = true;
         if request.dry_run {
             return Ok(preview(&import_dir, source_location, true));
         }
@@ -137,19 +140,20 @@ pub fn stage_source(
             path: source.clone(),
         });
     }
-    let import_dir = ensure_import_private_chain(request.journal_root, request.import_id)?;
+    let import_dir = import_directory(request.journal_root, request.import_id)?;
     let destination = import_destination(&import_dir, request.destination_name)?;
     if resolve(source)? == resolve(&destination)? {
         return Ok(StageOutcome {
             path: destination,
             source_location,
             disposition: StageDisposition::AlreadyStaged,
-            force_audit_recorded: false,
+            force_audit_recorded,
         });
     }
     if request.dry_run {
-        return Ok(preview(&destination, source_location, false));
+        return Ok(preview(&destination, source_location, force_audit_recorded));
     }
+    ensure_import_private_chain(request.journal_root, request.import_id)?;
     let mut reader = File::open(source).map_err(|error| source_error(source, error))?;
     write_reader_exclusive(
         &destination,
@@ -162,7 +166,7 @@ pub fn stage_source(
         path: destination,
         source_location,
         disposition: StageDisposition::Staged,
-        force_audit_recorded: false,
+        force_audit_recorded,
     })
 }
 
@@ -215,8 +219,16 @@ pub(crate) fn ensure_import_private_chain(
     import_id: &str,
 ) -> Result<PathBuf, ImportError> {
     let imports = journal_root.join("imports");
-    create_directory_with_mode(&imports, 0o700)
-        .map_err(|error| path_error(&imports, error.to_string()))?;
+    let imports_is_symlink = path_lexists(&imports)
+        .map_err(|error| path_error(&imports, error.to_string()))?
+        && fs::symlink_metadata(&imports)
+            .map_err(|error| path_error(&imports, error.to_string()))?
+            .file_type()
+            .is_symlink();
+    if !imports_is_symlink {
+        create_directory_with_mode(&imports, 0o700)
+            .map_err(|error| path_error(&imports, error.to_string()))?;
+    }
     let import_dir = import_directory(journal_root, import_id)?;
     create_directory_with_mode(&import_dir, 0o700)
         .map_err(|error| path_error(&import_dir, error.to_string()))?;
@@ -237,10 +249,7 @@ fn import_destination(import_dir: &Path, destination_name: &OsStr) -> Result<Pat
 
 fn verify_force_metadata(request: &StageRequest<'_>, import_dir: &Path) -> Result<(), ImportError> {
     let Some(existing) = read_provenance(request.journal_root, request.import_id)? else {
-        return Err(ImportError::MetadataMismatchOnForce {
-            path: import_dir.to_path_buf(),
-            key: "import.json",
-        });
+        return Ok(());
     };
     for key in ["source_hash", "client_item_id", "task_id"] {
         if existing.get(key) != request.metadata.get(key) {
@@ -249,6 +258,19 @@ fn verify_force_metadata(request: &StageRequest<'_>, import_dir: &Path) -> Resul
                 key,
             });
         }
+    }
+    Ok(())
+}
+
+fn verify_force_containment(journal_root: &Path, import_dir: &Path) -> Result<(), ImportError> {
+    let imports = resolve(&journal_root.join("imports"))?;
+    let resolved_import_dir = resolve(import_dir)?;
+    // These path observations cannot close a replacement race; that needs dirfd/O_NOFOLLOW handling.
+    if resolved_import_dir == imports || !resolved_import_dir.starts_with(&imports) {
+        return Err(ImportError::ImportDirectoryEscapesImports {
+            path: resolved_import_dir,
+            imports,
+        });
     }
     Ok(())
 }

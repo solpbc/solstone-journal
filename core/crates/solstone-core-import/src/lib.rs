@@ -62,6 +62,7 @@ pub enum ImportError {
     ExistingImportDirectory { path: PathBuf },
     MetadataMismatchOnForce { path: PathBuf, key: &'static str },
     ImportDirectoryIsSymlink { path: PathBuf },
+    ImportDirectoryEscapesImports { path: PathBuf, imports: PathBuf },
     SourceMissing { path: PathBuf },
     SourceNotFile { path: PathBuf },
     NonUtf8DirectoryEntry { path: PathBuf },
@@ -93,6 +94,12 @@ impl fmt::Display for ImportError {
             Self::ImportDirectoryIsSymlink { path } => write!(
                 formatter,
                 "import directory is a symlink: {}",
+                path.display()
+            ),
+            Self::ImportDirectoryEscapesImports { path, imports } => write!(
+                formatter,
+                "import directory escapes imports root {}: {}",
+                imports.display(),
                 path.display()
             ),
             Self::SourceMissing { path } => {

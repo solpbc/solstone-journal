@@ -14,8 +14,8 @@ use solstone_core_import::staging::{
 };
 use solstone_core_import::{
     AuditSinkError, ForceReimportAudit, ImportError, ImportForceEffects, RemovalError, SourceHash,
-    find_manifest_by_hash, hash_source, read_import_metadata, stage_source, windowed_source_hash,
-    write_import_metadata, write_manifest,
+    find_manifest_by_hash, hash_source, observe_source_immutability, read_import_metadata,
+    stage_source, windowed_source_hash, write_import_metadata, write_manifest,
 };
 
 static NEXT_TREE: AtomicUsize = AtomicUsize::new(0);
@@ -291,6 +291,7 @@ fn force_orders_audit_before_removal_and_preserves_failures() {
     );
     let outcome = stage_source(&request, &effects).unwrap();
     assert_eq!(effects.events(), vec!["audit", "remove"]);
+    assert!(outcome.force_audit_recorded);
     assert_eq!(fs::read(outcome.path).unwrap(), b"replacement");
 
     let audit_failure = RecordingEffects::new(&journal, FailureStage::Audit);
@@ -306,6 +307,185 @@ fn force_orders_audit_before_removal_and_preserves_failures() {
         Err(ImportError::RemovalFailed { .. })
     ));
     assert_eq!(removal_failure.events(), vec!["audit", "remove"]);
+}
+
+#[test]
+fn non_force_dry_run_creates_nothing_and_a_real_retry_stages() {
+    let tree = TempTree::new();
+    let journal = tree.path().join("journal");
+    let source = tree.path().join("owner.txt");
+    fs::write(&source, b"owner bytes").unwrap();
+    let metadata = metadata("source-a");
+    let preview_request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("owner.txt"),
+        &metadata,
+        false,
+        true,
+    );
+
+    let preview = stage_source(&preview_request, &NoopEffects).unwrap();
+    assert_eq!(preview.disposition, StageDisposition::Preview);
+    assert!(!journal.join("imports").exists());
+
+    let stage_request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("owner.txt"),
+        &metadata,
+        false,
+        false,
+    );
+    assert_eq!(
+        stage_source(&stage_request, &NoopEffects)
+            .unwrap()
+            .disposition,
+        StageDisposition::Staged
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn force_allows_a_relocated_imports_root() {
+    use std::os::unix::fs::symlink;
+
+    let tree = TempTree::new();
+    let journal = tree.path().join("journal");
+    let relocated_imports = tree.path().join("external-imports");
+    let source = tree.path().join("replacement.txt");
+    fs::create_dir(&journal).unwrap();
+    fs::create_dir_all(relocated_imports.join("item")).unwrap();
+    fs::write(relocated_imports.join("item/old.txt"), b"old").unwrap();
+    symlink(&relocated_imports, journal.join("imports")).unwrap();
+    fs::write(&source, b"replacement").unwrap();
+    let metadata = metadata("source-a");
+    let request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("replacement.txt"),
+        &metadata,
+        true,
+        false,
+    );
+    let effects = RecordingEffects::new(&journal, FailureStage::None);
+
+    let outcome = stage_source(&request, &effects).unwrap();
+    assert!(outcome.force_audit_recorded);
+    assert_eq!(effects.events(), vec!["audit", "remove"]);
+    assert_eq!(
+        fs::read(relocated_imports.join("item/replacement.txt")).unwrap(),
+        b"replacement"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn force_without_metadata_audits_file_links_in_component_order() {
+    use std::os::unix::fs::symlink;
+
+    let tree = TempTree::new();
+    let journal = tree.path().join("journal");
+    let import_dir = journal.join("imports/item");
+    let source = tree.path().join("replacement.txt");
+    fs::create_dir_all(import_dir.join("real")).unwrap();
+    fs::create_dir_all(import_dir.join("sub")).unwrap();
+    fs::write(import_dir.join("real/payload.bin"), b"abc").unwrap();
+    fs::write(import_dir.join("sub/a.txt"), b"xy").unwrap();
+    fs::write(import_dir.join("sub.txt"), b"x").unwrap();
+    symlink("real/payload.bin", import_dir.join("link_to_file")).unwrap();
+    fs::write(&source, b"replacement").unwrap();
+    let metadata = metadata("source-a");
+    let request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("replacement.txt"),
+        &metadata,
+        true,
+        false,
+    );
+    let effects = RecordingEffects::new(&journal, FailureStage::None);
+
+    stage_source(&request, &effects).unwrap();
+    let inventories = effects.inventories();
+    let files = inventories[0]["files"].as_array().unwrap();
+    let names = files
+        .iter()
+        .map(|file| file["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec!["link_to_file", "real/payload.bin", "sub/a.txt", "sub.txt"]
+    );
+    assert_eq!(files[0]["bytes"], json!(3));
+    assert!(files.iter().all(|file| file["hash"].is_string()));
+}
+
+#[cfg(unix)]
+#[test]
+fn force_inventory_refuses_a_non_utf8_entry_without_removing_it() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let tree = TempTree::new();
+    let journal = tree.path().join("journal");
+    let import_dir = journal.join("imports/item");
+    let source = tree.path().join("replacement.txt");
+    let invalid = import_dir.join(OsString::from_vec(vec![b'a', 0xff]));
+    fs::create_dir_all(&import_dir).unwrap();
+    fs::write(&invalid, b"old").unwrap();
+    fs::write(&source, b"replacement").unwrap();
+    let metadata = metadata("source-a");
+    let request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("replacement.txt"),
+        &metadata,
+        true,
+        false,
+    );
+    let effects = RecordingEffects::new(&journal, FailureStage::None);
+
+    assert!(matches!(
+        stage_source(&request, &effects),
+        Err(ImportError::NonUtf8DirectoryEntry { path }) if path == invalid
+    ));
+    assert!(effects.events().is_empty());
+    assert_eq!(fs::read(invalid).unwrap(), b"old");
+}
+
+#[test]
+fn forced_staging_leaves_the_owner_source_tree_unchanged() {
+    let tree = TempTree::new();
+    let owner_root = tree.path().join("owner");
+    let journal = tree.path().join("journal");
+    let source = owner_root.join("recording.txt");
+    fs::create_dir(&owner_root).unwrap();
+    fs::write(&source, b"owner bytes").unwrap();
+    let metadata = metadata("source-a");
+    fs::create_dir_all(journal.join("imports/item")).unwrap();
+    fs::write(journal.join("imports/item/old.txt"), b"old").unwrap();
+    write_import_metadata(&journal, "item", &metadata).unwrap();
+    let request = request(
+        &journal,
+        "item",
+        &source,
+        OsStr::new("recording.txt"),
+        &metadata,
+        true,
+        false,
+    );
+    let effects = RecordingEffects::new(&journal, FailureStage::None);
+
+    let report = observe_source_immutability(&owner_root, |_| {
+        stage_source(&request, &effects).unwrap();
+    })
+    .unwrap();
+    assert!(!report.violated());
 }
 
 #[test]
@@ -508,6 +688,7 @@ struct RecordingEffects {
     failure: FailureStage,
     events: Mutex<Vec<&'static str>>,
     dry_runs: Mutex<Vec<bool>>,
+    inventories: Mutex<Vec<Value>>,
 }
 
 impl RecordingEffects {
@@ -517,6 +698,7 @@ impl RecordingEffects {
             failure,
             events: Mutex::new(Vec::new()),
             dry_runs: Mutex::new(Vec::new()),
+            inventories: Mutex::new(Vec::new()),
         }
     }
 
@@ -527,12 +709,20 @@ impl RecordingEffects {
     fn dry_run_values(&self) -> Vec<bool> {
         self.dry_runs.lock().unwrap().clone()
     }
+
+    fn inventories(&self) -> Vec<Value> {
+        self.inventories.lock().unwrap().clone()
+    }
 }
 
 impl ImportForceEffects for RecordingEffects {
     fn append_force_reimport(&self, audit: &ForceReimportAudit) -> Result<(), AuditSinkError> {
         self.events.lock().unwrap().push("audit");
         self.dry_runs.lock().unwrap().push(audit.dry_run);
+        self.inventories
+            .lock()
+            .unwrap()
+            .push(audit.inventory.clone());
         if matches!(self.failure, FailureStage::Audit) {
             return Err(AuditSinkError {
                 message: "injected audit failure".to_owned(),

@@ -206,16 +206,18 @@ pub fn find_manifest_by_hash(
 }
 
 pub(crate) fn build_import_inventory(import_dir: &Path) -> Result<Value, ImportError> {
-    let mut files = Vec::new();
-    collect_inventory_files(import_dir, import_dir, &mut files)?;
-    files.sort_by(|left, right| left.0.cmp(&right.0));
+    let files = directory_files(import_dir)?;
     let mut total_bytes = 0_u64;
     let entries = files
         .into_iter()
-        .map(|(relative, path, size)| {
-            total_bytes += size;
-            let hash = hash_file(&path)?.into_inner();
-            Ok(json!({ "name": relative, "bytes": size, "hash": hash }))
+        .map(|file| {
+            total_bytes += file.size;
+            let hash = hash_file(&file.path)?.into_inner();
+            Ok(json!({
+                "name": relative_name(&file)?,
+                "bytes": file.size,
+                "hash": hash,
+            }))
         })
         .collect::<Result<Vec<_>, ImportError>>()?;
     Ok(json!({
@@ -244,30 +246,44 @@ fn hash_file(path: &Path) -> Result<SourceHash, ImportError> {
 }
 
 fn hash_directory(root: &Path) -> Result<SourceHash, ImportError> {
-    let mut files = Vec::new();
-    collect_directory_files(root, Vec::new(), &mut files)?;
-    files.sort_by(|left, right| left.parts.cmp(&right.parts));
-    let invalid = files
-        .iter()
-        .filter(|entry| entry.parts.iter().any(|part| part.to_str().is_none()))
-        .map(|entry| entry.path.clone())
-        .min();
-    if let Some(path) = invalid {
-        return Err(ImportError::NonUtf8DirectoryEntry { path });
-    }
+    let files = directory_files(root)?;
     let mut lines = Vec::with_capacity(files.len());
     for entry in files {
-        let relative = entry
-            .parts
-            .iter()
-            .map(|part| part.to_str().expect("non-UTF-8 names were rejected"))
-            .collect::<Vec<_>>()
-            .join("/");
+        let relative = relative_name(&entry)?;
         lines.push(format!("{relative}:{}", entry.size));
     }
     let mut hasher = Sha256::new();
     hasher.update(lines.join("\n").as_bytes());
     Ok(SourceHash::new(format!("{:x}", hasher.finalize())))
+}
+
+fn directory_files(root: &Path) -> Result<Vec<DirectoryFile>, ImportError> {
+    let mut files = Vec::new();
+    collect_directory_files(root, Vec::new(), &mut files)?;
+    files.sort_by(|left, right| left.parts.cmp(&right.parts));
+    if let Some(file) = files
+        .iter()
+        .find(|file| file.parts.iter().any(|part| part.to_str().is_none()))
+    {
+        return Err(ImportError::NonUtf8DirectoryEntry {
+            path: file.path.clone(),
+        });
+    }
+    Ok(files)
+}
+
+fn relative_name(file: &DirectoryFile) -> Result<String, ImportError> {
+    file.parts
+        .iter()
+        .map(|part| {
+            part.to_str()
+                .map(str::to_owned)
+                .ok_or_else(|| ImportError::NonUtf8DirectoryEntry {
+                    path: file.path.clone(),
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|parts| parts.join("/"))
 }
 
 struct DirectoryFile {
@@ -304,38 +320,6 @@ fn collect_directory_files(
                 path,
                 size: metadata.len(),
             });
-        }
-    }
-    Ok(())
-}
-
-fn collect_inventory_files(
-    root: &Path,
-    directory: &Path,
-    files: &mut Vec<(String, PathBuf, u64)>,
-) -> Result<(), ImportError> {
-    for entry in fs::read_dir(directory).map_err(|error| source_error(directory, error))? {
-        let entry = entry.map_err(|error| source_error(directory, error))?;
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| source_error(&path, error))?;
-        if file_type.is_dir() {
-            collect_inventory_files(root, &path, files)?;
-        } else if file_type.is_file() {
-            let relative = path
-                .strip_prefix(root)
-                .expect("walk remains under root")
-                .to_string_lossy()
-                .into_owned();
-            files.push((
-                relative,
-                path,
-                entry
-                    .metadata()
-                    .map_err(|error| source_error(root, error))?
-                    .len(),
-            ));
         }
     }
     Ok(())
