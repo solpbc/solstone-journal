@@ -73,6 +73,13 @@ pub struct InstallStatus {
     pub owner: Option<Value>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObserveAttempt {
+    Terminal(InstallStatus),
+    DifferentTarget(InstallStatus),
+    TimedOut,
+}
+
 pub fn status_path(journal: &Path, provider: &str) -> PathBuf {
     journal
         .join("health/providers")
@@ -191,6 +198,51 @@ pub fn assert_current(
         ));
     }
     Ok(current)
+}
+
+pub fn observe_attempt<F>(
+    journal: &Path,
+    provider: &str,
+    target_fingerprint_sha256: &str,
+    poll_interval: Duration,
+    timeout: Duration,
+    progress_interval: Duration,
+    mut progress: F,
+) -> Result<ObserveAttempt, StatusError>
+where
+    F: FnMut(&InstallStatus),
+{
+    let deadline = Instant::now() + timeout;
+    let mut last_progress_at = None;
+    let mut last_progress_key = None;
+    loop {
+        let current = read_status(journal, provider)?;
+        if current.target_fingerprint_sha256.as_deref() != Some(target_fingerprint_sha256) {
+            return Ok(ObserveAttempt::DifferentTarget(current));
+        }
+        let key = (
+            current.install_state.clone(),
+            current.progress_bytes_received,
+            current.progress_bytes_total,
+            current.install_error.clone(),
+            current.error_code.clone(),
+        );
+        let now = Instant::now();
+        if last_progress_key.as_ref() != Some(&key)
+            || last_progress_at.is_none_or(|last| now.duration_since(last) >= progress_interval)
+        {
+            progress(&current);
+            last_progress_key = Some(key);
+            last_progress_at = Some(now);
+        }
+        if is_terminal(&current.install_state) {
+            return Ok(ObserveAttempt::Terminal(current));
+        }
+        if now >= deadline {
+            return Ok(ObserveAttempt::TimedOut);
+        }
+        std::thread::sleep(poll_interval);
+    }
 }
 
 pub fn record_interrupted(

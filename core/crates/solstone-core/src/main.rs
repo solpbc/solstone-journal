@@ -37,6 +37,7 @@ use solstone_core_cli::{
 use solstone_core_transcribe::{CliError, CliRunError};
 mod facet_candidates;
 mod identity;
+mod install_models;
 mod navigate;
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -136,6 +137,7 @@ fn main() -> ExitCode {
         Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
         Ok(Command::FacetCandidates) => run_facet_candidates(),
+        Ok(Command::InstallModels(options)) => install_models::run(options),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),

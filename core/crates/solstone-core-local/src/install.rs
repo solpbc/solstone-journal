@@ -13,6 +13,7 @@
 
 pub mod archive;
 pub mod fingerprint;
+pub mod fit_report;
 pub mod lease;
 pub mod manifest;
 pub mod mlx;
@@ -243,10 +244,22 @@ fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     run(object, RunKind::Parakeet)
 }
 
+pub fn install_parakeet_with_lease(
+    journal: &Path,
+    lease: lease::InstallLease,
+) -> Result<Value, DispatchError> {
+    let mut object = Map::new();
+    object.insert(
+        "journal".to_owned(),
+        Value::String(journal.display().to_string()),
+    );
+    run_with_lease(&object, RunKind::Parakeet, journal.to_path_buf(), lease)
+}
+
 fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let provider = kind.status_provider();
-    let Some(_lease) = lease::acquire(&journal, provider)
+    let Some(lease) = lease::acquire(&journal, provider)
         .map_err(|error| failure("io", "lease_error", error, 74))?
     else {
         return Err(failure(
@@ -256,6 +269,16 @@ fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchErro
             lease::BUSY_EXIT_CODE,
         ));
     };
+    run_with_lease(object, kind, journal, lease)
+}
+
+fn run_with_lease(
+    object: &Map<String, Value>,
+    kind: RunKind,
+    journal: PathBuf,
+    _lease: lease::InstallLease,
+) -> Result<Value, DispatchError> {
+    let provider = kind.status_provider();
     let fingerprint = match kind {
         RunKind::Local => local_target(
             &journal,
@@ -421,7 +444,15 @@ fn mlx_target(model_id: &str) -> Result<Value, DispatchError> {
 /// `provider`, `runtime`, `artifact_key`, `binary_pins` (cpu then vulkan,
 /// matching `PARAKEET_CPP_BINARY_BACKENDS`'s order), `model_pin`, `cache_root`.
 fn parakeet_target(journal: &Path) -> Result<Value, DispatchError> {
-    let key = pins::parakeet_host_artifact_key()
+    parakeet_target_for_platform(journal, std::env::consts::OS, std::env::consts::ARCH)
+}
+
+pub fn parakeet_target_for_platform(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> Result<Value, DispatchError> {
+    let key = pins::parakeet_artifact_key(os_name, arch)
         .map_err(|error| failure("platform", "unsupported_platform", error, 65))?;
     let binary_pins: Vec<Value> = ["cpu", "vulkan"]
         .into_iter()
@@ -804,6 +835,14 @@ fn install_parakeet_model(
             .map_err(|error| failure("state", "transition_failed", error, 74))?,
     )
     .map_err(|error| failure("state", "status_write_failed", error, 74))?;
+    write_parakeet_model_manifest(&model_dir, status_value)?;
+    Ok(dest)
+}
+
+pub(crate) fn write_parakeet_model_manifest(
+    model_dir: &Path,
+    status_value: &status::InstallStatus,
+) -> Result<(), DispatchError> {
     let built = manifest::build_manifest(
         "parakeet",
         "parakeet-model",
@@ -812,15 +851,15 @@ fn install_parakeet_model(
             .as_deref()
             .unwrap_or(""),
         json!({"pin_identity": pins::parakeet_model_identity()}),
-        manifest::inventory_for_tree(&model_dir, "model")
+        manifest::inventory_for_tree(model_dir, "model")
             .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
         None,
         status_value.attempt_id.as_deref(),
     )
     .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-    manifest::write_manifest(&manifest::artifact_manifest_path(&model_dir), &built)
+    manifest::write_manifest(&manifest::artifact_manifest_path(model_dir), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-    Ok(dest)
+    Ok(())
 }
 
 fn copy_tree(source: &Path, destination: &Path) -> Result<(), DispatchError> {

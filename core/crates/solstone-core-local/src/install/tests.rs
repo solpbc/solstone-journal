@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, fingerprint, lease,
     local_backend_choice, manifest, pins, publish_staged_tree_with, readiness, status,
+    write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -136,6 +137,53 @@ fn status_corpus_has_exact_case_count() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../../fixtures/install_status.json")).unwrap();
     assert_eq!(fixture["cases"].as_array().unwrap().len(), 63);
+}
+
+#[test]
+fn manifest_model_rewrite_excludes_the_previous_manifest_from_its_inventory() {
+    let root = temp("manifest-model-rewrite");
+    let manifest_path = manifest::artifact_manifest_path(&root);
+    fs::write(root.join("model.gguf"), b"model bytes").unwrap();
+    fs::write(&manifest_path, b"old manifest\n").unwrap();
+    let pin_identity = json!({"unit": "test-model"});
+
+    dispatch(
+        InstallVerb::ManifestModel,
+        json!({
+            "root": root,
+            "manifest_path": manifest_path,
+            "target_fingerprint_sha256": "target",
+            "pin_identity": pin_identity,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &pin_identity)["status"],
+        "ready"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn parakeet_model_manifest_still_proves_after_a_second_write() {
+    let root = temp("parakeet-model-manifest-rewrite");
+    fs::write(root.join("tdt-0.6b-v3-q8_0.gguf"), b"model bytes").unwrap();
+    let mut attempt = status::idle_status("parakeet");
+    attempt.attempt_id = Some("attempt".to_owned());
+    attempt.target_fingerprint_sha256 = Some("target".to_owned());
+
+    write_parakeet_model_manifest(&root, &attempt).unwrap();
+    write_parakeet_model_manifest(&root, &attempt).unwrap();
+
+    assert_eq!(
+        manifest::prove_manifest(
+            &manifest::artifact_manifest_path(&root),
+            &pins::parakeet_model_identity(),
+        )["status"],
+        "ready"
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

@@ -19,7 +19,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
-    "  solstone-core facet-candidates [-h] [-v] [-d]\n"
+    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -361,6 +361,7 @@ pub enum Command {
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
     FacetCandidates,
+    InstallModels(InstallModelsOptions),
     Convey(ConveyOptions),
     Grab(GrabCommand),
     Spl(SplCommand),
@@ -393,6 +394,21 @@ pub enum Command {
     FacetCandidatesHelp,
     FacetCandidatesUsage,
     TransferHelp(&'static str),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallModelsVariant {
+    Auto,
+    Cpu,
+    Cuda,
+    Coreml,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstallModelsOptions {
+    pub check: bool,
+    pub force: bool,
+    pub variant: InstallModelsVariant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -889,6 +905,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             }
             Ok(parse_facet_candidates(rest)
                 .map_or(Command::FacetCandidatesUsage, |_| Command::FacetCandidates))
+        }
+        [command, rest @ ..] if command == OsStr::new("install-models") => {
+            parse_install_models(rest).map(Command::InstallModels)
         }
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
@@ -1976,6 +1995,57 @@ fn parse_cogitate(args: &[OsString]) -> CogitateCommand {
         [arg] if arg == OsStr::new("--one-shot") => CogitateCommand::OneShot,
         _ => CogitateCommand::Malformed,
     }
+}
+
+fn parse_install_models(args: &[OsString]) -> Result<InstallModelsOptions, UsageError> {
+    let mut check = false;
+    let mut force = false;
+    let mut variant = InstallModelsVariant::Auto;
+    let mut variant_seen = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--check") {
+            if check || force {
+                return Err(UsageError);
+            }
+            check = true;
+        } else if argument == OsStr::new("--force") {
+            if force || check {
+                return Err(UsageError);
+            }
+            force = true;
+        } else {
+            let value = if argument == OsStr::new("--variant") {
+                index += 1;
+                args.get(index).and_then(|value| value.to_str())
+            } else {
+                argument
+                    .to_str()
+                    .and_then(|value| value.strip_prefix("--variant="))
+            };
+            let Some(value) = value else {
+                return Err(UsageError);
+            };
+            if variant_seen {
+                return Err(UsageError);
+            }
+            variant = match value {
+                "auto" => InstallModelsVariant::Auto,
+                "cpu" => InstallModelsVariant::Cpu,
+                "cuda" => InstallModelsVariant::Cuda,
+                "coreml" => InstallModelsVariant::Coreml,
+                _ => return Err(UsageError),
+            };
+            variant_seen = true;
+        }
+        index += 1;
+    }
+    Ok(InstallModelsOptions {
+        check,
+        force,
+        variant,
+    })
 }
 
 fn parse_local(args: &[OsString]) -> Result<LocalCommand, UsageError> {
@@ -4413,6 +4483,7 @@ mod tests {
             "identity",
             "export",
             "facet-candidates",
+            "install-models",
         ] {
             assert!(
                 USAGE.contains(&format!("solstone-core {command}")),
@@ -4462,6 +4533,42 @@ mod tests {
                 Ok(Command::FacetCandidatesUsage),
                 "{values:?}"
             );
+        }
+    }
+
+    #[test]
+    fn parses_install_models_options_and_rejects_conflicts() {
+        assert_eq!(
+            evaluate_args(&args(&["install-models"])),
+            Ok(Command::InstallModels(InstallModelsOptions {
+                check: false,
+                force: false,
+                variant: InstallModelsVariant::Auto,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["install-models", "--check", "--variant=cpu"])),
+            Ok(Command::InstallModels(InstallModelsOptions {
+                check: true,
+                force: false,
+                variant: InstallModelsVariant::Cpu,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["install-models", "--force", "--variant", "coreml"])),
+            Ok(Command::InstallModels(InstallModelsOptions {
+                check: false,
+                force: true,
+                variant: InstallModelsVariant::Coreml,
+            }))
+        );
+        for values in [
+            &["install-models", "--check", "--force"][..],
+            &["install-models", "--variant"][..],
+            &["install-models", "--variant", "bad"][..],
+            &["install-models", "--variant", "cpu", "--variant", "cuda"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }
     }
 
