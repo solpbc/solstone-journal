@@ -21,20 +21,22 @@ use solstone_core_cli::{
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions,
     CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE,
-    CONTRACT_HELP, CONTRACT_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions,
-    EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE,
-    GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions,
-    IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE,
-    IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, IndexerCommand,
+    CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CogitateCommand, Command,
+    ContractCommand, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions,
+    FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand,
+    GenerateSessionOptions, GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP,
+    IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
+    IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, IndexerCommand,
     IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, ServiceOptions,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
-    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
-    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    RESTART_CONVEY_USAGE, RestartConveyOptions, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
+    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, ServiceOptions, SettingsParseError,
+    SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE,
+    TranscribeOptions, TransferCommand, TransferExportOptions, TransferImportOptions,
+    TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
@@ -156,6 +158,25 @@ fn main() -> ExitCode {
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
         Ok(Command::Convey(options)) => run_convey(options),
+        Ok(Command::ConveyHelp) => {
+            print!("{CONVEY_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ConveyUsage(error)) => {
+            eprint!("{CONVEY_USAGE}");
+            eprintln!("journal convey: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::RestartConvey(options)) => run_restart_convey(options),
+        Ok(Command::RestartConveyHelp) => {
+            print!("{RESTART_CONVEY_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::RestartConveyUsage(error)) => {
+            eprint!("{RESTART_CONVEY_USAGE}");
+            eprintln!("journal restart-convey: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
@@ -893,6 +914,33 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
         Err(error) => {
             eprintln!("{error}");
             ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
+}
+
+fn run_restart_convey(options: RestartConveyOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(None) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_convey_shell::restart_convey(
+        &journal,
+        solstone_core_convey_shell::RestartConveyOptions {
+            timeout: Duration::from_secs_f64(options.timeout.max(0.0)),
+            verbose: options.verbose,
+            debug: options.debug,
+        },
+    ) {
+        Ok(report) => {
+            print!("{}", report.output);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            print!("{}", error.output());
+            ExitCode::from(1)
         }
     }
 }
