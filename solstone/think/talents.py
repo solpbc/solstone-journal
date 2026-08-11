@@ -43,8 +43,12 @@ from solstone.think.pipeline_health import (
     TerminalUnit,
     read_terminal_states,
 )
-from solstone.think.providers.cli import QuotaExhaustedError
-from solstone.think.providers.shared import Event, classify_provider_error, safe_raw
+from solstone.think.providers.shared import (
+    Event,
+    QuotaExhaustedError,
+    classify_provider_error,
+    safe_raw,
+)
 from solstone.think.responsiveness import (
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
     NON_RESPONSIVE_REASON_CODE,

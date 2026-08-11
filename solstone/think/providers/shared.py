@@ -142,6 +142,14 @@ Event = Union[
 ]
 
 
+class QuotaExhaustedError(Exception):
+    """Raised when a provider reports quota exhaustion."""
+
+    def __init__(self, message: str, retry_delay_ms: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_delay_ms = retry_delay_ms
+
+
 # ---------------------------------------------------------------------------
 # Provider Error Classification
 # ---------------------------------------------------------------------------
@@ -170,7 +178,7 @@ _CONTEXT_WINDOW_PATTERNS = (
     "context length exceeded",
 )
 _CLOUD_MODEL_REQUEST_ATTR = "_solstone_cloud_model_request"
-_TRUSTED_MODEL_NOT_FOUND_MODULES = ("litellm.exceptions", "openai", "anthropic")
+_TRUSTED_MODEL_NOT_FOUND_MODULES = ("openai", "anthropic")
 
 
 def _status_code(exc: BaseException) -> int | None:
@@ -211,8 +219,8 @@ def _chain_has_status_code(exc: BaseException, code: int) -> bool:
 
 
 def mark_cloud_model_request(exc: BaseException) -> None:
-    # OpenHands may classify __cause__/__context__ via _unwrap_provider_exception,
-    # so marking only the caught wrapper would lose transport provenance.
+    # Wrapped transport exceptions may carry the status on an inner cause, so
+    # mark the complete chain to retain cloud-request provenance.
     for item in exception_chain(exc):
         try:
             setattr(item, _CLOUD_MODEL_REQUEST_ATTR, True)
@@ -315,19 +323,9 @@ def classify_provider_error(exc: BaseException, provider: str) -> str:
             return "provider_unavailable"
         if exc_name in {"LLMNoResponseError", "LLMResponseError"}:
             return "provider_response_invalid"
-        # Keep this message rescue ahead of the cloud BadRequest ->
-        # provider_request_rejected fallback. OpenHands maps only "context length
-        # exceeded" to LLMContextWindowExceedError; the other recognised
-        # context-window messages arrive as LLMBadRequestError and would
-        # otherwise be classified as a permanent request rejection. See
-        # tests/test_openhands_context_boundary.py for the dependency contract.
+        # Keep this message rescue ahead of provider-request rejection fallbacks.
         if _contains_any(message_lower, _CONTEXT_WINDOW_PATTERNS):
             return "context_window_exceeded"
-        # MaxIterationsReached is OpenHands' event-code spelling of the same limit;
-        # our MaxTurnsExhausted (cogitate_policy) is what actually reaches here.
-        if exc_name in ("MaxTurnsExhausted", "MaxIterationsReached"):
-            return "max_turns_exhausted"
-
         if isinstance(exc, ValueError) and "no response from model" in message_lower:
             return "provider_response_invalid"
 
@@ -439,16 +437,6 @@ def classify_provider_error(exc: BaseException, provider: str) -> str:
             return "provider_response_invalid"
         if "internalservererror" in exc_name_lower or "servererror" in exc_name_lower:
             return "provider_unavailable"
-
-        if is_cloud_provider(provider) and (
-            exc_name == "LLMBadRequestError"
-            or (
-                _module_matches(exc_module, "litellm.exceptions")
-                and exc_name == "BadRequestError"
-                and status_code == 400
-            )
-        ):
-            return "provider_request_rejected"
 
         return "unknown"
     except Exception:

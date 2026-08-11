@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import Any
 
 from solstone.think import core_handshake
-from solstone.think.providers.cli import QuotaExhaustedError
 from solstone.think.providers.shared import (
     CANNED_GENERATE_MAX_OUTPUT_TOKENS,
     CANNED_GENERATE_NUM_RETRIES,
     CANNED_GENERATE_PROMPT,
     CANNED_GENERATE_THINKING_BUDGET,
     CANNED_GENERATE_TIMEOUT_S,
+    QuotaExhaustedError,
     classify_provider_error,
 )
 from solstone.think.utils import get_journal, now_ms
