@@ -3,6 +3,7 @@
 
 """Tests for the file-based Cortex agent manager."""
 
+import asyncio
 import json
 import os
 import signal
@@ -2725,6 +2726,72 @@ def test_monitor_stdout_finish_prefers_model_version(cortex_service, mock_journa
     assert mock_log_token_usage.call_args.kwargs["model"] == (
         "claude-haiku-4-5-20251001"
     )
+
+
+def test_native_finish_usage_handoffs_to_cortex_token_logging(
+    cortex_service, mock_journal, tmp_path, monkeypatch
+):
+    """A native finish usage event survives the talent-to-Cortex handoff."""
+    from solstone.think import talents
+    from solstone.think.cortex import TalentProcess
+
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+        "model_version": "gemini-native",
+    }
+    binary = tmp_path / "fake-solstone-core"
+    binary.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        "import sys\n"
+        "sys.stdin.read()\n"
+        f"print({json.dumps({'event': 'finish', 'terminal': True, 'result': 'done', 'usage': usage})!r}, flush=True)\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o700)
+    monkeypatch.setattr("solstone.think.cogitate_client._native_binary", lambda: binary)
+
+    talent_events: list[dict] = []
+    asyncio.run(
+        talents._execute_with_tools(
+            {
+                "provider": "google",
+                "model": "gemini-test",
+                "name": "native_usage",
+                "type": "cogitate",
+                "prompt": "test",
+                "output": "md",
+                "output_path": None,
+            },
+            talent_events.append,
+        )
+    )
+
+    use_id = "native_usage_handoff"
+    active_path = mock_journal / "talents" / f"{use_id}_active.jsonl"
+    active_path.touch()
+    cortex_service.use_requests = {
+        use_id: {
+            "event": "request",
+            "name": "native_usage",
+            "model": "gemini-test",
+            "type": "cogitate",
+        }
+    }
+    mock_process = MagicMock()
+    mock_process.stdout = MockPipe([json.dumps(talent_events[0]) + "\n"])
+    mock_process.wait.return_value = 0
+    agent = TalentProcess(use_id, mock_process, active_path)
+
+    with patch("solstone.think.models.log_token_usage") as mock_log_token_usage:
+        with patch.object(cortex_service, "_complete_use_file"):
+            cortex_service._monitor_stdout(agent)
+
+    mock_log_token_usage.assert_called_once()
+    assert mock_log_token_usage.call_args.kwargs["usage"] == usage
+    assert mock_log_token_usage.call_args.kwargs["model"] == "gemini-native"
 
 
 def test_monitor_stdout_finish_falls_back_to_request_model(

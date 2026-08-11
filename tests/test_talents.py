@@ -12,13 +12,13 @@ from typing import Any
 import pytest
 
 from solstone.think import talents
-from solstone.think.providers.cli import QuotaExhaustedError
 from solstone.think.providers import brain_state as brain_state_module
 from solstone.think.providers.brain_state import (
     begin_brain_refresh,
     finish_brain_refresh,
     inspect_brain_state,
 )
+from solstone.think.providers.cli import QuotaExhaustedError
 
 NOW = datetime.now(timezone.utc)
 
@@ -99,16 +99,17 @@ def _generate_config(output_path: Path) -> dict[str, Any]:
 def _install_native_cogitate_event(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    event: dict[str, Any],
+    event: dict[str, Any] | list[dict[str, Any]],
 ) -> None:
-    """Point the thin client at a temporary one-event native executable."""
+    """Point the thin client at a temporary native event executable."""
     binary = tmp_path / "fake-solstone-core-cogitate"
-    event_line = json.dumps(event)
+    events = event if isinstance(event, list) else [event]
+    event_lines = "\n".join(f"print({json.dumps(item)!r}, flush=True)" for item in events)
     binary.write_text(
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "sys.stdin.read()\n"
-        f"print({event_line!r}, flush=True)\n",
+        f"{event_lines}\n",
         encoding="utf-8",
     )
     binary.chmod(0o700)
@@ -201,20 +202,19 @@ def test_native_cogitate_finish_runs_post_hooks_and_persists_clean_output(
         "load_post_hook",
         lambda _config: lambda _result, _context: '{"answer": "post-hook"}',
     )
-
-    async def run_cogitate(config: dict[str, Any], on_event: Any) -> str:
-        del config
-        on_event({"event": "start", "provider": "google"})
-        on_event(
+    _install_native_cogitate_event(
+        monkeypatch,
+        tmp_path,
+        [
+            {"event": "start", "provider": "google"},
             {
                 "event": "finish",
+                "terminal": True,
                 "result": '{"answer": "raw"}',
                 "usage": {"output_tokens": talents.MIN_OUTPUT_TOKENS},
-            }
-        )
-        return '{"answer": "raw"}'
-
-    monkeypatch.setattr("solstone.think.cogitate_client.run_cogitate", run_cogitate)
+            },
+        ],
+    )
     events: list[dict[str, Any]] = []
 
     asyncio.run(talents._execute_with_tools(config, events.append))
