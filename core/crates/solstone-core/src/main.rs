@@ -19,13 +19,14 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
-    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP,
-    FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
-    GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE,
-    IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP,
-    IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, IndexerCommand, IndexerCountsOptions,
-    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions,
+    CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE,
+    CONTRACT_HELP, CONTRACT_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions,
+    EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE,
+    GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions,
+    IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE,
+    IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, IndexerCommand,
+    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
@@ -35,6 +36,7 @@ use solstone_core_cli::{
     TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
+mod contract;
 mod facet_candidates;
 mod identity;
 mod navigate;
@@ -152,6 +154,31 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         Ok(Command::Identity(command)) => identity::run(command),
+        Ok(Command::Contract(ContractCommand::Build { check, root })) => {
+            contract::run_build(check, root)
+        }
+        Ok(Command::Contract(ContractCommand::Check { journals, root })) => {
+            contract::run_check(journals, root)
+        }
+        Ok(Command::ContractHelp) => {
+            print!("{CONTRACT_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ContractUsage) => contract_usage(CONTRACT_USAGE, "journal contract"),
+        Ok(Command::ContractBuildHelp) => {
+            print!("{CONTRACT_BUILD_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ContractBuildUsage) => {
+            contract_usage(CONTRACT_BUILD_USAGE, "journal contract build")
+        }
+        Ok(Command::ContractCheckHelp) => {
+            print!("{CONTRACT_CHECK_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ContractCheckUsage) => {
+            contract_usage(CONTRACT_CHECK_USAGE, "journal contract check")
+        }
         Ok(Command::IdentityHelp) => {
             print!("{IDENTITY_HELP}");
             ExitCode::SUCCESS
@@ -237,6 +264,12 @@ fn main() -> ExitCode {
 }
 
 fn identity_usage(usage: &str, command: &str) -> ExitCode {
+    eprint!("{usage}");
+    eprintln!("{command}: error: invalid arguments");
+    ExitCode::from(2)
+}
+
+fn contract_usage(usage: &str, command: &str) -> ExitCode {
     eprint!("{usage}");
     eprintln!("{command}: error: invalid arguments");
     ExitCode::from(2)

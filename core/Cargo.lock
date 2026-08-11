@@ -2367,6 +2367,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "image",
+ "jsonschema",
  "nix",
  "rcgen",
  "rusqlite",

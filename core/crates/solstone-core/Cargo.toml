@@ -97,6 +97,7 @@ solstone-core-transfer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 serde_json.workspace = true
+jsonschema.workspace = true
 nix = { workspace = true, features = ["process", "signal"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
