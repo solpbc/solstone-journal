@@ -82,10 +82,37 @@ fn ac1_every_declared_task_verb_has_root_native_or_empty_preset_process_authorit
         if root_commands.contains(&format!("\"{token}\"")) {
             continue;
         }
-        let start = JOURNAL_PROCESSES.find(&marker).unwrap_or_else(|| {
+        // A token satisfies this three ways, and the name says so: a native
+        // root command, a NATIVE dispatch spec, or a Python ProcessSpec whose
+        // preset is empty so the task queue's own argv passes through intact.
+        //
+        // Search the two tables separately. A bare `find` returns whichever
+        // occurrence comes first in the file, and NATIVE_PROCESS_SPECS is
+        // declared above PROCESS_SPECS — so once a verb is cut native, the
+        // native row is what a single search finds, and native rows legitimately
+        // carry a preset (that is how the subcommand is named). Judging a
+        // natively-dispatched verb by the empty-preset rule fails it for
+        // satisfying the criterion a different, allowed way.
+        let native_table = JOURNAL_PROCESSES
+            .find("NATIVE_PROCESS_SPECS")
+            .map(|start| {
+                let rest = &JOURNAL_PROCESSES[start..];
+                &rest[..rest.find("\n];").map_or(rest.len(), |end| end)]
+            })
+            .unwrap_or("");
+        if native_table.contains(&marker) {
+            continue;
+        }
+        let python_table_start = JOURNAL_PROCESSES
+            .find("const PROCESS_SPECS")
+            .unwrap_or_else(|| {
+                panic!("journal process table boundary");
+            });
+        let python_table = &JOURNAL_PROCESSES[python_table_start..];
+        let start = python_table.find(&marker).unwrap_or_else(|| {
             panic!("task token {token} has no native root or process authority")
         });
-        let entry = &JOURNAL_PROCESSES[start..];
+        let entry = &python_table[start..];
         let end = entry.find("ProcessSpec {").unwrap_or(entry.len());
         assert!(
             entry[..end].contains("preset_argv: EMPTY"),
