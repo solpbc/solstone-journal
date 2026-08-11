@@ -1157,11 +1157,16 @@ fn download_verified_policy_accepts_uppercased_allowed_host() {
 
 #[test]
 fn download_verified_policy_refuses_userinfo_by_actual_host() {
+    let error = archive::DownloadPolicy::for_test(&["allowed.test"], &["https"], 3)
+        .permits("https://allowed.test@evil.example/x")
+        .unwrap_err();
     assert!(matches!(
-        archive::DownloadPolicy::for_test(&["allowed.test"], &["https"], 3)
-            .permits("https://allowed.test@evil.example/x"),
-        Err(archive::ArchiveError::HostRefused { host }) if host == "evil.example"
+        &error,
+        archive::ArchiveError::HostRefused { host } if host == "evil.example"
     ));
+    let rendered = error.to_string();
+    assert!(rendered.contains("evil.example"));
+    assert!(!rendered.contains("updates.solstone.app"));
 }
 
 #[test]
@@ -1208,9 +1213,12 @@ fn download_verified_refuses_second_redirect_target() {
     .unwrap_err();
     server.join().unwrap();
     assert!(matches!(
-        error,
+        &error,
         archive::ArchiveError::HostRefused { host } if host == "evil.example"
     ));
+    let rendered = error.to_string();
+    assert!(rendered.contains("evil.example"));
+    assert!(!rendered.contains("127.0.0.1"));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1369,11 +1377,31 @@ fn dispatch_run_local_surfaces_download_host_refusal() {
     let root = temp("dispatch-download-host-refusal");
     let policy = archive::DownloadPolicy::for_test(&[], &["http"], 3);
     let _guard = super::override_download_policy_for_test(policy);
+    let key = pins::platform_key();
+    let artifact = match local_backend_choice(&root, None).backend {
+        crate::Backend::Cuda => {
+            super::resolve_catalog_artifact_by_key("llama-server-cuda", &key)
+        }
+        crate::Backend::Vulkan => {
+            let (_, filename, _, _) = pins::vulkan_pin(&key).unwrap();
+            super::resolve_catalog_artifact("llama-server-vulkan", filename)
+        }
+    }
+    .unwrap();
+    let refused_host = artifact
+        .upstream_url
+        .split_once("://")
+        .unwrap()
+        .1
+        .split('/')
+        .next()
+        .unwrap();
     let error = dispatch(InstallVerb::RunLocal, json!({"journal": root})).unwrap_err();
     let body = error.envelope.error.unwrap();
     assert_eq!(body.kind, "download");
     assert_eq!(body.reason_code, "download_host_refused");
     assert!(body.message.starts_with("download host refused: "));
+    assert!(body.message.contains(refused_host));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1869,15 +1897,93 @@ fn download_verified_callers(source: &str) -> Result<Vec<String>, String> {
     Ok(callers)
 }
 
+const DOWNLOAD_VERIFIED_SOURCE_INVENTORY: &[(&str, &str)] = &[
+    ("install", include_str!("../install.rs")),
+    ("archive", include_str!("archive.rs")),
+    ("fingerprint", include_str!("fingerprint.rs")),
+    ("lease", include_str!("lease.rs")),
+    ("manifest", include_str!("manifest.rs")),
+    ("mlx", include_str!("mlx.rs")),
+    ("pins", include_str!("pins.rs")),
+    ("readiness", include_str!("readiness.rs")),
+    ("status", include_str!("status.rs")),
+    ("tests", include_str!("tests.rs")),
+];
+
+fn declared_install_modules(source: &str) -> Result<BTreeSet<String>, String> {
+    let mut modules = BTreeSet::new();
+    for line in source.lines() {
+        let declaration = line.trim();
+        let Some(name) = ["pub(crate) mod ", "pub mod ", "mod "]
+            .iter()
+            .find_map(|prefix| declaration.strip_prefix(prefix))
+            .and_then(|name| name.strip_suffix(';'))
+        else {
+            continue;
+        };
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|character| character == '_' || character.is_alphanumeric())
+        {
+            return Err(format!(
+                "unclassifiable install module declaration: {declaration}"
+            ));
+        }
+        if !modules.insert(name.to_owned()) {
+            return Err(format!("duplicate install module declaration: {name}"));
+        }
+    }
+    if modules.is_empty() {
+        return Err("install module declaration parser found no modules".to_owned());
+    }
+    Ok(modules)
+}
+
+fn check_install_module_inventory(
+    install_source: &str,
+    inventory: &[(&str, &str)],
+) -> Result<(), String> {
+    let modules = declared_install_modules(install_source)?;
+    let mut registered = BTreeSet::new();
+    for (source_name, _) in inventory {
+        if !registered.insert(*source_name) {
+            return Err(format!(
+                "duplicate install source inventory entry: {source_name}"
+            ));
+        }
+    }
+    if !registered.contains("install") {
+        return Err("install.rs is missing from the source inventory".to_owned());
+    }
+    for module in &modules {
+        if !registered.contains(module.as_str()) {
+            return Err(format!(
+                "declared install module missing from source inventory: {module}"
+            ));
+        }
+    }
+    for source_name in &registered {
+        if *source_name != "install" && !modules.contains(*source_name) {
+            return Err(format!(
+                "source inventory entry has no declared install module: {source_name}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn check_download_verified_inventory(source_name: &str, source: &str) -> Result<(), String> {
     let expected: &[&str] = match source_name {
-        "install.rs" => &[
+        "install" => &[
             "run_local_install",
             "run_parakeet_install",
             "install_parakeet_model",
             "install_model",
         ],
-        "install/tests.rs" => &["download_verified_test_call"],
+        "tests" => &["download_verified_test_call"],
+        "archive" | "fingerprint" | "lease" | "manifest" | "mlx" | "pins" | "readiness"
+        | "status" => &[],
         _ => {
             return Err(format!(
                 "unknown download-call inventory source: {source_name}"
@@ -1900,17 +2006,26 @@ fn check_download_verified_inventory(source_name: &str, source: &str) -> Result<
 
 #[test]
 fn download_verified_call_inventory_is_closed() {
-    for (source_name, source) in [
-        ("install.rs", include_str!("../install.rs")),
-        ("install/tests.rs", include_str!("tests.rs")),
-    ] {
+    check_install_module_inventory(
+        include_str!("../install.rs"),
+        DOWNLOAD_VERIFIED_SOURCE_INVENTORY,
+    )
+    .unwrap();
+    for (source_name, source) in DOWNLOAD_VERIFIED_SOURCE_INVENTORY {
         check_download_verified_inventory(source_name, source).unwrap();
     }
 
     let needle = ["archive::download_verified", "("].concat();
     let synthetic = format!("\nfn unclassified() {{ {needle} }}");
-    assert!(check_download_verified_inventory("install.rs", &synthetic).is_err());
-    assert!(check_download_verified_inventory("unexpected.rs", "").is_err());
+    assert!(check_download_verified_inventory("install", &synthetic).is_err());
+    assert!(check_download_verified_inventory("unexpected", "").is_err());
+    assert!(
+        check_install_module_inventory(
+            "pub mod archive;\npub(crate) mod tests;",
+            &[("install", ""), ("archive", "")],
+        )
+        .is_err()
+    );
 }
 
 #[test]
