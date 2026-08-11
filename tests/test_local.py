@@ -534,18 +534,13 @@ def test_run_cogitate_byo_acquires_permit_and_records_no_telemetry(monkeypatch):
     records = []
     monkeypatch.setattr(local_admission, "record_local_inference", records.append)
 
-    async def fake_cogitate(*_args, slot_lease=None, **_kwargs):
-        assert slot_lease is not None
-        slot_lease.yield_slot()
-        with local_admission.acquire_local_slot(1, 0.1) as nested:
-            assert nested.slot_index == 0
-        slot_lease.reacquire()
+    async def fake_cogitate(*_args, **_kwargs):
         with pytest.raises(local_admission.LocalAdmissionTimeout):
             local_admission.acquire_local_slot(1, 0.03)
         return "ok"
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fake_cogitate,
     )
 
@@ -577,13 +572,12 @@ def test_run_cogitate_local_delegated_non_responsive_single_event(
         "raw": [{"reason_code": NON_RESPONSIVE_REASON_CODE}],
     }
 
-    async def fake_cogitate(*_args, on_event=None, slot_lease=None, **_kwargs):
-        assert slot_lease is not None
+    async def fake_cogitate(*_args, on_event=None, **_kwargs):
         on_event(terminal_event)
         return None
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fake_cogitate,
     )
     events: list[dict] = []
@@ -613,14 +607,13 @@ def test_run_cogitate_byo_keeps_permit_for_non_sol_work(monkeypatch):
 
     from solstone.think.providers import local_admission
 
-    async def fake_cogitate(*_args, slot_lease=None, **_kwargs):
-        assert slot_lease is not None
+    async def fake_cogitate(*_args, **_kwargs):
         with pytest.raises(local_admission.LocalAdmissionTimeout):
             local_admission.acquire_local_slot(1, 0.03)
         return "ok"
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fake_cogitate,
     )
 
@@ -631,7 +624,7 @@ def test_run_cogitate_byo_keeps_permit_for_non_sol_work(monkeypatch):
 
 
 @pytest.mark.parametrize("bundled", [False, True])
-def test_run_cogitate_reacquire_timeout_preserves_exact_type(
+def test_run_cogitate_keeps_admission_held_for_native_client(
     monkeypatch,
     bundled,
 ):
@@ -651,27 +644,20 @@ def test_run_cogitate_reacquire_timeout_preserves_exact_type(
 
     from solstone.think.providers import local_admission
 
-    async def fake_cogitate(*_args, slot_lease=None, **_kwargs):
-        assert slot_lease is not None
-        slot_lease.yield_slot()
-        holder = local_admission.acquire_local_slot(1, 0.1)
-        try:
-            slot_lease.reacquire()
-        finally:
-            holder.release()
+    async def fake_cogitate(*_args, **_kwargs):
+        with pytest.raises(local_admission.LocalAdmissionTimeout):
+            local_admission.acquire_local_slot(1, 0.03)
+        return "ok"
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fake_cogitate,
     )
 
-    with pytest.raises(local_admission.LocalAdmissionTimeout) as exc:
-        asyncio.run(
-            provider.run_cogitate({"model": LOCAL_MODEL, "timeout_seconds": 0.03})
-        )
-
-    assert exc.type is local_admission.LocalAdmissionTimeout
-    assert exc.value.reason_code == "local_queue_timeout"
+    assert (
+        asyncio.run(provider.run_cogitate({"model": LOCAL_MODEL, "timeout_seconds": 1}))
+        == "ok"
+    )
     assert not list(Path(local_admission._admission_dir()).glob("wait-*.ticket"))
 
 
@@ -693,7 +679,7 @@ def test_run_cogitate_byo_queue_timeout_preserves_exact_type(monkeypatch):
     from solstone.think.providers import local_admission
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fail_if_called,
     )
 
@@ -739,7 +725,7 @@ def test_run_cogitate_confidential_with_stray_slots_skips_admission(monkeypatch)
     monkeypatch.setattr(local_endpoint, "read_journal_config", lambda: config)
     monkeypatch.setattr(local_admission, "acquire_local_slot_async", fail_acquire)
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fake_cogitate,
     )
 
@@ -767,7 +753,7 @@ def test_run_cogitate_byo_classified_error_uses_fixed_copy_and_redacts(
         lambda: (_ for _ in ()).throw(AssertionError("connect not expected")),
     )
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fail_cogitate,
     )
 
@@ -814,7 +800,7 @@ def test_run_cogitate_byo_context_error_event_caps_error_field(monkeypatch):
         lambda: (_ for _ in ()).throw(AssertionError("connect not expected")),
     )
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fail_cogitate,
     )
 
@@ -860,7 +846,7 @@ def test_run_cogitate_byo_connection_error_records_no_success_telemetry(
         raise redact_exception_credential(exc, sentinel)
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fail_cogitate,
     )
 
@@ -905,7 +891,7 @@ def test_run_cogitate_talent_hook_error_bypasses_local_error_event(monkeypatch):
         lambda: (_ for _ in ()).throw(AssertionError("connect not expected")),
     )
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
+        "solstone.think.cogitate_client.run_cogitate",
         fail_cogitate,
     )
 
