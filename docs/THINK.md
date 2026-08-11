@@ -190,12 +190,10 @@ talent-specific provider route. Configure cloud API keys in the `env` section of
 ### Provider modules
 
 The registry in `solstone/think/providers/__init__.py` maps cloud provider names
-to `solstone/think/providers/openhands.py` and maps `local` to
+to `solstone/think/cogitate_client.py` and maps `local` to
 `solstone/think/providers/local.py`. Effective provider modules expose:
 
-- `run_generate()` - Sync text generation, returns `GenerateResult`
-- `run_agenerate()` - Async text generation, returns `GenerateResult`
-- `run_cogitate()` - Tool-calling execution via `sol call` commands and event streaming
+- `run_cogitate()` - Native tool-calling execution via `sol call` commands and event streaming
 
 For direct LLM calls, use `think.models.generate()` or `think.models.agenerate()`;
 they route through the active brain.
@@ -263,15 +261,14 @@ Cortex (orchestrator)
 
 | Provider | Module | Features |
 |----------|--------|----------|
-| OpenAI | `solstone/think/providers/openhands.py` | GPT models via OpenHands/LiteLLM |
-| Google | `solstone/think/providers/openhands.py` | Gemini models via OpenHands/LiteLLM |
-| Anthropic | `solstone/think/providers/openhands.py` | Claude via OpenHands/LiteLLM |
+| OpenAI | `solstone/think/cogitate_client.py` | GPT models via native one-shot cogitate |
+| Google | `solstone/think/cogitate_client.py` | Gemini models via native one-shot cogitate |
+| Anthropic | `solstone/think/cogitate_client.py` | Claude via native one-shot cogitate |
 | Local | `solstone/think/providers/local.py` | Bundled llama-server, BYO OpenAI-compatible endpoint, and confidential local endpoint |
 
-Effective provider modules implement `run_generate()`, `run_agenerate()`, and
-`run_cogitate()` functions. Cloud vendor leaf modules implement generate only;
-OpenHands owns cloud cogitate. See [PROVIDERS.md](PROVIDERS.md) for implementation
-details.
+Generation and cloud cogitate are native clients; the local wrapper adds only
+local admission around the native cogitate call. See [PROVIDERS.md](PROVIDERS.md)
+for implementation details.
 
 ## Key Components
 

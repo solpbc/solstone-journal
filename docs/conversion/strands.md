@@ -204,7 +204,7 @@ Talent output landing durably. Carries the failure semantics: retries, back-offs
 🔴 **`_active.jsonl` is not only a talent convention — it is a deletion gate in two other subsystems.** Seven production readers, including `think/log_retention.py:368` (skips pruning them) and **`think/retention.py:199` (treats presence as "segment incomplete, do not purge raw media")**. A cleaner claim filename is a format change on the writer side and a **silent capability loss on the deletion side.**
 
 ### `S:thinking:local`
-**Connects** `P-thinking` → `P-local` · **Owner** `P-thinking` · **Tier** schema + fixture
+**Connects** `P-thinking` → `P-local` · **Owner** `P-local` · **Tier** schema + fixture
 
 The local model lane. ⚠ Not a types boundary — it is loopback HTTP **plus a durable record**. See
 [`plates.md`](plates.md) § `P-local` for what must and must not be carried across it.
@@ -238,9 +238,10 @@ in `core/fixtures/local_contract.json`.
 success, and the caller is the one that must notice; it is also normalised on the way through, so a
 consumer matching the endpoint's own spelling sees nothing wrong.
 
-⚠ **The inference telemetry is part of this strand's durable surface, not a log.** One row per call —
-success and every error path — carrying the queue wait, the admission slot, the serving capacity and its
-source, the prompt-cache state, the server timings, the retry index, the outcome and the reason code.
+⚠ **Bundled-local cogitate inference telemetry is part of this strand's durable surface, not a log.**
+It writes one row per run — success and every error path — carrying the queue wait, the admission slot,
+the serving capacity and its source, the prompt-cache state, the server timings, the retry index, the
+outcome and the reason code. BYO and confidential local variants do not write this telemetry.
 
 🆕 🔴 **CORRECTED 2026-08-09 — "one row per call" is FALSE on the `generate` path, and has been since
 the cut.** Measured three ways. **(1)** The only writer of `health/local-inference/YYYYMMDD.jsonl`
