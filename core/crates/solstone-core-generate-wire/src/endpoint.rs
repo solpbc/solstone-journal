@@ -323,11 +323,9 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         max_tokens,
         json_output: request.json_output,
         json_schema: request.json_schema.as_ref(),
-        // The reference gates the llama-server sampling controls on
-        // `is_bundled or is_confidential`, not on `is_bundled` alone. The
-        // confidential lane sends this request over a directly attested
-        // RA-TLS channel.
-        include_qwen_sampling_controls: endpoint.is_confidential,
+        // Bundled and confidential lanes use llama-server-specific controls;
+        // arbitrary BYO endpoints may not support them.
+        include_qwen_sampling_controls: endpoint.is_bundled || endpoint.is_confidential,
     };
     let mut body = match build_converse_request_body(&local_request, input_budget_tokens) {
         Ok(body) => body,
@@ -401,6 +399,9 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
         Err(LocalConverseError::ToolCallsMissing) => return converse_failure("tool_calls_missing"),
         Err(LocalConverseError::ToolCallArgumentsInvalid) => {
             return converse_failure("tool_call_arguments_invalid");
+        }
+        Err(LocalConverseError::ToolCallSynthesizedAsProse) => {
+            return converse_failure("tool_call_synthesized_as_prose");
         }
     };
     let offered = tools
@@ -500,10 +501,9 @@ fn prepare_endpoint_request(
             max_tokens,
             request.json_output,
             request.json_schema.as_ref(),
-            // The reference gates the llama-server sampling controls on
-            // `is_bundled or is_confidential`, not on `is_bundled` alone. The
-            // confidential lane sends this request over a directly attested
-            // RA-TLS channel.
+            // Bundled generate never reaches this endpoint path. Only the
+            // confidential lane's directly attested channel is distinguished
+            // from a plain BYO endpoint here.
             endpoint.is_confidential,
         ),
         input_budget,
@@ -679,7 +679,7 @@ impl EndpointRuntime {
     }
 }
 
-fn configured_served_context_window(config: &Map<String, Value>) -> Option<u32> {
+pub(crate) fn configured_served_context_window(config: &Map<String, Value>) -> Option<u32> {
     config
         .get("providers")
         .and_then(Value::as_object)
@@ -917,6 +917,7 @@ mod tests {
             credential: None,
             parallel_slots: Some(1),
             is_confidential: false,
+            is_bundled: false,
         }
     }
 
@@ -929,24 +930,49 @@ mod tests {
     ];
 
     #[test]
-    fn qwen_sampling_controls_follow_the_confidential_flag() {
-        // This directly checks the flag mapping for both values at the
-        // convenient request-preparation boundary. The confidential lane's
-        // wire-level coverage is in confidential.rs.
-        for is_confidential in [false, true] {
+    fn qwen_sampling_controls_follow_the_endpoint_lane_flags() {
+        for (is_bundled, is_confidential, expected) in [
+            (false, false, false),
+            (true, false, true),
+            (false, true, true),
+        ] {
             let mut endpoint = endpoint("http://127.0.0.1:1");
+            endpoint.is_bundled = is_bundled;
             endpoint.is_confidential = is_confidential;
-            let prepared = prepare_endpoint_request(&request(None), &endpoint, 512, None)
-                .expect("prepared endpoint request");
-            let body = prepared.body.as_object().expect("body is an object");
+            let journal = journal_path();
+            let request = request(None);
+            let messages = [];
+            let tools = [];
+            let runtime = EndpointRuntime::default();
+            let config = served_window_config();
+            let mut transport = StubTransport {
+                post_result: Some(Ok(response())),
+                ..Default::default()
+            };
+            endpoint_converse_with(
+                EndpointConverseCall {
+                    request: &request,
+                    messages: &messages,
+                    tools: &tools,
+                    journal_path: &journal,
+                    endpoint: &endpoint,
+                    config: &config,
+                    runtime: &runtime,
+                },
+                &mut transport,
+                Instant::now(),
+            )
+            .expect("converse request succeeds");
+            let body = transport.posts.remove(0);
             for field in QWEN_SAMPLING_FIELDS {
                 assert_eq!(
-                    body.contains_key(field),
-                    is_confidential,
-                    "is_confidential={is_confidential}: {field}"
+                    body.get(field).is_some(),
+                    expected,
+                    "is_bundled={is_bundled}, is_confidential={is_confidential}: {field}"
                 );
             }
-            assert!(body.contains_key("model"), "model is always present");
+            assert!(body.get("model").is_some(), "model is always present");
+            let _ = std::fs::remove_dir_all(journal);
         }
     }
 
@@ -1846,6 +1872,7 @@ mod tests {
             "provider_response_invalid",
             "tool_calls_missing",
             "tool_call_arguments_invalid",
+            "tool_call_synthesized_as_prose",
             "local_endpoint_unreachable",
             "local_capacity_exhausted",
             "local_queue_timeout",

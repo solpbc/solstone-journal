@@ -45,6 +45,7 @@ pub enum LocalConverseError {
     ResponseInvalid,
     ToolCallsMissing,
     ToolCallArgumentsInvalid,
+    ToolCallSynthesizedAsProse,
 }
 
 /// Build an OpenAI-compatible chat-completions request body.
@@ -112,6 +113,9 @@ pub fn parse_converse_response(data: &Value) -> Result<LocalConverseResponse, Lo
     } else {
         normalize_converse_finish_reason(choice.get("finish_reason"))?
     };
+    if tool_calls.is_empty() && finish_reason == "stop" && text.contains("<tool_call>") {
+        return Err(LocalConverseError::ToolCallSynthesizedAsProse);
+    }
     Ok(LocalConverseResponse {
         text,
         tool_calls,
@@ -416,6 +420,29 @@ mod tests {
             })),
             Err(LocalConverseError::ToolCallsMissing)
         );
+    }
+
+    #[test]
+    fn parser_rejects_synthesized_tool_call_prose_only_on_stop() {
+        let marker = "<tool_call>{\"name\":\"weather\"}</tool_call>";
+        assert_eq!(
+            parse_converse_response(&json!({
+                "choices": [{"message": {"content": marker}, "finish_reason": "stop"}],
+            })),
+            Err(LocalConverseError::ToolCallSynthesizedAsProse)
+        );
+        for finish_reason in ["max_tokens", "content_filter"] {
+            let response = parse_converse_response(&json!({
+                "choices": [{"message": {"content": marker}, "finish_reason": finish_reason}],
+            }))
+            .expect("non-stop marker is ordinary text");
+            assert_eq!(response.finish_reason, finish_reason);
+        }
+        let response = parse_converse_response(&json!({
+            "choices": [{"message": {"content": "ordinary text"}, "finish_reason": "stop"}],
+        }))
+        .expect("ordinary stop text");
+        assert_eq!(response.finish_reason, "stop");
     }
 
     #[test]

@@ -1801,7 +1801,8 @@ fn run_cogitate_one_shot() -> ExitCode {
     let (_, lane) = solstone_core_generate_wire::resolve_lane(&config);
     let mut sink = StdoutEventSink;
     let mut provider = match lane {
-        lane @ (solstone_core_generate_wire::LaneOutcome::ByoEndpoint(_)
+        lane @ (solstone_core_generate_wire::LaneOutcome::BundledLocal
+        | solstone_core_generate_wire::LaneOutcome::ByoEndpoint(_)
         | solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(_)
         | solstone_core_generate_wire::LaneOutcome::Anthropic
         | solstone_core_generate_wire::LaneOutcome::OpenAi
@@ -1823,15 +1824,6 @@ fn run_cogitate_one_shot() -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
-        solstone_core_generate_wire::LaneOutcome::BundledLocal => {
-            emit_cogitate_preflight_error(
-                &mut sink,
-                &request,
-                "bundled_local_unavailable",
-                "the bundled local engine has no cogitate converse arm",
-            );
-            return ExitCode::SUCCESS;
-        }
         solstone_core_generate_wire::LaneOutcome::UnimplementedLane => {
             emit_cogitate_preflight_error(
                 &mut sink,
@@ -1841,6 +1833,8 @@ fn run_cogitate_one_shot() -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // `resolve_lane` cannot return attestation failures: confidential
+        // converse reports those through `ConverseFailure` inside its arm.
         _ => unreachable!("resolve_lane never returns a failure outcome"),
     };
     let mut slot = solstone_core_cogitate_tools::NoopSlotLease;

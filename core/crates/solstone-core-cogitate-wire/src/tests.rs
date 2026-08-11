@@ -365,6 +365,10 @@ fn ambient_provider_key_does_not_bypass_missing_journal_credential() {
 fn journal_configuration_selects_each_executable_cogitate_arm() {
     let cases = [
         (
+            json!({"providers": {"active": {"provider": "local"}}}),
+            "bundled",
+        ),
+        (
             json!({"providers": {"active": {"provider": "local"}, "local": {"endpoint_url": "http://endpoint", "served_model_id": "served"}}}),
             "endpoint",
         ),

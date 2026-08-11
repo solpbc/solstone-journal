@@ -7,7 +7,9 @@ use serde_json::Value;
 
 pub(crate) fn converse_failure_flags(reason_code: &str) -> (bool, bool) {
     match reason_code {
-        "tool_calls_missing" | "tool_call_arguments_invalid" => (true, false),
+        "tool_calls_missing" | "tool_call_arguments_invalid" | "tool_call_synthesized_as_prose" => {
+            (true, false)
+        }
         known => {
             let entry = solstone_core_generate::contract()["reason_codes"]
                 .as_array()

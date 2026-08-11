@@ -26,6 +26,7 @@ pub struct DispatchConverseProvider {
 }
 
 enum ConverseArm {
+    Bundled,
     Endpoint(ByoEndpoint),
     Confidential(ByoEndpoint),
     Google,
@@ -42,6 +43,7 @@ impl DispatchConverseProvider {
     ) -> Option<Self> {
         set_local_context_window(&mut config, request.context_window);
         let arm = match lane {
+            LaneOutcome::BundledLocal => ConverseArm::Bundled,
             LaneOutcome::ByoEndpoint(mut endpoint) => {
                 overrides.apply_to(&mut endpoint);
                 ConverseArm::Endpoint(endpoint)
@@ -99,6 +101,7 @@ impl DispatchConverseProvider {
     #[cfg(test)]
     pub(crate) const fn arm_name(&self) -> &'static str {
         match self.arm {
+            ConverseArm::Bundled => "bundled",
             ConverseArm::Endpoint(_) => "endpoint",
             ConverseArm::Confidential(_) => "confidential",
             ConverseArm::Google => "google",
@@ -119,6 +122,17 @@ impl ConverseProvider for DispatchConverseProvider {
     ) -> Result<ProviderResponse, ConverseFailure> {
         let request = self.request(system_instruction, deadline);
         let (turn, arm) = match &mut self.arm {
+            ConverseArm::Bundled => (
+                solstone_core_generate_wire::bundled_converse(
+                    &request,
+                    messages,
+                    tools,
+                    &self.journal_root,
+                    &self.config,
+                    &self.endpoint_runtime,
+                )?,
+                "bundled",
+            ),
             ConverseArm::Endpoint(endpoint) => {
                 endpoint.served_model_id = model.to_owned();
                 (
