@@ -29,6 +29,22 @@ pub fn render_browser_text(records: &[JsonObject]) -> String {
         .join("\n\n")
 }
 
+/// Render one parsed morning briefing as its owner-facing Markdown document.
+pub fn render_morning_briefing_text(briefing: &JsonObject) -> String {
+    let produced = produce_chunks_by_shape(
+        Family::MorningBriefing,
+        None,
+        std::slice::from_ref(briefing),
+        &ChatLabels::default(),
+    );
+    produced
+        .chunks
+        .into_iter()
+        .map(|chunk| chunk.content)
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +100,18 @@ mod tests {
 
         assert!(case["header"].is_null());
         assert_eq!(render_browser_text(&records), expected);
+    }
+
+    #[test]
+    fn projection_matches_committed_document() {
+        let briefing: JsonObject = serde_json::from_str(
+            r#"{"metadata":{"coverage_preamble":"\n\nCoverage starts.\n\nCoverage continues.\n\n\n"},"your_day":[{"time":"09:00","text":"Timed item."},{"text":"Untimed item."},{"time":"10:00","text":""}],"yesterday":[],"needs_attention":[42,{"text":"Review the report."}],"forward_look":["Plan next week."],"reading":[{"facet":"personal"},{"summary":"Loose summary."},{"facet":"work","summary":"Newsletter."}]}"#,
+        )
+        .expect("briefing fixture input parses");
+        // Committed text fixtures end with a newline; rendered documents do not.
+        let expected = include_str!("../../../../fixtures/morning_briefing_projection.md")
+            .trim_end_matches('\n');
+
+        assert_eq!(render_morning_briefing_text(&briefing), expected);
     }
 }

@@ -26,7 +26,7 @@ use crate::chunker::format_markdown;
 use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns_for_root};
 
 pub use crate::matcher::PatternRoot;
-pub use projections::{render_browser_text, render_raw_screen_text};
+pub use projections::{render_browser_text, render_morning_briefing_text, render_raw_screen_text};
 pub use talent_projections::{
     TalentTextProjection, iter_talent_text_projections, talent_projection_map,
 };
