@@ -56,6 +56,51 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, SnapshotEntry> {
 }
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+const W3C_CHECK_NAMES: &[&str] = &[
+    "journal_sync",
+    "journal_caught_up",
+    "journal_maint_tasks",
+    "task_pace",
+    "brain",
+    "capture_health",
+    "observer_binding",
+    "observer_delivery_stall",
+    "observer_ingest_health",
+    "orphan_segment_pdf",
+    "default_stt_ready",
+    "parakeet_cpp_stt_ready",
+    "speakers_analyze_installation",
+    "skill_state",
+    "feature:pdf-import",
+    "feature:pdf-export",
+];
+
+const W3A_REAL_CHECK_NAMES: &[&str] = &[
+    "config_dir_readable",
+    "journal_dir_writable",
+    "supervisor_conflict",
+    "service_running",
+    "launchd_stale_plist",
+];
+
+// W3b landed before this branch. Like the W3c list above, these names carry
+// `deferred: None` now and so are indistinguishable from W3a's rows in the
+// registry — the classification cannot be derived after the fact and has to be
+// written down to keep the partition assertion below self-policing.
+const W3B_REAL_CHECK_NAMES: &[&str] = &[
+    "journal_leaf_exclusivity",
+    "journal_package_version",
+    "retired_host_shim",
+    "host_dependencies",
+    "disk_space",
+    "python_version",
+    "service_identity",
+    "stale_alias_symlink",
+    "sol_importable",
+    "local_bin_sol_reachable",
+];
+
 fn fixture() -> CheckContext {
     let root = std::env::temp_dir().join(format!(
         "w3c-{}-{}",
@@ -149,6 +194,52 @@ fn config_backend(context: &CheckContext, backend: &str) {
     )
     .unwrap();
 }
+fn stage_brain_ready(context: &CheckContext) {
+    let path = context.journal_path.join("health/brain.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let observed_at = "2025-12-31T23:59:00+00:00";
+    let record = serde_json::json!({
+        "schema_version": 1,
+        "revision": 3,
+        "aggregate_state": "ready",
+        "reason_code": null,
+        "active_lane": "none",
+        "active_provider": "none",
+        "active_model": null,
+        "fingerprint_sha256": null,
+        "checking": null,
+        "evidence": {
+            "configuration": {
+                "status": "ok",
+                "observed_at": observed_at,
+                "expires_at": "2026-01-02T00:00:00+00:00"
+            },
+            "lane_prerequisites": null,
+            "generate": null,
+            "cogitate": null
+        },
+        "runtime_failure_marker": null,
+        "diagnostic": {},
+        "updated_at": observed_at,
+    });
+    fs::write(path, record.to_string()).unwrap();
+}
+
+fn stage_brain_checking(context: &CheckContext) -> solstone_core_brain::BrainRefreshPermit {
+    let path = context.journal_path.join("config/journal.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, r#"{"providers":{"active":{"provider":"anthropic"}}}"#).unwrap();
+    solstone_core_brain::begin_refresh(
+        &context.journal_path,
+        context.now,
+        Some("0123456789abcdef".into()),
+        None,
+        false,
+        None,
+    )
+    .unwrap()
+    .expect("configured cloud provider starts a refresh and holds its lease")
+}
 #[cfg(unix)]
 fn executable(path: &std::path::Path, body: &str) {
     use std::os::unix::fs::PermissionsExt;
@@ -186,6 +277,291 @@ fn args() -> DoctorArgs {
         port: 5015,
         feature: None,
         readiness: false,
+    }
+}
+
+fn stage_maint(context: &CheckContext, exit_code: Option<i64>) {
+    let state = context.journal_path.join("maint/settings/reindex.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    let contents = match exit_code {
+        Some(code) => format!(
+            "{{\"event\":\"exec\",\"ts\":1}}\n{{\"event\":\"exit\",\"exit_code\":{code},\"ts\":2}}\n"
+        ),
+        None => format!(
+            "{{\"event\":\"exec\",\"ts\":{}}}\n",
+            context.now.timestamp_millis() - 300_001
+        ),
+    };
+    fs::write(state, contents).unwrap();
+}
+
+#[cfg(unix)]
+fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
+    config_backend(context, backend);
+    let artifacts = solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
+        &context.journal_path,
+        "linux",
+        "x86_64",
+    )
+    .unwrap();
+    fs::create_dir_all(artifacts.binary_cpu.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.binary_vulkan.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.model.parent().unwrap()).unwrap();
+    executable(&artifacts.binary_cpu, "#!/bin/sh\necho v\n");
+    executable(&artifacts.binary_vulkan, "#!/bin/sh\necho v\n");
+    fs::write(&artifacts.model, "model").unwrap();
+    context.parakeet_server_probe_override = Some(parakeet_ready_probe);
+}
+
+#[cfg(unix)]
+fn stage_router_skills(context: &mut CheckContext, broken: bool) {
+    use std::os::unix::fs::symlink;
+
+    let root = context.journal_path.parent().unwrap().join("checkout");
+    for name in ["sol", "journal"] {
+        let source = root.join("solstone/talent").join(name);
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "x").unwrap();
+    }
+    for parent in [
+        context.journal_path.join(".claude/skills"),
+        context.journal_path.join(".agents/skills"),
+    ] {
+        fs::create_dir_all(&parent).unwrap();
+        for name in ["sol", "journal"] {
+            let source = root.join("solstone/talent").join(name);
+            symlink(
+                solstone_core_skill_state::expected_link_target(&source, &parent),
+                parent.join(name),
+            )
+            .unwrap();
+        }
+    }
+    context.checkout_root = Some(root);
+    if broken {
+        let parent = context.journal_path.join(".claude/skills");
+        fs::remove_file(parent.join("sol")).unwrap();
+    }
+}
+
+fn stage_feature(context: &mut CheckContext, name: &str, present: bool) {
+    let environment = context.journal_path.parent().unwrap().join("venv");
+    let site = environment.join("lib/python3.13/site-packages");
+    fs::create_dir_all(&site).unwrap();
+    context.python_env_root = Some(environment);
+    if present {
+        for module in match name {
+            "feature:pdf-import" => ["pypdfium2", "PIL"].as_slice(),
+            "feature:pdf-export" => ["weasyprint"].as_slice(),
+            _ => unreachable!(),
+        } {
+            let module = site.join(module);
+            fs::create_dir_all(&module).unwrap();
+            fs::write(module.join("__init__.py"), "").unwrap();
+        }
+    }
+}
+
+fn task_pace_with(tasks: serde_json::Value) -> CheckResult {
+    use serde_json::Map;
+    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
+
+    let mut context = fixture();
+    fs::create_dir_all(context.callosum_socket_path.parent().unwrap()).unwrap();
+    context.service_status_timeout = Duration::from_millis(250);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let server = runtime
+        .block_on(CallosumSocketServer::bind(&context.callosum_socket_path))
+        .unwrap();
+    let thread_context = context.clone();
+    let handle = std::thread::spawn(move || result("task_pace", &thread_context));
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_millis(100), async {
+            while server.client_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    let envelope = CallosumEnvelope {
+        tract: "supervisor".into(),
+        event: "status".into(),
+        ts: None,
+        extra: Map::from_iter([("tasks".into(), tasks)]),
+    };
+    for _ in 0..20 {
+        assert!(server.broadcast(envelope.clone()));
+        runtime.block_on(async { tokio::time::sleep(Duration::from_millis(5)).await });
+        if handle.is_finished() {
+            break;
+        }
+    }
+    let output = handle.join().unwrap();
+    runtime.block_on(server.stop());
+    output
+}
+
+#[derive(Clone, Copy)]
+enum SecondBranch {
+    DifferentStatus,
+    DifferentDetail,
+}
+
+fn coverage_result(name: &str, ok: bool) -> CheckResult {
+    match name {
+        "journal_sync" => {
+            let context = fixture();
+            if !ok {
+                fs::remove_dir_all(&context.journal_path).unwrap();
+            }
+            result(name, &context)
+        }
+        "journal_caught_up" => {
+            let context = fixture();
+            if !ok {
+                screen_segment(&context, "20251231");
+                health(
+                    &context,
+                    "20251231",
+                    &[
+                        r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
+                    ],
+                );
+                incomplete(&context, "20251231");
+            }
+            result(name, &context)
+        }
+        "journal_maint_tasks" => {
+            let context = fixture();
+            stage_maint(&context, Some(if ok { 0 } else { 3 }));
+            result(name, &context)
+        }
+        "task_pace" => {
+            if ok {
+                task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
+            } else {
+                result(name, &fixture())
+            }
+        }
+        "brain" => {
+            let context = fixture();
+            if ok {
+                stage_brain_ready(&context);
+            } else {
+                let path = context.journal_path.join("health/brain.json");
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, "{").unwrap();
+            }
+            result(name, &context)
+        }
+        "capture_health" => {
+            let context = fixture();
+            if ok {
+                observer(&context, "phone", context.now.timestamp_millis() - 1);
+            } else {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-31_000,"health":{"ingest_rejection":{"active_count":1}}}),
+                );
+            }
+            result(name, &context)
+        }
+        "observer_binding" => {
+            let context = fixture();
+            if ok {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"device_binding":{"device":format!("sha256:{}", "a".repeat(64)),"kind":"cert"}}),
+                );
+            } else {
+                observer(&context, "phone", context.now.timestamp_millis() - 1);
+            }
+            result(name, &context)
+        }
+        "observer_delivery_stall" => {
+            let context = fixture();
+            let upload_age = if ok { 1_000 } else { 21_600_001 };
+            write_observer(
+                &context,
+                "abcdefgh",
+                serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-1_000,"last_segment_received_at":context.now.timestamp_millis()-upload_age}),
+            );
+            result(name, &context)
+        }
+        "observer_ingest_health" => {
+            let context = fixture();
+            observer(&context, "phone", context.now.timestamp_millis() - 1);
+            if !ok {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"health":{"ingest_rejection":{"version":"1.2","summary":"bad payload","active_count":2}}}),
+                );
+            }
+            result(name, &context)
+        }
+        "orphan_segment_pdf" => {
+            let context = fixture();
+            let chronicle = context.journal_path.join("chronicle");
+            fs::create_dir_all(&chronicle).unwrap();
+            if !ok {
+                let path = chronicle.join(".dot/a/b/raw.pdf");
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, "pdf").unwrap();
+            }
+            result(name, &context)
+        }
+        "default_stt_ready" => {
+            let mut context = fixture();
+            if ok {
+                #[cfg(unix)]
+                stage_parakeet_ready(&mut context, "parakeet");
+            } else {
+                config_backend(&context, "whisper");
+            }
+            result(name, &context)
+        }
+        "parakeet_cpp_stt_ready" => {
+            let mut context = fixture();
+            if ok {
+                #[cfg(unix)]
+                stage_parakeet_ready(&mut context, "parakeet-cpp");
+            }
+            result(name, &context)
+        }
+        "speakers_analyze_installation" => {
+            let mut context = fixture();
+            #[cfg(unix)]
+            {
+                context.speakers_analyze_resolvers = Some((
+                    if ok {
+                        speakers_binary_ready
+                    } else {
+                        speakers_binary_missing
+                    },
+                    speakers_model_ready,
+                ));
+            }
+            result(name, &context)
+        }
+        "skill_state" => {
+            let mut context = fixture();
+            #[cfg(unix)]
+            stage_router_skills(&mut context, !ok);
+            result(name, &context)
+        }
+        "feature:pdf-import" | "feature:pdf-export" => {
+            let mut context = fixture();
+            stage_feature(&mut context, name, ok);
+            result(name, &context)
+        }
+        _ => unreachable!("unknown W3c check {name}"),
     }
 }
 #[test]
@@ -244,109 +620,103 @@ fn w3c_severity_table_matches_reference() {
 }
 #[test]
 fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
-    let clean = fixture();
-    let sync = result("journal_sync", &clean);
-    assert_eq!(sync.status, Status::Ok);
-    assert_eq!(
-        sync.detail,
-        "this device only (fixture-host, machine fixture-...)"
-    );
-
-    let maint_ok = fixture();
-    let state = maint_ok.journal_path.join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(
-        &state,
-        "{\"event\":\"exec\",\"ts\":1}\n{\"event\":\"exit\",\"exit_code\":0,\"ts\":2}\n",
-    )
-    .unwrap();
-    let maint = result("journal_maint_tasks", &maint_ok);
-    assert_eq!(maint.status, Status::Ok);
-    assert_eq!(maint.detail, "no unresolved maint tasks");
-
-    let maint_failed = fixture();
-    let state = maint_failed
-        .journal_path
-        .join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(
-        &state,
-        "{\"event\":\"exec\",\"ts\":1}\n{\"event\":\"exit\",\"exit_code\":3,\"ts\":2}\n",
-    )
-    .unwrap();
-    let failed = result("journal_maint_tasks", &maint_failed);
-    assert_eq!(failed.status, Status::Fail);
-    assert_eq!(
-        failed.detail,
-        "failed maint task(s): settings.reindex (exit 3)"
-    );
-
-    let maint_stale = fixture();
-    let state = maint_stale
-        .journal_path
-        .join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(
-        &state,
-        format!(
-            "{{\"event\":\"exec\",\"ts\":{}}}\n",
-            maint_stale.now.timestamp_millis() - 300_001
+    let coverage = [
+        ("journal_sync", SecondBranch::DifferentStatus),
+        ("journal_caught_up", SecondBranch::DifferentStatus),
+        ("journal_maint_tasks", SecondBranch::DifferentStatus),
+        ("task_pace", SecondBranch::DifferentStatus),
+        ("brain", SecondBranch::DifferentStatus),
+        ("capture_health", SecondBranch::DifferentStatus),
+        // The Python reference reports both binding branches as OK; changing
+        // the unbound stream branch into a warning would be a regression.
+        ("observer_binding", SecondBranch::DifferentDetail),
+        ("observer_delivery_stall", SecondBranch::DifferentStatus),
+        ("observer_ingest_health", SecondBranch::DifferentStatus),
+        ("orphan_segment_pdf", SecondBranch::DifferentStatus),
+        ("default_stt_ready", SecondBranch::DifferentStatus),
+        ("parakeet_cpp_stt_ready", SecondBranch::DifferentStatus),
+        (
+            "speakers_analyze_installation",
+            SecondBranch::DifferentStatus,
         ),
-    )
-    .unwrap();
-    let stale = result("journal_maint_tasks", &maint_stale);
-    assert_eq!(stale.status, Status::Warn);
-    assert_eq!(stale.detail, "started, no exit: settings.reindex");
-
-    let maint_unknown = fixture();
-    let state = maint_unknown
-        .journal_path
-        .join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(&state, "{\"event\":\"exec\"}\n").unwrap();
-    let unknown = result("journal_maint_tasks", &maint_unknown);
-    assert_eq!(unknown.status, Status::Warn);
+        ("skill_state", SecondBranch::DifferentStatus),
+        ("feature:pdf-import", SecondBranch::DifferentStatus),
+        ("feature:pdf-export", SecondBranch::DifferentStatus),
+    ];
+    let coverage_names = coverage
+        .iter()
+        .map(|(name, _)| *name)
+        .collect::<std::collections::BTreeSet<_>>();
+    let w3c_names = W3C_CHECK_NAMES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
-        unknown.detail,
-        "couldn't fully determine — maint task started without a timestamp"
+        w3c_names, coverage_names,
+        "every native W3c registry row needs AC1 coverage"
     );
-
-    let active = fixture();
-    observer(&active, "phone", active.now.timestamp_millis() - 1);
-    let capture = result("capture_health", &active);
-    assert_eq!(capture.status, Status::Ok);
+    for name in W3C_CHECK_NAMES {
+        let entry = registry::lookup(Battery::Journal, name)
+            .unwrap_or_else(|| panic!("W3c check {name} is missing from the registry"));
+        assert!(
+            entry.deferred.is_none(),
+            "W3c check {name} must resolve to a real runner"
+        );
+    }
+    let w3a_names = W3A_REAL_CHECK_NAMES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let w3b_names = W3B_REAL_CHECK_NAMES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    for name in W3B_REAL_CHECK_NAMES {
+        let entry = registry::lookup(Battery::Journal, name)
+            .or_else(|| registry::lookup(Battery::JournalReadiness, name))
+            .unwrap_or_else(|| panic!("W3b check {name} is missing from the registry"));
+        assert!(
+            entry.deferred.is_none(),
+            "W3b check {name} must resolve to a real runner"
+        );
+    }
+    assert!(
+        registry::entries(Battery::Journal)
+            .iter()
+            .chain(registry::entries(Battery::JournalReadiness))
+            .all(|entry| entry.deferred.is_none()),
+        "every deferred wave has landed; no registry row may still be a stub"
+    );
+    assert!(w3a_names.is_disjoint(&w3b_names));
+    assert!(w3a_names.is_disjoint(&w3c_names));
+    assert!(w3b_names.is_disjoint(&w3c_names));
+    let partition = w3a_names
+        .union(&w3b_names)
+        .copied()
+        .chain(w3c_names.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
-        capture.detail,
-        "rollup=active; observers reaching the journal"
+        registry::union_names(),
+        partition,
+        "every registry check must be classified as W3a, W3b, or W3c"
     );
-    assert_eq!(
-        result("observer_ingest_health", &active).detail,
-        "no observers failing ingest"
-    );
-    assert_eq!(
-        result("observer_binding", &active).detail,
-        "active observer records=1; unbound=1; streams=phone"
-    );
-
-    let degraded = fixture();
-    write_observer(
-        &degraded,
-        "abcdefgh",
-        serde_json::json!({
-            "key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,
-            "last_seen": degraded.now.timestamp_millis() - 31_000,
-            "health":{"ingest_rejection":{"version":"1.2","summary":"bad payload","active_count":2}}
-        }),
-    );
-    let capture = result("capture_health", &degraded);
-    assert_eq!(capture.status, Status::Warn);
-    assert_eq!(capture.detail, "rollup=degraded; observers: phone=degraded");
-    let ingest = result("observer_ingest_health", &degraded);
-    assert_eq!(ingest.status, Status::Warn);
-    assert_eq!(
-        ingest.detail,
-        "observer phone (v1.2) failing ingest: bad payload, 2x since unknown"
-    );
+    for (name, kind) in coverage {
+        let ok = coverage_result(name, true);
+        let second = coverage_result(name, false);
+        assert_eq!(ok.status, Status::Ok, "{name} OK branch: {}", ok.detail);
+        match kind {
+            SecondBranch::DifferentStatus => assert_ne!(
+                second.status,
+                Status::Ok,
+                "{name} non-OK branch: {}",
+                second.detail
+            ),
+            SecondBranch::DifferentDetail => {
+                assert_eq!(second.status, Status::Ok, "{name}: {}", second.detail);
+                assert_ne!(ok.detail, second.detail, "{name} branches must differ");
+            }
+        }
+    }
 }
 #[test]
 fn w3c_parakeet_cpp_required_states_are_distinct() {
@@ -489,6 +859,27 @@ fn w3c_brain_unconstructible_snapshot_is_an_explicit_warning() {
     let row = result("brain", &context);
     assert_eq!(row.status, Status::Warn);
     assert!(row.detail.starts_with("unknown: "), "{}", row.detail);
+}
+
+#[test]
+fn w3c_brain_ready_and_checking_records_are_healthy() {
+    let ready = fixture();
+    stage_brain_ready(&ready);
+    let row = result("brain", &ready);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(
+        row.detail,
+        "sol can think; state=ready; reason=ok; component=none; evidence_age=1m"
+    );
+
+    let checking = fixture();
+    let _permit = stage_brain_checking(&checking);
+    let row = result("brain", &checking);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(
+        row.detail,
+        "checking how sol thinks; state=checking; reason=brain check in progress; component=none; evidence_age=unknown"
+    );
 }
 
 #[test]
@@ -969,6 +1360,12 @@ fn w3c_owner_boundary_guard_is_nonvacuous() {
 #[test]
 fn w3c_poisoned_interpreters_positive_control_and_battery() {
     let mut c = fixture();
+    // The production resolver looks for the helper next to the running test
+    // executable, and a sibling convey-shell test installs a stub speakers
+    // helper into that same directory. Inject the resolvers so this battery's
+    // expected verdict does not depend on which other tests have already run.
+    #[cfg(unix)]
+    stage_speakers_analyze(&mut c, false);
     let poison = c.journal_path.parent().unwrap().join("poison");
     fs::create_dir_all(&poison).unwrap();
     let witness = poison.join("witness");
@@ -1002,13 +1399,61 @@ fn w3c_poisoned_interpreters_positive_control_and_battery() {
         },
         &c,
     );
-    assert_eq!(journal.len(), registry::entries(Battery::Journal).len());
+    let verdicts = |rows: &[CheckResult]| {
+        rows.iter()
+            .map(|row| (row.name, row.status))
+            .collect::<BTreeMap<_, _>>()
+    };
     assert_eq!(
-        readiness.len(),
-        registry::entries(Battery::JournalReadiness).len()
+        verdicts(&journal),
+        BTreeMap::from([
+            ("journal_leaf_exclusivity", Status::Skip),
+            ("journal_package_version", Status::Skip),
+            ("retired_host_shim", Status::Skip),
+            ("host_dependencies", Status::Skip),
+            ("disk_space", Status::Skip),
+            ("config_dir_readable", Status::Fail),
+            ("journal_dir_writable", Status::Ok),
+            ("supervisor_conflict", Status::Skip),
+            ("service_identity", Status::Skip),
+            ("service_running", Status::Skip),
+            ("journal_sync", Status::Ok),
+            ("journal_caught_up", Status::Ok),
+            ("journal_maint_tasks", Status::Ok),
+            ("task_pace", Status::Skip),
+            ("brain", Status::Warn),
+            ("capture_health", Status::Skip),
+            ("observer_binding", Status::Ok),
+            ("observer_delivery_stall", Status::Skip),
+            ("observer_ingest_health", Status::Skip),
+            ("orphan_segment_pdf", Status::Skip),
+            ("stale_alias_symlink", Status::Skip),
+            ("launchd_stale_plist", Status::Skip),
+            ("default_stt_ready", Status::Warn),
+            ("parakeet_cpp_stt_ready", Status::Skip),
+            ("speakers_analyze_installation", Status::Fail),
+            ("skill_state", Status::Skip),
+            ("feature:pdf-import", Status::Warn),
+            ("feature:pdf-export", Status::Warn),
+        ])
     );
-    assert!(journal.iter().all(|row| !row.name.is_empty()));
-    assert!(readiness.iter().all(|row| !row.name.is_empty()));
+    assert_eq!(
+        verdicts(&readiness),
+        BTreeMap::from([
+            ("host_dependencies", Status::Skip),
+            ("python_version", Status::Skip),
+            ("sol_importable", Status::Skip),
+            ("local_bin_sol_reachable", Status::Warn),
+            ("stale_alias_symlink", Status::Skip),
+            ("disk_space", Status::Skip),
+            ("journal_dir_writable", Status::Ok),
+            ("default_stt_ready", Status::Warn),
+            ("parakeet_cpp_stt_ready", Status::Skip),
+            ("speakers_analyze_installation", Status::Fail),
+            ("feature:pdf-import", Status::Warn),
+            ("feature:pdf-export", Status::Warn),
+        ])
+    );
     assert!(!witness.exists());
 }
 #[test]
