@@ -29,16 +29,18 @@ use solstone_core_cli::{
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions,
-    SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE,
-    TranscribeOptions, TransferCommand, TransferExportOptions, TransferImportOptions,
-    TransferSendOptions, USAGE, evaluate_args, version_line,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, SETTINGS_CONVEY_HELP,
+    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, ServiceOptions,
+    SettingsParseError, SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
+    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
+    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod facet_candidates;
 mod identity;
 mod install_models;
 mod navigate;
+mod settings;
 mod supervisor;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -181,6 +183,20 @@ fn main() -> ExitCode {
         Ok(Command::IdentityBriefingUsage) => {
             identity_usage(IDENTITY_BRIEFING_USAGE, "journal identity briefing")
         }
+        Ok(Command::Settings(command)) => settings::run(command),
+        Ok(Command::SettingsHelp) => {
+            print!("{SETTINGS_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::SettingsConveyHelp) => {
+            print!("{SETTINGS_CONVEY_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::SettingsStatusHelp) => {
+            print!("{SETTINGS_STATUS_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::SettingsParseError(error)) => settings_parse_error(error),
         Ok(Command::TransferHelp(text)) => {
             print!("{text}");
             ExitCode::SUCCESS
@@ -247,6 +263,28 @@ fn identity_usage(usage: &str, command: &str) -> ExitCode {
 fn identity_unknown_command(command: &str) -> ExitCode {
     eprint!("{IDENTITY_USAGE}");
     eprintln!("journal identity: error: invalid choice: '{command}'");
+    ExitCode::from(2)
+}
+
+fn settings_parse_error(error: SettingsParseError) -> ExitCode {
+    match error {
+        SettingsParseError::InvalidSection(value) => {
+            eprint!("{SETTINGS_USAGE}");
+            eprintln!(
+                "journal settings: error: argument section: invalid choice: '{value}' (choose from convey)"
+            );
+        }
+        SettingsParseError::InvalidConveyCommand(value) => {
+            eprint!("{SETTINGS_CONVEY_USAGE}");
+            eprintln!(
+                "journal settings convey: error: argument convey_command: invalid choice: '{value}' (choose from status)"
+            );
+        }
+        SettingsParseError::UnrecognizedArgument(value) => {
+            eprint!("{SETTINGS_USAGE}");
+            eprintln!("journal settings: error: unrecognized arguments: {value}");
+        }
+    }
     ExitCode::from(2)
 }
 

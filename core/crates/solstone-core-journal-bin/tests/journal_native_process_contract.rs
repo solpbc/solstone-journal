@@ -109,6 +109,11 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
     },
+    Probe {
+        token: "settings",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
 ];
 
 #[allow(dead_code)]

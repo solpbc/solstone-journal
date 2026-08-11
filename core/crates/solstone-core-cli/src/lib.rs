@@ -17,6 +17,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
+    "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
     "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n"
@@ -109,6 +110,46 @@ pub const IDENTITY_BRIEFING_HELP: &str = concat!(
     "options:\n",
     "  -h, --help            show this help message and exit\n",
     "  -d DAY, --day DAY     Specific day YYYYMMDD.\n",
+);
+
+pub const SETTINGS_USAGE: &str = "usage: journal settings [-h] [-v] [-d] {convey} ...\n";
+
+pub const SETTINGS_HELP: &str = concat!(
+    "usage: journal settings [-h] [-v] [-d] {convey} ...\n",
+    "\n",
+    "Manage local journal settings\n",
+    "\n",
+    "positional arguments:\n",
+    "  {convey}\n",
+    "    convey       Manage convey settings\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+pub const SETTINGS_CONVEY_USAGE: &str = "usage: journal settings convey [-h] {status} ...\n";
+
+pub const SETTINGS_CONVEY_HELP: &str = concat!(
+    "usage: journal settings convey [-h] {status} ...\n",
+    "\n",
+    "positional arguments:\n",
+    "  {status}\n",
+    "    status    Show convey bind and dashboard URL status\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+);
+
+pub const SETTINGS_STATUS_USAGE: &str = "usage: journal settings convey status [-h] [--json]\n";
+
+pub const SETTINGS_STATUS_HELP: &str = concat!(
+    "usage: journal settings convey status [-h] [--json]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --json      Print machine-readable status.\n",
 );
 
 /// `journal grab --help`, verbatim from the reference. The native verb
@@ -383,6 +424,11 @@ pub enum Command {
     IdentityHealthHelp,
     IdentityBriefingUsage,
     IdentityBriefingHelp,
+    Settings(SettingsCommand),
+    SettingsHelp,
+    SettingsConveyHelp,
+    SettingsStatusHelp,
+    SettingsParseError(SettingsParseError),
     ObserverUsage,
     ObserverPruneUsage,
     ObserverHelp,
@@ -434,6 +480,25 @@ pub struct IdentityHealthOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentityBriefingOptions {
     pub day: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsCommand {
+    RootFallbackHelp,
+    Convey(SettingsConveyCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsConveyCommand {
+    FallbackHelp,
+    Status { json: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsParseError {
+    InvalidSection(String),
+    InvalidConveyCommand(String),
+    UnrecognizedArgument(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -895,6 +960,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
         }
         [command, rest @ ..] if command == OsStr::new("identity") => parse_identity(rest),
+        [command, rest @ ..] if command == OsStr::new("settings") => parse_settings(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("facet-candidates") => {
             let help = |argument: &OsString| {
@@ -951,6 +1017,98 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         _ => Err(UsageError),
     }
+}
+
+fn parse_settings(args: &[OsString]) -> Result<Command, UsageError> {
+    let root_args_end = args
+        .iter()
+        .position(|argument| argument == OsStr::new("convey"))
+        .unwrap_or(args.len());
+    if args[..root_args_end].iter().any(is_help) {
+        return Ok(Command::SettingsHelp);
+    }
+
+    let mut index = 0;
+    while let Some(argument) = args.get(index) {
+        if is_help(argument) {
+            return Ok(Command::SettingsHelp);
+        }
+        if matches!(
+            argument.as_os_str(),
+            value if value == OsStr::new("-v")
+                || value == OsStr::new("--verbose")
+                || value == OsStr::new("-d")
+                || value == OsStr::new("--debug")
+        ) {
+            index += 1;
+            continue;
+        }
+        if argument == OsStr::new("convey") {
+            return parse_settings_convey(&args[index + 1..]);
+        }
+        let value = argument.to_string_lossy().into_owned();
+        return if value.starts_with('-') {
+            Ok(Command::SettingsParseError(
+                SettingsParseError::UnrecognizedArgument(value),
+            ))
+        } else {
+            Ok(Command::SettingsParseError(
+                SettingsParseError::InvalidSection(value),
+            ))
+        };
+    }
+    Ok(Command::Settings(SettingsCommand::RootFallbackHelp))
+}
+
+fn parse_settings_convey(args: &[OsString]) -> Result<Command, UsageError> {
+    let convey_args_end = args
+        .iter()
+        .position(|argument| argument == OsStr::new("status"))
+        .unwrap_or(args.len());
+    if args[..convey_args_end].iter().any(is_help) {
+        return Ok(Command::SettingsConveyHelp);
+    }
+
+    let Some((argument, rest)) = args.split_first() else {
+        return Ok(Command::Settings(SettingsCommand::Convey(
+            SettingsConveyCommand::FallbackHelp,
+        )));
+    };
+    if is_help(argument) {
+        return Ok(Command::SettingsConveyHelp);
+    }
+    if argument == OsStr::new("status") {
+        return parse_settings_status(rest);
+    }
+    let value = argument.to_string_lossy().into_owned();
+    if value.starts_with('-') {
+        Ok(Command::SettingsParseError(
+            SettingsParseError::UnrecognizedArgument(value),
+        ))
+    } else {
+        Ok(Command::SettingsParseError(
+            SettingsParseError::InvalidConveyCommand(value),
+        ))
+    }
+}
+
+fn parse_settings_status(args: &[OsString]) -> Result<Command, UsageError> {
+    if args.iter().any(is_help) {
+        return Ok(Command::SettingsStatusHelp);
+    }
+    let mut json = false;
+    for argument in args {
+        if argument == OsStr::new("--json") {
+            json = true;
+        } else {
+            return Ok(Command::SettingsParseError(
+                SettingsParseError::UnrecognizedArgument(argument.to_string_lossy().into_owned()),
+            ));
+        }
+    }
+    Ok(Command::Settings(SettingsCommand::Convey(
+        SettingsConveyCommand::Status { json },
+    )))
 }
 
 fn parse_identity(args: &[OsString]) -> Result<Command, UsageError> {
@@ -4481,6 +4639,7 @@ mod tests {
             "supervisor",
             "navigate",
             "identity",
+            "settings",
             "export",
             "facet-candidates",
             "install-models",
