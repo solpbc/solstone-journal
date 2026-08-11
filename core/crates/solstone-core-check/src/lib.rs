@@ -5,6 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use solstone_core_local::{
+    VulkanDevice, cpu_placement_suffix, discrete_hardware_gpu_count, is_discrete, select_device,
+};
+use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const GPU_MIN: u64 = 6 * GIB;
@@ -56,13 +60,6 @@ pub struct VulkanInput {
     pub probe_ok: bool,
     pub devices: Vec<VulkanDevice>,
 }
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VulkanDevice {
-    pub index: u32,
-    pub name: String,
-    pub device_type: i32,
-    pub vram_mib: u64,
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CheckReport {
@@ -112,12 +109,28 @@ fn check(
     }
 }
 fn label(bytes: u64) -> String {
-    let tenths = (bytes.saturating_mul(10) + GIB / 2) / GIB;
-    if tenths.is_multiple_of(10) {
-        (tenths / 10).to_string()
+    let rounded = ((bytes as f64 / GIB as f64) * 10.0).round_ties_even() / 10.0;
+    if rounded.fract() == 0.0 {
+        format!("{rounded:.0}")
     } else {
-        format!("{}.{}", tenths / 10, tenths % 10)
+        format!("{rounded:.1}")
     }
+}
+fn placement_suffix(
+    devices: &[VulkanDevice],
+    selected: Option<&VulkanDevice>,
+    vram_mib: Option<u64>,
+    unified_memory: bool,
+) -> String {
+    let decision = decide_parakeet_auto_placement(
+        vram_mib.and_then(|value| value.try_into().ok()),
+        selected.is_some_and(is_discrete),
+        discrete_hardware_gpu_count(devices),
+        unified_memory,
+        // `sol check` runs before install and cannot rely on journal config.
+        true,
+    );
+    cpu_placement_suffix(selected, decision.force_cpu)
 }
 fn supported(platform: &PlatformInput) -> bool {
     (platform.os == "Darwin" && platform.arch == "arm64")
@@ -253,16 +266,11 @@ fn gpu(inputs: &CheckInputs) -> Check {
             None,
         );
     }
-    let selected = if inputs.vulkan.probe_ok {
-        inputs
-            .vulkan
-            .devices
-            .iter()
-            .filter(|device| matches!(device.device_type, 1 | 2))
-            .min_by_key(|device| (if device.device_type == 2 { 0 } else { 1 }, device.index))
-    } else {
-        None
-    };
+    let selected = inputs
+        .vulkan
+        .probe_ok
+        .then(|| select_device(&inputs.vulkan.devices, None))
+        .flatten();
     if !inputs.nvidia.detected {
         if (!inputs.vulkan.probe_ok || selected.is_none())
             && inputs.render_nodes_present_but_inaccessible
@@ -304,7 +312,17 @@ fn gpu(inputs: &CheckInputs) -> Check {
         return check(
             "gpu",
             Severity::Ok,
-            format!("Vulkan GPU {} with {} GB", selected.name, label(bytes)),
+            format!(
+                "Vulkan GPU {} with {} GB{}",
+                selected.name,
+                label(bytes),
+                placement_suffix(
+                    &inputs.vulkan.devices,
+                    Some(&selected),
+                    Some(selected.vram_mib),
+                    false
+                )
+            ),
             Some(GPU_MIN),
             Some(bytes),
         );
@@ -337,19 +355,12 @@ fn gpu(inputs: &CheckInputs) -> Check {
     if unified {
         detail.push_str(" (unified memory)");
     }
-    if !unified
-        && mib < 16000
-        && selected.is_some()
-        && inputs
-            .vulkan
-            .devices
-            .iter()
-            .filter(|device| device.device_type == 2)
-            .count()
-            == 1
-    {
-        detail.push_str("; sol thinks on your GPU; transcription runs on your CPU on this machine");
-    }
+    detail.push_str(&placement_suffix(
+        &inputs.vulkan.devices,
+        selected.as_ref(),
+        Some(mib),
+        unified,
+    ));
     check("gpu", Severity::Ok, detail, Some(GPU_MIN), Some(bytes))
 }
 fn ram(memory: &MemoryInput) -> Check {
@@ -486,5 +497,55 @@ mod tests {
             version: "x".into(),
         };
         assert!(json_output(&build_check_report(&inputs)).contains("\"python\": null"));
+    }
+
+    #[test]
+    fn labels_match_python_rounding_and_g_formatting() {
+        assert_eq!(label(24 * GIB), "24");
+        assert_eq!(label(11 * GIB / 2), "5.5");
+        assert_eq!(label(5 * GIB / 4), "1.2");
+        assert_eq!(label(7 * GIB / 4), "1.8");
+    }
+
+    #[test]
+    fn vulkan_gpu_uses_shared_cpu_placement_decision() {
+        let inputs = CheckInputs {
+            platform: PlatformInput {
+                os: "Linux".into(),
+                os_version: "x".into(),
+                arch: "x86_64".into(),
+            },
+            memory: MemoryInput {
+                total_bytes: Some(8 * GIB),
+                available_bytes: Some(8 * GIB),
+            },
+            disk: DiskInput::Ok {
+                free_bytes: 20 * GIB,
+            },
+            journal_path: "/journal".into(),
+            nvidia: NvidiaInput {
+                detected: false,
+                vram_mib: None,
+                tiering_memory_mib: None,
+                memory_source: "unavailable".into(),
+            },
+            vulkan: VulkanInput {
+                probe_ok: true,
+                devices: vec![VulkanDevice {
+                    index: 0,
+                    name: "Test GPU".into(),
+                    device_type: Some(2),
+                    vram_mib: 6144,
+                }],
+            },
+            render_nodes_present_but_inaccessible: false,
+            gpu_evaluation_error: None,
+            version: "x".into(),
+        };
+        let report = build_check_report(&inputs);
+        assert_eq!(
+            report.checks[1].detail,
+            "Vulkan GPU Test GPU with 6 GB; sol thinks on your GPU; transcription runs on your CPU on this machine"
+        );
     }
 }

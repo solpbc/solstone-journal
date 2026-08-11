@@ -7,7 +7,7 @@ use std::process::Command;
 
 use nix::sys::statvfs::statvfs;
 use solstone_core_check::{
-    CheckInputs, DiskInput, MemoryInput, NvidiaInput, PlatformInput, VulkanDevice, VulkanInput,
+    CheckInputs, DiskInput, MemoryInput, NvidiaInput, PlatformInput, VulkanInput,
     build_check_report, exit_code, human_output, json_output,
 };
 use solstone_core_local::{detect_gpus, gpu_probe_ok, probe_nvidia_gpu};
@@ -27,7 +27,6 @@ struct HostPlatform {
     os: String,
     os_version: String,
     arch: String,
-    supported: bool,
 }
 fn command_text(program: &str, args: &[&str]) -> Option<String> {
     Command::new(program)
@@ -58,13 +57,10 @@ fn host_platform() -> HostPlatform {
         command_text("uname", &["-r"])
     }
     .unwrap_or_default();
-    let supported = (os == "Darwin" && arch == "arm64")
-        || (os == "Linux" && matches!(arch, "x86_64" | "aarch64"));
     HostPlatform {
         os: os.into(),
         os_version,
         arch: arch.into(),
-        supported,
     }
 }
 fn meminfo() -> Option<(u64, u64)> {
@@ -193,18 +189,7 @@ fn host_inputs() -> CheckInputs {
             tiering_memory_mib,
             memory_source: memory_source.into(),
         },
-        vulkan: VulkanInput {
-            probe_ok,
-            devices: devices
-                .into_iter()
-                .map(|device| VulkanDevice {
-                    index: device.index,
-                    name: device.name,
-                    device_type: device.device_type.unwrap_or_default() as i32,
-                    vram_mib: device.vram_mib,
-                })
-                .collect(),
-        },
+        vulkan: VulkanInput { probe_ok, devices },
         render_nodes_present_but_inaccessible: render_nodes_present_but_inaccessible(Path::new(
             "/dev/dri",
         )),
@@ -222,15 +207,9 @@ mod tests {
     fn real_host_platform_is_mapped_at_the_consumption_site() {
         let platform = host_platform();
         #[cfg(target_os = "linux")]
-        assert_eq!(
-            (&platform.os[..], &platform.arch[..], platform.supported),
-            ("Linux", "x86_64", true)
-        );
+        assert_eq!((&platform.os[..], &platform.arch[..]), ("Linux", "x86_64"));
         #[cfg(target_os = "macos")]
-        assert_eq!(
-            (&platform.os[..], &platform.arch[..], platform.supported),
-            ("Darwin", "arm64", true)
-        );
+        assert_eq!((&platform.os[..], &platform.arch[..]), ("Darwin", "arm64"));
     }
     #[test]
     fn render_nodes_use_constructed_root() {
@@ -265,6 +244,8 @@ mod tests {
     }
     #[test]
     fn binary_version_is_passed_to_renderer() {
-        assert_eq!(host_inputs().version, env!("CARGO_PKG_VERSION"));
+        let report = build_check_report(&host_inputs());
+        let payload: serde_json::Value = serde_json::from_str(&json_output(&report)).unwrap();
+        assert_eq!(payload["version"], env!("CARGO_PKG_VERSION"));
     }
 }
