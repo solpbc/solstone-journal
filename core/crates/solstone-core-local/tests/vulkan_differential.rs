@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
@@ -10,6 +10,8 @@ use solstone_core_local::{
     CPU_PLACEMENT_COPY, VulkanDevice, VulkanProbeConfig, VulkanProbeProgram, classify,
     cpu_placement_suffix, discrete_hardware_gpu_count, enumerate_gpus, is_discrete,
 };
+
+const NO_LOADER_OPT_OUT_ENV: &str = "SOLSTONE_VULKAN_DIFFERENTIAL_NO_LOADER";
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -50,9 +52,19 @@ fn core_helper() -> PathBuf {
 #[test]
 fn child_enumerator_matches_python_when_vulkan_loader_is_available() {
     if !python_loader_available() {
-        eprintln!("SKIP: Python could not load libvulkan.so.1; enumerator differential not run");
-        return;
+        if std::env::var_os(NO_LOADER_OPT_OUT_ENV).as_deref() == Some(OsStr::new("1")) {
+            eprintln!(
+                "SKIP: Python could not load libvulkan.so.1; {}=1 explicitly opted out",
+                NO_LOADER_OPT_OUT_ENV
+            );
+            return;
+        }
+        panic!(
+            "Python could not load libvulkan.so.1; install a Vulkan loader or set {}=1 to explicitly skip this differential",
+            NO_LOADER_OPT_OUT_ENV
+        );
     }
+    eprintln!("RUN: Vulkan loader available; enumerator differential executing");
     let python_output = Command::new(python())
         .args(["-m", "solstone.think.providers.local_vulkan"])
         .current_dir(repository_root())
@@ -72,9 +84,14 @@ fn child_enumerator_matches_python_when_vulkan_loader_is_available() {
             args: vec![OsString::from(
                 solstone_core_local::vulkan::VULKAN_PROBE_CHILD_ARG,
             )],
-            env: Vec::new(),
+            env: vec![(
+                OsString::from(solstone_core_local::vulkan::VULKAN_PROBE_CHILD_ENV),
+                OsString::from("1"),
+            )],
         },
-        timeout: Duration::from_secs(10),
+        // Well below the 10 s production budget, while leaving ample room for
+        // a real loader/ICD probe so the differential is not timing-sensitive.
+        timeout: Duration::from_secs(5),
     };
     let (rust_devices, probe_ok) = enumerate_gpus(&config);
 

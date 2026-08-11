@@ -35,6 +35,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const SOFTWARE_NAME_SUBSTRINGS: [&str; 3] = ["llvmpipe", "lavapipe", "swiftshader"];
 #[doc(hidden)]
 pub const VULKAN_PROBE_CHILD_ARG: &str = "--solstone-vulkan-probe-child";
+#[doc(hidden)]
+pub const VULKAN_PROBE_CHILD_ENV: &str = "SOLSTONE_VULKAN_PROBE_CHILD";
 
 /// Owner-facing advisory copy for forced CPU transcription placement.
 pub const CPU_PLACEMENT_COPY: &str =
@@ -200,9 +202,9 @@ impl VulkanFns {
 fn enumerate_in_process() -> Vec<VulkanDevice> {
     let functions = match VulkanFns::load() {
         Ok(functions) => functions,
-        // Python's local_vulkan.py contract intentionally converts loader and
-        // Vulkan failures into an empty successful result. This is parity, not
-        // a new exception to CLAUDE.md's normal fail-loudly rule.
+        // Scope §1 ports local_vulkan.py's swallow-and-return-empty contract
+        // for loader and Vulkan failures. CLAUDE.md §8's normal fail-loudly
+        // rule is deliberately not applied here.
         Err(()) => return Vec::new(),
     };
     let mut instance = std::ptr::null_mut();
@@ -282,12 +284,13 @@ fn enumerate_in_process() -> Vec<VulkanDevice> {
                 .map_err(|_| ())?
                 .min(VK_MAX_MEMORY_HEAPS);
             // Python sums every DEVICE_LOCAL heap's size. heapBudget and the
-            // largest heap are both wrong for this enumeration contract.
+            // largest heap are both wrong for this enumeration contract. Python
+            // has bignums; saturating u64 is the closest result here, since
+            // hiding every GPU on overflow is worse.
             let vram_bytes = memory.memory_heaps[..heap_count]
                 .iter()
                 .filter(|heap| heap.flags & VK_DEVICE_LOCAL_BIT != 0)
-                .try_fold(0_u64, |total, heap| total.checked_add(heap.size))
-                .ok_or(())?;
+                .fold(0_u64, |total, heap| total.saturating_add(heap.size));
             devices.push(VulkanDevice {
                 index: u32::try_from(index).map_err(|_| ())?,
                 name: String::from_utf8_lossy(&name_bytes).into_owned(),
@@ -300,8 +303,8 @@ fn enumerate_in_process() -> Vec<VulkanDevice> {
     if !instance.is_null() {
         unsafe { (functions.destroy_instance)(instance, std::ptr::null()) };
     }
-    // See the loader branch above: every in-process error is an empty, clean
-    // probe result by the ported Python contract.
+    // Scope §1 requires every in-process error to become an empty, clean probe
+    // result. CLAUDE.md §8's fail-loudly rule is deliberately not applied here.
     result.unwrap_or_default()
 }
 
@@ -340,8 +343,12 @@ pub fn enumerate_gpus(config: &VulkanProbeConfig) -> (Vec<VulkanDevice>, bool) {
                     return (Vec::new(), false);
                 }
                 return match serde_json::from_slice::<Vec<VulkanDevice>>(&output.stdout) {
-                    Ok(devices) => (devices, true),
-                    Err(_) => (Vec::new(), false),
+                    // The supervisor's legacy plan payload may omit device_type,
+                    // but the probe-child protocol must contain all four fields.
+                    Ok(devices) if devices.iter().all(|device| device.device_type.is_some()) => {
+                        (devices, true)
+                    }
+                    Ok(_) | Err(_) => (Vec::new(), false),
                 };
             }
             Ok(None) if started.elapsed() >= config.timeout => {
@@ -389,7 +396,7 @@ fn resolve_program(program: &VulkanProbeProgram) -> Result<ResolvedProbeProgram,
         VulkanProbeProgram::CurrentExecutable => Ok(ResolvedProbeProgram {
             executable: std::env::current_exe().map_err(|_| ())?,
             args: vec![OsString::from(VULKAN_PROBE_CHILD_ARG)],
-            env: Vec::new(),
+            env: vec![(OsString::from(VULKAN_PROBE_CHILD_ENV), OsString::from("1"))],
         }),
         VulkanProbeProgram::Explicit {
             executable,
@@ -582,6 +589,19 @@ mod tests {
             timeout: Duration::from_secs(1),
         };
         assert_eq!(enumerate_gpus(&invalid_json), (Vec::new(), false));
+
+        let legacy_payload = VulkanProbeConfig {
+            program: VulkanProbeProgram::Explicit {
+                executable: PathBuf::from("sh"),
+                args: vec![
+                    "-c".into(),
+                    "printf '[{\"index\":0,\"name\":\"GPU\",\"vram_mib\":1}]'".into(),
+                ],
+                env: Vec::new(),
+            },
+            timeout: Duration::from_secs(1),
+        };
+        assert_eq!(enumerate_gpus(&legacy_payload), (Vec::new(), false));
 
         let timeout = VulkanProbeConfig {
             program: VulkanProbeProgram::Explicit {
