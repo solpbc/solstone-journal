@@ -65,6 +65,7 @@ test = false
 chrono.workspace = true
 serde.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-check.workspace = true
 solstone-core-convey-shell.workspace = true
 solstone-core-body-rebuild.workspace = true
 solstone-core-observer.workspace = true
@@ -102,7 +103,7 @@ solstone-core-reprocess-cli.workspace = true
 solstone-core-backfill-cli.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 serde_json.workspace = true
-nix = { workspace = true, features = ["process", "signal"] }
+nix = { workspace = true, features = ["fs", "process", "signal"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [dev-dependencies]

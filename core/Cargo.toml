@@ -2,6 +2,7 @@
 members = [
     "crates/solstone-core",
     "crates/solstone-core-cli",
+    "crates/solstone-core-check",
     "crates/solstone-core-indexer",
     "crates/solstone-core-format",
     "crates/solstone-core-indexer-store",
@@ -90,6 +91,7 @@ unsafe_code = "forbid"
 
 [workspace.dependencies]
 solstone-core-cli = { path = "crates/solstone-core-cli" }
+solstone-core-check = { path = "crates/solstone-core-check" }
 solstone-core-entity = { path = "crates/solstone-core-entity" }
 solstone-core-entity-matching = { path = "crates/solstone-core-entity-matching" }
 solstone-core-facets = { path = "crates/solstone-core-facets" }

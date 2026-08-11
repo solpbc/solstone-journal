@@ -36,6 +36,7 @@ use solstone_core_cli::{
     TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
+mod check;
 mod facet_candidates;
 mod identity;
 mod install_models;
@@ -116,6 +117,7 @@ fn main() -> ExitCode {
                 ExitCode::SUCCESS
             }
         }
+        Ok(Command::Check { json }) => ExitCode::from(check::run(json)),
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
             Ok(line) => {
                 println!("{}\t{}", line.label, line.path.display());
