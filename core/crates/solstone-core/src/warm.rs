@@ -28,10 +28,13 @@ use std::thread;
 use serde_json::{Value, json};
 
 const SCHEMA: &str = "solstone-warm-v1";
-const STDERR_LIMIT: usize = 65_536;
+pub(crate) const STDERR_LIMIT: usize = 65_536;
 const CARGO_CACHE_TAG: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.";
 const LOADER_PREFIX: &str = "error while loading shared libraries: ";
 const LOADER_SUFFIX: &str = ": cannot open shared object file";
+const MAX_LOADER_LIBRARY_BYTES: usize = 4096;
+const LOADER_SCAN_TAIL: usize =
+    LOADER_PREFIX.len() + MAX_LOADER_LIBRARY_BYTES + LOADER_SUFFIX.len();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct InventoryRow {
@@ -151,6 +154,7 @@ pub(crate) struct WarmReport {
 struct BoundedStderr {
     bytes: Vec<u8>,
     truncated: bool,
+    loader_library: Option<String>,
 }
 
 impl WarmReport {
@@ -326,16 +330,30 @@ fn run_probe(path: &Path, argv: &[&str]) -> io::Result<(ExitStatus, BoundedStder
 fn read_bounded_stderr(mut stderr: impl Read) -> io::Result<BoundedStderr> {
     let mut bytes = Vec::new();
     let mut truncated = false;
+    let mut loader_library = None;
+    let mut scan_tail = Vec::new();
     let mut buffer = [0_u8; 8192];
     loop {
         let count = stderr.read(&mut buffer)?;
         if count == 0 {
-            return Ok(BoundedStderr { bytes, truncated });
+            return Ok(BoundedStderr {
+                bytes,
+                truncated,
+                loader_library,
+            });
         }
         let remaining = STDERR_LIMIT.saturating_sub(bytes.len());
         let kept = remaining.min(count);
         bytes.extend_from_slice(&buffer[..kept]);
         truncated |= kept != count;
+
+        if loader_library.is_none() {
+            let mut scan = scan_tail;
+            scan.extend_from_slice(&buffer[..count]);
+            loader_library = unresolved_library(&scan);
+            let tail_start = scan.len().saturating_sub(LOADER_SCAN_TAIL);
+            scan_tail = scan[tail_start..].to_vec();
+        }
     }
 }
 
@@ -359,6 +377,7 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
     let exit_code = status.code();
     let signal = status.signal();
     let stderr_truncated = stderr.truncated;
+    let loader_library = stderr.loader_library;
     let stderr = String::from_utf8_lossy(&stderr.bytes).into_owned();
     if exit_code.is_none() {
         let actual = match signal {
@@ -380,7 +399,7 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
         };
     }
     if exit_code == Some(127)
-        && let Some(library) = unresolved_library(&stderr)
+        && let Some(library) = loader_library
     {
         return WarmRecord {
             row,
@@ -411,10 +430,20 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
     }
 }
 
-fn unresolved_library(stderr: &str) -> Option<String> {
-    let after_prefix = stderr.split_once(LOADER_PREFIX)?.1;
-    let library = after_prefix.split_once(LOADER_SUFFIX)?.0;
-    (!library.is_empty()).then(|| library.to_owned())
+fn unresolved_library(stderr: &[u8]) -> Option<String> {
+    let prefix = LOADER_PREFIX.as_bytes();
+    let suffix = LOADER_SUFFIX.as_bytes();
+    let prefix_start = find_bytes(stderr, prefix)?;
+    let library_start = prefix_start + prefix.len();
+    let suffix_start = library_start + find_bytes(&stderr[library_start..], suffix)?;
+    (suffix_start != library_start)
+        .then(|| String::from_utf8_lossy(&stderr[library_start..suffix_start]).into_owned())
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn verified_cargo_target_tree(executable: &Path) -> bool {

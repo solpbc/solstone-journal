@@ -181,6 +181,27 @@ fn loader_failure_json_has_reason_library_and_house_fields() {
 }
 
 #[test]
+fn oversized_loader_stderr_still_classifies_cannot_load() {
+    let temp = TempDir::new();
+    let noise_bytes = warm::STDERR_LIMIT + 1;
+    write_shim(
+        &temp.path().join(FIXTURE_ROW.binary_name),
+        &format!(
+            "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt \"{noise_bytes}\" ]; do\n  printf x >&2\n  i=$((i + 1))\ndone\nprintf '%s: error while loading shared libraries: libwarm-oversize.so: cannot open shared object file: No such file or directory\\n' \"$0\" >&2\nexit 127\n"
+        ),
+    );
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW]);
+    let record = &report.records[0];
+    assert_eq!(record.classification, Classification::CannotLoad);
+    assert_eq!(record.reason_code, "loader-library-missing");
+    assert_eq!(
+        record.unresolved_library.as_deref(),
+        Some("libwarm-oversize.so")
+    );
+    assert!(record.stderr_truncated);
+}
+
+#[test]
 fn cargo_marker_makes_absent_sibling_a_named_gap() {
     let temp = TempDir::new();
     let target = temp.path().join("cargo-target");
