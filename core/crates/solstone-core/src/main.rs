@@ -118,6 +118,12 @@ fn main() -> ExitCode {
             }
         }
         Ok(Command::Check { json }) => ExitCode::from(check::run(json)),
+        Ok(Command::Doctor(args)) => run_doctor(args),
+        Ok(Command::DoctorUsage(error)) => {
+            eprintln!("solstone-core doctor: error: {}", error.0);
+            eprint!("{}", solstone_core_doctor::args::USAGE);
+            ExitCode::from(2)
+        }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
             Ok(line) => {
                 println!("{}\t{}", line.label, line.path.display());
@@ -3145,6 +3151,37 @@ fn run_brain(command: BrainCommand) -> ExitCode {
         }
         BrainCommand::Inspect(options) => run_brain_inspect(options),
         BrainCommand::Fingerprint => run_brain_fingerprint(),
+    }
+}
+
+fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {
+    let context = match solstone_core_doctor::context::CheckContext::production(args.port) {
+        Ok(context) => context,
+        Err(error) => {
+            eprintln!("doctor failed to resolve context: {error}");
+            return ExitCode::from(1);
+        }
+    };
+    let started = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let started_at = std::time::Instant::now();
+    let results = solstone_core_doctor::run(&args, &context);
+    if args.json {
+        solstone_core_doctor::output::emit_json(&results);
+    } else if args.jsonl {
+        solstone_core_doctor::output::emit_jsonl(
+            &results,
+            &started,
+            started_at.elapsed().as_millis(),
+            args.port,
+            args.feature.as_deref(),
+        );
+    } else {
+        solstone_core_doctor::output::emit_text(&results, args.verbose);
+    }
+    if solstone_core_doctor::vocabulary::results_failed(&results) {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

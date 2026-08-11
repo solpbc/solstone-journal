@@ -75,6 +75,7 @@ solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-identity.workspace = true
 solstone-core-brain.workspace = true
+solstone-core-doctor.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal.workspace = true

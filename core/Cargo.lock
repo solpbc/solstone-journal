@@ -1765,6 +1765,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
+name = "plist"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da1d65da6dd5d1e44199ac0f58712d241c0f439f80adea8924d832384087f85"
+dependencies = [
+ "base64 0.22.1",
+ "indexmap",
+ "quick-xml 0.41.0",
+ "serde",
+ "time",
+]
+
+[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1862,6 +1875,15 @@ name = "quick-xml"
 version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
@@ -2387,6 +2409,7 @@ dependencies = [
  "solstone-core-cogitate-tools",
  "solstone-core-cogitate-wire",
  "solstone-core-convey-shell",
+ "solstone-core-doctor",
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
@@ -2448,7 +2471,7 @@ dependencies = [
  "chrono-tz",
  "getrandom 0.3.4",
  "nix",
- "quick-xml",
+ "quick-xml 0.38.4",
  "rusqlite",
  "serde_json",
  "sha2",
@@ -2553,6 +2576,7 @@ dependencies = [
 name = "solstone-core-cli"
 version = "1.0.22"
 dependencies = [
+ "solstone-core-doctor",
  "solstone-core-observer",
 ]
 
@@ -2688,6 +2712,20 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+]
+
+[[package]]
+name = "solstone-core-doctor"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "nix",
+ "plist",
+ "serde",
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-journal",
+ "tokio",
 ]
 
 [[package]]
