@@ -9,7 +9,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "macos", test))]
-use chrono::{Local, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Local, LocalResult, NaiveDateTime, TimeZone};
 #[cfg(target_os = "linux")]
 use nix::unistd::{SysconfVar, sysconf};
 
@@ -264,11 +264,23 @@ fn parse_macos_lstart(lstart: &str) -> Result<f64, LifecycleError> {
     let normalized = format!("{weekday} {month} {day:02} {time} {year}");
     let naive = NaiveDateTime::parse_from_str(&normalized, "%a %b %d %H:%M:%S %Y")
         .map_err(|_| LifecycleError::Identity("ps process start time"))?;
-    Local
-        .from_local_datetime(&naive)
-        .single()
-        .map(|started| started.timestamp() as f64)
-        .ok_or(LifecycleError::Identity("ps process start time"))
+    epoch_seconds_from_local_result(Local.from_local_datetime(&naive))
+}
+
+/// Resolve DST fall-back ambiguity to the earliest instant so identity writes
+/// and later identity checks make the same PID-reuse-safe comparison. A
+/// nonexistent spring-forward local time cannot name a real process, so it
+/// still fails closed.
+#[cfg(any(target_os = "macos", test))]
+fn epoch_seconds_from_local_result<Tz: TimeZone>(
+    result: LocalResult<DateTime<Tz>>,
+) -> Result<f64, LifecycleError> {
+    match result {
+        LocalResult::Single(started) | LocalResult::Ambiguous(started, _) => {
+            Ok(started.timestamp() as f64)
+        }
+        LocalResult::None => Err(LifecycleError::Identity("ps process start time")),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -343,9 +355,9 @@ pub(crate) fn remove_test_supervisor_journal(root: PathBuf) {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Local, TimeZone};
+    use chrono::{Local, LocalResult, TimeZone, Utc};
 
-    use super::parse_macos_lstart;
+    use super::{epoch_seconds_from_local_result, parse_macos_lstart};
 
     #[test]
     fn macos_lstart_parser_accepts_c_locale_timestamp() {
@@ -363,5 +375,28 @@ mod tests {
     #[test]
     fn macos_lstart_parser_rejects_malformed_timestamp() {
         assert!(parse_macos_lstart("not an lstart timestamp").is_err());
+    }
+
+    #[test]
+    fn macos_lstart_parser_resolves_ambiguous_local_time_deterministically() {
+        let earliest = Utc
+            .with_ymd_and_hms(2026, 11, 1, 7, 30, 0)
+            .single()
+            .expect("utc time");
+        let latest = Utc
+            .with_ymd_and_hms(2026, 11, 1, 8, 30, 0)
+            .single()
+            .expect("utc time");
+        assert_eq!(
+            epoch_seconds_from_local_result(LocalResult::Ambiguous(earliest, latest))
+                .expect("resolve ambiguity"),
+            earliest.timestamp() as f64
+        );
+    }
+
+    #[test]
+    fn macos_lstart_parser_rejects_nonexistent_local_time() {
+        let nonexistent: LocalResult<chrono::DateTime<Utc>> = LocalResult::None;
+        assert!(epoch_seconds_from_local_result(nonexistent).is_err());
     }
 }
