@@ -3065,6 +3065,16 @@ dependencies = [
 [[package]]
 name = "solstone-core-segment-cli"
 version = "1.0.22"
+dependencies = [
+ "chrono",
+ "rusqlite",
+ "serde_json",
+ "solstone-core-format",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-segment",
+ "tempfile",
+]
 
 [[package]]
 name = "solstone-core-serving"
