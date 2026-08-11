@@ -21,7 +21,7 @@ def apply_http_logging_policy(
     httpx logs the full request URL at INFO; Gemini authenticates via
     `?key=AIzaSy...`, so an httpx INFO record reaching a handler leaks a
     live key into logs. Force httpx to WARNING. When a root baseline
-    snapshot is supplied (i.e. a third party such as the OpenHands SDK may
+    snapshot is supplied (i.e. a third-party library may
     have reconfigured global logging), reconcile the root logger back to it:
     restore the level and remove only handlers added beyond the snapshot.
     Never blind-reassign root.handlers; that would evict pytest's caplog

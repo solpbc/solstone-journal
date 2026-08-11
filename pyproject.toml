@@ -112,22 +112,6 @@ journal-host = [
     "tokenizers>=0.20",
     "av",
     "openai>=1.2.0",
-    "openhands-sdk==1.27.*",
-    # OpenHands leaves LiteLLM broad. Keep production on the exact version
-    # exercised by uv.lock: 1.92.0 started importing FastAPI from the core
-    # completion path even though neither package declares that proxy extra.
-    "litellm==1.86.1",
-    # Pinned to >=1.27.1: that release reverts the Gemini prompt-cache markers
-    # (upstream PR #3586 / issue #3585). Emitting cache_control on Gemini froze
-    # its cache at the static prefix and disabled Google's implicit caching
-    # (~6-14x cost); keep implicit caching available for exact Gemini defaults
-    # and any explicit gemini-2.5/3 pin.
-    # openhands-sdk pulls lmnr's OpenTelemetry beta stack. Pin the matching line
-    # so pip does not mix newer 1.42/0.63 packages with lmnr's 0.60b1
-    # semantic-conventions pin.
-    "opentelemetry-api==1.39.1",
-    "opentelemetry-sdk==1.39.1",
-    "opentelemetry-exporter-otlp-proto-grpc==1.39.1",
     "opentelemetry-exporter-otlp-proto-http==1.39.1",
     "opentelemetry-instrumentation==0.60b1",
     "opentelemetry-instrumentation-threading==0.60b1",

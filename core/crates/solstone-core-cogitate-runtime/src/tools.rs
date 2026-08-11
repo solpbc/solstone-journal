@@ -51,9 +51,9 @@ pub struct CogitateToolExecutor<'a> {
 }
 
 impl<'a> CogitateToolExecutor<'a> {
-    /// Python seeds its raw-read and sol counters from the same single config
-    /// field (`openhands.py:521-540,1335-1336`), while keeping the counters
-    /// independently scoped to their respective tool families.
+    /// The runtime seeds raw-read and sol counters from the same config field,
+    /// while keeping the counters independently scoped to their respective
+    /// tool families.
     pub fn new(journal_root: &'a Path, read_call_budget: i64, slot: &'a mut dyn SlotLease) -> Self {
         Self {
             journal_root,

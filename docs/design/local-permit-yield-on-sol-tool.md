@@ -1,5 +1,10 @@
 # Local Permit Yield On Sol Tool
 
+Historical design note, August 2026: this records the permit-yield design for
+the deleted OpenHands cogitate runtime. Native one-shot cogitate replaced that
+runtime; the OpenHands-specific scope, decisions, file plan, and tests below
+are retained as design history, not current implementation guidance.
+
 ## Scope
 
 This note covers local cogitate runs that already hold a governed local

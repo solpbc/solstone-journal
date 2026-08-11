@@ -11,7 +11,7 @@ pub struct RuntimeDivergence {
 
 /// Generate-wire deliberately exposes normalized token counts rather than an
 /// SDK price accumulator. Therefore native always uses the reference fallback
-/// formula from `openhands.py:744-756`; it has no provider price-table path.
+/// formula; it has no provider price-table path.
 pub const DIVERGENCES: &[RuntimeDivergence] = &[RuntimeDivergence {
     case: "cost_pricing",
     reference: "use accumulated SDK cost when positive, otherwise token fallback",

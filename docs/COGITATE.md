@@ -190,8 +190,7 @@ prompts can be checked against them:
 Every cogitate run receives the contract's essential preamble as the head of its
 system prompt. Native `compose_system_instruction`
 (`core/crates/solstone-core-cogitate/src/prompt.rs`) prepends
-`COGITATE_RUNTIME_PREAMBLE` ahead of the talent's own instruction. The verbatim
-text:
+`COGITATE_RUNTIME_PREAMBLE` ahead of the talent's own instruction. The verbatim text:
 
 ```
 You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.
@@ -234,7 +233,10 @@ but deliberately cannot reconstruct a retry delay from discarded provider text.
 | The contract preamble + locked vocabularies | `core/crates/solstone-core-cogitate/src/preambles.rs` |
 | Preamble injection into the system prompt | `compose_system_instruction` in `core/crates/solstone-core-cogitate/src/prompt.rs` |
 | Cogitate run assembly | `run_cogitate` in `solstone/think/cogitate_client.py`, then `solstone-core cogitate --one-shot` |
+| Talent-tier inventory and capabilities | `load_talent_contract` in `solstone/think/cogitate_client.py`, then `solstone-core cogitate --talent-contract` |
+| Effective prompt and finalization display | `render_dry_run_details` in `solstone/think/cogitate_client.py`, from the native one-shot `dry_run` event |
 | Command / write policy | `core/crates/solstone-core-cogitate/src/policy.rs` and `core/crates/solstone-core-cogitate-tools/` |
 | Finalization | `core/crates/solstone-core-cogitate/src/finalization.rs` and the native cogitate tools |
+| Deterministic post-run failure caps | `solstone/think/deterministic_failure_caps.py` |
 | Talent configs (prompts + frontmatter) | `solstone/talent/*.md`, `solstone/apps/*/talent/*.md` |
 | Talent execution lifecycle | `docs/CORTEX.md`, `docs/THINK.md` |

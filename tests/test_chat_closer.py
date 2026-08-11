@@ -5,7 +5,7 @@ import logging
 
 from solstone.apps.chat.copy import CHAT_CLOSER_SUPPORT_SEND_FAILED
 from solstone.convey import chat
-from solstone.think.cogitate_policy import DETERMINISTIC_FAILURE_REASON_CODES
+from solstone.think.deterministic_failure_caps import DETERMINISTIC_FAILURE_REASON_CODES
 
 CHAT_LOGGER = "solstone.convey.chat"
 FIXTURE_OPENERS = (

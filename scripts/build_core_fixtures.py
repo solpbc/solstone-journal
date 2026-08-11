@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import base64
 import copy
-import hashlib
 import importlib.metadata
 import json
 import logging
@@ -77,15 +76,6 @@ from solstone.convey.provider_readiness import (
     mapped_reason_codes,
 )
 from solstone.think import markdown as markdown_formatter
-from solstone.think.cogitate_contract import (
-    COGITATE_ACCESS_TIERS,
-    COGITATE_DIAGNOSTIC_PREAMBLE,
-    COGITATE_READ_TOOL_NAMES,
-    COGITATE_RUNTIME_PREAMBLE,
-    FUTURE_ACCESS_TIERS,
-    TALENT_FINALIZATION_MODES,
-    capabilities_for_access_tier,
-)
 from solstone.think.indexer.edges import EDGES_SCHEMA_VERSION, _ensure_edges_schema
 from solstone.think.providers.shared import (
     _UNKNOWN_FINISH_REASON,
@@ -146,7 +136,6 @@ FIXTURE_DIR = ROOT / "core" / "fixtures"
 CONTENT_FAMILIES_ARTIFACT_PATH = FIXTURE_DIR / "content_families.json"
 TALENT_PROJECTIONS_ARTIFACT_PATH = FIXTURE_DIR / "talent_projections.json"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
-COGITATE_ARTIFACT_PATH = FIXTURE_DIR / "cogitate_contract.json"
 GENERATE_ARTIFACT_PATH = FIXTURE_DIR / "generate_contract.json"
 
 _IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
@@ -224,42 +213,6 @@ def build_callosum_registry_fixture() -> dict[str, Any]:
         "generated_by": "make core-fixtures",
         "registry": {
             tract: list(CALLOSUM_REGISTRY[tract]) for tract in sorted(CALLOSUM_REGISTRY)
-        },
-    }
-
-
-def build_cogitate_contract_fixture() -> dict[str, Any]:
-    runtime_preamble_bytes = COGITATE_RUNTIME_PREAMBLE.encode("utf-8")
-    diagnostic_preamble_bytes = COGITATE_DIAGNOSTIC_PREAMBLE.encode("utf-8")
-    return {
-        "fixture": "solstone-cogitate-contract",
-        "fixture_version": 1,
-        "generated_by": "make core-fixtures",
-        "access_tiers": list(COGITATE_ACCESS_TIERS),
-        "capabilities": {
-            tier: {
-                "sol": capabilities_for_access_tier(tier).sol,
-                "reads": capabilities_for_access_tier(tier).reads,
-                "submit": capabilities_for_access_tier(tier).submit,
-            }
-            for tier in COGITATE_ACCESS_TIERS
-        },
-        "future_access_tiers": list(FUTURE_ACCESS_TIERS),
-        "read_tools": list(COGITATE_READ_TOOL_NAMES),
-        "finalization_modes": list(TALENT_FINALIZATION_MODES),
-        "runtime_preamble": {
-            "digest": hashlib.sha256(runtime_preamble_bytes).hexdigest(),
-            "algorithm": "sha256",
-            "encoding": "utf-8",
-            "byte_length": len(runtime_preamble_bytes),
-            "text": COGITATE_RUNTIME_PREAMBLE,
-        },
-        "diagnostic_preamble": {
-            "digest": hashlib.sha256(diagnostic_preamble_bytes).hexdigest(),
-            "algorithm": "sha256",
-            "encoding": "utf-8",
-            "byte_length": len(diagnostic_preamble_bytes),
-            "text": COGITATE_DIAGNOSTIC_PREAMBLE,
         },
     }
 
@@ -1614,9 +1567,6 @@ def expected_outputs() -> dict[Path, ArtifactDescriptor]:
     return {
         CALLOSUM_ARTIFACT_PATH: ArtifactDescriptor(
             build_callosum_registry_fixture,
-        ),
-        COGITATE_ARTIFACT_PATH: ArtifactDescriptor(
-            build_cogitate_contract_fixture,
         ),
         GENERATE_ARTIFACT_PATH: ArtifactDescriptor(
             build_generate_contract_fixture,

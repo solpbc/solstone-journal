@@ -59,45 +59,33 @@ Managed personal cloud keys remain journal-local:
 `solstone/think/providers/__init__.py` has a deliberately small registry:
 
 - `google`, `openai`, and `anthropic` all map to
-  `solstone/think/providers/openhands.py`.
+  `solstone/think/cogitate_client.py`.
 - `local` maps to `solstone/think/providers/local.py`.
 
-The effective modules implement:
-
-- `run_generate()` for synchronous single-shot generation.
-- `run_agenerate()` for asynchronous single-shot generation.
-- `run_cogitate()` for tool-using OpenHands conversations.
+The registry exists for cogitate execution and settings validation. All four
+entries expose `run_cogitate()`; the three cloud entries also use the native
+generate client for key/model probes. Single-shot generation does not dispatch
+through this registry: `solstone.think.generate_client` encodes the native
+generate request and invokes `solstone-core generate --one-shot`.
 
 ### Personal cloud
 
-`openhands.py` is the single cloud transport. It builds an OpenHands `LLM` and
-lets LiteLLM translate the request to OpenAI, Anthropic, or Google AI Studio.
-It also normalizes text, usage, finish reasons, and thinking blocks back into
-Solstone's `GenerateResult`.
+`cogitate_client.py` is the cloud transport. It serializes the prepared talent
+configuration, invokes `solstone-core cogitate --one-shot`, and relays native
+NDJSON events. The native runtime composes the system instruction, applies the
+talent contract and command policy, performs the tool loop, and emits usage and
+terminal events.
 
-Generate calls explicitly neutralize OpenHands' agent-oriented defaults and
-then apply only Solstone's requested behavior. The transport preserves:
-
-- sync and async calls;
-- multimodal message content;
-- JSON object and JSON Schema response formats;
-- OpenAI reasoning-effort suffixes;
-- Anthropic and Gemini thinking budgets;
-- normalized usage, resolved model, and finish reason.
-
-Direct OpenAI generation uses the Responses API. Anthropic and Google use chat
-completion through LiteLLM's provider translation. Key/model validation sends
-a tiny request through this same runtime path, so validation can incur a small
-provider charge.
-
-OpenHands/LiteLLM may internally contain code for many providers. That does not
-make them Solstone-supported providers: Solstone exposes no registry entry,
-config, UI, credential flow, or validation path for enterprise integrations.
+Key/model validation sends a bounded native generate probe through
+`generate_client.generate_with_result`, so validation can incur a small
+provider charge. Solstone still exposes only the three registry cloud choices;
+there is no enterprise-provider configuration or credential path.
 
 ### Local and arbitrary endpoints
 
 `local.py` remains a thin product-policy wrapper rather than a second general
-cloud adapter. It owns guarantees that OpenHands alone does not provide:
+cloud adapter. It owns guarantees around the native runtime that cloud providers
+do not require:
 
 - bundled runtime installation and manifest-backed readiness;
 - context-budget fitting and local schema preparation;
@@ -116,9 +104,10 @@ and the affirmative proof cache. A configured endpoint uses:
 - `providers.local.credential` (optional)
 - `providers.local.parallel_slots` (optional)
 
-Both generate and cogitate use the endpoint's OpenAI-compatible contract. The
-configured logical provider remains `local`, so the same readiness and safety
-boundary applies without maintaining vendor-specific adapters.
+The configured logical provider remains `local`, so the same readiness and
+safety boundary applies without maintaining vendor-specific adapters. Native
+generate owns endpoint requests; `local.py` adds governed local admission around
+native cogitate execution.
 
 ## Local Admission
 
@@ -130,11 +119,10 @@ endpoint.
 
 Admission uses per-slot `flock` files under
 `health/local-inference-admission/`, coordinating independent journal
-processes. Queue time consumes the caller's existing timeout. Cogitate yields
-its permit while a nested `sol` command runs and reacquires it before the next
-model turn.
+processes. Queue time consumes the caller's existing timeout. The local wrapper
+holds admission around the native cogitate subprocess.
 
-Bundled attempts append content-free telemetry to
+Bundled cogitate attempts append content-free telemetry to
 `health/local-inference/YYYYMMDD.jsonl`. Records include timing, capacity,
 token counts, retry index, finish reason, and safe failure codes—never prompts,
 responses, schemas, images, URLs, or credentials.

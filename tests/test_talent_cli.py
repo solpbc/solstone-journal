@@ -9,14 +9,6 @@ import pytest
 
 from solstone.think import talent as talent_mod
 from solstone.think import talent_cli as talent_cli_mod
-from solstone.think.cogitate_contract import (
-    COGITATE_ACCESS_TIERS,
-    COGITATE_READ_TOOL_NAMES,
-    COGITATE_RUNTIME_PREAMBLE,
-    capabilities_for_access_tier,
-    expects_emit_final,
-)
-from solstone.think.providers.cli import assemble_prompt
 from solstone.think.talent import get_talent, get_talent_configs
 from solstone.think.talent_cli import (
     _build_inventory_rows,
@@ -38,6 +30,71 @@ from solstone.think.talent_cli import (
     show_effective_prompt,
     show_prompt,
 )
+
+_NATIVE_TIERS = [
+    {
+        "name": "normal",
+        "sol": True,
+        "reads": True,
+        "submit": False,
+        "talent_facing": True,
+        "tools": ["sol", "read_file", "list_directory", "glob", "grep_search"],
+    },
+    {
+        "name": "system-read",
+        "sol": True,
+        "reads": True,
+        "submit": False,
+        "talent_facing": True,
+        "tools": ["sol", "read_file", "list_directory", "glob", "grep_search"],
+    },
+    {
+        "name": "outbound",
+        "sol": True,
+        "reads": False,
+        "submit": True,
+        "talent_facing": True,
+        "tools": ["sol"],
+    },
+    {
+        "name": "synthesis",
+        "sol": True,
+        "reads": False,
+        "submit": False,
+        "talent_facing": True,
+        "tools": ["sol"],
+    },
+    {
+        "name": "diagnostic",
+        "sol": False,
+        "reads": False,
+        "submit": False,
+        "talent_facing": False,
+        "tools": [],
+    },
+]
+_NATIVE_CONTRACT = {
+    "tiers": _NATIVE_TIERS,
+    "journal_commands": ["identity", "health", "talent"],
+}
+
+
+@pytest.fixture(autouse=True)
+def native_cogitate_contract(monkeypatch):
+    monkeypatch.setattr(
+        talent_cli_mod.cogitate_client,
+        "load_talent_contract",
+        lambda: _NATIVE_CONTRACT,
+    )
+    monkeypatch.setattr(
+        talent_cli_mod.cogitate_client,
+        "render_dry_run_details",
+        lambda config: {
+            "initial_prompt": "Native initial prompt",
+            "system_instruction": "Native system instruction",
+            "expects_emit_final": config.get("access_tier") == "outbound",
+        },
+    )
 
 
 def test_collect_configs_returns_prompts():
@@ -322,20 +379,13 @@ def test_show_prompt_context_day_format_validation(capsys):
 
 
 def test_show_effective_prompt_exec_omits_read_scope_hint(capsys):
-    """Cogitate prompt view omits the read-scope hint when no read_scope is set."""
-    config = get_talent("exec")
-    body, system_instruction = assemble_prompt(config, sol_tool_name="sol")
+    """Cogitate prompt view renders native dry-run prompt details."""
 
     show_effective_prompt("exec", full=True)
     output = capsys.readouterr().out
 
-    assert system_instruction is not None
-    assert system_instruction.startswith(COGITATE_RUNTIME_PREAMBLE)
-    assert "through the `sol` tool" in system_instruction
-    assert "Limit filesystem reads to today's segment dir" not in system_instruction
-    assert "You make the change the owner asked for" in body
-    assert system_instruction in output
-    assert body in output
+    assert "Native system instruction" in output
+    assert "Native initial prompt" in output
     assert "tier: normal" in output
     assert "finalize: FinishTool" in output
 
@@ -343,13 +393,11 @@ def test_show_effective_prompt_exec_omits_read_scope_hint(capsys):
 def test_show_effective_prompt_outbound_shows_submit_capability(capsys):
     """Outbound talents show submit capability on the tool-surface line."""
     config = get_talent("support:support")
-    caps = capabilities_for_access_tier(config["access_tier"])
 
     show_effective_prompt("support:support")
     output = capsys.readouterr().out
 
     assert config["access_tier"] == "outbound"
-    assert caps.submit is True
     assert "tier: outbound" in output
     assert "tier: outbound (sol+submit)" in output
     assert "tools: sol;" in output
@@ -371,9 +419,8 @@ def test_inventory_rows_normalize_and_lockstep_with_config():
     assert all(row["cwd"] == "journal" for row in rows)
     assert all(row["write"] == "ro" for row in rows)
 
-    for row in rows:
-        config = get_talent(row["name"])
-        assert (row["finalize"] == "emit_final") == expects_emit_final(config)
+    assert by_name["support:support"]["finalize"] == "emit_final"
+    assert by_name["exec"]["finalize"] == "FinishTool"
 
     assert by_name["support:support"]["access_tier"] == "outbound"
     # steward is a deterministic + lite-generate talent now, not cogitate, so it
@@ -383,22 +430,18 @@ def test_inventory_rows_normalize_and_lockstep_with_config():
     assert by_name["exec"]["schedule"] == "-"
 
 
-def test_tier_inventory_matches_capabilities():
-    """Tier inventory is derived from canonical tier capabilities."""
+def test_tier_inventory_matches_native_contract():
+    """Tier inventory mirrors the native contract, including diagnostic."""
     tiers = _tier_inventory()
 
-    assert set(tiers) == set(COGITATE_ACCESS_TIERS)
-    for tier in COGITATE_ACCESS_TIERS:
-        caps = capabilities_for_access_tier(tier)
-        assert tiers[tier]["sol"] is caps.sol
-        assert tiers[tier]["reads"] is caps.reads
-        assert tiers[tier]["submit"] is caps.submit
-        expected_tools: list[str] = []
-        if caps.sol:
-            expected_tools.append("sol")
-        if caps.reads:
-            expected_tools.extend(COGITATE_READ_TOOL_NAMES)
-        assert tiers[tier]["tools"] == expected_tools
+    assert set(tiers) == {tier["name"] for tier in _NATIVE_TIERS}
+    for tier in _NATIVE_TIERS:
+        assert tiers[tier["name"]] == {
+            "sol": tier["sol"],
+            "reads": tier["reads"],
+            "submit": tier["submit"],
+            "tools": tier["tools"],
+        }
 
 
 def test_inventory_json_uses_verbatim_rows_and_table_uses_same_values(capsys):
@@ -448,21 +491,22 @@ def test_scan_command_examples_dedupes_and_caps():
     ]
 
 
-def test_real_partner_prompt_uses_direct_journal_identity_without_contradiction():
-    config = get_talent("partner")
+def test_show_effective_prompt_uses_native_dry_run_details(monkeypatch, capsys):
+    monkeypatch.setattr(
+        talent_cli_mod.cogitate_client,
+        "render_dry_run_details",
+        lambda _config: {
+            "initial_prompt": "Native partner instruction",
+            "system_instruction": "Native partner system instruction",
+            "expects_emit_final": False,
+        },
+    )
 
-    prompt_body, system_instruction = assemble_prompt(config, sol_tool_name="sol")
+    show_effective_prompt("partner", full=True)
+    output = capsys.readouterr().out
 
-    assert system_instruction is not None
-    assert "approved host command families" in system_instruction
-    assert "journal <family> ..." in system_instruction
-    assert "never prefixed with `sol` or `sol call`" in system_instruction
-    assert "no bare `journal ...` commands" not in system_instruction
-    assert "no other bare `journal ...` family" in system_instruction
-    assert "`journal identity partner` through the provided" in prompt_body
-    assert "`journal identity partner --update-section`" in prompt_body
-    assert "`sol`-surface read form" not in prompt_body
-    assert "there is no `sol call` verb" not in prompt_body
+    assert "Native partner system instruction" in output
+    assert "Native partner instruction" in output
 
 
 def test_inventory_degrades_bad_access_tier_in_rows_table_and_json(

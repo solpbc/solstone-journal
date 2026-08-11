@@ -78,8 +78,8 @@ from solstone.convey.sol_initiated import (
 from solstone.convey.sol_initiated.copy import KIND_SOL_CHAT_REQUEST, SURFACE_CONVEY
 from solstone.convey.utils import error_response
 from solstone.think.callosum import CallosumConnection, callosum_send
-from solstone.think.cogitate_policy import DETERMINISTIC_FAILURE_REASON_CODES
 from solstone.think.cortex_client import CortexNotClaimed, CortexSpawnUnavailable
+from solstone.think.deterministic_failure_caps import DETERMINISTIC_FAILURE_REASON_CODES
 from solstone.think.pipeline_health import SegmentBacklog, read_segment_backlog
 from solstone.think.processing import (
     ProcessingSettings,

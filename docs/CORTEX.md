@@ -92,8 +92,7 @@ The `finish` event may include a `skipped` field when generation is skipped:
 
 Conversation continuation is owned by the active provider runtime. Include a
 `session_id` field in the request with the session ID from a previous talent's
-finish event; cloud providers and the bundled local provider continue through
-OpenHands.
+finish event; the native provider runtime continues the conversation.
 
 Chats are locked to their original provider — continuations must use the same provider
 that started the conversation. The `chat_id` field enables reverse lookup from an
@@ -316,7 +315,7 @@ the top-level `talent_overrides` map.
 The system supports multiple provider identities through
 `solstone/think/providers/__init__.py`:
 
-- **OpenAI, Google AI Studio, and Anthropic** (`solstone/think/providers/openhands.py`): one OpenHands/LiteLLM transport for generate and cogitate
+- **OpenAI, Google AI Studio, and Anthropic** (`solstone/think/cogitate_client.py`): native one-shot cogitate transport; native generate owns single-shot generation
 - **Local** (`solstone/think/providers/local.py`): bundled llama-server, BYO OpenAI-compatible endpoint, or confidential local endpoint
 
 Effective providers:

@@ -1,9 +1,10 @@
 # Providers Panel Consolidation
 
 Historical design note, July 2026: this document predates the current one-brain
-provider architecture in `docs/PROVIDERS.md`. Treat body references to a
-standalone `mlx` provider or old Settings provider-panel structure as historical
-implementation notes, not current routing guidance.
+provider architecture in `docs/PROVIDERS.md` and the retired OpenHands install
+card. Treat body references to a standalone `mlx` provider, `openhands`, or the
+old Settings provider-panel structure as historical implementation notes, not
+current routing guidance.
 
 Settings -> Providers will move from three install renderers (`bundledProviders`, `mlxBootstrapRegion`, `localBootstrapRegion`) to one install panel that renders `anthropic`, `openai`, `openhands`, `local`, and `mlx` from the shipped install-state contract. The contract producers stay unchanged: bundled provider state remains in `solstone/think/providers/bundled.py`, local state remains in `solstone/apps/settings/local_bootstrap.py`, mlx state remains in `solstone/apps/settings/mlx_bootstrap.py`, and copy remains in `solstone/apps/settings/install_copy.py`.
 

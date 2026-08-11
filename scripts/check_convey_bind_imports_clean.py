@@ -28,7 +28,6 @@ HEAVY = (
     "torch",
     "pandas",
     "huggingface_hub",
-    "litellm",
 )
 
 _INJECT_ENV = "SOLSTONE_CONVEY_BIND_GUARD_INJECT_HEAVY_MODULE"

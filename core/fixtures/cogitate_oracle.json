@@ -1,9 +1,13 @@
 {
   "fixture": "solstone-cogitate-oracle",
   "fixture_version": 8,
-  "generated_by": "scripts/cogitate_oracle_corpus.py",
   "reference_commit": "8002d42a523f1b5fbac40e7b00d088ba11672fec",
-  "provenance": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. CLOCK: this file is a FROZEN RECORD - it can only be regenerated while the Python reference is still importable, and it stops being reproducible when Python is cut. Tests read it; they never execute Python.",
+  "provenance": {
+    "status": "frozen",
+    "final_python_reference_commit": "aa5859766",
+    "native_divergence_ledger": "core/crates/solstone-core-cogitate/src/divergence.rs",
+    "detail": "Every vector below was produced by EXECUTING the Python reference, one call per case. Nothing here was written by hand from reading the source. Tests read it; they never execute Python."
+  },
   "preambles": {
     "runtime": {
       "algorithm": "sha256",

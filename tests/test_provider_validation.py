@@ -3,9 +3,18 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
-from solstone.think.providers import local, openhands
+from solstone.think import cogitate_client
+from solstone.think.providers import (
+    PROVIDER_REGISTRY,
+    get_provider_module,
+    local,
+    validate_key,
+    validate_model,
+)
 
 
 def test_cloud_validate_key_uses_child_only_key_override(monkeypatch) -> None:
@@ -17,7 +26,9 @@ def test_cloud_validate_key_uses_child_only_key_override(monkeypatch) -> None:
 
     monkeypatch.setattr("solstone.think.generate_client.generate_with_result", probe)
 
-    assert openhands.validate_key("google", "candidate-secret") == {"valid": True}
+    assert cogitate_client.validate_key("google", "candidate-secret") == {
+        "valid": True
+    }
     assert captured["child_environment"] == {
         "SOLSTONE_GENERATE_API_KEY_OVERRIDE": "candidate-secret"
     }
@@ -32,7 +43,7 @@ def test_cloud_validate_model_sets_child_only_lane_overrides(monkeypatch) -> Non
 
     monkeypatch.setattr("solstone.think.generate_client.generate_with_result", probe)
 
-    assert openhands.validate_model(
+    assert cogitate_client.validate_model(
         "openai", "candidate-model", "candidate-secret"
     ) == {"valid": True}
     assert captured["child_environment"] == {
@@ -53,7 +64,7 @@ def test_cloud_validate_key_preserves_probe_success_carve_out(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
     )
 
-    assert openhands.validate_key("google", "candidate-secret") == {
+    assert cogitate_client.validate_key("google", "candidate-secret") == {
         "valid": True,
         "probe_reason_code": reason,
     }
@@ -67,7 +78,7 @@ def test_cloud_validate_key_preserves_wire_failure_shape(monkeypatch) -> None:
         lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
     )
 
-    assert openhands.validate_key("google", "bad") == {
+    assert cogitate_client.validate_key("google", "bad") == {
         "valid": False,
         "error": "probe refused",
         "reason_code": "provider_key_invalid",
@@ -82,7 +93,7 @@ def test_cloud_validate_model_preserves_wire_failure_shape(monkeypatch) -> None:
         lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
     )
 
-    assert openhands.validate_model("anthropic", "candidate-model", "bad") == {
+    assert cogitate_client.validate_model("anthropic", "candidate-model", "bad") == {
         "valid": False,
         "error": "probe refused",
         "reason_code": "provider_key_invalid",
@@ -111,3 +122,31 @@ def test_local_validate_key_uses_native_probe_and_wire_reason(monkeypatch) -> No
     assert captured["max_output_tokens"] == 8
     assert captured["timeout_s"] == 10
     assert "child_environment" not in captured
+
+
+def test_registry_validation_resolves_cloud_modules(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def probe(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"text": "OK"}
+
+    monkeypatch.setattr("solstone.think.generate_client.generate_with_result", probe)
+
+    for provider in ("google", "openai", "anthropic"):
+        assert get_provider_module(provider) is cogitate_client
+        assert validate_key(provider, "candidate-secret") == {"valid": True}
+        assert validate_model(provider, "candidate-model", "candidate-secret") == {
+            "valid": True
+        }
+
+    assert PROVIDER_REGISTRY["local"] == "solstone.think.providers.local"
+    assert get_provider_module("local") is local
+    assert len(calls) == 6
+
+
+def test_cloud_registry_module_accepts_brain_cogitate_call_shape() -> None:
+    for provider in ("google", "openai", "anthropic"):
+        module = get_provider_module(provider)
+        assert module is cogitate_client
+        inspect.signature(module.run_cogitate).bind(config={}, on_event=None)

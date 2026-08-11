@@ -396,7 +396,7 @@ def byo_exception_matches_context_window(
 
 
 def classify_byo_cogitate_error(exc: BaseException) -> str | None:
-    """Return a BYO local-endpoint reason code for known OpenHands/LiteLLM errors."""
+    """Return a BYO local-endpoint reason code for known native-client errors."""
 
     chain = _exception_chain(exc)
     names = {type(item).__name__ for item in chain}

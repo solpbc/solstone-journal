@@ -27,7 +27,7 @@ pub(crate) const DIVERGENCES: &[PreambleDivergence] = &[PreambleDivergence {
         byte_length: 2163,
         sha256: "39011e2c0c5b2f144b082aaae9a9a5a564571b6346412902b8c349b41f67a75f",
     },
-    citation: "2026-08-09 operator ruling: the raw-read tier's runtime preamble corrects its broad-root framing to match glob/grep_search/list_directory's actual broad_root refusal rule; the frozen v3 oracle (core/fixtures/cogitate_oracle.json) retains the pre-correction text by design.",
+    citation: "2026-08-09 operator ruling: the raw-read tier's runtime preamble corrects its broad-root framing to match glob/grep_search/list_directory's actual broad_root refusal rule; the frozen v8 oracle (core/fixtures/cogitate_oracle.json) retains the pre-correction text by design.",
 }];
 
 pub(crate) fn check_divergence(

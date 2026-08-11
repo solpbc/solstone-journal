@@ -4,7 +4,6 @@
 import asyncio
 import logging
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -183,10 +182,7 @@ def test_execute_with_tools_weekly_reflection_finish_writes_sidecar(
         on_event({"event": "finish", "result": result})
         return ""
 
-    monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: SimpleNamespace(run_cogitate=run_cogitate),
-    )
+    monkeypatch.setattr("solstone.think.cogitate_client.run_cogitate", run_cogitate)
 
     config = _minimal_config(output_path, day="20260622")
     asyncio.run(talents._execute_with_tools(config, events.append))
@@ -219,10 +215,7 @@ def test_execute_with_tools_unmapped_output_still_finishes(
         on_event({"event": "finish", "result": result})
         return ""
 
-    monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: SimpleNamespace(run_cogitate=run_cogitate),
-    )
+    monkeypatch.setattr("solstone.think.cogitate_client.run_cogitate", run_cogitate)
 
     config = _minimal_config(output_path, day="20260622")
     asyncio.run(talents._execute_with_tools(config, events.append))

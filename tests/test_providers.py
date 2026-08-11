@@ -25,9 +25,6 @@ def _provider(name: str, env_key: str) -> dict[str, str]:
 def test_cogitate_baseline_ready_with_hosted_key(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
-    import litellm  # noqa: F401
-    import openhands.sdk  # noqa: F401
-
     status = build_provider_status([_provider("anthropic", "ANTHROPIC_API_KEY")])[
         "anthropic"
     ]
@@ -62,8 +59,7 @@ def test_cloud_provider_status_never_carries_install_gate(
     }
     assert status["issues"] in ([], [f"{env_key} not set"])
     assert not any(
-        "openhands" in issue.lower()
-        or "runtime" in issue.lower()
+        "runtime" in issue.lower()
         or "install" in issue.lower()
         for issue in status["issues"]
     )

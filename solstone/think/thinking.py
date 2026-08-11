@@ -40,7 +40,6 @@ from solstone.think.catchup_state import (
 )
 from solstone.think.change_detection import detect_segment_change, resolve_predecessor
 from solstone.think.cluster import cluster_segments, read_segment_data_state
-from solstone.think.cogitate_policy import failure_capped
 from solstone.think.cortex_client import (
     PATIENT_CLAIM_WINDOWS,
     CortexNotClaimed,
@@ -52,6 +51,7 @@ from solstone.think.cortex_client import (
     wait_for_uses,
 )
 from solstone.think.data_state import DataState
+from solstone.think.deterministic_failure_caps import failure_capped
 from solstone.think.facets import (
     get_active_facets,
     get_enabled_facets,
@@ -1284,7 +1284,7 @@ def _check_daily_skip(
         return (True, "already_complete")
     if not retry_on_deterministic_failure:
         failure = deterministic_failures.get((name, facet))
-        # Dispatch uses cogitate_policy.failure_capped, as does
+        # Dispatch uses deterministic_failure_caps.failure_capped, as does
         # evaluate_daily_completion. retry_on_deterministic_failure affects
         # dispatch only; completed day finalization ends retries, so forcing
         # convergence-by-retry with this flag is unsupported.
@@ -1303,7 +1303,7 @@ def evaluate_daily_completion(
     capped_daily_units: list[CappedDailyUnit] = []
     daily_units_terminal = True
 
-    # Invariant shared with _check_daily_skip via cogitate_policy.failure_capped:
+    # Invariant shared with _check_daily_skip via deterministic_failure_caps.failure_capped:
     # a unit's failure cap is terminal; the same predicate that stops dispatch
     # marks the unit terminal-degraded for day completion. Day completion means
     # all applicable units terminal, not all units succeeded. Degradation is

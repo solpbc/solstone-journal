@@ -120,7 +120,7 @@
     },
     "dry_run": {
       "role": "dry_run_native",
-      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "dry_run": "boolean", "terminal": "boolean" },
+      "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "dry_run": "boolean", "terminal": "boolean", "rendered_prompt": "object", "expects_emit_final": "boolean" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": true
@@ -142,13 +142,6 @@
     "tool_budget_exhausted": {
       "role": "native_producer",
       "required_fields": { "event": "string", "ts": "integer", "correlation_id": "string", "tool": "string", "budget": "integer", "count": "integer" },
-      "optional_fields": {},
-      "ts_required": true,
-      "terminal_applies": false
-    },
-    "warning": {
-      "role": "legacy_registered_not_native_producible",
-      "required_fields": { "event": "string", "ts": "integer" },
       "optional_fields": {},
       "ts_required": true,
       "terminal_applies": false

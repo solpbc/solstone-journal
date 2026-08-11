@@ -30,7 +30,7 @@ from typing import Any, Callable
 import frontmatter
 from jsonschema import Draft202012Validator, SchemaError
 
-from solstone.think.cogitate_contract import TALENT_ACCESS_TIERS
+from solstone.think import cogitate_client
 from solstone.think.facets import get_facets
 
 # Import core prompt utilities from solstone.think.prompts
@@ -92,11 +92,16 @@ def _validate_access_tier(raw: Any, talent_type: Any, key: str) -> str | None:
     if talent_type == "cogitate":
         if raw is None:
             return "normal"
-        if raw in TALENT_ACCESS_TIERS:
+        talent_access_tiers = tuple(
+            tier["name"]
+            for tier in cogitate_client.load_talent_contract()["tiers"]
+            if tier["talent_facing"]
+        )
+        if raw in talent_access_tiers:
             return raw
         raise ValueError(
             f"Prompt '{key}' has invalid 'access_tier' value '{raw}' "
-            f"(must be one of {TALENT_ACCESS_TIERS})"
+            f"(must be one of {talent_access_tiers})"
         )
 
     if raw is not None:

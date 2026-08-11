@@ -85,7 +85,7 @@ pub(crate) struct TailState {
     pub correlation_id: String,
 }
 
-/// The terminal ordering is ported directly from `openhands.py:1479-1647`.
+/// The terminal ordering preserves the retired runtime's precedence.
 /// Classify once, then let each higher-precedence branch retain the same
 /// non-responsive result-nullification behavior as the reference.
 pub(crate) fn compose_tail(state: TailState) -> RunOutcome {

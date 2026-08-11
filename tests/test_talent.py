@@ -19,6 +19,25 @@ from solstone.think.talent import (
     source_is_required,
 )
 
+_NATIVE_TALENT_CONTRACT = {
+    "tiers": [
+        {"name": "normal", "talent_facing": True},
+        {"name": "system-read", "talent_facing": True},
+        {"name": "outbound", "talent_facing": True},
+        {"name": "synthesis", "talent_facing": True},
+        {"name": "diagnostic", "talent_facing": False},
+    ]
+}
+
+
+@pytest.fixture(autouse=True)
+def native_talent_contract(monkeypatch):
+    monkeypatch.setattr(
+        talent_module.cogitate_client,
+        "load_talent_contract",
+        lambda: _NATIVE_TALENT_CONTRACT,
+    )
+
 
 def test_source_is_enabled_bool():
     """Test source_is_enabled with bool values."""

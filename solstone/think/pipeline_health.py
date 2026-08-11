@@ -18,11 +18,11 @@ from solstone.think.catchup_state import (
     read_segment_repair_summary,
 )
 from solstone.think.cluster import cluster_segments
-from solstone.think.cogitate_policy import (
+from solstone.think.data_state import DataState
+from solstone.think.deterministic_failure_caps import (
     DETERMINISTIC_FAILURE_REASON_CODES,
     failure_capped,
 )
-from solstone.think.data_state import DataState
 from solstone.think.utils import (
     DEFAULT_STREAM,
     day_dirs,

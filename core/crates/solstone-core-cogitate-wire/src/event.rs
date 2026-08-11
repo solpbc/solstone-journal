@@ -180,12 +180,24 @@ pub fn serialize_event_validated(event: RuntimeEvent) -> Result<Value, Validatio
 
 /// Produce the native dry-run terminal event without constructing a provider.
 pub fn serialize_dry_run(request: &CogitateRequest) -> Result<Value, ValidationError> {
+    let input = request.to_run_input();
     let value = event_value(
         NativeEventKind::DryRun,
         request.correlation_id.clone(),
         [
             ("dry_run", Value::Bool(true)),
             ("terminal", Value::Bool(true)),
+            (
+                "rendered_prompt",
+                json!({
+                    "initial_prompt": input.initial_prompt,
+                    "system_instruction": input.system_instruction,
+                }),
+            ),
+            (
+                "expects_emit_final",
+                Value::Bool(input.config.expects_emit_final),
+            ),
         ],
     );
     validate_event(&value)?;

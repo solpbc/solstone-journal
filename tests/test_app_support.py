@@ -1018,34 +1018,6 @@ def test_recent_beats_stale_under_limit(tmp_path, monkeypatch):
     )[::-1]
 
 
-def test_recent_errors_ignore_demoted_openhands_max_iterations_line(
-    tmp_path,
-    monkeypatch,
-):
-    health_dir = _health_dir(tmp_path, monkeypatch)
-    recent = (datetime.now() - timedelta(hours=1)).isoformat(timespec="seconds")
-    demoted = (
-        "INFO:openhands.sdk.conversation.impl.local_conversation:"
-        "Agent reached maximum iterations limit (4)."
-    )
-    untouched = (
-        "ERROR:openhands.sdk.conversation.impl.local_conversation:"
-        "Agent reached maximum iterations limit (4)."
-    )
-    _write_log(
-        health_dir,
-        "cortex.log",
-        [
-            f"{recent} [cortex:stderr] {demoted}",
-            f"{recent} [cortex:stderr] {untouched}",
-        ],
-    )
-
-    result = collect_recent_errors()
-    messages = [entry["message"] for entry in result]
-
-    assert any(untouched in message for message in messages)
-    assert not any(demoted in message for message in messages)
 
 
 def test_unparseable_line_inherits_preceding_timestamp(tmp_path, monkeypatch):

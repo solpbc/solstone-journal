@@ -5,9 +5,9 @@
 
 import asyncio
 import json
-import sys
 from datetime import datetime, timezone
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +21,14 @@ from solstone.think.providers.brain_state import (
 )
 
 NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+
+def _install_native_brain_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from solstone.think.providers import brain_state
+
+    binary = Path(__file__).resolve().parents[1] / "core/target/debug/solstone-core"
+    assert binary.is_file()
+    monkeypatch.setattr(brain_state, "_native_binary", lambda **_kwargs: binary)
 
 
 @pytest.fixture
@@ -123,14 +131,12 @@ def _write_ready_brain(journal_path):
 def mock_all_providers(monkeypatch):
     """Mock the registered cogitate provider module with mock_run_cogitate.
 
-    Cloud providers route through the OpenHands facade for cogitate, so one mock
-    covers openai, anthropic, and google registry lookups.
+    Cloud providers route through the native cogitate client, so one mock
+    covers openai, anthropic, and google dispatches.
     """
-    mock_module = MagicMock()
-    mock_module.run_cogitate = mock_run_cogitate
-    monkeypatch.setitem(sys.modules, "solstone.think.providers.openhands", mock_module)
-
-    monkeypatch.setitem(sys.modules, "agents", MagicMock())
+    monkeypatch.setattr(
+        "solstone.think.cogitate_client.run_cogitate", mock_run_cogitate
+    )
 
     # Mock prepare_config to avoid needing real agent configs
     monkeypatch.setattr("solstone.think.talents.prepare_config", mock_prepare_config)
@@ -182,18 +188,17 @@ def test_ndjson_single_request(mock_journal, monkeypatch, capsys):
 def test_ndjson_cogitate_model_not_found_records_runtime_failure(
     mock_journal, monkeypatch, capsys
 ):
-    from litellm.exceptions import NotFoundError
-
+    _install_native_brain_binary(monkeypatch)
     _write_ready_brain(mock_journal)
+
+    class ModelNotFoundError(RuntimeError):
+        reason_code = "model_not_found"
 
     async def run_cogitate(config, on_event=None):
         del config, on_event
-        raise NotFoundError("model not found", model="m", llm_provider="gemini")
+        raise ModelNotFoundError("model not found")
 
-    monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: SimpleNamespace(run_cogitate=run_cogitate),
-    )
+    monkeypatch.setattr("solstone.think.cogitate_client.run_cogitate", run_cogitate)
     monkeypatch.setattr("solstone.think.talents.prepare_config", mock_prepare_config)
     monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"prompt": "use tools"})))
     mock_args = MagicMock()
@@ -224,16 +229,14 @@ def test_ndjson_cogitate_generic_tool_404_stays_unknown(
     class ToolLookupError(Exception):
         status_code = 404
 
+    _install_native_brain_binary(monkeypatch)
     _write_ready_brain(mock_journal)
 
     async def run_cogitate(config, on_event=None):
         del config, on_event
         raise ToolLookupError("tool endpoint missing")
 
-    monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: SimpleNamespace(run_cogitate=run_cogitate),
-    )
+    monkeypatch.setattr("solstone.think.cogitate_client.run_cogitate", run_cogitate)
     monkeypatch.setattr("solstone.think.talents.prepare_config", mock_prepare_config)
     monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"prompt": "use tools"})))
     mock_args = MagicMock()
@@ -254,7 +257,7 @@ def test_ndjson_cogitate_generic_tool_404_stays_unknown(
 
     record = inspect_brain_state(NOW, journal_path=mock_journal)["record"]
     assert record is not None
-    assert record["reason_code"] is None
+    assert record["reason_code"] != "model_not_found"
     assert record["evidence"]["cogitate"].get("reason_code") is None
 
 

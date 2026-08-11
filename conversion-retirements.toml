@@ -13,6 +13,7 @@ content_exclusions = [
   "scripts/check_conversion_retirements.py",
   "scripts/check_convey_bind_imports_clean.py",
   "scripts/check_wheel_contents.py",
+  "scripts/check_cogitate_cutover.py",
 ]
 
 [[waves]]
@@ -33,4 +34,25 @@ status = "done"
 distribution = "pyhpke"
 python_roots = ["solstone/think/spl"]
 import_roots = ["pyhpke"]
+test_only_dependency_locations = []
+
+[[waves]]
+id = "R6b-2-cogitate-openhands-sdk"
+status = "done"
+distribution = "openhands-sdk"
+python_roots = [
+  "solstone/think/providers/openhands.py",
+  "solstone/think/providers/emit_final_tool.py",
+  "solstone/think/providers/read_tools.py",
+  "solstone/think/cogitate_read_tools.py",
+]
+import_roots = ["openhands"]
+test_only_dependency_locations = []
+
+[[waves]]
+id = "R6b-2-cogitate-litellm"
+status = "done"
+distribution = "litellm"
+python_roots = []
+import_roots = ["litellm"]
 test_only_dependency_locations = []

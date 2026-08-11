@@ -254,6 +254,14 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 ⚠ **Four near-identical entry points, three error semantics.** `generate` / `generate_with_result` / `agenerate` / `agenerate_with_result` each repeat the same nine-step policy sequence; the two `_with_result` forms make schema validation advisory while the two plain forms raise on it. Only `generate_with_result` accepts `num_retries`, `inference_retry_index`, `local_exclusive_admission` and `enforce_responsiveness`. One boundary, four doors, differing on what a schema failure means.
 
+🆕 ✅ **CLOSED 2026-08-11 — the cogitate Python-runtime inventory below is
+historical.** R6b-2 removed the OpenHands/LiteLLM driver, Python command gate,
+prompt assembly, raw-read bindings, and Python contract. The live path is
+`cogitate_client.run_cogitate` → `solstone-core cogitate --one-shot`; the
+native talent-contract query and dry-run event supply inventory and effective
+prompt details. Retain the pre-cut module counts and decisions below as the
+conversion record, not as current implementation guidance.
+
 ⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate`; `run_generate` and `run_agenerate` never touch it. It is a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture **— ⛔ FALSE AT HEAD since R1/R2: `solstone-core-cogitate` and `-cogitate-tools` both `include_str!` it**** (re-verified 2026-08-09), so today the digest detects only Python-source-versus-fixture drift.
 
 🆕 ⛔ **CORRECTED 2026-08-09 — "not reconstructible" was FALSE, and the correction changes what the fixture is for.** The text *is* recoverable from the repo: `docs/COGITATE.md` carries a **byte-identical** copy — extracted from its fence and hashed, 1,989 bytes, `6614e3fd…`, identical to the constant and to the fixture. 🔴 **But nothing checks that copy.** Grepping every `.py`, `.rs` and `Makefile` for `COGITATE.md` finds one reader, and it reads the doc for an unrelated assertion. So the text is reproducible **by luck of maintenance**, and the doc copy is a live drift hazard rather than a mitigation. ✅ **Disposition: the text goes INTO the fixture beside the digest**, the house style `core/fixtures/local_contract.json` already uses so a divergence *"fails on the string rather than on a hex value that says only 'different'."* 📌 **A digest is the right instrument for one implementation and the wrong one for two** — it can tell the second implementation that it is wrong while being structurally unable to tell it what right is. ⚠ **`COGITATE_DIAGNOSTIC_PREAMBLE` — the second runtime contract, the one the brain readiness probe runs against — is in NEITHER the fixture nor `COGITATE.md`**, and gets the same treatment.
