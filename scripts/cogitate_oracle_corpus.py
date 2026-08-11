@@ -59,14 +59,16 @@ from solstone.think.cogitate_policy import (  # noqa: E402
     CONTEXT_WARN_FRAC,
     COST_WARN_FRAC,
     DEFAULT_RUN_COST_CAP_USD,
-    DETERMINISTIC_FAILURE_CAPS,
-    DETERMINISTIC_FAILURE_REASON_CODES,
     MAX_TURNS,
     MAX_TURNS_HEADROOM,
     TURN_WARN_FRACS,
     CogitatePolicy,
-    failure_capped,
     resolve_read_scope,
+)
+from solstone.think.deterministic_failure_caps import (  # noqa: E402
+    DETERMINISTIC_FAILURE_CAPS,
+    DETERMINISTIC_FAILURE_REASON_CODES,
+    failure_capped,
 )
 
 SDK_INJECTED_ACTION_PROPERTIES = frozenset({"kind"})

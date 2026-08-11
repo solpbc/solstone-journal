@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from solstone.think import cogitate_policy
-from solstone.think.responsiveness import NON_RESPONSIVE_REASON_CODE
 
 
 def _policy(
@@ -39,32 +38,6 @@ def test_resolve_read_scope_span_is_inclusive():
         {"read_scope_span": 2},
         "20260427",
     ) == ["chronicle/20260425", "chronicle/20260426", "chronicle/20260427"]
-
-
-def test_failure_capped_schema_invalid_cap_is_three():
-    assert cogitate_policy.failure_capped("schema_invalid", 2) is False
-    assert cogitate_policy.failure_capped("schema_invalid", 3) is True
-
-
-def test_failure_capped_default_deterministic_cap_is_two():
-    assert cogitate_policy.failure_capped("context_window_exceeded", 1) is False
-    assert cogitate_policy.failure_capped("context_window_exceeded", 2) is True
-
-
-def test_failure_capped_provider_request_rejected_is_one():
-    assert cogitate_policy.failure_capped("provider_request_rejected", 1) is True
-
-
-def test_failure_capped_non_responsive_cap_is_two():
-    assert cogitate_policy.failure_capped(NON_RESPONSIVE_REASON_CODE, 1) is False
-    assert cogitate_policy.failure_capped(NON_RESPONSIVE_REASON_CODE, 2) is True
-
-
-def test_deterministic_failure_caps_cover_reason_codes_exactly():
-    assert (
-        set(cogitate_policy.DETERMINISTIC_FAILURE_CAPS)
-        == cogitate_policy.DETERMINISTIC_FAILURE_REASON_CODES
-    )
 
 
 def test_policy_denies_write_tools(tmp_path):

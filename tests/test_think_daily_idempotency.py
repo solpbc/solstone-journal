@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from solstone.think.cogitate_policy import DETERMINISTIC_FAILURE_CAPS
+from solstone.think.deterministic_failure_caps import DETERMINISTIC_FAILURE_CAPS
 from solstone.think.pipeline_health import (
     DeterministicFailure,
     read_completed_units,

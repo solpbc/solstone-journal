@@ -6,8 +6,8 @@ import os
 import sys
 
 sys.path.insert(0, os.environ["SOLSTONE_REPO_ROOT"])
-from solstone.think import cogitate_policy
-from solstone.think import pipeline_health
+
+from solstone.think import deterministic_failure_caps, pipeline_health
 
 day = os.environ.get("ORACLE_DAY", "20990202")
 since_ms = int(os.environ.get("ORACLE_SINCE_MS", "200"))
@@ -170,7 +170,9 @@ print(
             "no_processing": sorted(pipeline_health.SEGMENT_NO_PROCESSING_MODALITIES),
             "cap": pipeline_health.CAP,
             "min_span_ms": pipeline_health.MIN_SPAN_MS,
-            "deterministic": sorted(cogitate_policy.DETERMINISTIC_FAILURE_REASON_CODES),
+            "deterministic": sorted(
+                deterministic_failure_caps.DETERMINISTIC_FAILURE_REASON_CODES
+            ),
         },
         sort_keys=True,
     )

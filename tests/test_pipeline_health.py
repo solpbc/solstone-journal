@@ -21,7 +21,7 @@ from solstone.observe.processing_record import (
     build_processing_record,
 )
 from solstone.think import catchup_state
-from solstone.think.cogitate_policy import DETERMINISTIC_FAILURE_REASON_CODES
+from solstone.think.deterministic_failure_caps import DETERMINISTIC_FAILURE_REASON_CODES
 from solstone.think.pipeline_health import (
     BACKLOG_STATE_COMPLETE,
     BACKLOG_STATE_PENDING,
