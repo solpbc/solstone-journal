@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 check-rust-vad-analyze-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-cogitate-prompts check-local-server-argv-owner check-local-install-transport check-local-generate-cutover smoke-cogitate release release-test publish-release publish-release-test FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -28,6 +28,19 @@ RUST_MANIFEST := core/Cargo.toml
 IOS_TARGET := aarch64-apple-ios
 MACOS_TARGET := aarch64-apple-darwin
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
+
+# Every crate RUST_HOST_EXCLUDES removes from the workspace test selection is
+# named here, and check-rust-onnx-test runs it. They are excluded because they
+# link the pinned host ONNX Runtime, which a plain workspace `cargo test`
+# cannot resolve -- but excluding them from the SELECTION also excluded them
+# from the GATE. Measured 2026-08-11 on this tree: check-rust-test runs 4,411
+# tests and NOT ONE of the 33 in solstone-core-speakers-analyze (26) and
+# solstone-core-speakers-onnx (7) was among them, while
+# check-rust-vad-analyze-test covered only the third crate. Tests nobody runs
+# are worse than no tests, because they read as coverage.
+# ci_gate_purity::every_host_excluded_crate_is_tested_by_a_ci_target keeps the
+# two lists in step: adding a fourth --exclude without adding it here reds.
+ONNX_HOST_TEST_PACKAGES := -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze
 
 # bindgen (inside ffmpeg-sys-next, which solstone-core-describe pulls in) asks
 # libclang for its builtin-header directory, and libclang derives that path from
@@ -79,6 +92,7 @@ VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylin
 ONNX_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
 ONNX_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/speakers-analyze-runtime-link/$(ONNX_RUNTIME_HOST_TARGET)
 VAD_ANALYZE_HOST_ORT_ENV := ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)" LD_LIBRARY_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"
+REQUIRE_ONNX_HOST_RUNTIME = test -f "$(ONNX_RUNTIME_HOST_LINK_DIR)/libonnxruntime.so.1" || { echo "the pinned host ONNX Runtime is required to build and test the shipped analysis helpers; run 'make check-rust-onnx-stage' once outside make ci, then retry" >&2; exit 1; }
 DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Derived, never written out: the helper's declared coverage lives in
@@ -116,7 +130,7 @@ JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu
 # report uv-absence themselves. Rust-only and frozen/gated goals are likewise
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
-UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-vad-analyze-test check-rust-deny audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
+UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-deny audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
 ifndef UV
 ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -278,15 +292,31 @@ wheel-vulkan-probe-linux-aarch64:
 $(ONNX_RUNTIME_HOST_LINK_DIR):
 	python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json
 
-# solstone-core-vad-analyze links ONNX Runtime, so RUST_HOST_EXCLUDES keeps it
-# out of check-rust-test/build and its own #[test]s would otherwise run nowhere.
-# This target is that somewhere. It stages the shared runtime first, so it is
-# runnable standalone from a state where only `make install` has run. It stays
-# OUTSIDE ci/ci-under-poison, which cannot shell to Python at all — same spirit
-# as check-differentials.
-check-rust-vad-analyze-test: $(ONNX_RUNTIME_HOST_LINK_DIR)
+# Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
+# it stays OUTSIDE ci/ci-under-poison, which cannot shell to an interpreter at
+# all. Run it once per checkout; the rule is directory-existence, so a populated
+# stage is not re-downloaded.
+check-rust-onnx-stage: $(ONNX_RUNTIME_HOST_LINK_DIR)
+	@echo "host ONNX Runtime staged at $(ONNX_RUNTIME_HOST_LINK_DIR)"
+
+# The ONNX-linked crates' own #[test]s. This runs INSIDE ci: it requires the
+# staged runtime rather than building it, which is exactly the contract
+# check-rust-shipped-binaries has carried since it started building the shipped
+# helpers. Serialized to match check-rust-test -- three ONNX-linked suites
+# loading models in parallel would measure the host, not the product.
+check-rust-onnx-test:
 	@$(REQUIRE_CARGO)
-	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-vad-analyze --locked
+	@set -eu; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "ONNX-linked crate tests: not run on $$(uname -s); these helpers ship on Linux"; \
+		exit 0; \
+	fi; \
+	$(REQUIRE_ONNX_HOST_RUNTIME); \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path $(RUST_MANIFEST) $(ONNX_HOST_TEST_PACKAGES) --locked -- --test-threads=1
+
+# Retained name: check-rust-shipped-binaries' recovery message named it for
+# months and it is in muscle memory. It now stages AND runs all three crates.
+check-rust-vad-analyze-test: check-rust-onnx-stage check-rust-onnx-test
 
 wheel-describe-linux: wheel-describe-linux-x86_64
 
@@ -432,7 +462,7 @@ build:
 # package without adding its smoke command makes the Rust gate red.
 check-rust-shipped-binaries: build
 	@$(REQUIRE_CARGO)
-	@if [ "$$(uname -s)" = "Linux" ]; then test -f "$(ONNX_RUNTIME_HOST_LINK_DIR)/libonnxruntime.so.1" || { echo "the pinned host ONNX Runtime is required to build shipped analysis helpers; run 'make check-rust-vad-analyze-test' once outside make ci, then retry" >&2; exit 1; }; fi
+	@if [ "$$(uname -s)" = "Linux" ]; then $(REQUIRE_ONNX_HOST_RUNTIME); fi
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- --version >/dev/null
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-journal-bin --bin solstone-core-journal --locked -- --version >/dev/null
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-retention-cli --bin solstone-retention --locked -- --help >/dev/null
@@ -928,6 +958,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-test
+	@$(MAKE) check-rust-onnx-test
 	@$(MAKE) check-rust-shipped-binaries
 	@$(MAKE) check-rust-ios
 	@$(MAKE) check-rust-macos

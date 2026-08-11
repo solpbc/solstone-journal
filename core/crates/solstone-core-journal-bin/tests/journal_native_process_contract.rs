@@ -328,12 +328,32 @@ fn run_dispatcher(
     argv: &[&str],
 ) -> io::Result<Option<ExitStatus>> {
     let _ = fs::remove_file(context.poison_marker);
+    // PATH is pinned to the poisoned sibling directory, and that is an ADDITION
+    // to the sibling poison rather than a substitute for it. The two poisons are
+    // not interchangeable and must both hold:
+    //
+    //   * the SIBLING poison is the load-bearing one. It tests the shipped
+    //     dispatch path, because `sibling_python_for_executable` resolves
+    //     `python3` beside `current_exe()` and never from PATH. A PATH shim
+    //     proves nothing about that route.
+    //   * PATH was previously INHERITED here, so a native verb that reached an
+    //     interpreter the ordinary way -- `Command::new("python3")`, or any
+    //     library that shells one -- found the host's real interpreter and this
+    //     probe stayed green. The gate proved the dispatch was native and said
+    //     nothing about what the native binary then did.
+    //
+    // `sibling_dir` already holds poison shims named python, python3, pytest, uv
+    // and ruff, each of which writes POISON_MARKER and exits 97, so pointing
+    // PATH at it closes that second route with the shims already present. The
+    // dispatcher finds its sibling binary through current_exe(), not PATH, so
+    // narrowing PATH does not affect the route under test.
     let mut child = Command::new(context.dispatcher)
         .arg(token)
         .args(argv)
         .env("POISON_MARKER", context.poison_marker)
         .env("HOME", context.home)
         .env("SOLSTONE_JOURNAL", context.journal)
+        .env("PATH", context.sibling_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;

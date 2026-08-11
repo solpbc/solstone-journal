@@ -265,7 +265,14 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .lines()
         .filter_map(|invocation| invocation.split_whitespace().next())
         .collect::<Vec<_>>();
-    let mut expected = vec!["fmt", "check", "clippy", "test", "build"];
+    let mut expected = vec!["fmt", "check", "clippy", "test"];
+    // check-rust-onnx-test runs the crates RUST_HOST_EXCLUDES removes from the
+    // workspace selection. It shells to cargo only on Linux; elsewhere the
+    // target prints why it did not run and exits 0.
+    if cfg!(target_os = "linux") {
+        expected.push("test");
+    }
+    expected.push("build");
     expected.extend(["run"; if cfg!(target_os = "linux") { 9 } else { 6 }]);
     if cfg!(target_os = "macos") {
         expected.push("check");
@@ -308,6 +315,67 @@ fn make_ci_builds_and_exercises_every_host_packaged_binary() {
     assert!(
         target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-shipped-binaries"),
         "make ci must retain the shipped-binary build and smoke gate"
+    );
+}
+
+/// Every crate `RUST_HOST_EXCLUDES` removes from the workspace test selection
+/// must be named in a package list some `make ci` target actually runs.
+///
+/// This is the guard the tree did not have. The two lists were written months
+/// apart and nothing tied them together, so three crates were excluded from
+/// `check-rust-test` while only one of them was picked up by a target of its
+/// own -- 33 `#[test]`s that no `make` target ran, indistinguishable from
+/// coverage. Adding a fourth `--exclude` without adding it to
+/// `ONNX_HOST_TEST_PACKAGES` reds here.
+///
+/// Pairs with `rust_host_excludes_match_the_workspace_onnx_closure`, which
+/// answers *why* a crate is excluded (it is in the ONNX dependency closure).
+/// Together they close the loop: a new `ort` consumer must join
+/// `RUST_HOST_EXCLUDES` or that test reds, and once it does it must join
+/// `ONNX_HOST_TEST_PACKAGES` or this one does.
+#[test]
+fn every_host_excluded_crate_is_tested_by_a_ci_target() {
+    let makefile = makefile_text(&repo_root());
+
+    let excludes = makefile
+        .lines()
+        .find(|line| line.starts_with("RUST_HOST_EXCLUDES :="))
+        .expect("RUST_HOST_EXCLUDES must be defined");
+    let excluded = excludes
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter_map(|pair| (pair[0] == "--exclude").then_some(pair[1].to_owned()))
+        .collect::<BTreeSet<_>>();
+    assert!(
+        !excluded.is_empty(),
+        "the exclude parser found nothing; it is measuring itself, not the Makefile"
+    );
+
+    let packages = makefile
+        .lines()
+        .find(|line| line.starts_with("ONNX_HOST_TEST_PACKAGES :="))
+        .expect("ONNX_HOST_TEST_PACKAGES must be defined");
+    let tested = packages
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter_map(|pair| (pair[0] == "-p").then_some(pair[1].to_owned()))
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        excluded, tested,
+        "a crate excluded from the workspace test selection has no gate running its tests"
+    );
+
+    let onnx = target_body(&makefile, "check-rust-onnx-test");
+    assert!(
+        onnx.contains("$(ONNX_HOST_TEST_PACKAGES)"),
+        "check-rust-onnx-test must run the excluded-crate package list, not a hand copy"
+    );
+    assert!(
+        target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-onnx-test"),
+        "make ci must run the tests of the crates it excludes from the workspace selection"
     );
 }
 
