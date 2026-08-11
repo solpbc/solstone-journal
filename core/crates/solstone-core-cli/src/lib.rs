@@ -12,7 +12,7 @@ macro_rules! speaker_resolve_usage {
 }
 
 pub const USAGE: &str = concat!(
-    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
+    "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core assets\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
@@ -343,6 +343,7 @@ pub const TRANSFER_SEND_HELP: &str = concat!(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Version,
+    Assets,
     Warm {
         json: bool,
     },
@@ -797,6 +798,7 @@ pub struct UsageError;
 pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
     match args {
         [flag] if flag == OsStr::new("--version") => Ok(Command::Version),
+        [command] if command == OsStr::new("assets") => Ok(Command::Assets),
         [command] if command == OsStr::new("warm") => Ok(Command::Warm { json: false }),
         [command, flag] if command == OsStr::new("warm") && flag == OsStr::new("--json") => {
             Ok(Command::Warm { json: true })
@@ -2917,6 +2919,15 @@ mod tests {
     }
 
     #[test]
+    fn accepts_assets_command_without_arguments() {
+        assert_eq!(evaluate_args(&args(&["assets"])), Ok(Command::Assets));
+        assert_eq!(
+            evaluate_args(&args(&["assets", "unexpected"])),
+            Err(UsageError)
+        );
+    }
+
+    #[test]
     fn rejects_empty_args() {
         assert_eq!(evaluate_args(&args(&[])), Err(UsageError));
     }
@@ -4380,6 +4391,7 @@ mod tests {
         // invariant instead: every command the binary dispatches is listed.
         for command in [
             "--version",
+            "assets",
             "warm",
             "journal-path",
             "indexer",

@@ -31,6 +31,7 @@ solstone-core-brain.workspace = true
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+solstone-core-assets.workspace = true
 tempfile = "3.24.0"
 
 [[test]]
