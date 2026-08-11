@@ -154,6 +154,14 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         harness.run("depict"),
         "solstone-core-depict\n--opaque\nhas space\n"
     );
+    assert_eq!(
+        harness.run("facet-candidates"),
+        "solstone-core\nfacet-candidates\n--opaque\nhas space\n"
+    );
+    assert_eq!(
+        harness.run("navigate"),
+        "solstone-core\nnavigate\n--opaque\nhas space\n"
+    );
     let describe = harness.run_process("describe");
     assert_eq!(describe.status.code(), Some(97));
     assert!(

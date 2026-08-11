@@ -69,6 +69,16 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
     },
+    Probe {
+        token: "facet-candidates",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
+        token: "navigate",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
 ];
 
 #[allow(dead_code)]

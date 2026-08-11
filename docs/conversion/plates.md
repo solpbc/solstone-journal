@@ -565,6 +565,8 @@ Facets and their per-facet contents, including facet-scoped entity and speaker m
 
 ⛔ **`activities` here is the internal facet model only** — never the owner's physical movement, which is body motion / fitness / kinetics.
 
+The speculative-facet aggregation and candidate-record upsert are native, and `journal facet-candidates` dispatches to the sibling `solstone-core` binary, proven under the sibling-interpreter poison.
+
 ## `P-journal-config`
 
 `journal/config/journal.json`. Durable, `0o600`, mutated under `hold_lock` + `atomic_replace` with an explicit transaction type.
