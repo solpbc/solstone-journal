@@ -24,6 +24,7 @@ from unittest.mock import MagicMock
 from solstone.think.responsiveness import (
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS,
     NON_RESPONSIVE_REASON_CODE,
+    NonResponsiveOutputError,
 )
 from solstone.think.utils import day_path
 from tests.conftest import copytree_tracked
@@ -195,33 +196,26 @@ def _write_schema_file(tmp_path: Path, name: str, schema: dict) -> None:
     (tmp_path / name).write_text(json.dumps(schema, indent=2), encoding="utf-8")
 
 
-def _non_responsive_generate_result(text: str = _NON_RESPONSIVE_REFUSAL) -> dict:
-    return {
-        "text": text,
-        "model": "provider-model",
-        "finish_reason": "stop",
-        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-    }
+def _non_responsive_generate_error(
+    text: str = _NON_RESPONSIVE_REFUSAL,
+) -> NonResponsiveOutputError:
+    error = NonResponsiveOutputError()
+    error.non_responsive_output = text
+    error.non_responsive_matched_signal = "i cannot"
+    return error
 
 
 def _install_generate_provider(
     monkeypatch, outcome, *, provider: str = "google"
 ) -> None:
-    from solstone.think import models
-
-    provider_module = MagicMock()
-    if isinstance(outcome, list):
-        provider_module.run_generate.side_effect = outcome
+    native_generate = MagicMock()
+    if isinstance(outcome, (list, BaseException)):
+        native_generate.side_effect = outcome
     else:
-        provider_module.run_generate.return_value = outcome
+        native_generate.return_value = outcome
+    del provider
     monkeypatch.setattr(
-        models,
-        "resolve_provider",
-        lambda _interface: (provider, "provider-model"),
-    )
-    monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: provider_module,
+        "solstone.think.generate_client.generate_with_result", native_generate
     )
 
 
@@ -249,11 +243,9 @@ def _run_generate_failure(
             "load": {"transcripts": True, "percepts": True},
         },
     )
-    provider_module = MagicMock()
-    provider_module.run_generate.side_effect = side_effect
+    native_generate = MagicMock(side_effect=side_effect)
     monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: provider_module,
+        "solstone.think.generate_client.generate_with_result", native_generate
     )
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 
@@ -508,7 +500,7 @@ def test_execute_generate_heartbeat_emit_failure_is_logged_and_continues(
     assert "generate progress heartbeat failed talent=progress_failure" in caplog.text
 
 
-def test_execute_generate_provider_blank_records_runtime_failure(
+def test_execute_generate_provider_blank_emits_no_output(
     tmp_path,
     monkeypatch,
 ):
@@ -520,16 +512,14 @@ def test_execute_generate_provider_blank_records_runtime_failure(
     _write_ready_brain_record(tmp_path)
     output_path = tmp_path / "out.md"
     output_path.write_text("old output", encoding="utf-8")
-    provider_module = MagicMock()
-    provider_module.run_generate.return_value = {
+    native_generate = MagicMock(return_value={
         "text": "   ",
         "model": "gemini-3.5-flash",
         "finish_reason": "stop",
         "usage": {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1},
-    }
+    })
     monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: provider_module,
+        "solstone.think.generate_client.generate_with_result", native_generate
     )
     events: list[dict] = []
 
@@ -548,18 +538,16 @@ def test_execute_generate_provider_blank_records_runtime_failure(
     )
 
     assert [event["event"] for event in events] == ["error"]
-    assert events[0]["reason_code"] == "provider_response_invalid"
+    assert events[0]["reason_code"] == "no_output"
     assert events[0]["terminal"] is True
     assert output_path.read_text(encoding="utf-8") == "old output"
-    provider_module.run_generate.assert_called_once()
+    native_generate.assert_called_once()
 
     inspection = inspect_brain_state(datetime.now(timezone.utc), journal_path=tmp_path)
     record = inspection["record"]
     assert record is not None
-    assert record["reason_code"] == "provider_response_invalid"
-    assert record["evidence"]["generate"]["reason_code"] == (
-        "provider_response_invalid"
-    )
+    assert record["reason_code"] is None
+    assert record["evidence"]["generate"].get("reason_code") is None
 
 
 def test_execute_generate_non_responsive_emits_terminal_error(tmp_path, monkeypatch):
@@ -567,7 +555,7 @@ def test_execute_generate_non_responsive_emits_terminal_error(tmp_path, monkeypa
 
     output_path = tmp_path / "out.md"
     output_path.write_text("old output", encoding="utf-8")
-    _install_generate_provider(monkeypatch, _non_responsive_generate_result())
+    _install_generate_provider(monkeypatch, _non_responsive_generate_error())
     events = []
 
     asyncio.run(
@@ -599,7 +587,7 @@ def test_execute_generate_non_responsive_retry_emits_retries_one(
     output_path = tmp_path / "out.md"
     _install_generate_provider(
         monkeypatch,
-        [capacity_error, _non_responsive_generate_result()],
+        [capacity_error, _non_responsive_generate_error()],
         provider="local",
     )
     events = []
@@ -632,7 +620,7 @@ def test_execute_generate_non_responsive_terminal_event_carries_safe_raw(
     raw_output = _NON_RESPONSIVE_REFUSAL + " " + ("overflow " * 200)
     _install_generate_provider(
         monkeypatch,
-        _non_responsive_generate_result(raw_output),
+        _non_responsive_generate_error(raw_output),
     )
     events = []
 
@@ -660,18 +648,15 @@ def test_execute_generate_non_responsive_terminal_event_carries_safe_raw(
 
 
 def test_generate_model_not_found_records_runtime_failure(tmp_path, monkeypatch):
-    from litellm.exceptions import NotFoundError
-
     from solstone.think.providers.brain_state import inspect_brain_state
+
+    class ModelNotFoundError(RuntimeError):
+        reason_code = "model_not_found"
 
     events = _run_generate_failure(
         tmp_path,
         monkeypatch,
-        NotFoundError(
-            "model not found",
-            model="gemini-3.5-flash",
-            llm_provider="gemini",
-        ),
+        ModelNotFoundError("model not found"),
     )
 
     error_events = [event for event in events if event["event"] == "error"]
@@ -746,10 +731,10 @@ def test_execute_generate_provider_blank_rejected_when_config_switches_in_flight
     )
 
     f2_snapshot: dict[str, object] = {}
-    provider_module = MagicMock()
+    native_generate = MagicMock()
 
     def switch_to_f2_then_blank(*args, **kwargs):
-        assert kwargs["model"] == "gemini-3.5-flash"
+        del args, kwargs
         _write_ready_brain_record(tmp_path, model="gemini-3.1-flash-lite")
         f2_snapshot["bytes"] = brain_state_path(journal_path=tmp_path).read_bytes()
         f2_record = inspect_brain_state(
@@ -765,10 +750,9 @@ def test_execute_generate_provider_blank_rejected_when_config_switches_in_flight
             "usage": {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1},
         }
 
-    provider_module.run_generate.side_effect = switch_to_f2_then_blank
+    native_generate.side_effect = switch_to_f2_then_blank
     monkeypatch.setattr(
-        "solstone.think.providers.get_provider_module",
-        lambda _provider: provider_module,
+        "solstone.think.generate_client.generate_with_result", native_generate
     )
     output_path = tmp_path / "out.md"
     output_path.write_text("old output", encoding="utf-8")
@@ -789,10 +773,10 @@ def test_execute_generate_provider_blank_rejected_when_config_switches_in_flight
     )
 
     assert [event["event"] for event in events] == ["error"]
-    assert events[0]["reason_code"] == "provider_response_invalid"
+    assert events[0]["reason_code"] == "no_output"
     assert events[0]["terminal"] is True
-    provider_module.run_generate.assert_called_once()
-    assert recorded_expected_fingerprints == [f1_sha]
+    native_generate.assert_called_once()
+    assert recorded_expected_fingerprints == []
 
     assert brain_state_path(journal_path=tmp_path).read_bytes() == f2_snapshot["bytes"]
     current_record = inspect_brain_state(
@@ -802,10 +786,7 @@ def test_execute_generate_provider_blank_rejected_when_config_switches_in_flight
     assert current_record is not None
     assert current_record["reason_code"] is None
     assert current_record["evidence"]["generate"]["status"] == "ok"
-    assert (
-        current_record["evidence"]["generate"].get("reason_code")
-        != "provider_response_invalid"
-    )
+    assert current_record["evidence"]["generate"].get("reason_code") is None
 
 
 def test_execute_generate_schema_invalid_emits_terminal_error(tmp_path, monkeypatch):

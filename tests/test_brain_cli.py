@@ -25,7 +25,6 @@ from solstone.think.providers.brain_state import (
     brain_state_path,
     finish_brain_refresh,
 )
-from tests.openhands_fakes import install_fake_openhands
 
 NOW = datetime.now(timezone.utc)
 RUNTIME_FP = "b" * 64
@@ -715,72 +714,21 @@ def test_refresh_excludes_inactive_providers(
     assert cogitate_calls[0]["provider"] == "openai"
 
 
-def test_byo_endpoint_generate_uses_served_model_post_not_get_probe(
+def test_byo_endpoint_diagnostic_uses_native_clients(
     brain_journal: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import httpx
-
-    from solstone.think.providers import local_admission, local_endpoint
-
-    class NullAdmission:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args: Any) -> None:
-            return None
-
-        def release(self) -> None:
-            return None
-
-    class FakeResponse:
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, Any]:
-            return {
-                "choices": [
-                    {
-                        "message": {"content": "OK"},
-                        "finish_reason": "stop",
-                    }
-                ]
-            }
-
-    posts: list[dict[str, Any]] = []
     _write_config(brain_journal, _endpoint_config())
-    monkeypatch.setattr(
-        local_endpoint,
-        "probe_local_endpoint",
-        lambda *_args, **_kwargs: pytest.fail("GET / endpoint probe was used"),
-    )
-    monkeypatch.setattr(
-        local_admission,
-        "acquire_local_slot",
-        lambda *_args, **_kwargs: NullAdmission(),
-    )
-
-    def fake_post(url: str, **kwargs: Any) -> FakeResponse:
-        posts.append({"url": url, "kwargs": kwargs})
-        return FakeResponse()
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-    cogitate_calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        brain_cli,
-        "get_provider_module",
-        lambda _provider: _FakeProviderModule(cogitate_calls),
-    )
+    generate_calls, cogitate_calls = _patch_generate_and_cogitate(monkeypatch)
 
     code = brain_cli._run_refresh(_args(json=True))
     payload = json.loads(capsys.readouterr().out)
 
     assert code == 0
     assert payload["lane"] == "byo-endpoint"
-    assert len(posts) == 1
-    assert posts[0]["url"] == "https://brain.example.test/v1/chat/completions"
-    assert posts[0]["kwargs"]["json"]["model"] == "served-model"
+    assert len(generate_calls) == 1
+    assert generate_calls[0]["kwargs"]["num_retries"] == 0
     assert len(cogitate_calls) == 1
     assert cogitate_calls[0]["provider"] == "local"
 
@@ -949,36 +897,25 @@ def test_refresh_expected_absent_fingerprint_stale_when_key_appears(
     assert _health_snapshot(brain_journal) == before
 
 
-def test_refresh_diagnostic_cogitate_constructs_zero_retry_llm(
+def test_refresh_diagnostic_cogitate_uses_native_client(
     brain_journal: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from solstone.think.providers import emit_final_tool, openhands
+    cogitate_calls: list[dict[str, Any]] = []
 
-    fake_openhands = install_fake_openhands(monkeypatch)
-    emit_final_tool._EMIT_FINAL_TYPES.clear()
-    monkeypatch.setattr(openhands, "get_journal", lambda: brain_journal)
-    monkeypatch.setattr(openhands, "get_project_root", lambda: brain_journal)
-    monkeypatch.setattr(brain_cli, "get_provider_module", lambda _provider: openhands)
+    async def run_cogitate(
+        *, config: dict[str, Any], on_event: None
+    ) -> str:
+        assert on_event is None
+        cogitate_calls.append(config)
+        return "OK"
+
+    module = SimpleNamespace(run_cogitate=run_cogitate)
+    monkeypatch.setattr(brain_cli, "get_provider_module", lambda _provider: module)
     monkeypatch.setenv("OPENAI_API_KEY", "config-secret")
     _write_config(brain_journal, _cloud_config())
 
-    async def emit_final(conversation):
-        for callback in conversation.callbacks:
-            callback(
-                fake_openhands.ActionEvent(
-                    reasoning_content=None,
-                    thinking_blocks=[],
-                    responses_reasoning_item=None,
-                    tool_name="emit_final",
-                    tool_call=SimpleNamespace(arguments={"content": "OK"}),
-                    tool_call_id="emit-1",
-                    action=SimpleNamespace(content="OK"),
-                )
-            )
-
-    fake_openhands.Conversation.arun_impl = emit_final
     generate_calls: list[dict[str, Any]] = []
 
     def fake_generate(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -992,7 +929,17 @@ def test_refresh_diagnostic_cogitate_constructs_zero_retry_llm(
 
     assert code == 0
     assert generate_calls[0]["kwargs"]["num_retries"] == 0
-    assert fake_openhands.LLM.instances[-1].num_retries == 0
+    assert cogitate_calls == [
+        {
+            "diagnostic": True,
+            "prompt": brain_cli.CANNED_COGITATE_PROBE_PROMPT,
+            "provider": "openai",
+            "model": "gpt-5",
+            "max_turns": 2,
+            "max_run_cost_usd": 0.05,
+            "timeout_seconds": 60,
+        }
+    ]
 
 
 @pytest.mark.parametrize(

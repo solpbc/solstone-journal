@@ -18,7 +18,7 @@ from solstone.think.providers.brain_state import (
     finish_brain_refresh,
     inspect_brain_state,
 )
-from solstone.think.providers.cli import QuotaExhaustedError
+from solstone.think.providers.shared import QuotaExhaustedError
 
 NOW = datetime.now(timezone.utc)
 

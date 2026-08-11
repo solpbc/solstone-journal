@@ -2201,16 +2201,13 @@ def test_read_backlog_view_provider_model_failure_remains_failing_step(
 def test_read_backlog_view_serializes_classified_provider_request_rejected(
     pipeline_journal,
 ):
-    from litellm.exceptions import BadRequestError
-
     from solstone.think.journal_stats import _serialize_backlog_view
     from solstone.think.providers.shared import classify_provider_error
 
-    exc = BadRequestError(
-        "Invalid value for parameter 'temperature'",
-        model="gemini-test",
-        llm_provider="google",
-    )
+    class ProviderRequestRejectedError(RuntimeError):
+        reason_code = "provider_request_rejected"
+
+    exc = ProviderRequestRejectedError("invalid request")
     reason_code = classify_provider_error(exc, "google")
     assert reason_code == "provider_request_rejected"
 

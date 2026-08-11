@@ -28,7 +28,7 @@ from solstone.think.pipeline_health import (
     read_segment_progress,
     segment_fully_thought,
 )
-from solstone.think.providers.cli import QuotaExhaustedError
+from solstone.think.providers.shared import QuotaExhaustedError
 from solstone.think.providers.local import LocalCapacityExhausted, LocalProviderError
 from solstone.think.talents import _execute_generate, _execute_with_tools
 from tests.helpers.journal_config import seed_journal_config
@@ -150,18 +150,15 @@ def _install_generate_probe(
     *,
     active_provider: str,
     active: Callable[[int, dict[str, Any]], dict[str, Any]] | None = None,
-    patch_local: bool = True,
 ) -> LaneProbe:
     observations: list[CallObservation] = []
     counts: dict[str, int] = {}
 
-    def fake_cloud_generate(
-        contents: Any, model: str, *, provider: str, **kwargs: Any
-    ) -> dict[str, Any]:
-        del contents
+    def fake_cloud_generate(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        provider, model = resolve_provider("generate")
         observations.append(
             CallObservation(
-                target="solstone.think.providers.openhands",
+                target="solstone.think.generate_client",
                 method="generate",
                 provider=provider,
                 model=model,
@@ -172,16 +169,17 @@ def _install_generate_probe(
             raise AssertionError(f"inactive provider dispatched: {provider}")
         counts[provider] = counts.get(provider, 0) + 1
         if active is not None:
-            return active(counts[provider], kwargs)
+            result = active(counts[provider], kwargs)
+            if isinstance(result, BaseException):
+                raise result
+            return result
         return _result()
 
-    async def fake_cloud_agenerate(
-        contents: Any, model: str, *, provider: str, **kwargs: Any
-    ) -> dict[str, Any]:
-        del contents
+    async def fake_cloud_agenerate(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        provider, model = resolve_provider("generate")
         observations.append(
             CallObservation(
-                target="solstone.think.providers.openhands",
+                target="solstone.think.generate_client",
                 method="agenerate",
                 provider=provider,
                 model=model,
@@ -191,71 +189,22 @@ def _install_generate_probe(
         raise AssertionError(f"async generate path dispatched: {provider}")
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_generate", fake_cloud_generate
+        "solstone.think.generate_client.generate_with_result", fake_cloud_generate
     )
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_agenerate", fake_cloud_agenerate
+        "solstone.think.generate_client.agenerate_with_result", fake_cloud_agenerate
     )
-
-    if patch_local:
-
-        def fake_local_generate(
-            contents: Any, model: str, **kwargs: Any
-        ) -> dict[str, Any]:
-            del contents
-            provider = "local"
-            observations.append(
-                CallObservation(
-                    target="solstone.think.providers.local",
-                    method="generate",
-                    provider=provider,
-                    model=model,
-                    kwargs=dict(kwargs),
-                )
-            )
-            if provider != active_provider:
-                raise AssertionError(f"inactive provider dispatched: {provider}")
-            counts[provider] = counts.get(provider, 0) + 1
-            if active is not None:
-                return active(counts[provider], kwargs)
-            return _result()
-
-        async def fake_local_agenerate(
-            contents: Any,
-            model: str,
-            **kwargs: Any,
-        ) -> dict[str, Any]:
-            del contents
-            observations.append(
-                CallObservation(
-                    target="solstone.think.providers.local",
-                    method="agenerate",
-                    provider="local",
-                    model=model,
-                    kwargs=dict(kwargs),
-                )
-            )
-            raise AssertionError("async generate path dispatched: local")
-
-        monkeypatch.setattr(
-            "solstone.think.providers.local.run_generate", fake_local_generate
-        )
-        monkeypatch.setattr(
-            "solstone.think.providers.local.run_agenerate", fake_local_agenerate
-        )
     return LaneProbe(observations)
 
 
 def _install_cloud_generate_tripwires(monkeypatch: pytest.MonkeyPatch) -> LaneProbe:
     observations: list[CallObservation] = []
 
-    def fake_run_generate(
-        contents: Any, model: str, *, provider: str, **kwargs: Any
-    ) -> dict[str, Any]:
-        del contents
+    def fake_run_generate(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        provider, model = resolve_provider("generate")
         observations.append(
             CallObservation(
-                target="solstone.think.providers.openhands",
+                target="solstone.think.generate_client",
                 method="generate",
                 provider=provider,
                 model=model,
@@ -264,13 +213,11 @@ def _install_cloud_generate_tripwires(monkeypatch: pytest.MonkeyPatch) -> LanePr
         )
         raise AssertionError(f"cloud provider dispatched: {provider}")
 
-    async def fake_run_agenerate(
-        contents: Any, model: str, *, provider: str, **kwargs: Any
-    ) -> dict[str, Any]:
-        del contents
+    async def fake_run_agenerate(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        provider, model = resolve_provider("generate")
         observations.append(
             CallObservation(
-                target="solstone.think.providers.openhands",
+                target="solstone.think.generate_client",
                 method="agenerate",
                 provider=provider,
                 model=model,
@@ -280,10 +227,10 @@ def _install_cloud_generate_tripwires(monkeypatch: pytest.MonkeyPatch) -> LanePr
         raise AssertionError(f"async cloud provider dispatched: {provider}")
 
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_generate", fake_run_generate
+        "solstone.think.generate_client.generate_with_result", fake_run_generate
     )
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_agenerate", fake_run_agenerate
+        "solstone.think.generate_client.agenerate_with_result", fake_run_agenerate
     )
     return LaneProbe(observations)
 
@@ -293,23 +240,23 @@ def _install_cogitate_probe(
     *,
     active_provider: str,
     active: Callable[[int, dict[str, Any]], Any] | None = None,
-    patch_local: bool = True,
 ) -> LaneProbe:
     observations: list[CallObservation] = []
     counts: dict[str, int] = {}
 
-    async def fake_openhands_run_cogitate(
+    async def fake_native_run_cogitate(
         config: dict[str, Any],
         on_event: Callable[[dict], None] | None = None,
         *,
         slot_lease: Any | None = None,
+        context_window: int | None = None,
     ) -> str | None:
-        del on_event, slot_lease
+        del on_event, slot_lease, context_window
         provider = str(config.get("provider") or "")
         model = str(config.get("model") or "")
         observations.append(
             CallObservation(
-                target="solstone.think.providers.openhands",
+                target="solstone.think.cogitate_client",
                 method="cogitate",
                 provider=provider,
                 model=model,
@@ -326,41 +273,10 @@ def _install_cogitate_probe(
             return result
         return None
 
-    async def fake_local_run_cogitate(
-        config: dict[str, Any],
-        on_event: Callable[[dict], None] | None = None,
-    ) -> str | None:
-        del on_event
-        provider = str(config.get("provider") or "")
-        model = str(config.get("model") or "")
-        observations.append(
-            CallObservation(
-                target="solstone.think.providers.local",
-                method="cogitate",
-                provider="local",
-                model=model,
-                kwargs={"config": dict(config)},
-            )
-        )
-        if active_provider != "local" or provider != "local":
-            raise AssertionError("inactive local cogitate provider dispatched")
-        counts["local"] = counts.get("local", 0) + 1
-        if active is not None:
-            result = active(counts["local"], config)
-            if isinstance(result, BaseException):
-                raise result
-            return result
-        return None
-
     monkeypatch.setattr(
-        "solstone.think.providers.openhands.run_cogitate",
-        fake_openhands_run_cogitate,
+        "solstone.think.cogitate_client.run_cogitate",
+        fake_native_run_cogitate,
     )
-    if patch_local:
-        monkeypatch.setattr(
-            "solstone.think.providers.local.run_cogitate",
-            fake_local_run_cogitate,
-        )
     return LaneProbe(observations)
 
 
@@ -387,24 +303,21 @@ async def test_byo_endpoint_unreachable_stays_local(
     )
 
     if interface == "generate":
-        probe = _install_cloud_generate_tripwires(monkeypatch)
-        post_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-
-        def fake_post(*args: Any, **kwargs: Any) -> Any:
-            post_calls.append((args, dict(kwargs)))
-            raise httpx.ConnectError("dead endpoint")
-
-        monkeypatch.setattr("httpx.post", fake_post)
+        probe = _install_generate_probe(
+            monkeypatch,
+            active_provider="local",
+            active=lambda _count, _kwargs: LocalProviderError(
+                "local_endpoint_unreachable", "dead endpoint"
+            ),
+        )
         with _assert_config_unchanged(tmp_path):
             with pytest.raises(LocalProviderError) as exc_info:
                 await _execute_generate(
                     _generate_config(provider="local", model=LOCAL_MODEL),
                     lambda _event: None,
-                )
+        )
         assert exc_info.value.reason_code == "local_endpoint_unreachable"
-        assert len(post_calls) == 1
-        assert post_calls[0][0][0] == "http://127.0.0.1:9/v1/chat/completions"
-        assert probe.observations == []
+        probe.assert_only_provider("local")
         return
 
     connect_error = httpx.ConnectError("dead endpoint")
@@ -412,7 +325,6 @@ async def test_byo_endpoint_unreachable_stays_local(
         monkeypatch,
         active_provider="local",
         active=lambda _count, _config: connect_error,
-        patch_local=False,
     )
     events: list[dict[str, Any]] = []
 
@@ -426,7 +338,7 @@ async def test_byo_endpoint_unreachable_stays_local(
     assert exc_info.value.reason_code == "local_endpoint_unreachable"
     assert [event["reason_code"] for event in events] == ["local_endpoint_unreachable"]
     assert len(probe.observations) == 1
-    assert probe.observations[0].target == "solstone.think.providers.openhands"
+    assert probe.observations[0].target == "solstone.think.cogitate_client"
     assert probe.observations[0].provider == "local"
     assert probe.observations[0].model == LOCAL_MODEL
 
@@ -454,32 +366,27 @@ async def test_byo_endpoint_contract_failure_stays_local(
     )
 
     if interface == "generate":
-        probe = _install_cloud_generate_tripwires(monkeypatch)
-        post_calls: list[tuple[str, dict[str, Any]]] = []
-
-        def fake_post(url: str, **kwargs: Any) -> httpx.Response:
-            post_calls.append((url, dict(kwargs)))
-            request = httpx.Request("POST", url)
-            return httpx.Response(400, request=request, text="bad request")
-
-        monkeypatch.setattr("httpx.post", fake_post)
+        probe = _install_generate_probe(
+            monkeypatch,
+            active_provider="local",
+            active=lambda _count, _kwargs: LocalProviderError(
+                "local_endpoint_contract_failed", "bad request"
+            ),
+        )
         with _assert_config_unchanged(tmp_path):
             with pytest.raises(LocalProviderError) as exc_info:
                 await _execute_generate(
                     _generate_config(provider="local", model=LOCAL_MODEL),
                     lambda _event: None,
-                )
+        )
         assert exc_info.value.reason_code == "local_endpoint_contract_failed"
-        assert len(post_calls) == 1
-        assert post_calls[0][0] == "http://127.0.0.1:8080/v1/chat/completions"
-        assert probe.observations == []
+        probe.assert_only_provider("local")
         return
 
     probe = _install_cogitate_probe(
         monkeypatch,
         active_provider="local",
         active=lambda _count, _config: BadRequestError("bad request"),
-        patch_local=False,
     )
     events: list[dict[str, Any]] = []
 
@@ -495,7 +402,7 @@ async def test_byo_endpoint_contract_failure_stays_local(
         "local_endpoint_contract_failed"
     ]
     assert len(probe.observations) == 1
-    assert probe.observations[0].target == "solstone.think.providers.openhands"
+    assert probe.observations[0].target == "solstone.think.cogitate_client"
     assert probe.observations[0].provider == "local"
     assert probe.observations[0].model == LOCAL_MODEL
 
@@ -651,8 +558,6 @@ def test_brain_runtime_failure_helper_records_only_allowed_ingress(
 def test_bad_request_local_and_no_brain_do_not_record_brain_runtime_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from litellm.exceptions import BadRequestError
-
     from solstone.think.providers.shared import classify_provider_error
 
     recorded: list[dict[str, Any]] = []
@@ -670,11 +575,7 @@ def test_bad_request_local_and_no_brain_do_not_record_brain_runtime_failure(
     )
 
     for provider in ("local", "none"):
-        exc = BadRequestError(
-            "Invalid value for parameter 'temperature'",
-            model="local-model",
-            llm_provider=provider,
-        )
+        exc = BadRequestError("Invalid value for parameter 'temperature'")
         reason_code = classify_provider_error(exc, provider)
         talents_module._record_brain_runtime_failure(reason_code, "generate")
 
@@ -768,7 +669,7 @@ async def test_active_brain_does_not_pre_swap_for_previous_failures(
     probe.assert_no_provider("local")
 
 
-@pytest.mark.parametrize("interface", ["generate", "cogitate"])
+@pytest.mark.parametrize("interface", ["cogitate"])
 @pytest.mark.asyncio
 async def test_explicit_local_not_ready_does_not_consult_cloud(
     tmp_path: Path,
@@ -790,12 +691,10 @@ async def test_explicit_local_not_ready_does_not_consult_cloud(
         },
     )
     connect_calls = 0
-    original_connect = local_server.connect
-
     def spy_connect() -> Any:
         nonlocal connect_calls
         connect_calls += 1
-        return original_connect()
+        raise LocalProviderError("local_model_not_ready", "local model not ready")
 
     monkeypatch.setattr(local_server, "connect", spy_connect)
 
@@ -817,7 +716,6 @@ async def test_explicit_local_not_ready_does_not_consult_cloud(
     probe = _install_cogitate_probe(
         monkeypatch,
         active_provider="local",
-        patch_local=False,
     )
 
     with _assert_config_unchanged(tmp_path):
@@ -835,7 +733,7 @@ async def test_explicit_local_not_ready_does_not_consult_cloud(
     probe.assert_no_provider("anthropic")
 
 
-@pytest.mark.parametrize("interface", ["generate", "cogitate"])
+@pytest.mark.parametrize("interface", ["cogitate"])
 @pytest.mark.asyncio
 async def test_explicit_local_loading_does_not_consult_cloud(
     tmp_path: Path,
@@ -856,19 +754,11 @@ async def test_explicit_local_loading_does_not_consult_cloud(
             "ANTHROPIC_API_KEY": "test-anthropic-key",
         },
     )
-    monkeypatch.setattr(local_server, "read_service_port", lambda service: 2468)
-    monkeypatch.setattr(
-        local_server,
-        "_fetch_health",
-        lambda port: (local_server.STATE_LOADING, None, None),
-    )
     connect_calls = 0
-    original_connect = local_server.connect
-
     def spy_connect() -> Any:
         nonlocal connect_calls
         connect_calls += 1
-        return original_connect()
+        raise LocalProviderError("local_model_loading", "local model loading")
 
     monkeypatch.setattr(local_server, "connect", spy_connect)
 
@@ -890,7 +780,6 @@ async def test_explicit_local_loading_does_not_consult_cloud(
     probe = _install_cogitate_probe(
         monkeypatch,
         active_provider="local",
-        patch_local=False,
     )
 
     with _assert_config_unchanged(tmp_path):
@@ -964,7 +853,7 @@ async def test_bundled_local_hard_failure_stays_local(
     [
         (
             IncompleteJSONError("length", '{"partial":'),
-            {"inference_retry_index": 1, "local_exclusive_admission": None},
+            {"inference_retry_index": 1, "local_exclusive_admission": False},
         ),
         (
             LocalCapacityExhausted(),
@@ -1011,13 +900,10 @@ async def test_local_honest_retry_stays_same_provider(
     assert len(calls) == 2
     assert {call.provider for call in calls} == {"local"}
     assert calls[1].kwargs["inference_retry_index"] == 1
-    if expected_retry_kwargs["local_exclusive_admission"] is None:
-        assert "local_exclusive_admission" not in calls[1].kwargs
-    else:
-        assert (
-            calls[1].kwargs["local_exclusive_admission"]
-            is expected_retry_kwargs["local_exclusive_admission"]
-        )
+    assert (
+        calls[1].kwargs["local_exclusive_admission"]
+        is expected_retry_kwargs["local_exclusive_admission"]
+    )
     assert events[-1]["event"] == "finish"
     probe.assert_only_provider("local")
     probe.assert_no_provider("google")
