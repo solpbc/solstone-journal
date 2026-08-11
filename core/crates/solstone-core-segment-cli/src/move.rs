@@ -44,13 +44,18 @@ impl MoveRefusal {
     }
 }
 
+pub(crate) enum RenameFailure {
+    DestinationExists,
+    Io(String),
+}
+
 pub(crate) trait SegmentOperations {
     fn rename(
         &self,
         journal: &Path,
         source: &SegmentLocation,
         destination: &SegmentLocation,
-    ) -> Result<(), String>;
+    ) -> Result<(), RenameFailure>;
     fn rewrite_events(&self, destination: &SegmentLocation) -> Result<u64, String>;
     fn patch_successor(
         &self,
@@ -80,11 +85,17 @@ impl SegmentOperations for NativeOperations {
         journal: &Path,
         source: &SegmentLocation,
         destination: &SegmentLocation,
-    ) -> Result<(), String> {
+    ) -> Result<(), RenameFailure> {
         ensure_directory(&journal.join(&destination.parent_rel))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| RenameFailure::Io(error.to_string()))?;
+        // The plan's collision check can become stale while it reads markers and
+        // the index. This narrows that window to check-to-syscall, but cannot
+        // make rename atomic: rename(2) has no no-replace mode through this seam.
+        if destination.path.exists() {
+            return Err(RenameFailure::DestinationExists);
+        }
         rename_within(journal, &source.disk_rel, &destination.disk_rel)
-            .map_err(|error| error.to_string())
+            .map_err(|error| RenameFailure::Io(error.to_string()))
     }
 
     fn rewrite_events(&self, destination: &SegmentLocation) -> Result<u64, String> {
@@ -286,14 +297,27 @@ pub(crate) fn execute_plan(
 ) -> MoveExecution {
     let mut stdout = "\nExecuting move...\n".to_owned();
     let mut stderr = String::new();
-    if let Err(error) = operations.rename(journal, &plan.source, &plan.destination) {
-        return MoveExecution {
-            stdout,
-            stderr: format!(
-                "step 1 directory move failed: {error}; source and index remain authoritative\n"
-            ),
-            exit_code: 3,
-        };
+    match operations.rename(journal, &plan.source, &plan.destination) {
+        Ok(()) => {}
+        Err(RenameFailure::DestinationExists) => {
+            return MoveExecution {
+                stdout,
+                stderr: format!(
+                    "Destination {} already exists; no changes made\n",
+                    plan.destination.token()
+                ),
+                exit_code: 1,
+            };
+        }
+        Err(RenameFailure::Io(error)) => {
+            return MoveExecution {
+                stdout,
+                stderr: format!(
+                    "step 1 directory move failed: {error}; source and index remain authoritative\n"
+                ),
+                exit_code: 3,
+            };
+        }
     }
     if verbose {
         stdout.push_str(&format!(

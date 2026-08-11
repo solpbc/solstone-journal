@@ -608,6 +608,25 @@ mod tests {
             .unwrap()
     }
 
+    fn index_row_set(root: &Path) -> (Vec<String>, Vec<String>) {
+        let connection = Connection::open(db_path(root)).unwrap();
+        let chunks = connection
+            .prepare("SELECT path FROM chunks ORDER BY path")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<String>, _>>()
+            .unwrap();
+        let files = connection
+            .prepare("SELECT path FROM files ORDER BY path")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<String>, _>>()
+            .unwrap();
+        (chunks, files)
+    }
+
     fn move_args(path: &str, day: &str) -> Vec<String> {
         args(&["move", path, "--to-day", day])
     }
@@ -634,8 +653,9 @@ mod tests {
             journal: &Path,
             source: &SegmentLocation,
             destination: &SegmentLocation,
-        ) -> Result<(), String> {
-            self.record("rename")?;
+        ) -> Result<(), crate::r#move::RenameFailure> {
+            self.record("rename")
+                .map_err(crate::r#move::RenameFailure::Io)?;
             NativeOperations.rename(journal, source, destination)
         }
 
@@ -683,6 +703,58 @@ mod tests {
         fn touch_health(&self, journal: &Path, day: &str) -> Result<(), String> {
             self.record("health")?;
             NativeOperations.touch_health(journal, day)
+        }
+    }
+
+    struct LateCollisionOperations;
+
+    impl SegmentOperations for LateCollisionOperations {
+        fn rename(
+            &self,
+            journal: &Path,
+            source: &SegmentLocation,
+            destination: &SegmentLocation,
+        ) -> Result<(), crate::r#move::RenameFailure> {
+            fs::create_dir_all(&destination.path)
+                .map_err(|error| crate::r#move::RenameFailure::Io(error.to_string()))?;
+            fs::write(
+                destination.path.join("stream.json"),
+                "{\"sentinel\":true}\n",
+            )
+            .map_err(|error| crate::r#move::RenameFailure::Io(error.to_string()))?;
+            NativeOperations.rename(journal, source, destination)
+        }
+
+        fn rewrite_events(&self, _: &SegmentLocation) -> Result<u64, String> {
+            unreachable!("late collision returns before post-move work")
+        }
+
+        fn patch_successor(&self, _: &SegmentLocation, _: &str, _: &str) -> Result<(), String> {
+            unreachable!("late collision returns before post-move work")
+        }
+
+        fn repair_tail(
+            &self,
+            _: &Path,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: u64,
+            _: LockOptions,
+        ) -> RepairOutcome {
+            unreachable!("late collision returns before post-move work")
+        }
+
+        fn prune(&self, _: &Path, _: &str) -> Result<Option<StreamPruneCounts>, String> {
+            unreachable!("late collision returns before post-move work")
+        }
+
+        fn rescan(&self, _: &Path, _: &Path) -> Result<RescanFileStatus, String> {
+            unreachable!("late collision returns before post-move work")
+        }
+
+        fn touch_health(&self, _: &Path, _: &str) -> Result<(), String> {
+            unreachable!("late collision returns before post-move work")
         }
     }
 
@@ -1033,6 +1105,8 @@ mod tests {
             ),
         );
         let state = stream_state(root.path(), "workstation", "20260304", "090000_60", 5);
+        let identity_before: Value =
+            serde_json::from_str(&fs::read_to_string(&state).unwrap()).unwrap();
         segment(
             root.path(),
             "20260304",
@@ -1072,7 +1146,11 @@ mod tests {
             "platform",
             "unknown",
         ] {
-            assert!(repaired.get(key).is_some(), "{key} was not preserved");
+            assert_eq!(
+                repaired.get(key),
+                identity_before.get(key),
+                "{key} was not preserved"
+            );
         }
         assert_eq!(repaired["last_day"], "20260305");
         assert!(
@@ -1154,6 +1232,30 @@ mod tests {
             Some(json!({"stream":"other","seq":1})),
         );
         let original = fs::read(source.join("stream.json")).unwrap();
+        let successor = segment(
+            root.path(),
+            "20260306",
+            "work",
+            "100000_60",
+            Some(
+                json!({"stream":"other","seq":2,"prev_day":"20260304","prev_segment":"090000_60"}),
+            ),
+        );
+        let successor_before = fs::read(successor.join("stream.json")).unwrap();
+        let state = stream_state(root.path(), "other", "20260304", "090000_60", 1);
+        let state_before = fs::read(&state).unwrap();
+        seed_index(root.path(), "20260304/work/090000_60");
+        let index_before = index_row_set(root.path());
+        let assert_inert = || {
+            assert!(source.is_dir());
+            assert_eq!(fs::read(source.join("stream.json")).unwrap(), original);
+            assert_eq!(
+                fs::read(successor.join("stream.json")).unwrap(),
+                successor_before
+            );
+            assert_eq!(fs::read(&state).unwrap(), state_before);
+            assert_eq!(index_row_set(root.path()), index_before);
+        };
         let cases: &[&[&str]] = &[
             &["move", "bad", "--to-day", "20260305"],
             &["move", "20260304/work/missing", "--to-day", "20260305"],
@@ -1172,8 +1274,7 @@ mod tests {
         for case in cases {
             let run = bypass(case, root.path());
             assert_eq!(run.exit_code, 1);
-            assert!(source.is_dir());
-            assert_eq!(fs::read(source.join("stream.json")).unwrap(), original);
+            assert_inert();
         }
         let markerless = segment(root.path(), "20260304", "work", "100000_60", None);
         let no_marker = bypass(
@@ -1184,19 +1285,26 @@ mod tests {
         assert_eq!(no_marker.stderr, "No stream.json in source segment\n");
         assert!(markerless.is_dir());
         assert!(!markerless.join("stream.json").exists());
-        segment(
+        assert_inert();
+        let collision_destination = segment(
             root.path(),
             "20260305",
             "work",
             "090000_60",
             Some(json!({"stream":"work","seq":2})),
         );
+        let collision_before = fs::read(collision_destination.join("stream.json")).unwrap();
         let collision = bypass(
             &["move", "20260304/work/090000_60", "--to-day", "20260305"],
             root.path(),
         );
         assert!(collision.stderr.contains("already exists"));
         assert!(!collision.stderr.contains("Stream mismatch"));
+        assert_eq!(
+            fs::read(collision_destination.join("stream.json")).unwrap(),
+            collision_before
+        );
+        assert_inert();
     }
 
     #[test]
@@ -1224,8 +1332,10 @@ mod tests {
             Some(json!({"stream":"work","seq":3,"prev_day":"20260304","prev_segment":"090000_60"})),
         );
         stream_state(root.path(), "work", "20260304", "090000_60", 1);
+        seed_index(root.path(), "20260304/work/090000_60");
         let before_first = fs::read(first.join("stream.json")).unwrap();
         let before_second = fs::read(second.join("stream.json")).unwrap();
+        let index_before = index_row_set(root.path());
         let dry = bypass(
             &[
                 "move",
@@ -1238,6 +1348,7 @@ mod tests {
         );
         assert_eq!(dry.exit_code, 0);
         assert!(source.is_dir());
+        assert_eq!(index_row_set(root.path()), index_before);
         assert!(
             !root
                 .path()
@@ -1264,8 +1375,20 @@ mod tests {
             "090000_60",
             Some(json!({"stream":"work","seq":1})),
         );
-        stream_state(root.path(), "work", "20260304", "090000_60", 1);
+        fs::write(source.join("events.jsonl"), "{\"tract\":\"capture\"}\n").unwrap();
+        let source_events = fs::read(source.join("events.jsonl")).unwrap();
+        let successor = segment(
+            root.path(),
+            "20260305",
+            "work",
+            "100000_60",
+            Some(json!({"stream":"work","seq":2,"prev_day":"20260304","prev_segment":"090000_60"})),
+        );
+        let successor_before = fs::read(successor.join("stream.json")).unwrap();
+        let state = stream_state(root.path(), "work", "20260304", "090000_60", 1);
+        let state_before = fs::read(&state).unwrap();
         seed_index(root.path(), "20260304/work/090000_60");
+        let index_before = index_row_set(root.path());
         let directory_failure = RecordingOperations {
             fail: Some("rename"),
             calls: RefCell::new(Vec::new()),
@@ -1277,7 +1400,16 @@ mod tests {
         );
         assert_eq!(run.exit_code, 3);
         assert!(source.is_dir());
-        assert_eq!(index_rows(root.path(), "20260304/work/090000_60"), 1);
+        assert_eq!(
+            fs::read(source.join("events.jsonl")).unwrap(),
+            source_events
+        );
+        assert_eq!(
+            fs::read(successor.join("stream.json")).unwrap(),
+            successor_before
+        );
+        assert_eq!(fs::read(state).unwrap(), state_before);
+        assert_eq!(index_row_set(root.path()), index_before);
         assert_eq!(&*directory_failure.calls.borrow(), &["rename"]);
 
         for (failure, step) in [
@@ -1325,5 +1457,35 @@ mod tests {
             assert!(run.stdout.contains("checks passed"));
             assert!(operations.calls.borrow().contains(&"health"));
         }
+    }
+
+    #[test]
+    fn late_destination_collision_refuses_without_mutating_either_segment() {
+        let root = TempDir::new().unwrap();
+        let source = segment(
+            root.path(),
+            "20260304",
+            "work",
+            "090000_60",
+            Some(json!({"stream":"work","seq":1})),
+        );
+        let source_before = fs::read(source.join("stream.json")).unwrap();
+        let run = run_with_operations(
+            &move_args("20260304/work/090000_60", "20260305"),
+            root.path(),
+            &LateCollisionOperations,
+        );
+        let destination = root.path().join("chronicle/20260305/work/090000_60");
+        assert_eq!(run.exit_code, 1);
+        assert_eq!(
+            run.stderr,
+            "Destination 20260305/work/090000_60 already exists; no changes made\n"
+        );
+        assert!(source.is_dir());
+        assert_eq!(fs::read(source.join("stream.json")).unwrap(), source_before);
+        assert_eq!(
+            fs::read(destination.join("stream.json")).unwrap(),
+            b"{\"sentinel\":true}\n"
+        );
     }
 }
