@@ -599,6 +599,7 @@ pub enum InstallCommand {
     ManifestModel,
     InspectLocal,
     InspectMlx,
+    InspectParakeet,
     ProbeBinary,
     RunLocal,
     RunMlx,
@@ -2032,6 +2033,9 @@ fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> 
         [one, two] if one == OsStr::new("inspect") && two == OsStr::new("mlx") => {
             Ok(InstallCommand::InspectMlx)
         }
+        [one, two] if one == OsStr::new("inspect") && two == OsStr::new("parakeet") => {
+            Ok(InstallCommand::InspectParakeet)
+        }
         [one] if one == OsStr::new("probe-binary") => Ok(InstallCommand::ProbeBinary),
         [one, two] if one == OsStr::new("run") && two == OsStr::new("local") => {
             Ok(InstallCommand::RunLocal)
@@ -3446,6 +3450,10 @@ mod tests {
             (
                 &["local", "install", "fingerprint", "parakeet"][..],
                 InstallCommand::FingerprintParakeet,
+            ),
+            (
+                &["local", "install", "inspect", "parakeet"][..],
+                InstallCommand::InspectParakeet,
             ),
             (
                 &["local", "install", "run", "parakeet"][..],

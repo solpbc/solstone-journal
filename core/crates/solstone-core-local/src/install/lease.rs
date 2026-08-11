@@ -22,6 +22,22 @@ pub fn lease_path(journal: &Path, provider: &str) -> PathBuf {
         .join(format!("{provider}.lease"))
 }
 
+/// Return whether an existing lease is held without creating any filesystem state.
+#[allow(deprecated)]
+pub fn is_held(journal: &Path, provider: &str) -> std::io::Result<bool> {
+    let path = lease_path(journal, provider);
+    let file = match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    match flock(file.as_raw_fd(), FlockArg::LockExclusiveNonblock) {
+        Ok(()) => Ok(false),
+        Err(nix::errno::Errno::EWOULDBLOCK) => Ok(true),
+        Err(error) => Err(std::io::Error::other(error)),
+    }
+}
+
 #[allow(deprecated)]
 pub fn acquire(journal: &Path, provider: &str) -> std::io::Result<Option<InstallLease>> {
     let path = lease_path(journal, provider);

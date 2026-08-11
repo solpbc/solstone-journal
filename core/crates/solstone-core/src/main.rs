@@ -2855,6 +2855,7 @@ fn run_local_install(command: InstallCommand) -> ExitCode {
         InstallCommand::ManifestModel => solstone_core_local::InstallVerb::ManifestModel,
         InstallCommand::InspectLocal => solstone_core_local::InstallVerb::InspectLocal,
         InstallCommand::InspectMlx => solstone_core_local::InstallVerb::InspectMlx,
+        InstallCommand::InspectParakeet => solstone_core_local::InstallVerb::InspectParakeet,
         InstallCommand::ProbeBinary => solstone_core_local::InstallVerb::ProbeBinary,
         InstallCommand::RunLocal => solstone_core_local::InstallVerb::RunLocal,
         InstallCommand::RunMlx => solstone_core_local::InstallVerb::RunMlx,
