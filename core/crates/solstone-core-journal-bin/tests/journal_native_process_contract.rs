@@ -10,7 +10,6 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -26,9 +25,6 @@ exit 97
 "#;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
-
-static SOLSTONE_CORE_BINARY: OnceLock<PathBuf> = OnceLock::new();
-static SOLSTONE_CORE_DEPICT_BINARY: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -218,18 +214,6 @@ fn make_executable(path: &Path) {
 }
 
 fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
-    match (package, binary) {
-        ("solstone-core", "solstone-core") => SOLSTONE_CORE_BINARY
-            .get_or_init(|| locate_workspace_binary_uncached(package, binary))
-            .clone(),
-        ("solstone-core-depict", "solstone-core-depict") => SOLSTONE_CORE_DEPICT_BINARY
-            .get_or_init(|| locate_workspace_binary_uncached(package, binary))
-            .clone(),
-        _ => locate_workspace_binary_uncached(package, binary),
-    }
-}
-
-fn locate_workspace_binary_uncached(package: &str, binary: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_manifest = manifest_dir
         .parent()
