@@ -9,9 +9,10 @@
 //! remote mode, platform-can-host, then the admission latch's `blocked`/
 //! `desired` verdict. The remaining branch -- resolving a GPU backend and
 //! building a launch plan when the latch says Parakeet is desired and not
-//! blocked -- needs real Vulkan/CUDA device probing and journal config that
-//! are not part of this port; composing that branch behind
-//! [`super::seams::TruthObservationSeam`] is a follow-up.
+//! blocked -- is composed behind [`super::seams::TruthObservationSeam`] in
+//! [`super::parakeet_truth_seam`], with an injectable (always-empty in
+//! production) Vulkan device list standing in for the real device probing
+//! that is still not part of this port.
 
 use serde_json::{Value, json};
 

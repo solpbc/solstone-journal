@@ -556,6 +556,86 @@ mod tests {
     }
 
     #[test]
+    fn plan_builder_maps_vulkan_backend_to_gpu_placement_and_cpu_to_cpu_placement() {
+        let journal = PathBuf::from("/fixture-journal");
+        let vulkan_paths = resolved_parakeet_paths(&journal, "x86_64-unknown-linux-gnu", "vulkan")
+            .expect("pinned vulkan paths");
+        let vulkan_launch = build_parakeet_launch_config(
+            "vulkan".to_owned(),
+            BTreeMap::from([("GGML_VK_VISIBLE_DEVICES".to_owned(), "0".to_owned())]),
+            Some(0),
+            vulkan_paths,
+            8,
+            "{}".to_owned(),
+            "fingerprint".to_owned(),
+        );
+        assert_eq!(vulkan_launch.placement, ParakeetPlacement::Gpu);
+
+        let cpu_paths = resolved_parakeet_paths(&journal, "x86_64-unknown-linux-gnu", "cpu")
+            .expect("pinned cpu paths");
+        let cpu_launch = build_parakeet_launch_config(
+            "cpu".to_owned(),
+            BTreeMap::new(),
+            None,
+            cpu_paths,
+            8,
+            "{}".to_owned(),
+            "fingerprint".to_owned(),
+        );
+        assert_eq!(cpu_launch.placement, ParakeetPlacement::Cpu);
+    }
+
+    #[test]
+    fn dispatch_truth_re_fires_and_records_two_independent_results() {
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let mut seam = ParakeetTruthSeam::with_config(
+            shared.clone(),
+            ParakeetTruthConfig {
+                journal_path: PathBuf::from("/nonexistent-journal-for-remote-mode-test"),
+                remote_mode: true,
+                platform: "linux".to_owned(),
+                machine: "x86_64".to_owned(),
+                vulkan_devices: Vec::new(),
+            },
+        );
+        let state = ProviderRuntimeState::new(ProviderName::Parakeet);
+        let fence_of = |attempt: u32| ProviderFence {
+            incarnation: "incarnation".to_owned(),
+            generation: 4,
+            fingerprint: None,
+            attempt,
+        };
+
+        // Two independent dispatch cycles on the same real (non-fixture) seam,
+        // matching how the reconciler re-fires truth observation on its
+        // cadence. remote_mode short-circuits to a fast, host-independent
+        // result so this test does not depend on real host state.
+        let first_fence = fence_of(0);
+        seam.dispatch_truth(&state, &first_fence);
+        let first = shared.wait_for_truth_result(&first_fence);
+        assert_eq!(first.phase, RuntimePhase::NotDesired);
+        assert_eq!(
+            first.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("provider-not-needed")
+        );
+
+        let second_fence = fence_of(1);
+        seam.dispatch_truth(&state, &second_fence);
+        let second = shared.wait_for_truth_result(&second_fence);
+        assert_eq!(second.phase, RuntimePhase::NotDesired);
+        assert_eq!(
+            second.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("provider-not-needed")
+        );
+
+        // Each cycle's result was recorded and retrieved independently under
+        // its own fence -- proving the seam and its shared result channel
+        // support re-firing, not a single one-shot dispatch.
+        assert!(shared.take_truth_result(&first_fence).is_none());
+        assert!(shared.take_truth_result(&second_fence).is_none());
+    }
+
+    #[test]
     fn plan_builder_uses_injected_threads_and_pinned_paths() {
         let journal = PathBuf::from("/fixture-journal");
         let paths = resolved_parakeet_paths(&journal, "x86_64-unknown-linux-gnu", "cpu")
