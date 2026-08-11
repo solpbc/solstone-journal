@@ -74,6 +74,13 @@ pub enum DistributionMetadataError {
     },
 }
 
+const KNOWN_SOLSTONE_PACKAGE_NAMES: &[&str] = &[
+    "solstone",
+    "solstone-journal",
+    "solstone-journal-cuda",
+    "solstone-journal-host",
+];
+
 impl fmt::Display for DistributionMetadataError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -203,6 +210,20 @@ pub fn detect_checkout_root(root: &Path) -> Option<PathBuf> {
 }
 
 pub fn installed_site_packages_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
+    site_packages_from_executable_dir(executable_dir, |package_dir| {
+        let init = package_dir.join("solstone").join("__init__.py");
+        fs::metadata(init).is_ok_and(|metadata| metadata.is_file())
+    })
+}
+
+pub fn python_site_packages_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
+    site_packages_from_executable_dir(executable_dir, Path::is_dir)
+}
+
+fn site_packages_from_executable_dir(
+    executable_dir: &Path,
+    include: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
     let prefix = executable_dir.parent()?;
     let entries = fs::read_dir(prefix).ok()?;
     let mut candidates = Vec::new();
@@ -233,8 +254,7 @@ pub fn installed_site_packages_from_executable_dir(executable_dir: &Path) -> Opt
             }
             for package_dir_name in ["site-packages", "dist-packages"] {
                 let package_dir = python_path.join(package_dir_name);
-                let init = package_dir.join("solstone").join("__init__.py");
-                if fs::metadata(&init).is_ok_and(|metadata| metadata.is_file()) {
+                if include(&package_dir) {
                     candidates.push(package_dir);
                 }
             }
@@ -294,10 +314,11 @@ pub fn installed_distributions(
             }
         };
         let (name, version, requires_python) = metadata_headers(&metadata);
-        let header_target = name
-            .as_deref()
-            .map(normalize_distribution_name)
-            .filter(|name| targets.contains(name));
+        let normalized_name = name.as_deref().map(normalize_distribution_name);
+        let header_target = normalized_name
+            .as_ref()
+            .filter(|name| targets.contains(name))
+            .cloned();
         let target = match (header_target, directory_target) {
             (Some(header_target), Some(directory_target)) if header_target != directory_target => {
                 return Err(metadata_error(
@@ -309,7 +330,19 @@ pub fn installed_distributions(
             // A generic target list may contain a prefix of another package
             // name (for example `solstone` and `solstone-journal`). A present
             // non-target Name header makes that entry unrelated, not malformed.
-            (None, Some(_)) if name.is_some() => None,
+            (None, Some(_)) if name.is_some() => {
+                if normalized_name
+                    .as_deref()
+                    .is_some_and(|name| KNOWN_SOLSTONE_PACKAGE_NAMES.contains(&name))
+                {
+                    None
+                } else {
+                    return Err(metadata_error(
+                        &path,
+                        "Name header does not match target package",
+                    ));
+                }
+            }
             (None, directory_target) => directory_target,
         };
         let Some(target) = target else {
@@ -731,6 +764,10 @@ mod tests {
             Some(fs::canonicalize(&site_packages).expect("canonical staged site-packages"))
         );
         assert_eq!(
+            python_site_packages_from_executable_dir(&bin),
+            Some(fs::canonicalize(&site_packages).expect("canonical staged site-packages"))
+        );
+        assert_eq!(
             resolve_installation_root_from_executable_dir(&bin),
             Some(fs::canonicalize(&site_packages).expect("canonical staged site-packages"))
         );
@@ -776,6 +813,28 @@ mod tests {
             })
         );
         assert_eq!(distributions.len(), 1);
+        fs::remove_dir_all(root).expect("cleanup distribution metadata");
+    }
+
+    #[test]
+    fn installed_distributions_rejects_unrecognized_name_for_a_target_directory() {
+        let root = unique_temp("distribution-name-mismatch");
+        let site_packages = root.join("site-packages");
+        let dist_info = site_packages.join("solstone-1.2.3.dist-info");
+        fs::create_dir_all(&dist_info).expect("create dist-info");
+        fs::write(
+            dist_info.join("METADATA"),
+            "Name: unrelated\nVersion: 1.2.3\n\n",
+        )
+        .expect("write mismatched metadata");
+
+        let error = installed_distributions(&site_packages, &["solstone"])
+            .expect_err("mismatched target metadata must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("Name header does not match target package")
+        );
         fs::remove_dir_all(root).expect("cleanup distribution metadata");
     }
 

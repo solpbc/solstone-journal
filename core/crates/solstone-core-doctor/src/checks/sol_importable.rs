@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use solstone_core_journal::resolve_installation_root_from_executable_dir;
+use solstone_core_journal::{
+    python_site_packages_from_executable_dir, resolve_installation_root_from_executable_dir,
+};
 
 use crate::{
     context::CheckContext,
@@ -14,6 +16,11 @@ const REINSTALL: &str = "rm -rf .venv .installed && make install";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let Some(root) = resolve_installation_root_from_executable_dir(&context.install_bin_dir) else {
+        if let Some(site_packages) =
+            python_site_packages_from_executable_dir(&context.install_bin_dir)
+        {
+            return Ok(packaged_result(check, &site_packages));
+        }
         return Ok(make_result(
             check,
             Status::Skip,
@@ -93,9 +100,14 @@ mod tests {
         assert_eq!(result.status, Status::Ok);
         assert!(result.detail.contains("does not execute an import"));
 
-        let missing = staged.home_dir.join("empty-site-packages");
+        let missing_context = context();
+        let missing = missing_context
+            .install_bin_dir
+            .parent()
+            .expect("staged install prefix")
+            .join("lib/python3.12/site-packages");
         fs::create_dir_all(&missing).expect("create empty site-packages");
-        let result = packaged_result(check, &missing);
+        let result = run(&missing_context, check).unwrap();
         assert_eq!(result.status, Status::Fail);
         assert_eq!(
             result.detail,
