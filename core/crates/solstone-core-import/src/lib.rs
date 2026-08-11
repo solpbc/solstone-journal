@@ -35,6 +35,13 @@ pub use events::{
     emit_file_imported, emit_importer_completed, emit_importer_error, emit_importer_started,
     emit_importer_status, emit_observe_observed, emit_observe_observing, emit_supervisor_drain,
 };
+pub use publish::{
+    CreatedSegment, DayMarkerOutcome, DayMarkerStatus, IndexPublicationOutcomes, IndexedFile,
+    IndexedFileError, PublicationInput, PublicationOperations, PublicationRecord,
+    PublicationStatus, PublishError, SegmentBindingOutcome, SegmentPublicationOutcome, publish,
+    publish_with_operations, read_publication_record, write_publication_record,
+};
+
 /// Error returned by an importer seam that has no implementation yet.
 #[derive(Debug, Eq, PartialEq)]
 pub enum ImportError {
@@ -61,7 +68,6 @@ pub const MODULE_STUBS: &[ModuleStub] = &[
     ("timestamp", timestamp::reserved_seam),
     ("staging", staging::reserved_seam),
     ("metadata", metadata::reserved_seam),
-    ("publish", publish::reserved_seam),
     ("dedupe", dedupe::reserved_seam),
     ("audio", audio::reserved_seam),
     ("text", text::reserved_seam),
