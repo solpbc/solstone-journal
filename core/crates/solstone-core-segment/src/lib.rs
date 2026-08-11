@@ -56,8 +56,9 @@ pub use solstone_core_journal_io::{
     iter_segments, list_dir_entries, read_text,
 };
 pub use stream_record::{
-    BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
-    bind_stream, lookup_stream, resolve_stream,
+    BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord,
+    UnboundStreamAdvanceError, advance_bound_stream, advance_unbound_stream, bind_stream,
+    lookup_stream, resolve_stream,
 };
 pub use stream_repair::{
     MarkerTail, RepairOutcome, TolerantStreamRecords, UnchangedReason,

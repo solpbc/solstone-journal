@@ -30,9 +30,9 @@ pub struct StreamRecord {
     pub last_day: Option<String>,
     pub last_segment: Option<String>,
     pub seq: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub did: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 }
 
@@ -48,6 +48,40 @@ pub struct StreamAdvance {
     pub prev_day: Option<String>,
     pub prev_segment: Option<String>,
     pub seq: u64,
+}
+
+/// Failure while advancing a stream that has no device binding.
+#[derive(Debug)]
+pub enum UnboundStreamAdvanceError {
+    /// Reading, validating, locking, or writing the stream state failed.
+    Advance(SegmentError),
+    /// The stream state was written but the segment marker could not be written.
+    MarkerWrite {
+        path: PathBuf,
+        source: AtomicWriteError,
+    },
+}
+
+impl std::fmt::Display for UnboundStreamAdvanceError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Advance(error) => error.fmt(formatter),
+            Self::MarkerWrite { path, source } => write!(
+                formatter,
+                "stream marker write {}: {source}",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for UnboundStreamAdvanceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Advance(error) => Some(error),
+            Self::MarkerWrite { source, .. } => Some(source),
+        }
+    }
 }
 
 /// A selected stream and its segment advancement result.
@@ -152,6 +186,50 @@ pub fn advance_bound_stream(
         hints,
         StreamBinding { did, source },
     )
+}
+
+/// Advance a stream that has no `(did, source)` binding, then write its marker.
+///
+/// Import-created streams predate device identity and deliberately retain that
+/// unbound record shape. The state write and marker write share one record lock;
+/// a marker failure is reported separately because the durable state advance has
+/// already succeeded at that point.
+pub fn advance_unbound_stream(
+    journal: &Path,
+    stream: &str,
+    day: &str,
+    segment: &str,
+    hints: StreamHints,
+) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+    if stream.is_empty() || stream.contains('/') || stream.contains('\\') {
+        return Err(UnboundStreamAdvanceError::Advance(
+            SegmentError::StreamInput("stream name must be a plain path component"),
+        ));
+    }
+    let segment_dir = SegmentDir::resolve(journal, day, segment, stream)
+        .map_err(UnboundStreamAdvanceError::Advance)?;
+    let state_path = stream_record_path(journal, stream);
+    let _lock = hold_lock(&state_path, LockOptions::default())
+        .map_err(|error| UnboundStreamAdvanceError::Advance(error.into()))?;
+    let record =
+        read_typed_stream_record(&state_path).map_err(UnboundStreamAdvanceError::Advance)?;
+    let (record, advance) = update_unbound_record(record, stream, day, segment, hints)
+        .map_err(UnboundStreamAdvanceError::Advance)?;
+    write_stream_record(&state_path, &record).map_err(UnboundStreamAdvanceError::Advance)?;
+    let marker_path = segment_dir.path.join("stream.json");
+    let marker = StreamMarker {
+        stream: stream.to_owned(),
+        prev_day: advance.prev_day.clone(),
+        prev_segment: advance.prev_segment.clone(),
+        seq: advance.seq,
+    };
+    write_json(&marker_path, &marker, JsonWriteOptions::default()).map_err(|source| {
+        UnboundStreamAdvanceError::MarkerWrite {
+            path: marker_path,
+            source,
+        }
+    })?;
+    Ok(advance)
 }
 
 /// Look up the stream currently bound to `(did, source)`, if any content has
@@ -411,6 +489,29 @@ fn reservation_record(
     })
 }
 
+fn unbound_reservation_record(
+    name: String,
+    hints: &StreamHints,
+) -> Result<StreamRecord, SegmentError> {
+    Ok(StreamRecord {
+        name,
+        kind: hints
+            .kind
+            .as_ref()
+            .map(Kind::compat_label)
+            .unwrap_or("unknown")
+            .to_owned(),
+        host: hints.host.clone(),
+        platform: hints.platform.clone(),
+        created_at: now_unix_seconds()?,
+        last_day: None,
+        last_segment: None,
+        seq: 0,
+        did: None,
+        source: None,
+    })
+}
+
 fn update_record(
     record: Option<StreamRecord>,
     name: &str,
@@ -422,6 +523,59 @@ fn update_record(
     match record {
         None => {
             let mut record = reservation_record(name.to_owned(), binding, &hints)?;
+            record.last_day = Some(day.to_owned());
+            record.last_segment = Some(segment.to_owned());
+            record.seq = 1;
+            Ok((
+                record,
+                StreamAdvance {
+                    prev_day: None,
+                    prev_segment: None,
+                    seq: 1,
+                },
+            ))
+        }
+        Some(mut record) => {
+            let prev_day = record.last_day.clone();
+            let prev_segment = record.last_segment.clone();
+            let seq = record
+                .seq
+                .checked_add(1)
+                .ok_or(SegmentError::StreamInput("stream sequence overflow"))?;
+            record.last_day = Some(day.to_owned());
+            record.last_segment = Some(segment.to_owned());
+            record.seq = seq;
+            if let Some(kind) = hints.kind {
+                record.kind = kind.compat_label().to_owned();
+            }
+            if let Some(host) = hints.host {
+                record.host = Some(host);
+            }
+            if let Some(platform) = hints.platform {
+                record.platform = Some(platform);
+            }
+            Ok((
+                record,
+                StreamAdvance {
+                    prev_day,
+                    prev_segment,
+                    seq,
+                },
+            ))
+        }
+    }
+}
+
+fn update_unbound_record(
+    record: Option<StreamRecord>,
+    name: &str,
+    day: &str,
+    segment: &str,
+    hints: StreamHints,
+) -> Result<(StreamRecord, StreamAdvance), SegmentError> {
+    match record {
+        None => {
+            let mut record = unbound_reservation_record(name.to_owned(), &hints)?;
             record.last_day = Some(day.to_owned());
             record.last_segment = Some(segment.to_owned());
             record.seq = 1;
@@ -567,6 +721,134 @@ mod tests {
     }
 
     #[test]
+    fn unbound_stream_advances_state_and_markers_as_one_chain() {
+        let temporary = TempDir::new();
+        let segments = ["120000_60", "120100_60", "120200_60"];
+        for (index, segment) in segments.iter().enumerate() {
+            let advance = advance_unbound_stream(
+                temporary.path(),
+                "import.apple",
+                "20260804",
+                segment,
+                StreamHints::default(),
+            )
+            .unwrap();
+            assert_eq!(advance.seq, u64::try_from(index + 1).unwrap());
+            assert_eq!(
+                advance.prev_segment.as_deref(),
+                segments.get(index.wrapping_sub(1)).copied()
+            );
+            let marker: Value = serde_json::from_slice(
+                &fs::read(
+                    temporary
+                        .path()
+                        .join("chronicle/20260804/import.apple")
+                        .join(segment)
+                        .join("stream.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(marker["seq"], advance.seq);
+            assert_eq!(marker["prev_day"], serde_json::json!(advance.prev_day));
+            assert_eq!(
+                marker["prev_segment"],
+                serde_json::json!(advance.prev_segment)
+            );
+        }
+
+        let state: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "import.apple")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(state.seq, 3);
+        assert_eq!(state.last_day.as_deref(), Some("20260804"));
+        assert_eq!(state.last_segment.as_deref(), Some("120200_60"));
+        assert!(state.did.is_none());
+        assert!(state.source.is_none());
+    }
+
+    #[test]
+    fn unbound_stream_advances_python_import_fixture_without_rebinding() {
+        let temporary = TempDir::new();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/stream-record-readcompat.json"
+        ))
+        .unwrap();
+        let state_path = stream_record_path(temporary.path(), "import.apple");
+        fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+        fs::write(
+            &state_path,
+            serde_json::to_vec(&fixture["records"]["import.apple.json"]).unwrap(),
+        )
+        .unwrap();
+
+        let advance = advance_unbound_stream(
+            temporary.path(),
+            "import.apple",
+            "20260804",
+            "120100_60",
+            StreamHints::default(),
+        )
+        .unwrap();
+        assert_eq!(advance.prev_day.as_deref(), Some("20260801"));
+        assert_eq!(advance.prev_segment.as_deref(), Some("120000_60"));
+        assert_eq!(advance.seq, 2);
+
+        let state: StreamRecord = serde_json::from_slice(&fs::read(&state_path).unwrap()).unwrap();
+        assert_eq!(state.created_at, 1_785_891_124);
+        assert_eq!(state.seq, 2);
+        assert_eq!(state.last_day.as_deref(), Some("20260804"));
+        assert_eq!(state.last_segment.as_deref(), Some("120100_60"));
+        assert_eq!(
+            fs::read_dir(temporary.path().join("streams"))
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "json"))
+                .count(),
+            1
+        );
+        let marker: Value = serde_json::from_slice(
+            &fs::read(
+                temporary
+                    .path()
+                    .join("chronicle/20260804/import.apple/120100_60/stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker["prev_day"], "20260801");
+        assert_eq!(marker["prev_segment"], "120000_60");
+        assert_eq!(marker["seq"], 2);
+    }
+
+    #[test]
+    fn unbound_malformed_state_refuses_without_changing_bytes() {
+        let temporary = TempDir::new();
+        let state = stream_record_path(temporary.path(), "import.apple");
+        fs::create_dir_all(state.parent().unwrap()).unwrap();
+        fs::write(&state, b"{not json\n").unwrap();
+        let before = fs::read(&state).unwrap();
+
+        assert!(matches!(
+            advance_unbound_stream(
+                temporary.path(),
+                "import.apple",
+                "20260804",
+                "120000_60",
+                StreamHints::default(),
+            ),
+            Err(UnboundStreamAdvanceError::Advance(
+                SegmentError::MalformedStreamRecord { .. }
+            ))
+        ));
+        assert_eq!(fs::read(state).unwrap(), before);
+    }
+
+    #[test]
     fn bool_sequence_is_rejected() {
         let temporary = TempDir::new();
         let state = temporary.path().join("streams/workstation.json");
@@ -635,6 +917,15 @@ mod tests {
         let state = temporary.path().join("streams/workstation.json");
         let record: StreamRecord = serde_json::from_slice(&fs::read(state).unwrap()).unwrap();
         assert_eq!(record.seq, 1);
+    }
+
+    #[test]
+    fn bound_records_still_serialize_binding_fields() {
+        let bytes =
+            serde_json::to_vec(&record("workstation", Some(DID_A), Some("camera"), 1, 7)).unwrap();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["did"], DID_A);
+        assert_eq!(value["source"], "camera");
     }
 
     #[test]
