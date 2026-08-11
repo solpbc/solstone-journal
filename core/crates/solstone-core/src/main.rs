@@ -25,13 +25,14 @@ use solstone_core_cli::{
     IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP,
-    OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions, SpeakerResolveCommand, SplCommand,
-    TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions, TransferCommand,
-    TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE, evaluate_args,
-    version_line,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions,
+    SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE,
+    TranscribeOptions, TransferCommand, TransferExportOptions, TransferImportOptions,
+    TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
+mod navigate;
 mod supervisor;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -125,6 +126,16 @@ fn main() -> ExitCode {
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::Observer(command)) => run_observer(command),
+        Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
+        Ok(Command::NavigateHelp) => {
+            print!("{NAVIGATE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::NavigateUsage) => {
+            eprint!("{NAVIGATE_USAGE}");
+            eprintln!("journal navigate: error: invalid arguments");
+            ExitCode::from(2)
+        }
         Ok(Command::TransferHelp(text)) => {
             print!("{text}");
             ExitCode::SUCCESS

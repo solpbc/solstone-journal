@@ -119,7 +119,10 @@ where
 }
 
 /// Perform the current process's supervisor check against `journal/health/convey.port`.
-pub(crate) fn require_solstone(journal_path: &Path) -> Result<(), CliError> {
+///
+/// This is shared host-preflight while native journal verbs still lack a common
+/// owner; callers must reuse this single owner-facing contract.
+pub fn require_solstone(journal_path: &Path) -> Result<(), CliError> {
     require_solstone_with(|name| env::var(name).ok(), || is_solstone_up(journal_path))
 }
 

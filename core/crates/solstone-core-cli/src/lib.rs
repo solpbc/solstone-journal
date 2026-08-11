@@ -15,6 +15,7 @@ pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
+    "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n"
 );
@@ -27,6 +28,28 @@ pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
 /// never typed.
 pub const GRAB_USAGE: &str =
     "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
+
+/// The usage line native `journal navigate` prints for an argument error.
+/// It names `journal navigate`, not `solstone-core navigate`, because that is
+/// the command the owner typed.
+pub const NAVIGATE_USAGE: &str = "usage: journal navigate [-h] [-f FACET | --facet FACET] [PATH]\n";
+
+/// `journal navigate --help` in the owner-facing command vocabulary.
+/// It names `journal navigate`, not `solstone-core navigate`, because that is
+/// the command the owner typed.
+pub const NAVIGATE_HELP: &str = concat!(
+    "usage: journal navigate [-h] [-f FACET | --facet FACET] [PATH]\n",
+    "\n",
+    "Navigate the browser to a path and/or switch facet.\n",
+    "\n",
+    "positional arguments:\n",
+    "  PATH                  URL path to navigate to.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -f FACET, --facet FACET\n",
+    "                        Facet to switch to.\n",
+);
 
 /// `journal grab --help`, verbatim from the reference. The native verb
 /// previously answered --help with the one-line usage above, losing every
@@ -263,6 +286,12 @@ pub enum Command {
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
     Observer(ObserverCommand),
+    Navigate {
+        path: Option<String>,
+        facet: Option<String>,
+    },
+    NavigateUsage,
+    NavigateHelp,
     ObserverUsage,
     ObserverPruneUsage,
     ObserverHelp,
@@ -715,6 +744,17 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             // argparse exits 2 here, not 64.
             Ok(parse_export(rest).map_or(Command::ExportUsage, Command::Export))
         }
+        [command, rest @ ..] if command == OsStr::new("navigate") => {
+            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            let option_end = rest
+                .iter()
+                .position(|argument| argument == OsStr::new("--"))
+                .unwrap_or(rest.len());
+            if rest[..option_end].iter().any(help) {
+                return Ok(Command::NavigateHelp);
+            }
+            Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
+        }
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
@@ -758,6 +798,46 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         _ => Err(UsageError),
     }
+}
+
+fn parse_navigate(args: &[OsString]) -> Result<Command, UsageError> {
+    let mut path = None;
+    let mut facet = None;
+    let mut literal = false;
+    let mut index = 0;
+
+    while index < args.len() {
+        let argument = &args[index];
+        if !literal && argument == OsStr::new("--") {
+            literal = true;
+            index += 1;
+            continue;
+        }
+        if !literal && (argument == OsStr::new("--facet") || argument == OsStr::new("-f")) {
+            if facet.is_some() {
+                return Err(UsageError);
+            }
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            // An option value cannot be another dash-leading option token.
+            let value = value
+                .to_str()
+                .filter(|value| !value.starts_with('-'))
+                .ok_or(UsageError)?;
+            facet = Some(value.to_owned());
+            index += 2;
+            continue;
+        }
+        if !literal && argument.to_str().is_none_or(|value| value.starts_with('-')) {
+            return Err(UsageError);
+        }
+        if path.is_some() {
+            return Err(UsageError);
+        }
+        path = Some(argument.to_str().ok_or(UsageError)?.to_owned());
+        index += 1;
+    }
+
+    Ok(Command::Navigate { path, facet })
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -2524,6 +2604,109 @@ mod tests {
     }
 
     #[test]
+    fn parses_navigate_arguments_in_either_option_position() {
+        assert_eq!(
+            evaluate_args(&args(&["navigate"])),
+            Ok(Command::Navigate {
+                path: None,
+                facet: None,
+            })
+        );
+        for (values, expected_path, expected_facet) in [
+            (
+                &["navigate", "/home", "--facet", "work"][..],
+                "/home",
+                Some("work"),
+            ),
+            (
+                &["navigate", "--facet", "work", "/home"][..],
+                "/home",
+                Some("work"),
+            ),
+            (
+                &["navigate", "-f", "work", "/home"][..],
+                "/home",
+                Some("work"),
+            ),
+            (&["navigate", "--", "-weird"][..], "-weird", None),
+            (&["navigate", "--", "--help"][..], "--help", None),
+            (&["navigate", "--", "-h"][..], "-h", None),
+            (
+                &["navigate", "-f", "work", "--", "-weird"][..],
+                "-weird",
+                Some("work"),
+            ),
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Navigate {
+                    path: Some(expected_path.to_owned()),
+                    facet: expected_facet.map(str::to_owned),
+                }),
+                "{values:?}"
+            );
+        }
+        assert_eq!(
+            evaluate_args(&args(&["navigate", "--facet", ""])),
+            Ok(Command::Navigate {
+                path: None,
+                facet: Some(String::new()),
+            })
+        );
+        assert_eq!(
+            evaluate_args(&args(&["navigate", "--"])),
+            Ok(Command::Navigate {
+                path: None,
+                facet: None,
+            })
+        );
+    }
+
+    #[test]
+    fn navigate_help_is_a_carrier_before_parsing() {
+        for values in [
+            &["navigate", "--help"][..],
+            &["navigate", "-h"][..],
+            &["navigate", "/home", "--help"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Ok(Command::NavigateHelp));
+        }
+    }
+
+    #[test]
+    fn navigate_malformed_arguments_are_usage_carriers() {
+        for values in [
+            &["navigate", "--facet"][..],
+            &["navigate", "-f"][..],
+            &["navigate", "--nonsense"][..],
+            &["navigate", "-x"][..],
+            &["navigate", "-weird"][..],
+            &["navigate", "/a", "/b"][..],
+            &["navigate", "--facet", "one", "-f", "two"][..],
+            &["navigate", "--facet", "--nonsense"][..],
+            &["navigate", "--facet", "--"][..],
+            &["navigate", "-f", "-x"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::NavigateUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn navigate_non_utf8_arguments_are_usage_carriers() {
+        use std::os::unix::ffi::OsStringExt;
+
+        assert_eq!(
+            evaluate_args(&[OsString::from("navigate"), OsString::from_vec(vec![0xff]),]),
+            Ok(Command::NavigateUsage)
+        );
+    }
+
+    #[test]
     fn rejects_unknown_args() {
         assert_eq!(evaluate_args(&args(&["--unknown"])), Err(UsageError));
     }
@@ -3784,6 +3967,7 @@ mod tests {
             "grab",
             "spl",
             "supervisor",
+            "navigate",
             "export",
         ] {
             assert!(

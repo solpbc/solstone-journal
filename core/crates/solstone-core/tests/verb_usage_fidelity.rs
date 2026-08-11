@@ -268,6 +268,67 @@ fn export_help_is_served_and_keeps_the_references_flag_list() {
     }
 }
 
+// --- navigate -------------------------------------------------------------
+
+#[test]
+fn malformed_navigate_invocations_exit_2_with_their_own_usage() {
+    for args in [
+        ["navigate", "--nonsense"].as_slice(),
+        ["navigate", "/a", "/b"].as_slice(),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .output()
+            .expect("run solstone-core");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("usage: journal navigate"),
+            "{args:?} did not print navigate usage: {stderr}"
+        );
+        assert!(
+            stderr.contains("journal navigate: error: invalid arguments"),
+            "{args:?} did not print navigate error: {stderr}"
+        );
+        assert!(
+            !stderr.contains("solstone-core --version"),
+            "{args:?} printed top-level usage: {stderr}"
+        );
+        assert!(
+            !stderr.contains("solstone-core"),
+            "{args:?} named the internal binary: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn navigate_help_is_served_not_treated_as_a_usage_error() {
+    for args in [
+        ["navigate", "--help"].as_slice(),
+        ["navigate", "-h"].as_slice(),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .output()
+            .expect("run solstone-core");
+        assert_eq!(output.status.code(), Some(0), "{args:?}");
+        assert_eq!(output.stderr, b"", "{args:?}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.starts_with("usage: journal navigate"),
+            "{args:?} did not print navigate help: {stdout}"
+        );
+        assert!(stdout.contains("-f FACET, --facet FACET"), "{stdout}");
+        assert!(
+            stdout.contains("PATH                  URL path to navigate to."),
+            "{stdout}"
+        );
+        assert!(!stdout.contains("solstone-core --version"), "{stdout}");
+        assert!(!stdout.contains("solstone-core"), "{stdout}");
+    }
+}
+
 // --- transcribe -----------------------------------------------------------
 
 const TRANSCRIBE_USAGE: &str = concat!(
