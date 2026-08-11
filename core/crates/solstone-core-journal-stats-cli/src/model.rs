@@ -71,6 +71,7 @@ pub enum CacheStatus {
     Saved,
     SaveFailed { message: String },
     NotSavedMissingDay,
+    NotSavedNoCache,
 }
 
 /// A computed day payload plus the observable cache persistence result.

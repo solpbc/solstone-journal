@@ -33,6 +33,8 @@ pub enum JournalStatsError {
     },
     #[error("invalid talent configuration {path}: {message}")]
     TalentConfig { path: PathBuf, message: String },
+    #[error("stats validation failed: {0}")]
+    Validation(String),
 }
 
 impl JournalStatsError {

@@ -4,27 +4,41 @@
 //! Per-day journal statistics scan and cache.
 
 mod activities;
+mod backlog;
 mod cache;
+mod cli;
+mod document;
+mod document_writer;
 mod error;
 mod fold;
 mod model;
+mod run;
 mod scan;
 mod talents;
+mod tokens;
 
 #[cfg(test)]
 #[path = "../tests/day_scan.rs"]
 mod day_scan;
+
+#[cfg(test)]
+#[path = "../tests/journal_stats.rs"]
+mod journal_stats;
 
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_system_health::{HealthLogSource, SegmentSource};
 
+pub use backlog::{BacklogViewReader, FilesystemBacklogViewReader};
 pub use cache::{DayCacheWriter, FilesystemDayCacheWriter};
+pub use document::StatsDocument;
+pub use document_writer::{DocumentWriter, FilesystemDocumentWriter};
 pub use error::JournalStatsError;
 pub use model::{
     ActivityTotals, CacheStatus, DayScan, DayStats, HeatmapData, SCHEMA_VERSION, ScanDayOutcome,
 };
+pub use run::{CliRun, run_cli};
 
 /// Inputs for one cache-aware per-day journal statistics scan.
 pub struct DayScanRequest<'a, S, H, W> {
@@ -47,6 +61,18 @@ where
     H: HealthLogSource,
     W: DayCacheWriter,
 {
+    scan_day_with_cache(request, true)
+}
+
+pub(crate) fn scan_day_with_cache<S, H, W>(
+    request: DayScanRequest<'_, S, H, W>,
+    use_cache: bool,
+) -> Result<ScanDayOutcome, JournalStatsError>
+where
+    S: SegmentSource,
+    H: HealthLogSource,
+    W: DayCacheWriter,
+{
     NaiveDate::parse_from_str(request.day, "%Y%m%d")
         .map_err(|_| JournalStatsError::InvalidDay(request.day.to_owned()))?;
     let day_dir =
@@ -57,7 +83,7 @@ where
             cache_status: CacheStatus::NotSavedMissingDay,
         });
     }
-    if let Some(scan) = cache::load_fresh_day_cache(&day_dir)? {
+    if use_cache && let Some(scan) = cache::load_fresh_day_cache(&day_dir)? {
         return Ok(ScanDayOutcome {
             scan,
             cache_status: CacheStatus::Hit,
@@ -65,6 +91,12 @@ where
     }
 
     let scan = scan::compute_day(&request, &day_dir)?;
+    if !use_cache {
+        return Ok(ScanDayOutcome {
+            scan,
+            cache_status: CacheStatus::NotSavedNoCache,
+        });
+    }
     let cache_path = day_dir.join("stats.json");
     let cache_status = match cache::save_day_cache(request.cache_writer, &cache_path, &scan) {
         Ok(()) => CacheStatus::Saved,
