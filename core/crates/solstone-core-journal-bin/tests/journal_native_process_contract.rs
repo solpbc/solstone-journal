@@ -44,20 +44,31 @@ const PROBES: &[Probe] = &[
         argv: &["--nope"],
         expected_exit: 64,
     },
-    // `supervisor` and `start` share one NativeProcessSpec preset (`supervisor`),
-    // so both probes exercise the same native entry point. `--nonsense` is
-    // rejected during argument parsing, before any journal or running solstone
-    // is required, and the native root answers an unknown flag with exit 64.
-    Probe {
-        token: "supervisor",
-        argv: &["--nonsense"],
-        expected_exit: 64,
-    },
-    Probe {
-        token: "start",
-        argv: &["--nonsense"],
-        expected_exit: 64,
-    },
+    // NO PROBE FOR supervisor OR start, DELIBERATELY, AND THIS RED IS CORRECT.
+    //
+    // 1d1523b4b added both tokens to NATIVE_PROCESS_SPECS without probes, so
+    // this contract is red. Registering them at exit 64 makes it green and
+    // makes it check less. Measured in a replica of this harness:
+    //
+    //   journal grab       --nonsense -> 2,  "usage: journal grab [-h] ..."
+    //   journal export     --nonsense -> 2,  "usage: journal export [-h] ..."
+    //   journal identity   --nonsense -> 2,  "usage: journal identity [-h] ..."
+    //   journal supervisor --nonsense -> 64, top-level "Usage:"
+    //   journal start      --nonsense -> 64, top-level "Usage:"
+    //   journal spl        --nope     -> 64, top-level "Usage:"
+    //   solstone-core bogus-verb --nonsense -> 64, top-level "Usage:"
+    //
+    // parse_supervisor and parse_spl have no verb-level usage variant, so every
+    // bad argv for those verbs falls through to the top-level arm -- the SAME
+    // arm that answers a verb the sibling does not have at all. A row expecting
+    // 64 therefore certifies the token on a code the binary would still emit
+    // with supervisor deleted from the sibling entirely. That is the exact
+    // failure class this guard exists to catch, reproduced inside the guard.
+    //
+    // The fix is to give parse_supervisor and parse_spl a verb-level usage path
+    // so a bad argv exits 2, then register against that. It is scoped and
+    // scope-checked as Lane Z's Z6-pre, which also covers spl -- whose existing
+    // row carries this same defect today. Leave this red for it.
     Probe {
         token: "grab",
         argv: &["--nonsense"],
