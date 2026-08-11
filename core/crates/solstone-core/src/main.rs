@@ -27,9 +27,11 @@ use solstone_core_cli::{
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, OBSERVER_HELP, OBSERVER_PRUNE_HELP,
     OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions, SpeakerResolveCommand, SplCommand,
-    TRANSFER_USAGE, TransferCommand, TransferExportOptions, TransferImportOptions,
-    TransferSendOptions, USAGE, evaluate_args, version_line,
+    TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions, TransferCommand,
+    TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE, evaluate_args,
+    version_line,
 };
+use solstone_core_transcribe::{CliError, CliRunError};
 mod supervisor;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
@@ -117,6 +119,7 @@ fn main() -> ExitCode {
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Export(options)) => run_export(options),
+        Ok(Command::Transcribe(options)) => run_transcribe(options),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
@@ -128,6 +131,10 @@ fn main() -> ExitCode {
         }
         Ok(Command::ExportHelp) => {
             print!("{EXPORT_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::TranscribeHelp) => {
+            print!("{TRANSCRIBE_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::ExportUsage) => {
@@ -242,6 +249,37 @@ fn run_grab_request(options: GrabOptions) -> ExitCode {
                 solstone_core_grab::GrabFailureClass::Usage => ExitCode::from(2),
                 solstone_core_grab::GrabFailureClass::Runtime => ExitCode::from(1),
             }
+        }
+    }
+}
+
+fn run_transcribe(options: TranscribeOptions) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_transcribe::run_cli(options.arguments, &journal.path) {
+        Ok(result) => {
+            if let Some(summary) = result.summary {
+                println!("{summary}");
+            }
+            ExitCode::from(result.exit_code as u8)
+        }
+        Err(CliRunError::Cli(CliError::Usage { message })) => {
+            eprint!("{TRANSCRIBE_USAGE}");
+            eprintln!("journal transcribe: error: {message}");
+            ExitCode::from(2)
+        }
+        Err(error) => {
+            if let Some(message) = error.message() {
+                eprintln!("{message}");
+            } else {
+                eprintln!("{error}");
+            }
+            ExitCode::from(error.exit_code() as u8)
         }
     }
 }

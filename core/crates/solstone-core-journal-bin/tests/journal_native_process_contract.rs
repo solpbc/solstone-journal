@@ -60,6 +60,11 @@ const PROBES: &[Probe] = &[
         expected_exit: 2,
     },
     Probe {
+        token: "transcribe",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+    },
+    Probe {
         token: "observer",
         argv: &["--nonsense"],
         expected_exit: 2,
@@ -485,7 +490,6 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
 }
 
 #[test]
-#[ignore = "Lane W is pending: transcribe is not a native cutover until W8b. export landed in W6b (004a23288) and now passes this list."]
 fn lane_w_process_tokens_are_native_cutovers() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()

@@ -15,7 +15,8 @@ pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
-    "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n"
+    "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
+    "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -175,6 +176,39 @@ pub const EXPORT_USAGE: &str = concat!(
     "                      [--day DAY] [-v] [-d]\n",
 );
 
+/// `journal transcribe --help`, verbatim from the Python reference.
+pub const TRANSCRIBE_HELP: &str = concat!(
+    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
+    "                          [-v] [-d]\n",
+    "                          [audio_path]\n",
+    "\n",
+    "Transcribe audio files using pluggable STT and native speaker analysis\n",
+    "\n",
+    "positional arguments:\n",
+    "  audio_path            Path to audio file in journal segment directory, e.g.\n",
+    "                        HHMMSS_LEN/audio.flac\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --all                 Batch-transcribe all unprocessed audio segments in the\n",
+    "                        journal\n",
+    "  --redo                Reprocess file, overwriting existing outputs\n",
+    "  --backend {parakeet,parakeet-cpp,confidential}\n",
+    "                        STT backend to use (overrides config and resource-\n",
+    "                        aware auto default)\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
+/// The wrapped usage lines argparse prints on a `journal transcribe` error.
+pub const TRANSCRIBE_USAGE: &str = concat!(
+    "usage: journal transcribe [-h] [--all] [--redo]\n",
+    "                          [--backend {parakeet,parakeet-cpp,confidential}]\n",
+    "                          [-v] [-d]\n",
+    "                          [audio_path]\n",
+);
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -223,6 +257,7 @@ pub enum Command {
     Body(BodyCommand),
     Transfer(TransferCommand),
     Export(ExportOptions),
+    Transcribe(TranscribeOptions),
     Convey(ConveyOptions),
     Grab(GrabCommand),
     Spl(SplCommand),
@@ -235,6 +270,7 @@ pub enum Command {
     TransferUsage,
     ExportUsage,
     ExportHelp,
+    TranscribeHelp,
     TransferHelp(&'static str),
 }
 
@@ -276,6 +312,11 @@ pub struct ExportOptions {
     /// Parsed only so the binary can reject the retired option explicitly.
     pub key: Option<String>,
     pub journal_override: Option<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscribeOptions {
+    pub arguments: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -672,6 +713,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             // argparse exits 2 here, not 64.
             Ok(parse_export(rest).map_or(Command::ExportUsage, Command::Export))
         }
+        [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
         }
@@ -1088,6 +1130,35 @@ fn parse_export(args: &[OsString]) -> Result<ExportOptions, UsageError> {
             .transpose()?,
         journal_override,
     })
+}
+
+fn parse_transcribe(args: &[OsString]) -> Result<Command, UsageError> {
+    let mut arguments = Vec::with_capacity(args.len());
+    let mut iter = args.iter();
+    while let Some(argument) = iter.next() {
+        if argument == OsStr::new("--backend") {
+            arguments.push(argument.clone().into_string().map_err(|_| UsageError)?);
+            if let Some(value) = iter.next() {
+                arguments.push(value.clone().into_string().map_err(|_| UsageError)?);
+            }
+            continue;
+        }
+        if argument == OsStr::new("-h") || argument == OsStr::new("--help") {
+            return Ok(Command::TranscribeHelp);
+        }
+        if matches!(
+            argument.as_os_str(),
+            value
+                if value == OsStr::new("-v")
+                    || value == OsStr::new("--verbose")
+                    || value == OsStr::new("-d")
+                    || value == OsStr::new("--debug")
+        ) {
+            continue;
+        }
+        arguments.push(argument.clone().into_string().map_err(|_| UsageError)?);
+    }
+    Ok(Command::Transcribe(TranscribeOptions { arguments }))
 }
 
 fn parse_convey(args: &[OsString]) -> Result<ConveyOptions, UsageError> {
@@ -2432,6 +2503,54 @@ mod tests {
     #[test]
     fn rejects_unknown_args() {
         assert_eq!(evaluate_args(&args(&["--unknown"])), Err(UsageError));
+    }
+
+    #[test]
+    fn transcribe_intercepts_help_and_discards_logging_flags() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "transcribe",
+                "--all",
+                "-v",
+                "--debug",
+                "--backend",
+                "parakeet",
+            ])),
+            Ok(Command::Transcribe(TranscribeOptions {
+                arguments: vec![
+                    "--all".to_owned(),
+                    "--backend".to_owned(),
+                    "parakeet".to_owned(),
+                ],
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["transcribe", "--nonsense", "-h"])),
+            Ok(Command::TranscribeHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "transcribe",
+                "--backend",
+                "--debug",
+                "parakeet",
+                "--all",
+            ])),
+            Ok(Command::Transcribe(TranscribeOptions {
+                arguments: vec![
+                    "--backend".to_owned(),
+                    "--debug".to_owned(),
+                    "parakeet".to_owned(),
+                    "--all".to_owned(),
+                ],
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["transcribe", "--backend", "-h", "--all"])),
+            Ok(Command::Transcribe(TranscribeOptions {
+                arguments: vec!["--backend".to_owned(), "-h".to_owned(), "--all".to_owned()],
+            }))
+        );
     }
 
     #[test]
