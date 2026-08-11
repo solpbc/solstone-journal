@@ -929,17 +929,18 @@ fn run_restart_convey(options: RestartConveyOptions) -> ExitCode {
     match solstone_core_convey_shell::restart_convey(
         &journal,
         solstone_core_convey_shell::RestartConveyOptions {
-            timeout: Duration::from_secs_f64(options.timeout.max(0.0)),
+            timeout: options.timeout,
             verbose: options.verbose,
-            debug: options.debug,
         },
     ) {
         Ok(report) => {
-            print!("{}", report.output);
+            print!("{}", report.stdout());
+            eprint!("{}", report.stderr());
             ExitCode::SUCCESS
         }
         Err(error) => {
-            print!("{}", error.output());
+            print!("{}", error.stdout());
+            eprint!("{}", error.stderr());
             ExitCode::from(1)
         }
     }
