@@ -44,6 +44,20 @@ const PROBES: &[Probe] = &[
         argv: &["--nope"],
         expected_exit: 64,
     },
+    // `supervisor` and `start` share one NativeProcessSpec preset (`supervisor`),
+    // so both probes exercise the same native entry point. `--nonsense` is
+    // rejected during argument parsing, before any journal or running solstone
+    // is required, and the native root answers an unknown flag with exit 64.
+    Probe {
+        token: "supervisor",
+        argv: &["--nonsense"],
+        expected_exit: 64,
+    },
+    Probe {
+        token: "start",
+        argv: &["--nonsense"],
+        expected_exit: 64,
+    },
     Probe {
         token: "grab",
         argv: &["--nonsense"],
