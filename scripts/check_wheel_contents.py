@@ -419,6 +419,12 @@ def _speakers_analyze_rebuild_command(platform_tuple: CorePlatform | None) -> st
     return "make wheel-speakers-analyze-linux-x86_64"
 
 
+def _vulkan_probe_rebuild_command(platform_tuple: CorePlatform | None) -> str:
+    if platform_tuple is not None and platform_tuple[1] == "aarch64":
+        return "make wheel-vulkan-probe-linux-aarch64"
+    return "make wheel-vulkan-probe-linux-x86_64"
+
+
 def _vad_analyze_rebuild_command(platform_tuple: CorePlatform | None) -> str:
     if platform_tuple is not None and platform_tuple[1] == "aarch64":
         return "make wheel-vad-analyze-linux-aarch64"
@@ -1589,20 +1595,81 @@ def _check_vulkan_probe_elf_binary(
 ) -> list[str]:
     """Validate the dynamic helper's ELF identity without static-link checks."""
 
-    repair = _speakers_analyze_rebuild_command(platform_tuple)
+    repair = _vulkan_probe_rebuild_command(platform_tuple)
     if len(content) < 64:
-        return [_failure(wheel_name, "Vulkan probe ELF binary is too short", expected="at least 64-byte ELF64 header", actual=f"{len(content)} bytes", repair=repair)]
+        return [
+            _failure(
+                wheel_name,
+                "Vulkan probe ELF binary is too short",
+                expected="at least 64-byte ELF64 header",
+                actual=f"{len(content)} bytes",
+                repair=repair,
+            )
+        ]
     if content[:4] != ELF_MAGIC:
-        return [_failure(wheel_name, "Vulkan probe binary is not ELF", expected="ELF magic 7f454c46", actual=content[:4].hex(), repair=repair)]
+        return [
+            _failure(
+                wheel_name,
+                "Vulkan probe binary is not ELF",
+                expected="ELF magic 7f454c46",
+                actual=content[:4].hex(),
+                repair=repair,
+            )
+        ]
     errors: list[str] = []
     if content[4] != ELF_CLASS_64:
-        errors.append(_failure(wheel_name, "Vulkan probe ELF binary is not ELF64", expected=str(ELF_CLASS_64), actual=str(content[4]), repair=repair))
+        errors.append(
+            _failure(
+                wheel_name,
+                "Vulkan probe ELF binary is not ELF64",
+                expected=str(ELF_CLASS_64),
+                actual=str(content[4]),
+                repair=repair,
+            )
+        )
     if content[5] != ELF_DATA_LITTLE_ENDIAN:
-        errors.append(_failure(wheel_name, "Vulkan probe ELF binary is not little-endian", expected=str(ELF_DATA_LITTLE_ENDIAN), actual=str(content[5]), repair=repair))
+        errors.append(
+            _failure(
+                wheel_name,
+                "Vulkan probe ELF binary is not little-endian",
+                expected=str(ELF_DATA_LITTLE_ENDIAN),
+                actual=str(content[5]),
+                repair=repair,
+            )
+        )
     actual_machine = struct.unpack_from("<H", content, 18)[0]
     expected_machine = ELF_MACHINE[platform_tuple[1]]
     if actual_machine != expected_machine:
-        errors.append(_failure(wheel_name, "Vulkan probe ELF machine does not match wheel tag", expected=f"{platform_tuple[1]} ({expected_machine:#06x})", actual=f"{actual_machine:#06x}", repair=repair))
+        errors.append(
+            _failure(
+                wheel_name,
+                "Vulkan probe ELF machine does not match wheel tag",
+                expected=f"{platform_tuple[1]} ({expected_machine:#06x})",
+                actual=f"{actual_machine:#06x}",
+                repair=repair,
+            )
+        )
+    if not _has_program_header(content, PT_INTERP):
+        errors.append(
+            _failure(
+                wheel_name,
+                "Vulkan probe ELF binary is missing PT_INTERP",
+                expected="PT_INTERP program header present",
+                actual="missing",
+                repair=repair,
+            )
+        )
+    needed, _runpath, _rpath = _elf_dynamic_strings(content)
+    if not needed:
+        errors.append(
+            _failure(
+                wheel_name,
+                "Vulkan probe ELF binary is missing DT_NEEDED",
+                expected="at least one DT_NEEDED entry",
+                actual="<empty>",
+                repair=repair,
+            )
+        )
     return errors
 
 
@@ -1612,7 +1679,7 @@ def check_vulkan_probe_wheel(path: Path, package: NativePackage) -> list[str]:
     errors: list[str] = []
     tag = _core_wheel_tag(path)
     platform_tuple = VULKAN_PROBE_TAG_PLATFORMS.get(tag)
-    repair = _speakers_analyze_rebuild_command(platform_tuple)
+    repair = _vulkan_probe_rebuild_command(platform_tuple)
     if path.stat().st_size > MAX_VULKAN_PROBE_WHEEL_BYTES:
         errors.append(_failure(path.name, "Vulkan probe wheel is too large", expected=f"<= {MAX_VULKAN_PROBE_WHEEL_BYTES} bytes", actual=str(path.stat().st_size), repair=repair))
     if platform_tuple is None:

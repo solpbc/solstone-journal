@@ -383,18 +383,16 @@ documentation was what was wrong.
 
 Local model runtime, inside the security boundary. **Native**: `solstone-core-brain` owns the durable
 record; `solstone-core-local` owns the launch plan, the loopback bind, the connect client, the NVIDIA
-probe, the install machinery and `generate`. Both are reached as `solstone-core brain …` and
-`solstone-core local …` subcommands of the packaged binary, ⛔ never as a standalone executable — the
-wheel check builds an exact member set from a one-name script list, so a separate binary is unreachable
-on an installed host and a Rust-only gate cannot see that it is.
+probe, the install machinery and `generate`. Those command surfaces are reached as `solstone-core brain
+…` and `solstone-core local …` subcommands of the packaged binary. On Linux that binary is static musl
+and cannot host a Vulkan loader, so `solstone-core-vulkan-probe` ships separately as a Linux-only glibc
+sibling helper.
+Python `local_vulkan.py` still owns production probing today; the helper makes the Rust probe shippable
+for later selection.
 
-⚠ **Four things here are still Python, each for a stated reason**, so the remainder is not read as
+⚠ **Three things here are still Python, each for a stated reason**, so the remainder is not read as
 unfinished work:
 
-- the **Vulkan** device enumeration and its VRAM-usage sibling — they call `libvulkan` in-process
-  through `ctypes`, and `solstone-core` ships **static musl** on both Linux lanes, which cannot
-  `dlopen`. That is linkage, not effort; the shape it needs is a separately packaged, dynamically
-  linked helper on its own glibc lanes, the way the speaker analyzer ships;
 - the **endpoint and confidential arms** of the provider module, and the request builder, schema
   preparation, response parser and finish-reason normaliser they share with the bundled arm — those
   belong to `P-BYO` and `P-SPP`, and they are **egress**;
