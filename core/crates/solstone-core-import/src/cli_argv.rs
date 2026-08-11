@@ -108,11 +108,14 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
             continue;
         }
         if takes_value(argument) {
+            let attached_value = argument.contains('=');
             index += 1;
-            if args.get(index).is_none() {
-                return Err(format!("argument {argument}: expected one argument"));
+            if !attached_value {
+                if args.get(index).is_none() {
+                    return Err(format!("argument {argument}: expected one argument"));
+                }
+                index += 1;
             }
-            index += 1;
             continue;
         }
         if argument == "--auto" {

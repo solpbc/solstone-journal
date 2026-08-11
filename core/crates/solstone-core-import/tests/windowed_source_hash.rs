@@ -12,16 +12,26 @@ fn source_hash_round_trips_open_ended_windows_from_fixture() {
     let examples = fixture["windowed_source_hash"]["examples"]
         .as_array()
         .unwrap();
-    let open_ended = examples
+    let values = examples
         .iter()
         .map(Value::as_str)
         .collect::<Option<Vec<_>>>()
-        .unwrap()
-        .into_iter()
-        .filter(|value| value.contains("#window:open:") || value.ends_with(":open"))
+        .unwrap();
+    let open_start = values
+        .iter()
+        .copied()
+        .filter(|value| value.contains("#window:open:"))
+        .collect::<Vec<_>>();
+    let open_end = values
+        .iter()
+        .copied()
+        .filter(|value| value.ends_with(":open"))
         .collect::<Vec<_>>();
 
-    for value in open_ended {
+    assert!(!open_start.is_empty());
+    assert!(!open_end.is_empty());
+
+    for value in open_start.into_iter().chain(open_end) {
         let hash = SourceHash::new(value.to_owned());
         assert_eq!(hash.as_str(), value);
         assert_eq!(hash.into_inner(), value);

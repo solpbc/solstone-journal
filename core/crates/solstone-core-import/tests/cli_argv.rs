@@ -60,6 +60,31 @@ fn positional_timestamp_reaches_the_unimplemented_handler() {
     assert!(result.stderr.contains("import: unimplemented: cli_argv"));
 }
 
+#[test]
+fn value_options_accept_attached_and_separated_values() {
+    for arguments in [
+        &["--timestamp=20260311_120000", "file"][..],
+        &["--timestamp", "20260311_120000", "file"][..],
+    ] {
+        let result = run(
+            arguments,
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        );
+
+        assert!(result.stderr.contains("import: unimplemented: cli_argv"));
+        assert!(!result.stderr.contains("media"));
+    }
+}
+
+#[test]
+fn unknown_attached_option_is_rejected() {
+    let result = run(&["--nonsense=x", "file"], |_| None, || false);
+
+    assert_eq!(result.exit_code, 2);
+    assert!(result.stderr.contains("usage: journal importer"));
+}
+
 fn run<E, C>(
     args: &[&str],
     lookup_env: E,
