@@ -263,6 +263,9 @@ fn inventory_applicability_matches_packaged_target_families() {
 
     // This treats a family outside the macOS set as Linux-only. That remains valid only because
     // release_candidate_driver.py builds every current family for both Linux architectures.
+    // It binds only the getter's family-set literal and each leaf's declared target-family, not
+    // NativePackage construction or native_packages filtering; a divergence or dropped leaf there
+    // can change real macOS coverage without this test noticing.
     for leaf in leaves {
         let family = leaf.target_family.as_deref().unwrap_or_else(|| {
             panic!(

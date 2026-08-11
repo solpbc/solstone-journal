@@ -8,8 +8,8 @@
 //! and `mlx_vlm` on Darwin arm64); native warm proves that native binaries start.
 //! Those are disjoint sets. Both verbs exist today, but the cut wave must retain this
 //! as an explicit obligation. In particular, macOS Gatekeeper commonly evaluates the
-//! notarized `.so` payloads under site-packages, which spawning these nine binaries
-//! does not touch.
+//! notarized `.so` payloads under site-packages, which this native-binary census does
+//! not touch.
 
 // Do not extend solstone-core-local::install::readiness::probe_binary: it hard-codes
 // --version, reduces outcomes to status.code(), discards stderr needed to name loader
