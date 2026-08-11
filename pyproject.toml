@@ -112,10 +112,6 @@ journal-host = [
     "tokenizers>=0.20",
     "av",
     "openai>=1.2.0",
-    "opentelemetry-exporter-otlp-proto-http==1.39.1",
-    "opentelemetry-instrumentation==0.60b1",
-    "opentelemetry-instrumentation-threading==0.60b1",
-    "opentelemetry-semantic-conventions==0.60b1",
     # 0.6.2 = validated continuous-batching-fix baseline; <0.7 pins it
     # so on-device builds don't float past the soak-validated server-wedge fix.
     "mlx-vlm>=0.6.2,<0.7; sys_platform == 'darwin' and platform_machine == 'arm64'",
