@@ -4,6 +4,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -40,13 +41,21 @@ struct Supervisor(Child);
 impl Drop for Supervisor {
     fn drop(&mut self) {
         if self.0.try_wait().ok().flatten().is_none() {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(self.0.id() as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            );
-            let _ = self.0.wait();
+            signal_process_group(&self.0, nix::sys::signal::Signal::SIGTERM);
+            for _ in 0..1_000 {
+                if self.0.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            signal_process_group(&self.0, nix::sys::signal::Signal::SIGKILL);
         }
+        let _ = self.0.wait();
     }
+}
+
+fn signal_process_group(child: &Child, signal: nix::sys::signal::Signal) {
+    let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(-(child.id() as i32)), signal);
 }
 
 fn start(journal: &Journal, convey_argv: Option<String>) -> Supervisor {
@@ -66,7 +75,8 @@ fn start(journal: &Journal, convey_argv: Option<String>) -> Supervisor {
         .env(
             "SOLSTONE_SUPERVISOR_APP_BINARY",
             env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-        );
+        )
+        .process_group(0);
     if let Some(convey_argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", convey_argv);
     }

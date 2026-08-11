@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
-use std::process::Command;
+use std::process::{Child, Command};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -37,6 +37,22 @@ fn wait_for_port_file(path: &std::path::Path) {
         );
         thread::yield_now();
     }
+}
+
+fn terminate_and_reap(child: &mut Child) {
+    child.kill().expect("native Convey terminates");
+    for _ in 0..1_000 {
+        if child
+            .try_wait()
+            .expect("native Convey status reads")
+            .is_some()
+        {
+            child.wait().expect("native Convey reaps");
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    panic!("native Convey did not exit after kill");
 }
 
 fn run_controlled_restart(
@@ -138,8 +154,7 @@ fn convey_and_restart_convey_never_reach_an_interpreter_shim() {
         .spawn()
         .expect("native Convey starts");
     wait_for_port_file(&journal.join("health/convey.port"));
-    convey.kill().expect("native Convey terminates");
-    convey.wait().expect("native Convey reaps");
+    terminate_and_reap(&mut convey);
     run_controlled_restart(&core, &journal, &bin, &temp);
     for name in ["python", "python3", "pytest", "uv", "ruff"] {
         assert!(!temp.join(name).exists(), "{name} shim was reached");
