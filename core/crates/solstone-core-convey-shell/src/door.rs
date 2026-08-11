@@ -46,6 +46,7 @@ pub(super) struct DoorStartOptions {
     pub handshake_timeout: Duration,
     pub stream_stall_timeout: Duration,
     pub router: Router,
+    pub authorization_sender: watch::Sender<DeviceDoorAuthorization>,
 }
 
 pub(super) struct DoorStart {
@@ -243,8 +244,13 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
-    let (authorization, refresh_task) = spawn_authorization_refresh(
+    // [check] This refresh adopts the sender created before authorized_router,
+    // so request-time authorization and door admission observe one publication,
+    // never parallel watch channels.
+    let authorization = options.authorization_sender.subscribe();
+    let refresh_task = spawn_authorization_refresh(
         AuthorizationLedger::new(&options.journal_root),
+        options.authorization_sender,
         AUTHORIZATION_REFRESH_INTERVAL,
     );
     let config = Arc::new(DoorConnectionConfig {

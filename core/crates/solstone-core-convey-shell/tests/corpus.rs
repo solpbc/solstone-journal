@@ -6,12 +6,18 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chrono::Local;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_shell::authorization_gate::authorized_router;
 use solstone_core_convey_shell::router;
+use solstone_core_sol_link::DeviceDoorAuthorization;
+use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+use tokio::sync::watch;
 use tower::ServiceExt;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -148,7 +154,11 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
 
     for (phase, cases) in phases {
         let journal = journal_for_phase(phase);
-        let app = router(journal.0.clone());
+        let (_, authorization) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let app = authorized_router(journal.0.clone(), authorization)
+            .layer(Extension(AccessBasis::Localhost));
         for case in cases.as_array().expect("phase cases are array") {
             let path = case["path"].as_str().expect("case path");
             if phase == "established" && ESTABLISHED_DEFERRED.contains(&path) {

@@ -11,14 +11,16 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 use solstone_core_convey_http::serve::{serve_connection, tcp_builder};
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 
+use crate::DeviceDoorAuthorization;
 use crate::door::{
     DeviceDoorConfigError, build_device_door_server_config, spawn_authorization_refresh,
 };
 use crate::http::router;
-use crate::ledger::AuthorizationLedger;
+use crate::ledger::{AuthorizationLedger, AuthorizedClientsRead};
 
 // Scope transcription of spl-rust v0.5.0 .proto-ref/session.md §7: authorized_clients.json is mtime-polled at 0.5s; revocation propagates within one second of the file edit.
 pub const DEVICE_DOOR_AUTHORIZATION_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
@@ -30,8 +32,11 @@ pub fn build_device_door_acceptor(
     server_key: PrivateKeyDer<'static>,
     client_ca: CertificateDer<'static>,
 ) -> Result<(TlsAcceptor, JoinHandle<()>), DeviceDoorConfigError> {
-    let (authorization, task) =
-        spawn_authorization_refresh(ledger, DEVICE_DOOR_AUTHORIZATION_REFRESH_INTERVAL);
+    let (sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let task =
+        spawn_authorization_refresh(ledger, sender, DEVICE_DOOR_AUTHORIZATION_REFRESH_INTERVAL);
     let config = match build_device_door_server_config(
         server_cert_chain,
         server_key,

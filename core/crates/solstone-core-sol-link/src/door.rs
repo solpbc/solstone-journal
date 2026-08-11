@@ -10,9 +10,8 @@
 //! - Direct verifier tests live here; duplex TLS tests live in `tests/device_door_tls.rs`.
 //! - [`build_device_door_server_config`] returns an `Arc<ServerConfig>` for direct use by Tokio TLS.
 //!
-//! [check] `read_authorized` intentionally drops a malformed individual array entry. The affected
-//! device consequently reads as revoked rather than as a ledger-read error; this module preserves
-//! that ledger-owned behavior and does not attempt to reinterpret it.
+//! [check] `read_authorized` treats a malformed individual array entry as a malformed ledger.
+//! This module publishes that ledger-owned posture without attempting to reinterpret it.
 
 use std::error::Error;
 use std::fmt;
@@ -56,31 +55,25 @@ pub fn refresh_once(
     sender.send_replace(DeviceDoorAuthorization::from(ledger.read_state()));
 }
 
-/// Spawn the ledger-owning refresh loop and return its latest authorization publication.
+/// Spawn the ledger-owning refresh loop for a caller-owned authorization publication.
 pub fn spawn_authorization_refresh(
     mut ledger: AuthorizationLedger,
+    sender: watch::Sender<DeviceDoorAuthorization>,
     interval: Duration,
-) -> (
-    watch::Receiver<DeviceDoorAuthorization>,
-    tokio::task::JoinHandle<()>,
-) {
+) -> tokio::task::JoinHandle<()> {
     assert!(
         interval > Duration::ZERO,
         "authorization refresh interval must be greater than zero"
     );
-    let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Missing,
-    ));
     refresh_once(&mut ledger, &sender);
-    let task = tokio::spawn(async move {
+    tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
         ticker.tick().await;
         loop {
             ticker.tick().await;
             refresh_once(&mut ledger, &sender);
         }
-    });
-    (receiver, task)
+    })
 }
 
 /// TLS client-certificate verifier for the journal's paired-device door.

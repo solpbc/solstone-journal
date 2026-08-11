@@ -82,8 +82,11 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+#[cfg(feature = "host")]
+use solstone_core_sol_link::DeviceDoorAuthorization;
 
 mod assets;
+pub mod authorization_gate;
 #[cfg(feature = "host")]
 mod door;
 pub mod refusal;
@@ -202,6 +205,22 @@ impl std::error::Error for ConveyServeError {}
 /// Bind loopback and, when available, the paired-device door.
 #[cfg(feature = "host")]
 pub async fn serve(options: ConveyServeOptions) -> Result<ConveyServeHandle, ConveyServeError> {
+    use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+    use tokio::sync::watch;
+
+    let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_router = options.router.clone();
+    bind_with_authorization(options, door_router, authorization_sender).await
+}
+
+#[cfg(feature = "host")]
+pub async fn bind_with_authorization(
+    options: ConveyServeOptions,
+    door_router: Router,
+    authorization_sender: tokio::sync::watch::Sender<DeviceDoorAuthorization>,
+) -> Result<ConveyServeHandle, ConveyServeError> {
     use solstone_core_convey_http::listener::bind_loopback;
 
     let listeners = bind_loopback(options.loopback_port)
@@ -230,7 +249,8 @@ pub async fn serve(options: ConveyServeOptions) -> Result<ConveyServeHandle, Con
         port: options.door_port,
         handshake_timeout: options.handshake_timeout,
         stream_stall_timeout: options.stream_stall_timeout,
-        router: options.router,
+        router: door_router,
+        authorization_sender,
     })
     .await;
     let mut tasks = vec![loopback_task];
@@ -269,6 +289,9 @@ async fn serve_loopback(
 /// Run the production Convey server until its process is terminated; port zero is unsupported.
 #[cfg(feature = "host")]
 pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
+    use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+    use tokio::sync::watch;
+
     if port == 0 {
         return Err("convey --port 0 is not supported; choose a concrete loopback port".to_owned());
     }
@@ -277,17 +300,26 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
         .enable_all()
         .build()
         .map_err(|error| format!("convey could not create its Tokio runtime: {error}"))?;
-    let app = router(journal_root.clone());
+    let (authorization_sender, authorization_receiver) = watch::channel(
+        DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
+    );
+    let loopback_router = router(journal_root.clone());
+    let door_router =
+        authorization_gate::authorized_router(journal_root.clone(), authorization_receiver);
     let handle = runtime
-        .block_on(serve(ConveyServeOptions {
-            journal_root: journal_root.clone(),
-            loopback_port: port,
-            door_port: 7657,
-            // spl_transport::connection::HANDSHAKE_TIMEOUT is the shipped symmetric 10 s budget.
-            handshake_timeout: Duration::from_secs(10),
-            stream_stall_timeout: Duration::from_secs(60),
-            router: app,
-        }))
+        .block_on(bind_with_authorization(
+            ConveyServeOptions {
+                journal_root: journal_root.clone(),
+                loopback_port: port,
+                door_port: 7657,
+                // spl_transport::connection::HANDSHAKE_TIMEOUT is the shipped symmetric 10 s budget.
+                handshake_timeout: Duration::from_secs(10),
+                stream_stall_timeout: Duration::from_secs(60),
+                router: loopback_router,
+            },
+            door_router,
+            authorization_sender,
+        ))
         .map_err(|error| error.to_string())?;
     // The door outcome is the ONLY signal an operator gets that linked devices can
     // reach this journal, and until now `serve` computed it and `run_convey` dropped
