@@ -1379,9 +1379,7 @@ fn dispatch_run_local_surfaces_download_host_refusal() {
     let _guard = super::override_download_policy_for_test(policy);
     let key = pins::platform_key();
     let artifact = match local_backend_choice(&root, None).backend {
-        crate::Backend::Cuda => {
-            super::resolve_catalog_artifact_by_key("llama-server-cuda", &key)
-        }
+        crate::Backend::Cuda => super::resolve_catalog_artifact_by_key("llama-server-cuda", &key),
         crate::Backend::Vulkan => {
             let (_, filename, _, _) = pins::vulkan_pin(&key).unwrap();
             super::resolve_catalog_artifact("llama-server-vulkan", filename)
