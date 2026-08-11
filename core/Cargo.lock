@@ -2411,6 +2411,13 @@ dependencies = [
 [[package]]
 name = "solstone-core-backfill-cli"
 version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "solstone-core-journal-io",
+ "solstone-core-processing-record",
+ "tempfile",
+]
 
 [[package]]
 name = "solstone-core-body-ingest"
