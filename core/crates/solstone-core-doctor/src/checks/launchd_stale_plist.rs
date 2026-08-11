@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 
 use crate::{
     context::CheckContext,
@@ -22,21 +22,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    let value = match File::open(&path)
-        .and_then(|file| plist::Value::from_reader(file).map_err(std::io::Error::other))
-    {
+    let value = match plist::Value::from_file(&path) {
         Ok(value) => value,
         Err(error) => {
             return Ok(make_result(
                 check,
                 Status::Fail,
-                format!(
-                    "could not parse plist: {}: {error}",
-                    std::any::type_name_of_val(&error)
-                        .rsplit("::")
-                        .next()
-                        .unwrap_or("Error")
-                ),
+                format!("could not parse plist: plist::Error: {error}"),
                 Some(REPAIR),
             ));
         }

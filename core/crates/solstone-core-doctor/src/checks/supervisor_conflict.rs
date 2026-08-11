@@ -4,6 +4,7 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let dir = context.home_dir.join("Library/LaunchAgents");
     let mut foreign = Vec::new();
@@ -13,18 +14,27 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             if path.extension().is_none_or(|ext| ext != "plist") {
                 continue;
             }
-            let Ok(text) = std::fs::read_to_string(&path) else {
+            let Ok(value) = plist::Value::from_file(&path) else {
                 continue;
             };
-            let label = value(&text, "Label");
-            let persistent = text.contains("<key>KeepAlive</key>")
-                && (text.contains("<true/>") || text.contains("<dict>"));
-            if let Some(label) = label.filter(|label| {
-                label != "org.solpbc.solstone" && !label.starts_with("org.solpbc.solstone.")
-            }) && persistent
-                && text.contains("/Applications/solstone.app")
-            {
-                foreign.push((label, path));
+            let Some(data) = value.as_dictionary() else {
+                continue;
+            };
+            let label = data
+                .get("Label")
+                .and_then(plist::Value::as_string)
+                .filter(|label| {
+                    *label != "org.solpbc.solstone" && !label.starts_with("org.solpbc.solstone.")
+                });
+            let persistent = data.get("KeepAlive").is_some_and(|value| {
+                value.as_boolean() == Some(true)
+                    || value.as_dictionary().is_some_and(|dict| !dict.is_empty())
+            });
+            let mentions_solstone_app = command_strings(data)
+                .iter()
+                .any(|command| command.contains("/Applications/solstone.app"));
+            if let Some(label) = label.filter(|_| persistent && mentions_solstone_app) {
+                foreign.push((label.to_owned(), path));
             }
         }
     }
@@ -38,7 +48,14 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     }
     let commands = foreign
         .iter()
-        .map(|(label, path)| format!("launchctl bootout 'gui/0/{label}'; rm '{}'", path.display()))
+        .map(|(label, path)| {
+            let target = format!("gui/{}/{label}", nix::unistd::Uid::effective());
+            format!(
+                "launchctl bootout {}; rm {}",
+                shell_quote(&target),
+                shell_quote(&path.display().to_string())
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ");
     let fix = format!(
@@ -56,9 +73,22 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Some(fix),
     ))
 }
-fn value(text: &str, key: &str) -> Option<String> {
-    let (_, rest) = text.split_once(&format!("<key>{key}</key>"))?;
-    let start = rest.find("<string>")? + 8;
-    let end = rest[start..].find("</string>")? + start;
-    Some(rest[start..end].to_owned())
+
+fn command_strings(data: &plist::Dictionary) -> Vec<&str> {
+    let mut strings = data
+        .get("Program")
+        .and_then(plist::Value::as_string)
+        .into_iter()
+        .collect::<Vec<_>>();
+    if let Some(arguments) = data
+        .get("ProgramArguments")
+        .and_then(plist::Value::as_array)
+    {
+        strings.extend(arguments.iter().filter_map(plist::Value::as_string));
+    }
+    strings
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }

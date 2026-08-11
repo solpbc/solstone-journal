@@ -140,7 +140,7 @@ pub static JOURNAL: &[RegistryEntry] = &[
     ),
     stub(
         "retired_host_shim",
-        Severity::Blocker,
+        Severity::Advisory,
         DeferredWave::W3b,
         None,
     ),
@@ -246,7 +246,7 @@ pub static JOURNAL: &[RegistryEntry] = &[
     ),
     stub(
         "parakeet_cpp_stt_ready",
-        Severity::Blocker,
+        Severity::Advisory,
         DeferredWave::W3c,
         None,
     ),
@@ -306,7 +306,7 @@ pub static READINESS: &[RegistryEntry] = &[
     ),
     stub(
         "parakeet_cpp_stt_ready",
-        Severity::Blocker,
+        Severity::Advisory,
         DeferredWave::W3c,
         None,
     ),

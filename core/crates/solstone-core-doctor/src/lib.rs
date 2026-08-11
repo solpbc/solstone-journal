@@ -764,6 +764,38 @@ mod tests {
         runtime.block_on(server.stop());
     }
     #[test]
+    fn supervisor_conflict_detects_binary_foreign_launcher_plist() {
+        let mut c = context();
+        c.platform = Platform::Darwin;
+        let directory = c.home_dir.join("Library/LaunchAgents");
+        fs::create_dir_all(&directory).unwrap();
+        let mut data = plist::Dictionary::new();
+        data.insert(
+            "Label".into(),
+            plist::Value::String("example.foreign".into()),
+        );
+        data.insert("KeepAlive".into(), plist::Value::Boolean(true));
+        data.insert(
+            "ProgramArguments".into(),
+            plist::Value::Array(vec![plist::Value::String(
+                "/Applications/solstone.app/Contents/MacOS/solstone".into(),
+            )]),
+        );
+        plist::Value::Dictionary(data)
+            .to_file_binary(directory.join("foreign.plist"))
+            .unwrap();
+        let result = checks::supervisor_conflict::run(
+            &c,
+            Check {
+                name: "supervisor_conflict",
+                severity: Severity::Blocker,
+                platforms: &[Platform::Darwin],
+            },
+        )
+        .unwrap();
+        assert_eq!(result.status, Status::Fail);
+    }
+    #[test]
     fn ac18_silent_present_socket_warns_without_execution_error() {
         use std::os::unix::net::UnixListener;
         let mut c = context();
