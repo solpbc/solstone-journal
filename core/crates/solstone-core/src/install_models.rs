@@ -79,18 +79,17 @@ pub fn run(options: InstallModelsOptions) -> ExitCode {
         arch: normalize_arch(std::env::consts::ARCH).to_owned(),
         journal_variant: std::env::var("JOURNAL_VARIANT").ok(),
     };
-    let journal = match resolve_process_journal_path() {
-        Ok(journal) => journal.path,
-        Err(error) => {
-            eprint_journal_path_error(error);
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
     let outcome = run_inner(
         host,
         || solstone_core_local::probe_nvidia_gpu().detected,
         options,
-        &journal,
+        || match resolve_process_journal_path() {
+            Ok(journal) => Ok(journal.path),
+            Err(error) => {
+                eprint_journal_path_error(error);
+                Err(())
+            }
+        },
         install_model,
     );
     for line in outcome.stdout {
@@ -102,22 +101,23 @@ pub fn run(options: InstallModelsOptions) -> ExitCode {
     ExitCode::from(outcome.exit_code)
 }
 
-fn run_inner<P, I>(
+fn run_inner<P, J, I>(
     host: HostPlatform,
     nvidia_probe: P,
     options: InstallModelsOptions,
-    journal: &Path,
+    journal_resolver: J,
     install_executor: I,
 ) -> InstallModelsOutcome
 where
     P: FnOnce() -> bool,
-    I: FnOnce(&Path, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
+    J: FnOnce() -> Result<PathBuf, ()>,
+    I: FnOnce(&Path, &HostPlatform, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
 {
     run_inner_with(
         host,
         nvidia_probe,
         options,
-        journal,
+        journal_resolver,
         |name| {
             resolve_model_asset(name)
                 .map(|_| ())
@@ -128,19 +128,20 @@ where
     )
 }
 
-fn run_inner_with<P, A, I>(
+fn run_inner_with<P, J, A, I>(
     host: HostPlatform,
     nvidia_probe: P,
     options: InstallModelsOptions,
-    journal: &Path,
+    journal_resolver: J,
     mut asset_gate: A,
     report_override: Option<fit_report::FitReport>,
     install_executor: I,
 ) -> InstallModelsOutcome
 where
     P: FnOnce() -> bool,
+    J: FnOnce() -> Result<PathBuf, ()>,
     A: FnMut(&str) -> Result<(), String>,
-    I: FnOnce(&Path, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
+    I: FnOnce(&Path, &HostPlatform, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
 {
     let variant = match resolve_variant(&options, &host, nvidia_probe) {
         Ok(variant) => variant,
@@ -187,20 +188,31 @@ where
             return InstallModelsOutcome::failure(Some(variant), EXIT_DATAERR, error.to_string());
         }
     };
+    let journal = match journal_resolver() {
+        Ok(journal) => journal,
+        Err(()) => {
+            return InstallModelsOutcome {
+                resolved_variant: Some(variant),
+                exit_code: EXIT_TEMPFAIL,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            };
+        }
+    };
     if options.check {
-        return match parakeet_ready(journal, &key) {
+        return match parakeet_ready(&journal, &key) {
             Ok(path) => InstallModelsOutcome::success(Some(variant), vec![ready_line(&path)]),
             Err(message) => InstallModelsOutcome::failure(Some(variant), EXIT_DATAERR, message),
         };
     }
     if !options.force
-        && let Ok(path) = parakeet_ready(journal, &key)
+        && let Ok(path) = parakeet_ready(&journal, &key)
     {
         return InstallModelsOutcome::success(Some(variant), vec![ready_line(&path)]);
     }
 
     let report = report_override.unwrap_or_else(|| {
-        fit_report::build_parakeet_fit_report(journal, &host.os_name, &host.arch)
+        fit_report::build_parakeet_fit_report(&journal, &host.os_name, &host.arch)
     });
     let rendered = fit_report::render_fit_report(&report);
     if report.overall() == fit_report::FitSeverity::Blocked {
@@ -211,20 +223,20 @@ where
         stderr.push(rendered);
     }
 
-    let target_sha = match parakeet_target_sha(journal, &host) {
+    let target_sha = match parakeet_target_sha(&journal, &host) {
         Ok(value) => value,
         Err(error) => {
             return InstallModelsOutcome::failure(Some(variant), EXIT_DATAERR, error.to_string());
         }
     };
-    let held = match lease::acquire(journal, "parakeet") {
+    let held = match lease::acquire(&journal, "parakeet") {
         Ok(value) => value,
         Err(error) => {
             return InstallModelsOutcome::failure(Some(variant), EXIT_IOERR, error.to_string());
         }
     };
     let model = match held {
-        Some(held) => match install_executor(journal, held) {
+        Some(held) => match install_executor(&journal, &host, held) {
             Ok(path) => path,
             Err(error) => {
                 return InstallModelsOutcome::failure(
@@ -235,7 +247,7 @@ where
             }
         },
         None => {
-            let current = match status::read_status(journal, "parakeet") {
+            let current = match status::read_status(&journal, "parakeet") {
                 Ok(status) => status,
                 Err(error) => {
                     return InstallModelsOutcome::failure(
@@ -255,7 +267,7 @@ where
                 );
             }
             match status::observe_attempt(
-                journal,
+                &journal,
                 "parakeet",
                 &target_sha,
                 OBSERVE_POLL_INTERVAL,
@@ -278,7 +290,7 @@ where
                 Ok(status::ObserveAttempt::Terminal(state))
                     if state.install_state == "installed" =>
                 {
-                    match parakeet_ready(journal, &key) {
+                    match parakeet_ready(&journal, &key) {
                         Ok(path) => path,
                         Err(message) => {
                             return InstallModelsOutcome::failure(
@@ -473,8 +485,13 @@ fn parakeet_ready(journal: &Path, key: &str) -> Result<PathBuf, String> {
     Ok(model)
 }
 
-fn install_model(journal: &Path, held: lease::InstallLease) -> Result<PathBuf, Box<DispatchError>> {
-    let result = install_parakeet_with_lease(journal, held).map_err(Box::new)?;
+fn install_model(
+    journal: &Path,
+    host: &HostPlatform,
+    held: lease::InstallLease,
+) -> Result<PathBuf, Box<DispatchError>> {
+    let result =
+        install_parakeet_with_lease(journal, &host.os_name, &host.arch, held).map_err(Box::new)?;
     Ok(PathBuf::from(
         result["install"]["model_path"]
             .as_str()
@@ -595,6 +612,24 @@ mod tests {
     }
 
     #[test]
+    fn variant_refusal_precedes_journal_resolution() {
+        let outcome = run_inner_with(
+            host("linux", "arm64", None),
+            || false,
+            options(InstallModelsVariant::Cuda),
+            || Err(()),
+            |_| panic!("asset gate must not run"),
+            None,
+            |_, _, _| panic!("installer must not run"),
+        );
+        assert_eq!(outcome.exit_code, EXIT_USAGE);
+        assert_eq!(
+            outcome.stderr,
+            ["variant 'cuda' not supported on linux/arm64"]
+        );
+    }
+
+    #[test]
     fn normalization_maps_platform_names_and_raw_values_fall_through() {
         assert_eq!(normalize_os("macos"), "darwin");
         assert_eq!(normalize_arch("aarch64"), "arm64");
@@ -606,10 +641,10 @@ mod tests {
             host("macos", "aarch64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
-            journal.path(),
+            || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _| panic!("installer must not run"),
+            |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(
@@ -627,10 +662,10 @@ mod tests {
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
-            journal.path(),
+            || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _| panic!("installer must not run"),
+            |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.resolved_variant, Some(ResolvedVariant::Coreml));
         assert_eq!(outcome.exit_code, EXIT_UNAVAILABLE);
@@ -650,7 +685,7 @@ mod tests {
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
-            journal.path(),
+            || Ok(journal.path().to_path_buf()),
             |asset| {
                 seen.push(asset.to_owned());
                 if asset == "pyannote-segmentation-3.0.onnx" {
@@ -660,7 +695,7 @@ mod tests {
                 }
             },
             None,
-            |_, _| panic!("installer must not run"),
+            |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_DATAERR);
         assert_eq!(
@@ -681,8 +716,8 @@ mod tests {
                 host("linux", "x86_64", None),
                 || false,
                 options(InstallModelsVariant::Auto),
-                &journal,
-                |_, _| panic!("installer must not run"),
+                || Ok(journal.clone()),
+                |_, _, _| panic!("installer must not run"),
             );
             assert_eq!(outcome.exit_code, EXIT_DATAERR);
             assert!(outcome.stderr[0].contains("wespeaker-resnet34-256.onnx"));
@@ -746,10 +781,10 @@ mod tests {
                 force: true,
                 variant: InstallModelsVariant::Auto,
             },
-            journal.path(),
+            || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            |_, _| panic!("installer must not run"),
+            |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_UNAVAILABLE);
     }
@@ -774,10 +809,10 @@ mod tests {
                 force: true,
                 variant: InstallModelsVariant::Auto,
             },
-            journal.path(),
+            || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            |_, _| {
+            |_, _, _| {
                 installer_entered = true;
                 Ok(model)
             },
@@ -786,6 +821,36 @@ mod tests {
         assert_eq!(outcome.exit_code, 0);
         assert!(outcome.stdout[0].starts_with("model ready: "));
         assert_eq!(outcome.stderr, [rendered]);
+    }
+
+    #[test]
+    fn delegated_installer_receives_the_simulated_host() {
+        let journal = tempfile::tempdir().unwrap();
+        let report = fit_report::build_parakeet_fit_report_with_free_bytes(
+            journal.path(),
+            "linux",
+            "arm64",
+            Ok(u64::MAX),
+        );
+        let model = journal.path().join("model.gguf");
+        let outcome = run_inner_with(
+            host("linux", "arm64", None),
+            || panic!("probe must not run"),
+            InstallModelsOptions {
+                check: false,
+                force: true,
+                variant: InstallModelsVariant::Auto,
+            },
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            Some(report),
+            |_, delegated_host, _| {
+                assert_eq!(delegated_host.os_name, "linux");
+                assert_eq!(delegated_host.arch, "arm64");
+                Ok(model)
+            },
+        );
+        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
     }
 
     #[test]
@@ -831,10 +896,10 @@ mod tests {
                 force: true,
                 variant: InstallModelsVariant::Auto,
             },
-            journal.path(),
+            || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
-            |_, _| panic!("installer must not run"),
+            |_, _, _| panic!("installer must not run"),
         );
         writer.join().unwrap();
         drop(held);

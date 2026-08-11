@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,13 @@ const PRIVATE_MODE: u32 = 0o600;
 
 pub fn artifact_manifest_path(root: &Path) -> PathBuf {
     root.join(MANIFEST_NAME)
+}
+
+pub(crate) fn manifest_temp_name(file_name: &OsStr) -> OsString {
+    let mut temporary = OsString::from(".");
+    temporary.push(file_name);
+    temporary.push(".tmp");
+    temporary
 }
 
 pub fn runtime_inventory(root: &Path, exclude_names: &[String]) -> Result<Vec<Value>, String> {
@@ -92,11 +100,8 @@ pub fn write_manifest(path: &Path, manifest: &Value) -> Result<Value, String> {
     }
     let parent = path.parent().ok_or("manifest path has no parent")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let temporary = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .ok_or("manifest file name")?
-            .to_string_lossy()
+    let temporary = parent.join(manifest_temp_name(
+        path.file_name().ok_or("manifest file name")?,
     ));
     let mut file = OpenOptions::new()
         .create(true)
@@ -224,7 +229,9 @@ fn proof(status: &str, reason_code: &str) -> Value {
     json!({"status":status,"reason_code":reason_code,"cache_hit":false})
 }
 fn is_provider_manifest(path: &Path) -> bool {
-    path.file_name().is_some_and(|name| name == MANIFEST_NAME)
+    path.file_name().is_some_and(|name| {
+        name == OsStr::new(MANIFEST_NAME) || name == manifest_temp_name(OsStr::new(MANIFEST_NAME))
+    })
 }
 fn walk_files(
     root: &Path,

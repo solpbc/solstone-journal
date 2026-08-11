@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, fingerprint, lease,
-    local_backend_choice, manifest, pins, publish_staged_tree_with, readiness, status,
-    write_parakeet_model_manifest,
+    local_backend_choice, manifest, parakeet_target_for_install, pins, publish_staged_tree_with,
+    readiness, status, write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -145,6 +145,36 @@ fn manifest_model_rewrite_excludes_the_previous_manifest_from_its_inventory() {
     let manifest_path = manifest::artifact_manifest_path(&root);
     fs::write(root.join("model.gguf"), b"model bytes").unwrap();
     fs::write(&manifest_path, b"old manifest\n").unwrap();
+    let pin_identity = json!({"unit": "test-model"});
+
+    dispatch(
+        InstallVerb::ManifestModel,
+        json!({
+            "root": root,
+            "manifest_path": manifest_path,
+            "target_fingerprint_sha256": "target",
+            "pin_identity": pin_identity,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &pin_identity)["status"],
+        "ready"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn manifest_model_rewrite_excludes_a_leftover_writer_temp_from_its_inventory() {
+    let root = temp("manifest-model-temp-rewrite");
+    let manifest_path = manifest::artifact_manifest_path(&root);
+    fs::write(root.join("model.gguf"), b"model bytes").unwrap();
+    fs::write(
+        root.join(format!(".{}.tmp", manifest::MANIFEST_NAME)),
+        b"interrupted manifest write",
+    )
+    .unwrap();
     let pin_identity = json!({"unit": "test-model"});
 
     dispatch(
@@ -1506,6 +1536,14 @@ fn parakeet_artifact_key_matches_every_python_alias() {
             "arch={arch}"
         );
     }
+}
+
+#[test]
+fn delegated_parakeet_target_uses_the_supplied_platform() {
+    let root = temp("delegated-parakeet-platform");
+    let target = parakeet_target_for_install(&root, Some(("linux", "arm64"))).unwrap();
+    assert_eq!(target["artifact_key"], "aarch64-unknown-linux-gnu");
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

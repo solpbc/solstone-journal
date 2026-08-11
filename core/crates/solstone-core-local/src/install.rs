@@ -246,6 +246,8 @@ fn run_parakeet(object: &Map<String, Value>) -> Result<Value, DispatchError> {
 
 pub fn install_parakeet_with_lease(
     journal: &Path,
+    os_name: &str,
+    arch: &str,
     lease: lease::InstallLease,
 ) -> Result<Value, DispatchError> {
     let mut object = Map::new();
@@ -253,7 +255,13 @@ pub fn install_parakeet_with_lease(
         "journal".to_owned(),
         Value::String(journal.display().to_string()),
     );
-    run_with_lease(&object, RunKind::Parakeet, journal.to_path_buf(), lease)
+    run_with_lease(
+        &object,
+        RunKind::Parakeet,
+        journal.to_path_buf(),
+        lease,
+        Some((os_name, arch)),
+    )
 }
 
 fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchError> {
@@ -269,7 +277,7 @@ fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchErro
             lease::BUSY_EXIT_CODE,
         ));
     };
-    run_with_lease(object, kind, journal, lease)
+    run_with_lease(object, kind, journal, lease, None)
 }
 
 fn run_with_lease(
@@ -277,6 +285,7 @@ fn run_with_lease(
     kind: RunKind,
     journal: PathBuf,
     _lease: lease::InstallLease,
+    parakeet_platform: Option<(&str, &str)>,
 ) -> Result<Value, DispatchError> {
     let provider = kind.status_provider();
     let fingerprint = match kind {
@@ -287,7 +296,7 @@ fn run_with_lease(
         RunKind::Mlx => mlx_target(
             &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
         )?,
-        RunKind::Parakeet => parakeet_target(&journal)?,
+        RunKind::Parakeet => parakeet_target_for_install(&journal, parakeet_platform)?,
     };
     let resolved = resolved_fingerprint(fingerprint)?;
     let fingerprint_json = resolved["target_fingerprint_json"]
@@ -444,7 +453,17 @@ fn mlx_target(model_id: &str) -> Result<Value, DispatchError> {
 /// `provider`, `runtime`, `artifact_key`, `binary_pins` (cpu then vulkan,
 /// matching `PARAKEET_CPP_BINARY_BACKENDS`'s order), `model_pin`, `cache_root`.
 fn parakeet_target(journal: &Path) -> Result<Value, DispatchError> {
-    parakeet_target_for_platform(journal, std::env::consts::OS, std::env::consts::ARCH)
+    parakeet_target_for_install(journal, None)
+}
+
+fn parakeet_target_for_install(
+    journal: &Path,
+    platform: Option<(&str, &str)>,
+) -> Result<Value, DispatchError> {
+    match platform {
+        Some((os_name, arch)) => parakeet_target_for_platform(journal, os_name, arch),
+        None => parakeet_target_for_platform(journal, std::env::consts::OS, std::env::consts::ARCH),
+    }
 }
 
 pub fn parakeet_target_for_platform(
