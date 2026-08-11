@@ -104,6 +104,7 @@ solstone-core-reprocess-cli.workspace = true
 solstone-core-backfill-cli.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 serde_json.workspace = true
+jsonschema.workspace = true
 nix = { workspace = true, features = ["fs", "process", "signal"] }
 tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
