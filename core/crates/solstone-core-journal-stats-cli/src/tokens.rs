@@ -78,21 +78,7 @@ pub(crate) fn scan_tokens(
         }
 
         if use_cache && day != today {
-            let payload = usage.by_day.get(&day).cloned().unwrap_or_default();
-            match serde_json::to_string(&payload) {
-                Ok(contents) => {
-                    if let Err(error) = fs::write(&cache_file, contents) {
-                        diagnostics.push(format!(
-                            "Token cache save failed for {}: {error}",
-                            token_file.display()
-                        ));
-                    }
-                }
-                Err(error) => diagnostics.push(format!(
-                    "Token cache save failed for {}: {error}",
-                    token_file.display()
-                )),
-            }
+            save_token_cache(&token_file, &cache_file, &day, &usage, diagnostics);
         }
     }
     usage
@@ -139,10 +125,37 @@ fn try_cache_hit(
     }
 }
 
+fn save_token_cache(
+    token_file: &Path,
+    cache_file: &Path,
+    day: &str,
+    usage: &TokenUsage,
+    diagnostics: &mut Vec<String>,
+) {
+    let payload = usage.by_day.get(day).cloned().unwrap_or_default();
+    match serde_json::to_string(&payload) {
+        Ok(contents) => {
+            if let Err(error) = fs::write(cache_file, contents) {
+                diagnostics.push(format!(
+                    "Token cache save failed for {}: {error}",
+                    token_file.display()
+                ));
+            }
+        }
+        Err(error) => diagnostics.push(format!(
+            "Token cache save failed for {}: {error}",
+            token_file.display()
+        )),
+    }
+}
+
 fn process_entry(entry: &Value, usage: &mut TokenUsage) {
     let Some(timestamp) = entry.get("timestamp").and_then(Value::as_f64) else {
         return;
     };
+    if timestamp == 0.0 {
+        return;
+    }
     let seconds = timestamp.floor() as i64;
     let nanos = ((timestamp - seconds as f64) * 1_000_000_000.0).round() as u32;
     let Some(timestamp) = DateTime::<Utc>::from_timestamp(seconds, nanos) else {
@@ -158,7 +171,7 @@ fn process_entry(entry: &Value, usage: &mut TokenUsage) {
         return;
     };
     for (token_type, value) in values {
-        let Some(count) = value.as_i64() else {
+        let Some(count) = usage_count(value) else {
             continue;
         };
         *usage
@@ -175,5 +188,13 @@ fn process_entry(entry: &Value, usage: &mut TokenUsage) {
             .or_default()
             .entry(token_type.clone())
             .or_default() += count;
+    }
+}
+
+fn usage_count(value: &Value) -> Option<i64> {
+    match value {
+        Value::Number(number) => number.as_i64(),
+        Value::Bool(value) => Some(i64::from(*value)),
+        _ => None,
     }
 }
