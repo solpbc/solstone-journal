@@ -108,7 +108,7 @@ pub fn bind_stream(
         let segment_dir = SegmentDir::resolve(journal, day, segment, &name)?;
         let state_path = stream_record_path(journal, &name);
         let _lock = hold_lock(&state_path, LockOptions::default())?;
-        match read_stream_record(&state_path)? {
+        match read_typed_stream_record(&state_path)? {
             Some(record) if !binding_matches(&record, binding) => {
                 // A non-native writer may have replaced a reservation after the
                 // registry lock was released. Re-enter allocation rather than
@@ -276,7 +276,7 @@ fn advance_stream(
     }
     let state_path = stream_record_path(&segment_dir.journal, name);
     let _lock = hold_lock(&state_path, LockOptions::default())?;
-    let record = read_stream_record(&state_path)?;
+    let record = read_typed_stream_record(&state_path)?;
     if let Some(record) = record.as_ref()
         && !binding_matches(record, binding)
     {
@@ -307,8 +307,8 @@ fn read_registry_records(journal: &Path) -> Result<BTreeMap<String, StreamRecord
         let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
             continue;
         };
-        let record =
-            read_stream_record(&path)?.ok_or_else(|| SegmentError::MalformedStreamRecord {
+        let record = read_typed_stream_record(&path)?.ok_or_else(|| {
+            SegmentError::MalformedStreamRecord {
                 path: path.clone(),
                 source: ReadError::Malformed(solstone_core_journal_io::MalformedDataError {
                     path: path.clone(),
@@ -318,7 +318,8 @@ fn read_registry_records(journal: &Path) -> Result<BTreeMap<String, StreamRecord
                         "empty stream record",
                     )),
                 }),
-            })?;
+            }
+        })?;
         records.insert(name.to_owned(), record);
     }
     Ok(records)
@@ -367,7 +368,7 @@ pub(crate) fn stream_record_path(journal: &Path, name: &str) -> PathBuf {
     journal.join("streams").join(format!("{name}.json"))
 }
 
-fn read_stream_record(path: &Path) -> Result<Option<StreamRecord>, SegmentError> {
+fn read_typed_stream_record(path: &Path) -> Result<Option<StreamRecord>, SegmentError> {
     match read_json(path, None, MalformedPolicy::Raise) {
         Ok(record) => Ok(record),
         Err(error @ ReadError::Malformed(_)) => Err(SegmentError::MalformedStreamRecord {

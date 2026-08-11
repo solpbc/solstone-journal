@@ -12,7 +12,7 @@ use solstone_core_journal_io::{
 };
 
 use crate::stream_record::{registry_json_paths, stream_record_path, write_stream_record};
-use crate::{SegmentError, StreamRecord};
+use crate::{SegmentError, StreamRecord, is_safe_stream_component};
 
 /// The tail derived from validated segment markers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +49,9 @@ pub struct TolerantStreamRecords {
 
 /// Read one registry record without normalizing its keys or values.
 pub fn read_stream_record(journal: &Path, name: &str) -> Result<Option<Value>, SegmentError> {
+    if !is_safe_stream_component(name) {
+        return Ok(None);
+    }
     read_stream_record_value(&stream_record_path(journal, name))
 }
 
@@ -81,6 +84,9 @@ pub fn repair_stream_tail_from_markers(
     marker_tail: &MarkerTail<'_>,
     lock_options: LockOptions,
 ) -> RepairOutcome {
+    if !is_safe_stream_component(stream) {
+        return RepairOutcome::NoRecord;
+    }
     let path = stream_record_path(journal, stream);
     if !path.exists() {
         return RepairOutcome::NoRecord;
@@ -286,6 +292,44 @@ mod tests {
             RepairOutcome::NoRecord
         );
         assert!(!temporary.path().join("streams").exists());
+    }
+
+    #[test]
+    fn unsafe_stream_names_never_escape_the_registry_directory() {
+        let temporary = TempDir::new();
+        let escaped_name = format!(
+            "../../{}-escaped",
+            temporary.path().file_name().unwrap().to_str().unwrap()
+        );
+        let escaped = temporary.path().parent().unwrap().join(format!(
+            "{}-escaped.json",
+            temporary.path().file_name().unwrap().to_str().unwrap()
+        ));
+        let outside = TempDir::new();
+        let absolute_name = outside.path().join("absolute-record");
+        let absolute_record = outside.path().join("absolute-record.json");
+        let marker_tail = MarkerTail {
+            last_day: "20260101",
+            last_segment: "090000_300",
+            max_seq: 1,
+        };
+
+        for name in [escaped_name.as_str(), absolute_name.to_str().unwrap()] {
+            assert_eq!(read_stream_record(temporary.path(), name).unwrap(), None);
+            assert_eq!(
+                repair_stream_tail_from_markers(
+                    temporary.path(),
+                    name,
+                    &marker_tail,
+                    LockOptions::default(),
+                ),
+                RepairOutcome::NoRecord
+            );
+        }
+
+        assert!(!temporary.path().join("streams").exists());
+        assert!(!escaped.exists());
+        assert!(!absolute_record.exists());
     }
 
     #[test]

@@ -63,19 +63,23 @@ impl SegmentDir {
 }
 
 fn validate_component(value: &str, kind: &'static str) -> Result<(), SegmentError> {
-    if value.is_empty()
-        || value.contains('/')
-        || value.contains('\\')
-        || matches!(value, "." | "..")
-        || value.starts_with('.')
-        || value.chars().any(|ch| ch.is_ascii_uppercase())
-    {
+    if !is_safe_stream_component(value) {
         return Err(SegmentError::StreamInput(match kind {
             "segment" => "segment must be a plain path component",
             _ => "stream must be a plain path component",
         }));
     }
     Ok(())
+}
+
+/// True when a stream name is safe to use as one journal path component.
+pub fn is_safe_stream_component(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains('/')
+        && !value.contains('\\')
+        && !matches!(value, "." | "..")
+        && !value.starts_with('.')
+        && !value.chars().any(|ch| ch.is_ascii_uppercase())
 }
 
 /// Every `YYYYMMDD` chronicle day directory present in the journal, sorted.

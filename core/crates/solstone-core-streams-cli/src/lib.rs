@@ -11,8 +11,8 @@ use serde_json::Value;
 use solstone_core_journal_io::LockOptions;
 use solstone_core_segment::{
     MarkerTail, RepairOutcome, SUPERVISOR_MESSAGE, SupervisorRefusal, UnchangedReason,
-    is_solstone_up, list_days, list_segments, list_stream_records_tolerant,
-    repair_stream_tail_from_markers, require_solstone_with,
+    is_safe_stream_component, is_solstone_up, list_days, list_segments,
+    list_stream_records_tolerant, repair_stream_tail_from_markers, require_solstone_with,
 };
 
 const USAGE: &str = "usage: journal streams [-h] [--rebuild] [-v] [-d] [name]";
@@ -227,6 +227,13 @@ fn stream_row(value: &Value) -> StreamRow {
 }
 
 fn inspect_stream(journal: &Path, name: &str) -> CliRun {
+    if !is_safe_stream_component(name) {
+        return CliRun {
+            stdout: format!("Stream not found: {name}\n"),
+            stderr: String::new(),
+            exit_code: 1,
+        };
+    }
     let path = journal.join("streams").join(format!("{name}.json"));
     let bytes = match fs::read(&path) {
         Ok(bytes) if !bytes.is_empty() => bytes,
@@ -454,6 +461,7 @@ fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -533,6 +541,25 @@ options:
 
     fn marker_value(stream: &str, seq: u64) -> Value {
         json!({"stream": stream, "prev_day": null, "prev_segment": null, "seq": seq})
+    }
+
+    fn registry_json_bytes(root: &Path) -> BTreeMap<String, Vec<u8>> {
+        fs::read_dir(root.join("streams"))
+            .unwrap()
+            .filter_map(|entry| {
+                let entry = entry.unwrap();
+                (entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "json"))
+                .then(|| {
+                    (
+                        entry.file_name().to_string_lossy().into_owned(),
+                        fs::read(entry.path()).unwrap(),
+                    )
+                })
+            })
+            .collect()
     }
 
     #[test]
@@ -642,6 +669,7 @@ options:
             "long",
             json!({"name": "a-name-that-is-longer-than-twenty-four", "type": "legacy"}),
         );
+        write_record(root, "missing-name", json!({"type": "observer", "seq": 1}));
         fs::write(root.join("streams/.registry.lock"), b"").unwrap();
         fs::write(root.join("streams/alpha.json.lock"), b"").unwrap();
 
@@ -651,6 +679,7 @@ options:
             run.stdout,
             "Name                     Type         Last Day   Last Segment       Seq\n\
 -----------------------------------------------------------------------\n\
+?                        observer     ?          ?                    1\n\
 ?                        ?            ?          ?                    ?\n\
 a-name-that-is-longer-than-twenty-four legacy       ?          ?                    0\n\
 alpha                    kind-only    ?          ?                    2\n\
@@ -693,28 +722,34 @@ zeta                     observer     20260101   090000_1         123456\n"
     #[test]
     fn inspect_preserves_raw_legacy_bytes_and_reports_missing_or_malformed_path() {
         let temporary = TempDir::new().unwrap();
-        let path = temporary.path().join("streams/legacy.json");
+        let root = temporary.path().join("journal");
+        let path = root.join("streams/legacy.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let raw = b"{\n  \"unknown\": 7, \"type\": \"legacy\", \"name\": \"legacy\"\n}";
         fs::write(&path, raw).unwrap();
         assert_eq!(
-            bypass_run(&["legacy"], temporary.path()),
+            bypass_run(&["legacy"], &root),
             success(
                 "{\n  \"unknown\": 7, \"type\": \"legacy\", \"name\": \"legacy\"\n}\n".to_owned()
             )
         );
-        assert_eq!(
-            bypass_run(&["missing"], temporary.path()).stdout,
-            "Stream not found: missing\n"
-        );
-        fs::write(temporary.path().join("streams/bad.json"), b"{").unwrap();
-        let run = bypass_run(&["bad"], temporary.path());
+        let missing = bypass_run(&["missing"], &root);
+        assert_eq!(missing.stdout, "Stream not found: missing\n");
+        assert_eq!(missing.exit_code, 1);
+        let escaped = temporary.path().join("escaped.json");
+        fs::write(&escaped, b"{\"outside\":true}").unwrap();
+        let traversal = bypass_run(&["../../escaped"], &root);
+        assert_eq!(traversal.stdout, "Stream not found: ../../escaped\n");
+        assert_eq!(traversal.exit_code, 1);
+        assert_eq!(fs::read(&escaped).unwrap(), b"{\"outside\":true}");
+        fs::write(root.join("streams/bad.json"), b"{").unwrap();
+        let run = bypass_run(&["bad"], &root);
         assert_eq!(run.exit_code, 3);
         assert_eq!(
             run.stderr,
             format!(
                 "Could not read stream {}: malformed record\n",
-                temporary.path().join("streams/bad.json").display()
+                root.join("streams/bad.json").display()
             )
         );
     }
@@ -748,13 +783,10 @@ zeta                     observer     20260101   090000_1         123456\n"
             first.stdout,
             "Rebuilt 2 stream(s) from 2 segments:\n  alpha\n  zeta\n"
         );
-        let after_first = fs::read(root.join("streams/alpha.json")).unwrap();
+        let after_first = registry_json_bytes(root);
         let second = bypass_run(&["--rebuild"], root);
         assert_eq!(second.stdout, first.stdout);
-        assert_eq!(
-            fs::read(root.join("streams/alpha.json")).unwrap(),
-            after_first
-        );
+        assert_eq!(registry_json_bytes(root), after_first);
         assert!(root.join("streams/zeta.json.lock").exists());
     }
 
@@ -983,6 +1015,7 @@ zeta                     observer     20260101   090000_1         123456\n"
             marker_value("locked", 2),
         );
         let record_path = root.join("streams/locked.json");
+        let locked_before = fs::read(&record_path).unwrap();
         let _guard = hold_lock(&record_path, LockOptions::default()).unwrap();
         let short = LockOptions {
             timeout: Duration::from_millis(20),
@@ -997,6 +1030,7 @@ zeta                     observer     20260101   090000_1         123456\n"
         );
         assert_eq!(locked.exit_code, 3);
         assert!(locked.stdout.contains("could not lock streams/locked.json"));
+        assert_eq!(fs::read(&record_path).unwrap(), locked_before);
         drop(_guard);
 
         #[cfg(unix)]
