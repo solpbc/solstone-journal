@@ -227,6 +227,27 @@ fn request_body(request: &GenerateRequest, _model: &str) -> Value {
     body
 }
 
+/// Reshape a tool parameter schema into the subset Gemini accepts.
+///
+/// Function declarations take a restricted OpenAPI 3.0 Schema; `additionalProperties`
+/// is not part of it, and Gemini rejects the whole request with HTTP 400
+/// INVALID_ARGUMENT -- one violation per declaration -- rather than ignoring the
+/// key. Anthropic and OpenAI accept the same schema unchanged, so the narrowing
+/// belongs here on the way out rather than in the shared tool definitions.
+fn gemini_schema(schema: &Value) -> Value {
+    match schema {
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .filter(|(key, _)| key.as_str() != "additionalProperties")
+                .map(|(key, value)| (key.clone(), gemini_schema(value)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(gemini_schema).collect()),
+        other => other.clone(),
+    }
+}
+
 fn converse_request_body(
     request: &GenerateRequest,
     messages: &[ConverseMessage],
@@ -270,7 +291,7 @@ fn converse_request_body(
         "tools": [{"functionDeclarations": tools.iter().map(|tool| json!({
             "name": tool.name,
             "description": tool.description,
-            "parameters": tool.parameters,
+            "parameters": gemini_schema(&tool.parameters),
         })).collect::<Vec<_>>() }],
         "generationConfig": {
             "temperature": request.temperature,
@@ -397,14 +418,7 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
         return converse_failure("tool_call_arguments_invalid");
     }
     let mut tool_calls = Vec::new();
-    for function_call in function_parts {
-        let Some(id) = function_call
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-        else {
-            return converse_failure("tool_call_arguments_invalid");
-        };
+    for (position, function_call) in function_parts.into_iter().enumerate() {
         let Some(name) = function_call
             .get("name")
             .and_then(Value::as_str)
@@ -412,6 +426,18 @@ fn parse_converse_response(body: &str, offered: &BTreeSet<String>) -> GoogleConv
         else {
             return converse_failure("tool_call_arguments_invalid");
         };
+        // Gemini assigns no call id -- verified against the live endpoint, a real
+        // tool call carries only `name` and `args`. The runtime needs an id to
+        // correlate a call with its result, and the outbound `functionResponse`
+        // echoes whatever we choose, so synthesize one that stays unique across
+        // parallel calls to the same tool within a turn.
+        let id = function_call
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("{name}-{position}"));
+        let id = id.as_str();
         let Some(arguments) = function_call.get("args") else {
             return converse_failure("tool_call_arguments_invalid");
         };
@@ -1083,6 +1109,77 @@ mod tests {
         let refusal = refusal_for(&LaneOutcome::GoogleFailure(failure), "google", None);
         assert!(!refusal.detail.contains(credential));
         assert_eq!(transport.api_keys, [credential]);
+    }
+
+    /// Gemini refuses `additionalProperties` inside a function declaration.
+    ///
+    /// Its declarations take a restricted OpenAPI 3.0 Schema subset; sending the key
+    /// yields HTTP 400 INVALID_ARGUMENT, one violation per declaration. Verified
+    /// against the live endpoint 2026-08-10, where it blocked every cogitate talent
+    /// on Google before a single token was spent. Anthropic and OpenAI accept the
+    /// same schema, so the narrowing belongs in this arm.
+    #[test]
+    fn converse_tool_schemas_omit_keys_gemini_rejects() {
+        let tools = vec![ConverseToolSpec {
+            name: "read_file".to_owned(),
+            description: "read".to_owned(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "nested": {
+                        "type": "object",
+                        "properties": {"deep": {"type": "string"}},
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        }];
+        let body = converse_request_body(&request(), &[], &tools);
+        assert!(
+            !body.to_string().contains("additionalProperties"),
+            "gemini rejects additionalProperties anywhere in a declaration"
+        );
+        let declared = &body["tools"][0]["functionDeclarations"][0]["parameters"];
+        assert_eq!(declared["properties"]["path"]["type"], "string");
+        assert_eq!(
+            declared["properties"]["nested"]["properties"]["deep"]["type"],
+            "string"
+        );
+        assert_eq!(declared["required"][0], "path");
+    }
+
+    /// Gemini assigns no call id; requiring one refused every real tool call.
+    ///
+    /// A live response is `{"name": ..., "args": {...}}` with no `id` -- verified
+    /// 2026-08-10. Every other fixture in this file supplies one, so the arm's own
+    /// tests measured a shape the provider never sends.
+    #[test]
+    fn converse_synthesizes_a_call_id_when_gemini_omits_one() {
+        let offered = ["weather".to_owned()].into_iter().collect();
+        let GoogleConverseResult::Turn(turn) = parse_converse_response(
+            &json!({
+                "modelVersion":"gemini",
+                "candidates":[{"finishReason":"STOP","content":{"parts":[
+                    {"functionCall":{"name":"weather","args":{"city":"Denver"}}},
+                    {"functionCall":{"name":"weather","args":{"city":"Boulder"}}}
+                ]}}]
+            })
+            .to_string(),
+            &offered,
+        ) else {
+            panic!("an id-less gemini tool call must parse")
+        };
+        assert_eq!(turn.tool_calls.len(), 2);
+        assert_eq!(turn.tool_calls[0].name, "weather");
+        assert_eq!(turn.tool_calls[0].arguments["city"], "Denver");
+        assert_ne!(
+            turn.tool_calls[0].id, turn.tool_calls[1].id,
+            "parallel calls to one tool need distinct ids to correlate results"
+        );
+        assert!(!turn.tool_calls[0].id.is_empty());
     }
 
     #[test]
