@@ -7,7 +7,7 @@ pub(crate) mod serialize;
 mod validate;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use bundle::{build_bundle, classify_breaking_changes, read_artifact, repo_relative};
@@ -26,7 +26,10 @@ pub(crate) fn run_build(check: bool, root: Option<PathBuf>) -> ExitCode {
     };
     let expected = render(&bundle);
     if check {
-        let current = fs::read_to_string(&paths.artifact).unwrap_or_default();
+        let current = match read_or_missing(&paths.artifact) {
+            Ok(current) => current,
+            Err(error) => return failure(error),
+        };
         if current != expected {
             eprintln!(
                 "{} is stale; run `journal contract build`",
@@ -73,7 +76,11 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
         eprintln!("{change}");
         failed = true;
     }
-    if render(&current) != fs::read_to_string(&paths.artifact).unwrap_or_default() {
+    let artifact_text = match read_or_missing(&paths.artifact) {
+        Ok(text) => text,
+        Err(error) => return failure(error),
+    };
+    if render(&current) != artifact_text {
         eprintln!(
             "{} is stale; run `journal contract build`",
             repo_relative(&paths.artifact, &paths.root)
@@ -135,4 +142,14 @@ fn report_tree(root: &std::path::Path, bundle: &serde_json::Value) -> bool {
 fn failure(error: String) -> ExitCode {
     eprintln!("{error}");
     ExitCode::from(1)
+}
+
+/// A missing artifact is the normal stale state; other read errors need their
+/// concrete cause rather than being misreported as staleness.
+fn read_or_missing(path: &Path) -> Result<String, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(format!("contract: cannot read {}: {error}", path.display())),
+    }
 }
