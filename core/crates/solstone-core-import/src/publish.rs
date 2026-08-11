@@ -671,8 +671,10 @@ mod tests {
         let record =
             publish_with_operations(input(temporary.path(), None, &segments, &files), &fake)
                 .unwrap();
+        assert_eq!(record.indexing.published.len(), 1);
         assert!(record.indexing.declined.is_empty());
         assert!(record.indexing.errored.is_empty());
+        assert_eq!(record.status, PublicationStatus::Success);
     }
 
     #[test]
