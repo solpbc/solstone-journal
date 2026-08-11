@@ -282,10 +282,11 @@ fn ac25_ios_process_state_probe_is_explicit_and_returns_unknown() {
 }
 
 #[test]
-fn ac26_lifecycle_sweep_and_identity_have_explicit_platform_absence() {
+fn ac26_lifecycle_sweep_and_identity_have_explicit_platform_support() {
     assert!(LIFECYCLE_SWEEP.contains("#[cfg(target_os = \"linux\")]"));
-    assert!(LIFECYCLE_SWEEP.contains("UnsupportedPlatform"));
-    assert!(LIFECYCLE_SWEEP.contains("Other targets refuse"));
+    assert!(LIFECYCLE_SWEEP.contains("#[cfg(target_os = \"macos\")]"));
+    assert!(LIFECYCLE_SWEEP.contains("OrphanSweepOutcome::UnsupportedPlatform"));
     assert!(LIFECYCLE_STATE.contains("#[cfg(target_os = \"linux\")]"));
-    assert!(LIFECYCLE_STATE.contains("no non-Linux creation-time implementation"));
+    assert!(LIFECYCLE_STATE.contains("#[cfg(target_os = \"macos\")]"));
+    assert!(LIFECYCLE_STATE.contains("iOS still has no supported process-start-time source"));
 }

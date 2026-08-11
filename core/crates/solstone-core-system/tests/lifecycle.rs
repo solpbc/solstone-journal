@@ -19,7 +19,7 @@ use solstone_core_system::lifecycle::{
     compact_log_if_oversized, format_conflict_message, sanitize_hostname, shutdown,
     sync_conflict_event, wait_until_parent_gone, write_sync_heartbeat,
 };
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::lifecycle::{
     LifecycleError, OrphanSweepOutcome, is_supervisor_up, readiness_is_valid,
     recorded_supervisor_pid, sweep_orphans, wait_ready_with,
@@ -85,6 +85,48 @@ fn process_is_live(pid: u32) -> bool {
         != Some("Z")
 }
 
+#[cfg(target_os = "macos")]
+fn wait_for_orphan(pid: u32) {
+    for _ in 0..200 {
+        let output = Command::new("/bin/ps")
+            .args(["-p", &pid.to_string(), "-o", "ppid="])
+            .output()
+            .expect("ps");
+        if output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "1" {
+            return;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    panic!("fixture did not become an orphan");
+}
+
+#[cfg(target_os = "macos")]
+fn process_is_live(pid: u32) -> bool {
+    Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "pid="])
+        .output()
+        .is_ok_and(|output| output.status.success() && !output.stdout.is_empty())
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_orphan(journal: &std::path::Path, ready: &std::path::Path, mode: &str) {
+    let holder = journal.join("journal:holder");
+    std::os::unix::fs::symlink(FIXTURE, &holder).expect("holder symlink");
+    let status = Command::new(FIXTURE)
+        .args([
+            "orphan-sweep-spawner",
+            journal.to_str().expect("utf8"),
+            ready.to_str().expect("utf8"),
+            mode,
+            holder.to_str().expect("utf8"),
+        ])
+        .status()
+        .expect("spawn orphan fixture");
+    assert!(status.success());
+    wait_for(ready);
+    fs::remove_file(holder).expect("remove holder symlink");
+}
+
 fn now_seconds() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -105,7 +147,7 @@ fn heartbeat(journal: &std::path::Path, machine_id: &str) -> Heartbeat {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac6_ac7_singleton_admission_is_real_process_safe() {
     let bed = Bed::new("singleton");
@@ -139,7 +181,7 @@ fn ac6_ac7_singleton_admission_is_real_process_safe() {
     assert_eq!(lifecycle.journal(), bed.root);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac7_single_process_lease_lives_with_supervisor_value() {
     let bed = Bed::new("lease-lifetime");
@@ -151,7 +193,7 @@ fn ac7_single_process_lease_lives_with_supervisor_value() {
     drop(lifecycle);
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts() {
     let conflicting = Bed::new("boot-conflict");
@@ -212,7 +254,7 @@ fn ac5_boot_conflict_does_not_write_identity_and_shutdown_retains_only_conflicts
     assert!(heartbeat_path.exists());
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac8_ac17_identity_and_readiness_are_pid_bound() {
     let bed = Bed::new("readiness");
@@ -235,7 +277,7 @@ fn ac8_ac17_identity_and_readiness_are_pid_bound() {
     assert!(!readiness_is_valid(&bed.root));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
     let bed = Bed::new("identity-rules");
@@ -269,7 +311,7 @@ fn ac10_ac11_ac16_identity_tolerance_and_readiness_shape_rules() {
     assert!(!is_supervisor_up(&bed.root));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn ac17_wait_ready_uses_injected_clock_and_poll() {
     let bed = Bed::new("wait-ready");
@@ -294,6 +336,28 @@ fn ac17_wait_ready_uses_injected_clock_and_poll() {
         || ticks.set(ticks.get() + 1),
     );
     assert!(timeout.is_none());
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn ac3_ac8_stale_pid_identity_is_rejected() {
+    let bed = Bed::new("stale-pid");
+    let lifecycle = SupervisorLifecycle::boot(&bed.root).expect("boot");
+    lifecycle
+        .signal_ready(1.0, serde_json::Map::new())
+        .expect("ready");
+    let start_path = bed.root.join("health/supervisor.start_time");
+    let actual: f64 = fs::read_to_string(&start_path)
+        .expect("start")
+        .parse()
+        .expect("number");
+    fs::write(
+        start_path,
+        (actual + solstone_core_system::lifecycle::START_TIME_TOLERANCE_SECONDS + 0.1).to_string(),
+    )
+    .expect("stale identity");
+    assert!(!is_supervisor_up(&bed.root));
+    assert!(!readiness_is_valid(&bed.root));
 }
 
 #[cfg(target_os = "linux")]
@@ -402,6 +466,31 @@ fn ac30_orphan_sweep_reports_reaped_survivor_and_unresolvable_candidates() {
             nix::sys::signal::Signal::SIGKILL,
         );
     }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn ac28_orphan_sweep_matches_name_parent_and_uid() {
+    let bed = Bed::new("orphan-macos");
+    let ready = bed.root.join("orphan.pid");
+    spawn_orphan(&bed.root, &ready, "orphan-sweep-holder");
+    let pid: u32 = fs::read_to_string(&ready)
+        .expect("pid")
+        .parse()
+        .expect("numeric pid");
+    wait_for_orphan(pid);
+    let OrphanSweepOutcome::Completed(report) = sweep_orphans(&bed.root, Duration::from_millis(20))
+    else {
+        panic!("macOS sweep must run");
+    };
+    assert_eq!(report.targeted, 1);
+    for _ in 0..200 {
+        if !process_is_live(pid) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!process_is_live(pid));
 }
 
 #[test]
