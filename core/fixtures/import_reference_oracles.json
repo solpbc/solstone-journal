@@ -87,12 +87,46 @@
     "must_differ": true
   },
   "hash_source_directory_symlinks": {
-    "note": "is_file() FOLLOWS links: a symlink to a file is INCLUDED at its target's size; a symlinked DIRECTORY is NOT recursed. Rust walkdir defaults (follow_links(false) + file_type().is_file()) EXCLUDE the symlink-to-file and give a different digest.",
-    "entries_included": [
+    "note": "is_file() FOLLOWS links: a symlink to a file is INCLUDED at its TARGET's size; a symlinked DIRECTORY is NOT recursed; a DANGLING symlink is EXCLUDED. Rust walkdir defaults (follow_links(false) + file_type().is_file()) exclude the symlink-to-file and give a different digest.",
+    "reconstruct": {
+      "regular_files": [
+        {
+          "rel": "f.md",
+          "bytes": 5
+        },
+        {
+          "rel": "real/big.bin",
+          "bytes": 100
+        }
+      ],
+      "symlinks": [
+        {
+          "rel": "link_to_file",
+          "target": "real/big.bin",
+          "counted_as_bytes": 100
+        },
+        {
+          "rel": "link_to_dir",
+          "target": "real",
+          "counted": false
+        },
+        {
+          "rel": "dangling",
+          "target": "nope (missing)",
+          "counted": false
+        }
+      ]
+    },
+    "entries_included_in_digest": [
       "f.md",
       "link_to_file",
       "real/big.bin"
     ],
+    "sizes_used": {
+      "f.md": 5,
+      "link_to_file": 100,
+      "real/big.bin": 100
+    },
     "expected_digest": "4a1c562fade8961abbc2834ed9d1c01989b64ef28fcca998dd3b49b446d0ceb9"
   },
   "windowed_source_hash": {
@@ -137,6 +171,37 @@
       "link_id": null,
       "observer_handle": null,
       "raw_retention": "delete_after_processing"
+    }
+  },
+  "hash_source_directory_dotfiles": {
+    "note": "rglob('*') INCLUDES hidden files and RECURSES into dot-directories. An implementation built on a walker that skips hidden entries by default (the idiomatic Rust choice) produces a different digest for EVERY vault, because a vault is defined by its dot-directory \u2014 so every previously-imported vault stops deduping and re-imports.",
+    "tree": [
+      {
+        "rel": ".dotdir/in.txt",
+        "bytes": 1
+      },
+      {
+        "rel": ".hidden",
+        "bytes": 2
+      },
+      {
+        "rel": "a.md",
+        "bytes": 8
+      },
+      {
+        "rel": "sub/b.md",
+        "bytes": 10
+      }
+    ],
+    "expected_digest": "2f7a064f786450f38df79cb8fff8f7a2fd31305a64030549adf6b85e9830a691"
+  },
+  "degenerate_and_encoding": {
+    "empty_directory": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "empty_file": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "nonexistent_path": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "note": "all three return the digest of the EMPTY STRING, so a vanished source dedupes against a prior empty import. Erroring is defensible; pin whichever you choose.",
+    "non_utf8_filename": {
+      "result": "bccb37d7755496894d7af7466343e5b50ff3fa94e69df31f18c37adf6fb1fce4"
     }
   }
 }
