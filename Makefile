@@ -1269,7 +1269,11 @@ check-removed-time-parser-ready:
 contract:
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build
 
-check-contract: .installed
+# No .installed: both recipes are cargo-only now that the verb is native, and
+# the prerequisite was the last thing dragging a Python venv bootstrap into a
+# target that needs no interpreter. check-contract-parity keeps it -- that one
+# really does run the reference.
+check-contract:
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract check
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --check
 
