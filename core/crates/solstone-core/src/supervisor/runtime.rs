@@ -43,6 +43,7 @@ const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
 pub(crate) struct SupervisorState {
     pub journal: PathBuf,
     pub is_remote_mode: bool,
+    pub no_daily: bool,
     pub server: Arc<CallosumSocketServer>,
     pub connection: CallosumSocketConnection,
     pub queue: TaskQueue,
@@ -92,18 +93,18 @@ impl AppService {
         }
     }
 
-    fn production_argv(self, journal_binary: &Path) -> Vec<String> {
+    fn production_argv(self, journal_binary: &Path, convey_port: u16) -> Vec<String> {
         let mut argv = vec![journal_binary.display().to_string()];
-        argv.extend(
-            match self {
-                Self::Convey => ["convey", "--port", "5015"].as_slice(),
-                Self::Sense => ["sense"].as_slice(),
-                Self::Cortex => ["cortex"].as_slice(),
-                Self::Spl => ["spl"].as_slice(),
-            }
-            .iter()
-            .map(|value| (*value).to_owned()),
-        );
+        match self {
+            Self::Convey => argv.extend([
+                "convey".to_owned(),
+                "--port".to_owned(),
+                convey_port.to_string(),
+            ]),
+            Self::Sense => argv.push("sense".to_owned()),
+            Self::Cortex => argv.push("cortex".to_owned()),
+            Self::Spl => argv.push("spl".to_owned()),
+        }
         argv
     }
 }
@@ -126,9 +127,14 @@ impl ManagedAppProcess {
         journal: &Path,
         fixture_binary: Option<&str>,
         journal_binary: Option<&Path>,
+        convey_port: u16,
     ) -> Self {
         let argv = fixture_binary.map_or_else(
-            || journal_binary.map_or_else(Vec::new, |binary| service.production_argv(binary)),
+            || {
+                journal_binary.map_or_else(Vec::new, |binary| {
+                    service.production_argv(binary, convey_port)
+                })
+            },
             |binary| fixture_argv(service, binary, journal),
         );
         Self {
@@ -223,6 +229,11 @@ fn resolve_journal_binary() -> Result<PathBuf, String> {
     // The journal shim only delegates to this sibling binary, so direct execution
     // is equivalent, removes an exec hop, and does not depend on PATH.
     Ok(resolve_journal_binary_from(exe_dir))
+}
+
+fn resolve_available_port() -> std::io::Result<u16> {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    Ok(listener.local_addr()?.port())
 }
 
 trait ConveyReadinessProbe: Send + Sync {
@@ -372,6 +383,7 @@ fn app_processes(
     journal: &Path,
     fixture_binary: Option<&str>,
     journal_binary: Option<&Path>,
+    convey_port: u16,
 ) -> Vec<ManagedAppProcess> {
     let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     [
@@ -382,7 +394,14 @@ fn app_processes(
     ]
     .into_iter()
     .map(|(service, enabled)| {
-        ManagedAppProcess::new(service, enabled, journal, fixture_binary, journal_binary)
+        ManagedAppProcess::new(
+            service,
+            enabled,
+            journal,
+            fixture_binary,
+            journal_binary,
+            convey_port,
+        )
     })
     .collect()
 }
@@ -569,6 +588,36 @@ pub(crate) async fn boot_and_tick(
         launch_recorded_for: None,
         fixture_launch,
     };
+    // This is a seeded stub, not a production-faithful launch — do not wire
+    // `journal supervisor`/`journal start` to this binary until all four are
+    // closed:
+    //   - Installed-artifact resolution: hardcoded bare names
+    //     ("parakeet-server", "parakeet") resolved via PATH, only overridable
+    //     by SOLSTONE_PARAKEET_BINARY/SOLSTONE_PARAKEET_MODEL. Python resolves
+    //     the installed artifact under the provider cache root via
+    //     `parakeet_install.inspect_readiness()` / `.target_fingerprint()`
+    //     (solstone/think/providers/parakeet_install.py, kept — not deleted by
+    //     the W9c cutover).
+    //   - Device selection: hardcoded `binary_backend: "cpu"` /
+    //     `ParakeetPlacement::Cpu`, never reads config. Python reads
+    //     `transcribe.parakeet-cpp.device` via `_configured_parakeet_device()`
+    //     (solstone/think/supervisor.py) and resolves cpu-vs-vulkan/GPU-index
+    //     via `_resolve_parakeet_backend()` and
+    //     `parakeet_placement.decide_parakeet_auto_placement()`
+    //     (solstone/think/providers/parakeet_placement.py, kept).
+    //   - Thread count: hardcoded `threads: 4`. Python derives it from actual
+    //     host topology via `parakeet_physical_thread_count()`
+    //     (`psutil.cpu_count(logical=False)`, solstone/think/supervisor.py).
+    //   - Truth seam: `truth: NoopWorkers` and `next_truth_at: f64::MAX` mean
+    //     desired-vs-actual state is never re-observed after boot. Local
+    //     already has this in `LocalTruthSeam` (implements
+    //     `TruthObservationSeam`,
+    //     core/crates/solstone-core-system/src/provider_runtime/launch.rs:401);
+    //     Parakeet has no counterpart. Python's equivalent is the periodic
+    //     `_reconcile_parakeet_provider_runtime()` tick
+    //     (solstone/think/supervisor.py) driving truth submission/handling
+    //     against the observation function that composes the three items
+    //     above into a `ParakeetServerLaunchPlan`.
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let fingerprint = "native-parakeet-seeded".to_owned();
     parakeet_shared.record_launch_request(
@@ -642,11 +691,17 @@ pub(crate) async fn boot_and_tick(
         None
     };
     let readiness_probe = convey_readiness_probe(fixture_binary.as_deref());
+    let convey_port = if options.port != 0 {
+        options.port
+    } else {
+        resolve_available_port().map_err(|error| error.to_string())?
+    };
     let mut app_processes = app_processes(
         &options,
         &journal,
         fixture_binary.as_deref(),
         journal_binary.as_deref(),
+        convey_port,
     );
     start_app_stack(
         &mut app_processes,
@@ -667,6 +722,7 @@ pub(crate) async fn boot_and_tick(
     let mut state = SupervisorState {
         journal,
         is_remote_mode: remote,
+        no_daily: options.no_daily,
         server,
         connection,
         queue,

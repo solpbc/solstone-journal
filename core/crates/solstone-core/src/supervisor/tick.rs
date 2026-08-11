@@ -56,14 +56,16 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
             &mut state.flush,
             false,
         );
-        if let Err(error) = handle_daily_tasks(
-            &state.journal,
-            &state.queue,
-            state.is_remote_mode,
-            &mut state.daily,
-            &mut state.flush,
-            wall.date_naive(),
-        ) {
+        if !state.no_daily
+            && let Err(error) = handle_daily_tasks(
+                &state.journal,
+                &state.queue,
+                state.is_remote_mode,
+                &mut state.daily,
+                &mut state.flush,
+                wall.date_naive(),
+            )
+        {
             eprintln!("supervisor: daily catchup drain failed: {error}");
         }
         let schedule_sink = SupervisorScheduleSink {
