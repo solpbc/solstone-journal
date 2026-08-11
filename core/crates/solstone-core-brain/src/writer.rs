@@ -1222,11 +1222,11 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
+    use std::process::{Child, Command};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::{self, TryRecvError};
     use std::thread;
-    use std::time::Duration as StdDuration;
+    use std::time::{Duration as StdDuration, Instant as StdInstant};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use chrono::DateTime;
@@ -2017,7 +2017,7 @@ mod tests {
         journal.write_config("lane_byo_cloud");
         let ready = journal.path().join("begin.ready");
         let mut child = begin_pause_command(journal.path(), &ready).spawn().unwrap();
-        wait_for_file(&ready);
+        wait_for_file(&ready, &mut child);
         child.kill().unwrap();
         child.wait().unwrap();
 
@@ -2099,7 +2099,7 @@ mod tests {
         journal.write_config("lane_byo_cloud");
         let ready = journal.path().join("refresh.ready");
         let mut child = begin_pause_command(journal.path(), &ready).spawn().unwrap();
-        wait_for_file(&ready);
+        wait_for_file(&ready, &mut child);
         assert!(
             begin_refresh(journal.path(), fixture_now(), None, None, false, None)
                 .unwrap()
@@ -2116,7 +2116,7 @@ mod tests {
         let mut child = renewal_pause_command(journal.path(), &ready)
             .spawn()
             .unwrap();
-        wait_for_file(&ready);
+        wait_for_file(&ready, &mut child);
         assert!(matches!(
             begin_prerequisite_renewal(journal.path(), fixture_now(), None, None, None),
             BeginPrerequisiteRenewal::Busy { .. }
@@ -2136,7 +2136,7 @@ mod tests {
         let mut holder = record_lock_pause_command(journal.path(), &ready)
             .spawn()
             .unwrap();
-        wait_for_file(&ready);
+        wait_for_file(&ready, &mut holder);
 
         let journal_path = journal.path().to_path_buf();
         let (sender, receiver) = mpsc::channel();
@@ -2271,13 +2271,26 @@ mod tests {
         command
     }
 
-    fn wait_for_file(path: &Path) {
-        for _ in 0..100 {
+    fn wait_for_file(path: &Path, child: &mut Child) {
+        // A cold helper binary can take longer than one second to start while the
+        // full workspace test suite is competing for CPU and I/O.
+        let deadline = StdInstant::now() + StdDuration::from_secs(10);
+        loop {
             if path.exists() {
                 return;
             }
+            if let Some(status) = child.try_wait().expect("poll helper process") {
+                panic!(
+                    "helper exited with {status} before {} appeared",
+                    path.display()
+                );
+            }
+            if StdInstant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("timed out waiting for {}", path.display());
+            }
             thread::sleep(StdDuration::from_millis(10));
         }
-        panic!("timed out waiting for {}", path.display());
     }
 }
