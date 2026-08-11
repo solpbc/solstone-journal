@@ -46,7 +46,7 @@ pub use projection::project_stream_name;
 pub use segment_dir::{
     SegmentDir, is_safe_stream_component, list_days, list_segments, list_segments_in,
 };
-pub use solstone_core_journal_io::Segment;
+pub use solstone_core_journal_io::{PathOrDay, Segment, day_path, iter_segments};
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord, advance_bound_stream,
     bind_stream, lookup_stream, resolve_stream,

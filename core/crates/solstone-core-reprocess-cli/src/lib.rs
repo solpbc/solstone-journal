@@ -13,8 +13,7 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
-use solstone_core_journal_io::{PathOrDay, day_path, iter_segments};
-use solstone_core_segment::touch_stream_health_marker;
+use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
 use solstone_core_system::catchup::read_raw_input_fingerprint;
 use solstone_core_system_health::{FilesystemSegmentSource, day_is_complete, scan_day};
 
@@ -71,16 +70,13 @@ enum DayOutcome {
 #[derive(Debug, Default, Deserialize)]
 struct CatchupState {
     #[serde(default)]
-    entries: HashMap<String, CatchupEntry>,
+    entries: HashMap<String, Value>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug)]
 struct CatchupEntry {
-    #[serde(default)]
     active: Option<Value>,
-    #[serde(default)]
     next_retry_at: Option<Value>,
-    #[serde(default)]
     fingerprint: Option<String>,
 }
 
@@ -485,6 +481,7 @@ fn read_drain_hold_retry_at(journal: &Path, day: &str, now: DateTime<Utc>) -> Op
     let records = ["daily-catchup", "segment-repair"]
         .into_iter()
         .filter_map(|kind| state.entries.get(&format!("{day}:{kind}")))
+        .filter_map(catchup_entry)
         .collect::<Vec<_>>();
     // Python uses `record.get("active")`: null, false, 0, empty strings, and
     // empty containers are inactive; other values are active.
@@ -512,6 +509,18 @@ fn read_drain_hold_retry_at(journal: &Path, day: &str, now: DateTime<Utc>) -> Op
             (record.fingerprint.as_deref() == Some(fingerprint.as_str())).then_some(retry_at)
         })
         .max_by(f64::total_cmp)
+}
+
+fn catchup_entry(value: &Value) -> Option<CatchupEntry> {
+    let object = value.as_object()?;
+    Some(CatchupEntry {
+        active: object.get("active").cloned(),
+        next_retry_at: object.get("next_retry_at").cloned(),
+        fingerprint: object
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+    })
 }
 
 fn python_truthy(value: &Value) -> bool {
@@ -717,6 +726,7 @@ mod tests {
                     run_cli_with(&baseline, root.path(), now(), chrono_tz::UTC, |_| true);
                 assert_eq!(result.exit_code, 0, "{flag} {flavor:?}");
                 assert_eq!(result.stdout, expected.stdout, "{flag} {flavor:?}");
+                assert_eq!(result.stderr, expected.stderr, "{flag} {flavor:?}");
             }
         }
     }
@@ -787,6 +797,7 @@ mod tests {
                 false
             },
         );
+        assert_eq!(result.exit_code, 1);
         assert_eq!(result.stderr, format!("{UNREACHABLE_MESSAGE}\n"));
         assert!(marker.is_file());
     }
@@ -913,7 +924,11 @@ mod tests {
     #[test]
     fn range_yes_queues_data_days_oldest_first() {
         let root = TempDir::new().unwrap();
-        for day in ["20251231", DAY] {
+        let range_now = Utc.with_ymd_and_hms(2026, 1, 4, 12, 0, 0).unwrap();
+        for day in ["20251230", DAY, "20260103"] {
+            fs::create_dir_all(root.path().join("chronicle").join(day)).unwrap();
+        }
+        for day in ["20251231", "20260102"] {
             fs::write(
                 segment(root.path(), day, "090000_60").join("audio.jsonl"),
                 "{}\n",
@@ -922,9 +937,15 @@ mod tests {
         }
         let mut sent_days = Vec::new();
         let result = run_cli_with(
-            &words(&["20251231", "--through", DAY, "--from-scratch", "--yes"]),
+            &words(&[
+                "20251230",
+                "--through",
+                "20260103",
+                "--from-scratch",
+                "--yes",
+            ]),
             root.path(),
-            now(),
+            range_now,
             chrono_tz::UTC,
             |envelope| {
                 sent_days.push(
@@ -936,7 +957,7 @@ mod tests {
                 true
             },
         );
-        assert_eq!(sent_days, ["20251231", DAY]);
+        assert_eq!(sent_days, ["20251231", "20260102"]);
         assert_eq!(
             result.stdout,
             "queued from-scratch reprocess for 2 days (2 segments)\nprogress is visible in journal top or journal health\nqueued days do not survive a supervisor restart\n"
@@ -944,7 +965,7 @@ mod tests {
     }
 
     #[test]
-    fn catchup_hold_tolerates_active_legacy_malformed_and_corrupt_state() {
+    fn catchup_hold_observes_active_retry_fingerprint_and_both_kinds() {
         let root = TempDir::new().unwrap();
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
@@ -957,13 +978,17 @@ mod tests {
         let fingerprint = read_raw_input_fingerprint(root.path(), DAY).unwrap();
         let state_path = root.path().join("health/catchup-state.json");
         fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+        let daily_key = format!("{DAY}:daily-catchup");
+        let segment_key = format!("{DAY}:segment-repair");
+        let early_retry = now().timestamp() as f64 + 3_600.0;
+        let later_retry = now().timestamp() as f64 + 10_800.0;
 
-        let write_state = |entry: Value| {
+        let write_entries = |entries: Value| {
             fs::write(
                 &state_path,
                 serde_json::to_vec(&json!({
                     "version": 1,
-                    "entries": {format!("{DAY}:daily-catchup"): entry},
+                    "entries": entries,
                 }))
                 .unwrap(),
             )
@@ -976,9 +1001,18 @@ mod tests {
             })
         };
 
-        write_state(
-            json!({"active": {"ref": "x"}, "next_retry_at": 2_000_000_000_f64, "fingerprint": fingerprint}),
-        );
+        write_entries(json!({
+            daily_key.clone(): {
+                "active": {"ref": "x"},
+                "next_retry_at": later_retry,
+                "fingerprint": fingerprint.clone(),
+            },
+            segment_key.clone(): {
+                "active": null,
+                "next_retry_at": later_retry,
+                "fingerprint": fingerprint.clone(),
+            },
+        }));
         let mut calls = 0;
         assert_eq!(
             held(&mut calls).stdout,
@@ -986,23 +1020,68 @@ mod tests {
         );
         assert_eq!(calls, 1);
 
-        write_state(
-            json!({"active": null, "next_retry_at": 2_000_000_000_f64, "fingerprint": fingerprint}),
+        write_entries(json!({
+            daily_key.clone(): {
+                "active": null,
+                "next_retry_at": early_retry,
+                "fingerprint": fingerprint.clone(),
+            },
+            segment_key.clone(): {
+                "active": null,
+                "next_retry_at": later_retry,
+                "fingerprint": fingerprint.clone(),
+            },
+        }));
+        calls = 0;
+        assert_eq!(
+            held(&mut calls).stdout,
+            "day 20260101 is held until today at 3:00pm; use --from-scratch to start it over now\n"
         );
+        assert_eq!(calls, 0);
+
+        write_entries(json!({
+            daily_key.clone(): {
+                "active": null,
+                "next_retry_at": now().timestamp() as f64 - 1.0,
+                "fingerprint": fingerprint.clone(),
+            },
+        }));
         calls = 0;
         assert!(
             held(&mut calls)
                 .stdout
-                .starts_with("day 20260101 is held until ")
+                .starts_with("reprocess (process-now) submitted")
         );
-        assert_eq!(calls, 0);
+        assert_eq!(calls, 1);
 
-        write_state(json!({"active": null, "next_retry_at": "bad", "fingerprint": fingerprint}));
+        write_entries(json!({
+            daily_key.clone(): {
+                "active": null,
+                "next_retry_at": later_retry,
+                "fingerprint": "stale",
+            },
+        }));
         calls = 0;
         assert_eq!(held(&mut calls).exit_code, 0);
         assert_eq!(calls, 1);
 
-        write_state(json!({"active": null, "next_retry_at": 2_000_000_000_f64}));
+        write_entries(json!({
+            daily_key.clone(): {
+                "active": null,
+                "next_retry_at": "bad",
+                "fingerprint": fingerprint.clone(),
+            },
+        }));
+        calls = 0;
+        assert_eq!(held(&mut calls).exit_code, 0);
+        assert_eq!(calls, 1);
+
+        write_entries(json!({
+            daily_key: {
+                "active": null,
+                "next_retry_at": later_retry,
+            },
+        }));
         calls = 0;
         assert_eq!(held(&mut calls).exit_code, 0);
         assert_eq!(calls, 1);
@@ -1011,6 +1090,48 @@ mod tests {
         calls = 0;
         assert_eq!(held(&mut calls).exit_code, 0);
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn catchup_garbage_record_does_not_discard_a_valid_hold() {
+        let root = TempDir::new().unwrap();
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "raw\n",
+        )
+        .unwrap();
+        let health = root.path().join("chronicle").join(DAY).join("health");
+        fs::create_dir_all(&health).unwrap();
+        fs::write(health.join("stream.updated"), "").unwrap();
+        let fingerprint = read_raw_input_fingerprint(root.path(), DAY).unwrap();
+        let state_path = root.path().join("health/catchup-state.json");
+        fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+        fs::write(
+            state_path,
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "unrelated": ["garbage"],
+                    format!("{DAY}:daily-catchup"): {
+                        "active": null,
+                        "next_retry_at": now().timestamp() as f64 + 3_600.0,
+                        "fingerprint": fingerprint,
+                    },
+                },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut calls = 0;
+        let result = run_cli_with(&words(&[DAY]), root.path(), now(), chrono_tz::UTC, |_| {
+            calls += 1;
+            true
+        });
+        assert_eq!(calls, 0);
+        assert_eq!(
+            result.stdout,
+            "day 20260101 is held until today at 1:00pm; use --from-scratch to start it over now\n"
+        );
     }
 
     #[test]
