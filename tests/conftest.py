@@ -415,44 +415,6 @@ def add_module_stubs(monkeypatch):
             sys.modules[name] = types.ModuleType(name)
 
 
-@pytest.fixture(autouse=True)
-def reset_supervisor_state():
-    """Reset supervisor module state before/after tests to prevent cross-test pollution."""
-    try:
-        import solstone.think.supervisor as mod
-
-        # Reset before test
-        mod._daily_state["last_day"] = None
-        mod._recovery_state = {
-            "local": mod.ProviderRecoveryState(),
-            "parakeet": mod.ProviderRecoveryState(),
-        }
-        mod._is_remote_mode = False
-        mod._supervisor_callosum = None
-        # Create fresh task queue
-        mod._task_queue = mod.TaskQueue(on_queue_change=None)
-    except ImportError:
-        pass  # supervisor not loaded yet
-    yield
-    try:
-        import solstone.think.supervisor as mod
-
-        # Reset after test
-        mod._daily_state["last_day"] = None
-        mod._recovery_state = {
-            "local": mod.ProviderRecoveryState(),
-            "parakeet": mod.ProviderRecoveryState(),
-        }
-        mod._is_remote_mode = False
-        mod._supervisor_callosum = None
-        mod._observer_health = {}
-        mod._enabled_observers = set()
-        # Create fresh task queue
-        mod._task_queue = mod.TaskQueue(on_queue_change=None)
-    except ImportError:
-        pass
-
-
 @pytest.fixture
 def mock_callosum(monkeypatch):
     """Mock Callosum connections to capture emitted events without real I/O.
@@ -519,9 +481,6 @@ def mock_callosum(monkeypatch):
     )
     monkeypatch.setattr(
         "solstone.think.callosum.CallosumConnection", MockCallosumConnection
-    )
-    monkeypatch.setattr(
-        "solstone.think.supervisor.CallosumConnection", MockCallosumConnection
     )
 
 

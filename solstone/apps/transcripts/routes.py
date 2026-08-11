@@ -85,7 +85,7 @@ from solstone.think.pipeline_health import (
     segment_fully_thought,
     segment_requires_processing,
 )
-from solstone.think.supervisor import is_supervisor_up
+from solstone.think.readiness import is_supervisor_up
 from solstone.think.talent_outputs import talent_projection_map
 from solstone.think import retention_executor
 from solstone.think.utils import (

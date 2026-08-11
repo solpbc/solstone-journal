@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -30,54 +29,6 @@ def _journal_path() -> Path:
 
 def _marker_path() -> Path:
     return _journal_path() / MARKER_RELATIVE_PATH
-
-
-def _read_supervisor_start_time(now: float) -> float:
-    start_time_path = _journal_path() / _START_TIME_RELATIVE_PATH
-    try:
-        return float(start_time_path.read_text().strip())
-    except (OSError, ValueError) as exc:
-        logger.warning(
-            "Could not read supervisor start time for readiness marker: %s", exc
-        )
-        return now
-
-
-def _write_marker(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_name: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            dir=path.parent,
-            encoding="utf-8",
-            prefix=".supervisor_ready_",
-            suffix=".tmp",
-            delete=False,
-        ) as temp_file:
-            temp_name = temp_file.name
-            temp_file.write(content)
-        os.replace(temp_name, path)
-    except Exception:
-        if temp_name is not None:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-        raise
-
-
-def signal_ready(payload: dict[str, Any] | None = None) -> None:
-    now = time.time()
-    out = dict(payload or {})
-    out.update(
-        {
-            "pid": os.getpid(),
-            "ready_at": now,
-            "start_time": _read_supervisor_start_time(now),
-        }
-    )
-    _write_marker(_marker_path(), json.dumps(out, sort_keys=True) + "\n")
 
 
 def clear_ready() -> None:
@@ -127,6 +78,37 @@ def _read_recorded_start_time(path: Path) -> float | None:
             "Could not read supervisor start time for readiness check: %s", exc
         )
     return None
+
+
+# This cut leaves no dual-path shim. is_supervisor_up(), wait_ready(), and
+# clear_ready() were never part of the deleted Python supervisor writer domain;
+# service.py uses them for launch-and-wait orchestration around the native
+# supervisor, now the sole writer of health/supervisor.{pid,start_time,ready}.
+# No future deletion of this module is planned.
+def is_supervisor_up() -> bool:
+    """Return True when pid and start time identify a live supervisor process."""
+    journal = _journal_path()
+    pid = _read_supervisor_pid(journal / _PID_RELATIVE_PATH)
+    if pid is None:
+        return False
+
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+
+    recorded_start = _read_recorded_start_time(
+        journal / _START_TIME_RELATIVE_PATH
+    )
+    if recorded_start is None:
+        return False
+
+    try:
+        create_time = psutil.Process(pid).create_time()
+    except psutil.Error:
+        return False
+
+    return abs(recorded_start - create_time) <= START_TIME_TOLERANCE_S
 
 
 def _valid_marker() -> dict[str, Any] | None:

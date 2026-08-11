@@ -12,9 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OWNER_FUNCTIONS: frozenset[tuple[str, str]] = frozenset(
-    {("solstone/think/supervisor.py", "_build_parakeet_cmd")}
-)
+OWNER_FUNCTIONS: frozenset[tuple[str, str]] = frozenset()
 _HOST = "--host"
 _PORT = "--port"
 _LLAMA_FLAGS: frozenset[str] = frozenset(

@@ -3,12 +3,10 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 import logging
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -537,90 +535,3 @@ def test_register_then_scheduler_init_surfaces_runtime_cap(tmp_path, monkeypatch
     assert scheduler.collect_runtime_caps() == [
         (["journal", "maintenance", "run", "alpha:cleanup"], 300)
     ]
-
-
-def test_supervisor_registers_maintenance_before_scheduler_init(tmp_path, monkeypatch):
-    _use_journal(tmp_path, monkeypatch)
-    apps_dir = _use_apps(tmp_path, monkeypatch)
-    _write_app(apps_dir, "alpha", _routine_module())
-    mod = importlib.reload(importlib.import_module("solstone.think.supervisor"))
-    order: list[tuple[str, bool | None]] = []
-
-    monkeypatch.delenv("SOL_SUPERVISOR_SPAWNED", raising=False)
-    monkeypatch.delenv("SOLSTONE_APP_SUPERVISED", raising=False)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["supervisor", "0", "--no-daily", "--no-convey", "--no-cortex", "--no-spl"],
-    )
-    monkeypatch.setattr(mod, "run_pending_tasks", lambda *a, **k: [])
-    monkeypatch.setattr(mod, "_sweep_orphaned_sol_processes", lambda *_a, **_k: 0)
-    monkeypatch.setattr(
-        mod,
-        "check_journal_sync",
-        lambda journal: SimpleNamespace(is_conflict=False),
-    )
-    monkeypatch.setattr(mod, "write_self_heartbeat", lambda journal: None)
-    monkeypatch.setattr(mod, "clear_self_heartbeat", lambda: None)
-    monkeypatch.setattr(mod, "start_callosum_in_process", lambda: None)
-    monkeypatch.setattr(mod, "stop_callosum_in_process", lambda **_kwargs: None)
-    monkeypatch.setattr(mod, "is_local_provider_needed", lambda: False)
-    monkeypatch.setattr(mod, "signal_ready", lambda: None)
-    monkeypatch.setattr(mod, "clear_ready", lambda: None)
-    monkeypatch.setattr(mod, "_sd_notify", lambda _state: None)
-    monkeypatch.setattr(mod, "_stop_process", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(mod.time, "sleep", lambda _seconds: None)
-
-    class FakeCallosumConnection:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def start(self, *args, **kwargs):
-            pass
-
-        def emit(self, *args, **kwargs):
-            return True
-
-        def stop(self):
-            pass
-
-    monkeypatch.setattr(mod, "CallosumConnection", FakeCallosumConnection)
-    monkeypatch.setattr(
-        mod,
-        "start_sense",
-        lambda: SimpleNamespace(name="sense", cmd=["journal", "sense"]),
-    )
-
-    original_register = mod.maintenance.register_maintenance_schedules
-
-    def register_spy():
-        order.append(("register", None))
-        return original_register()
-
-    def init_spy(_callosum):
-        raw = schedule_config.read_schedules()
-        order.append(("scheduler.init", "maintenance:alpha:cleanup" in raw))
-
-    monkeypatch.setattr(mod.maintenance, "register_maintenance_schedules", register_spy)
-    monkeypatch.setattr(mod.scheduler, "init", init_spy)
-    monkeypatch.setattr(
-        mod.scheduler,
-        "register_defaults",
-        lambda: order.append(("register_defaults", None)),
-    )
-    monkeypatch.setattr(mod.scheduler, "collect_runtime_caps", lambda: [])
-    monkeypatch.setattr(
-        mod.scheduler, "catch_up", lambda: order.append(("catch_up", None))
-    )
-
-    def interrupt_supervise(coro):
-        coro.close()
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(mod.asyncio, "run", interrupt_supervise)
-
-    mod.main()
-
-    assert order[0] == ("register", None)
-    assert ("scheduler.init", True) in order
-    assert order.index(("register", None)) < order.index(("scheduler.init", True))

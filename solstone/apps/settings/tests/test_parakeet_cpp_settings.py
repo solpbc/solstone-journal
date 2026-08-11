@@ -85,8 +85,6 @@ def test_transcribe_payload_marks_linux_parakeet_cpp_runtime(
 
 
 def test_parakeet_cpp_device_round_trips_through_settings_config(settings_env) -> None:
-    from solstone.think import supervisor
-
     journal_path, config = settings_env()
     config["setup"] = {"completed_at": 1700000000000}
     (journal_path / "config" / "journal.json").write_text(
@@ -103,16 +101,6 @@ def test_parakeet_cpp_device_round_trips_through_settings_config(settings_env) -
     assert response.status_code == 200
     payload = client.get("/app/settings/api/config").get_json()
     assert payload["transcribe"]["parakeet-cpp"]["device"] == "cpu"
-    assert supervisor._configured_parakeet_device() == "cpu"
-    plan = supervisor.resolve_parakeet_server_launch_plan(
-        "cpu",
-        None,
-        binary_path=Path("/tmp/parakeet-server"),
-        model_path=Path("/tmp/model.gguf"),
-        threads=6,
-    )
-    assert plan.binary_backend == "cpu"
-    assert plan.env_updates == {}
 
     unknown = client.put(
         "/app/settings/api/config",

@@ -36,32 +36,6 @@ def _write_marker(tmp_path: Path, payload: dict) -> None:
     marker.write_text(json.dumps(payload))
 
 
-def test_signal_ready_writes_authoritative_marker(tmp_path, monkeypatch):
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    _pid, start_time = _write_identity(tmp_path)
-
-    readiness.signal_ready(
-        {"pid": 1, "ready_at": 2.0, "start_time": 3.0, "caller": "kept"}
-    )
-
-    payload = json.loads((tmp_path / readiness.MARKER_RELATIVE_PATH).read_text())
-    assert payload["pid"] == os.getpid()
-    assert payload["start_time"] == start_time
-    assert payload["ready_at"] != 2.0
-    assert payload["caller"] == "kept"
-
-
-def test_signal_ready_falls_back_when_start_time_missing(tmp_path, monkeypatch):
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    monkeypatch.setattr(readiness.time, "time", lambda: 123.5)
-
-    readiness.signal_ready()
-
-    payload = json.loads((tmp_path / readiness.MARKER_RELATIVE_PATH).read_text())
-    assert payload["ready_at"] == 123.5
-    assert payload["start_time"] == 123.5
-
-
 def test_clear_ready_removes_marker_and_tolerates_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     _health_dir(tmp_path)
@@ -137,10 +111,14 @@ def test_wait_ready_rejects_reused_pid(tmp_path, monkeypatch):
 def test_wait_ready_observes_marker_written_mid_flight(tmp_path, monkeypatch):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
     monkeypatch.setattr(readiness, "_POLL_INTERVAL_S", 0.02)
-    _write_identity(tmp_path)
-    timer = threading.Timer(
-        0.02, readiness.signal_ready, kwargs={"payload": {"stage": "ready"}}
-    )
+    pid, start_time = _write_identity(tmp_path)
+    payload = {
+        "pid": pid,
+        "ready_at": 50.0,
+        "start_time": start_time,
+        "stage": "ready",
+    }
+    timer = threading.Timer(0.02, _write_marker, args=(tmp_path, payload))
 
     try:
         timer.start()

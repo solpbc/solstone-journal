@@ -90,7 +90,6 @@ EXCLUDED_FILES: frozenset[str] = frozenset(
         # Ops/runtime state and single-process guards.
         "solstone/think/catchup_state.py",
         "solstone/think/scheduler.py",
-        "solstone/think/supervisor.py",
         "solstone/think/readiness.py",
         "solstone/think/providers/state.py",
         "solstone/think/providers/local_install.py",
@@ -109,7 +108,6 @@ EXCLUDED_FILES: frozenset[str] = frozenset(
         "solstone/think/voice/brain.py",
         "solstone/think/sync_check.py",
         "solstone/think/runner.py",
-        "solstone/think/start.py",
         # App-storage and temporary upload/transcription files.
         "solstone/apps/import/routes.py",
         "solstone/apps/support/routes.py",

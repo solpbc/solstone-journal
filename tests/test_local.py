@@ -1096,28 +1096,6 @@ def test_openhands_local_small_window_omits_caps_and_extra_body(monkeypatch):
     assert "litellm_extra_body" not in captured
 
 
-def test_local_context_window_split_floor_vs_tier():
-    import inspect
-
-    from solstone.think import supervisor
-    from solstone.think.providers import local_server, openhands
-
-    assert local_server.LOCAL_MIN_CONTEXT_TOKENS == 16384
-    removed_name = "_".join(("LOCAL", "SERVER", "CONTEXT", "TOKENS"))
-    assert not hasattr(local_server, removed_name)
-    truth_src = inspect.getsource(supervisor._observe_linux_local_provider_truth)
-    assert "select_server_tier" in truth_src
-    assert "tier.context_tokens" in truth_src
-    launcher_src = inspect.getsource(supervisor.start_local_server)
-    assert "select_server_tier" not in launcher_src
-    llama_launcher_src = inspect.getsource(supervisor._start_llama_local_server)
-    assert "_request_local_launch_plan(plan, port)" in llama_launcher_src
-    assert '"context_tokens"' in llama_launcher_src
-    assert '"16384"' not in launcher_src
-    llm_src = inspect.getsource(openhands._build_llm)
-    assert "LOCAL_MIN_CONTEXT_TOKENS" in llm_src
-
-
 def test_select_server_tier_vram_thresholds():
     from solstone.think.providers import local_server
 
