@@ -1,0 +1,255 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+#![cfg(unix)]
+
+use std::collections::BTreeSet;
+use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+#[path = "support/maturin_leaves.rs"]
+mod maturin_leaves;
+// This integration test directly exercises only a subset of warm module items.
+#[allow(dead_code)]
+#[path = "../src/warm.rs"]
+mod warm;
+
+use warm::{Classification, InventoryRow, collect_for_executable, inventory_rows};
+
+const FIXTURE_ROW: InventoryRow = InventoryRow {
+    binary_name: "warm-fixture",
+    distribution: "warm-fixture",
+    crate_name: "warm-fixture",
+    argv: &[],
+    expected: "fixture reaches main",
+};
+
+struct TempDir(tempfile::TempDir);
+
+impl TempDir {
+    fn new() -> Self {
+        Self(tempfile::tempdir().expect("create temporary directory"))
+    }
+
+    fn path(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+fn make_executable(path: &Path) {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make executable");
+}
+
+fn write_shim(path: &Path, script: &str) {
+    fs::write(path, script).expect("write shim");
+    make_executable(path);
+}
+
+fn executable_in(directory: &Path) -> PathBuf {
+    directory.join("solstone-core")
+}
+
+fn build_linked_fixture(directory: &Path) {
+    fs::write(
+        directory.join("lib.rs"),
+        "#[no_mangle]\npub extern \"C\" fn warm_fixture() {}\n",
+    )
+    .expect("write cdylib source");
+    fs::write(
+        directory.join("bin.rs"),
+        "extern \"C\" { fn warm_fixture(); }\nfn main() { unsafe { warm_fixture(); } }\n",
+    )
+    .expect("write binary source");
+
+    let library = directory.join("libwarm_fixture.so");
+    let status = Command::new("rustc")
+        .current_dir(directory)
+        .args(["--crate-type", "cdylib", "lib.rs", "-o"])
+        .arg(&library)
+        .status()
+        .expect("rustc must be available to build the cdylib fixture");
+    assert!(status.success(), "rustc must build the cdylib fixture");
+
+    let binary = directory.join(FIXTURE_ROW.binary_name);
+    let status = Command::new("rustc")
+        .current_dir(directory)
+        .args(["bin.rs", "-L", "native=.", "-l", "dylib=warm_fixture", "-C"])
+        .arg("link-arg=-Wl,-rpath,$ORIGIN")
+        .arg("-o")
+        .arg(&binary)
+        .status()
+        .expect("rustc must be available to build the linked fixture");
+    assert!(status.success(), "rustc must build the linked fixture");
+}
+
+#[test]
+fn warm_spawns_sibling_by_independent_witness() {
+    let temp = TempDir::new();
+    let bin = temp.path().join("bin");
+    fs::create_dir(&bin).expect("create bin directory");
+    let copied_core = executable_in(&bin);
+    fs::copy(env!("CARGO_BIN_EXE_solstone-core"), &copied_core).expect("copy core binary");
+    make_executable(&copied_core);
+
+    let marker = temp.path().join("witness");
+    for row in inventory_rows() {
+        if row.binary_name != "solstone-core" {
+            write_shim(
+                &bin.join(row.binary_name),
+                "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"$WARM_WITNESS\"\nexit 0\n",
+            );
+        }
+    }
+
+    // The copied core probes itself with --version; that terminates and cannot recurse into warm.
+    let output = Command::new(&copied_core)
+        .args(["warm", "--json"])
+        .env("WARM_WITNESS", &marker)
+        .output()
+        .expect("run copied core warm");
+    assert!(
+        output.status.success(),
+        "warm stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let witness = fs::read_to_string(marker).expect("sibling shim wrote witness");
+    assert!(witness.contains("solstone-core-journal --version"));
+}
+
+#[test]
+fn linked_fixture_runs_then_reports_missing_library() {
+    let temp = TempDir::new();
+    build_linked_fixture(temp.path());
+    let executable = executable_in(temp.path());
+    let report = collect_for_executable(&executable, &[FIXTURE_ROW]);
+    assert_eq!(report.records[0].classification, Classification::Ran);
+    assert_eq!(report.records[0].reason_code, "reached-own-code");
+
+    fs::rename(
+        temp.path().join("libwarm_fixture.so"),
+        temp.path().join("libwarm_fixture.so.hidden"),
+    )
+    .expect("hide fixture library");
+    let report = collect_for_executable(&executable, &[FIXTURE_ROW]);
+    let record = &report.records[0];
+    assert_eq!(record.classification, Classification::CannotLoad);
+    assert_eq!(record.reason_code, "loader-library-missing");
+    assert_eq!(
+        record.unresolved_library.as_deref(),
+        Some("libwarm_fixture.so")
+    );
+    assert_eq!(record.exit_code, Some(127));
+}
+
+#[test]
+fn signal_death_is_cannot_load() {
+    let temp = TempDir::new();
+    write_shim(
+        &temp.path().join(FIXTURE_ROW.binary_name),
+        "#!/bin/sh\nkill -TERM $$\n",
+    );
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW]);
+    let record = &report.records[0];
+    assert_eq!(record.classification, Classification::CannotLoad);
+    assert_eq!(record.reason_code, "terminated-by-signal");
+    assert_eq!(record.exit_code, None);
+    assert_eq!(record.signal, Some(15));
+}
+
+#[test]
+fn loader_failure_json_has_reason_library_and_house_fields() {
+    let temp = TempDir::new();
+    build_linked_fixture(temp.path());
+    fs::rename(
+        temp.path().join("libwarm_fixture.so"),
+        temp.path().join("libwarm_fixture.so.hidden"),
+    )
+    .expect("hide fixture library");
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW]);
+    let value = report.as_json();
+    let row = &value["binaries"][0];
+    assert_eq!(row["classification"], "cannot-load");
+    assert_eq!(row["reason-code"], "loader-library-missing");
+    assert_eq!(row["unresolved-library"], "libwarm_fixture.so");
+    for field in ["subject", "error", "expected", "actual", "repair-command"] {
+        assert!(row.get(field).is_some(), "missing {field}");
+    }
+    assert!(row["repair-command"].is_null());
+}
+
+#[test]
+fn cargo_marker_makes_absent_sibling_a_named_gap() {
+    let temp = TempDir::new();
+    let target = temp.path().join("cargo-target");
+    let debug = target.join("debug");
+    fs::create_dir_all(&debug).expect("create target debug directory");
+    fs::write(
+        target.join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n",
+    )
+    .expect("write Cargo target marker");
+    let report = collect_for_executable(&debug.join("solstone-core"), &[FIXTURE_ROW]);
+    let record = &report.records[0];
+    assert_eq!(record.classification, Classification::Unexercised);
+    assert_eq!(record.reason_code, "development-sibling-not-built");
+    assert!(!report.failed());
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+#[test]
+fn inventory_and_maturin_leaf_derivation_are_equal_both_directions() {
+    let inventory: BTreeSet<_> = inventory_rows()
+        .iter()
+        .map(|row| (row.crate_name.to_owned(), row.binary_name.to_owned()))
+        .collect();
+    let derived = maturin_leaves::host_packaged_binaries(&repo_root());
+    assert!(
+        inventory.is_subset(&derived),
+        "inventory has undeclared leaves"
+    );
+    assert!(
+        derived.is_subset(&inventory),
+        "maturin leaves are absent from inventory"
+    );
+}
+
+#[test]
+fn shared_derivation_ignores_non_bin_maturin_packages() {
+    let temp = TempDir::new();
+    let packages = temp.path().join("packages");
+    let valid = packages.join("valid");
+    fs::create_dir_all(valid.join("crate")).expect("create valid package");
+    fs::write(
+        valid.join("pyproject.toml"),
+        "build-backend = \"maturin\"\nbindings = \"bin\"\nmanifest-path = \"crate/Cargo.toml\"\n",
+    )
+    .expect("write valid pyproject");
+    fs::write(
+        valid.join("crate/Cargo.toml"),
+        "[package]\nname = \"valid-crate\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"valid-bin\"\npath = \"src/main.rs\"\n",
+    )
+    .expect("write valid manifest");
+    let invalid = packages.join("invalid");
+    fs::create_dir_all(&invalid).expect("create invalid package");
+    fs::write(
+        invalid.join("pyproject.toml"),
+        "build-backend = \"maturin\"\nbindings = \"pyo3\"\nmanifest-path = \"Cargo.toml\"\n",
+    )
+    .expect("write invalid pyproject");
+
+    assert_eq!(
+        maturin_leaves::host_packaged_binaries(temp.path()),
+        BTreeSet::from([("valid-crate".to_owned(), "valid-bin".to_owned())])
+    );
+}

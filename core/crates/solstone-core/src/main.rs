@@ -57,6 +57,7 @@ use solstone_core_journal_config_write::{
 };
 use solstone_core_observer::{CREATE_RETIRED_MESSAGE, ObserverCommand};
 mod talent_contract;
+mod warm;
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_INTERNAL_FAILURE: u8 = 70;
@@ -110,6 +111,13 @@ fn main() -> ExitCode {
         Ok(Command::Version) => {
             print!("{}", version_line(env!("CARGO_PKG_VERSION")));
             ExitCode::SUCCESS
+        }
+        Ok(Command::Warm { json }) => {
+            if warm::run(json) {
+                ExitCode::from(EXIT_UNAVAILABLE)
+            } else {
+                ExitCode::SUCCESS
+            }
         }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
             Ok(line) => {
