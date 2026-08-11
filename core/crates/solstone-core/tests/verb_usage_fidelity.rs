@@ -15,6 +15,8 @@
 
 use std::process::Command;
 
+use tempfile::tempdir;
+
 /// Every one of these is rejected by the reference with exit 2.
 const MALFORMED: &[&[&str]] = &[
     &["observer", "bogusverb"],
@@ -440,5 +442,86 @@ fn transcribe_selection_errors_match_the_reference() {
             expected_transcribe_error(message),
             "{args:?}"
         );
+    }
+}
+
+// --- facet-candidates -----------------------------------------------------
+
+#[test]
+fn malformed_facet_candidates_invocations_exit_2_before_supervisor_preflight() {
+    for args in [
+        ["facet-candidates", "--nonsense"].as_slice(),
+        ["facet-candidates", "extra-positional"].as_slice(),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .env_remove("SOLSTONE_JOURNAL")
+            .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
+            .env_remove("SOL_SUPERVISOR_SPAWNED")
+            .output()
+            .expect("run solstone-core facet-candidates");
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
+        assert!(
+            stderr.contains("usage: journal facet-candidates"),
+            "{stderr}"
+        );
+        assert!(!stderr.contains("solstone-core --version"), "{stderr}");
+    }
+}
+
+#[test]
+fn facet_candidates_help_is_structural_and_served_before_journal_resolution() {
+    for args in [["facet-candidates", "--help"], ["facet-candidates", "-h"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+            .args(args)
+            .env_remove("SOLSTONE_JOURNAL")
+            .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
+            .env_remove("SOL_SUPERVISOR_SPAWNED")
+            .output()
+            .expect("run solstone-core facet-candidates");
+        assert_eq!(output.status.code(), Some(0), "{args:?}");
+        assert_eq!(output.stderr, b"", "{args:?}");
+        let stdout = String::from_utf8(output.stdout).expect("UTF-8 stdout");
+        assert!(
+            stdout.starts_with("usage: journal facet-candidates [-h] [-v] [-d]\n"),
+            "{stdout}"
+        );
+        assert!(stdout.contains("-h, --help"), "{stdout}");
+        assert!(stdout.contains("-v, --verbose"), "{stdout}");
+        assert!(stdout.contains("-d, --debug"), "{stdout}");
+        assert!(
+            stdout.contains("Record recurring facet review candidates"),
+            "{stdout}"
+        );
+    }
+}
+
+fn run_facet_candidates(args: &[&str], journal: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .arg("facet-candidates")
+        .args(args)
+        .env("SOLSTONE_JOURNAL", journal)
+        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
+        .env_remove("SOL_SUPERVISOR_SPAWNED")
+        .output()
+        .expect("run solstone-core facet-candidates")
+}
+
+#[test]
+fn facet_candidates_logging_flags_do_not_change_output() {
+    let journal = tempdir().expect("create journal");
+    let baseline = run_facet_candidates(&[], journal.path());
+    assert_eq!(baseline.status.code(), Some(0));
+    for args in [
+        ["-v"].as_slice(),
+        ["-d"].as_slice(),
+        ["-v", "-d"].as_slice(),
+    ] {
+        let output = run_facet_candidates(args, journal.path());
+        assert_eq!(output.status.code(), baseline.status.code(), "{args:?}");
+        assert_eq!(output.stdout, baseline.stdout, "{args:?}");
+        assert_eq!(output.stderr, baseline.stderr, "{args:?}");
     }
 }

@@ -20,18 +20,20 @@ use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions, GRAB_HELP, GRAB_USAGE,
-    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, IndexerCommand,
-    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
-    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
-    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions,
+    Command, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP,
+    FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
+    GrabCommand, GrabOptions, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
+    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, ServiceOptions,
     SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE,
     TranscribeOptions, TransferCommand, TransferExportOptions, TransferImportOptions,
     TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
+mod facet_candidates;
 mod navigate;
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -131,6 +133,7 @@ fn main() -> ExitCode {
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
+        Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
@@ -158,6 +161,10 @@ fn main() -> ExitCode {
             print!("{TRANSCRIBE_HELP}");
             ExitCode::SUCCESS
         }
+        Ok(Command::FacetCandidatesHelp) => {
+            print!("{FACET_CANDIDATES_HELP}");
+            ExitCode::SUCCESS
+        }
         Ok(Command::ExportUsage) => {
             eprint!("{EXPORT_USAGE}");
             eprintln!("journal export: error: invalid arguments");
@@ -166,6 +173,11 @@ fn main() -> ExitCode {
         Ok(Command::TransferUsage) => {
             eprint!("{TRANSFER_USAGE}");
             eprintln!("journal transfer: error: invalid arguments");
+            ExitCode::from(2)
+        }
+        Ok(Command::FacetCandidatesUsage) => {
+            eprint!("{FACET_CANDIDATES_USAGE}");
+            eprintln!("journal facet-candidates: error: invalid arguments");
             ExitCode::from(2)
         }
         Ok(Command::ObserverHelp) => {
@@ -303,6 +315,17 @@ fn run_transcribe(options: TranscribeOptions) -> ExitCode {
             ExitCode::from(error.exit_code() as u8)
         }
     }
+}
+
+fn run_facet_candidates() -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    facet_candidates::run(&journal.path)
 }
 
 fn run_export(options: ExportOptions) -> ExitCode {

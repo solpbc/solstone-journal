@@ -17,7 +17,8 @@ pub const USAGE: &str = concat!(
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
-    "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n"
+    "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
+    "  solstone-core facet-candidates [-h] [-v] [-d]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
@@ -232,6 +233,21 @@ pub const TRANSCRIBE_USAGE: &str = concat!(
     "                          [audio_path]\n",
 );
 
+/// `journal facet-candidates --help`, verbatim from the reference.
+pub const FACET_CANDIDATES_HELP: &str = concat!(
+    "usage: journal facet-candidates [-h] [-v] [-d]\n",
+    "\n",
+    "Record recurring facet review candidates.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+/// The wrapped usage line argparse prints on a `journal facet-candidates` error.
+pub const FACET_CANDIDATES_USAGE: &str = "usage: journal facet-candidates [-h] [-v] [-d]\n";
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -281,6 +297,7 @@ pub enum Command {
     Transfer(TransferCommand),
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
+    FacetCandidates,
     Convey(ConveyOptions),
     Grab(GrabCommand),
     Spl(SplCommand),
@@ -300,6 +317,8 @@ pub enum Command {
     ExportUsage,
     ExportHelp,
     TranscribeHelp,
+    FacetCandidatesHelp,
+    FacetCandidatesUsage,
     TransferHelp(&'static str),
 }
 
@@ -756,6 +775,16 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
         }
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
+        [command, rest @ ..] if command == OsStr::new("facet-candidates") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::FacetCandidatesHelp);
+            }
+            Ok(parse_facet_candidates(rest)
+                .map_or(Command::FacetCandidatesUsage, |_| Command::FacetCandidates))
+        }
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
         }
@@ -1288,6 +1317,16 @@ fn parse_transcribe(args: &[OsString]) -> Result<Command, UsageError> {
         arguments.push(argument.clone().into_string().map_err(|_| UsageError)?);
     }
     Ok(Command::Transcribe(TranscribeOptions { arguments }))
+}
+
+fn parse_facet_candidates(args: &[OsString]) -> Result<(), UsageError> {
+    for argument in args {
+        match argument.to_str() {
+            Some("-v") | Some("--verbose") | Some("-d") | Some("--debug") => {}
+            _ => return Err(UsageError),
+        }
+    }
+    Ok(())
 }
 
 fn parse_convey(args: &[OsString]) -> Result<ConveyOptions, UsageError> {
@@ -4017,6 +4056,7 @@ mod tests {
             "supervisor",
             "navigate",
             "export",
+            "facet-candidates",
         ] {
             assert!(
                 USAGE.contains(&format!("solstone-core {command}")),
@@ -4024,6 +4064,49 @@ mod tests {
             );
         }
         assert!(USAGE.starts_with("Usage:\n"));
+    }
+
+    #[test]
+    fn parses_facet_candidates_arguments() {
+        for values in [
+            &["facet-candidates"][..],
+            &["facet-candidates", "-v"][..],
+            &["facet-candidates", "--verbose"][..],
+            &["facet-candidates", "-d"][..],
+            &["facet-candidates", "--debug"][..],
+            &["facet-candidates", "-d", "-v"][..],
+            &["facet-candidates", "--verbose", "--debug"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::FacetCandidates),
+                "{values:?}"
+            );
+        }
+
+        for values in [
+            &["facet-candidates", "--help"][..],
+            &["facet-candidates", "-h"][..],
+            &["facet-candidates", "-v", "--help"][..],
+            &["facet-candidates", "-d", "-h"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::FacetCandidatesHelp),
+                "{values:?}"
+            );
+        }
+
+        for values in [
+            &["facet-candidates", "--nonsense"][..],
+            &["facet-candidates", "extra-positional"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::FacetCandidatesUsage),
+                "{values:?}"
+            );
+        }
     }
 
     #[test]
