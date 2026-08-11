@@ -8,7 +8,8 @@ use std::{env, io};
 
 use solstone_core_journal::{
     ConfigError, HomeError, ResolvedJournal, Source, detect_checkout_root, discover_home,
-    read_config_journal, resolve_journal_path,
+    installed_site_packages_from_executable_dir, read_config_journal,
+    resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
 
 #[derive(Debug)]
@@ -88,15 +89,8 @@ pub(crate) fn resolve_project_root_from_executable(
     let Some(executable_dir) = executable.parent() else {
         return Err(ProjectRootError::Unclassified(executable.to_path_buf()));
     };
-    if let Some(site_packages) = installed_site_packages_from_executable_dir(executable_dir) {
-        return Ok(site_packages);
-    }
-    for candidate in executable_dir.ancestors() {
-        if is_solstone_checkout_root(candidate) {
-            return Ok(candidate.to_path_buf());
-        }
-    }
-    Err(ProjectRootError::Unclassified(executable.to_path_buf()))
+    resolve_installation_root_from_executable_dir(executable_dir)
+        .ok_or_else(|| ProjectRootError::Unclassified(executable.to_path_buf()))
 }
 
 pub(crate) fn inspect_journal_days(journal: &Path) -> Result<Option<usize>, io::Error> {
@@ -137,49 +131,6 @@ pub(crate) fn inspect_journal_days(journal: &Path) -> Result<Option<usize>, io::
     Ok(Some(days))
 }
 
-pub(crate) fn installed_site_packages_from_executable_dir(
-    executable_dir: &Path,
-) -> Option<PathBuf> {
-    let prefix = executable_dir.parent()?;
-    let entries = fs::read_dir(prefix).ok()?;
-    let mut candidates = Vec::new();
-    for lib_entry in entries.flatten() {
-        let lib_path = lib_entry.path();
-        if !lib_path.is_dir() {
-            continue;
-        }
-        let Some(lib_name) = lib_path.file_name().and_then(OsStr::to_str) else {
-            continue;
-        };
-        if !lib_name.starts_with("lib") {
-            continue;
-        }
-        let Ok(python_entries) = fs::read_dir(&lib_path) else {
-            continue;
-        };
-        for python_entry in python_entries.flatten() {
-            let python_path = python_entry.path();
-            if !python_path.is_dir() {
-                continue;
-            }
-            let Some(python_name) = python_path.file_name().and_then(OsStr::to_str) else {
-                continue;
-            };
-            if !python_name.starts_with("python") {
-                continue;
-            }
-            for package_dir_name in ["site-packages", "dist-packages"] {
-                let package_dir = python_path.join(package_dir_name);
-                let init = package_dir.join("solstone").join("__init__.py");
-                if fs::metadata(&init).is_ok_and(|metadata| metadata.is_file()) {
-                    candidates.push(package_dir);
-                }
-            }
-        }
-    }
-    resolve_canonical_site_packages(&candidates)
-}
-
 fn discover_current_home() -> Result<PathBuf, HomeError> {
     let home_env = env::var_os("HOME");
     if let Some(home) = home_env.as_deref() {
@@ -196,22 +147,6 @@ fn detect_current_checkout_root() -> Option<PathBuf> {
         return None;
     }
     executable_dir.ancestors().find_map(detect_checkout_root)
-}
-
-fn resolve_canonical_site_packages(candidates: &[PathBuf]) -> Option<PathBuf> {
-    let mut canonical = candidates
-        .iter()
-        .filter_map(|candidate| fs::canonicalize(candidate).ok())
-        .collect::<Vec<_>>();
-    canonical.sort();
-    canonical.dedup();
-    canonical.into_iter().next()
-}
-
-fn is_solstone_checkout_root(candidate: &Path) -> bool {
-    candidate.join("pyproject.toml").is_file()
-        && candidate.join(".git").exists()
-        && candidate.join("solstone").is_dir()
 }
 
 fn is_day_dir_name(value: &str) -> bool {
