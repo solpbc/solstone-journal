@@ -2395,6 +2395,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
  "solstone-core-system",
+ "solstone-core-transcribe",
  "solstone-core-transfer",
  "spl-core",
  "tempfile",
