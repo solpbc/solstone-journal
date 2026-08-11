@@ -45,7 +45,10 @@ fn main() {
             let holder_mode = args
                 .next()
                 .unwrap_or_else(|| "orphan-sweep-holder".to_owned());
-            let executable = std::env::current_exe().expect("fixture executable");
+            let executable = args
+                .next()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::env::current_exe().expect("fixture executable"));
             let child = Command::new(executable)
                 .args([&holder_mode, &journal, &ready_path])
                 .env("SOLSTONE_JOURNAL", &journal)
