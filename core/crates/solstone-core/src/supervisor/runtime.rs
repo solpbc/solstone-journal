@@ -590,36 +590,29 @@ pub(crate) async fn boot_and_tick(
         launch_recorded_for: None,
         fixture_launch,
     };
-    // This is a seeded stub, not a production-faithful launch — do not wire
-    // `journal supervisor`/`journal start` to this binary until all four are
-    // closed:
-    //   - Installed-artifact resolution: hardcoded bare names
-    //     ("parakeet-server", "parakeet") resolved via PATH, only overridable
-    //     by SOLSTONE_PARAKEET_BINARY/SOLSTONE_PARAKEET_MODEL. Python resolves
-    //     the installed artifact under the provider cache root via
-    //     `parakeet_install.inspect_readiness()` / `.target_fingerprint()`
-    //     (solstone/think/providers/parakeet_install.py, kept — not deleted by
-    //     the W9c cutover).
-    //   - Device selection: hardcoded `binary_backend: "cpu"` /
-    //     `ParakeetPlacement::Cpu`, never reads config. Python reads
-    //     `transcribe.parakeet-cpp.device` via `_configured_parakeet_device()`
-    //     (solstone/think/supervisor.py) and resolves cpu-vs-vulkan/GPU-index
-    //     via `_resolve_parakeet_backend()` and
-    //     `parakeet_placement.decide_parakeet_auto_placement()`
-    //     (solstone/think/providers/parakeet_placement.py, kept).
-    //   - Thread count: hardcoded `threads: 4`. Python derives it from actual
-    //     host topology via `parakeet_physical_thread_count()`
-    //     (`psutil.cpu_count(logical=False)`, solstone/think/supervisor.py).
-    //   - Truth seam: `truth: NoopWorkers` and `next_truth_at: f64::MAX` mean
-    //     desired-vs-actual state is never re-observed after boot. Local
-    //     already has this in `LocalTruthSeam` (implements
-    //     `TruthObservationSeam`,
-    //     core/crates/solstone-core-system/src/provider_runtime/launch.rs:401);
-    //     Parakeet has no counterpart. Python's equivalent is the periodic
-    //     `_reconcile_parakeet_provider_runtime()` tick
-    //     (solstone/think/supervisor.py) driving truth submission/handling
-    //     against the observation function that composes the three items
-    //     above into a `ParakeetServerLaunchPlan`.
+    // The four blockers that once made this a seeded stub are CLOSED. Keeping
+    // the contract here, satisfied rather than deleted, because it is what a
+    // cutover wave reads to decide whether it may proceed:
+    //   - Installed-artifact resolution: `ParakeetTruthSeam` derives pinned
+    //     binary and model paths and verifies each resolves to a regular file.
+    //     No bare PATH-resolved names.
+    //   - Device selection: reads `transcribe.parakeet-cpp.device` via
+    //     `configured_parakeet_device()`, resolves the backend and GPU index,
+    //     and WARNS with the configured value when one cannot be honoured.
+    //   - Thread count: `parakeet_physical_thread_count()` — physical cores
+    //     from `/proc/cpuinfo` on Linux, with a documented fallback. Not a
+    //     constant.
+    //   - Truth seam: a real `ParakeetTruthSeam` replaces `NoopWorkers`, and
+    //     the `next_truth_at: f64::MAX` sentinel is gone, so desired-vs-actual
+    //     state is re-observed on the tick like Local's.
+    //
+    // ⚠ STILL NARROWER THAN PYTHON, and deliberately — see the module header on
+    // `provider_runtime::parakeet_truth_seam`. It does not yet inspect
+    // manifests, proof state, install progress, or binary host eligibility, and
+    // native Vulkan enumeration plus the `decide_parakeet_auto_placement` /
+    // `is_local_provider_needed` co-location branch remain follow-up work. Those
+    // gaps degrade placement quality; they do not leave the provider unmanaged,
+    // which is the distinction that gated the cutover.
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let parakeet_fixture = std::env::var(PARAKEET_FIXTURE_ENV).as_deref() == Ok("1");
     let parakeet_truth = if parakeet_fixture {
