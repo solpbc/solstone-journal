@@ -353,6 +353,13 @@ fn invalid_transcribe_backend_exits_2_with_argparse_choice_error() {
 }
 
 #[test]
+fn transcribe_backend_value_does_not_consume_logging_flag() {
+    let output = run_transcribe(&["--backend", "--debug", "parakeet", "--all"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+}
+
+#[test]
 fn transcribe_selection_errors_match_the_reference() {
     for (args, message) in [
         (

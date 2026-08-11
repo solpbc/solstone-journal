@@ -713,15 +713,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             // argparse exits 2 here, not 64.
             Ok(parse_export(rest).map_or(Command::ExportUsage, Command::Export))
         }
-        [command, rest @ ..] if command == OsStr::new("transcribe") => {
-            let help = |argument: &OsString| {
-                argument == OsStr::new("--help") || argument == OsStr::new("-h")
-            };
-            if rest.iter().any(help) {
-                return Ok(Command::TranscribeHelp);
-            }
-            parse_transcribe(rest).map(Command::Transcribe)
-        }
+        [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("convey") => {
             parse_convey(rest).map(Command::Convey)
         }
@@ -1140,22 +1132,33 @@ fn parse_export(args: &[OsString]) -> Result<ExportOptions, UsageError> {
     })
 }
 
-fn parse_transcribe(args: &[OsString]) -> Result<TranscribeOptions, UsageError> {
-    let arguments = args
-        .iter()
-        .filter(|argument| {
-            !matches!(
-                argument.as_os_str(),
-                value
-                    if value == OsStr::new("-v")
-                        || value == OsStr::new("--verbose")
-                        || value == OsStr::new("-d")
-                        || value == OsStr::new("--debug")
-            )
-        })
-        .map(|argument| argument.clone().into_string().map_err(|_| UsageError))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(TranscribeOptions { arguments })
+fn parse_transcribe(args: &[OsString]) -> Result<Command, UsageError> {
+    let mut arguments = Vec::with_capacity(args.len());
+    let mut iter = args.iter();
+    while let Some(argument) = iter.next() {
+        if argument == OsStr::new("--backend") {
+            arguments.push(argument.clone().into_string().map_err(|_| UsageError)?);
+            if let Some(value) = iter.next() {
+                arguments.push(value.clone().into_string().map_err(|_| UsageError)?);
+            }
+            continue;
+        }
+        if argument == OsStr::new("-h") || argument == OsStr::new("--help") {
+            return Ok(Command::TranscribeHelp);
+        }
+        if matches!(
+            argument.as_os_str(),
+            value
+                if value == OsStr::new("-v")
+                    || value == OsStr::new("--verbose")
+                    || value == OsStr::new("-d")
+                    || value == OsStr::new("--debug")
+        ) {
+            continue;
+        }
+        arguments.push(argument.clone().into_string().map_err(|_| UsageError)?);
+    }
+    Ok(Command::Transcribe(TranscribeOptions { arguments }))
 }
 
 fn parse_convey(args: &[OsString]) -> Result<ConveyOptions, UsageError> {
@@ -2524,6 +2527,29 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["transcribe", "--nonsense", "-h"])),
             Ok(Command::TranscribeHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "transcribe",
+                "--backend",
+                "--debug",
+                "parakeet",
+                "--all",
+            ])),
+            Ok(Command::Transcribe(TranscribeOptions {
+                arguments: vec![
+                    "--backend".to_owned(),
+                    "--debug".to_owned(),
+                    "parakeet".to_owned(),
+                    "--all".to_owned(),
+                ],
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["transcribe", "--backend", "-h", "--all"])),
+            Ok(Command::Transcribe(TranscribeOptions {
+                arguments: vec!["--backend".to_owned(), "-h".to_owned(), "--all".to_owned()],
+            }))
         );
     }
 
