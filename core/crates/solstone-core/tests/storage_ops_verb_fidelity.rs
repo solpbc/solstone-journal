@@ -283,7 +283,10 @@ fn storage_ops_real_work_reaches_each_body() {
     assert!(text(empty_backfill.stdout).contains("stamp_empty: 0"));
     let empty_stats = run_journal(empty.path(), &["journal-stats"], false);
     assert_eq!(empty_stats.status.code(), Some(0));
-    assert!(empty.path().join("stats.json").is_file());
+    let empty_document: serde_json::Value =
+        serde_json::from_slice(&fs::read(empty.path().join("stats.json")).expect("empty stats"))
+            .expect("parse empty stats");
+    assert_eq!(empty_document["day_count"], 0);
 }
 
 #[test]
