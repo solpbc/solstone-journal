@@ -6,12 +6,14 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use chrono::{DateTime, Local};
@@ -141,10 +143,18 @@ pub struct PdfWorkerRequest {
 }
 
 #[derive(Clone, Debug)]
-pub struct WorkerFailure {
-    pub exit_code: Option<i32>,
-    pub error: String,
-    pub detail: Option<String>,
+pub enum WorkerFailure {
+    Process {
+        exit_code: Option<i32>,
+        error: String,
+        detail: Option<String>,
+    },
+    TimedOut {
+        timeout: Duration,
+    },
+    ProtocolViolation {
+        detail: String,
+    },
 }
 
 /// PDF worker boundary. Fakes receive typed input rather than needing to parse argv.
@@ -195,45 +205,76 @@ impl PdfWorker for SystemPdfWorker {
                 .arg("--dpi")
                 .arg(render.dpi.to_string());
         }
-        let mut child = command.spawn().map_err(|error| WorkerFailure {
+        let mut child = command.spawn().map_err(|error| WorkerFailure::Process {
             exit_code: Some(1),
             error: "worker spawn failed".to_owned(),
             detail: Some(error.to_string()),
         })?;
-        let started = SystemTime::now();
-        loop {
-            if child
-                .try_wait()
-                .map_err(|error| WorkerFailure {
-                    exit_code: Some(1),
-                    error: "worker wait failed".to_owned(),
-                    detail: Some(error.to_string()),
-                })?
-                .is_some()
-            {
-                break;
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        let stdout_reader = thread::spawn(move || read_worker_stream(stdout));
+        let stderr_reader = thread::spawn(move || read_worker_stream(stderr));
+        let started = Instant::now();
+        let mut timed_out = false;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
+                    return Err(WorkerFailure::Process {
+                        exit_code: Some(1),
+                        error: "worker wait failed".to_owned(),
+                        detail: Some(error.to_string()),
+                    });
+                }
+                Ok(None) if started.elapsed() >= self.timeout => {
+                    timed_out = true;
+                    let _ = child.kill();
+                    break child.wait().map_err(|error| WorkerFailure::Process {
+                        exit_code: Some(1),
+                        error: "worker wait failed".to_owned(),
+                        detail: Some(error.to_string()),
+                    })?;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(10)),
             }
-            if started.elapsed().unwrap_or_default() >= self.timeout {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(WorkerFailure {
-                    exit_code: None,
-                    error: "worker timed out".to_owned(),
-                    detail: None,
-                });
-            }
-            thread::sleep(Duration::from_millis(10));
+        };
+        let stdout =
+            join_worker_reader(stdout_reader).map_err(|detail| WorkerFailure::Process {
+                exit_code: Some(1),
+                error: "worker output failed".to_owned(),
+                detail: Some(detail),
+            })?;
+        let stderr =
+            join_worker_reader(stderr_reader).map_err(|detail| WorkerFailure::Process {
+                exit_code: Some(1),
+                error: "worker output failed".to_owned(),
+                detail: Some(detail),
+            })?;
+        if timed_out {
+            return Err(WorkerFailure::TimedOut {
+                timeout: self.timeout,
+            });
         }
-        let output = child.wait_with_output().map_err(|error| WorkerFailure {
-            exit_code: Some(1),
-            error: "worker output failed".to_owned(),
-            detail: Some(error.to_string()),
-        })?;
-        if output.status.success() {
-            return serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure {
-                exit_code: output.status.code(),
-                error: "worker response decode failed".to_owned(),
-                detail: Some(error.to_string()),
+        if status.success() {
+            let payload =
+                serde_json::from_slice(&stdout).map_err(|error| WorkerFailure::Process {
+                    exit_code: status.code(),
+                    error: "worker response decode failed".to_owned(),
+                    detail: Some(error.to_string()),
+                })?;
+            validate_worker_payload(&payload, request.command)
+                .map_err(|detail| WorkerFailure::ProtocolViolation { detail })?;
+            return Ok(payload);
+        }
+        if status.code().is_none() {
+            return Err(WorkerFailure::Process {
+                exit_code: None,
+                error: "PDF worker terminated by signal".to_owned(),
+                detail: Some(worker_termination_detail(&status, &stderr)),
             });
         }
         #[derive(Deserialize)]
@@ -241,16 +282,72 @@ impl PdfWorker for SystemPdfWorker {
             error: Option<String>,
             detail: Option<String>,
         }
-        let body = serde_json::from_slice::<ErrorBody>(&output.stdout).unwrap_or(ErrorBody {
+        let body = serde_json::from_slice::<ErrorBody>(&stdout).unwrap_or(ErrorBody {
             error: None,
-            detail: Some(String::from_utf8_lossy(&output.stderr).into_owned()),
+            detail: Some(String::from_utf8_lossy(&stderr).into_owned()),
         });
-        Err(WorkerFailure {
-            exit_code: output.status.code(),
+        Err(WorkerFailure::Process {
+            exit_code: status.code(),
             error: body.error.unwrap_or_else(|| "PDF worker failed".to_owned()),
             detail: body.detail,
         })
     }
+}
+
+fn read_worker_stream(mut stream: impl Read) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    stream.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn join_worker_reader(
+    reader: thread::JoinHandle<std::io::Result<Vec<u8>>>,
+) -> Result<Vec<u8>, String> {
+    reader
+        .join()
+        .map_err(|_| "worker output reader panicked".to_owned())?
+        .map_err(|error| error.to_string())
+}
+
+fn worker_termination_detail(status: &std::process::ExitStatus, stderr: &[u8]) -> String {
+    let mut detail = "PDF worker terminated by signal".to_owned();
+    #[cfg(unix)]
+    if let Some(signal) = std::os::unix::process::ExitStatusExt::signal(status) {
+        detail.push(' ');
+        detail.push_str(&signal.to_string());
+    }
+    let stderr = String::from_utf8_lossy(stderr);
+    let stderr = collapse_line(&stderr);
+    if !stderr.is_empty() {
+        detail.push_str(": ");
+        detail.push_str(&stderr);
+    }
+    detail
+}
+
+fn validate_worker_payload(payload: &PdfPayload, command: PdfCommand) -> Result<(), String> {
+    if payload.schema != "sol-pdf/1" {
+        return Err("expected sol-pdf/1 response".to_owned());
+    }
+    if payload.engine.is_empty() {
+        return Err("response engine is missing".to_owned());
+    }
+    if payload.pages.len() != payload.page_count {
+        return Err(format!(
+            "response page count {} does not match {} page records",
+            payload.page_count,
+            payload.pages.len()
+        ));
+    }
+    if command == PdfCommand::Extract
+        && payload
+            .pages
+            .iter()
+            .any(|page| page.error.is_none() && page.text.is_none())
+    {
+        return Err("extract response is missing page text".to_owned());
+    }
+    Ok(())
 }
 
 /// Model boundary for document page calls.
@@ -296,6 +393,7 @@ pub struct DocumentImportRequest<'a> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DocumentFailure {
     Internal { detail: String },
+    Protocol { detail: String },
     CallerBug { detail: String },
     PasswordRequired,
     Corrupt { detail: String },
@@ -308,6 +406,9 @@ impl fmt::Display for DocumentFailure {
         match self {
             Self::Internal { detail } => {
                 write!(formatter, "PDF worker internal failure ({detail})")
+            }
+            Self::Protocol { detail } => {
+                write!(formatter, "PDF worker protocol failure ({detail})")
             }
             Self::CallerBug { detail } => {
                 write!(formatter, "PDF import configuration error ({detail})")
@@ -354,7 +455,7 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
                 dates.push(claim_timestamp(&payload, source, request.now).timestamp);
                 page_count += payload.page_count;
             }
-            Err(failure) => failures.push(owner_message(source, &failure, Duration::ZERO)),
+            Err(failure) => failures.push(owner_message(source, &failure)),
         }
     }
     let mut days = dates.into_iter().map(day_for).collect::<Vec<_>>();
@@ -407,7 +508,7 @@ pub fn import(
         )) {
             Ok(payload) => payload,
             Err(failure) => {
-                let message = owner_message(source, &failure, Duration::ZERO);
+                let message = owner_message(source, &failure);
                 errors.push(message.clone());
                 hard_failures.push(message);
                 continue;
@@ -449,43 +550,47 @@ pub fn import(
             .join(STREAM)
             .join(&claim.segment);
         let render_pages = render_set(&first);
-        let second = if render_pages.is_empty() {
+        let render = if render_pages.is_empty() {
             None
         } else {
-            let render_dir = segment_dir.join(".render");
-            if let Err(error) = create_document_artifact_directories(&segment_dir, &render_dir) {
-                errors.push(format!(
-                    "{}: document import failed ({error})",
-                    display_name(source)
-                ));
-                continue;
-            }
+            let render_dir = match create_temporary_render_directory() {
+                Ok(render_dir) => render_dir,
+                Err(error) => {
+                    errors.push(format!(
+                        "{}: document import failed ({error})",
+                        display_name(source)
+                    ));
+                    continue;
+                }
+            };
             match worker.execute(&worker_request(
                 PdfCommand::Extract,
                 source,
                 request.password,
                 Some(PdfRenderOptions {
                     pages: render_pages,
-                    render_dir,
+                    render_dir: render_dir.path().to_path_buf(),
                     dpi: RENDER_DPI,
                 }),
             )) {
-                Ok(payload) => Some(payload),
+                Ok(payload) => Some((render_dir, payload)),
                 Err(failure) => {
-                    let message = owner_message(source, &failure, Duration::ZERO);
+                    let message = owner_message(source, &failure);
                     errors.push(message.clone());
                     hard_failures.push(message);
                     continue;
                 }
             }
         };
-        let (rasters, render_errors) = rendered_pages(
-            second.as_ref().unwrap_or(&first),
-            &segment_dir.join(".render"),
-        );
+        let (rasters, render_errors) = if let Some((render_dir, payload)) = &render {
+            rendered_pages(payload, render_dir.path())
+        } else {
+            Default::default()
+        };
+        let second = render.as_ref().map(|(_, payload)| payload);
         let warnings = merge_warnings(
             &first.warnings,
-            second.as_ref().map_or(&[], |payload| &payload.warnings),
+            second.map_or(&[], |payload| &payload.warnings),
         );
         let prepared = render_document(
             RenderDocumentInput {
@@ -874,9 +979,11 @@ fn render_page(
 ) -> String {
     let mut section = format!("## Page {}\n\n", page.index);
     let raster = rasters.get(&page.index);
-    if page.error.is_none() && page.chars >= PAGE_TEXT_MIN_CHARS {
+    if page.error.is_none()
+        && page.chars >= PAGE_TEXT_MIN_CHARS
+        && let Some(text) = page.text.as_deref()
+    {
         stats.text_layer_pages += 1;
-        let text = page.text.as_deref().unwrap_or_default();
         section.push_str(text);
         if !text.ends_with('\n') {
             section.push('\n');
@@ -913,6 +1020,19 @@ fn render_page(
             }
             section.push('\n');
         }
+        return section.trim_end_matches('\n').to_owned();
+    }
+    if page.error.is_none() && page.chars >= PAGE_TEXT_MIN_CHARS {
+        stats.unavailable_pages += 1;
+        section.push_str(&marker(
+            if raster.is_some() {
+                MARKER_PAGE_TEXT_UNAVAILABLE_WITH_RASTER
+            } else {
+                MARKER_PAGE_TEXT_UNAVAILABLE_NO_RASTER
+            },
+            page.index,
+            Some(&format!("page {}: text layer missing", page.index)),
+        ));
         return section.trim_end_matches('\n').to_owned();
     }
     if page.error.is_none()
@@ -1103,10 +1223,6 @@ fn install_artifacts(
     }
     let transcript = segment_dir.join(TRANSCRIPT);
     write_document_transcript(&transcript, &prepared.transcript)?;
-    let render_dir = segment_dir.join(".render");
-    if render_dir.exists() {
-        fs::remove_dir_all(&render_dir).map_err(|error| error.to_string())?;
-    }
     Ok(transcript.display().to_string())
 }
 
@@ -1147,7 +1263,7 @@ fn install_source_file(
         .parent()
         .ok_or_else(|| "destination has no parent".to_owned())?;
     create_directory_with_mode(parent, DIRECTORY_MODE).map_err(|error| error.to_string())?;
-    let temporary = temporary_path(parent, destination.file_name().unwrap_or_default());
+    let temporary = create_temporary_file(parent, destination.file_name().unwrap_or_default());
     fs::copy(source, &temporary).map_err(|error| error.to_string())?;
     install_file(
         &temporary,
@@ -1162,7 +1278,7 @@ fn install_source_file(
         .map_err(|error| error.to_string())
 }
 
-fn temporary_path(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
+fn create_temporary_file(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
     loop {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let candidate = parent.join(format!(".{}.{}.tmp", name.to_string_lossy(), sequence));
@@ -1173,6 +1289,43 @@ fn temporary_path(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
             .is_ok()
         {
             return candidate;
+        }
+    }
+}
+
+struct TemporaryRenderDirectory {
+    path: PathBuf,
+}
+
+impl TemporaryRenderDirectory {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TemporaryRenderDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn create_temporary_render_directory() -> Result<TemporaryRenderDirectory, String> {
+    let parent = std::env::temp_dir();
+    loop {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(
+            "solstone-document-render-{}-{sequence}",
+            std::process::id()
+        ));
+        match fs::create_dir(&path) {
+            Ok(()) => {
+                #[cfg(unix)]
+                fs::set_permissions(&path, fs::Permissions::from_mode(DIRECTORY_MODE))
+                    .map_err(|error| error.to_string())?;
+                return Ok(TemporaryRenderDirectory { path });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
         }
     }
 }
@@ -1203,24 +1356,31 @@ fn write_document_content_manifest(
     .map_err(|error| error.to_string())
 }
 
-fn owner_message(source: &Path, failure: &WorkerFailure, timeout: Duration) -> String {
-    format!(
-        "{}: {}",
-        display_name(source),
-        owner_failure(failure, timeout)
-    )
+fn owner_message(source: &Path, failure: &WorkerFailure) -> String {
+    format!("{}: {}", display_name(source), owner_failure(failure))
 }
 
-fn owner_failure(failure: &WorkerFailure, timeout: Duration) -> DocumentFailure {
-    let detail = collapse_line(failure.detail.as_deref().unwrap_or(&failure.error));
-    match failure.exit_code {
-        None => DocumentFailure::TimedOut { timeout },
-        Some(1) => DocumentFailure::Internal { detail },
-        Some(2) => DocumentFailure::CallerBug { detail },
-        Some(3) => DocumentFailure::PasswordRequired,
-        Some(4) => DocumentFailure::Corrupt { detail },
-        Some(5) => DocumentFailure::RenderIo { detail },
-        Some(_) => DocumentFailure::Internal { detail },
+fn owner_failure(failure: &WorkerFailure) -> DocumentFailure {
+    match failure {
+        WorkerFailure::TimedOut { timeout } => DocumentFailure::TimedOut { timeout: *timeout },
+        WorkerFailure::ProtocolViolation { detail } => DocumentFailure::Protocol {
+            detail: collapse_line(detail),
+        },
+        WorkerFailure::Process {
+            exit_code,
+            error,
+            detail,
+        } => {
+            let detail = collapse_line(detail.as_deref().unwrap_or(error));
+            match exit_code {
+                Some(1) => DocumentFailure::Internal { detail },
+                Some(2) => DocumentFailure::CallerBug { detail },
+                Some(3) => DocumentFailure::PasswordRequired,
+                Some(4) => DocumentFailure::Corrupt { detail },
+                Some(5) => DocumentFailure::RenderIo { detail },
+                Some(_) | None => DocumentFailure::Internal { detail },
+            }
+        }
     }
 }
 

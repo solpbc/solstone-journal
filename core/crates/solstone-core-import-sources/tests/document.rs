@@ -18,7 +18,7 @@ use solstone_core_generate::{
 use solstone_core_import::{CreatedSegment, PublicationOperations, observe_source_immutability};
 use solstone_core_import_sources::document::{
     DocumentImportRequest, DocumentModelClient, PdfCommand, PdfMetadata, PdfPage, PdfPayload,
-    PdfWorker, PdfWorkerRequest, WorkerFailure, import,
+    PdfWorker, PdfWorkerRequest, SystemPdfWorker, WorkerFailure, import,
 };
 use solstone_core_indexer_store::scan::RescanFileStatus;
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError};
@@ -243,7 +243,7 @@ fn ac7_document_worker_exit_classes_are_distinct_owner_outcomes() {
     for (exit_code, wording) in expected {
         let tree = TestTree::new();
         let source = tree.pdf("failure.pdf", b"source");
-        let worker = FakeWorker::new(vec![Err(WorkerFailure {
+        let worker = FakeWorker::new(vec![Err(WorkerFailure::Process {
             exit_code: Some(exit_code),
             error: "failure".to_owned(),
             detail: Some("detail".to_owned()),
@@ -265,6 +265,44 @@ fn ac7_document_worker_exit_classes_are_distinct_owner_outcomes() {
     actual.sort();
     actual.dedup();
     assert_eq!(actual.len(), 5);
+
+    let tree = TestTree::new();
+    let source = tree.pdf("timeout.pdf", b"source");
+    let worker = FakeWorker::new(vec![Err(WorkerFailure::TimedOut {
+        timeout: Duration::from_secs(90),
+    })]);
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::default();
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+    assert!(result.hard_failures[0].contains("PDF worker timed out after 90s"));
+
+    let tree = TestTree::new();
+    let source = tree.pdf("terminated.pdf", b"source");
+    let worker = FakeWorker::new(vec![Err(WorkerFailure::Process {
+        exit_code: None,
+        error: "PDF worker terminated by signal".to_owned(),
+        detail: Some("PDF worker terminated by signal 9".to_owned()),
+    })]);
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::default();
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+    assert!(result.hard_failures[0].contains("PDF worker internal failure"));
+    assert!(result.hard_failures[0].contains("terminated by signal 9"));
+    assert!(!result.hard_failures[0].contains("timed out"));
 }
 
 #[test]
@@ -351,6 +389,123 @@ fn ac9_document_publication_days_come_from_claim_not_misleading_path() {
     assert_ne!(expected_day, "20991231");
     assert_eq!(result.segments.as_ref().unwrap()[0].0, expected_day);
     assert_eq!(publication.days(), vec![expected_day]);
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_reads_large_stdout_without_timeout() {
+    let tree = TestTree::new();
+    let source = tree.pdf("large.pdf", b"source");
+    let script = write_executable_script(
+        &tree,
+        "large-worker.sh",
+        "#!/bin/sh\nprintf '%s' '{\"schema\":\"sol-pdf/1\",\"engine\":\"test\",\"page_count\":1,\"pages\":[{\"index\":1,\"chars\":262145,\"text\":\"'\nhead -c 262145 /dev/zero | tr '\\000' x\nprintf '%s\\n' '\"}]}'\n",
+    );
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+
+    let payload = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap();
+
+    assert_eq!(payload.schema, "sol-pdf/1");
+    assert_eq!(payload.pages.len(), 1);
+    assert_eq!(payload.pages[0].text.as_deref().unwrap().len(), 262_145);
+}
+
+#[cfg(unix)]
+#[test]
+fn document_rejects_invalid_worker_protocol_before_artifact_writes() {
+    let tree = TestTree::new();
+    let source = tree.pdf("invalid.pdf", b"source");
+    let script = write_executable_script(&tree, "invalid-worker.sh", "#!/bin/sh\nprintf '{}\\n'\n");
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::default();
+
+    let result = import(
+        DocumentImportRequest {
+            source: &source,
+            journal_root: tree.journal(),
+            import_dir: tree.import_dir(),
+            import_id: "document-test",
+            revision: None,
+            password: None,
+            force: false,
+            now: SystemTime::now(),
+        },
+        &worker,
+        &model,
+        &publication,
+    );
+
+    assert_eq!(result.entries_written, 0);
+    assert!(result.hard_failures[0].contains("PDF worker protocol failure"));
+    assert!(!tree.journal().join("chronicle").exists());
+    assert!(!tree.import_dir().join("content_manifest.jsonl").exists());
+}
+
+#[test]
+fn document_second_pass_failure_creates_no_segment_directory() {
+    let tree = TestTree::new();
+    let source = tree.pdf("render-failure.pdf", b"source");
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(1, 0, 0.0, None)])),
+        Err(WorkerFailure::Process {
+            exit_code: Some(5),
+            error: "render failed".to_owned(),
+            detail: Some("output failed".to_owned()),
+        }),
+    ]);
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::default();
+
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+
+    assert_eq!(result.entries_written, 0);
+    assert!(!tree.journal().join("chronicle").exists());
+}
+
+#[test]
+fn document_missing_text_layer_emits_raster_backed_unavailable_marker() {
+    let tree = TestTree::new();
+    let source = tree.pdf("missing-text.pdf", b"source");
+    let worker = FakeWorker::new(vec![
+        Ok(payload(vec![page(1, 50, 0.10, None)])),
+        Ok(payload(vec![rendered_page(1)])),
+    ]);
+    let model = FakeModel::generated([]);
+    let publication = FakePublication::default();
+    let result = run_import(
+        &tree,
+        &source,
+        &worker,
+        &model,
+        &publication,
+        SystemTime::now(),
+    );
+
+    let transcript = fs::read_to_string(transcript_path(&tree, &result)).unwrap();
+    assert!(transcript.contains(
+        "> [page text unavailable — page 1: text layer missing; page image preserved at pages/page-0001.png]"
+    ));
+    assert!(
+        segment_dir(&tree, &result)
+            .join("pages/page-0001.png")
+            .is_file()
+    );
+    assert!(model.requests().is_empty());
 }
 
 fn run_import<'a>(
@@ -610,11 +765,23 @@ impl TestTree {
     fn sources(&self) -> &Path {
         &self.sources
     }
+    #[cfg(unix)]
+    fn root(&self) -> &Path {
+        &self.root
+    }
     fn pdf(&self, name: &str, contents: &[u8]) -> PathBuf {
         let path = self.sources.join(name);
         fs::write(&path, contents).unwrap();
         path
     }
+}
+
+#[cfg(unix)]
+fn write_executable_script(tree: &TestTree, name: &str, contents: &str) -> PathBuf {
+    let path = tree.root().join(name);
+    fs::write(&path, contents).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+    path
 }
 
 impl Drop for TestTree {
