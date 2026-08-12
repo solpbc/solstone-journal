@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::PathBuf;
-
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Request, StatusCode};
@@ -42,9 +40,9 @@ struct AuthorizationRefusal {
     detail: &'static str,
 }
 
-/// Build the production router whose paired-device requests are rechecked per request.
+/// Apply per-request paired-device authorization to a composed production router.
 pub fn authorized_router(
-    journal_root: PathBuf,
+    router: Router,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
 ) -> Router {
     // [check] Axum 0.8.9 `Router::route_layer` runs only for a matching route,
@@ -53,7 +51,7 @@ pub fn authorized_router(
     // `route_layer`, not `layer`, preserves strict-slash and unknown-path 404s.
     // Applying it after router() has composed every route wraps the full
     // surface, including routes from merged sub-routers.
-    crate::router(journal_root).route_layer(middleware::from_fn_with_state(
+    router.route_layer(middleware::from_fn_with_state(
         AuthorizationGateState { authorization },
         require_authorization,
     ))

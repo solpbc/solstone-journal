@@ -92,6 +92,8 @@ mod assets;
 pub mod authorization_gate;
 #[cfg(feature = "host")]
 mod door;
+#[cfg(feature = "host")]
+mod ingest_notify;
 pub mod refusal;
 pub mod registry;
 #[cfg(feature = "host")]
@@ -314,9 +316,17 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
     let (authorization_sender, authorization_receiver) = watch::channel(
         DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
     );
-    let loopback_router = router(journal_root.clone());
-    let door_router =
-        authorization_gate::authorized_router(journal_root.clone(), authorization_receiver);
+    let loopback_router = merged_router(
+        journal_root.clone(),
+        RouterMergeSet::production(journal_root.clone()),
+    );
+    let door_router = authorization_gate::authorized_router(
+        merged_router(
+            journal_root.clone(),
+            RouterMergeSet::production(journal_root.clone()),
+        ),
+        authorization_receiver,
+    );
     let handle = runtime
         .block_on(bind_with_authorization(
             ConveyServeOptions {
@@ -383,7 +393,42 @@ fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
         })
 }
 
+#[cfg(feature = "host")]
+pub struct RouterMergeSet {
+    shell: Router,
+    ingest: Router,
+    link: Router,
+}
+
+#[cfg(feature = "host")]
+impl RouterMergeSet {
+    pub fn production(journal_root: PathBuf) -> Self {
+        let notifier = Arc::new(ingest_notify::CallosumIngestNotifier::new(&journal_root));
+        Self {
+            shell: shell_router(journal_root.clone()),
+            ingest: solstone_core_ingest::router_with_notifier(&journal_root, notifier),
+            link: solstone_core_sol_link::http::router(&journal_root),
+        }
+    }
+}
+
+/// Merge the shell, ingest, and link HTTP surfaces under one session gate.
+#[cfg(feature = "host")]
+pub fn merged_router(journal_root: PathBuf, merge_set: RouterMergeSet) -> Router {
+    session_gate::apply_layer(
+        merge_set
+            .shell
+            .merge(merge_set.ingest.reset_fallback())
+            .merge(merge_set.link.reset_fallback()),
+        journal_root,
+    )
+}
+
 pub fn router(journal_root: PathBuf) -> Router {
+    session_gate::apply_layer(shell_router(journal_root.clone()), journal_root)
+}
+
+fn shell_router(journal_root: PathBuf) -> Router {
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let routes = Router::new()
@@ -594,7 +639,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/{app}/{*tail}", get(app_nested))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root));
-    session_gate::apply_layer(routes, journal_root).fallback(not_found)
+    routes.fallback(not_found)
 }
 
 pub(crate) fn asset_response(path: &str) -> Response {
