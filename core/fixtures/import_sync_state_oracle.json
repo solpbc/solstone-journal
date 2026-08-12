@@ -1,0 +1,54 @@
+{
+  "plaud": {
+    "backend": "plaud",
+    "files": {
+      "plaud-001": {
+        "filename": "meeting-note.mp3",
+        "fullname": "2026-08-01 meeting",
+        "filesize": 123456,
+        "start_time": 1785600000000,
+        "duration": 3600000,
+        "is_trash": false,
+        "status": "imported",
+        "import_timestamp": "2026-08-02T10:00:00Z",
+        "matched_at": "2026-08-02T10:00:01Z",
+        "imported_at": "2026-08-02T10:00:02Z"
+      }
+    },
+    "last_sync": "2026-08-02T10:00:03Z"
+  },
+  "obsidian": {
+    "backend": "obsidian",
+    "source_path": "/tmp/vault",
+    "files": {
+      "Projects/plan.md": {
+        "filename": "plan.md",
+        "title": "plan",
+        "mtime": 1785600000.5,
+        "content_hash": "abc123",
+        "status": "imported",
+        "edit_count": 2,
+        "imported_at": "2026-08-02T10:01:00Z",
+        "segments": ["20260802/100000"]
+      }
+    },
+    "last_sync": "2026-08-02T10:01:01Z"
+  },
+  "audio": {
+    "backend": "audio",
+    "source_path": "/tmp/audio",
+    "files": {
+      "recording.m4a": {
+        "filename": "recording.m4a",
+        "filesize": 654321,
+        "hash": "def456",
+        "status": "available",
+        "duration": 128.25,
+        "skip_reason": "too_short",
+        "imported_at": "2026-08-02T10:02:00Z",
+        "last_error": "temporary source error"
+      }
+    },
+    "last_sync": "2026-08-02T10:02:01Z"
+  }
+}

@@ -30,6 +30,10 @@ pub mod sync_state;
 pub mod text;
 pub mod timestamp;
 
+pub use connect::{ConnectOutcome, connect_backend};
+pub use consent_gate::{
+    ScheduledSyncGuidance, oura_save_refusal, read_oura_scheduled_sync_guidance,
+};
 pub use contract::{
     ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest, SaveRequest,
     SourceHash, SourceImmutabilityReport, observe_source_immutability, should_write_manifest,
@@ -59,6 +63,17 @@ pub use staging::{
     SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
     stage_source,
 };
+pub use sync_audio::{AudioFileState, AudioSyncOptions, AudioSyncState, sync_audio};
+pub use sync_obsidian::{ObsidianFileState, ObsidianSyncOptions, ObsidianSyncState, sync_obsidian};
+pub use sync_plaud::{
+    LivePlaudHttp, PlaudFileState, PlaudHttp, PlaudRemoteFile, PlaudSyncOptions, PlaudSyncState,
+    sync_plaud_with_http,
+};
+pub use sync_state::{
+    FileSyncBackend, FileSyncState, OuraSyncSummary, SyncActionFailure, SyncActionMetadata,
+    SyncActionRequest, SyncActionSeams, SyncBackend, SyncItemFailure, SyncReport, SyncRequest,
+    available_sync_backends, dispatch_sync, load_sync_state, state_path, write_sync_state,
+};
 pub use text::{
     SystemWireClient, TextImportError, TextWirePhase, WireClient, process_transcript,
     process_transcript_with_wire,
@@ -70,25 +85,94 @@ pub use timestamp::{
 /// Error returned by an importer seam that has no implementation yet.
 #[derive(Debug)]
 pub enum ImportError {
-    Unimplemented { module: &'static str },
-    ExistingImportDirectory { path: PathBuf },
-    MetadataMismatchOnForce { path: PathBuf, key: &'static str },
-    ImportDirectoryIsSymlink { path: PathBuf },
-    ImportDirectoryEscapesImports { path: PathBuf, imports: PathBuf },
-    SourceMissing { path: PathBuf },
-    SourceNotFile { path: PathBuf },
-    NonUtf8DirectoryEntry { path: PathBuf },
-    DestinationExists { path: PathBuf },
-    PromotionFailed { path: PathBuf, message: String },
-    AuditSinkFailed { message: String },
-    RemovalFailed { path: PathBuf, message: String },
-    MetadataCorrupt { path: PathBuf, message: String },
-    MetadataWriteFailed { path: PathBuf, message: String },
-    ManifestWriteFailed { path: PathBuf, message: String },
-    PathResolution { path: PathBuf, message: String },
-    RelocationFailed { path: PathBuf, message: String },
-    InvalidImportId { import_id: String },
-    InvalidDestinationName { name: OsString },
+    Unimplemented {
+        module: &'static str,
+    },
+    ExistingImportDirectory {
+        path: PathBuf,
+    },
+    MetadataMismatchOnForce {
+        path: PathBuf,
+        key: &'static str,
+    },
+    ImportDirectoryIsSymlink {
+        path: PathBuf,
+    },
+    ImportDirectoryEscapesImports {
+        path: PathBuf,
+        imports: PathBuf,
+    },
+    SourceMissing {
+        path: PathBuf,
+    },
+    SourceNotFile {
+        path: PathBuf,
+    },
+    NonUtf8DirectoryEntry {
+        path: PathBuf,
+    },
+    DestinationExists {
+        path: PathBuf,
+    },
+    PromotionFailed {
+        path: PathBuf,
+        message: String,
+    },
+    AuditSinkFailed {
+        message: String,
+    },
+    RemovalFailed {
+        path: PathBuf,
+        message: String,
+    },
+    MetadataCorrupt {
+        path: PathBuf,
+        message: String,
+    },
+    MetadataWriteFailed {
+        path: PathBuf,
+        message: String,
+    },
+    ManifestWriteFailed {
+        path: PathBuf,
+        message: String,
+    },
+    PathResolution {
+        path: PathBuf,
+        message: String,
+    },
+    RelocationFailed {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidImportId {
+        import_id: String,
+    },
+    InvalidDestinationName {
+        name: OsString,
+    },
+    Refusal {
+        kind: &'static str,
+        exit_code: i32,
+        message: String,
+    },
+    SyncStateRead {
+        path: PathBuf,
+        message: String,
+    },
+    SyncStateWrite {
+        path: PathBuf,
+        message: String,
+    },
+    SyncCatalog {
+        backend: &'static str,
+        message: String,
+    },
+    SyncAction {
+        backend: &'static str,
+        item: String,
+        message: String,
+    },
 }
 
 impl fmt::Display for ImportError {
@@ -158,11 +242,47 @@ impl fmt::Display for ImportError {
                     name.to_string_lossy()
                 )
             }
+            Self::Refusal { message, .. } => formatter.write_str(message),
+            Self::SyncStateRead { path, message } => {
+                write!(
+                    formatter,
+                    "could not read sync state {}: {message}",
+                    path.display()
+                )
+            }
+            Self::SyncStateWrite { path, message } => {
+                write!(
+                    formatter,
+                    "could not write sync state {}: {message}",
+                    path.display()
+                )
+            }
+            Self::SyncCatalog { backend, message } => {
+                write!(formatter, "could not catalog {backend}: {message}")
+            }
+            Self::SyncAction {
+                backend,
+                item,
+                message,
+            } => {
+                write!(formatter, "could not sync {backend} item {item}: {message}")
+            }
         }
     }
 }
 
 impl std::error::Error for ImportError {}
+
+impl ImportError {
+    /// Exit status requested by a structured importer refusal.
+    #[must_use]
+    pub const fn exit_code(&self) -> Option<i32> {
+        match self {
+            Self::Refusal { exit_code, .. } => Some(*exit_code),
+            _ => None,
+        }
+    }
+}
 
 /// One importer module name and its reserved skeleton seam.
 pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
@@ -170,12 +290,6 @@ pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
 /// The complete inventory of importer modules that remain unimplemented.
 pub const MODULE_STUBS: &[ModuleStub] = &[
     ("audio", audio::reserved_seam),
-    ("consent_gate", consent_gate::reserved_seam),
-    ("sync_state", sync_state::reserved_seam),
-    ("sync_plaud", sync_plaud::reserved_seam),
-    ("sync_obsidian", sync_obsidian::reserved_seam),
-    ("sync_audio", sync_audio::reserved_seam),
-    ("connect", connect::reserved_seam),
     ("cli_argv", cli_argv::reserved_seam),
     ("cli_render", cli_render::reserved_seam),
 ];
