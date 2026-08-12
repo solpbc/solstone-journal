@@ -97,13 +97,12 @@ fn build_vulkan_probe() -> std::path::PathBuf {
         if message["reason"] != "compiler-artifact" {
             continue;
         }
-        if let Some(executable) = message["executable"].as_str() {
-            if std::path::Path::new(executable)
+        if let Some(executable) = message["executable"].as_str()
+            && std::path::Path::new(executable)
                 .file_name()
                 .is_some_and(|name| name == "solstone-core-vulkan-probe")
-            {
-                return std::path::PathBuf::from(executable);
-            }
+        {
+            return std::path::PathBuf::from(executable);
         }
     }
     panic!("cargo did not report a solstone-core-vulkan-probe executable");
