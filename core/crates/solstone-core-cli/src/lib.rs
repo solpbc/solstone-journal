@@ -1109,17 +1109,20 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, flag] if command == OsStr::new("warm") && flag == OsStr::new("--json") => {
             Ok(Command::Warm { json: true })
         }
-        [command] if command == OsStr::new("check") => Ok(Command::Check { json: false }),
-        [command, flag] if command == OsStr::new("check") && flag == OsStr::new("--json") => {
-            Ok(Command::Check { json: true })
+        [command, rest @ ..] if command == OsStr::new("check") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                Ok(Command::CheckHelp)
+            } else {
+                match rest {
+                    [] => Ok(Command::Check { json: false }),
+                    [flag] if flag == OsStr::new("--json") => Ok(Command::Check { json: true }),
+                    _ => Ok(Command::CheckUsage),
+                }
+            }
         }
-        [command, flag]
-            if command == OsStr::new("check")
-                && (flag == OsStr::new("--help") || flag == OsStr::new("-h")) =>
-        {
-            Ok(Command::CheckHelp)
-        }
-        [command, _rest @ ..] if command == OsStr::new("check") => Ok(Command::CheckUsage),
         [command, rest @ ..] if command == OsStr::new("journal-path") => {
             parse_journal_path(rest).map(Command::JournalPath)
         }
@@ -5316,7 +5319,12 @@ mod tests {
             evaluate_args(&args(&["check", "--nonsense"])),
             Ok(Command::CheckUsage)
         );
-        for values in [&["check", "--help"][..], &["check", "-h"][..]] {
+        for values in [
+            &["check", "--help"][..],
+            &["check", "-h"][..],
+            &["check", "--json", "--help"][..],
+            &["check", "--nonsense", "--help"][..],
+        ] {
             assert_eq!(
                 evaluate_args(&args(values)),
                 Ok(Command::CheckHelp),

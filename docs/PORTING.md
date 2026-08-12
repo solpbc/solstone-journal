@@ -374,8 +374,9 @@ design documents that hazard but does not change Python behavior.
 
 Native ports reserve process exit code 69 for inputs the native command cannot
 process. Wrappers should surface that code unless a command-specific design says
-otherwise. It is distinct from success, usage errors (64), empty-input codes, and
-temporary failures (75). Signal death is normalized to temporary failure (75).
+otherwise. It is distinct from success, the top-level usage fallthrough (64),
+command-level parser errors (such as supervisor/check/install-models, 2), empty-input
+codes, and temporary failures (75). Signal death is normalized to temporary failure (75).
 The supervisor intentionally keeps mapping non-zero scheduled-task exits to
 `error`; command stderr carries the operator-facing detail.
 

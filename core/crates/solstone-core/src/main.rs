@@ -352,6 +352,9 @@ fn main() -> ExitCode {
 }
 
 fn render_usage_error(usage: &str, command: &str) -> ExitCode {
+    // `UsageError` is unit-shaped, so these parsers deliberately use the house
+    // message instead of argparse's per-failure detail. Transcribe preserves detail
+    // through its separate crate's `CliError::Usage { message }`.
     eprint!("{usage}");
     eprintln!("{command}: error: invalid arguments");
     ExitCode::from(2)

@@ -208,7 +208,11 @@ fn malformed_check_invocation_exits_2_with_its_own_usage() {
 
 #[test]
 fn check_help_is_byte_identical_for_both_spellings() {
-    for args in [["check", "--help"].as_slice(), ["check", "-h"].as_slice()] {
+    for args in [
+        ["check", "--help"].as_slice(),
+        ["check", "-h"].as_slice(),
+        ["check", "--json", "--help"].as_slice(),
+    ] {
         assert_help(args, CHECK_HELP);
     }
 }
