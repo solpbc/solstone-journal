@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "release_version": "1.0.18",
+  "non_origin_upstream_hosts": ["github.com", "huggingface.co"],
+  "origin_pins": [
+    {"origin_key": "providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.2-archive.manifest.json", "sha256": "0d46ffdf21a9c5a61370fbf77aed0c275dae93f3609511f4573515a7260ddc39", "unit": "nvattest"},
+    {"origin_key": "providers/nvattest/libnvat-linux-aarch64-1.2.2-sol.2-archive.tar.xz", "sha256": "7a13a15192f5005a700dbe154da28cbc2a2b5f3f387113c8cd89a36083a2bd80", "unit": "nvattest"},
+    {"origin_key": "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.2-archive.manifest.json", "sha256": "a013d18a74d89f3ee99a0a3648c582df08446a30f5b8f5bbb48929a08fad4a8f", "unit": "nvattest"},
+    {"origin_key": "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.2-archive.tar.xz", "sha256": "3e2d207a3bb6eab9c47fc9cf65d7990f0d11541ff8691dce18e786e2ce9b26c7", "unit": "nvattest"},
+    {"origin_key": "providers/nvattest/libnvat-macos-aarch64-1.2.2-sol.2-archive.manifest.json", "sha256": "dca5342f87bba1244f8ee78848207410ae5ee8976df42fe10d804f1c99167094", "unit": "nvattest"},
+    {"origin_key": "providers/nvattest/libnvat-macos-aarch64-1.2.2-sol.2-archive.tar.xz", "sha256": "f2b01f60ee52f9c38c9e5e0f3cea6e8078a1efa165fad1f5c59994563120e365", "unit": "nvattest"},
+    {"origin_key": "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz", "sha256": "3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea", "unit": "llama-server-cuda"},
+    {"origin_key": "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz", "sha256": "6de68319db40e8c0eb45dc4bd3a45a16971dbdc128f2b621b19bef5dae87d064", "unit": "llama-server-cuda"}
+  ]
+}

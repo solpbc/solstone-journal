@@ -14,10 +14,10 @@ const MAX_REDIRECT_HOPS: u8 = 5;
 const DOWNLOAD_ALLOWED_HOSTS: &[&str] = &["updates.solstone.app"];
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct DownloadHostPolicy<'a> {
-    pub(crate) allowed_hosts: &'a [&'a str],
-    pub(crate) allow_http: bool,
-    pub(crate) origin_base_url: &'a str,
+pub struct DownloadHostPolicy<'a> {
+    pub allowed_hosts: &'a [&'a str],
+    pub allow_http: bool,
+    pub origin_base_url: &'a str,
 }
 
 pub(crate) const PRODUCTION_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadHostPolicy {
@@ -72,7 +72,7 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError
     Ok(actual)
 }
 
-pub(crate) fn download_verified(
+pub fn download_verified(
     artifact: &Artifact,
     destination: &Path,
     policy: &DownloadHostPolicy<'_>,
@@ -179,7 +179,7 @@ impl AbsoluteUrl {
     }
 }
 
-pub(crate) fn origin_url(base: &str, artifact: &Artifact) -> String {
+pub fn origin_url(base: &str, artifact: &Artifact) -> String {
     format!("{base}/{}", artifact.origin_key)
 }
 

@@ -3179,6 +3179,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-origin"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-assets",
+ "solstone-core-local",
+ "thiserror 2.0.20",
+ "ureq",
+]
+
+[[package]]
 name = "solstone-core-pdf"
 version = "1.0.22"
 dependencies = [
