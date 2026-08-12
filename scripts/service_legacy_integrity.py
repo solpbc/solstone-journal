@@ -47,6 +47,14 @@ GIT_HELPER_LINKS = (
     Path("/usr/libexec/git-core/git-remote-https"),
     Path("/usr/lib/git-core/git-remote-https"),
 )
+HOST_TOOL_PATHS = {
+    "ar": "/usr/bin/ar",
+    "as": "/usr/bin/as",
+    "cc": "/usr/bin/cc",
+    "ld": "/usr/bin/ld",
+    "sh": "/bin/sh",
+    "strip": "/usr/bin/strip",
+}
 
 DUMMY_FIELDS = {
     "ANTHROPIC_API_KEY": "__SERVICE_LEGACY_DUMMY_ANTHROPIC__",
@@ -110,6 +118,26 @@ def installed_git_helper_targets() -> set[Path]:
     if not targets:
         raise IntegrityError("git-tool", "pinned HTTPS helper is unavailable")
     return targets
+
+
+def verified_host_tool_paths(packaging: dict[str, Any]) -> set[str]:
+    try:
+        host_tools = packaging["build"]["bundle"]["host_tools"]
+    except (KeyError, TypeError) as exc:
+        raise IntegrityError("host-tools", "packaging host tools are absent") from exc
+    if not isinstance(host_tools, dict) or set(host_tools) != set(HOST_TOOL_PATHS):
+        raise IntegrityError("host-tools", "packaging host-tool roles are not exact")
+    for role, expected_path in HOST_TOOL_PATHS.items():
+        row = host_tools.get(role)
+        path = Path(expected_path)
+        if (
+            not isinstance(row, dict)
+            or row.get("selected_path") != expected_path
+            or not path.is_file()
+            or row.get("sha256") != sha256_file(path.resolve())
+        ):
+            raise IntegrityError("host-tools", f"packaging {role} fact differs")
+    return set(HOST_TOOL_PATHS.values())
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -501,6 +529,7 @@ def audit_corpus(
             "credential-sentinel-count", f"expected 570, found {dummy_occurrences}"
         )
     audit_negative_bundles(evidence_root)
+    packaging = read_json(evidence_root / "packaging-provenance.json")
     stable_literals = {
         "/usr/bin/ar",
         "/usr/bin/as",
@@ -514,6 +543,7 @@ def audit_corpus(
         "/usr/lib/git-core/git-remote-https",
         "/usr/libexec/git-core/git-remote-https",
     }
+    stable_literals.update(verified_host_tool_paths(packaging))
     stable_literals.update(str(path) for path in installed_git_helper_targets())
     for path in sorted(evidence_root.glob("*.json")):
         payload = read_json(path)
@@ -1040,6 +1070,26 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
         '"/opt/solstone-service-legacy-evidence/blob/default/home/.local/bin/sol"'
     ):
         raise AssertionError("synthetic profile HOME was classified as operator state")
+    host_tool_control = {
+        "build": {
+            "bundle": {
+                "host_tools": {
+                    role: {
+                        "selected_path": path,
+                        "sha256": sha256_file(Path(path).resolve()),
+                    }
+                    for role, path in HOST_TOOL_PATHS.items()
+                }
+            }
+        }
+    }
+    if verified_host_tool_paths(host_tool_control) != set(HOST_TOOL_PATHS.values()):
+        raise AssertionError("controlled host-tool inventory changed")
+    poisoned_host_tools = json.loads(json.dumps(host_tool_control))
+    poisoned_host_tools["build"]["bundle"]["host_tools"]["sh"]["selected_path"] = (
+        "/tmp/sh"
+    )
+    _expect_guard("host-tools", lambda: verified_host_tool_paths(poisoned_host_tools))
     with tempfile.TemporaryDirectory(
         prefix="service-legacy-integrity-test-"
     ) as temporary:
