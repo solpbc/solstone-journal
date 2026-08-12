@@ -8,7 +8,7 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use solstone_core_import::ImportPreview;
 
-use crate::shared::{ParsedEntry, has_extension, is_file, plan_entries};
+use crate::shared::{ParsedEntry, SourcePathKind, has_extension, plan_entries, source_path_kind};
 use crate::{ImportPlan, SkipLocator, SkipReason, SkippedEntry, SourceError};
 
 const DELIMITER: &str = "==========";
@@ -21,7 +21,7 @@ const DATE_FORMATS: [&str; 4] = [
 
 /// Detect a Kindle clippings file from its text structure.
 pub fn detect(path: &Path) -> Result<bool, SourceError> {
-    if !is_file(path) || !has_extension(path, "txt") {
+    if source_path_kind(path)? != SourcePathKind::File || !has_extension(path, "txt") {
         return Ok(false);
     }
     let text = read_text(path)?;
@@ -71,7 +71,7 @@ pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
         .collect::<Vec<_>>()
         .join(", ");
     let summary = if parsed.records.is_empty() {
-        "No parseable clippings found".to_owned()
+        "0 highlights from 0 books".to_owned()
     } else {
         format!("{kinds} from {} books", books.len())
     };
@@ -103,7 +103,7 @@ struct ClippingRecord {
 }
 
 fn parse_clippings(path: &Path) -> Result<ParsedClippings, SourceError> {
-    if !is_file(path) {
+    if source_path_kind(path)? != SourcePathKind::File {
         return Err(SourceError::UnsupportedPathKind {
             path: path.to_owned(),
         });
@@ -214,9 +214,13 @@ fn title_author(title: &str) -> (String, String) {
 
 fn clip_type(value: &str) -> Option<&str> {
     let lower = value.to_lowercase();
-    ["highlight", "note", "bookmark"]
-        .into_iter()
-        .find(|kind| lower.contains(&format!("your {kind}")))
+    let words = lower.split_whitespace().collect::<Vec<_>>();
+    words.windows(2).find_map(|words| match words {
+        ["your", "highlight"] => Some("highlight"),
+        ["your", "note"] => Some("note"),
+        ["your", "bookmark"] => Some("bookmark"),
+        _ => None,
+    })
 }
 
 fn parse_date(value: &str) -> Option<NaiveDateTime> {

@@ -206,6 +206,13 @@ pub(crate) struct ParsedEntry {
     pub model_slug: Option<String>,
 }
 
+#[derive(Eq, PartialEq)]
+pub(crate) enum SourcePathKind {
+    File,
+    Directory,
+    Other,
+}
+
 pub(crate) fn plan_entries(
     mut entries: Vec<ParsedEntry>,
     skipped: Vec<SkippedEntry>,
@@ -314,6 +321,48 @@ pub(crate) fn source_io(
     }
 }
 
+pub(crate) fn source_path_kind(path: &Path) -> Result<SourcePathKind, SourceError> {
+    let metadata = path
+        .metadata()
+        .map_err(|error| source_io(path, "inspect source", error))?;
+    if metadata.is_file() {
+        Ok(SourcePathKind::File)
+    } else if metadata.is_dir() {
+        Ok(SourcePathKind::Directory)
+    } else {
+        Ok(SourcePathKind::Other)
+    }
+}
+
+pub(crate) fn skip_conversation(
+    skipped: &mut Vec<SkippedEntry>,
+    conversation_index: usize,
+    reason: SkipReason,
+) {
+    skipped.push(SkippedEntry {
+        locator: SkipLocator::Conversation {
+            conversation_index,
+            message_index: None,
+        },
+        reason,
+    });
+}
+
+pub(crate) fn skip_message(
+    skipped: &mut Vec<SkippedEntry>,
+    conversation_index: usize,
+    message_index: usize,
+    reason: SkipReason,
+) {
+    skipped.push(SkippedEntry {
+        locator: SkipLocator::Conversation {
+            conversation_index,
+            message_index: Some(message_index),
+        },
+        reason,
+    });
+}
+
 pub(crate) fn read_json_file(path: &Path, context: &'static str) -> Result<Value, SourceError> {
     let bytes = std::fs::read(path).map_err(|error| source_io(path, "read source", error))?;
     serde_json::from_slice(&bytes).map_err(|error| SourceError::InvalidJson {
@@ -381,10 +430,6 @@ pub(crate) fn parse_iso_utc(value: &str) -> Option<DateTime<Utc>> {
                 .ok()
                 .map(|timestamp| timestamp.and_utc())
         })
-}
-
-pub(crate) fn is_file(path: &Path) -> bool {
-    path.metadata().is_ok_and(|metadata| metadata.is_file())
 }
 
 pub(crate) fn has_extension(path: &Path, expected: &str) -> bool {

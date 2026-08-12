@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
 use crate::shared::{
-    ParsedEntry, has_extension, is_file, parse_iso_utc, plan_entries, read_json_file,
-    read_zip_json, read_zip_member,
+    ParsedEntry, SourcePathKind, has_extension, parse_iso_utc, plan_entries, read_json_file,
+    read_zip_json, read_zip_member, source_path_kind,
 };
 use crate::{ImportPlan, SkipLocator, SkipReason, SkippedEntry, SourceError};
 
@@ -23,31 +23,31 @@ const ACTIVITY_PATHS: [&str; 4] = [
 
 /// Detect a Gemini Takeout archive, JSON export, or export directory.
 pub fn detect(path: &Path) -> Result<bool, SourceError> {
-    if is_file(path) && has_extension(path, "zip") {
-        for activity_path in ACTIVITY_PATHS {
-            if read_zip_member(path, activity_path)?.is_some() {
-                return Ok(true);
+    match source_path_kind(path)? {
+        SourcePathKind::File if has_extension(path, "zip") => {
+            for activity_path in ACTIVITY_PATHS {
+                if read_zip_member(path, activity_path)?.is_some() {
+                    return Ok(true);
+                }
             }
+            Ok(false)
         }
-        return Ok(false);
-    }
-    if is_file(path) && has_extension(path, "json") {
-        let value = read_json_file(path, "Gemini activities")?;
-        let Some(first) = value.as_array().and_then(|activities| activities.first()) else {
-            return Ok(false);
-        };
-        let Some(first) = first.as_object() else {
-            return Ok(false);
-        };
-        return Ok(first.contains_key("header") && first.contains_key("time"));
-    }
-    if path.is_dir() {
-        return Ok(ACTIVITY_PATHS
+        SourcePathKind::File if has_extension(path, "json") => {
+            let value = read_json_file(path, "Gemini activities")?;
+            let Some(first) = value.as_array().and_then(|activities| activities.first()) else {
+                return Ok(false);
+            };
+            let Some(first) = first.as_object() else {
+                return Ok(false);
+            };
+            Ok(first.contains_key("header") && first.contains_key("time"))
+        }
+        SourcePathKind::Directory => Ok(ACTIVITY_PATHS
             .iter()
             .any(|activity_path| path.join(activity_path).is_file())
-            || path.join("MyActivity.json").is_file());
+            || path.join("MyActivity.json").is_file()),
+        SourcePathKind::File | SourcePathKind::Other => Ok(false),
     }
-    Ok(false)
 }
 
 /// Preview the atomic message count and UTC date range for Gemini activities.
@@ -79,48 +79,42 @@ pub fn plan(path: &Path) -> Result<ImportPlan, SourceError> {
 }
 
 fn load_activities(path: &Path) -> Result<Value, SourceError> {
-    if is_file(path) && has_extension(path, "zip") {
-        for activity_path in ACTIVITY_PATHS {
-            match read_zip_json(path, activity_path, "Gemini activities") {
-                Ok(value) => return Ok(value),
-                Err(SourceError::ArchiveMemberMissing { .. }) => {}
-                Err(error) => return Err(error),
+    match source_path_kind(path)? {
+        SourcePathKind::File if has_extension(path, "zip") => {
+            for activity_path in ACTIVITY_PATHS {
+                match read_zip_json(path, activity_path, "Gemini activities") {
+                    Ok(value) => return Ok(value),
+                    Err(SourceError::ArchiveMemberMissing { .. }) => {}
+                    Err(error) => return Err(error),
+                }
             }
+            Err(SourceError::ArchiveMemberMissing {
+                path: path.to_owned(),
+                member: ACTIVITY_PATHS[0],
+            })
         }
-        return Err(SourceError::ArchiveMemberMissing {
-            path: path.to_owned(),
-            member: ACTIVITY_PATHS[0],
-        });
-    }
-    if is_file(path) && has_extension(path, "json") {
-        return read_json_file(path, "Gemini activities");
-    }
-    if path.is_dir() {
-        for activity_path in ACTIVITY_PATHS {
-            let candidate = path.join(activity_path);
+        SourcePathKind::File if has_extension(path, "json") => {
+            read_json_file(path, "Gemini activities")
+        }
+        SourcePathKind::Directory => {
+            for activity_path in ACTIVITY_PATHS {
+                let candidate = path.join(activity_path);
+                if candidate.is_file() {
+                    return read_json_file(&candidate, "Gemini activities");
+                }
+            }
+            let candidate = path.join("MyActivity.json");
             if candidate.is_file() {
                 return read_json_file(&candidate, "Gemini activities");
             }
+            Err(SourceError::ArchiveMemberMissing {
+                path: path.to_owned(),
+                member: ACTIVITY_PATHS[0],
+            })
         }
-        let candidate = path.join("MyActivity.json");
-        if candidate.is_file() {
-            return read_json_file(&candidate, "Gemini activities");
-        }
-        return Err(SourceError::ArchiveMemberMissing {
+        SourcePathKind::File | SourcePathKind::Other => Err(SourceError::UnsupportedExtension {
             path: path.to_owned(),
-            member: ACTIVITY_PATHS[0],
-        });
-    }
-    if path.exists() {
-        Err(SourceError::UnsupportedExtension {
-            path: path.to_owned(),
-        })
-    } else {
-        Err(SourceError::Io {
-            path: path.to_owned(),
-            operation: "open source",
-            source: std::io::Error::new(std::io::ErrorKind::NotFound, "source does not exist"),
-        })
+        }),
     }
 }
 
@@ -225,29 +219,68 @@ fn strip_html(html: &str) -> String {
             _ => {}
         }
     }
-    output
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .trim()
-        .to_owned()
+    unescape_html(&output).trim().to_owned()
 }
 
-#[cfg(test)]
-fn is_bard_era(activity: &Map<String, Value>) -> bool {
-    activity
-        .get("products")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .any(|product| product.to_lowercase().contains("bard"))
-        || activity
-            .get("header")
-            .and_then(Value::as_str)
-            .is_some_and(|header| header.to_lowercase().contains("bard"))
+fn unescape_html(input: &str) -> String {
+    let mut output = String::new();
+    let mut remaining = input;
+    while let Some(start) = remaining.find('&') {
+        output.push_str(&remaining[..start]);
+        let candidate = &remaining[start + 1..];
+        let Some(end) = candidate.find(';') else {
+            output.push_str(&remaining[start..]);
+            return output;
+        };
+        let entity = &candidate[..end];
+        if let Some(value) = decode_entity(entity) {
+            output.push(value);
+        } else {
+            output.push('&');
+            output.push_str(entity);
+            output.push(';');
+        }
+        remaining = &candidate[end + 1..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+fn decode_entity(entity: &str) -> Option<char> {
+    match entity {
+        "amp" => Some('&'),
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "quot" => Some('"'),
+        "apos" => Some('\''),
+        "nbsp" => Some('\u{a0}'),
+        "copy" => Some('©'),
+        "reg" => Some('®'),
+        "trade" => Some('™'),
+        "ndash" => Some('–'),
+        "mdash" => Some('—'),
+        "hellip" => Some('…'),
+        "laquo" => Some('«'),
+        "raquo" => Some('»'),
+        "lsquo" => Some('‘'),
+        "rsquo" => Some('’'),
+        "ldquo" => Some('“'),
+        "rdquo" => Some('”'),
+        _ => decode_numeric_entity(entity),
+    }
+}
+
+fn decode_numeric_entity(entity: &str) -> Option<char> {
+    let decimal = entity.strip_prefix('#')?;
+    let value = if let Some(hexadecimal) = decimal
+        .strip_prefix('x')
+        .or_else(|| decimal.strip_prefix('X'))
+    {
+        u32::from_str_radix(hexadecimal, 16).ok()?
+    } else {
+        decimal.parse::<u32>().ok()?
+    };
+    char::from_u32(value)
 }
 
 fn skip_activity(skipped: &mut Vec<SkippedEntry>, activity_index: usize, reason: SkipReason) {
@@ -255,24 +288,4 @@ fn skip_activity(skipped: &mut Vec<SkippedEntry>, activity_index: usize, reason:
         locator: SkipLocator::Activity { activity_index },
         reason,
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::is_bard_era;
-
-    #[test]
-    fn bard_era_recognizes_products_and_header() {
-        assert!(is_bard_era(
-            json!({ "products": ["Bard"] }).as_object().unwrap()
-        ));
-        assert!(is_bard_era(
-            json!({ "header": "Bard activity" }).as_object().unwrap()
-        ));
-        assert!(!is_bard_era(
-            json!({ "products": ["Gemini"] }).as_object().unwrap()
-        ));
-    }
 }

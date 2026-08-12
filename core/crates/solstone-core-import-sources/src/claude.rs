@@ -9,15 +9,18 @@ use serde_json::{Map, Value};
 use solstone_core_import::ImportPreview;
 
 use crate::shared::{
-    ParsedEntry, has_extension, is_file, parse_iso_utc, plan_entries, read_zip_json,
+    ParsedEntry, SourcePathKind, has_extension, parse_iso_utc, plan_entries, read_zip_json,
+    skip_conversation, skip_message, source_path_kind,
 };
-use crate::{ImportPlan, SkipLocator, SkipReason, SkippedEntry, SourceError};
+use crate::{ImportPlan, SkipReason, SkippedEntry, SourceError};
 
 const CONVERSATIONS: &str = "conversations.json";
 
 /// Detect a Claude archive by its content, not its filename.
 pub fn detect(path: &Path) -> Result<bool, SourceError> {
-    if !is_file(path) || !(has_extension(path, "zip") || has_extension(path, "dms")) {
+    if source_path_kind(path)? != SourcePathKind::File
+        || !(has_extension(path, "zip") || has_extension(path, "dms"))
+    {
         return Ok(false);
     }
     let value = match read_zip_json(path, CONVERSATIONS, "Claude conversations") {
@@ -47,7 +50,7 @@ pub fn preview(path: &Path) -> Result<ImportPreview, SourceError> {
 
 /// Parse a Claude archive into a write-free UTC segment plan.
 pub fn plan(path: &Path) -> Result<ImportPlan, SourceError> {
-    if !is_file(path) {
+    if source_path_kind(path)? != SourcePathKind::File {
         return Err(SourceError::UnsupportedPathKind {
             path: path.to_owned(),
         });
@@ -151,33 +154,4 @@ fn parse_conversation(
 
 fn string_at<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
     object.get(key).and_then(Value::as_str)
-}
-
-fn skip_conversation(
-    skipped: &mut Vec<SkippedEntry>,
-    conversation_index: usize,
-    reason: SkipReason,
-) {
-    skipped.push(SkippedEntry {
-        locator: SkipLocator::Conversation {
-            conversation_index,
-            message_index: None,
-        },
-        reason,
-    });
-}
-
-fn skip_message(
-    skipped: &mut Vec<SkippedEntry>,
-    conversation_index: usize,
-    message_index: usize,
-    reason: SkipReason,
-) {
-    skipped.push(SkippedEntry {
-        locator: SkipLocator::Conversation {
-            conversation_index,
-            message_index: Some(message_index),
-        },
-        reason,
-    });
 }
