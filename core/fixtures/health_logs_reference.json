@@ -1,0 +1,456 @@
+{
+  "regex": [
+    {
+      "haystacks": [
+        "ERROR here",
+        "error here"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "ERROR"
+    },
+    {
+      "haystacks": [
+        "warn here",
+        "ok"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "error|warn"
+    },
+    {
+      "haystacks": [
+        "foo",
+        "xfoo"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "^foo$"
+    },
+    {
+      "haystacks": [
+        "a word!",
+        "sword"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "\\bword\\b"
+    },
+    {
+      "haystacks": [
+        "ABC12",
+        "abc12"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "[A-Z]+\\d{2}"
+    },
+    {
+      "haystacks": [
+        "ERROR",
+        "ok"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(?i)error"
+    },
+    {
+      "haystacks": [
+        "abab",
+        "xx"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(?:ab)+?"
+    },
+    {
+      "haystacks": [
+        "foo",
+        "foo\n"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "\\Afoo\\Z"
+    },
+    {
+      "haystacks": [
+        "foo",
+        "bar"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(?P<name>foo)"
+    },
+    {
+      "haystacks": [
+        "foobar",
+        "foobaz"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "foo(?=bar)"
+    },
+    {
+      "haystacks": [
+        "foobaz",
+        "foobar"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "foo(?!bar)"
+    },
+    {
+      "haystacks": [
+        "foobar",
+        "bar"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(?<=foo)bar"
+    },
+    {
+      "haystacks": [
+        "xbar",
+        "foobar"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(?<!foo)bar"
+    },
+    {
+      "haystacks": [
+        "foofoo",
+        "foo"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(foo)\\1"
+    },
+    {
+      "haystacks": [
+        "foofoo",
+        "foo"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "(?P<x>foo)(?P=x)"
+    },
+    {
+      "haystacks": [
+        "foobar",
+        "fobar"
+      ],
+      "matches": [
+        true,
+        true
+      ],
+      "pattern": "(?>foo|fo)bar"
+    },
+    {
+      "haystacks": [
+        "foo",
+        "bar"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "foo++"
+    },
+    {
+      "error": "Invalid Python regex: '(?P<x>a)|(?P<x>b)': redefinition of group name 'x' as group 2; was group 1 at position 13",
+      "error_type": "ArgumentTypeError",
+      "haystacks": [
+        "a",
+        "b"
+      ],
+      "pattern": "(?P<x>a)|(?P<x>b)"
+    },
+    {
+      "error": "Invalid Python regex: '\\\\p{Greek}+': bad escape \\p at position 0",
+      "error_type": "ArgumentTypeError",
+      "haystacks": [
+        "\u03b1\u03b2",
+        "ab"
+      ],
+      "pattern": "\\p{Greek}+"
+    },
+    {
+      "haystacks": [
+        "abc",
+        "123"
+      ],
+      "matches": [
+        false,
+        false
+      ],
+      "pattern": "[[:alpha:]]+"
+    },
+    {
+      "haystacks": [
+        "foo",
+        "foo\n"
+      ],
+      "matches": [
+        true,
+        false
+      ],
+      "pattern": "foo\\z"
+    },
+    {
+      "error": "Invalid Python regex: '\\\\R': bad escape \\R at position 0",
+      "error_type": "ArgumentTypeError",
+      "haystacks": [
+        "\n",
+        "R"
+      ],
+      "pattern": "\\R"
+    },
+    {
+      "error": "Invalid Python regex: '[invalid': unterminated character set at position 0",
+      "error_type": "ArgumentTypeError",
+      "haystacks": [
+        "anything"
+      ],
+      "pattern": "[invalid"
+    }
+  ],
+  "rows": [
+    {
+      "input": "2026-02-09T10:00:00 [echo:stdout] hello world",
+      "outcome": {
+        "message": "hello world",
+        "raw": "2026-02-09T10:00:00 [echo:stdout] hello world",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09 10:00:00 [echo:stdout] space separator",
+      "outcome": {
+        "message": "space separator",
+        "raw": "2026-02-09 10:00:00 [echo:stdout] space separator",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09_10:00:00 [echo:stdout] underscore separator",
+      "outcome": {
+        "message": "underscore separator",
+        "raw": "2026-02-09_10:00:00 [echo:stdout] underscore separator",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09\ud83d\udc0d10:00:00 [echo:stdout] unicode separator",
+      "outcome": {
+        "message": "unicode separator",
+        "raw": "2026-02-09\ud83d\udc0d10:00:00 [echo:stdout] unicode separator",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2021-W01-1T00:00:00 [echo:stdout] week date",
+      "outcome": {
+        "message": "week date",
+        "raw": "2021-W01-1T00:00:00 [echo:stdout] week date",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2021-01-04T00:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09T10:00:00 [:stdout] empty service",
+      "outcome": {
+        "message": "empty service",
+        "raw": "2026-02-09T10:00:00 [:stdout] empty service",
+        "service": "",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09T10:00:00 [echo:] empty stream",
+      "outcome": {
+        "message": "empty stream",
+        "raw": "2026-02-09T10:00:00 [echo:] empty stream",
+        "service": "echo",
+        "stream": "",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09T10:00:00 [echo:stdout]  two spaces",
+      "outcome": {
+        "message": " two spaces",
+        "raw": "2026-02-09T10:00:00 [echo:stdout]  two spaces",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09T10:00:00 [echo:stdout] trailing\u001c\u001d\u001e\u001f",
+      "outcome": {
+        "message": "trailing",
+        "raw": "2026-02-09T10:00:00 [echo:stdout] trailing",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-09T10:00:00"
+      }
+    },
+    {
+      "input": "2026-02-30T10:00:00 [echo:stdout] bad date",
+      "outcome": null
+    },
+    {
+      "input": "2026-02-09T24:00:00 [echo:stdout] bad hour",
+      "outcome": {
+        "message": "bad hour",
+        "raw": "2026-02-09T24:00:00 [echo:stdout] bad hour",
+        "service": "echo",
+        "stream": "stdout",
+        "timestamp": "2026-02-10T00:00:00"
+      }
+    },
+    {
+      "input": "2026-02-09T10:00:00 no brackets",
+      "outcome": null
+    },
+    {
+      "input": "short",
+      "outcome": null
+    }
+  ],
+  "runtime": {
+    "executable_sha256": "255e900f44ce87c630e83b637a79435f9ae7778dd72f6e2a2f18a486e501d016",
+    "fixed_now": "2026-08-12T17:45:30",
+    "python": "3.14.6 (main, Jun 23 2026, 15:18:23) [Clang 22.1.3 ]",
+    "unicode": "16.0.0"
+  },
+  "schema": 1,
+  "since": [
+    {
+      "input": "30m",
+      "outcome": "2026-08-12T17:15:30"
+    },
+    {
+      "input": " 30m ",
+      "outcome": "2026-08-12T17:15:30"
+    },
+    {
+      "input": "\u0663\u0660m",
+      "outcome": "2026-08-12T17:15:30"
+    },
+    {
+      "input": "\uff13\uff10m",
+      "outcome": "2026-08-12T17:15:30"
+    },
+    {
+      "input": "0m",
+      "outcome": "2026-08-12T17:45:30"
+    },
+    {
+      "input": "2h",
+      "outcome": "2026-08-12T15:45:30"
+    },
+    {
+      "input": "1d",
+      "outcome": "2026-08-11T17:45:30"
+    },
+    {
+      "input": "4pm",
+      "outcome": "2026-08-12T16:00:00"
+    },
+    {
+      "input": "04PM",
+      "outcome": "2026-08-12T16:00:00"
+    },
+    {
+      "input": "4:30pm",
+      "outcome": "2026-08-12T16:30:00"
+    },
+    {
+      "input": "16:00",
+      "outcome": "2026-08-12T16:00:00"
+    },
+    {
+      "input": "00:00",
+      "outcome": "2026-08-12T00:00:00"
+    },
+    {
+      "input": "12am",
+      "outcome": "2026-08-12T00:00:00"
+    },
+    {
+      "input": "12pm",
+      "outcome": "2026-08-12T12:00:00"
+    },
+    {
+      "error": "Invalid time: '24:00'. Use e.g., 30m, 2h, 1d, 4pm, 16:00",
+      "error_type": "ArgumentTypeError",
+      "input": "24:00"
+    },
+    {
+      "error": "Invalid time: '4 pm'. Use e.g., 30m, 2h, 1d, 4pm, 16:00",
+      "error_type": "ArgumentTypeError",
+      "input": "4 pm"
+    },
+    {
+      "error": "Invalid time: '30M'. Use e.g., 30m, 2h, 1d, 4pm, 16:00",
+      "error_type": "ArgumentTypeError",
+      "input": "30M"
+    },
+    {
+      "error": "Invalid time: 'xyz'. Use e.g., 30m, 2h, 1d, 4pm, 16:00",
+      "error_type": "ArgumentTypeError",
+      "input": "xyz"
+    },
+    {
+      "error": "Python int too large to convert to C int",
+      "error_type": "OverflowError",
+      "input": "999999999999999999999999999999999999999d"
+    }
+  ],
+  "source": {
+    "path": "solstone/think/logs_cli.py",
+    "sha256": "f2ce46d928dc7c1a2922b8060e95c26b610cfe4eae250370571dc532ceed7a7f"
+  }
+}
