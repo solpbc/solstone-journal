@@ -339,9 +339,6 @@ fn catalogue<M>(
     }
     for (relative, entry) in state.files_mut().iter_mut() {
         if !seen.iter().any(|path| path == relative)
-            && entry.as_object().is_none_or(|object| {
-                object.get("status") != Some(&Value::String("imported".to_owned()))
-            })
             && let Some(object) = entry.as_object_mut()
         {
             object.insert("status".to_owned(), Value::String("removed".to_owned()));
