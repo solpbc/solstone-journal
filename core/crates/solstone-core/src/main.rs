@@ -32,11 +32,12 @@ use solstone_core_cli::{
     InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
     JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
     OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
-    RESTART_CONVEY_USAGE, RestartConveyOptions, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
-    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, ServiceOptions, SettingsParseError,
-    SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE,
-    TranscribeOptions, TransferCommand, TransferExportOptions, TransferImportOptions,
-    TransferSendOptions, USAGE, evaluate_args, version_line,
+    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE,
+    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, ScheduleOptions, ServiceOptions, SettingsParseError, SpeakerResolveCommand,
+    SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions,
+    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
+    evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
@@ -175,6 +176,16 @@ fn main() -> ExitCode {
         Ok(Command::RestartConveyUsage(error)) => {
             eprint!("{RESTART_CONVEY_USAGE}");
             eprintln!("journal restart-convey: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::Schedule(options)) => run_schedule(options),
+        Ok(Command::ScheduleHelp) => {
+            print!("{SCHEDULE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ScheduleUsage(error)) => {
+            eprint!("{SCHEDULE_USAGE}");
+            eprintln!("journal schedule: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::Grab(command)) => run_grab(command),
@@ -944,6 +955,30 @@ fn run_restart_convey(options: RestartConveyOptions) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+fn run_schedule(_options: ScheduleOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(None) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let wall = chrono::Local::now();
+    let report = solstone_core_system::schedule::build_schedule_report(
+        journal.join("config/schedules.json"),
+        journal.join("health/scheduler.json"),
+        solstone_core_system::schedule::ScheduleNow {
+            local: wall.naive_local(),
+            unix_millis: wall.timestamp_millis(),
+        },
+    );
+    print!("{}", report.render());
+    for diagnostic in report.diagnostics {
+        eprintln!("{diagnostic}");
+    }
+    ExitCode::from(report.exit_code)
 }
 
 fn run_observer(command: ObserverCommand) -> ExitCode {

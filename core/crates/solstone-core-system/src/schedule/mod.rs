@@ -8,6 +8,7 @@ mod completion;
 mod config;
 mod due;
 mod engine;
+mod report;
 mod status;
 mod submission;
 
@@ -20,6 +21,7 @@ pub use caps::baseline_cap_contributions;
 pub use config::{ConfigDiagnostic, ScheduleConfig, ScheduleEntry};
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};
+pub use report::{ScheduleReport, ScheduleReportRow, build_schedule_report};
 pub use status::ScheduleStatus;
 pub use submission::ScheduleSubmissionSink;
 

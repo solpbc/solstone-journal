@@ -15,7 +15,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
@@ -416,6 +416,21 @@ pub const RESTART_CONVEY_HELP: &str = concat!(
 pub const RESTART_CONVEY_USAGE: &str =
     "usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n";
 
+/// `journal schedule --help`, captured from the retained scheduler CLI.
+pub const SCHEDULE_HELP: &str = concat!(
+    "usage: journal schedule [-h] [-v] [-d]\n",
+    "\n",
+    "Show scheduled tasks\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+/// The parse-error usage for `journal schedule`.
+pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -487,6 +502,9 @@ pub enum Command {
     RestartConvey(RestartConveyOptions),
     RestartConveyHelp,
     RestartConveyUsage(RestartConveyUsageError),
+    Schedule(ScheduleOptions),
+    ScheduleHelp,
+    ScheduleUsage(ScheduleUsageError),
     Grab(GrabCommand),
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
@@ -716,6 +734,15 @@ impl Eq for RestartConveyOptions {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestartConveyUsageError(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleOptions {
+    pub verbose: bool,
+    pub debug: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupervisorOptions {
@@ -1128,6 +1155,11 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 Err(error) => Ok(Command::RestartConveyUsage(error)),
             }
         }
+        [command, rest @ ..] if command == OsStr::new("schedule") => match parse_schedule(rest) {
+            Ok(ScheduleParse::Run(options)) => Ok(Command::Schedule(options)),
+            Ok(ScheduleParse::Help) => Ok(Command::ScheduleHelp),
+            Err(error) => Ok(Command::ScheduleUsage(error)),
+        },
         [command, rest @ ..] if command == OsStr::new("grab") => {
             Ok(Command::Grab(parse_grab(rest)))
         }
@@ -2143,6 +2175,34 @@ fn parse_restart_convey(args: &[OsString]) -> Result<RestartConveyParse, Restart
         verbose,
         debug,
     }))
+}
+
+enum ScheduleParse {
+    Run(ScheduleOptions),
+    Help,
+}
+
+fn parse_schedule(args: &[OsString]) -> Result<ScheduleParse, ScheduleUsageError> {
+    let mut verbose = false;
+    let mut debug = false;
+    for (index, argument) in args.iter().enumerate() {
+        match argument.to_str() {
+            Some("-h" | "--help") => return Ok(ScheduleParse::Help),
+            Some("-v" | "--verbose") => verbose = true,
+            Some("-d" | "--debug") => debug = true,
+            _ => {
+                return Err(ScheduleUsageError(format!(
+                    "unrecognized arguments: {}",
+                    args[index..]
+                        .iter()
+                        .map(|value| value.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )));
+            }
+        }
+    }
+    Ok(ScheduleParse::Run(ScheduleOptions { verbose, debug }))
 }
 
 fn parse_body(args: &[OsString]) -> Result<BodyCommand, UsageError> {
@@ -5009,6 +5069,7 @@ mod tests {
         }
         assert!(USAGE.contains("journal convey"));
         assert!(USAGE.contains("journal restart-convey"));
+        assert!(USAGE.contains("journal schedule"));
         assert!(USAGE.starts_with("Usage:\n"));
     }
 
@@ -5393,5 +5454,37 @@ mod tests {
         ] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }
+    }
+
+    #[test]
+    fn parses_schedule_arguments_before_execution() {
+        assert_eq!(
+            SCHEDULE_HELP,
+            "usage: journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule"])),
+            Ok(Command::Schedule(ScheduleOptions {
+                verbose: false,
+                debug: false,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule", "-v", "--debug"])),
+            Ok(Command::Schedule(ScheduleOptions {
+                verbose: true,
+                debug: true,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule", "--help"])),
+            Ok(Command::ScheduleHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule", "--nonsense"])),
+            Ok(Command::ScheduleUsage(ScheduleUsageError(
+                "unrecognized arguments: --nonsense".to_owned()
+            )))
+        );
     }
 }

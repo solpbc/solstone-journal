@@ -405,6 +405,7 @@ CLI commands, a native `native/authority.toml` plus `native/command.rs`.
 | Observe (capture) | `transcribe`, `describe`, `sense`, `transfer`, `observer` |
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `restart-convey`, `maint` |
+| Schedule (read-only) | `schedule` |
 | Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter`, `detect-created` |
 | Installation | `doctor` |
 | Help | `help`, `chat` |
