@@ -534,7 +534,7 @@ fn local_target(journal: &Path, model_id: &str) -> Result<Value, DispatchError> 
     )
 }
 
-pub(crate) fn local_backend_choice(
+pub fn local_backend_choice(
     journal: &Path,
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> crate::BackendChoice {

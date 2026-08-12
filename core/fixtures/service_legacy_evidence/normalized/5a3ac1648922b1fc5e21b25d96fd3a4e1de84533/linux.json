@@ -1,0 +1,64 @@
+{
+  "blob": "5a3ac1648922b1fc5e21b25d96fd3a4e1de84533",
+  "commit": "7f7436fb678ddf475cb76baa97eb76eb97a31473",
+  "path": "think/service.py",
+  "platform": "linux",
+  "schema": "service-legacy-normalized-evidence",
+  "schema_version": 1,
+  "variants": {
+    "optional_keys_absent": {
+      "plist": {
+        "EnvironmentVariables": {
+          "HOME": "<HOME>",
+          "PATH": "<PATH>",
+          "_SOLSTONE_JOURNAL_OVERRIDE": "<JOURNAL>"
+        },
+        "KeepAlive": true,
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "supervisor",
+          "<PORT>"
+        ],
+        "RunAtLoad": true,
+        "StandardErrorPath": "<JOURNAL>/health/launchd-stderr.log",
+        "StandardOutPath": "<JOURNAL>/health/launchd-stdout.log"
+      },
+      "profiles": [
+        "alt_port_path",
+        "default",
+        "keys_absent",
+        "spaces_nonascii"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=<LAUNCHER_BIN> supervisor <PORT>\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=<HOME>\nEnvironment=PATH=<PATH>\nEnvironment=_SOLSTONE_JOURNAL_OVERRIDE=<JOURNAL>\n\n[Install]\nWantedBy=default.target\n"
+    },
+    "optional_keys_present": {
+      "plist": {
+        "EnvironmentVariables": {
+          "ANTHROPIC_API_KEY": "<API_KEY:ANTHROPIC_API_KEY>",
+          "GOOGLE_API_KEY": "<API_KEY:GOOGLE_API_KEY>",
+          "HOME": "<HOME>",
+          "OPENAI_API_KEY": "<API_KEY:OPENAI_API_KEY>",
+          "PATH": "<PATH>",
+          "PLAUD_ACCESS_TOKEN": "<API_KEY:PLAUD_ACCESS_TOKEN>",
+          "REVAI_ACCESS_TOKEN": "<API_KEY:REVAI_ACCESS_TOKEN>",
+          "_SOLSTONE_JOURNAL_OVERRIDE": "<JOURNAL>"
+        },
+        "KeepAlive": true,
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "supervisor",
+          "<PORT>"
+        ],
+        "RunAtLoad": true,
+        "StandardErrorPath": "<JOURNAL>/health/launchd-stderr.log",
+        "StandardOutPath": "<JOURNAL>/health/launchd-stdout.log"
+      },
+      "profiles": [
+        "keys_present"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=<LAUNCHER_BIN> supervisor <PORT>\nRestart=on-failure\nRestartSec=5\nEnvironment=ANTHROPIC_API_KEY=<API_KEY:ANTHROPIC_API_KEY>\nEnvironment=GOOGLE_API_KEY=<API_KEY:GOOGLE_API_KEY>\nEnvironment=HOME=<HOME>\nEnvironment=OPENAI_API_KEY=<API_KEY:OPENAI_API_KEY>\nEnvironment=PATH=<PATH>\nEnvironment=PLAUD_ACCESS_TOKEN=<API_KEY:PLAUD_ACCESS_TOKEN>\nEnvironment=REVAI_ACCESS_TOKEN=<API_KEY:REVAI_ACCESS_TOKEN>\nEnvironment=_SOLSTONE_JOURNAL_OVERRIDE=<JOURNAL>\n\n[Install]\nWantedBy=default.target\n"
+    }
+  }
+}

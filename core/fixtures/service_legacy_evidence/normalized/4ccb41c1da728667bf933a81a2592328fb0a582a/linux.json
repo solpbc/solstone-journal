@@ -1,0 +1,62 @@
+{
+  "blob": "4ccb41c1da728667bf933a81a2592328fb0a582a",
+  "commit": "4a187e1d725f77238c7cdd38bb28e21b581611fe",
+  "path": "think/service.py",
+  "platform": "linux",
+  "schema": "service-legacy-normalized-evidence",
+  "schema_version": 1,
+  "variants": {
+    "optional_keys_absent": {
+      "plist": {
+        "EnvironmentVariables": {
+          "HOME": "<HOME>",
+          "PATH": "<PATH>"
+        },
+        "KeepAlive": {
+          "SuccessfulExit": false
+        },
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "supervisor",
+          "<PORT>"
+        ],
+        "RunAtLoad": true
+      },
+      "profiles": [
+        "alt_port_path",
+        "default",
+        "keys_absent",
+        "spaces_nonascii"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=<LAUNCHER_BIN> supervisor <PORT>\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nEnvironment=HOME=<HOME>\nEnvironment=PATH=<PATH>\n\n[Install]\nWantedBy=default.target\n"
+    },
+    "optional_keys_present": {
+      "plist": {
+        "EnvironmentVariables": {
+          "ANTHROPIC_API_KEY": "<API_KEY:ANTHROPIC_API_KEY>",
+          "GOOGLE_API_KEY": "<API_KEY:GOOGLE_API_KEY>",
+          "HOME": "<HOME>",
+          "OPENAI_API_KEY": "<API_KEY:OPENAI_API_KEY>",
+          "PATH": "<PATH>",
+          "PLAUD_ACCESS_TOKEN": "<API_KEY:PLAUD_ACCESS_TOKEN>",
+          "REVAI_ACCESS_TOKEN": "<API_KEY:REVAI_ACCESS_TOKEN>"
+        },
+        "KeepAlive": {
+          "SuccessfulExit": false
+        },
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "supervisor",
+          "<PORT>"
+        ],
+        "RunAtLoad": true
+      },
+      "profiles": [
+        "keys_present"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=<LAUNCHER_BIN> supervisor <PORT>\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nEnvironment=ANTHROPIC_API_KEY=<API_KEY:ANTHROPIC_API_KEY>\nEnvironment=GOOGLE_API_KEY=<API_KEY:GOOGLE_API_KEY>\nEnvironment=HOME=<HOME>\nEnvironment=OPENAI_API_KEY=<API_KEY:OPENAI_API_KEY>\nEnvironment=PATH=<PATH>\nEnvironment=PLAUD_ACCESS_TOKEN=<API_KEY:PLAUD_ACCESS_TOKEN>\nEnvironment=REVAI_ACCESS_TOKEN=<API_KEY:REVAI_ACCESS_TOKEN>\n\n[Install]\nWantedBy=default.target\n"
+    }
+  }
+}

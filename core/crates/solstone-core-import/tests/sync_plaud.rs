@@ -3,15 +3,15 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_plaud::{
-    ImportPipeline, PipelineAuto, PipelineImportRequest, PipelineOutcome, PlaudCatalogue,
-    PlaudCredential, PlaudDownload, PlaudFailureKind, PlaudFile, PlaudManifestLookup,
-    PlaudPreviewSeams, PlaudSaveSeams, PlaudStateWriter, PlaudSyncError, PlaudSyncRequest,
-    SyncClock, sync_plaud_preview, sync_plaud_save,
+    FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
+    PipelineOutcome, PlaudCatalogue, PlaudCredential, PlaudDownload, PlaudFailureKind, PlaudFile,
+    PlaudManifestLookup, PlaudPreviewSeams, PlaudSaveSeams, PlaudStateWriter, PlaudSyncError,
+    PlaudSyncRequest, SyncClock, sync_plaud_preview, sync_plaud_save,
 };
 use solstone_core_import::{BackendName, SyncState, state_path};
 use tempfile::TempDir;
@@ -558,6 +558,109 @@ fn closed_transport_failures_cannot_persist_or_render_url_or_token_text() {
         !format!("{}", PlaudSyncError::Operation(PlaudFailureKind::Download))
             .contains("signature=secret")
     );
+}
+
+struct SentinelCredential;
+impl PlaudCredential for SentinelCredential {
+    fn access_token(&self) -> Option<&str> {
+        Some(SENTINEL)
+    }
+}
+
+const SENTINEL: &str = "PLAUD-ACCESS-TOKEN-SENTINEL-DO-NOT-PERSIST";
+
+/// Every regular file under `root`, so the assertion below covers the whole tree rather than
+/// the one state file a reader would think to check.
+fn every_file_under(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).expect("journal tree is readable") {
+            let path = entry.expect("directory entry is readable").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn credential_reaches_no_file_in_the_owner_s_journal_tree() {
+    let tree = TempDir::new().unwrap();
+    let credential = SentinelCredential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![file("matched", 1_725_000_000_000.5, 60_000.25)],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::from([(
+        "matched".to_owned(),
+        "20240801_010203".to_owned(),
+    )]));
+    // The real writer, not the recording fake: this test is about bytes on disk, and a fake
+    // state writer would make it pass without the journal ever being written to.
+    let mut writer = FilesystemPlaudStateWriter;
+    let mut downloader = Downloader::default();
+    let mut pipeline = ImportedPipeline::default();
+    let mut seams = PlaudSaveSeams {
+        preview: PlaudPreviewSeams {
+            credential: &credential,
+            catalogue: &mut catalogue,
+            manifests: &matches,
+            clock: &clock,
+            state_writer: &mut writer,
+        },
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+    let request = PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf());
+
+    let outcome = sync_plaud_save(&request, &mut seams).unwrap();
+
+    let written = every_file_under(tree.path());
+
+    // Positive control, and it is the point of the test rather than decoration. A tree walk
+    // that visits nothing satisfies every "does not contain" assertion below, so prove the
+    // instrument can both see files and find the sentinel before trusting its absence.
+    assert!(
+        !written.is_empty(),
+        "walk found no files, so the sentinel checks below would pass vacuously"
+    );
+    let planted = tree.path().join("planted-control");
+    std::fs::write(&planted, format!("leading {SENTINEL} trailing")).unwrap();
+    let control = every_file_under(tree.path())
+        .iter()
+        .filter(|path| {
+            String::from_utf8_lossy(&std::fs::read(path).unwrap_or_default()).contains(SENTINEL)
+        })
+        .count();
+    assert_eq!(
+        control, 1,
+        "walk cannot detect a planted sentinel, so it cannot testify to its absence"
+    );
+    std::fs::remove_file(&planted).unwrap();
+
+    for path in every_file_under(tree.path()) {
+        let bytes = std::fs::read(&path).expect("written file is readable");
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains(SENTINEL),
+            "credential reached the owner's journal at {}",
+            path.display()
+        );
+    }
+
+    // The state file specifically must exist, or the walk proved nothing about the write path.
+    assert!(
+        written
+            .iter()
+            .any(|path| path == &state_path(tree.path(), BackendName::Plaud)),
+        "sync did not write its state file, so no persistence path was exercised"
+    );
+    assert!(!format!("{outcome:?}").contains(SENTINEL));
+    assert!(!format!("{:?}", outcome.errors).contains(SENTINEL));
 }
 
 fn file(id: &str, start_time: f64, duration: f64) -> PlaudFile {

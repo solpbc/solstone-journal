@@ -476,7 +476,7 @@ fn origin_urls_follow_the_catalog_for_every_rust_download_unit() {
     for (unit, platform, backend, expected) in cases {
         let artifact = resolve(unit, platform, backend).into_iter().next().unwrap();
         assert_eq!(
-            archive::origin_url("https://updates.solstone.app", artifact),
+            archive::origin_url("https://updates.solstone.app", artifact.origin_key),
             expected
         );
     }

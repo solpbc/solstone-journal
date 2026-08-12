@@ -1,0 +1,37 @@
+{
+  "blob": "2a530a9e61bdd09115f10e2978f9d3a0e41d6864",
+  "commit": "d1fcda1f81ab5334888ec22b06342baa4a530357",
+  "path": "solstone/think/service.py",
+  "platform": "linux",
+  "schema": "service-legacy-normalized-evidence",
+  "schema_version": 1,
+  "variants": {
+    "canonical": {
+      "plist": {
+        "EnvironmentVariables": {
+          "HOME": "<HOME>",
+          "PATH": "<PATH>",
+          "PYTHONUNBUFFERED": "1"
+        },
+        "KeepAlive": {
+          "SuccessfulExit": false
+        },
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "start",
+          "<PORT>"
+        ],
+        "RunAtLoad": true,
+        "StandardErrorPath": "<JOURNAL>/health/service.log",
+        "StandardOutPath": "<JOURNAL>/health/service.log"
+      },
+      "profiles": [
+        "alt_port_path",
+        "default",
+        "spaces_nonascii"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nExecStart=<LAUNCHER_BIN> start <PORT>\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nStandardOutput=append:<JOURNAL>/health/service.log\nStandardError=inherit\nEnvironment=HOME=<HOME>\nEnvironment=PATH=<PATH>\nEnvironment=PYTHONUNBUFFERED=1\n\n[Install]\nWantedBy=default.target\n"
+    }
+  }
+}

@@ -249,7 +249,7 @@ pub(crate) fn origin_url_for_arch_key(unit: &str, arch_key: &str) -> Option<Stri
         .map(|artifact| {
             archive::origin_url(
                 archive::PRODUCTION_DOWNLOAD_POLICY.origin_base_url,
-                artifact,
+                artifact.origin_key,
             )
         })
 }

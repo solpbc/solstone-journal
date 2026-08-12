@@ -40,7 +40,7 @@ pub use install::{
 };
 pub use nvidia::{
     ArtifactTrust, Backend, BackendChoice, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION,
-    NvidiaProbe, hardware_backend_rejection, probe_nvidia_gpu, select_local_backend,
+    MemorySource, NvidiaProbe, hardware_backend_rejection, probe_nvidia_gpu, select_local_backend,
 };
 pub use plan::{LaunchPlan, PlanInput, PlanOutcome, Platform, VulkanDevice, plan};
 pub use vulkan::{

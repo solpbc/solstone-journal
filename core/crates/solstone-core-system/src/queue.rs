@@ -4,6 +4,7 @@
 //! Per-partition task admission, lifecycle, and deadline enforcement.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
@@ -13,8 +14,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::cap::CapResolver;
 use crate::partition::Partition;
 use crate::process::{
-    CAP_TERMINATION_TIMEOUT, ManagedProcess, ProcessEventSink, SpawnOptions,
-    TASK_QUEUE_SHUTDOWN_TIMEOUT, exit_status_for_code,
+    CAP_TERMINATION_TIMEOUT, ManagedProcess, ProcessEventSink, SpawnError, SpawnOptions,
+    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, exit_status_for_code,
 };
 use crate::request::{ActiveTaskSnapshot, ExecutionRequest};
 
@@ -162,11 +163,59 @@ pub struct TaskStatus {
     pub stuck: bool,
 }
 
+/// One coherent queue-status read captured under one queue-state lock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskQueueStatusSnapshot {
+    pub tasks: Vec<TaskStatus>,
+    pub recent_tasks: Vec<TaskHistoryRecord>,
+    pub queues: BTreeMap<String, usize>,
+}
+
+trait QueueProcess: Send {
+    fn pid(&self) -> u32;
+    fn poll(&mut self) -> io::Result<Option<i32>>;
+    fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError>;
+    fn cleanup(&mut self);
+}
+
+struct ManagedQueueProcess(ManagedProcess);
+
+impl QueueProcess for ManagedQueueProcess {
+    fn pid(&self) -> u32 {
+        self.0.pid()
+    }
+
+    fn poll(&mut self) -> io::Result<Option<i32>> {
+        self.0.poll()
+    }
+
+    fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
+        self.0.terminate(timeout)
+    }
+
+    fn cleanup(&mut self) {
+        self.0.cleanup();
+    }
+}
+
+type QueueProcessHandle = Arc<Mutex<Box<dyn QueueProcess>>>;
+type QueueProcessSpawner =
+    Arc<dyn Fn(Vec<String>, SpawnOptions) -> Result<QueueProcessHandle, SpawnError> + Send + Sync>;
+
+fn spawn_managed_queue_process(
+    command: Vec<String>,
+    options: SpawnOptions,
+) -> Result<QueueProcessHandle, SpawnError> {
+    Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
+        ManagedProcess::spawn(command, options)?,
+    )))))
+}
+
 /// A read-only active-process snapshot for a parent-death backstop.
 #[derive(Clone)]
 pub struct ActiveProcessHandle {
     pub reference: String,
-    process: Arc<Mutex<ManagedProcess>>,
+    process: QueueProcessHandle,
 }
 
 impl ActiveProcessHandle {
@@ -214,6 +263,11 @@ struct QueueInner {
     options: QueueOptions,
     state: Mutex<QueueState>,
     reaped: Condvar,
+    worker_spawner: Mutex<QueueProcessSpawner>,
+    #[cfg(test)]
+    worker_threads: Mutex<Vec<thread::JoinHandle<()>>>,
+    #[cfg(test)]
+    worker_threads_changed: Condvar,
 }
 
 struct QueueOptions {
@@ -271,11 +325,11 @@ struct ActiveEntry {
     started_at: Instant,
     started_at_unix: u64,
     pid: u32,
-    process: Arc<Mutex<ManagedProcess>>,
+    process: QueueProcessHandle,
 }
 
-type TerminationAttempt = (String, u64, Arc<Mutex<ManagedProcess>>);
-type ShutdownSnapshot = (String, Arc<Mutex<ManagedProcess>>);
+type TerminationAttempt = (String, u64, QueueProcessHandle);
+type ShutdownSnapshot = (String, QueueProcessHandle);
 
 // This guard is separate from deadline detection so repeated enforcement ticks start
 // only one termination attempt per ref. A future service-restart port should share it.
@@ -345,6 +399,11 @@ impl TaskQueue {
                     termination_attempts: TerminationAttemptRegistry::default(),
                 }),
                 reaped: Condvar::new(),
+                worker_spawner: Mutex::new(Arc::new(spawn_managed_queue_process)),
+                #[cfg(test)]
+                worker_threads: Mutex::new(Vec::new()),
+                #[cfg(test)]
+                worker_threads_changed: Condvar::new(),
             }),
         }
     }
@@ -558,9 +617,9 @@ impl TaskQueue {
         active_count
     }
 
-    pub fn collect_task_status(&self, now: Instant) -> Vec<TaskStatus> {
+    pub fn collect_status_snapshot(&self, now: Instant) -> TaskQueueStatusSnapshot {
         let state = self.inner.state.lock().expect("queue state lock poisoned");
-        state
+        let tasks = state
             .active
             .iter()
             .map(|(reference, active)| {
@@ -571,33 +630,41 @@ impl TaskQueue {
                     .cap_resolver
                     .cap_for(&active.partition)
                     .as_secs();
+                let (slow, stuck) = task_status_flags(duration_seconds, cap_seconds);
                 TaskStatus {
                     partition: active.partition.clone(),
                     reference: reference.clone(),
                     command: active.command.clone(),
                     duration_seconds,
-                    // Status deliberately truncates before comparisons; enforcement uses
-                    // untruncated Duration. Preserve Python's >= slow and > stuck split.
                     cap_seconds,
-                    slow: duration_seconds.saturating_mul(4) >= cap_seconds.saturating_mul(3),
-                    stuck: duration_seconds > cap_seconds,
+                    slow,
+                    stuck,
                 }
             })
-            .collect()
-    }
-
-    pub fn collect_queue_counts(&self) -> BTreeMap<String, usize> {
-        let state = self.inner.state.lock().expect("queue state lock poisoned");
-        let mut counts = state
+            .collect();
+        let recent_tasks = state.history.iter().cloned().collect();
+        let mut queues = state
             .queues
             .iter()
             .filter(|(_, queue)| !queue.is_empty())
             .map(|(partition, queue)| (partition.as_str().to_owned(), queue.len()))
             .collect::<BTreeMap<_, _>>();
         if !state.pending.is_empty() {
-            counts.insert("pending".to_owned(), state.pending.len());
+            queues.insert("pending".to_owned(), state.pending.len());
         }
-        counts
+        TaskQueueStatusSnapshot {
+            tasks,
+            recent_tasks,
+            queues,
+        }
+    }
+
+    pub fn collect_task_status(&self, now: Instant) -> Vec<TaskStatus> {
+        self.collect_status_snapshot(now).tasks
+    }
+
+    pub fn collect_queue_counts(&self) -> BTreeMap<String, usize> {
+        self.collect_status_snapshot(Instant::now()).queues
     }
 
     pub fn get_active_by_cmd_name(&self, partition: &Partition) -> Option<ActiveTaskSnapshot> {
@@ -627,15 +694,63 @@ impl TaskQueue {
 
     /// Return the bounded, read-only completion projection for status consumers.
     pub fn history(&self) -> Vec<TaskHistoryRecord> {
-        self.inner
-            .state
-            .lock()
-            .expect("queue state lock poisoned")
-            .history
-            .iter()
-            .cloned()
-            .collect()
+        self.collect_status_snapshot(Instant::now()).recent_tasks
     }
+
+    #[cfg(test)]
+    fn set_worker_spawner(&self, spawner: QueueProcessSpawner) {
+        *self
+            .inner
+            .worker_spawner
+            .lock()
+            .expect("queue worker spawner lock poisoned") = spawner;
+    }
+
+    #[cfg(test)]
+    fn join_test_workers(&self, expected: usize, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        let mut handles = self
+            .inner
+            .worker_threads
+            .lock()
+            .expect("queue worker registry lock poisoned");
+        while handles.len() < expected {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(format!(
+                    "timed out waiting for {expected} queue workers; observed {}",
+                    handles.len()
+                ));
+            }
+            let (next, wait) = self
+                .inner
+                .worker_threads_changed
+                .wait_timeout(handles, remaining)
+                .expect("queue worker registry lock poisoned");
+            handles = next;
+            if wait.timed_out() && handles.len() < expected {
+                return Err(format!(
+                    "timed out waiting for {expected} queue workers; observed {}",
+                    handles.len()
+                ));
+            }
+        }
+        let worker_handles = handles.drain(..expected).collect::<Vec<_>>();
+        drop(handles);
+        for handle in worker_handles {
+            handle
+                .join()
+                .map_err(|_| "queue worker panicked".to_owned())?;
+        }
+        Ok(())
+    }
+}
+
+fn task_status_flags(duration_seconds: u64, cap_seconds: u64) -> (bool, bool) {
+    (
+        (duration_seconds as u128) * 4 >= (cap_seconds as u128) * 3,
+        duration_seconds > cap_seconds,
+    )
 }
 
 // Normalize at this one consumer instead of widening request.rs with a trait used nowhere else.
@@ -714,21 +829,42 @@ fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
         };
         run_worker(worker_inner, dispatch);
     });
-    if spawned.is_err() {
-        let next = finish_worker(
-            &inner,
-            &rollback.submission.partition,
-            &rollback.submission.reference,
-        );
-        if let Some(next) = next {
-            start_dispatch(inner, next);
+    match spawned {
+        Ok(handle) => {
+            #[cfg(test)]
+            {
+                inner
+                    .worker_threads
+                    .lock()
+                    .expect("queue worker registry lock poisoned")
+                    .push(handle);
+                inner.worker_threads_changed.notify_all();
+            }
+            #[cfg(not(test))]
+            drop(handle);
+        }
+        Err(_) => {
+            let next = finish_worker(
+                &inner,
+                &rollback.submission.partition,
+                &rollback.submission.reference,
+            );
+            if let Some(next) = next {
+                start_dispatch(inner, next);
+            }
         }
     }
 }
 
 fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
     let primary = dispatch.submission.reference.clone();
-    let process = ManagedProcess::spawn(
+    let spawner = Arc::clone(
+        &inner
+            .worker_spawner
+            .lock()
+            .expect("queue worker spawner lock poisoned"),
+    );
+    let process = spawner(
         dispatch.submission.command.clone(),
         SpawnOptions {
             journal_root: inner.options.journal_root.clone(),
@@ -742,8 +878,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
         record_completion(&inner, &dispatch, -1, "error".to_owned());
         return;
     };
-    let pid = process.pid();
-    let process = Arc::new(Mutex::new(process));
+    let pid = process.lock().expect("managed process lock poisoned").pid();
     let started_at = Instant::now();
     let started_at_unix = unix_seconds();
     {
@@ -947,7 +1082,7 @@ fn start_termination(
     inner: Arc<QueueInner>,
     reference: String,
     token: u64,
-    process: Arc<Mutex<ManagedProcess>>,
+    process: QueueProcessHandle,
     timeout: Duration,
 ) {
     let thread_inner = Arc::clone(&inner);
@@ -969,7 +1104,7 @@ fn terminate_process(
     inner: &QueueInner,
     reference: &str,
     token: u64,
-    process: Arc<Mutex<ManagedProcess>>,
+    process: QueueProcessHandle,
     timeout: Duration,
 ) {
     let _ = process
@@ -989,4 +1124,626 @@ fn unix_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Barrier, Condvar, mpsc};
+
+    use super::*;
+    use crate::request::{BusTaskRequest, TaskArgv};
+
+    struct FixedCap(u64);
+    impl CapResolver for FixedCap {
+        fn cap_for(&self, _partition: &Partition) -> Duration {
+            Duration::from_secs(self.0)
+        }
+    }
+
+    enum Poll {
+        Error,
+        Complete(i32),
+        Gate {
+            arrived: Arc<Barrier>,
+            release: Arc<Barrier>,
+            code: i32,
+        },
+    }
+
+    struct FakeProcess {
+        pid: u32,
+        polls: VecDeque<Poll>,
+        terminate_error: bool,
+        cleanups: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl FakeProcess {
+        fn idle(pid: u32, cleanups: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+            Self {
+                pid,
+                polls: VecDeque::new(),
+                terminate_error: false,
+                cleanups,
+            }
+        }
+
+        fn poll_error(pid: u32, cleanups: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+            Self {
+                pid,
+                polls: VecDeque::from([Poll::Error]),
+                terminate_error: true,
+                cleanups,
+            }
+        }
+
+        fn complete(pid: u32, cleanups: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+            Self {
+                pid,
+                polls: VecDeque::from([Poll::Complete(0)]),
+                terminate_error: false,
+                cleanups,
+            }
+        }
+
+        fn gated(
+            arrived: Arc<Barrier>,
+            release: Arc<Barrier>,
+            cleanups: Arc<std::sync::atomic::AtomicUsize>,
+        ) -> Self {
+            Self {
+                pid: 1,
+                polls: VecDeque::from([Poll::Gate {
+                    arrived,
+                    release,
+                    code: 0,
+                }]),
+                terminate_error: false,
+                cleanups,
+            }
+        }
+    }
+
+    impl QueueProcess for FakeProcess {
+        fn pid(&self) -> u32 {
+            self.pid
+        }
+
+        fn poll(&mut self) -> io::Result<Option<i32>> {
+            match self.polls.pop_front() {
+                Some(Poll::Error) => Err(io::Error::other("poll failure")),
+                Some(Poll::Complete(code)) => Ok(Some(code)),
+                Some(Poll::Gate {
+                    arrived,
+                    release,
+                    code,
+                }) => {
+                    arrived.wait();
+                    release.wait();
+                    Ok(Some(code))
+                }
+                None => Ok(None),
+            }
+        }
+
+        fn terminate(
+            &mut self,
+            _timeout: Duration,
+        ) -> Result<TerminationOutcome, TerminationError> {
+            if self.terminate_error {
+                Err(TerminationError::ParentGraceTimeout)
+            } else {
+                Ok(TerminationOutcome::Graceful { exit_code: None })
+            }
+        }
+
+        fn cleanup(&mut self) {
+            self.cleanups
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    enum SpawnPlan {
+        Failure,
+        Process(FakeProcess),
+    }
+
+    fn plan_spawner(plans: VecDeque<SpawnPlan>) -> QueueProcessSpawner {
+        let plans = Mutex::new(plans);
+        Arc::new(
+            move |_, _| match plans.lock().expect("fake plans").pop_front() {
+                Some(SpawnPlan::Failure) => Err(SpawnError::EmptyCommand),
+                Some(SpawnPlan::Process(process)) => Ok(Arc::new(Mutex::new(Box::new(process)))),
+                None => panic!("missing fake process plan"),
+            },
+        )
+    }
+
+    fn gated_plan(
+        arrived: Arc<Barrier>,
+        release: Arc<Barrier>,
+        cleanups: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> SpawnPlan {
+        SpawnPlan::Process(FakeProcess::gated(arrived, release, cleanups))
+    }
+
+    fn queue(ready: bool, cap: u64, plans: VecDeque<SpawnPlan>) -> TaskQueue {
+        queue_with_sink(ready, cap, plans, None)
+    }
+
+    fn queue_with_sink(
+        ready: bool,
+        cap: u64,
+        plans: VecDeque<SpawnPlan>,
+        queue_sink: Option<Arc<dyn TaskQueueEventSink>>,
+    ) -> TaskQueue {
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: PathBuf::new(),
+            cap_resolver: Arc::new(FixedCap(cap)),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink,
+            process_sink: None,
+            ready,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(plan_spawner(plans));
+        queue
+    }
+
+    const TEST_TRANSITION_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum StatusSeam {
+        SentinelStarted = 1,
+        SentinelCompleted = 2,
+        FollowerPopped = 3,
+        FollowerStarted = 4,
+        FollowerReleased = 5,
+    }
+
+    impl StatusSeam {
+        fn rank(self) -> u8 {
+            self as u8
+        }
+    }
+
+    #[derive(Default)]
+    struct SeamControl {
+        released: u8,
+        cancelled: bool,
+    }
+
+    struct StatusSeamSink {
+        events: mpsc::Sender<StatusSeam>,
+        control: StatusSeamControl,
+    }
+
+    type StatusSeamControl = Arc<(Mutex<SeamControl>, Condvar)>;
+    type StatusSeamParts = (
+        Arc<dyn TaskQueueEventSink>,
+        mpsc::Receiver<StatusSeam>,
+        StatusSeamControl,
+    );
+
+    impl TaskQueueEventSink for StatusSeamSink {
+        fn emit(&self, event: TaskQueueEvent) {
+            let seam = match event {
+                TaskQueueEvent::Started { reference, .. } if reference == "sentinel" => {
+                    Some(StatusSeam::SentinelStarted)
+                }
+                TaskQueueEvent::Stopped { reference, .. } if reference == "sentinel" => {
+                    Some(StatusSeam::SentinelCompleted)
+                }
+                TaskQueueEvent::QueueChanged {
+                    running_reference: Some(reference),
+                    queued_depth: 0,
+                    ..
+                } if reference == "follower" => Some(StatusSeam::FollowerPopped),
+                TaskQueueEvent::Started { reference, .. } if reference == "follower" => {
+                    Some(StatusSeam::FollowerStarted)
+                }
+                TaskQueueEvent::QueueChanged {
+                    running_reference: None,
+                    queued_depth: 0,
+                    ..
+                } => Some(StatusSeam::FollowerReleased),
+                _ => None,
+            };
+            let Some(seam) = seam else {
+                return;
+            };
+            if self.events.send(seam).is_err() {
+                return;
+            }
+            let (lock, changed) = &*self.control;
+            let control = lock.lock().expect("status seam control poisoned");
+            let (control, wait) = changed
+                .wait_timeout_while(control, TEST_TRANSITION_TIMEOUT, |control| {
+                    !control.cancelled && control.released < seam.rank()
+                })
+                .expect("status seam control poisoned");
+            assert!(
+                control.cancelled || control.released >= seam.rank() || !wait.timed_out(),
+                "timed out waiting to release status seam {seam:?}"
+            );
+        }
+    }
+
+    struct StatusSeamHarness {
+        queue: TaskQueue,
+        events: mpsc::Receiver<StatusSeam>,
+        control: StatusSeamControl,
+        expected_workers: usize,
+        finished: bool,
+    }
+
+    impl StatusSeamHarness {
+        fn new(
+            queue: TaskQueue,
+            events: mpsc::Receiver<StatusSeam>,
+            control: StatusSeamControl,
+        ) -> Self {
+            Self {
+                queue,
+                events,
+                control,
+                expected_workers: 0,
+                finished: false,
+            }
+        }
+
+        fn expect_workers(&mut self, expected: usize) {
+            self.expected_workers = expected;
+        }
+
+        fn wait_for(&self, expected: StatusSeam) {
+            let actual = self
+                .events
+                .recv_timeout(TEST_TRANSITION_TIMEOUT)
+                .unwrap_or_else(|error| {
+                    panic!("timed out waiting for status seam {expected:?}: {error}")
+                });
+            assert_eq!(actual, expected, "unexpected queue status seam");
+        }
+
+        fn release(&self, seam: StatusSeam) {
+            let (lock, changed) = &*self.control;
+            let mut control = lock.lock().expect("status seam control poisoned");
+            control.released = control.released.max(seam.rank());
+            changed.notify_all();
+        }
+
+        fn finish(mut self) {
+            let result = self
+                .queue
+                .join_test_workers(self.expected_workers, TEST_TRANSITION_TIMEOUT);
+            self.finished = true;
+            result.unwrap_or_else(|error| panic!("failed to join queue workers: {error}"));
+        }
+    }
+
+    impl Drop for StatusSeamHarness {
+        fn drop(&mut self) {
+            if self.finished {
+                return;
+            }
+            let (lock, changed) = &*self.control;
+            lock.lock().expect("status seam control poisoned").cancelled = true;
+            changed.notify_all();
+            let _ = self
+                .queue
+                .join_test_workers(self.expected_workers, TEST_TRANSITION_TIMEOUT);
+        }
+    }
+
+    fn status_seam_sink() -> StatusSeamParts {
+        let (events, receiver) = mpsc::channel();
+        let control = Arc::new((Mutex::new(SeamControl::default()), Condvar::new()));
+        (
+            Arc::new(StatusSeamSink {
+                events,
+                control: Arc::clone(&control),
+            }),
+            receiver,
+            control,
+        )
+    }
+
+    fn dispatch(reference: &str) -> Dispatch {
+        Dispatch {
+            submission: Submission {
+                partition: Partition::new("svc"),
+                command: vec!["svc".to_owned()],
+                reference: reference.to_owned(),
+                day: None,
+                scheduler_name: None,
+            },
+            references: vec![reference.to_owned()],
+        }
+    }
+
+    fn add_active(queue: &TaskQueue, reference: &str) {
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let process: QueueProcessHandle =
+            Arc::new(Mutex::new(Box::new(FakeProcess::idle(1, cleanups))));
+        queue
+            .inner
+            .state
+            .lock()
+            .expect("queue state")
+            .active
+            .insert(
+                reference.to_owned(),
+                ActiveEntry {
+                    partition: Partition::new("svc"),
+                    command: vec!["svc".to_owned()],
+                    started_at: Instant::now(),
+                    started_at_unix: 0,
+                    pid: 1,
+                    process,
+                },
+            );
+    }
+
+    fn request(reference: &str) -> ExecutionRequest {
+        ExecutionRequest::Bus(BusTaskRequest {
+            cmd: TaskArgv::from_wire(vec!["svc".to_owned()]).expect("command"),
+            reference: reference.to_owned(),
+            day: None,
+            scheduler_name: None,
+            queue_if_active_cmd_differs: false,
+        })
+    }
+
+    #[test]
+    fn status_snapshot_is_ordered_coherent_and_stable() {
+        let queue = queue(true, 10, VecDeque::new());
+        add_active(&queue, "z");
+        add_active(&queue, "a");
+        record_completion(&queue.inner, &dispatch("old"), 0, "ok".to_owned());
+        queue
+            .inner
+            .state
+            .lock()
+            .expect("queue state")
+            .queues
+            .insert(
+                Partition::new("svc"),
+                VecDeque::from([QueuedEntry {
+                    references: vec!["queued".to_owned()],
+                    command: vec!["svc".to_owned()],
+                    day: None,
+                    scheduler_name: None,
+                }]),
+            );
+        let now = Instant::now();
+        let first = queue.collect_status_snapshot(now);
+        assert_eq!(
+            first
+                .tasks
+                .iter()
+                .map(|task| task.reference.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "z"]
+        );
+        assert_eq!(first.recent_tasks[0].reference, "old");
+        assert_eq!(first.queues.get("svc"), Some(&1));
+        assert_eq!(first, queue.collect_status_snapshot(now));
+    }
+
+    #[test]
+    fn status_flags_keep_thresholds_without_saturation() {
+        assert_eq!(task_status_flags(2, 4), (false, false));
+        assert_eq!(task_status_flags(3, 4), (true, false));
+        assert_eq!(task_status_flags(4, 4), (true, false));
+        assert_eq!(task_status_flags(5, 4), (true, true));
+        assert_eq!(task_status_flags(0, 0), (true, false));
+        assert_eq!(task_status_flags(1, 0), (true, true));
+        let cap = u64::MAX;
+        let below = 13_835_058_055_282_163_711;
+        let oracle = cap - cap / 4;
+        assert_eq!(below < oracle, !task_status_flags(below, cap).0);
+        assert_eq!(below + 1 >= oracle, task_status_flags(below + 1, cap).0);
+    }
+
+    #[test]
+    fn snapshot_history_is_fifo_and_keeps_active_reference() {
+        let queue = queue(true, 10, VecDeque::new());
+        for index in 0..101 {
+            record_completion(
+                &queue.inner,
+                &dispatch(&format!("ref-{index}")),
+                0,
+                "ok".to_owned(),
+            );
+        }
+        add_active(&queue, "ref-1");
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snapshot.recent_tasks.len(), HISTORY_LIMIT);
+        for (record, reference) in [
+            (&snapshot.recent_tasks[0], "ref-1"),
+            (&snapshot.recent_tasks[99], "ref-100"),
+        ] {
+            assert_eq!(record.reference, reference);
+            assert_eq!(record.partition, Partition::new("svc"));
+            assert_eq!(record.command, ["svc"]);
+            assert!(record.ended_at.duration_since(UNIX_EPOCH).is_ok());
+            assert_eq!(record.exit_status, "ok");
+            assert_eq!(record.scheduler_name, None);
+        }
+        assert_eq!(snapshot.tasks[0].reference, "ref-1");
+        assert!(
+            snapshot
+                .recent_tasks
+                .iter()
+                .any(|record| record.reference == "ref-1")
+        );
+    }
+
+    #[test]
+    fn legacy_projections_preserve_queue_count_rules() {
+        let pending = queue(false, 10, VecDeque::new());
+        assert_eq!(
+            pending.collect_status_snapshot(Instant::now()),
+            TaskQueueStatusSnapshot {
+                tasks: Vec::new(),
+                recent_tasks: Vec::new(),
+                queues: BTreeMap::new(),
+            }
+        );
+        pending.submit(request("pending"));
+        assert_eq!(pending.collect_queue_counts().get("pending"), Some(&1));
+        let queue = queue(true, 10, VecDeque::new());
+        queue
+            .inner
+            .state
+            .lock()
+            .expect("queue state")
+            .running
+            .insert(
+                Partition::new("svc"),
+                RunningSlot {
+                    reference: "running".to_owned(),
+                },
+            );
+        queue.submit(request("one"));
+        queue.submit(request("two"));
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snapshot.queues.get("svc"), Some(&1));
+        assert_eq!(queue.collect_queue_counts(), snapshot.queues);
+        assert_eq!(queue.history(), snapshot.recent_tasks);
+        assert_eq!(queue.collect_task_status(Instant::now()), snapshot.tasks);
+    }
+
+    #[test]
+    fn status_snapshot_covers_every_normal_completion_seam_and_rejects_torn_reads() {
+        let (sink, events, control) = status_seam_sink();
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let queue = queue_with_sink(
+            true,
+            10,
+            VecDeque::from([
+                SpawnPlan::Process(FakeProcess::complete(1, Arc::clone(&cleanups))),
+                SpawnPlan::Process(FakeProcess::complete(2, cleanups)),
+            ]),
+            Some(sink),
+        );
+        let mut harness = StatusSeamHarness::new(queue.clone(), events, control);
+        harness.expect_workers(1);
+
+        queue.submit(request("sentinel"));
+        harness.wait_for(StatusSeam::SentinelStarted);
+        queue.submit(request("follower"));
+        harness.expect_workers(2);
+        let active = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(
+            active
+                .tasks
+                .iter()
+                .map(|task| task.reference.as_str())
+                .collect::<Vec<_>>(),
+            ["sentinel"]
+        );
+        assert!(active.recent_tasks.is_empty());
+        assert_eq!(active.queues.get("svc"), Some(&1));
+        harness.release(StatusSeam::SentinelStarted);
+
+        harness.wait_for(StatusSeam::SentinelCompleted);
+        let completed = queue.collect_status_snapshot(Instant::now());
+        assert!(completed.tasks.is_empty());
+        assert_eq!(completed.recent_tasks[0].reference, "sentinel");
+        assert_eq!(completed.queues.get("svc"), Some(&1));
+        harness.release(StatusSeam::SentinelCompleted);
+
+        harness.wait_for(StatusSeam::FollowerPopped);
+        let popped = queue.collect_status_snapshot(Instant::now());
+        assert!(popped.tasks.is_empty());
+        assert_eq!(popped.recent_tasks[0].reference, "sentinel");
+        assert!(popped.queues.is_empty());
+
+        let legacy_torn = TaskQueueStatusSnapshot {
+            tasks: active.tasks.clone(),
+            recent_tasks: popped.recent_tasks.clone(),
+            queues: popped.queues.clone(),
+        };
+        assert_eq!(legacy_torn.tasks[0].reference, "sentinel");
+        assert_eq!(legacy_torn.recent_tasks[0].reference, "sentinel");
+        assert!(legacy_torn.queues.is_empty());
+        assert_ne!(legacy_torn, active);
+        assert_ne!(legacy_torn, completed);
+        assert_ne!(legacy_torn, popped);
+        harness.release(StatusSeam::FollowerPopped);
+
+        harness.wait_for(StatusSeam::FollowerStarted);
+        let follower = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(follower.tasks[0].reference, "follower");
+        assert_eq!(follower.recent_tasks[0].reference, "sentinel");
+        assert!(follower.queues.is_empty());
+        harness.release(StatusSeam::FollowerStarted);
+
+        harness.wait_for(StatusSeam::FollowerReleased);
+        let idle = queue.collect_status_snapshot(Instant::now());
+        assert!(idle.tasks.is_empty());
+        assert_eq!(
+            idle.recent_tasks
+                .iter()
+                .map(|task| task.reference.as_str())
+                .collect::<Vec<_>>(),
+            ["sentinel", "follower"]
+        );
+        assert!(idle.queues.is_empty());
+        harness.release(StatusSeam::FollowerReleased);
+        harness.finish();
+    }
+
+    #[test]
+    fn spawn_failure_completes_and_advances_the_follower() {
+        let arrived = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let queue = queue(
+            true,
+            10,
+            VecDeque::from([
+                SpawnPlan::Failure,
+                gated_plan(Arc::clone(&arrived), Arc::clone(&release), cleanups),
+            ]),
+        );
+        queue.submit(request("failed"));
+        queue.submit(request("follower"));
+        arrived.wait();
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(snapshot.recent_tasks[0].reference, "failed");
+        assert_eq!(snapshot.recent_tasks[0].exit_status, "error");
+        assert_eq!(snapshot.tasks[0].reference, "follower");
+        assert!(snapshot.queues.is_empty());
+        release.wait();
+    }
+
+    #[test]
+    fn poll_and_terminate_errors_still_cleanup_and_advance() {
+        let arrived = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let queue = queue(
+            true,
+            10,
+            VecDeque::from([
+                SpawnPlan::Process(FakeProcess::poll_error(1, Arc::clone(&cleanups))),
+                gated_plan(
+                    Arc::clone(&arrived),
+                    Arc::clone(&release),
+                    Arc::clone(&cleanups),
+                ),
+            ]),
+        );
+        queue.submit(request("failed"));
+        queue.submit(request("follower"));
+        arrived.wait();
+        let snapshot = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(cleanups.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(snapshot.recent_tasks[0].exit_status, "error");
+        assert_eq!(snapshot.tasks[0].reference, "follower");
+        assert!(snapshot.queues.is_empty());
+        release.wait();
+    }
 }

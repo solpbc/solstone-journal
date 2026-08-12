@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "release_version": "1.0.15",
+  "non_origin_upstream_hosts": ["github.com", "huggingface.co"],
+  "origin_pins": [
+    {"origin_key": "providers/nvattest/libnvat-linux-x86_64-1.2.2-sol.1-archive.tar.xz", "sha256": "60ef75d1873e7129f03ea80d107d92b2ef216d2a8815958617b30d9c721d474a", "unit": "nvattest"},
+    {"origin_key": "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz", "sha256": "3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea", "unit": "llama-server-cuda"},
+    {"origin_key": "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz", "sha256": "6de68319db40e8c0eb45dc4bd3a45a16971dbdc128f2b621b19bef5dae87d064", "unit": "llama-server-cuda"}
+  ]
+}
