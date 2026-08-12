@@ -1,0 +1,147 @@
+{
+  "build": {
+    "source_date_epoch": "0",
+    "tools": {
+      "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+      "maturin": "maturin 1.14.1",
+      "uv": "uv 0.11.4 (x86_64-unknown-linux-gnu)"
+    }
+  },
+  "launcher_chain": {
+    "journal_launcher": {
+      "mechanism": "script-files",
+      "source_path": "packages/solstone-journal/scripts/journal",
+      "source_sha256": "c3de2fe58414924d3bbf5e3cfb20625c6f6645cdb381e48979e1cc934cb39df5",
+      "wheel": {
+        "content_sha256": "c3de2fe58414924d3bbf5e3cfb20625c6f6645cdb381e48979e1cc934cb39df5",
+        "mechanism": "script-files",
+        "path": "solstone_journal-1.0.22.data/scripts/journal",
+        "record_sha256": "w94v5YQUkk07v148-yBiXG9mRc2zgeSJeeHMk0yznfU",
+        "record_size": 529
+      }
+    },
+    "native_binary": {
+      "name": "solstone-core-journal",
+      "wheel": {
+        "content_sha256": "c6f1881bd88ba2c326398881cf2df845d04d446fcdd40d4ce1975f5a8363d97e",
+        "path": "solstone_core_journal-1.0.22.data/scripts/solstone-core-journal",
+        "record_sha256": "xvGIG9iLosMmOYiBzy34RdBNRG_N1A1M4ZdfWoNj2X4",
+        "record_size": 10249400
+      }
+    },
+    "native_dispatch": {
+      "process_tokens": [
+        "service",
+        "up",
+        "down"
+      ],
+      "python_module": "solstone.think.service"
+    },
+    "native_dispatch_sources": [
+      {
+        "path": "core/crates/solstone-core-journal-cli/src/processes.rs",
+        "sha256": "187a8a33c7be846bc1d9919c00358d3be00db26c8536a74026fef5bd7c39ef72"
+      },
+      {
+        "path": "core/crates/solstone-core-journal-cli/src/runner.rs",
+        "sha256": "300728bb2769725b897ef10adca12ec665470a2af6cce6e7ac48affb89657fc4"
+      },
+      {
+        "path": "core/crates/solstone-core-journal-cli/src/lib.rs",
+        "sha256": "190ee8b0e6abd7b38d2ee9744a7490eecec048d70854ea4c0150668a2929376d"
+      }
+    ],
+    "sibling_binary": "solstone-core-journal"
+  },
+  "schema": "service-legacy-packaging-provenance",
+  "schema_version": 1,
+  "source": {
+    "commit": "09efbacd508ca388a42efa14f9f2e04dd2350829"
+  },
+  "wheels": {
+    "solstone_core_journal": {
+      "binary": {
+        "content_sha256": "c6f1881bd88ba2c326398881cf2df845d04d446fcdd40d4ce1975f5a8363d97e",
+        "path": "solstone_core_journal-1.0.22.data/scripts/solstone-core-journal",
+        "record_sha256": "xvGIG9iLosMmOYiBzy34RdBNRG_N1A1M4ZdfWoNj2X4",
+        "record_size": 10249400
+      },
+      "filename": "solstone_core_journal-1.0.22-py3-none-linux_x86_64.whl",
+      "metadata": {
+        "name": "solstone-core-journal",
+        "record": {
+          "content_sha256": "13217f06755e2e93af0ddc36013a3e65ba7f0912c21e08869093eb231718eb4d",
+          "path": "solstone_core_journal-1.0.22.dist-info/METADATA",
+          "record_sha256": "EyF_BnVeLpOvDdw2ATo-Zbp_CRLCHgiGkJPrIxcY600",
+          "record_size": 166
+        },
+        "requires_dist": [],
+        "version": "1.0.22"
+      },
+      "record": {
+        "content_sha256": "46e1451c37182612529f6aa72097c524aea31761f1943a1c2239a5731b994224",
+        "path": "solstone_core_journal-1.0.22.dist-info/RECORD"
+      },
+      "sha256": "9b6a0e80d34e174123df4844fcab42c411f426c943cf629093165a7c52efd7d3"
+    },
+    "solstone_journal": {
+      "filename": "solstone_journal-1.0.22-py3-none-any.whl",
+      "metadata": {
+        "name": "solstone-journal",
+        "record": {
+          "content_sha256": "9eb4eb56c678dc7a97f655ed0227868b1f86cc73dd1a5418259fccde0002e568",
+          "path": "solstone_journal-1.0.22.dist-info/METADATA",
+          "record_sha256": "nrTrVsZ43HqX9lXtAieGix-GzHPdGlQYJZ_M3gAC5Wg",
+          "record_size": 2421
+        },
+        "requires_dist": [
+          "solstone[journal-host]==1.0.22",
+          "solstone-core==1.0.22; sys_platform == \"linux\" and platform_machine == \"x86_64\"",
+          "solstone-core==1.0.22; sys_platform == \"linux\" and platform_machine == \"aarch64\"",
+          "solstone-core==1.0.22; sys_platform == \"darwin\" and platform_machine == \"arm64\"",
+          "solstone-core-journal==1.0.22; sys_platform == \"linux\" and platform_machine == \"x86_64\"",
+          "solstone-core-journal==1.0.22; sys_platform == \"linux\" and platform_machine == \"aarch64\"",
+          "solstone-core-journal==1.0.22; sys_platform == \"darwin\" and platform_machine == \"arm64\"",
+          "solstone-core-depict==1.0.22; sys_platform == \"linux\" and platform_machine == \"x86_64\"",
+          "solstone-core-depict==1.0.22; sys_platform == \"linux\" and platform_machine == \"aarch64\"",
+          "solstone-core-depict==1.0.22; sys_platform == \"darwin\" and platform_machine == \"arm64\"",
+          "solstone-core-retention==1.0.22; sys_platform == \"linux\" and platform_machine == \"x86_64\"",
+          "solstone-core-retention==1.0.22; sys_platform == \"linux\" and platform_machine == \"aarch64\"",
+          "solstone-core-retention==1.0.22; sys_platform == \"darwin\" and platform_machine == \"arm64\"",
+          "solstone-core-speakers-analyze==1.0.22; sys_platform == \"linux\" and platform_machine == \"x86_64\"",
+          "solstone-core-speakers-analyze==1.0.22; sys_platform == \"linux\" and platform_machine == \"aarch64\"",
+          "solstone-core-speakers-analyze==1.0.22; sys_platform == \"darwin\" and platform_machine == \"arm64\"",
+          "solstone-core-vulkan-probe==1.0.22; sys_platform == \"linux\" and platform_machine == \"x86_64\"",
+          "solstone-core-vulkan-probe==1.0.22; sys_platform == \"linux\" and platform_machine == \"aarch64\"",
+          "onnxruntime!=1.24.1,>=1.20.0",
+          "onnxruntime!=1.24.1,>=1.25.0; sys_platform == \"linux\" and platform_machine == \"x86_64\""
+        ],
+        "version": "1.0.22"
+      },
+      "project_script": {
+        "entry_points": {
+          "content_sha256": "4a0c1d18ec673eb68cce9f62910fd082d11096d1df8c693c7259b161a2fdfc60",
+          "path": "solstone_journal-1.0.22.dist-info/entry_points.txt",
+          "record_sha256": "SgwdGOxnPraMzp9ikQ_QgtEQltHfjGk8clmxYaL9_GA",
+          "record_size": 76
+        },
+        "mechanism": "project.scripts",
+        "name": "mlx-vlm-server",
+        "part_of_journal_launcher_chain": false,
+        "target": "solstone.think.providers.mlx_server:main"
+      },
+      "record": {
+        "content_sha256": "bd41db2c781b173d198a585565f722434b2f21997ffc7ca96723525409088274",
+        "path": "solstone_journal-1.0.22.dist-info/RECORD"
+      },
+      "script_files_launcher": {
+        "content_sha256": "c3de2fe58414924d3bbf5e3cfb20625c6f6645cdb381e48979e1cc934cb39df5",
+        "mechanism": "script-files",
+        "path": "solstone_journal-1.0.22.data/scripts/journal",
+        "record_sha256": "w94v5YQUkk07v148-yBiXG9mRc2zgeSJeeHMk0yznfU",
+        "record_size": 529
+      },
+      "sha256": "3bc1ff8b5764c9bc9100e5dfc0838f8837cb9e137bcf86682f82ee76ee74bdaf"
+    }
+  }
+}
