@@ -1,0 +1,40 @@
+{
+  "blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6",
+  "commit": "c812d3bcfd1a3d361e0a2ee73afd258f034f4d11",
+  "path": "solstone/think/service.py",
+  "platform": "linux",
+  "schema": "service-legacy-normalized-evidence",
+  "schema_version": 1,
+  "variants": {
+    "canonical": {
+      "plist": {
+        "EnvironmentVariables": {
+          "HOME": "<HOME>",
+          "PATH": "<PATH>",
+          "PYTHONUNBUFFERED": "1"
+        },
+        "KeepAlive": {
+          "SuccessfulExit": false
+        },
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "start",
+          "<PORT>"
+        ],
+        "RunAtLoad": true,
+        "SoftResourceLimits": {
+          "NumberOfFiles": 4096
+        },
+        "StandardErrorPath": "<JOURNAL>/health/service.log",
+        "StandardOutPath": "<JOURNAL>/health/service.log"
+      },
+      "profiles": [
+        "alt_port_path",
+        "default",
+        "spaces_nonascii"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nExecStart=<LAUNCHER_BIN> start <PORT>\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nLimitNOFILE=4096\nStandardOutput=append:<JOURNAL>/health/service.log\nStandardError=inherit\nEnvironment=HOME=<HOME>\nEnvironment=PATH=<PATH>\nEnvironment=PYTHONUNBUFFERED=1\n\n[Install]\nWantedBy=default.target\n"
+    }
+  }
+}
