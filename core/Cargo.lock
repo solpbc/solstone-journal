@@ -2598,6 +2598,7 @@ dependencies = [
  "serde_json",
  "solstone-core-cogitate-wire",
  "solstone-core-journal-io",
+ "solstone-core-system",
  "tokio",
 ]
 
