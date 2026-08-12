@@ -59,6 +59,10 @@ pub use staging::{
     SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
     stage_source,
 };
+pub use text::{
+    SystemWireClient, TextImportError, TextWirePhase, WireClient, process_transcript,
+    process_transcript_with_wire,
+};
 pub use timestamp::{
     AutoTimestamp, DetectedTimestamp, Timestamp, TimestampError, validate_timestamp,
 };
@@ -166,7 +170,6 @@ pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
 /// The complete inventory of importer modules that remain unimplemented.
 pub const MODULE_STUBS: &[ModuleStub] = &[
     ("audio", audio::reserved_seam),
-    ("text", text::reserved_seam),
     ("consent_gate", consent_gate::reserved_seam),
     ("sync_state", sync_state::reserved_seam),
     ("sync_plaud", sync_plaud::reserved_seam),

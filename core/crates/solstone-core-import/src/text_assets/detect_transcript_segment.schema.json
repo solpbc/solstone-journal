@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "segments"
+  ],
+  "properties": {
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start_at",
+          "line"
+        ],
+        "properties": {
+          "start_at": {
+            "type": "string",
+            "pattern": "^\\d{2}:\\d{2}:\\d{2}$"
+          },
+          "line": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

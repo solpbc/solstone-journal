@@ -2921,6 +2921,8 @@ dependencies = [
  "sha2",
  "solstone-core-callosum",
  "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-generate",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-segment",
