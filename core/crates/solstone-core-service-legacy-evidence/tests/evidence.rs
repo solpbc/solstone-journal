@@ -351,7 +351,17 @@ fn manifest_inventory_and_censuses_are_exact() {
     let interpreters = fixture(text(&manifest["interpreters"], "path"));
     exact_keys(&interpreters, &["buckets", "schema", "schema_version"]);
     exact_keys(&interpreters["buckets"], &["cpython37", "cpython39"]);
-    for bucket in object(&interpreters["buckets"]).values() {
+    let expected_inventories = BTreeMap::from([
+        (
+            "cpython37",
+            "b201e461f249322c261004b8799044bec73d0166a0426ea06d4cb4c496b5514c",
+        ),
+        (
+            "cpython39",
+            "f018c25a948d20946dce010d13e7804697247ecd27eba7a9ec3a30d9a43cbd3c",
+        ),
+    ]);
+    for (name, bucket) in object(&interpreters["buckets"]) {
         exact_keys(
             bucket,
             &[
@@ -359,12 +369,18 @@ fn manifest_inventory_and_censuses_are_exact() {
                 "declared_floor",
                 "executable",
                 "executable_sha256",
+                "inventory_sha256",
                 "pin_rationale",
                 "pinned_version",
                 "platform",
                 "release_tag",
                 "url",
             ],
+        );
+        assert_eq!(
+            text(bucket, "inventory_sha256"),
+            expected_inventories[name.as_str()],
+            "interpreter inventory pin is exact"
         );
     }
 
