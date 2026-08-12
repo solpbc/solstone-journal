@@ -102,4 +102,21 @@ fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
     assert!(makefile.contains(
         "cargo test --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml"
     ));
+
+    for target in [
+        "check-service-legacy-evidence",
+        "service-legacy-evidence-capture",
+    ] {
+        let dry_run = Command::new("make")
+            .args(["-n", target])
+            .env("PATH", "/usr/bin:/bin")
+            .current_dir(&root)
+            .output()
+            .expect("uv-free make dry run starts");
+        assert!(
+            dry_run.status.success(),
+            "{target} must be selectable without uv: {}",
+            String::from_utf8_lossy(&dry_run.stderr)
+        );
+    }
 }

@@ -473,6 +473,22 @@ fn make_ci_names_the_manual_rust_race_gate() {
 }
 
 #[test]
+fn manual_race_gate_is_selectable_without_uv() {
+    let root = repo_root();
+    let dry_run = Command::new("make")
+        .args(["-n", "check-rust-race"])
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(&root)
+        .output()
+        .expect("uv-free make dry run starts");
+    assert!(
+        dry_run.status.success(),
+        "check-rust-race must be selectable without uv: {}",
+        String::from_utf8_lossy(&dry_run.stderr)
+    );
+}
+
+#[test]
 fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
     let makefile = makefile_text(&repo_root());
     let ci = target_body(&makefile, "ci-under-poison");

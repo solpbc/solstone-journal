@@ -75,6 +75,18 @@ PACKAGING_ROLE_TOKENS = {
     "UV_CACHE",
     "XDG_CONFIG",
 }
+EVIDENCE_VALUE_TOKENS = {"JOURNAL", "LAUNCHER_BIN", "PORT"}
+EVIDENCE_VALUES = {
+    "<JOURNAL>",
+    "<JOURNAL>/health/launchd-stderr.log",
+    "<JOURNAL>/health/launchd-stdout.log",
+    "<JOURNAL>/health/service.log",
+    "<LAUNCHER_BIN> start <PORT>",
+    "<LAUNCHER_BIN> supervisor",
+    "<LAUNCHER_BIN> supervisor <PORT>",
+    "<PORT>",
+    "append:<JOURNAL>/health/service.log",
+}
 
 DUMMY_FIELDS = {
     "ANTHROPIC_API_KEY": "__SERVICE_LEGACY_DUMMY_ANTHROPIC__",
@@ -246,12 +258,26 @@ def scalar_strings(value: Any, location: str = "$") -> Iterable[tuple[str, str]]
 def canonicalize_role_tokens(value: str) -> str:
     angle_names = re.findall(r"<([^<>]*)>", value)
     observed = set(angle_names)
-    unknown = observed - PACKAGING_ROLE_TOKENS
-    residue = re.sub(r"<[^<>]*>", "", value)
-    if unknown or "<" in residue or ">" in residue:
+    known = PACKAGING_ROLE_TOKENS | EVIDENCE_VALUE_TOKENS
+    unknown = observed - known
+    role_names = "|".join(sorted((re.escape(name) for name in known), key=len, reverse=True))
+    partial_role = re.compile(rf"<(?:{role_names})(?!>)|(?<!<)(?:{role_names})>")
+    malformed_opener = re.compile(r"<[^<>\s]*/")
+    if unknown:
         raise IntegrityError("role-token", f"unknown path roles: {sorted(unknown)}")
     if not observed:
+        if partial_role.search(value) or malformed_opener.search(value):
+            raise IntegrityError("role-token", "partial path role")
         return value
+    residue = re.sub(r"<[^<>]*>", "", value)
+    if partial_role.search(residue) or malformed_opener.search(residue):
+        raise IntegrityError("role-token", "partial path role")
+    if observed & EVIDENCE_VALUE_TOKENS:
+        if observed - EVIDENCE_VALUE_TOKENS:
+            raise IntegrityError("role-token", "mixed evidence and packaging roles")
+        if value not in EVIDENCE_VALUES:
+            raise IntegrityError("role-token", "invalid evidence token value")
+        return re.sub(r"<(?:JOURNAL|LAUNCHER_BIN|PORT)>", "VALUE", value)
 
     def validate_role_path(role_path: str) -> None:
         match = ROLE_TOKEN.match(role_path)
@@ -615,7 +641,13 @@ def audit_corpus(
         for location, value in scalar_strings(payload):
             if value.startswith(("http://", "https://")):
                 continue
-            for token in _path_tokens(value):
+            try:
+                path_tokens = _path_tokens(value)
+            except IntegrityError as exc:
+                raise IntegrityError(
+                    exc.guard, f"{path}:{location}: {value!r}: {exc}"
+                ) from exc
+            for token in path_tokens:
                 if token not in stable_literals:
                     raise IntegrityError(
                         "absolute-path", f"unclassified {token!r} at {path}:{location}"
@@ -1164,6 +1196,30 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
         "--remap-path-prefix=<RUN_ROOT>=<BUILD_ROOT>"
     ):
         raise AssertionError("canonical remap roles were treated as host absolute")
+    if _path_tokens("append:<JOURNAL>/health/service.log"):
+        raise AssertionError("canonical journal value was treated as host absolute")
+    if _path_tokens("<LAUNCHER_BIN> start <PORT>"):
+        raise AssertionError("canonical command values were treated as host absolute")
+    for value in (
+        "onnxruntime!=1.24.1,>=1.20.0",
+        "package<3",
+        "package>1",
+        "PyJWT>=2",
+        "CUDA>1",
+        "A<B",
+        "CUDA<ROCm",
+    ):
+        if _path_tokens(value):
+            raise AssertionError("version constraint was treated as a host absolute")
+    for value in (
+        "<JOURNAL>:/home/operator/secret",
+        "<JOURNAL>/../home/operator/secret",
+        "<PORT>/home/operator/secret",
+        "<LAUNCHER_BIN>:/Users/operator/secret",
+        "<JOURNAL><PORT>",
+        "prefix<PORT>suffix",
+    ):
+        _expect_guard("role-token", lambda value=value: _path_tokens(value))
     _expect_guard("role-token", lambda: _path_tokens("<CALLER_ROOT>/bin/tool"))
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/../home/tool"))
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/<HOME>/tool"))
@@ -1171,6 +1227,15 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/%2e%2e/home/tool"))
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>:/tmp/tool"))
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/<malformed>"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN"))
+    _expect_guard("role-token", lambda: _path_tokens("BUNDLE_BIN>"))
+    _expect_guard(
+        "role-token", lambda: _path_tokens("<CALLER_ROOT/home/operator/secret")
+    )
+    _expect_guard(
+        "role-token", lambda: _path_tokens("<caller_root/home/operator/secret")
+    )
+    _expect_guard("role-token", lambda: _path_tokens("<x/home/operator/secret"))
     with tempfile.TemporaryDirectory(
         prefix="service-legacy-integrity-test-"
     ) as temporary:
