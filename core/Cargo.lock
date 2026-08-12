@@ -2886,8 +2886,14 @@ dependencies = [
 name = "solstone-core-import-sources"
 version = "1.0.22"
 dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "image",
  "serde_json",
+ "solstone-core-generate",
  "solstone-core-import",
+ "solstone-core-journal-io",
+ "tempfile",
 ]
 
 [[package]]

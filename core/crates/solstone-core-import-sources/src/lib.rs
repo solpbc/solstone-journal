@@ -49,7 +49,6 @@ pub const MODULE_STUBS: &[ModuleStub] = &[
     ("gemini", gemini::reserved_seam),
     ("kindle", kindle::reserved_seam),
     ("document", document::reserved_seam),
-    ("image", image::reserved_seam),
     ("archive", archive::reserved_seam),
     ("apple_health", apple_health::reserved_seam),
     ("oura", oura::reserved_seam),
