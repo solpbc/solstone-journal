@@ -18,6 +18,7 @@ use solstone_core_import::{
     import_audio_with_seams, read_audio_import_record,
 };
 use tempfile::TempDir;
+use tokio::time::timeout;
 
 const ORACLE: &str = include_str!("../../../fixtures/import_audio_oracles.json");
 
@@ -86,6 +87,40 @@ async fn fake_import_with_calls(
 
 fn created(outcome: &AudioImportOutcome) -> &solstone_core_import::AudioImportComplete {
     outcome.created()
+}
+
+fn write_analyzed_processing_record(sidecar: &Path) {
+    fs::write(
+        sidecar,
+        "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":5}}\n",
+    )
+    .unwrap();
+}
+
+async fn wait_for_segment_state(
+    request: &AudioImportRequest,
+    key: &str,
+    expected: AudioProcessingState,
+) {
+    timeout(Duration::from_secs(1), async {
+        loop {
+            let reached = read_audio_import_record(&request.journal_root, &request.import_id)
+                .ok()
+                .flatten()
+                .is_some_and(|record| {
+                    record
+                        .created_segments
+                        .iter()
+                        .any(|segment| segment.key == key && segment.processing == expected)
+                });
+            if reached {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("observed event did not update the durable audio record");
 }
 
 #[tokio::test]
@@ -288,7 +323,15 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
     .unwrap();
     assert_eq!(total_loss_record.created_segments.len(), 0);
     assert_eq!(total_loss_record.dropped_chunks.len(), 3);
-    assert!(total_loss_record.abort.is_some());
+    let total_loss_abort = total_loss_record.abort.as_ref().unwrap();
+    assert_eq!(total_loss_abort.chunk_index, None);
+    assert_eq!(total_loss_abort.start_offset_seconds, None);
+    assert_eq!(total_loss_abort.duration_seconds, None);
+    assert!(
+        total_loss_abort
+            .reason
+            .contains("no audio segments created")
+    );
 
     let destination_temp = TempDir::new().unwrap();
     let destination_request = request(&destination_temp, "destination-error");
@@ -329,7 +372,19 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
     .unwrap();
     assert_eq!(destination_record.created_segments.len(), 1);
     assert!(destination_record.dropped_chunks.is_empty());
-    assert_eq!(destination_record.abort.unwrap().chunk_index, Some(1));
+    let destination_abort = destination_record.abort.as_ref().unwrap();
+    assert_eq!(destination_abort.chunk_index, Some(1));
+    assert_eq!(destination_abort.start_offset_seconds, Some(300.0));
+    assert_eq!(destination_abort.duration_seconds, Some(300.0));
+    assert!(destination_abort.reason.contains("audio slice rejected"));
+    assert!(
+        destination_abort.reason.contains(
+            &ffmpeg_next::Error::Other {
+                errno: ffmpeg_next::error::EACCES,
+            }
+            .to_string()
+        )
+    );
 }
 
 #[tokio::test]
@@ -444,7 +499,11 @@ async fn ac6_allocation_is_exclusive_bounded_and_cleans_failed_leaves() {
             .unwrap()
             .unwrap();
     assert_eq!(mid_loop_record.created_segments.len(), 1);
-    assert_eq!(mid_loop_record.abort.unwrap().chunk_index, Some(1));
+    let mid_loop_abort = mid_loop_record.abort.as_ref().unwrap();
+    assert_eq!(mid_loop_abort.chunk_index, Some(1));
+    assert_eq!(mid_loop_abort.start_offset_seconds, Some(300.0));
+    assert_eq!(mid_loop_abort.duration_seconds, Some(300.0));
+    assert!(mid_loop_abort.reason.contains("audio segment collision"));
     assert!(
         mid_loop_record.created_segments[0].file_path.is_file(),
         "the already-created audio remains recorded rather than being deleted"
@@ -626,47 +685,115 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     during_request.wait_for_processing = true;
     during_request.stall_timeout = Duration::from_millis(50);
     during_request.poll_interval = Duration::from_millis(1);
+    let during_wait_request = during_request.clone();
     let during_sidecar = during_request
         .journal_root
-        .join("chronicle/20260811/import.audio/120000_120/imported_audio.jsonl");
-    let writer = std::thread::spawn(move || {
-        for _ in 0..100 {
-            if during_sidecar.parent().is_some_and(Path::exists) {
-                std::thread::sleep(Duration::from_millis(5));
-                fs::write(
-                    during_sidecar,
-                    "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":5}}\n",
-                )
-                .unwrap();
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(1));
+        .join("chronicle/20260811/import.audio/120500_300/imported_audio.jsonl");
+    let during_server =
+        CallosumSocketServer::bind(during_request.journal_root.join("health/callosum.sock"))
+            .await
+            .unwrap();
+    let send_during_event = async {
+        while during_server.client_count() == 0 {
+            tokio::task::yield_now().await;
         }
-        panic!("audio slice did not create its sidecar directory");
-    });
-    let during = import_audio_with_seams(
+        assert!(during_server.broadcast(CallosumEnvelope {
+            tract: "observe".to_owned(),
+            event: "observed".to_owned(),
+            ts: None,
+            extra: Map::from_iter([(String::from("segment"), json!("120000_300"))]),
+        }));
+        wait_for_segment_state(
+            &during_wait_request,
+            "120000_300",
+            AudioProcessingState::Succeeded,
+        )
+        .await;
+        write_analyzed_processing_record(&during_sidecar);
+    };
+    let during_import = import_audio_with_seams(
         during_request.clone(),
         AudioImportSeams {
-            duration_probe: |_: &Path| Ok(120.0),
+            duration_probe: |_: &Path| Ok(600.0),
             slice: |_: &Path, output: &Path, _: f64, _: f64| {
                 fs::write(output, b"audio").unwrap();
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
         },
-    )
-    .await
-    .unwrap();
-    writer.join().unwrap();
+    );
+    let (during, ()) = tokio::join!(during_import, send_during_event);
+    during_server.stop().await;
+    let during = during.unwrap();
     assert!(created(&during).processing.failed_segments.is_empty());
     assert!(created(&during).processing.stalled_segments.is_empty());
     let during_record =
         read_audio_import_record(&during_request.journal_root, &during_request.import_id)
             .unwrap()
             .unwrap();
-    assert_eq!(
-        during_record.created_segments[0].processing,
-        AudioProcessingState::Succeeded
+    assert!(
+        during_record
+            .created_segments
+            .iter()
+            .all(|segment| segment.processing == AudioProcessingState::Succeeded)
+    );
+
+    let after_temp = TempDir::new().unwrap();
+    let mut after_request = request(&after_temp, "after-loop");
+    after_request.wait_for_processing = true;
+    after_request.stall_timeout = Duration::from_millis(20);
+    after_request.poll_interval = Duration::from_millis(20);
+    let after_wait_request = after_request.clone();
+    let after_sidecar = after_request
+        .journal_root
+        .join("chronicle/20260811/import.audio/120500_300/imported_audio.jsonl");
+    let after_server =
+        CallosumSocketServer::bind(after_request.journal_root.join("health/callosum.sock"))
+            .await
+            .unwrap();
+    let send_last_event = async {
+        while after_server.client_count() == 0 {
+            tokio::task::yield_now().await;
+        }
+        assert!(after_server.broadcast(CallosumEnvelope {
+            tract: "observe".to_owned(),
+            event: "observed".to_owned(),
+            ts: None,
+            extra: Map::from_iter([(String::from("segment"), json!("120000_300"))]),
+        }));
+        wait_for_segment_state(
+            &after_wait_request,
+            "120000_300",
+            AudioProcessingState::Succeeded,
+        )
+        .await;
+        write_analyzed_processing_record(&after_sidecar);
+    };
+    let after_import = import_audio_with_seams(
+        after_request.clone(),
+        AudioImportSeams {
+            duration_probe: |_: &Path| Ok(600.0),
+            slice: |_: &Path, output: &Path, _: f64, _: f64| {
+                fs::write(output, b"audio").unwrap();
+                Ok(())
+            },
+            emit_observing: |_: &ObservingSegment| {},
+        },
+    );
+    let (after, ()) = tokio::join!(after_import, send_last_event);
+    after_server.stop().await;
+    let after = after.unwrap();
+    assert!(created(&after).processing.failed_segments.is_empty());
+    assert!(created(&after).processing.stalled_segments.is_empty());
+    let after_record =
+        read_audio_import_record(&after_request.journal_root, &after_request.import_id)
+            .unwrap()
+            .unwrap();
+    assert!(
+        after_record
+            .created_segments
+            .iter()
+            .all(|segment| segment.processing == AudioProcessingState::Succeeded)
     );
 
     let failure_temp = TempDir::new().unwrap();

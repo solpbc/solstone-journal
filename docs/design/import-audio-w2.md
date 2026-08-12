@@ -253,9 +253,10 @@ than draining into partial drops.  The native error vocabulary is
 `ffmpeg-next/src/util/error.rs:40-81`.
 
 Do **not** port Python's re-encode fallback (`audio.py:57-75`).  W2 is a
-lossless stream-copy import; AC11 forbids silently re-encoding.  A muxer that
-cannot accept a copied chunk becomes a named durable drop, and all drops still
-trigger the zero-created total-loss guard when applicable.
+lossless stream-copy import; AC11 forbids silently re-encoding.  A packet-level
+`EINVAL` rejection of one copied chunk becomes a named durable drop.  A missing
+or unsupported muxer configuration aborts instead, and all drops still trigger
+the zero-created total-loss guard when applicable.
 
 Rejected: `catch Err(_)` around a slice.  It would hide input/ownership/disk
 errors that must abort and would blur a corrupt recording with one rejected
@@ -432,7 +433,10 @@ W2 changes no supervisor, callosum protocol/crate, drain behavior,
 transcription consumer, `sense.py`, owner-facing grammar, W1a/W1b/W1c module
 bodies, or Python.  It does not add a new `sol`/`journal` flag.  It leaves the
 scope §9 follow-ups—dispatcher wiring, manifest finalization, publication,
-and any end-to-end owner-command integration—to their owning waves.
+and any end-to-end owner-command integration—to their owning waves.  The
+dispatcher supplies a unique `import_id` for each invocation; reusing one
+replaces `audio-import.json` wholesale, matching the reference record's
+replacement behavior.
 
 ## File-by-file implementation order and commit shape
 

@@ -403,7 +403,9 @@ where
                 });
             }
             Err(error) => {
-                let _ = fs::remove_dir_all(&segment_dir);
+                let cleanup_note = fs::remove_dir_all(&segment_dir).err().map(|cleanup_error| {
+                    format!("; cleanup left {}: {cleanup_error}", segment_dir.display())
+                });
                 let error = ImportError::AudioSliceRejected {
                     path: request.source_media.clone(),
                     chunk_index: index,
@@ -419,7 +421,7 @@ where
                         chunk_index: Some(index),
                         start_offset_seconds: Some(start_offset_seconds),
                         duration_seconds: Some(chunk_duration_seconds),
-                        reason: error.to_string(),
+                        reason: format!("{error}{}", cleanup_note.unwrap_or_default()),
                     },
                 )?;
                 return Err(error);
