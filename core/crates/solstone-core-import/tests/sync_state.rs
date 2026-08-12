@@ -76,7 +76,7 @@ fn reference_states() -> [(BackendName, Value); 3] {
                 "files": {
                     "imported": {
                         "filename": "recording", "fullname": "recording.opus", "filesize": 12,
-                        "start_time": 1725000000000_i64, "duration": 60000_i64, "is_trash": false,
+                        "start_time": 1725000000000.5, "duration": 60000.25, "is_trash": false,
                         "status": "imported", "import_timestamp": "20240801_010203",
                         "matched_at": "2026-08-11T12:00:00+00:00", "imported_at": "2026-08-11T12:00:00+00:00"
                     },

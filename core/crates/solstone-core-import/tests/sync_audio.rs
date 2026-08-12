@@ -239,7 +239,7 @@ fn fractional_duration_uses_the_reference_threshold_without_truncation() {
 }
 
 #[test]
-fn preexisting_available_manifest_match_is_promoted_before_removed_scan() {
+fn unseen_preexisting_manifest_match_is_removed_like_the_reference() {
     let tree = TempDir::new().unwrap();
     let scanner = OneScanner;
     let probe = Probe;
@@ -269,7 +269,7 @@ fn preexisting_available_manifest_match_is_promoted_before_removed_scan() {
     let outcome = sync_audio_preview(&request, &mut seams).unwrap();
     assert_eq!(
         outcome.state.root()["files"]["manually-imported.wav"]["status"],
-        "imported"
+        "removed"
     );
 }
 

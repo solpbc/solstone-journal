@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::rc::Rc;
 
 use solstone_core_import::contract::{SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_plaud::{
@@ -70,8 +71,21 @@ impl PlaudDownload for Downloader {
 
 struct Matches(BTreeMap<String, String>);
 impl PlaudManifestLookup for Matches {
-    fn matching_imports(&self, _: &[PlaudFile]) -> Result<BTreeMap<String, String>, String> {
+    fn matching_imports(
+        &self,
+        _: &[PlaudFile],
+    ) -> Result<BTreeMap<String, String>, PlaudFailureKind> {
         Ok(self.0.clone())
+    }
+}
+
+struct FailingMatches;
+impl PlaudManifestLookup for FailingMatches {
+    fn matching_imports(
+        &self,
+        _: &[PlaudFile],
+    ) -> Result<BTreeMap<String, String>, PlaudFailureKind> {
+        Err(PlaudFailureKind::Manifest)
     }
 }
 
@@ -86,10 +100,37 @@ impl PlaudStateWriter for Writer {
     }
 }
 
+struct EventWriter {
+    events: Rc<RefCell<Vec<String>>>,
+}
+impl PlaudStateWriter for EventWriter {
+    fn checkpoint(&mut self, _: &Path, _: &SyncState) -> Result<(), String> {
+        self.events.borrow_mut().push("checkpoint".to_owned());
+        Ok(())
+    }
+}
+
 struct PanicPipeline;
 impl ImportPipeline for PanicPipeline {
     fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
         panic!("preview has no pipeline authority")
+    }
+}
+
+struct CheckpointPipeline {
+    events: Rc<RefCell<Vec<String>>>,
+    calls: Cell<u8>,
+}
+impl ImportPipeline for CheckpointPipeline {
+    fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
+        let call = self.calls.get();
+        self.calls.set(call + 1);
+        self.events.borrow_mut().push(format!("pipeline:{call}"));
+        if call == 0 {
+            Ok(PipelineOutcome::Imported)
+        } else {
+            Err("later pipeline failure".to_owned())
+        }
     }
 }
 
@@ -120,7 +161,7 @@ fn preview_matches_before_cataloguing_and_has_no_download_or_pipeline_authority(
     let credential = Credential;
     let clock = Clock;
     let mut catalogue = Catalogue {
-        files: vec![file("matched", 1_725_000_000_000, 60_000)],
+        files: vec![file("matched", 1_725_000_000_000.5, 60_000.25)],
         fail: false,
     };
     let matches = Matches(BTreeMap::from([(
@@ -143,8 +184,8 @@ fn preview_matches_before_cataloguing_and_has_no_download_or_pipeline_authority(
     assert_eq!(entry["import_timestamp"], "20240801_010203");
     assert_eq!(entry["matched_at"], "2026-08-11T12:00:00+00:00");
     assert_eq!(entry["fullname"], "matched.opus");
-    assert_eq!(entry["start_time"], 1_725_000_000_000_i64);
-    assert_eq!(entry["duration"], 60_000_i64);
+    assert_eq!(entry["start_time"], 1_725_000_000_000.5);
+    assert_eq!(entry["duration"], 60_000.25);
     assert_eq!(entry["is_trash"], false);
     assert_eq!(outcome.downloaded, 0);
     assert_eq!(writer.checkpoints.len(), 1);
@@ -157,7 +198,7 @@ fn available_entry_is_promoted_when_a_later_manifest_match_appears() {
     let credential = Credential;
     let clock = Clock;
     let mut catalogue = Catalogue {
-        files: vec![file("later", 1_725_000_000_000, 60_000)],
+        files: vec![file("later", 1_725_000_000_000.0, 60_000.0)],
         fail: false,
     };
     let mut state = SyncState::empty(BackendName::Plaud);
@@ -206,9 +247,9 @@ fn new_trash_and_short_recordings_are_skipped() {
         files: vec![
             PlaudFile {
                 is_trash: true,
-                ..file("trash", 1_725_000_000_000, 60_000)
+                ..file("trash", 1_725_000_000_000.0, 60_000.0)
             },
-            file("short", 1_725_000_000_000, 29_999),
+            file("short", 1_725_000_000_000.0, 29_999.0),
         ],
         fail: false,
     };
@@ -243,8 +284,8 @@ fn save_orders_newest_first_and_checkpoints_each_success_before_the_next_item() 
     let clock = Clock;
     let mut catalogue = Catalogue {
         files: vec![
-            file("old", 1_725_000_000_000, 60_000),
-            file("new", 1_726_000_000_000, 60_000),
+            file("old", 1_725_000_000_000.0, 60_000.0),
+            file("new", 1_726_000_000_000.0, 60_000.0),
         ],
         fail: false,
     };
@@ -291,12 +332,195 @@ fn save_orders_newest_first_and_checkpoints_each_success_before_the_next_item() 
 }
 
 #[test]
+fn save_preserves_catalogue_order_for_equal_start_times() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("first", 1_725_000_000_000.0, 60_000.0),
+            file("second", 1_725_000_000_000.0, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let mut writer = Writer::default();
+    let mut downloader = Downloader::default();
+    let mut pipeline = ImportedPipeline::default();
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+
+    sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(downloader.downloads, ["first", "second"]);
+}
+
+#[test]
+fn successful_plaud_item_is_checkpointed_before_a_later_failure() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![
+            file("later", 1_725_000_000_000.0, 60_000.0),
+            file("first", 1_726_000_000_000.0, 60_000.0),
+        ],
+        fail: false,
+    };
+    let matches = Matches(BTreeMap::new());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut writer = EventWriter {
+        events: Rc::clone(&events),
+    };
+    let mut downloader = Downloader::default();
+    let mut pipeline = CheckpointPipeline {
+        events: Rc::clone(&events),
+        calls: Cell::new(0),
+    };
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = PlaudSaveSeams {
+        preview,
+        download: &mut downloader,
+        pipeline: &mut pipeline,
+    };
+
+    let outcome = sync_plaud_save(
+        &PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap();
+    assert_eq!(outcome.downloaded, 1);
+    assert_eq!(outcome.errors, ["later recording: import failed"]);
+    assert_eq!(outcome.state.root()["files"]["first"]["status"], "imported");
+    assert_eq!(
+        outcome.state.root()["files"]["later"]["status"],
+        "available"
+    );
+    assert_eq!(
+        outcome.state.root()["files"]["later"]["last_error"],
+        "import failed"
+    );
+    assert_eq!(
+        events.borrow().as_slice(),
+        ["pipeline:0", "checkpoint", "pipeline:1", "checkpoint"]
+    );
+}
+
+#[test]
+fn failed_available_recording_is_retried_on_the_next_save() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let matches = Matches(BTreeMap::new());
+    let request = PlaudSyncRequest::<SyncSaveRequest>::new(tree.path().to_path_buf());
+
+    let mut first_catalogue = Catalogue {
+        files: vec![file("retry", 1_725_000_000_000.0, 60_000.0)],
+        fail: false,
+    };
+    let mut first_writer = Writer::default();
+    let mut failing_download = Downloader {
+        downloads: Vec::new(),
+        fail_download_for: Some("retry"),
+    };
+    let mut first_pipeline = PanicPipeline;
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut first_catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut first_writer,
+    };
+    let mut first_seams = PlaudSaveSeams {
+        preview,
+        download: &mut failing_download,
+        pipeline: &mut first_pipeline,
+    };
+    let first = sync_plaud_save(&request, &mut first_seams).unwrap();
+    assert_eq!(first.state.root()["files"]["retry"]["status"], "available");
+    assert_eq!(first.errors, ["retry recording: download failed"]);
+    solstone_core_import::write_sync_state(tree.path(), &first.state).unwrap();
+
+    let mut second_catalogue = Catalogue {
+        files: vec![file("retry", 1_725_000_000_000.0, 60_000.0)],
+        fail: false,
+    };
+    let mut second_writer = Writer::default();
+    let mut working_download = Downloader::default();
+    let mut working_pipeline = ImportedPipeline::default();
+    let preview = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut second_catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut second_writer,
+    };
+    let mut second_seams = PlaudSaveSeams {
+        preview,
+        download: &mut working_download,
+        pipeline: &mut working_pipeline,
+    };
+    let second = sync_plaud_save(&request, &mut second_seams).unwrap();
+    assert_eq!(second.downloaded, 1);
+    assert!(second.errors.is_empty());
+    assert_eq!(second.state.root()["files"]["retry"]["status"], "imported");
+    assert_eq!(working_download.downloads, ["retry"]);
+}
+
+#[test]
+fn manifest_failures_render_only_the_closed_failure_kind() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let mut catalogue = Catalogue {
+        files: vec![file("matched", 1_725_000_000_000.0, 60_000.0)],
+        fail: false,
+    };
+    let matches = FailingMatches;
+    let mut writer = Writer::default();
+    let mut seams = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &matches,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+
+    let error = sync_plaud_preview(
+        &PlaudSyncRequest::<SyncPreviewRequest>::new(tree.path().to_path_buf()),
+        &mut seams,
+    )
+    .unwrap_err();
+    assert_eq!(error, PlaudSyncError::Operation(PlaudFailureKind::Manifest));
+    assert_eq!(format!("{error}"), "Plaud import matching failed");
+}
+
+#[test]
 fn closed_transport_failures_cannot_persist_or_render_url_or_token_text() {
     let tree = TempDir::new().unwrap();
     let credential = Credential;
     let clock = Clock;
     let mut catalogue = Catalogue {
-        files: vec![file("failed", 1_725_000_000_000, 60_000)],
+        files: vec![file("failed", 1_725_000_000_000.0, 60_000.0)],
         fail: false,
     };
     let matches = Matches(BTreeMap::new());
@@ -336,7 +560,7 @@ fn closed_transport_failures_cannot_persist_or_render_url_or_token_text() {
     );
 }
 
-fn file(id: &str, start_time: i64, duration: i64) -> PlaudFile {
+fn file(id: &str, start_time: f64, duration: f64) -> PlaudFile {
     PlaudFile {
         id: id.to_owned(),
         filename: format!("{id} recording"),
