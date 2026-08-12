@@ -54,13 +54,18 @@ impl AudioStateWriter for FilesystemAudioStateWriter {
     }
 }
 
-/// Named seams for audio sync.
-pub struct AudioSyncSeams<'a> {
+/// Named seams that preview may use. They contain no import-pipeline authority.
+pub struct AudioPreviewSeams<'a> {
     pub scanner: &'a dyn DirectoryScanner,
     pub probe: &'a dyn AudioProbe,
     pub manifests: &'a dyn ManifestLookup,
     pub clock: &'a dyn SyncClock,
     pub state_writer: &'a mut dyn AudioStateWriter,
+}
+
+/// Named save seams, extending preview authority with the import pipeline.
+pub struct AudioSaveSeams<'a> {
+    pub preview: AudioPreviewSeams<'a>,
     pub pipeline: &'a mut dyn ImportPipeline,
 }
 
@@ -126,23 +131,119 @@ impl std::error::Error for AudioSyncError {}
 
 pub fn sync_audio_preview(
     request: &AudioSyncRequest<SyncPreviewRequest>,
-    seams: &mut AudioSyncSeams<'_>,
+    seams: &mut AudioPreviewSeams<'_>,
 ) -> Result<AudioSyncOutcome, AudioSyncError> {
-    sync(request, seams, false)
+    let catalogued = catalogue(
+        request,
+        seams.scanner,
+        seams.probe,
+        seams.manifests,
+        seams.clock,
+    )?;
+    seams
+        .state_writer
+        .checkpoint(&request.journal_root, &catalogued.state)
+        .map_err(AudioSyncError::State)?;
+    Ok(AudioSyncOutcome {
+        state: catalogued.state,
+        downloaded: 0,
+        errors: catalogued.errors,
+        items: Vec::new(),
+    })
 }
 
 pub fn sync_audio_save(
     request: &AudioSyncRequest<SyncSaveRequest>,
-    seams: &mut AudioSyncSeams<'_>,
+    seams: &mut AudioSaveSeams<'_>,
 ) -> Result<AudioSyncOutcome, AudioSyncError> {
-    sync(request, seams, true)
+    let mut catalogued = catalogue(
+        request,
+        seams.preview.scanner,
+        seams.preview.probe,
+        seams.preview.manifests,
+        seams.preview.clock,
+    )?;
+    let mut downloaded = 0;
+    let mut items = Vec::new();
+    for candidate in catalogued.available {
+        let result = seams.pipeline.import_one(PipelineImportRequest {
+            source: &candidate.source,
+            source_kind: "audio",
+            timestamp: None,
+            auto: pipeline_auto(&request.auto),
+        });
+        let entry = catalogued
+            .state
+            .files_mut()
+            .get_mut(&candidate.relative_path)
+            .and_then(Value::as_object_mut)
+            .expect("catalogued audio exists");
+        let (imported, error) = match result {
+            Ok(PipelineOutcome::Imported) => {
+                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
+                entry.insert(
+                    "imported_at".to_owned(),
+                    Value::String(seams.preview.clock.now()),
+                );
+                entry.remove("last_error");
+                downloaded += 1;
+                (true, None)
+            }
+            Ok(PipelineOutcome::Skipped { reason }) => {
+                (false, Some(format!("import skipped: {reason}")))
+            }
+            Ok(PipelineOutcome::NoResult) => (false, Some("import returned no result".to_owned())),
+            Ok(PipelineOutcome::Unrecognized) => (
+                false,
+                Some("import returned unrecognized result".to_owned()),
+            ),
+            Err(message) => (false, Some(message)),
+        };
+        if let Some(message) = &error {
+            entry.insert("status".to_owned(), Value::String("available".to_owned()));
+            entry.insert("last_error".to_owned(), Value::String(message.clone()));
+            catalogued
+                .errors
+                .push(format!("{}: {message}", candidate.relative_path));
+        }
+        seams
+            .preview
+            .state_writer
+            .checkpoint(&request.journal_root, &catalogued.state)
+            .map_err(AudioSyncError::State)?;
+        items.push(AudioItemOutcome {
+            relative_path: candidate.relative_path,
+            imported,
+            checkpointed: true,
+            error,
+        });
+    }
+    seams
+        .preview
+        .state_writer
+        .checkpoint(&request.journal_root, &catalogued.state)
+        .map_err(AudioSyncError::State)?;
+    Ok(AudioSyncOutcome {
+        state: catalogued.state,
+        downloaded,
+        errors: catalogued.errors,
+        items,
+    })
 }
 
-fn sync<M>(
+struct CataloguedAudio {
+    state: SyncState,
+    available: Vec<AudioCandidate>,
+    errors: Vec<String>,
+}
+
+fn catalogue<M>(
     request: &AudioSyncRequest<M>,
-    seams: &mut AudioSyncSeams<'_>,
-    save: bool,
-) -> Result<AudioSyncOutcome, AudioSyncError> {
+    scanner: &dyn DirectoryScanner,
+    probe: &dyn AudioProbe,
+    manifests: &dyn ManifestLookup,
+    clock: &dyn SyncClock,
+) -> Result<CataloguedAudio, AudioSyncError> {
     if request.source_path.as_os_str().is_empty() {
         return Err(AudioSyncError::MissingSource);
     }
@@ -157,8 +258,7 @@ fn sync<M>(
             .root_mut()
             .insert("files".to_owned(), Value::Object(Map::new()));
     }
-    let candidates = seams
-        .scanner
+    let candidates = scanner
         .audio_candidates(&request.source_path)
         .map_err(AudioSyncError::Scan)?;
     if candidates.is_empty() {
@@ -183,14 +283,14 @@ fn sync<M>(
             "hash".to_owned(),
             Value::String(candidate.source_hash.clone()),
         );
-        if seams.manifests.imported_hash(&candidate.source_hash) {
+        if manifests.imported_hash(&candidate.source_hash) {
             entry.insert("status".to_owned(), Value::String("imported".to_owned()));
-            entry.insert("imported_at".to_owned(), Value::String(seams.clock.now()));
+            entry.insert("imported_at".to_owned(), Value::String(clock.now()));
             entry.remove("last_error");
             entry.remove("skip_reason");
             continue;
         }
-        match seams.probe.duration_seconds(&candidate.source) {
+        match probe.duration_seconds(&candidate.source) {
             Ok(Some(duration)) if duration >= 30 => {
                 entry.insert("status".to_owned(), Value::String("available".to_owned()));
                 entry.insert("duration".to_owned(), Value::from(duration));
@@ -232,76 +332,11 @@ fn sync<M>(
     );
     state
         .root_mut()
-        .insert("last_sync".to_owned(), Value::String(seams.clock.now()));
-    if !save {
-        seams
-            .state_writer
-            .checkpoint(&request.journal_root, &state)
-            .map_err(AudioSyncError::State)?;
-        return Ok(AudioSyncOutcome {
-            state,
-            downloaded: 0,
-            errors,
-            items: Vec::new(),
-        });
-    }
-    let mut downloaded = 0;
-    let mut items = Vec::new();
-    for candidate in available {
-        let result = seams.pipeline.import_one(PipelineImportRequest {
-            source: &candidate.source,
-            source_kind: "audio",
-            timestamp: None,
-            auto: pipeline_auto(&request.auto),
-        });
-        let entry = state
-            .files_mut()
-            .get_mut(&candidate.relative_path)
-            .and_then(Value::as_object_mut)
-            .expect("catalogued audio exists");
-        let (imported, error) = match result {
-            Ok(PipelineOutcome::Imported) => {
-                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
-                entry.insert("imported_at".to_owned(), Value::String(seams.clock.now()));
-                entry.remove("last_error");
-                downloaded += 1;
-                (true, None)
-            }
-            Ok(PipelineOutcome::Skipped { reason }) => {
-                (false, Some(format!("import skipped: {reason}")))
-            }
-            Ok(PipelineOutcome::NoResult) => (false, Some("import returned no result".to_owned())),
-            Ok(PipelineOutcome::Unrecognized) => (
-                false,
-                Some("import returned unrecognized result".to_owned()),
-            ),
-            Err(message) => (false, Some(message)),
-        };
-        if let Some(message) = &error {
-            entry.insert("status".to_owned(), Value::String("available".to_owned()));
-            entry.insert("last_error".to_owned(), Value::String(message.clone()));
-            errors.push(format!("{}: {message}", candidate.relative_path));
-        }
-        seams
-            .state_writer
-            .checkpoint(&request.journal_root, &state)
-            .map_err(AudioSyncError::State)?;
-        items.push(AudioItemOutcome {
-            relative_path: candidate.relative_path,
-            imported,
-            checkpointed: true,
-            error,
-        });
-    }
-    seams
-        .state_writer
-        .checkpoint(&request.journal_root, &state)
-        .map_err(AudioSyncError::State)?;
-    Ok(AudioSyncOutcome {
+        .insert("last_sync".to_owned(), Value::String(clock.now()));
+    Ok(CataloguedAudio {
         state,
-        downloaded,
+        available,
         errors,
-        items,
     })
 }
 

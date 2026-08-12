@@ -39,12 +39,17 @@ pub trait ObsidianWriter {
     fn import_note(&mut self, vault: &Path, note: &ObsidianNote) -> Result<u64, String>;
 }
 
-/// Named seams for Obsidian sync.
-pub struct ObsidianSyncSeams<'a> {
+/// Named seams that preview may use. They contain no note-write authority.
+pub struct ObsidianPreviewSeams<'a> {
     pub candidates: &'a dyn ObsidianHomeCandidates,
     pub scanner: &'a dyn ObsidianScanner,
-    pub writer: &'a mut dyn ObsidianWriter,
     pub clock: &'a dyn SyncClock,
+}
+
+/// Named save seams, extending preview authority with note-write access.
+pub struct ObsidianSaveSeams<'a> {
+    pub preview: ObsidianPreviewSeams<'a>,
+    pub writer: &'a mut dyn ObsidianWriter,
 }
 
 /// Obsidian request with a type-level preview/save marker.
@@ -97,23 +102,72 @@ impl std::error::Error for ObsidianSyncError {}
 
 pub fn sync_obsidian_preview(
     request: &ObsidianSyncRequest<SyncPreviewRequest>,
-    seams: &mut ObsidianSyncSeams<'_>,
+    seams: &mut ObsidianPreviewSeams<'_>,
 ) -> Result<ObsidianSyncOutcome, ObsidianSyncError> {
-    sync(request, seams, false)
+    let catalogued = catalogue(request, seams.candidates, seams.scanner, seams.clock)?;
+    write_sync_state(&request.journal_root, &catalogued.state).map_err(state_error)?;
+    Ok(ObsidianSyncOutcome {
+        state: catalogued.state,
+        imported: 0,
+        errors: Vec::new(),
+    })
 }
 
 pub fn sync_obsidian_save(
     request: &ObsidianSyncRequest<SyncSaveRequest>,
-    seams: &mut ObsidianSyncSeams<'_>,
+    seams: &mut ObsidianSaveSeams<'_>,
 ) -> Result<ObsidianSyncOutcome, ObsidianSyncError> {
-    sync(request, seams, true)
+    let mut catalogued = catalogue(
+        request,
+        seams.preview.candidates,
+        seams.preview.scanner,
+        seams.preview.clock,
+    )?;
+    let mut imported = 0;
+    let mut errors = Vec::new();
+    for note in catalogued.pending {
+        let result = seams.writer.import_note(&catalogued.vault, &note);
+        let entry = catalogued
+            .state
+            .files_mut()
+            .get_mut(&note.relative_path)
+            .and_then(Value::as_object_mut)
+            .expect("catalogued note exists");
+        match result {
+            Ok(segments) => {
+                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
+                entry.insert(
+                    "imported_at".to_owned(),
+                    Value::String(seams.preview.clock.now()),
+                );
+                entry.insert("segments".to_owned(), Value::from(segments));
+                let edits = entry.get("edit_count").and_then(Value::as_u64).unwrap_or(0) + 1;
+                entry.insert("edit_count".to_owned(), Value::from(edits));
+                imported += 1;
+            }
+            Err(message) => errors.push(format!("{}: {message}", note.relative_path)),
+        }
+    }
+    write_sync_state(&request.journal_root, &catalogued.state).map_err(state_error)?;
+    Ok(ObsidianSyncOutcome {
+        state: catalogued.state,
+        imported,
+        errors,
+    })
 }
 
-fn sync<M>(
+struct CataloguedObsidian {
+    state: SyncState,
+    vault: PathBuf,
+    pending: Vec<ObsidianNote>,
+}
+
+fn catalogue<M>(
     request: &ObsidianSyncRequest<M>,
-    seams: &mut ObsidianSyncSeams<'_>,
-    save: bool,
-) -> Result<ObsidianSyncOutcome, ObsidianSyncError> {
+    candidates: &dyn ObsidianHomeCandidates,
+    scanner: &dyn ObsidianScanner,
+    clock: &dyn SyncClock,
+) -> Result<CataloguedObsidian, ObsidianSyncError> {
     let mut state = match read_sync_state(&request.journal_root, BackendName::Obsidian) {
         SyncStateRead::Loaded(state) => state,
         SyncStateRead::Absent | SyncStateRead::Unreadable { .. } => {
@@ -125,11 +179,9 @@ fn sync<M>(
             .root_mut()
             .insert("files".to_owned(), Value::Object(Map::new()));
     }
-    let vault = select_vault(request, &state, seams).ok_or(ObsidianSyncError::NoVault)?;
-    let notes = seams
-        .scanner
-        .notes(&vault)
-        .map_err(ObsidianSyncError::Scan)?;
+    let vault =
+        select_vault(request, &state, candidates, scanner).ok_or(ObsidianSyncError::NoVault)?;
+    let notes = scanner.notes(&vault).map_err(ObsidianSyncError::Scan)?;
     let mut seen = Vec::new();
     let mut pending = Vec::new();
     for note in notes {
@@ -174,66 +226,36 @@ fn sync<M>(
     );
     state
         .root_mut()
-        .insert("last_sync".to_owned(), Value::String(seams.clock.now()));
-    if !save {
-        write_sync_state(&request.journal_root, &state).map_err(state_error)?;
-        return Ok(ObsidianSyncOutcome {
-            state,
-            imported: 0,
-            errors: Vec::new(),
-        });
-    }
-    let mut imported = 0;
-    let mut errors = Vec::new();
-    for note in pending {
-        let result = seams.writer.import_note(&vault, &note);
-        let entry = state
-            .files_mut()
-            .get_mut(&note.relative_path)
-            .and_then(Value::as_object_mut)
-            .expect("catalogued note exists");
-        match result {
-            Ok(segments) => {
-                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
-                entry.insert("imported_at".to_owned(), Value::String(seams.clock.now()));
-                entry.insert("segments".to_owned(), Value::from(segments));
-                let edits = entry.get("edit_count").and_then(Value::as_u64).unwrap_or(0) + 1;
-                entry.insert("edit_count".to_owned(), Value::from(edits));
-                imported += 1;
-            }
-            Err(message) => errors.push(format!("{}: {message}", note.relative_path)),
-        }
-    }
-    write_sync_state(&request.journal_root, &state).map_err(state_error)?;
-    Ok(ObsidianSyncOutcome {
+        .insert("last_sync".to_owned(), Value::String(clock.now()));
+    Ok(CataloguedObsidian {
         state,
-        imported,
-        errors,
+        vault,
+        pending,
     })
 }
 
 fn select_vault<M>(
     request: &ObsidianSyncRequest<M>,
     state: &SyncState,
-    seams: &ObsidianSyncSeams<'_>,
+    candidates: &dyn ObsidianHomeCandidates,
+    scanner: &dyn ObsidianScanner,
 ) -> Option<PathBuf> {
     if let Some(path) = &request.source_path {
-        return seams.scanner.is_directory(path).then(|| path.clone());
+        return scanner.is_directory(path).then(|| path.clone());
     }
     if let Some(path) = state
         .root()
         .get("source_path")
         .and_then(Value::as_str)
         .map(PathBuf::from)
-        .filter(|path| seams.scanner.is_directory(path))
+        .filter(|path| scanner.is_directory(path))
     {
         return Some(path);
     }
-    seams
-        .candidates
+    candidates
         .candidates()
         .iter()
-        .find(|path| seams.scanner.is_directory(path))
+        .find(|path| scanner.is_directory(path))
         .cloned()
 }
 
