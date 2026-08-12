@@ -3948,7 +3948,7 @@
   "inventory": [
     {
       "path": "core/fixtures/service_legacy_evidence/capture-input.json",
-      "sha256": "a95763613767ff235d4786f76dff3a5063261770431053a2c2dd66594215644b"
+      "sha256": "7b19b384023327d4debc5f079d946fb74cf95134cad5fdb2816866def0a52f7b"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/follow-census.json",
@@ -4664,7 +4664,7 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/packaging-provenance.json",
-      "sha256": "a280e2e625f94fb06e25c72017932ec97db54fc01f1d8b5fb1ae2ea3abb74a94"
+      "sha256": "4b200294fd2ece25017dac0700a25f134c63a971497e6abbfee90df4cbaaeb6a"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/alt_port_path.json",
@@ -6037,7 +6037,7 @@
   ],
   "packaging_provenance": {
     "path": "core/fixtures/service_legacy_evidence/packaging-provenance.json",
-    "sha256": "a280e2e625f94fb06e25c72017932ec97db54fc01f1d8b5fb1ae2ea3abb74a94"
+    "sha256": "4b200294fd2ece25017dac0700a25f134c63a971497e6abbfee90df4cbaaeb6a"
   },
   "schema": "service-legacy-evidence",
   "schema_version": 1,
@@ -6047,7 +6047,7 @@
     "sha256": "fd808d236c8035ace1d68a11c596b242f08c6a3f8501faa9e84ee9434f483cf3"
   },
   "source": {
-    "commit": "8b70b8d23fa8d44faf677f8e301b0ec78b9ae2a0",
+    "commit": "a93faaff9122816dd5c16543e8d8b4f6b6ad037b",
     "tooling": [
       {
         "path": "Makefile",
@@ -6107,15 +6107,15 @@
       },
       {
         "path": "scripts/service_legacy_capture.py",
-        "sha256": "abb52e5250ac28695d3282f0764e11fc405d4103e95728edbd32caaca350bb67"
+        "sha256": "71a7c663c3224379f1d9602fcea6a8aabe689ab2bdf5464a1f5642b89227da90"
       },
       {
         "path": "scripts/service_legacy_git.py",
-        "sha256": "3485a6828824f730686444a091faf8b84cab4cca3ba2f66d4449731dcb711da9"
+        "sha256": "f022620db28bd4da3ff9284b6db6885fb81a8ede1c679b7877024807b7e55800"
       },
       {
         "path": "scripts/service_legacy_integrity.py",
-        "sha256": "a4a79103de318dee8e9b3f53d2022f1395c7cb9cf82aacd1c822756d65fdf759"
+        "sha256": "abfe96504743a0ac57204f6e9dccb333190a45fb393b06658b68c8e39a9796af"
       },
       {
         "path": "scripts/service_legacy_paths.py",
