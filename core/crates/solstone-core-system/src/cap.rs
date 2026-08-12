@@ -49,3 +49,24 @@ impl CapResolver for DefaultCapResolver {
             .unwrap_or(self.default)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::{CapResolver, DefaultCapResolver};
+    use crate::partition::Partition;
+
+    #[test]
+    fn zero_overrides_fall_back_but_a_zero_default_is_retained() {
+        let partition = Partition::new("test");
+        let mut resolver = DefaultCapResolver::new(Duration::from_secs(7));
+        assert_eq!(resolver.cap_for(&partition), Duration::from_secs(7));
+        resolver.set_override(partition.clone(), Duration::ZERO);
+        assert_eq!(resolver.cap_for(&partition), Duration::from_secs(7));
+        assert_eq!(
+            DefaultCapResolver::new(Duration::ZERO).cap_for(&partition),
+            Duration::ZERO
+        );
+    }
+}
