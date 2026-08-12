@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use solstone_core_import::contract::SyncPreviewRequest;
 use solstone_core_import::sync_obsidian::{
-    ObsidianHomeCandidates, ObsidianNote, ObsidianScanner, ObsidianSyncError, ObsidianSyncRequest,
-    ObsidianSyncSeams, ObsidianWriter, sync_obsidian_preview,
+    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianScanner, ObsidianSyncError,
+    ObsidianSyncRequest, sync_obsidian_preview,
 };
 use solstone_core_import::sync_plaud::SyncClock;
 use solstone_core_import::{BackendName, SyncState, write_sync_state};
@@ -45,13 +45,6 @@ impl SyncClock for Clock {
     }
 }
 
-struct PanicWriter;
-impl ObsidianWriter for PanicWriter {
-    fn import_note(&mut self, _: &Path, _: &ObsidianNote) -> Result<u64, String> {
-        panic!("preview must not write a note")
-    }
-}
-
 #[test]
 fn source_selection_is_explicit_then_retained_then_ordered_candidates_then_refusal() {
     let tree = TempDir::new().unwrap();
@@ -68,7 +61,6 @@ fn source_selection_is_explicit_then_retained_then_ordered_candidates_then_refus
         scanned: RefCell::new(Vec::new()),
     };
     let clock = Clock;
-    let mut writer = PanicWriter;
 
     let explicit_outcome = preview(
         tree.path(),
@@ -76,33 +68,16 @@ fn source_selection_is_explicit_then_retained_then_ordered_candidates_then_refus
         &candidates,
         &scanner,
         &clock,
-        &mut writer,
     )
     .unwrap();
     assert_eq!(explicit_outcome.state.root()["source_path"], "explicit");
 
     write_retained_state(tree.path(), &retained, None);
-    let retained_outcome = preview(
-        tree.path(),
-        None,
-        &candidates,
-        &scanner,
-        &clock,
-        &mut writer,
-    )
-    .unwrap();
+    let retained_outcome = preview(tree.path(), None, &candidates, &scanner, &clock).unwrap();
     assert_eq!(retained_outcome.state.root()["source_path"], "retained");
 
     write_retained_state(tree.path(), &first_candidate, None);
-    let candidate_outcome = preview(
-        tree.path(),
-        None,
-        &candidates,
-        &scanner,
-        &clock,
-        &mut writer,
-    )
-    .unwrap();
+    let candidate_outcome = preview(tree.path(), None, &candidates, &scanner, &clock).unwrap();
     assert_eq!(
         candidate_outcome.state.root()["source_path"],
         "candidate-two"
@@ -111,14 +86,7 @@ fn source_selection_is_explicit_then_retained_then_ordered_candidates_then_refus
     let no_candidates = Candidates(Vec::new());
     write_retained_state(tree.path(), &first_candidate, None);
     assert!(matches!(
-        preview(
-            tree.path(),
-            None,
-            &no_candidates,
-            &scanner,
-            &clock,
-            &mut writer,
-        ),
+        preview(tree.path(), None, &no_candidates, &scanner, &clock,),
         Err(ObsidianSyncError::NoVault)
     ));
 }
@@ -134,21 +102,49 @@ fn unseen_previously_imported_note_transitions_to_removed() {
         scanned: RefCell::new(Vec::new()),
     };
     let clock = Clock;
-    let mut writer = PanicWriter;
     write_retained_state(tree.path(), &vault, Some("gone.md"));
 
-    let outcome = preview(
-        tree.path(),
-        None,
-        &candidates,
-        &scanner,
-        &clock,
-        &mut writer,
-    )
-    .unwrap();
+    let outcome = preview(tree.path(), None, &candidates, &scanner, &clock).unwrap();
     assert_eq!(
         outcome.state.root()["files"]["gone.md"]["status"],
         "removed"
+    );
+}
+
+#[test]
+fn unchanged_imported_note_refreshes_its_numeric_mtime() {
+    let tree = TempDir::new().unwrap();
+    let vault = PathBuf::from("vault");
+    let candidates = Candidates(Vec::new());
+    let scanner = Scanner {
+        directories: [vault.clone()].into_iter().collect(),
+        notes: vec![note("present.md")],
+        scanned: RefCell::new(Vec::new()),
+    };
+    let clock = Clock;
+    let mut state = SyncState::empty(BackendName::Obsidian);
+    state.root_mut().insert(
+        "source_path".to_owned(),
+        Value::String(vault.display().to_string()),
+    );
+    state.files_mut().insert(
+        "present.md".to_owned(),
+        serde_json::json!({
+            "status": "imported",
+            "content_hash": "hash",
+            "mtime": 1.0
+        }),
+    );
+    write_sync_state(tree.path(), &state).unwrap();
+
+    let outcome = preview(tree.path(), None, &candidates, &scanner, &clock).unwrap();
+    assert_eq!(
+        outcome.state.root()["files"]["present.md"]["status"],
+        "imported"
+    );
+    assert_eq!(
+        outcome.state.root()["files"]["present.md"]["mtime"],
+        serde_json::json!(1_725_000_000.5)
     );
 }
 
@@ -158,12 +154,10 @@ fn preview(
     candidates: &Candidates,
     scanner: &Scanner,
     clock: &Clock,
-    writer: &mut PanicWriter,
 ) -> Result<solstone_core_import::sync_obsidian::ObsidianSyncOutcome, ObsidianSyncError> {
-    let mut seams = ObsidianSyncSeams {
+    let mut seams = ObsidianPreviewSeams {
         candidates,
         scanner,
-        writer,
         clock,
     };
     let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
@@ -194,7 +188,7 @@ fn note(relative_path: &str) -> ObsidianNote {
         relative_path: relative_path.to_owned(),
         filename: relative_path.to_owned(),
         title: relative_path.to_owned(),
-        modified_at: "2026-08-11T12:00:00+00:00".to_owned(),
+        modified_at: 1_725_000_000.5,
         content_hash: "hash".to_owned(),
     }
 }

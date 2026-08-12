@@ -20,6 +20,10 @@ fn gate_fails_closed_for_missing_confirmation_and_unreadable_approval() {
     };
     let blocked = check_oura_sync_save(&request);
     assert!(matches!(blocked, ConsentGateOutcome::Blocked(_)));
+    assert!(
+        !tree.path().join("imports").exists(),
+        "a blocked pre-flight gate must not reach a save route"
+    );
     assert_eq!(CONSENT_GATE_EXIT_CODE, 2);
     let ConsentGateOutcome::Blocked(failure) = blocked else {
         unreachable!()

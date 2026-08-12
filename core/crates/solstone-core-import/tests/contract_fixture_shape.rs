@@ -9,6 +9,15 @@ use solstone_core_import::{
 use std::path::PathBuf;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/import_reference_grammar.json");
+const W9_SURFACE: &str = concat!(
+    include_str!("../src/contract.rs"),
+    include_str!("../src/sync_state.rs"),
+    include_str!("../src/sync_plaud.rs"),
+    include_str!("../src/sync_obsidian.rs"),
+    include_str!("../src/sync_audio.rs"),
+    include_str!("../src/connect.rs"),
+    include_str!("../src/consent_gate.rs"),
+);
 
 #[test]
 fn contract_field_names_match_the_frozen_grammar() {
@@ -98,4 +107,7 @@ fn sync_backend_request_confines_window_days_to_the_native_variant() {
 fn scheduling_guidance_is_pure_text_without_a_schedule_writer_surface() {
     let guidance = SyncGuidance::new("Run this on a cadence you choose.".to_owned());
     assert_eq!(guidance.format_text(), "Run this on a cadence you choose.");
+    assert!(!W9_SURFACE.contains("ScheduleWriter"));
+    assert!(!W9_SURFACE.contains("schedule_path"));
+    assert!(!W9_SURFACE.contains("cron_hint"));
 }

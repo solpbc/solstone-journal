@@ -7,10 +7,13 @@ use std::path::{Path, PathBuf};
 use solstone_core_import::SyncState;
 use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::sync_audio::{
-    AudioCandidate, AudioProbe, AudioStateWriter, AudioSyncError, AudioSyncRequest, AudioSyncSeams,
-    DirectoryScanner, ManifestLookup, sync_audio_preview, sync_audio_save,
+    AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioStateWriter,
+    AudioSyncError, AudioSyncRequest, DirectoryScanner, ManifestLookup, sync_audio_preview,
+    sync_audio_save,
 };
-use solstone_core_import::sync_plaud::{ImportPipeline, PipelineOutcome, SyncClock};
+use solstone_core_import::sync_plaud::{
+    ImportPipeline, PipelineAuto, PipelineImportRequest, PipelineOutcome, SyncClock,
+};
 use tempfile::TempDir;
 
 struct Scanner;
@@ -21,6 +24,13 @@ impl DirectoryScanner for Scanner {
             candidate("first.wav", "first"),
             candidate("failed.wav", "failed"),
         ])
+    }
+}
+
+struct OneScanner;
+impl DirectoryScanner for OneScanner {
+    fn audio_candidates(&self, _: &Path) -> Result<Vec<AudioCandidate>, String> {
+        Ok(vec![candidate("current.wav", "current")])
     }
 }
 
@@ -36,8 +46,15 @@ fn candidate(name: &str, hash: &str) -> AudioCandidate {
 
 struct Probe;
 impl AudioProbe for Probe {
-    fn duration_seconds(&self, _: &Path) -> Result<Option<u64>, String> {
-        Ok(Some(60))
+    fn duration_seconds(&self, _: &Path) -> Result<Option<f64>, String> {
+        Ok(Some(60.0))
+    }
+}
+
+struct FractionalProbe;
+impl AudioProbe for FractionalProbe {
+    fn duration_seconds(&self, _: &Path) -> Result<Option<f64>, String> {
+        Ok(Some(29.5))
     }
 }
 
@@ -68,7 +85,7 @@ impl AudioStateWriter for Writer {
 
 struct FailingPipeline(Cell<u32>);
 impl ImportPipeline for FailingPipeline {
-    fn import_one(&mut self, _: &Path, _: &str, _: bool) -> Result<PipelineOutcome, String> {
+    fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
         if self.0.get() == 0 {
             self.0.set(1);
             Ok(PipelineOutcome::Imported)
@@ -78,29 +95,20 @@ impl ImportPipeline for FailingPipeline {
     }
 }
 
-struct PanicPipeline;
-impl ImportPipeline for PanicPipeline {
-    fn import_one(&mut self, _: &Path, _: &str, _: bool) -> Result<PipelineOutcome, String> {
-        panic!("preview must not invoke pipeline")
-    }
-}
-
 #[test]
-fn preview_never_invokes_the_pipeline() {
+fn preview_has_no_pipeline_authority() {
     let tree = TempDir::new().unwrap();
     let scanner = Scanner;
     let probe = Probe;
     let manifests = Manifests;
     let clock = Clock;
     let mut writer = Writer::default();
-    let mut pipeline = PanicPipeline;
-    let mut seams = AudioSyncSeams {
+    let mut seams = AudioPreviewSeams {
         scanner: &scanner,
         probe: &probe,
         manifests: &manifests,
         clock: &clock,
         state_writer: &mut writer,
-        pipeline: &mut pipeline,
     };
     let request = AudioSyncRequest::<SyncPreviewRequest>::new(
         tree.path().to_path_buf(),
@@ -121,12 +129,15 @@ fn failure_keeps_imported_items_and_checkpoints_failed_item_state() {
     let clock = Clock;
     let mut writer = Writer::default();
     let mut pipeline = FailingPipeline(Cell::new(0));
-    let mut seams = AudioSyncSeams {
+    let preview = AudioPreviewSeams {
         scanner: &scanner,
         probe: &probe,
         manifests: &manifests,
         clock: &clock,
         state_writer: &mut writer,
+    };
+    let mut seams = AudioSaveSeams {
+        preview,
         pipeline: &mut pipeline,
     };
     let request = AudioSyncRequest::<SyncSaveRequest>::new(
@@ -175,14 +186,12 @@ fn missing_source_is_a_named_refusal() {
     let manifests = Manifests;
     let clock = Clock;
     let mut writer = Writer::default();
-    let mut pipeline = PanicPipeline;
-    let mut seams = AudioSyncSeams {
+    let mut seams = AudioPreviewSeams {
         scanner: &scanner,
         probe: &probe,
         manifests: &manifests,
         clock: &clock,
         state_writer: &mut writer,
-        pipeline: &mut pipeline,
     };
     let request = AudioSyncRequest::<SyncPreviewRequest>::new(
         tree.path().to_path_buf(),
@@ -194,4 +203,118 @@ fn missing_source_is_a_named_refusal() {
         sync_audio_preview(&request, &mut seams),
         Err(AudioSyncError::MissingSource)
     ));
+}
+
+#[test]
+fn fractional_duration_uses_the_reference_threshold_without_truncation() {
+    let tree = TempDir::new().unwrap();
+    let scanner = OneScanner;
+    let probe = FractionalProbe;
+    let manifests = Manifests;
+    let clock = Clock;
+    let mut writer = Writer::default();
+    let mut seams = AudioPreviewSeams {
+        scanner: &scanner,
+        probe: &probe,
+        manifests: &manifests,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let request = AudioSyncRequest::<SyncPreviewRequest>::new(
+        tree.path().to_path_buf(),
+        PathBuf::from("audio"),
+        false,
+        AudioAuto::Enabled,
+    );
+
+    let outcome = sync_audio_preview(&request, &mut seams).unwrap();
+    assert_eq!(
+        outcome.state.root()["files"]["current.wav"]["status"],
+        "skipped"
+    );
+    assert_eq!(
+        outcome.state.root()["files"]["current.wav"]["duration"],
+        29.5
+    );
+}
+
+#[test]
+fn preexisting_available_manifest_match_is_promoted_before_removed_scan() {
+    let tree = TempDir::new().unwrap();
+    let scanner = OneScanner;
+    let probe = Probe;
+    let manifests = Manifests;
+    let clock = Clock;
+    let mut state = SyncState::empty(solstone_core_import::BackendName::Audio);
+    state.files_mut().insert(
+        "manually-imported.wav".to_owned(),
+        serde_json::json!({"status": "available", "hash": "already"}),
+    );
+    solstone_core_import::write_sync_state(tree.path(), &state).unwrap();
+    let mut writer = Writer::default();
+    let mut seams = AudioPreviewSeams {
+        scanner: &scanner,
+        probe: &probe,
+        manifests: &manifests,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let request = AudioSyncRequest::<SyncPreviewRequest>::new(
+        tree.path().to_path_buf(),
+        PathBuf::from("audio"),
+        false,
+        AudioAuto::Enabled,
+    );
+
+    let outcome = sync_audio_preview(&request, &mut seams).unwrap();
+    assert_eq!(
+        outcome.state.root()["files"]["manually-imported.wav"]["status"],
+        "imported"
+    );
+}
+
+struct AutoRecordingPipeline(Option<String>);
+impl ImportPipeline for AutoRecordingPipeline {
+    fn import_one(
+        &mut self,
+        request: PipelineImportRequest<'_>,
+    ) -> Result<PipelineOutcome, String> {
+        self.0 = Some(match request.auto {
+            PipelineAuto::Enabled => "enabled".to_owned(),
+            PipelineAuto::Disabled => "disabled".to_owned(),
+            PipelineAuto::Value(value) => value.to_owned(),
+        });
+        Ok(PipelineOutcome::Imported)
+    }
+}
+
+#[test]
+fn string_auto_mode_reaches_the_pipeline_unchanged() {
+    let tree = TempDir::new().unwrap();
+    let scanner = Scanner;
+    let probe = Probe;
+    let manifests = Manifests;
+    let clock = Clock;
+    let mut writer = Writer::default();
+    let mut pipeline = AutoRecordingPipeline(None);
+    let preview = AudioPreviewSeams {
+        scanner: &scanner,
+        probe: &probe,
+        manifests: &manifests,
+        clock: &clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = AudioSaveSeams {
+        preview,
+        pipeline: &mut pipeline,
+    };
+    let request = AudioSyncRequest::<SyncSaveRequest>::new(
+        tree.path().to_path_buf(),
+        PathBuf::from("audio"),
+        false,
+        AudioAuto::Value("quiet".to_owned()),
+    );
+
+    sync_audio_save(&request, &mut seams).unwrap();
+    assert_eq!(pipeline.0.as_deref(), Some("quiet"));
 }
