@@ -2538,7 +2538,12 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
         "source_snapshot": qwen_source,
         "lfs_sha256": {}
     });
-    let qwen_install = super::run_mlx_install(qwen_request.as_object().unwrap()).unwrap();
+    // A deliberately dead origin: these requests carry source_snapshot, so the
+    // fetch path must never run. If it ever did, this policy makes it fail loudly
+    // instead of quietly reaching the network from a unit test.
+    let unreachable = loopback_download_policy("http://127.0.0.1:1");
+    let qwen_install =
+        super::run_mlx_install(qwen_request.as_object().unwrap(), &unreachable).unwrap();
     let qwen_base = pins::cache_root(&mlx_root)
         .join("mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
     let qwen_snapshot_dir = qwen_base.join("snapshot");
@@ -2571,7 +2576,8 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
         "source_snapshot": gemma_source,
         "lfs_sha256": {}
     });
-    let gemma_install = super::run_mlx_install(gemma_request.as_object().unwrap()).unwrap();
+    let gemma_install =
+        super::run_mlx_install(gemma_request.as_object().unwrap(), &unreachable).unwrap();
     let mlx_base = pins::cache_root(&mlx_root).join(
         "mlx/mlx-community--gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
     );

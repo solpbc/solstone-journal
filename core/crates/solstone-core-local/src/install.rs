@@ -466,7 +466,7 @@ fn run_with_lease(
     .map_err(|error| failure("state", "begin_failed", error, 74))?;
     let start = Instant::now();
     let result = match kind {
-        RunKind::Mlx => run_mlx_install(object),
+        RunKind::Mlx => run_mlx_install(object, policy),
         RunKind::Local => run_local_install(object, &mut state, start, policy),
         RunKind::Parakeet => run_parakeet_install(&journal, &mut state, policy),
     };
@@ -793,19 +793,45 @@ fn run_local_install(
     )
 }
 
-fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+/// `source_snapshot` is OPTIONAL. When it is absent the snapshot is fetched from
+/// sol pbc's own origin, which is the production path; when present it names a
+/// directory already on disk, which is the test seam and the only way to install
+/// from bytes this process did not fetch.
+///
+/// ⛔ There is deliberately no third option. Python reaches Hugging Face here
+/// (`huggingface_hub.snapshot_download`), and Article 8 forbids telling a model
+/// hub that an owner's journal exists.
+fn run_mlx_install(
+    object: &Map<String, Value>,
+    policy: &archive::DownloadHostPolicy<'_>,
+) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let model_id = required(object, "model_id")?;
     let model = pins::MLX_MODELS
         .iter()
         .find(|model| model.0 == model_id)
         .ok_or_else(|| failure("model", "unsupported_model", &model_id, 65))?;
-    let source = PathBuf::from(required(object, "source_snapshot")?);
     let destination = pins::cache_root(&journal)
         .join("mlx")
         .join(model.1.replace('/', "--"))
         .join(model.2)
         .join("snapshot");
+    let from_origin = object.get("source_snapshot").is_none();
+    let fetch_root = destination.parent().unwrap().join(".origin-fetch");
+    let source = if from_origin {
+        let _ = fs::remove_dir_all(&fetch_root);
+        use mlx::SnapshotSource as _;
+        mlx::OriginSnapshotSource {
+            repo: model.1,
+            revision: model.2,
+            policy,
+        }
+        .populate(&fetch_root)
+        .map_err(|error| failure("download", "snapshot_fetch_failed", error, 74))?;
+        fetch_root.clone()
+    } else {
+        PathBuf::from(required(object, "source_snapshot")?)
+    };
     if !source.is_dir() {
         return Err(failure(
             "input",
@@ -822,18 +848,29 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
     std::fs::create_dir_all(&staging)
         .map_err(|error| failure("io", "snapshot_create_failed", error, 74))?;
     copy_tree(&source, &staging)?;
-    let hashes = object
-        .get("lfs_sha256")
-        .and_then(Value::as_object)
-        .cloned()
-        .ok_or_else(|| {
-            failure(
-                "input",
-                "missing_field",
-                "lfs_sha256 must describe the source snapshot",
-                65,
-            )
-        })?;
+    // On the origin path the digests are the registry's own pins, so the bytes are
+    // verified against the same values the fetch already enforced -- belt and
+    // braces across the copy into staging. A caller-supplied snapshot must still
+    // declare them, because nothing else vouches for those bytes.
+    let hashes = if from_origin {
+        mlx::snapshot_objects(model.1, model.2)
+            .into_iter()
+            .map(|artifact| (artifact.filename.to_owned(), Value::from(artifact.sha256)))
+            .collect()
+    } else {
+        object
+            .get("lfs_sha256")
+            .and_then(Value::as_object)
+            .cloned()
+            .ok_or_else(|| {
+                failure(
+                    "input",
+                    "missing_field",
+                    "lfs_sha256 must describe the source snapshot",
+                    65,
+                )
+            })?
+    };
     mlx::validate_snapshot_sha256(&staging, &hashes)
         .map_err(|error| failure("verification", "snapshot_sha256_mismatch", error, 65))?;
     publish_staged_tree(&staging, &destination)
@@ -868,7 +905,15 @@ fn run_mlx_install(object: &Map<String, Value>) -> Result<Value, DispatchError> 
     } else {
         None
     };
-    Ok(json!({"snapshot_path":destination,"variant_path":variant,"source":"local_snapshot_seam"}))
+    if from_origin {
+        let _ = fs::remove_dir_all(&fetch_root);
+    }
+    let source_label = if from_origin {
+        "origin"
+    } else {
+        "local_snapshot_seam"
+    };
+    Ok(json!({"snapshot_path":destination,"variant_path":variant,"source":source_label}))
 }
 
 /// Mirrors `run_local_install`'s download-extract-chmod-manifest-publish
