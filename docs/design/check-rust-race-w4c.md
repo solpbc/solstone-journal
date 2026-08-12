@@ -101,6 +101,39 @@ figures and the exact command that would have been run. A clearly reported
 could-not-run is a complete answer; a green produced by ignoring this bar,
 or a FAILED produced by a noisy host rather than the tree under test, is not.
 
+**AC1/AC3 result as of this commit: COULD NOT RUN.** Polled this Fedora host
+every 90s for ~20 minutes (10:48–11:06 UTC); load never dropped below the
+2.0 bar on any of the three averages, and 4–5 unrelated `cargo`/`make`
+processes from other worktrees were present throughout:
+
+```
+10:48:12 load=37.80, 39.53, 40.75  other_cargo_make_procs=4
+10:49:42 load=36.45, 38.63, 40.31  other_cargo_make_procs=4
+10:51:12 load=36.90, 38.22, 40.01  other_cargo_make_procs=5
+10:52:42 load=38.45, 38.60, 39.99  other_cargo_make_procs=4
+10:54:12 load=37.70, 38.30, 39.75  other_cargo_make_procs=4
+10:55:42 load=36.66, 37.81, 39.44  other_cargo_make_procs=4
+10:57:12 load=36.64, 37.52, 39.18  other_cargo_make_procs=4
+10:58:42 load=63.87, 45.37, 41.75  other_cargo_make_procs=4
+11:00:13 load=43.25, 43.42, 41.40  other_cargo_make_procs=4
+11:01:43 load=38.38, 41.72, 40.98  other_cargo_make_procs=4
+11:03:13 load=37.71, 40.65, 40.67  other_cargo_make_procs=4
+11:04:43 load=38.01, 40.00, 40.43  other_cargo_make_procs=4
+11:06:13 load=37.30, 39.25, 40.12  other_cargo_make_procs=4
+```
+
+The command that would have been run, unmodified: `make check-rust-race`
+(defaults, `RUST_RACE_RUNS=5 RUST_RACE_LOAD_JOBS=12`) in this worktree on
+this host. It was not run under these conditions. AC1 and AC3 remain
+unvalidated pending a genuinely quiet window; this is not a FAILED result
+and must not be read as one.
+
+If no window at or below this bar opens, do not force a run and do not
+soften the bar: report AC1/AC3 as **COULD NOT RUN**, with the measured load
+figures and the exact command that would have been run. A clearly reported
+could-not-run is a complete answer; a green produced by ignoring this bar,
+or a FAILED produced by a noisy host rather than the tree under test, is not.
+
 ## 2. K and what runs in parallel with what
 
 RUST_RACE_RUNS ?= 5 is the repeat count. Each one of those K runs is one
