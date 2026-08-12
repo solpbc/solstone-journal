@@ -1,0 +1,168 @@
+{
+  "cases": {
+    "gate_passed/backends": {
+      "argv": [
+        "--backends"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "Syncable backends:\n  plaud\n  obsidian\n  audio\n  oura\n",
+      "stdout_sha256": "c75161d373ae230d4a6094c0d4a9e20c82da665242e9a04521830d1651931ad6",
+      "supervisor": "gate_passed"
+    },
+    "gate_passed/help_long": {
+      "argv": [
+        "--help"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\n\nImport a media file into the journal\n\npositional arguments:\n  media                 Path to audio or text file\n\noptions:\n  -h, --help            show this help message and exit\n  --timestamp TIMESTAMP\n                        Timestamp YYYYMMDD_HHMMSS for journal entry\n  --facet FACET         Facet name for this import\n  --setting SETTING     Contextual setting description to store with import\n                        metadata\n  --source SOURCE       Import source hint: a file importer name (e.g.\n                        obsidian, plaud, ics) or a canonical category (audio,\n                        image, document, text). Auto-detected if omitted.\n  --force               Force re-import by deleting existing import directory\n  --auto [AUTO]         Auto-accept detected timestamp. Optionally provide\n                        guidance text for the LLM (e.g., --auto 'timestamps\n                        are Pacific time').\n  --dry-run             Show what would be imported without writing to the\n                        journal\n  --confirm-health-save\n                        Confirm this run may save sensitive health importer\n                        output\n  --date-from DATE_FROM\n                        For Apple Health: include records on or after YYYY-MM-\n                        DD\n  --date-to DATE_TO     For Apple Health: include records on or before YYYY-\n                        MM-DD\n  --with-day-summaries  For Apple Health: write factual daily summary\n                        transcript segments\n  --deterministic-only  Use only deterministic timestamp detection; skip model\n                        detection\n  --backends            List syncable importer backends\n  --sync BACKEND        Sync catalog from a backend (e.g., plaud). Shows\n                        status by default.\n  --save                With --sync: download and import new files (default is\n                        dry-run)\n  --path PATH           With --sync: override the default source directory\n                        path\n  --window-days WINDOW_DAYS\n                        With --sync oura: fetch a trailing window of this many\n                        days\n  --scheduled           With --sync oura --save: this is an unattended\n                        scheduled run; requires the artifact's standing\n                        scheduled_sync consent\n  --connect BACKEND     Owner-present connect/authorization flow (e.g., oura)\n  --list-importers      List available file importers\n  --json                Output results as JSON (file importers only)\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n",
+      "stdout_sha256": "2c2b589ff27e29fa1cce8435a125a2b76a570e7b4ec010642ae4415b1b473ee9",
+      "supervisor": "gate_passed"
+    },
+    "gate_passed/help_short": {
+      "argv": [
+        "-h"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\n\nImport a media file into the journal\n\npositional arguments:\n  media                 Path to audio or text file\n\noptions:\n  -h, --help            show this help message and exit\n  --timestamp TIMESTAMP\n                        Timestamp YYYYMMDD_HHMMSS for journal entry\n  --facet FACET         Facet name for this import\n  --setting SETTING     Contextual setting description to store with import\n                        metadata\n  --source SOURCE       Import source hint: a file importer name (e.g.\n                        obsidian, plaud, ics) or a canonical category (audio,\n                        image, document, text). Auto-detected if omitted.\n  --force               Force re-import by deleting existing import directory\n  --auto [AUTO]         Auto-accept detected timestamp. Optionally provide\n                        guidance text for the LLM (e.g., --auto 'timestamps\n                        are Pacific time').\n  --dry-run             Show what would be imported without writing to the\n                        journal\n  --confirm-health-save\n                        Confirm this run may save sensitive health importer\n                        output\n  --date-from DATE_FROM\n                        For Apple Health: include records on or after YYYY-MM-\n                        DD\n  --date-to DATE_TO     For Apple Health: include records on or before YYYY-\n                        MM-DD\n  --with-day-summaries  For Apple Health: write factual daily summary\n                        transcript segments\n  --deterministic-only  Use only deterministic timestamp detection; skip model\n                        detection\n  --backends            List syncable importer backends\n  --sync BACKEND        Sync catalog from a backend (e.g., plaud). Shows\n                        status by default.\n  --save                With --sync: download and import new files (default is\n                        dry-run)\n  --path PATH           With --sync: override the default source directory\n                        path\n  --window-days WINDOW_DAYS\n                        With --sync oura: fetch a trailing window of this many\n                        days\n  --scheduled           With --sync oura --save: this is an unattended\n                        scheduled run; requires the artifact's standing\n                        scheduled_sync consent\n  --connect BACKEND     Owner-present connect/authorization flow (e.g., oura)\n  --list-importers      List available file importers\n  --json                Output results as JSON (file importers only)\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n",
+      "stdout_sha256": "2c2b589ff27e29fa1cce8435a125a2b76a570e7b4ec010642ae4415b1b473ee9",
+      "supervisor": "gate_passed"
+    },
+    "gate_passed/journal_source_help": {
+      "argv": [
+        "journal-source",
+        "--help"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\n\nImport a media file into the journal\n\npositional arguments:\n  media                 Path to audio or text file\n\noptions:\n  -h, --help            show this help message and exit\n  --timestamp TIMESTAMP\n                        Timestamp YYYYMMDD_HHMMSS for journal entry\n  --facet FACET         Facet name for this import\n  --setting SETTING     Contextual setting description to store with import\n                        metadata\n  --source SOURCE       Import source hint: a file importer name (e.g.\n                        obsidian, plaud, ics) or a canonical category (audio,\n                        image, document, text). Auto-detected if omitted.\n  --force               Force re-import by deleting existing import directory\n  --auto [AUTO]         Auto-accept detected timestamp. Optionally provide\n                        guidance text for the LLM (e.g., --auto 'timestamps\n                        are Pacific time').\n  --dry-run             Show what would be imported without writing to the\n                        journal\n  --confirm-health-save\n                        Confirm this run may save sensitive health importer\n                        output\n  --date-from DATE_FROM\n                        For Apple Health: include records on or after YYYY-MM-\n                        DD\n  --date-to DATE_TO     For Apple Health: include records on or before YYYY-\n                        MM-DD\n  --with-day-summaries  For Apple Health: write factual daily summary\n                        transcript segments\n  --deterministic-only  Use only deterministic timestamp detection; skip model\n                        detection\n  --backends            List syncable importer backends\n  --sync BACKEND        Sync catalog from a backend (e.g., plaud). Shows\n                        status by default.\n  --save                With --sync: download and import new files (default is\n                        dry-run)\n  --path PATH           With --sync: override the default source directory\n                        path\n  --window-days WINDOW_DAYS\n                        With --sync oura: fetch a trailing window of this many\n                        days\n  --scheduled           With --sync oura --save: this is an unattended\n                        scheduled run; requires the artifact's standing\n                        scheduled_sync consent\n  --connect BACKEND     Owner-present connect/authorization flow (e.g., oura)\n  --list-importers      List available file importers\n  --json                Output results as JSON (file importers only)\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n",
+      "stdout_sha256": "2c2b589ff27e29fa1cce8435a125a2b76a570e7b4ec010642ae4415b1b473ee9",
+      "supervisor": "gate_passed"
+    },
+    "gate_passed/list_importers": {
+      "argv": [
+        "--list-importers"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "File importers:\n  ics          Google Calendar (ICS) (*.ics, *.zip)\n               Import events from ICS calendar files or Google Calendar export ZIP\n  obsidian     Obsidian / Logseq Vault (*.md)\n               Import notes from an Obsidian or Logseq vault\n  claude       Claude Chat History (*.zip, *.dms)\n               Import conversations from Claude chat export\n  chatgpt      ChatGPT History (*.zip)\n               Import conversations from ChatGPT export\n  kindle       Kindle Highlights (*.txt)\n               Import highlights and notes from Kindle's My Clippings.txt\n  gemini       Gemini Activity History (*.zip, *.json)\n               Import activity from Google Takeout Gemini/Bard export\n  document     Documents (*.pdf)\n               Import PDF documents with worker-backed text and raster extraction\n  image        Image (*.png, *.jpg, *.jpeg, *.webp, *.gif, *.tiff)\n               Import a single image and describe its contents with vision\n  journal_archive Journal Archive (*.zip)\n               Merge an exported journal archive into the current journal\n  apple_health Apple Health (apple_health_export/, export.xml, *.zip)\n               Preview Apple Health export.xml data without writing to the journal\n  oura         Oura (daily_sleep.json, daily_readiness.json, sleep.json)\n               Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)\n",
+      "stdout_sha256": "a8f2470b707557e63ce755d08574fb350c089f7a2c657a9da0ae01b04b3a87b7",
+      "supervisor": "gate_passed"
+    },
+    "gate_passed/list_importers_json": {
+      "argv": [
+        "--list-importers",
+        "--json"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "[{\"name\": \"ics\", \"display_name\": \"Google Calendar (ICS)\", \"file_patterns\": [\"*.ics\", \"*.zip\"], \"description\": \"Import events from ICS calendar files or Google Calendar export ZIP\"}, {\"name\": \"obsidian\", \"display_name\": \"Obsidian / Logseq Vault\", \"file_patterns\": [\"*.md\"], \"description\": \"Import notes from an Obsidian or Logseq vault\"}, {\"name\": \"claude\", \"display_name\": \"Claude Chat History\", \"file_patterns\": [\"*.zip\", \"*.dms\"], \"description\": \"Import conversations from Claude chat export\"}, {\"name\": \"chatgpt\", \"display_name\": \"ChatGPT History\", \"file_patterns\": [\"*.zip\"], \"description\": \"Import conversations from ChatGPT export\"}, {\"name\": \"kindle\", \"display_name\": \"Kindle Highlights\", \"file_patterns\": [\"*.txt\"], \"description\": \"Import highlights and notes from Kindle's My Clippings.txt\"}, {\"name\": \"gemini\", \"display_name\": \"Gemini Activity History\", \"file_patterns\": [\"*.zip\", \"*.json\"], \"description\": \"Import activity from Google Takeout Gemini/Bard export\"}, {\"name\": \"document\", \"display_name\": \"Documents\", \"file_patterns\": [\"*.pdf\"], \"description\": \"Import PDF documents with worker-backed text and raster extraction\"}, {\"name\": \"image\", \"display_name\": \"Image\", \"file_patterns\": [\"*.png\", \"*.jpg\", \"*.jpeg\", \"*.webp\", \"*.gif\", \"*.tiff\"], \"description\": \"Import a single image and describe its contents with vision\"}, {\"name\": \"journal_archive\", \"display_name\": \"Journal Archive\", \"file_patterns\": [\"*.zip\"], \"description\": \"Merge an exported journal archive into the current journal\"}, {\"name\": \"apple_health\", \"display_name\": \"Apple Health\", \"file_patterns\": [\"apple_health_export/\", \"export.xml\", \"*.zip\"], \"description\": \"Preview Apple Health export.xml data without writing to the journal\"}, {\"name\": \"oura\", \"display_name\": \"Oura\", \"file_patterns\": [\"daily_sleep.json\", \"daily_readiness.json\", \"sleep.json\"], \"description\": \"Preview Oura API v2 JSON documents (synthetic fixtures; save path is a later, gated phase)\"}]\n",
+      "stdout_sha256": "2b2875a727a3055da74336b8901aba49bafb738210d56216da8b624dcc980213",
+      "supervisor": "gate_passed"
+    },
+    "gate_passed/unknown_option": {
+      "argv": [
+        "--nonsense"
+      ],
+      "exit": 2,
+      "stderr": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\njournal importer: error: the following arguments are required: media\n",
+      "stderr_sha256": "d4af10e6f457b2caca274fac96950cd89c0e32246e336134b5e531fa44173703",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor": "gate_passed"
+    },
+    "solstone_down/backends": {
+      "argv": [
+        "--backends"
+      ],
+      "exit": 1,
+      "stderr": "sol: solstone isn't running. Start it with 'journal up' and retry.\n",
+      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor": "solstone_down"
+    },
+    "solstone_down/help_long": {
+      "argv": [
+        "--help"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\n\nImport a media file into the journal\n\npositional arguments:\n  media                 Path to audio or text file\n\noptions:\n  -h, --help            show this help message and exit\n  --timestamp TIMESTAMP\n                        Timestamp YYYYMMDD_HHMMSS for journal entry\n  --facet FACET         Facet name for this import\n  --setting SETTING     Contextual setting description to store with import\n                        metadata\n  --source SOURCE       Import source hint: a file importer name (e.g.\n                        obsidian, plaud, ics) or a canonical category (audio,\n                        image, document, text). Auto-detected if omitted.\n  --force               Force re-import by deleting existing import directory\n  --auto [AUTO]         Auto-accept detected timestamp. Optionally provide\n                        guidance text for the LLM (e.g., --auto 'timestamps\n                        are Pacific time').\n  --dry-run             Show what would be imported without writing to the\n                        journal\n  --confirm-health-save\n                        Confirm this run may save sensitive health importer\n                        output\n  --date-from DATE_FROM\n                        For Apple Health: include records on or after YYYY-MM-\n                        DD\n  --date-to DATE_TO     For Apple Health: include records on or before YYYY-\n                        MM-DD\n  --with-day-summaries  For Apple Health: write factual daily summary\n                        transcript segments\n  --deterministic-only  Use only deterministic timestamp detection; skip model\n                        detection\n  --backends            List syncable importer backends\n  --sync BACKEND        Sync catalog from a backend (e.g., plaud). Shows\n                        status by default.\n  --save                With --sync: download and import new files (default is\n                        dry-run)\n  --path PATH           With --sync: override the default source directory\n                        path\n  --window-days WINDOW_DAYS\n                        With --sync oura: fetch a trailing window of this many\n                        days\n  --scheduled           With --sync oura --save: this is an unattended\n                        scheduled run; requires the artifact's standing\n                        scheduled_sync consent\n  --connect BACKEND     Owner-present connect/authorization flow (e.g., oura)\n  --list-importers      List available file importers\n  --json                Output results as JSON (file importers only)\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n",
+      "stdout_sha256": "2c2b589ff27e29fa1cce8435a125a2b76a570e7b4ec010642ae4415b1b473ee9",
+      "supervisor": "solstone_down"
+    },
+    "solstone_down/help_short": {
+      "argv": [
+        "-h"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\n\nImport a media file into the journal\n\npositional arguments:\n  media                 Path to audio or text file\n\noptions:\n  -h, --help            show this help message and exit\n  --timestamp TIMESTAMP\n                        Timestamp YYYYMMDD_HHMMSS for journal entry\n  --facet FACET         Facet name for this import\n  --setting SETTING     Contextual setting description to store with import\n                        metadata\n  --source SOURCE       Import source hint: a file importer name (e.g.\n                        obsidian, plaud, ics) or a canonical category (audio,\n                        image, document, text). Auto-detected if omitted.\n  --force               Force re-import by deleting existing import directory\n  --auto [AUTO]         Auto-accept detected timestamp. Optionally provide\n                        guidance text for the LLM (e.g., --auto 'timestamps\n                        are Pacific time').\n  --dry-run             Show what would be imported without writing to the\n                        journal\n  --confirm-health-save\n                        Confirm this run may save sensitive health importer\n                        output\n  --date-from DATE_FROM\n                        For Apple Health: include records on or after YYYY-MM-\n                        DD\n  --date-to DATE_TO     For Apple Health: include records on or before YYYY-\n                        MM-DD\n  --with-day-summaries  For Apple Health: write factual daily summary\n                        transcript segments\n  --deterministic-only  Use only deterministic timestamp detection; skip model\n                        detection\n  --backends            List syncable importer backends\n  --sync BACKEND        Sync catalog from a backend (e.g., plaud). Shows\n                        status by default.\n  --save                With --sync: download and import new files (default is\n                        dry-run)\n  --path PATH           With --sync: override the default source directory\n                        path\n  --window-days WINDOW_DAYS\n                        With --sync oura: fetch a trailing window of this many\n                        days\n  --scheduled           With --sync oura --save: this is an unattended\n                        scheduled run; requires the artifact's standing\n                        scheduled_sync consent\n  --connect BACKEND     Owner-present connect/authorization flow (e.g., oura)\n  --list-importers      List available file importers\n  --json                Output results as JSON (file importers only)\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n",
+      "stdout_sha256": "2c2b589ff27e29fa1cce8435a125a2b76a570e7b4ec010642ae4415b1b473ee9",
+      "supervisor": "solstone_down"
+    },
+    "solstone_down/journal_source_help": {
+      "argv": [
+        "journal-source",
+        "--help"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout": "usage: journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n                        [--setting SETTING] [--source SOURCE] [--force]\n                        [--auto [AUTO]] [--dry-run] [--confirm-health-save]\n                        [--date-from DATE_FROM] [--date-to DATE_TO]\n                        [--with-day-summaries] [--deterministic-only]\n                        [--backends] [--sync BACKEND] [--save] [--path PATH]\n                        [--window-days WINDOW_DAYS] [--scheduled]\n                        [--connect BACKEND] [--list-importers] [--json] [-v]\n                        [-d]\n                        [media]\n\nImport a media file into the journal\n\npositional arguments:\n  media                 Path to audio or text file\n\noptions:\n  -h, --help            show this help message and exit\n  --timestamp TIMESTAMP\n                        Timestamp YYYYMMDD_HHMMSS for journal entry\n  --facet FACET         Facet name for this import\n  --setting SETTING     Contextual setting description to store with import\n                        metadata\n  --source SOURCE       Import source hint: a file importer name (e.g.\n                        obsidian, plaud, ics) or a canonical category (audio,\n                        image, document, text). Auto-detected if omitted.\n  --force               Force re-import by deleting existing import directory\n  --auto [AUTO]         Auto-accept detected timestamp. Optionally provide\n                        guidance text for the LLM (e.g., --auto 'timestamps\n                        are Pacific time').\n  --dry-run             Show what would be imported without writing to the\n                        journal\n  --confirm-health-save\n                        Confirm this run may save sensitive health importer\n                        output\n  --date-from DATE_FROM\n                        For Apple Health: include records on or after YYYY-MM-\n                        DD\n  --date-to DATE_TO     For Apple Health: include records on or before YYYY-\n                        MM-DD\n  --with-day-summaries  For Apple Health: write factual daily summary\n                        transcript segments\n  --deterministic-only  Use only deterministic timestamp detection; skip model\n                        detection\n  --backends            List syncable importer backends\n  --sync BACKEND        Sync catalog from a backend (e.g., plaud). Shows\n                        status by default.\n  --save                With --sync: download and import new files (default is\n                        dry-run)\n  --path PATH           With --sync: override the default source directory\n                        path\n  --window-days WINDOW_DAYS\n                        With --sync oura: fetch a trailing window of this many\n                        days\n  --scheduled           With --sync oura --save: this is an unattended\n                        scheduled run; requires the artifact's standing\n                        scheduled_sync consent\n  --connect BACKEND     Owner-present connect/authorization flow (e.g., oura)\n  --list-importers      List available file importers\n  --json                Output results as JSON (file importers only)\n  -v, --verbose         Enable verbose output\n  -d, --debug           Enable debug logging\n",
+      "stdout_sha256": "2c2b589ff27e29fa1cce8435a125a2b76a570e7b4ec010642ae4415b1b473ee9",
+      "supervisor": "solstone_down"
+    },
+    "solstone_down/list_importers": {
+      "argv": [
+        "--list-importers"
+      ],
+      "exit": 1,
+      "stderr": "sol: solstone isn't running. Start it with 'journal up' and retry.\n",
+      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor": "solstone_down"
+    },
+    "solstone_down/list_importers_json": {
+      "argv": [
+        "--list-importers",
+        "--json"
+      ],
+      "exit": 1,
+      "stderr": "sol: solstone isn't running. Start it with 'journal up' and retry.\n",
+      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor": "solstone_down"
+    },
+    "solstone_down/unknown_option": {
+      "argv": [
+        "--nonsense"
+      ],
+      "exit": 1,
+      "stderr": "sol: solstone isn't running. Start it with 'journal up' and retry.\n",
+      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stdout": "",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "supervisor": "solstone_down"
+    }
+  },
+  "provenance": {
+    "argv0": "journal importer",
+    "captured_by": "executing the reference cli.main() with redirected streams",
+    "note": "byte-exact stdout/stderr and exit code per case, captured in BOTH supervisor states. solstone_down is the state the interpreter-poison contract test runs in: it sets only the poison marker, HOME, the journal path and PATH, and never sets SOL_SKIP_SUPERVISOR_CHECK. Do not regenerate in a build worktree -- it has no importable environment."
+  },
+  "schema": "import-cli-help-fixture/2"
+}
