@@ -153,6 +153,36 @@ fn accepts_only_midnight_for_hour_24() {
 }
 
 #[test]
+fn rejects_overwide_12_hour_fields() {
+    let now = datetime(&fixture::fixture().runtime.fixed_now);
+    for input in ["001PM", "001pm", "4:000pm"] {
+        assert_eq!(
+            parse_health_log_since(input, now),
+            Err(HealthLogSinceError::InvalidTime {
+                input: input.to_owned(),
+            }),
+            "{input}"
+        );
+    }
+}
+
+#[test]
+fn accepts_one_or_two_digit_12_hour_fields() {
+    let now = datetime(&fixture::fixture().runtime.fixed_now);
+    for (input, expected) in [
+        ("4pm", "2026-08-12T16:00:00"),
+        ("04pm", "2026-08-12T16:00:00"),
+        ("4:30pm", "2026-08-12T16:30:00"),
+    ] {
+        assert_eq!(
+            parse_health_log_since(input, now),
+            Ok(datetime(expected)),
+            "{input}"
+        );
+    }
+}
+
+#[test]
 fn counts_timestamp_indices_as_unicode_scalars() {
     let parsed = parse_health_log_row("2026-02-09🐍10:00:00 [echo:stdout] scalar")
         .expect("astral separator consumes one scalar");

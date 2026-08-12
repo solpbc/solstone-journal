@@ -257,11 +257,17 @@ fn parse_12_hour_time(value: &str, format: &str, has_minutes: bool) -> Option<Na
     let clock = &value[..value.len() - 2];
     let (hour, minute) = if has_minutes {
         let (hour, minute) = clock.split_once(':')?;
+        if !(1..=2).contains(&hour.len()) || !(1..=2).contains(&minute.len()) {
+            return None;
+        }
         (
             ascii_number(&hour.chars().collect::<Vec<_>>())?,
             ascii_number(&minute.chars().collect::<Vec<_>>())?,
         )
     } else {
+        if !(1..=2).contains(&clock.len()) {
+            return None;
+        }
         (ascii_number(&clock.chars().collect::<Vec<_>>())?, 0)
     };
     let hour = match (hour, meridiem) {
