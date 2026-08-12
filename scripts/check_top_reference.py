@@ -14,9 +14,9 @@ from types import ModuleType
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "core/fixtures/top_reference.json"
 CAPTURE = ROOT / "scripts/capture_top_reference.py"
-FIXTURE_SHA256 = "c69e605a8f6e8bfb9e8768647568527a6a79621ba292431595a49a570c9bf40a"
-CAPTURE_BLOB = "247c63bf13923e7dab20838d7025a889b16f39a6"
-CAPTURE_SHA256 = "e73b7cee9c4f4497c76e0b67a7de968ed413636e150d3566247b5e8657f56896"
+FIXTURE_SHA256 = "10a424f5de70b4a009f0b13f07d0e4e8c093b92471453d594d9efdaab69ac9b9"
+CAPTURE_BLOB = "27410efa7983f5485a7eb7954dce8525472c5ac9"
+CAPTURE_SHA256 = "3c5b7bab2db495c449043c8fc8b433dc98c9725e36df31e47a4d0f6fe1d4faec"
 
 
 def sha256(path: Path) -> str:
