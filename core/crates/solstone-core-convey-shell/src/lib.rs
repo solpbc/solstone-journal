@@ -73,6 +73,8 @@ use std::io;
 #[cfg(feature = "host")]
 use std::net::SocketAddr;
 #[cfg(feature = "host")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "host")]
 use std::time::Duration;
 
 use axum::Extension;
@@ -92,6 +94,8 @@ pub mod authorization_gate;
 mod door;
 pub mod refusal;
 pub mod registry;
+#[cfg(feature = "host")]
+mod restart;
 pub mod session;
 pub mod session_gate;
 mod speakers;
@@ -118,6 +122,12 @@ mod system;
 use assets::lookup;
 use refusal::AppNotConverted;
 use registry::{ShellPayload, known_app, shell_payload};
+
+#[cfg(feature = "host")]
+pub use restart::{
+    RestartConveyError, RestartConveyOptions, RestartConveyReport, RestartTransport,
+    restart_convey, restart_convey_with_transport,
+};
 
 /// Journal filesystem root shared with converted app route handlers.
 pub(crate) struct JournalRoot(pub PathBuf);
@@ -358,8 +368,19 @@ fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
     let health = journal_root.join("health");
     std::fs::create_dir_all(&health)
         .map_err(|error| format!("convey could not create health directory: {error}"))?;
-    std::fs::write(health.join("convey.port"), port.to_string())
-        .map_err(|error| format!("convey could not write its port file: {error}"))
+    static NEXT_PORT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let target = health.join("convey.port");
+    let temporary = health.join(format!(
+        ".convey.port.{}.{}.tmp",
+        std::process::id(),
+        NEXT_PORT_TEMP.fetch_add(1, Ordering::Relaxed),
+    ));
+    std::fs::write(&temporary, port.to_string())
+        .and_then(|()| std::fs::rename(&temporary, &target))
+        .map_err(|error| {
+            let _ = std::fs::remove_file(&temporary);
+            format!("convey could not write its port file: {error}")
+        })
 }
 
 pub fn router(journal_root: PathBuf) -> Router {

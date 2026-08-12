@@ -1,0 +1,1429 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use crate::{
+    args::DoctorArgs,
+    context::CheckContext,
+    registry::{self, Battery},
+    run,
+    vocabulary::{CheckResult, Platform, Severity, Status},
+};
+use chrono::TimeZone;
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::{Duration, SystemTime},
+};
+
+#[derive(Debug, PartialEq, Eq)]
+enum SnapshotEntry {
+    File(Vec<u8>),
+    Symlink(PathBuf),
+    Directory,
+}
+
+fn snapshot(root: &Path) -> BTreeMap<PathBuf, SnapshotEntry> {
+    fn visit(root: &Path, path: &Path, out: &mut BTreeMap<PathBuf, SnapshotEntry>) {
+        let relative = path.strip_prefix(root).unwrap().to_path_buf();
+        let metadata = fs::symlink_metadata(path).unwrap();
+        if metadata.file_type().is_symlink() {
+            out.insert(
+                relative,
+                SnapshotEntry::Symlink(fs::read_link(path).unwrap()),
+            );
+        } else if metadata.is_dir() {
+            out.insert(relative, SnapshotEntry::Directory);
+            let mut entries = fs::read_dir(path)
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            entries.sort_by_key(|entry| entry.path());
+            for entry in entries {
+                visit(root, &entry.path(), out);
+            }
+        } else if metadata.is_file() {
+            out.insert(relative, SnapshotEntry::File(fs::read(path).unwrap()));
+        }
+    }
+    let mut out = BTreeMap::new();
+    if root.exists() {
+        visit(root, root, &mut out);
+    }
+    out
+}
+
+static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+const W3C_CHECK_NAMES: &[&str] = &[
+    "journal_sync",
+    "journal_caught_up",
+    "journal_maint_tasks",
+    "task_pace",
+    "brain",
+    "capture_health",
+    "observer_binding",
+    "observer_delivery_stall",
+    "observer_ingest_health",
+    "orphan_segment_pdf",
+    "default_stt_ready",
+    "parakeet_cpp_stt_ready",
+    "speakers_analyze_installation",
+    "skill_state",
+    "feature:pdf-import",
+    "feature:pdf-export",
+];
+
+const W3A_REAL_CHECK_NAMES: &[&str] = &[
+    "config_dir_readable",
+    "journal_dir_writable",
+    "supervisor_conflict",
+    "service_running",
+    "launchd_stale_plist",
+];
+
+// W3b landed before this branch. Like the W3c list above, these names carry
+// `deferred: None` now and so are indistinguishable from W3a's rows in the
+// registry — the classification cannot be derived after the fact and has to be
+// written down to keep the partition assertion below self-policing.
+const W3B_REAL_CHECK_NAMES: &[&str] = &[
+    "journal_leaf_exclusivity",
+    "journal_package_version",
+    "retired_host_shim",
+    "host_dependencies",
+    "disk_space",
+    "python_version",
+    "service_identity",
+    "stale_alias_symlink",
+    "sol_importable",
+    "local_bin_sol_reachable",
+];
+
+fn fixture() -> CheckContext {
+    let root = std::env::temp_dir().join(format!(
+        "w3c-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(root.join("journal")).unwrap();
+    CheckContext {
+        home_dir: root.join("home"),
+        install_bin_dir: root.join("install/bin"),
+        journal_path: root.join("journal"),
+        callosum_socket_path: root.join("journal/health/callosum.sock"),
+        platform: Platform::Linux,
+        now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+        host_arch: "x86_64".into(),
+        hostname: "fixture-host".into(),
+        machine_id: Some("fixture-machine".into()),
+        checkout_root: None,
+        python_env_root: None,
+        port: 5015,
+        service_status_timeout: Duration::from_millis(1),
+        service_status_command_override: None,
+        parakeet_server_probe_override: Some(|_, _| Err("fixture unreachable".into())),
+        speakers_analyze_resolvers: None,
+    }
+}
+fn status(name: &str, context: &CheckContext) -> Status {
+    result(name, context).status
+}
+fn result(name: &str, context: &CheckContext) -> CheckResult {
+    (registry::lookup(Battery::Journal, name).unwrap().runner)(context).unwrap()
+}
+fn write_observer(context: &CheckContext, name: &str, value: serde_json::Value) {
+    let path = context
+        .journal_path
+        .join("apps/observer/observers")
+        .join(format!("{name}.json"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, value.to_string()).unwrap();
+}
+fn observer(context: &CheckContext, name: &str, last_seen: i64) {
+    write_observer(
+        context,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key", "name": name, "enabled": true,
+            "created_at": 1, "last_seen": last_seen
+        }),
+    );
+}
+fn health(context: &CheckContext, day: &str, lines: &[&str]) {
+    let directory = context
+        .journal_path
+        .join("chronicle")
+        .join(day)
+        .join("health");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("001.jsonl"), lines.join("\n") + "\n").unwrap();
+}
+fn screen_segment(context: &CheckContext, day: &str) {
+    let path = context
+        .journal_path
+        .join("chronicle")
+        .join(day)
+        .join("120000_60");
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("screen.jsonl"), "{}\n{\"timestamp\":0}\n").unwrap();
+}
+fn incomplete(context: &CheckContext, day: &str) {
+    let path = context
+        .journal_path
+        .join("chronicle")
+        .join(day)
+        .join("health/stream.updated");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "stream\n").unwrap();
+    fs::File::open(path)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(
+            SystemTime::UNIX_EPOCH
+                + Duration::from_millis((context.now.timestamp_millis() - 1_000) as u64),
+        ))
+        .unwrap();
+}
+fn config_backend(context: &CheckContext, backend: &str) {
+    let path = context.journal_path.join("config/journal.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        format!(r#"{{"transcribe":{{"backend":"{backend}"}}}}"#),
+    )
+    .unwrap();
+}
+fn stage_brain_ready(context: &CheckContext) {
+    let path = context.journal_path.join("health/brain.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let observed_at = "2025-12-31T23:59:00+00:00";
+    let record = serde_json::json!({
+        "schema_version": 1,
+        "revision": 3,
+        "aggregate_state": "ready",
+        "reason_code": null,
+        "active_lane": "none",
+        "active_provider": "none",
+        "active_model": null,
+        "fingerprint_sha256": null,
+        "checking": null,
+        "evidence": {
+            "configuration": {
+                "status": "ok",
+                "observed_at": observed_at,
+                "expires_at": "2026-01-02T00:00:00+00:00"
+            },
+            "lane_prerequisites": null,
+            "generate": null,
+            "cogitate": null
+        },
+        "runtime_failure_marker": null,
+        "diagnostic": {},
+        "updated_at": observed_at,
+    });
+    fs::write(path, record.to_string()).unwrap();
+}
+
+fn stage_brain_checking(context: &CheckContext) -> solstone_core_brain::BrainRefreshPermit {
+    let path = context.journal_path.join("config/journal.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, r#"{"providers":{"active":{"provider":"anthropic"}}}"#).unwrap();
+    solstone_core_brain::begin_refresh(
+        &context.journal_path,
+        context.now,
+        Some("0123456789abcdef".into()),
+        None,
+        false,
+        None,
+    )
+    .unwrap()
+    .expect("configured cloud provider starts a refresh and holds its lease")
+}
+#[cfg(unix)]
+fn executable(path: &std::path::Path, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::write(path, body).unwrap();
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).unwrap();
+}
+fn parakeet_ready_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
+    Ok(())
+}
+fn parakeet_unreachable_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
+    Err("fixture unreachable".into())
+}
+#[cfg(unix)]
+fn speakers_binary_ready() -> Result<std::path::PathBuf, String> {
+    Ok("/bin/sh".into())
+}
+#[cfg(unix)]
+fn speakers_binary_missing() -> Result<std::path::PathBuf, String> {
+    Err("fixture helper missing".into())
+}
+#[cfg(unix)]
+fn speakers_model_ready(
+    _: &str,
+) -> Result<std::path::PathBuf, solstone_core_transcribe::TranscribeError> {
+    Ok("/fixture/model.onnx".into())
+}
+fn args() -> DoctorArgs {
+    DoctorArgs {
+        verbose: false,
+        json: false,
+        jsonl: false,
+        port: 5015,
+        feature: None,
+        readiness: false,
+    }
+}
+
+fn stage_maint(context: &CheckContext, exit_code: Option<i64>) {
+    let state = context.journal_path.join("maint/settings/reindex.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    let contents = match exit_code {
+        Some(code) => format!(
+            "{{\"event\":\"exec\",\"ts\":1}}\n{{\"event\":\"exit\",\"exit_code\":{code},\"ts\":2}}\n"
+        ),
+        None => format!(
+            "{{\"event\":\"exec\",\"ts\":{}}}\n",
+            context.now.timestamp_millis() - 300_001
+        ),
+    };
+    fs::write(state, contents).unwrap();
+}
+
+fn stage_backlog_pending(context: &CheckContext) {
+    screen_segment(context, "20251231");
+    health(
+        context,
+        "20251231",
+        &[
+            r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
+        ],
+    );
+    incomplete(context, "20251231");
+}
+
+#[cfg(unix)]
+fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
+    config_backend(context, backend);
+    let artifacts = solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
+        &context.journal_path,
+        "linux",
+        "x86_64",
+    )
+    .unwrap();
+    fs::create_dir_all(artifacts.binary_cpu.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.binary_vulkan.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.model.parent().unwrap()).unwrap();
+    executable(&artifacts.binary_cpu, "#!/bin/sh\necho v\n");
+    executable(&artifacts.binary_vulkan, "#!/bin/sh\necho v\n");
+    fs::write(&artifacts.model, "model").unwrap();
+    context.parakeet_server_probe_override = Some(parakeet_ready_probe);
+}
+
+#[cfg(unix)]
+fn stage_speakers_analyze(context: &mut CheckContext, ready: bool) {
+    context.speakers_analyze_resolvers = Some((
+        if ready {
+            speakers_binary_ready
+        } else {
+            speakers_binary_missing
+        },
+        speakers_model_ready,
+    ));
+}
+
+#[cfg(unix)]
+fn stage_router_skills(context: &mut CheckContext, broken: bool) {
+    use std::os::unix::fs::symlink;
+
+    let root = context.journal_path.parent().unwrap().join("checkout");
+    for name in ["sol", "journal"] {
+        let source = root.join("solstone/talent").join(name);
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "x").unwrap();
+    }
+    for parent in [
+        context.journal_path.join(".claude/skills"),
+        context.journal_path.join(".agents/skills"),
+    ] {
+        fs::create_dir_all(&parent).unwrap();
+        for name in ["sol", "journal"] {
+            let source = root.join("solstone/talent").join(name);
+            symlink(
+                solstone_core_skill_state::expected_link_target(&source, &parent),
+                parent.join(name),
+            )
+            .unwrap();
+        }
+    }
+    context.checkout_root = Some(root);
+    if broken {
+        let parent = context.journal_path.join(".claude/skills");
+        fs::remove_file(parent.join("sol")).unwrap();
+    }
+}
+
+fn stage_feature(context: &mut CheckContext, name: &str, present: bool) {
+    let environment = context.journal_path.parent().unwrap().join("venv");
+    let site = environment.join("lib/python3.13/site-packages");
+    fs::create_dir_all(&site).unwrap();
+    context.python_env_root = Some(environment);
+    if present {
+        for module in match name {
+            "feature:pdf-import" => ["pypdfium2", "PIL"].as_slice(),
+            "feature:pdf-export" => ["weasyprint"].as_slice(),
+            _ => unreachable!(),
+        } {
+            let module = site.join(module);
+            fs::create_dir_all(&module).unwrap();
+            fs::write(module.join("__init__.py"), "").unwrap();
+        }
+    }
+}
+
+fn task_pace_with(tasks: serde_json::Value) -> CheckResult {
+    use serde_json::Map;
+    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
+
+    let mut context = fixture();
+    fs::create_dir_all(context.callosum_socket_path.parent().unwrap()).unwrap();
+    context.service_status_timeout = Duration::from_millis(250);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let server = runtime
+        .block_on(CallosumSocketServer::bind(&context.callosum_socket_path))
+        .unwrap();
+    let thread_context = context.clone();
+    let handle = std::thread::spawn(move || result("task_pace", &thread_context));
+    runtime.block_on(async {
+        tokio::time::timeout(Duration::from_millis(100), async {
+            while server.client_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .unwrap();
+    });
+    let envelope = CallosumEnvelope {
+        tract: "supervisor".into(),
+        event: "status".into(),
+        ts: None,
+        extra: Map::from_iter([("tasks".into(), tasks)]),
+    };
+    for _ in 0..20 {
+        assert!(server.broadcast(envelope.clone()));
+        runtime.block_on(async { tokio::time::sleep(Duration::from_millis(5)).await });
+        if handle.is_finished() {
+            break;
+        }
+    }
+    let output = handle.join().unwrap();
+    runtime.block_on(server.stop());
+    output
+}
+
+#[derive(Clone, Copy)]
+enum SecondBranch {
+    DifferentStatus,
+    DifferentDetail,
+}
+
+fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
+    let mut context = fixture();
+    match name {
+        "journal_sync" => {
+            if !ok {
+                fs::remove_dir_all(&context.journal_path).unwrap();
+            }
+        }
+        "journal_caught_up" => {
+            if !ok {
+                stage_backlog_pending(&context);
+            }
+        }
+        "journal_maint_tasks" => stage_maint(&context, Some(if ok { 0 } else { 3 })),
+        "task_pace" => {
+            return if ok {
+                task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
+            } else {
+                result(name, &context)
+            };
+        }
+        "brain" => {
+            if ok {
+                stage_brain_ready(&context);
+            } else {
+                let path = context.journal_path.join("health/brain.json");
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, "{").unwrap();
+            }
+        }
+        "capture_health" => {
+            if ok {
+                observer(&context, "phone", context.now.timestamp_millis() - 1);
+            } else {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-31_000,"health":{"ingest_rejection":{"active_count":1}}}),
+                );
+            }
+        }
+        "observer_binding" => {
+            if ok {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"device_binding":{"device":format!("sha256:{}", "a".repeat(64)),"kind":"cert"}}),
+                );
+            } else {
+                observer(&context, "phone", context.now.timestamp_millis() - 1);
+            }
+        }
+        "observer_delivery_stall" => {
+            let upload_age = if ok { 1_000 } else { 21_600_001 };
+            write_observer(
+                &context,
+                "abcdefgh",
+                serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-1_000,"last_segment_received_at":context.now.timestamp_millis()-upload_age}),
+            );
+        }
+        "observer_ingest_health" => {
+            observer(&context, "phone", context.now.timestamp_millis() - 1);
+            if !ok {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"health":{"ingest_rejection":{"version":"1.2","summary":"bad payload","active_count":2}}}),
+                );
+            }
+        }
+        "orphan_segment_pdf" => {
+            let chronicle = context.journal_path.join("chronicle");
+            fs::create_dir_all(&chronicle).unwrap();
+            if !ok {
+                let path = chronicle.join(".dot/a/b/raw.pdf");
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, "pdf").unwrap();
+            }
+        }
+        "default_stt_ready" => {
+            if ok {
+                #[cfg(unix)]
+                stage_parakeet_ready(&mut context, "parakeet");
+            } else {
+                config_backend(&context, "whisper");
+            }
+        }
+        "parakeet_cpp_stt_ready" => {
+            if ok {
+                #[cfg(unix)]
+                stage_parakeet_ready(&mut context, "parakeet-cpp");
+            }
+        }
+        "speakers_analyze_installation" => {
+            #[cfg(unix)]
+            stage_speakers_analyze(&mut context, ok);
+        }
+        "skill_state" => {
+            #[cfg(unix)]
+            stage_router_skills(&mut context, !ok);
+        }
+        "feature:pdf-import" | "feature:pdf-export" => stage_feature(&mut context, name, ok),
+        _ => unreachable!("unknown W3c check {name}"),
+    }
+    result(name, &context)
+}
+#[test]
+fn w3c_registry_replaces_exact_deferred_set_with_runners() {
+    assert!(
+        registry::entries(Battery::Journal)
+            .iter()
+            .filter(|e| matches!(
+                e.check.name,
+                "journal_sync"
+                    | "journal_caught_up"
+                    | "journal_maint_tasks"
+                    | "task_pace"
+                    | "brain"
+                    | "capture_health"
+                    | "observer_binding"
+                    | "observer_delivery_stall"
+                    | "observer_ingest_health"
+                    | "orphan_segment_pdf"
+                    | "default_stt_ready"
+                    | "parakeet_cpp_stt_ready"
+                    | "speakers_analyze_installation"
+                    | "skill_state"
+            ) || e.check.name.starts_with("feature:"))
+            .all(|e| e.deferred.is_none())
+    );
+}
+#[test]
+fn w3c_severity_table_matches_reference() {
+    for (name, severity) in [
+        ("journal_sync", Severity::Blocker),
+        ("journal_caught_up", Severity::Advisory),
+        ("journal_maint_tasks", Severity::Blocker),
+        ("task_pace", Severity::Advisory),
+        ("brain", Severity::Advisory),
+        ("capture_health", Severity::Advisory),
+        ("observer_binding", Severity::Advisory),
+        ("observer_delivery_stall", Severity::Advisory),
+        ("observer_ingest_health", Severity::Advisory),
+        ("orphan_segment_pdf", Severity::Advisory),
+        ("default_stt_ready", Severity::Advisory),
+        ("parakeet_cpp_stt_ready", Severity::Advisory),
+        ("speakers_analyze_installation", Severity::Blocker),
+        ("skill_state", Severity::Advisory),
+        ("feature:pdf-import", Severity::Advisory),
+        ("feature:pdf-export", Severity::Advisory),
+    ] {
+        assert_eq!(
+            registry::lookup(Battery::Journal, name)
+                .unwrap()
+                .check
+                .severity,
+            severity
+        );
+    }
+}
+#[test]
+fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
+    let coverage = [
+        ("journal_sync", SecondBranch::DifferentStatus),
+        ("journal_caught_up", SecondBranch::DifferentStatus),
+        ("journal_maint_tasks", SecondBranch::DifferentStatus),
+        ("task_pace", SecondBranch::DifferentStatus),
+        ("brain", SecondBranch::DifferentStatus),
+        ("capture_health", SecondBranch::DifferentStatus),
+        // The Python reference reports both binding branches as OK; changing
+        // the unbound stream branch into a warning would be a regression.
+        ("observer_binding", SecondBranch::DifferentDetail),
+        ("observer_delivery_stall", SecondBranch::DifferentStatus),
+        ("observer_ingest_health", SecondBranch::DifferentStatus),
+        ("orphan_segment_pdf", SecondBranch::DifferentStatus),
+        ("default_stt_ready", SecondBranch::DifferentStatus),
+        ("parakeet_cpp_stt_ready", SecondBranch::DifferentStatus),
+        (
+            "speakers_analyze_installation",
+            SecondBranch::DifferentStatus,
+        ),
+        ("skill_state", SecondBranch::DifferentStatus),
+        ("feature:pdf-import", SecondBranch::DifferentStatus),
+        ("feature:pdf-export", SecondBranch::DifferentStatus),
+    ];
+    let coverage_names = coverage
+        .iter()
+        .map(|(name, _)| *name)
+        .collect::<std::collections::BTreeSet<_>>();
+    let w3c_names = W3C_CHECK_NAMES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        w3c_names, coverage_names,
+        "every native W3c registry row needs AC1 coverage"
+    );
+    for name in W3C_CHECK_NAMES {
+        let entry = registry::lookup(Battery::Journal, name)
+            .unwrap_or_else(|| panic!("W3c check {name} is missing from the registry"));
+        assert!(
+            entry.deferred.is_none(),
+            "W3c check {name} must resolve to a real runner"
+        );
+    }
+    let w3a_names = W3A_REAL_CHECK_NAMES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let w3b_names = W3B_REAL_CHECK_NAMES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    for name in W3B_REAL_CHECK_NAMES {
+        let entry = registry::lookup(Battery::Journal, name)
+            .or_else(|| registry::lookup(Battery::JournalReadiness, name))
+            .unwrap_or_else(|| panic!("W3b check {name} is missing from the registry"));
+        assert!(
+            entry.deferred.is_none(),
+            "W3b check {name} must resolve to a real runner"
+        );
+    }
+    assert!(
+        registry::entries(Battery::Journal)
+            .iter()
+            .chain(registry::entries(Battery::JournalReadiness))
+            .all(|entry| entry.deferred.is_none()),
+        "every deferred wave has landed; no registry row may still be a stub"
+    );
+    assert!(w3a_names.is_disjoint(&w3b_names));
+    assert!(w3a_names.is_disjoint(&w3c_names));
+    assert!(w3b_names.is_disjoint(&w3c_names));
+    let partition = w3a_names
+        .union(&w3b_names)
+        .copied()
+        .chain(w3c_names.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        registry::union_names(),
+        partition,
+        "every registry check must be classified as W3a, W3b, or W3c"
+    );
+    for (name, kind) in coverage {
+        let ok = staged_coverage_result(name, true);
+        let second = staged_coverage_result(name, false);
+        assert_eq!(ok.status, Status::Ok, "{name} OK branch: {}", ok.detail);
+        match kind {
+            SecondBranch::DifferentStatus => assert_ne!(
+                second.status,
+                Status::Ok,
+                "{name} non-OK branch: {}",
+                second.detail
+            ),
+            SecondBranch::DifferentDetail => {
+                assert_eq!(second.status, Status::Ok, "{name}: {}", second.detail);
+                assert_ne!(ok.detail, second.detail, "{name} branches must differ");
+            }
+        }
+    }
+}
+#[test]
+fn w3c_parakeet_cpp_required_states_are_distinct() {
+    assert_eq!(status("parakeet_cpp_stt_ready", &fixture()), Status::Skip);
+}
+#[test]
+fn w3c_default_stt_backend_platform_and_corrupt_config_matrix() {
+    let c = fixture();
+    fs::create_dir_all(c.journal_path.join("config")).unwrap();
+    fs::write(c.journal_path.join("config/journal.json"), b"{").unwrap();
+    assert_eq!(status("default_stt_ready", &c), Status::Fail);
+}
+#[test]
+fn w3c_orphan_pdf_depth_transcript_and_dot_entry_matrix() {
+    let c = fixture();
+    let p = c.journal_path.join("chronicle/.dot/a/b/raw.pdf");
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(p, b"pdf").unwrap();
+    assert_eq!(status("orphan_segment_pdf", &c), Status::Warn);
+}
+#[test]
+fn w3c_no_enabled_observers_skip_observer_trio() {
+    let c = fixture();
+    for name in [
+        "capture_health",
+        "observer_delivery_stall",
+        "observer_ingest_health",
+    ] {
+        assert_eq!(status(name, &c), Status::Skip);
+    }
+}
+
+#[test]
+fn w3c_observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
+    let dated = fixture();
+    write_observer(
+        &dated,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-dated", "name":"dated", "enabled":true, "created_at":1,
+            "health":{"ingest_rejection":{
+                "version":"1.2", "summary":"bad payload", "active_count":2,
+                "first_ts": dated.now.timestamp_millis()
+            }}
+        }),
+    );
+    let row = result("observer_ingest_health", &dated);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "observer dated (v1.2) failing ingest: bad payload, 2x since 2026-01-01"
+    );
+
+    let unknown = fixture();
+    write_observer(
+        &unknown,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-unknown", "name":"unknown", "enabled":true, "created_at":1,
+            "health":{"ingest_rejection":{
+                "version":"1.2", "summary":"bad payload", "active_count":2
+            }}
+        }),
+    );
+    let row = result("observer_ingest_health", &unknown);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "observer unknown (v1.2) failing ingest: bad payload, 2x since unknown"
+    );
+}
+
+#[test]
+fn w3c_maint_unreadable_state_uses_reference_detail() {
+    let unreadable = fixture();
+    let state = unreadable.journal_path.join("maint/settings/reindex.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(&state, "not json\n").unwrap();
+    let row = result("journal_maint_tasks", &unreadable);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "couldn't fully determine — maint state unreadable: settings.reindex"
+    );
+
+    let missing_timestamp = fixture();
+    let state = missing_timestamp
+        .journal_path
+        .join("maint/settings/reindex.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(&state, "{\"event\":\"exec\"}\n").unwrap();
+    let row = result("journal_maint_tasks", &missing_timestamp);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "couldn't fully determine — maint state unreadable: settings.reindex"
+    );
+}
+#[test]
+fn w3c_setup_json_and_jsonl_filters_receive_advisory_warning() {
+    let warned = run(&args(), &fixture());
+    let json = serde_json::json!({"checks": warned});
+    let json_matches = json["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| matches!(row["status"].as_str(), Some("warn" | "fail")))
+        .collect::<Vec<_>>();
+    assert!(!json_matches.is_empty());
+    assert!(
+        json_matches
+            .iter()
+            .any(|row| row["name"] == "default_stt_ready")
+    );
+    let mut bytes = Vec::new();
+    crate::output::emit_jsonl_to(&mut bytes, &warned, "2026-01-01T00:00:00Z", 0, 5015, None);
+    let jsonl_matches = String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .filter(|row| {
+            row["event"] == "check.completed"
+                && matches!(row["status"].as_str(), Some("warning" | "failed"))
+        })
+        .collect::<Vec<_>>();
+    assert!(!jsonl_matches.is_empty());
+    assert!(
+        jsonl_matches
+            .iter()
+            .any(|row| row["name"] == "default_stt_ready")
+    );
+
+    let ok = vec![crate::vocabulary::make_result(
+        crate::vocabulary::Check {
+            name: "ok",
+            severity: Severity::Advisory,
+            platforms: &[Platform::Linux],
+        },
+        Status::Ok,
+        "ok",
+        None::<String>,
+    )];
+    let ok_json = serde_json::json!({"checks": ok});
+    assert!(
+        ok_json["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| !matches!(row["status"].as_str(), Some("warn" | "fail")))
+    );
+}
+#[test]
+fn w3c_feature_environment_inspection_matrix() {
+    let missing = fixture();
+    let env = missing.journal_path.parent().unwrap().join("venv");
+    fs::create_dir_all(env.join("lib/python3.13/site-packages")).unwrap();
+    let mut missing = missing;
+    missing.python_env_root = Some(env.clone());
+    let absent = result("feature:pdf-import", &missing);
+    assert_eq!(absent.status, Status::Warn);
+    assert_eq!(absent.detail, "PDF document extraction not installed");
+    fs::create_dir_all(env.join("lib/python3.13/site-packages/pypdfium2")).unwrap();
+    fs::write(
+        env.join("lib/python3.13/site-packages/pypdfium2/__init__.py"),
+        "",
+    )
+    .unwrap();
+    fs::create_dir_all(env.join("lib/python3.13/site-packages/PIL")).unwrap();
+    fs::write(env.join("lib/python3.13/site-packages/PIL/__init__.py"), "").unwrap();
+    let present = result("feature:pdf-import", &missing);
+    assert_eq!(present.status, Status::Ok);
+    assert_eq!(present.detail, "PDF document extraction available");
+
+    let export = fixture();
+    let env = export.journal_path.parent().unwrap().join("export-venv");
+    fs::create_dir_all(env.join("lib/python3.13/site-packages")).unwrap();
+    let mut export = export;
+    export.python_env_root = Some(env.clone());
+    let absent = result("feature:pdf-export", &export);
+    assert_eq!(absent.status, Status::Warn);
+    assert_eq!(
+        absent.fix.as_deref(),
+        Some("pip install 'solstone[pdf-export]' and apt install libpango-1.0-0 libpangoft2-1.0-0")
+    );
+    export.platform = Platform::Darwin;
+    assert_eq!(
+        result("feature:pdf-export", &export).fix.as_deref(),
+        Some("pip install 'solstone[pdf-export]' and brew install pango")
+    );
+    fs::create_dir_all(env.join("lib/python3.13/site-packages/weasyprint")).unwrap();
+    fs::write(
+        env.join("lib/python3.13/site-packages/weasyprint/__init__.py"),
+        "",
+    )
+    .unwrap();
+    let present = result("feature:pdf-export", &export);
+    assert_eq!(present.status, Status::Ok);
+    assert_eq!(present.detail, "PDF export rendering available");
+}
+
+#[test]
+fn w3c_brain_unconstructible_snapshot_is_an_explicit_warning() {
+    let context = fixture();
+    let path = context.journal_path.join("health/brain.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, "{").unwrap();
+    let row = result("brain", &context);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.starts_with("unknown: "), "{}", row.detail);
+}
+
+#[test]
+fn w3c_brain_ready_and_checking_records_are_healthy() {
+    let ready = fixture();
+    stage_brain_ready(&ready);
+    let row = result("brain", &ready);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(
+        row.detail,
+        "sol can think; state=ready; reason=ok; component=none; evidence_age=1m"
+    );
+
+    let checking = fixture();
+    let _permit = stage_brain_checking(&checking);
+    let row = result("brain", &checking);
+    assert_eq!(row.status, Status::Ok, "{}", row.detail);
+    assert_eq!(
+        row.detail,
+        "checking how sol thinks; state=checking; reason=brain check in progress; component=none; evidence_age=unknown"
+    );
+}
+
+#[test]
+fn w3c_task_pace_uses_callosum_status_fixture() {
+    let ok = task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]));
+    assert_eq!(ok.status, Status::Ok);
+    assert_eq!(ok.detail, "tasks on pace");
+    let warn = task_pace_with(serde_json::json!([{
+        "name":"index", "slow":true, "duration_seconds":12, "max_runtime_seconds":10
+    }]));
+    assert_eq!(warn.status, Status::Warn);
+    assert_eq!(warn.detail, "running long: index (12s of 10s cap)");
+    assert_eq!(result("task_pace", &fixture()).status, Status::Skip);
+}
+
+#[test]
+fn w3c_caught_up_native_backlog_fixture_states() {
+    let clean = fixture();
+    let row = result("journal_caught_up", &clean);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "caught up");
+
+    let capped = fixture();
+    health(
+        &capped,
+        "20251230",
+        &[
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"summary","reason_code":"provider_request_rejected"}"#,
+        ],
+    );
+    let row = result("journal_caught_up", &capped);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(
+        row.detail,
+        "caught up; 1 day(s) completed with capped daily unit(s)"
+    );
+
+    let pending = fixture();
+    stage_backlog_pending(&pending);
+    let row = result("journal_caught_up", &pending);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "1 day(s) pending, 0 day(s) stuck; oldest outstanding 20251231"
+    );
+    assert_eq!(
+        row.fix.as_deref(),
+        Some(
+            "solstone catches up on its own; reprocess a day from the health surface to prioritize it"
+        )
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn w3c_parakeet_cpp_fixture_states_are_distinct() {
+    let not_applicable = fixture();
+    let row = result("parakeet_cpp_stt_ready", &not_applicable);
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(
+        row.detail,
+        "configured backend is not parakeet-cpp; check not applicable"
+    );
+
+    let missing = fixture();
+    config_backend(&missing, "parakeet-cpp");
+    let missing_row = result("parakeet_cpp_stt_ready", &missing);
+    assert_eq!(missing_row.status, Status::Warn);
+    assert!(missing_row.detail.starts_with("parakeet-cpp check failed:"));
+    assert_eq!(
+        missing_row.fix.as_deref(),
+        Some(
+            "parakeet-cpp artifacts are not installed — fetch them with: journal install-provider parakeet"
+        )
+    );
+
+    let generic = fixture();
+    config_backend(&generic, "parakeet-cpp");
+    let artifacts = solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
+        &generic.journal_path,
+        "linux",
+        "x86_64",
+    )
+    .unwrap();
+    fs::create_dir_all(artifacts.binary_cpu.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.binary_vulkan.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.model.parent().unwrap()).unwrap();
+    executable(&artifacts.binary_cpu, "#!/bin/sh\nexit 1\n");
+    executable(&artifacts.binary_vulkan, "#!/bin/sh\nexit 0\n");
+    fs::write(&artifacts.model, "model").unwrap();
+    let generic_row = result("parakeet_cpp_stt_ready", &generic);
+    assert_eq!(generic_row.status, Status::Warn);
+    assert_eq!(generic_row.detail, "parakeet-cpp binary cannot start");
+
+    let openmp = fixture();
+    config_backend(&openmp, "parakeet-cpp");
+    let artifacts = solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
+        &openmp.journal_path,
+        "linux",
+        "x86_64",
+    )
+    .unwrap();
+    fs::create_dir_all(artifacts.binary_cpu.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.binary_vulkan.parent().unwrap()).unwrap();
+    fs::create_dir_all(artifacts.model.parent().unwrap()).unwrap();
+    executable(
+        &artifacts.binary_cpu,
+        "#!/bin/sh\necho libgomp.so.1 >&2\nexit 1\n",
+    );
+    executable(&artifacts.binary_vulkan, "#!/bin/sh\nexit 0\n");
+    fs::write(&artifacts.model, "model").unwrap();
+    let openmp_row = result("parakeet_cpp_stt_ready", &openmp);
+    assert_eq!(openmp_row.status, Status::Warn);
+    assert_eq!(
+        openmp_row.detail,
+        "parakeet-cpp cannot start: OpenMP runtime unavailable (libgomp.so.1)"
+    );
+    assert_eq!(
+        openmp_row.fix.as_deref(),
+        Some(
+            "install the system OpenMP runtime that provides libgomp.so.1, then rerun journal doctor"
+        )
+    );
+
+    let mut unreachable = fixture();
+    stage_parakeet_ready(&mut unreachable, "parakeet-cpp");
+    unreachable.parakeet_server_probe_override = Some(parakeet_unreachable_probe);
+    let unreachable_row = result("parakeet_cpp_stt_ready", &unreachable);
+    assert_eq!(unreachable_row.status, Status::Warn);
+    assert_eq!(
+        unreachable_row.detail,
+        "parakeet-server not reachable: fixture unreachable"
+    );
+
+    unreachable.parakeet_server_probe_override = Some(parakeet_ready_probe);
+    let ready = result("parakeet_cpp_stt_ready", &unreachable);
+    assert_eq!(ready.status, Status::Ok);
+    assert_eq!(
+        ready.detail,
+        "parakeet-cpp ready (binaries + model installed, server reachable)"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn w3c_default_stt_fixture_matrix_delegates_and_checks_coreml() {
+    let other = fixture();
+    config_backend(&other, "whisper");
+    let row = result("default_stt_ready", &other);
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(
+        row.detail,
+        "configured backend is whisper; parakeet readiness not applicable"
+    );
+
+    let mut unsupported = fixture();
+    config_backend(&unsupported, "parakeet");
+    unsupported.host_arch = "aarch64".into();
+    let row = result("default_stt_ready", &unsupported);
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(row.detail, "parakeet not supported on this platform");
+
+    let mut linux = fixture();
+    config_backend(&linux, "parakeet");
+    stage_parakeet_ready(&mut linux, "parakeet");
+    let delegated = result("default_stt_ready", &linux);
+    let direct = result("parakeet_cpp_stt_ready", &{
+        let direct = linux.clone();
+        config_backend(&direct, "parakeet-cpp");
+        direct
+    });
+    assert_eq!(delegated.status, direct.status);
+    assert_eq!(delegated.detail, direct.detail);
+
+    let mut coreml = fixture();
+    config_backend(&coreml, "parakeet");
+    coreml.platform = Platform::Darwin;
+    coreml.host_arch = "arm64".into();
+    let cache = coreml
+        .home_dir
+        .join("Library/Application Support/solstone/parakeet/models/cache");
+    fs::create_dir_all(&cache).unwrap();
+    let model = cache.parent().unwrap().join("parakeet-tdt-0.6b-v3");
+    for path in [
+        "Encoder.mlmodelc/weights/weight.bin",
+        "Decoder.mlmodelc/weights/weight.bin",
+        "JointDecision.mlmodelc/weights/weight.bin",
+        "Preprocessor.mlmodelc/weights/weight.bin",
+    ] {
+        let path = model.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "model").unwrap();
+    }
+    let sentinel = coreml
+        .home_dir
+        .join("Library/Application Support/solstone/parakeet/models/.install-complete");
+    fs::write(sentinel, serde_json::json!({"schema_version":1,"backend":"parakeet","variant":"coreml","model_version":"v3","quantization":"fp32","fluidaudio_version":"x","platform":{"os":"darwin","arch":"arm64"},"cache_dir":cache}).to_string()).unwrap();
+    let row = result("default_stt_ready", &coreml);
+    assert_eq!(row.status, Status::Ok);
+    assert!(row.detail.starts_with("parakeet model ready at "));
+
+    let missing_coreml = fixture();
+    let mut missing_coreml = missing_coreml;
+    config_backend(&missing_coreml, "parakeet");
+    missing_coreml.platform = Platform::Darwin;
+    missing_coreml.host_arch = "arm64".into();
+    let row = result("default_stt_ready", &missing_coreml);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.fix.as_deref(),
+        Some("CoreML parakeet model is not downloaded — fetch it with: journal install-models")
+    );
+
+    let corrupt = fixture();
+    let path = corrupt.journal_path.join("config/journal.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, "{").unwrap();
+    let row = result("default_stt_ready", &corrupt);
+    assert_eq!(row.status, Status::Fail);
+    assert_eq!(
+        row.fix.as_deref(),
+        Some("repair or restore config/journal.json from a backup")
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn w3c_skill_state_fixture_branches() {
+    use std::os::unix::fs::symlink;
+
+    let mut installed = fixture();
+    stage_router_skills(&mut installed, false);
+    let root = installed.checkout_root.clone().unwrap();
+    let row = result("skill_state", &installed);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(
+        row.detail,
+        "router skills sol, journal are installed and current"
+    );
+
+    let broken = installed.clone();
+    let claude = broken.journal_path.join(".claude/skills");
+    fs::remove_file(claude.join("sol")).unwrap();
+    fs::remove_file(claude.join("journal")).unwrap();
+    symlink("foreign", claude.join("journal")).unwrap();
+    symlink("old", claude.join("stale")).unwrap();
+    let row = result("skill_state", &broken);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.contains("sol missing at"));
+    assert!(row.detail.contains("journal points elsewhere at"));
+    assert!(row.detail.contains("stale router skill link at"));
+    assert_eq!(
+        row.fix.as_deref(),
+        Some("run sol skills install --project .")
+    );
+
+    let no_root = fixture();
+    assert_eq!(result("skill_state", &no_root).status, Status::Skip);
+    let mut no_dirs = fixture();
+    no_dirs.checkout_root = Some(root);
+    let row = result("skill_state", &no_dirs);
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(row.detail, "router skill directories are unavailable");
+}
+
+#[test]
+#[cfg(unix)]
+fn w3c_speakers_installation_uses_injected_resolvers() {
+    let mut ready = fixture();
+    stage_speakers_analyze(&mut ready, true);
+    let row = result("speakers_analyze_installation", &ready);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "speakers-analyze installation ready");
+
+    stage_speakers_analyze(&mut ready, false);
+    let row = result("speakers_analyze_installation", &ready);
+    assert_eq!(row.status, Status::Fail);
+    assert_eq!(
+        row.detail,
+        "Speakers-analyze installation is incomplete (fixture helper missing). Repair: reinstall the journal host stack and restart the journal."
+    );
+    assert_eq!(
+        row.fix.as_deref(),
+        Some("reinstall the journal host stack and restart the journal")
+    );
+}
+
+#[test]
+fn w3c_observer_delivery_stall_clause_escalation() {
+    let stage = |value: serde_json::Value| {
+        let context = fixture();
+        write_observer(&context, "abcdefgh", value);
+        result("observer_delivery_stall", &context)
+    };
+    let now = fixture().now.timestamp_millis();
+    let base = |name: &str| {
+        serde_json::json!({
+            "key":"abcdefgh-key", "name":name, "enabled":true, "created_at":1,
+            "last_seen":now - 1_000,
+            "last_segment_received_at":now - 21_600_001
+        })
+    };
+    let mut duplicate = base("duplicate");
+    duplicate["stats"] = serde_json::json!({"duplicates_rejected":2});
+    let row = stage(duplicate);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.ends_with(
+        "prior duplicate responses=2, so repeated uploads may be landing without a newer upload"
+    ));
+
+    let mut beacon = base("beacon");
+    beacon["health"] = serde_json::json!({"beacon":{"pending_queue_depth":4}});
+    let row = stage(beacon);
+    assert_eq!(row.status, Status::Warn);
+    assert!(
+        row.detail
+            .ends_with("pending queue depth 4, so uploads may not be landing")
+    );
+
+    let row = stage(base("generic"));
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.ends_with("uploads may not be landing"));
+}
+
+#[test]
+fn w3c_owner_boundary_guard_is_nonvacuous() {
+    let owners = [
+        ("journal_sync", "solstone_core_system"),
+        ("journal_caught_up", "solstone_core_system_health"),
+        ("journal_maint_tasks", "solstone_core_system_health"),
+        ("brain", "solstone_core_brain"),
+        ("capture_health", "solstone_core_observer"),
+        ("observer_binding", "solstone_core_observer"),
+        ("observer_delivery_stall", "solstone_core_observer"),
+        ("observer_ingest_health", "solstone_core_observer"),
+        ("default_stt_ready", "solstone_core_system"),
+        ("parakeet_cpp_stt_ready", "solstone_core_system"),
+        ("speakers_analyze_installation", "solstone_core_transcribe"),
+        ("skill_state", "solstone_core_skill_state"),
+    ];
+    let accepts = |module: &str, source: &str| {
+        ["orphan_segment_pdf", "feature"].contains(&module)
+            || owners
+                .iter()
+                .find(|(name, _)| *name == module)
+                .is_some_and(|(_, owner)| source.contains(owner))
+    };
+    for (module, owner) in owners {
+        let path = format!("checks/{module}.rs");
+        let mut source = fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src")
+                .join(path),
+        )
+        .unwrap();
+        if matches!(
+            module,
+            "capture_health"
+                | "observer_binding"
+                | "observer_delivery_stall"
+                | "observer_ingest_health"
+        ) {
+            source.push_str(include_str!("checks/common.rs"));
+        }
+        assert!(accepts(module, &source), "{module} must consume {owner}");
+    }
+    assert!(accepts("orphan_segment_pdf", "std::fs::read_dir"));
+    assert!(accepts("feature", "std::fs::read_dir"));
+    assert!(!accepts("brain", "fn run() {}"));
+    let cargo = include_str!("../Cargo.toml");
+    for dependency in [
+        "solstone-core-system",
+        "solstone-core-system-health",
+        "solstone-core-brain",
+        "solstone-core-observer",
+        "solstone-core-transcribe",
+        "solstone-core-skill-state",
+    ] {
+        assert!(cargo.contains(dependency));
+    }
+    assert!(!cargo.contains("solstone-core-sol.workspace"));
+}
+#[test]
+fn w3c_poisoned_interpreters_positive_control_and_battery() {
+    let mut c = fixture();
+    // The production resolver looks for the helper next to the running test
+    // executable, and a sibling convey-shell test installs a stub speakers
+    // helper into that same directory. Inject the resolvers so this battery's
+    // expected verdict does not depend on which other tests have already run.
+    #[cfg(unix)]
+    stage_speakers_analyze(&mut c, false);
+    let poison = c.journal_path.parent().unwrap().join("poison");
+    fs::create_dir_all(&poison).unwrap();
+    let witness = poison.join("witness");
+    let script = format!(
+        "#!/bin/sh\necho 'forbidden interpreter invoked: $0' >&2\necho \"$0\" >> '{}'\nexit 97\n",
+        witness.display()
+    );
+    for name in ["python", "python3", "pytest", "ruff", "uv"] {
+        let path = poison.join(name);
+        fs::write(&path, &script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).unwrap();
+        }
+    }
+    let env = c.journal_path.parent().unwrap().join("venv");
+    fs::create_dir_all(env.join("bin")).unwrap();
+    fs::write(env.join("bin/python"), &script).unwrap();
+    c.python_env_root = Some(env);
+    let p = poison.join("python");
+    assert_eq!(Command::new(p).status().unwrap().code(), Some(97));
+    fs::remove_file(&witness).unwrap();
+    let journal = run(&args(), &c);
+    let readiness = run(
+        &DoctorArgs {
+            readiness: true,
+            ..args()
+        },
+        &c,
+    );
+    let verdicts = |rows: &[CheckResult]| {
+        rows.iter()
+            .map(|row| (row.name, row.status))
+            .collect::<BTreeMap<_, _>>()
+    };
+    assert_eq!(
+        verdicts(&journal),
+        BTreeMap::from([
+            ("journal_leaf_exclusivity", Status::Skip),
+            ("journal_package_version", Status::Skip),
+            ("retired_host_shim", Status::Skip),
+            ("host_dependencies", Status::Skip),
+            ("disk_space", Status::Skip),
+            ("config_dir_readable", Status::Fail),
+            ("journal_dir_writable", Status::Ok),
+            ("supervisor_conflict", Status::Skip),
+            ("service_identity", Status::Skip),
+            ("service_running", Status::Skip),
+            ("journal_sync", Status::Ok),
+            ("journal_caught_up", Status::Ok),
+            ("journal_maint_tasks", Status::Ok),
+            ("task_pace", Status::Skip),
+            ("brain", Status::Warn),
+            ("capture_health", Status::Skip),
+            ("observer_binding", Status::Ok),
+            ("observer_delivery_stall", Status::Skip),
+            ("observer_ingest_health", Status::Skip),
+            ("orphan_segment_pdf", Status::Skip),
+            ("stale_alias_symlink", Status::Skip),
+            ("launchd_stale_plist", Status::Skip),
+            ("default_stt_ready", Status::Warn),
+            ("parakeet_cpp_stt_ready", Status::Skip),
+            ("speakers_analyze_installation", Status::Fail),
+            ("skill_state", Status::Skip),
+            ("feature:pdf-import", Status::Warn),
+            ("feature:pdf-export", Status::Warn),
+        ])
+    );
+    assert_eq!(
+        verdicts(&readiness),
+        BTreeMap::from([
+            ("host_dependencies", Status::Skip),
+            ("python_version", Status::Skip),
+            ("sol_importable", Status::Skip),
+            ("local_bin_sol_reachable", Status::Warn),
+            ("stale_alias_symlink", Status::Skip),
+            ("disk_space", Status::Skip),
+            ("journal_dir_writable", Status::Ok),
+            ("default_stt_ready", Status::Warn),
+            ("parakeet_cpp_stt_ready", Status::Skip),
+            ("speakers_analyze_installation", Status::Fail),
+            ("feature:pdf-import", Status::Warn),
+            ("feature:pdf-export", Status::Warn),
+        ])
+    );
+    assert!(!witness.exists());
+}
+#[test]
+fn w3c_batteries_preserve_staged_home_and_journal() {
+    let c = fixture();
+    fs::create_dir_all(&c.home_dir).unwrap();
+    fs::write(c.home_dir.join("marker"), "home").unwrap();
+    let journal_before = snapshot(&c.journal_path);
+    let home_before = snapshot(&c.home_dir);
+    let _ = run(&args(), &c);
+    assert_eq!(snapshot(&c.journal_path), journal_before);
+    assert_eq!(snapshot(&c.home_dir), home_before);
+    let _ = run(
+        &DoctorArgs {
+            readiness: true,
+            ..args()
+        },
+        &c,
+    );
+    assert_eq!(snapshot(&c.journal_path), journal_before);
+    assert_eq!(snapshot(&c.home_dir), home_before);
+    assert!(!c.journal_path.join("chronicle").exists());
+    assert!(!c.journal_path.join("apps/observer/observers").exists());
+}

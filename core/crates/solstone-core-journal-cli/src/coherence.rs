@@ -2,10 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 
-use crate::layout::installed_site_packages_from_executable_dir;
+use solstone_core_journal::{installed_distributions, installed_site_packages_from_executable_dir};
 
 const SOLSTONE: &str = "solstone";
 const JOURNAL: &str = "solstone-journal";
@@ -82,147 +81,25 @@ pub(crate) fn guard_site_packages(site_packages: Option<&Path>) -> Result<(), Co
     Ok(())
 }
 
-fn installed_versions(
-    site_packages: &Path,
-) -> Result<BTreeMap<&'static str, String>, CoherenceError> {
-    let entries = fs::read_dir(site_packages).map_err(|error| {
-        CoherenceError::new(format!(
-            "native journal package coherence check failed: could not read {}: {error}",
-            site_packages.display()
-        ))
-    })?;
-    let mut versions = BTreeMap::new();
-    for entry in entries {
-        let entry = entry.map_err(|error| {
+fn installed_versions(site_packages: &Path) -> Result<BTreeMap<String, String>, CoherenceError> {
+    installed_distributions(site_packages, TARGETS)
+        .map_err(|error| {
             CoherenceError::new(format!(
-                "native journal package coherence check failed: could not read {}: {error}",
-                site_packages.display()
+                "native journal package coherence check failed: {error}"
             ))
-        })?;
-        let path = entry.path();
-        if !path.is_dir()
-            || !path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".dist-info"))
-        {
-            continue;
-        }
-        let directory_target = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(target_from_dist_info_directory);
-        let metadata = match fs::read_to_string(path.join("METADATA")) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                if directory_target.is_some() {
-                    return Err(metadata_error(&path, error.to_string()));
-                }
-                continue;
-            }
-        };
-        let (name, version) = metadata_headers(&metadata);
-        let target = name
-            .as_deref()
-            .map(normalize_name)
-            .and_then(|name| target_name(&name))
-            .or(directory_target);
-        let Some(target) = target else {
-            continue;
-        };
-        let Some(name) = name else {
-            return Err(metadata_error(&path, "missing Name header"));
-        };
-        let Some(version) = version else {
-            return Err(metadata_error(&path, "missing Version header"));
-        };
-        if normalize_name(&name) != target {
-            return Err(metadata_error(
-                &path,
-                "Name header does not match target package",
-            ));
-        }
-        match versions.get(target) {
-            Some(existing) if existing == &version => {}
-            Some(existing) => {
-                return Err(CoherenceError::new(format!(
-                    "native journal package coherence check failed: conflicting installed versions for {target}: {existing} and {version}"
-                )));
-            }
-            None => {
-                versions.insert(target, version);
-            }
-        }
-    }
-    Ok(versions)
-}
-
-fn metadata_headers(metadata: &str) -> (Option<String>, Option<String>) {
-    let mut name = None;
-    let mut version = None;
-    for line in metadata.lines() {
-        if line.is_empty() {
-            break;
-        }
-        if name.is_none() {
-            name = line.strip_prefix("Name:").map(str::trim).map(str::to_owned);
-        }
-        if version.is_none() {
-            version = line
-                .strip_prefix("Version:")
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-        }
-    }
-    (name.filter(|value| !value.is_empty()), version)
-}
-
-fn target_from_dist_info_directory(name: &str) -> Option<&'static str> {
-    let stem = name.strip_suffix(".dist-info")?;
-    let normalized = normalize_name(stem);
-    TARGETS
-        .iter()
-        .copied()
-        .filter(|target| {
-            normalized
-                .strip_prefix(target)
-                .is_some_and(|suffix| suffix.starts_with('-'))
         })
-        .max_by_key(|target| target.len())
-}
-
-fn target_name(name: &str) -> Option<&'static str> {
-    TARGETS.iter().copied().find(|target| *target == name)
-}
-
-fn normalize_name(value: &str) -> String {
-    let mut normalized = String::with_capacity(value.len());
-    let mut separator = false;
-    for character in value.chars() {
-        if matches!(character, '-' | '_' | '.') {
-            if !separator {
-                normalized.push('-');
-                separator = true;
-            }
-        } else {
-            normalized.extend(character.to_lowercase());
-            separator = false;
-        }
-    }
-    normalized
-}
-
-fn metadata_error(path: &Path, reason: impl std::fmt::Display) -> CoherenceError {
-    CoherenceError::new(format!(
-        "native journal package coherence check failed: invalid metadata at {}: {reason}",
-        path.join("METADATA").display()
-    ))
+        .map(|distributions| {
+            distributions
+                .into_iter()
+                .map(|(name, distribution)| (name, distribution.version))
+                .collect()
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct TempDir {

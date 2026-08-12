@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
@@ -88,7 +88,25 @@ impl TaskQueueEventSink for SupervisorTaskQueueSink {
     }
 }
 
-pub(crate) struct SupervisorProcessSink(pub Arc<CallosumSocketServer>);
+pub(crate) struct SupervisorProcessSink {
+    pub server: Arc<CallosumSocketServer>,
+    pub restart_id: Arc<Mutex<Option<String>>>,
+}
+
+impl SupervisorProcessSink {
+    fn with_restart_id(&self, mut extra: Map<String, Value>) -> Map<String, Value> {
+        if let Some(restart_id) = self
+            .restart_id
+            .lock()
+            .expect("restart correlation lock is not poisoned")
+            .as_ref()
+        {
+            extra.insert("restart_id".into(), json!(restart_id));
+        }
+        extra
+    }
+}
+
 impl ProcessEventSink for SupervisorProcessSink {
     fn emit(&self, event: ProcessEvent) {
         match event {
@@ -98,14 +116,14 @@ impl ProcessEventSink for SupervisorProcessSink {
                 pid,
                 ..
             } => emit(
-                &self.0,
+                &self.server,
                 "supervisor",
                 "started",
-                Map::from_iter([
+                self.with_restart_id(Map::from_iter([
                     ("service".into(), json!(name)),
                     ("ref".into(), json!(reference)),
                     ("pid".into(), json!(pid)),
-                ]),
+                ])),
             ),
             ProcessEvent::Exited {
                 reference,
@@ -114,15 +132,15 @@ impl ProcessEventSink for SupervisorProcessSink {
                 exit_code,
                 ..
             } => emit(
-                &self.0,
+                &self.server,
                 "supervisor",
                 "stopped",
-                Map::from_iter([
+                self.with_restart_id(Map::from_iter([
                     ("service".into(), json!(name)),
                     ("ref".into(), json!(reference)),
                     ("pid".into(), json!(pid)),
                     ("exit_code".into(), json!(exit_code)),
-                ]),
+                ])),
             ),
             ProcessEvent::Line {
                 reference,
@@ -131,10 +149,10 @@ impl ProcessEventSink for SupervisorProcessSink {
                 stream,
                 line,
             } => emit(
-                &self.0,
+                &self.server,
                 "logs",
                 "line",
-                Map::from_iter([
+                self.with_restart_id(Map::from_iter([
                     ("ref".into(), json!(reference)),
                     ("name".into(), json!(name)),
                     ("pid".into(), json!(pid)),
@@ -146,7 +164,7 @@ impl ProcessEventSink for SupervisorProcessSink {
                         }),
                     ),
                     ("line".into(), json!(line)),
-                ]),
+                ])),
             ),
         }
     }

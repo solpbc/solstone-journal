@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod delivery;
 pub mod format;
 pub mod history;
 pub mod paths;

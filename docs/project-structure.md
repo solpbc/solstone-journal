@@ -20,7 +20,7 @@ Each package has a README.md symlink pointing to its documentation in `docs/`.
 
 ## Package Organization
 
-- **Python**: Requires Python 3.11+
+- **Python**: Requires Python 3.12+
 - **Modules**: Each top-level folder is a Python package with `__init__.py` unless it is data-only (e.g., `tests/fixtures/`)
 - **Imports**: Prefer absolute imports (e.g., `from solstone.think.utils import setup_cli`) whenever feasible
 - **Entry Points**: Public launchers select sibling `solstone-core-sol` (API-only) or `solstone-core-journal` (same-device) executables

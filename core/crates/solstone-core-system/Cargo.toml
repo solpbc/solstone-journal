@@ -34,6 +34,9 @@ solstone-core-brain = { workspace = true }
 solstone-core-local = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.24.0"
+
 [[bin]]
 name = "solstone-system-test-child"
 path = "src/bin/solstone_system_test_child.rs"

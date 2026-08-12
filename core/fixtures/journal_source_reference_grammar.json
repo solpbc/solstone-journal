@@ -1,0 +1,43 @@
+{
+  "oracle": {
+    "note": "reached by the POSITIONAL 'journal-source' on the parent verb, which rewrites argv and calls a SECOND parser. A flag-keyed census does not see it.",
+    "stale_prog_string": "sol import journal-source",
+    "stale_prog_warning": "does not match how the verb is actually invoked; record as an observed oddity, NOT a target for owner-facing output",
+    "parses_with_parse_known": false,
+    "unknown_option_behaviour": "plain usage error — NOT tolerated and absorbed as data the way the parent's are",
+    "grammar": {
+      "prog": "sol import journal-source",
+      "subcommands": {
+        "create": {
+          "args": [
+            {"dest": "name", "option_strings": [], "required": true, "choices": null, "nargs": null}
+          ]
+        },
+        "list": {
+          "args": [
+            {"dest": "mode", "option_strings": ["--mode"], "required": false, "choices": ["dl", "pl"], "nargs": null}
+          ]
+        },
+        "status": {
+          "args": [
+            {"dest": "name", "option_strings": [], "required": false, "choices": null, "nargs": "?"}
+          ]
+        },
+        "revoke": {
+          "args": [
+            {"dest": "name", "option_strings": [], "required": true, "choices": null, "nargs": null}
+          ]
+        }
+      },
+      "top_level": [
+        {"dest": "json", "option_strings": ["--json"], "nargs": 0}
+      ]
+    },
+    "source_functions": ["cmd_create", "cmd_list", "cmd_revoke", "cmd_status"]
+  },
+  "native_delta": {
+    "usage_prog": "journal importer journal-source",
+    "injected_setup_cli_options": ["-v/--verbose", "-d/--debug"],
+    "note": "setup_cli (solstone/think/utils.py L1030-1058) injects -v/--verbose and -d/--debug onto every parser it touches, including this one; the oracle's narrower grammar capture omitted them. The native module accepts both as top-level no-op flags."
+  }
+}

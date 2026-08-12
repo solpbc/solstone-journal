@@ -3,8 +3,8 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Write;
-use std::net::TcpListener;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
@@ -33,10 +33,121 @@ fn temp(name: &str) -> PathBuf {
 const PARAKEET_TEST_KEY: &str = "x86_64-unknown-linux-gnu";
 const LOOPBACK_DOWNLOAD_HOSTS: &[&str] = &["127.0.0.1"];
 
-fn loopback_download_policy() -> archive::DownloadHostPolicy<'static> {
+fn loopback_download_policy(origin_base_url: &str) -> archive::DownloadHostPolicy<'_> {
     archive::DownloadHostPolicy {
         allowed_hosts: LOOPBACK_DOWNLOAD_HOSTS,
         allow_http: true,
+        origin_base_url,
+    }
+}
+
+fn loopback_host(address: SocketAddr) -> String {
+    address.ip().to_string()
+}
+
+fn request_host(stream: &mut TcpStream) -> String {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut chunk).unwrap();
+        assert_ne!(read, 0, "request ended before its headers");
+        request.extend_from_slice(&chunk[..read]);
+    }
+    let request = String::from_utf8(request).unwrap();
+    let host = request
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("host").then_some(value.trim())
+        })
+        .expect("request has Host header");
+    host.split(':').next().unwrap().to_owned()
+}
+
+fn record_http_hosts(
+    listener: TcpListener,
+    connections: usize,
+    response: String,
+) -> thread::JoinHandle<BTreeSet<String>> {
+    thread::spawn(move || {
+        let mut contacted = BTreeSet::new();
+        for _ in 0..connections {
+            let (mut stream, _) = listener.accept().unwrap();
+            contacted.insert(request_host(&mut stream));
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+        contacted
+    })
+}
+
+fn record_tls_hosts(
+    listener: TcpListener,
+    connections: usize,
+) -> thread::JoinHandle<BTreeSet<String>> {
+    let host = loopback_host(listener.local_addr().unwrap());
+    thread::spawn(move || {
+        for _ in 0..connections {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+        }
+        BTreeSet::from([host])
+    })
+}
+
+fn contacted_only_origin_host(contacted: &BTreeSet<String>, expected_host: &str) -> bool {
+    contacted == &BTreeSet::from([expected_host.to_owned()])
+}
+
+fn assert_only_origin_host(contacted: BTreeSet<String>, expected_host: &str) {
+    assert!(
+        contacted_only_origin_host(&contacted, expected_host),
+        "unexpected contacted hosts: {contacted:?}"
+    );
+}
+
+fn flipped_origin_artifacts() -> Vec<&'static Artifact> {
+    [
+        ("llama-server-vulkan", Some(Platform::LinuxX64), None),
+        ("llama-server-cuda", Some(Platform::LinuxX64), None),
+        ("local-model", None, None),
+        (
+            "parakeet-server",
+            Some(Platform::LinuxX64),
+            Some(Backend::Cpu),
+        ),
+        ("parakeet-model", None, None),
+    ]
+    .into_iter()
+    .map(|(unit, platform, backend)| resolve(unit, platform, backend).into_iter().next().unwrap())
+    .collect()
+}
+
+fn assert_origin_failure(
+    artifact: &Artifact,
+    destination: &std::path::Path,
+    policy: &archive::DownloadHostPolicy<'_>,
+    expected_reason_code: &str,
+    expected_host: &str,
+) {
+    let error = download_artifact(
+        artifact,
+        destination,
+        policy,
+        |_received, _total| {},
+        "download_failed",
+    )
+    .unwrap_err();
+    let error = error.envelope.error.unwrap();
+    assert_eq!(error.reason_code, expected_reason_code);
+    if expected_reason_code == "download_origin_unreachable" {
+        assert!(
+            error.message.contains(expected_host),
+            "expected origin host {expected_host} in {}",
+            error.message
+        );
     }
 }
 
@@ -58,6 +169,293 @@ fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifac
         backend: None,
         extracted_binary_sha256: None,
     }
+}
+
+fn assert_manifest_proves_preflip_identity(root: &std::path::Path, unit: &str, identity: Value) {
+    fs::create_dir_all(root).unwrap();
+    fs::write(root.join("payload"), b"fixture payload").unwrap();
+    let manifest = manifest::build_manifest(
+        "fixture",
+        unit,
+        "target",
+        json!({"pin_identity": identity.clone()}),
+        manifest::inventory_for_tree(root, "fixture").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    let path = manifest::artifact_manifest_path(root);
+    manifest::write_manifest(&path, &manifest).unwrap();
+    assert_eq!(
+        manifest::prove_manifest(&path, &identity),
+        json!({"status":"ready","reason_code":"ready","cache_hit":false})
+    );
+}
+
+#[test]
+fn preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs() {
+    // Captured pre-flip at commit d343a2899712fd666266cd7c76a648ec0cb48120.
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../fixtures/local_origin_readiness_preflip.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        fixture["capture_commit"],
+        "d343a2899712fd666266cd7c76a648ec0cb48120"
+    );
+    let root = temp("preflip-origin-readiness");
+
+    for row in fixture["llama_server_vulkan"].as_array().unwrap() {
+        let identity = pins::vulkan_identity(row["arch_key"].as_str().unwrap()).unwrap();
+        assert_eq!(identity, row["pin_identity"]);
+        assert_manifest_proves_preflip_identity(
+            &root.join(format!("vulkan-{}", row["arch_key"].as_str().unwrap())),
+            "llama-server-vulkan",
+            identity,
+        );
+    }
+    for row in fixture["llama_server_cuda"].as_array().unwrap() {
+        let identity = pins::cuda_identity(row["arch_key"].as_str().unwrap()).unwrap();
+        assert_eq!(identity, row["pin_identity"]);
+        assert_manifest_proves_preflip_identity(
+            &root.join(format!("cuda-{}", row["arch_key"].as_str().unwrap())),
+            "llama-server-cuda",
+            identity,
+        );
+    }
+
+    let local_identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    assert_eq!(local_identity, fixture["local_model"]["pin_identity"]);
+    assert_manifest_proves_preflip_identity(
+        &root.join("local-model"),
+        "local-model",
+        local_identity,
+    );
+
+    for row in fixture["parakeet_server"].as_array().unwrap() {
+        let identity = pins::parakeet_backend_identity(
+            row["arch_key"].as_str().unwrap(),
+            row["backend"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(identity, row["pin_identity"]);
+        assert_manifest_proves_preflip_identity(
+            &root.join(format!(
+                "parakeet-{}-{}",
+                row["arch_key"].as_str().unwrap(),
+                row["backend"].as_str().unwrap()
+            )),
+            "parakeet-server",
+            identity,
+        );
+    }
+
+    let parakeet_identity = pins::parakeet_model_identity();
+    assert_eq!(parakeet_identity, fixture["parakeet_model"]["pin_identity"]);
+    assert_manifest_proves_preflip_identity(
+        &root.join("parakeet-model"),
+        "parakeet-model",
+        parakeet_identity,
+    );
+    assert_eq!(
+        fixture["proof"],
+        json!({"status":"ready","reason_code":"ready","cache_hit":false})
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn preflip_manifest_fixture_rejects_a_perturbed_pin_identity() {
+    let root = temp("preflip-origin-readiness-mismatch");
+    let identity = pins::model_identity("local/qwen3.5-4b").unwrap();
+    fs::write(root.join("payload"), b"fixture payload").unwrap();
+    let built = manifest::build_manifest(
+        "fixture",
+        "local-model",
+        "target",
+        json!({"pin_identity": identity.clone()}),
+        manifest::inventory_for_tree(&root, "fixture").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    let path = manifest::artifact_manifest_path(&root);
+    manifest::write_manifest(&path, &built).unwrap();
+    let mut perturbed = identity;
+    perturbed["sha256"] = Value::String("00".repeat(32));
+    assert_eq!(
+        manifest::prove_manifest(&path, &perturbed)["reason_code"],
+        "manifest_pin_mismatch"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn preflip_fixture_preserves_paths_and_native_pins_json_fields() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../fixtures/local_origin_readiness_preflip.json"
+    ))
+    .unwrap();
+    let exported = pins::pins_json();
+
+    for row in fixture["llama_server_vulkan"].as_array().unwrap() {
+        let expected = &row["pin_identity"];
+        let actual = exported["llama_server_pins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["artifact_key"] == expected["artifact_key"])
+            .unwrap();
+        for field in [
+            "artifact_key",
+            "release_tag",
+            "filename",
+            "sha256",
+            "binary_name",
+        ] {
+            assert_eq!(actual[field], expected[field], "{field}");
+        }
+        let paths = pins::paths(
+            std::path::Path::new("/journal"),
+            expected["artifact_key"].as_str().unwrap(),
+            Some("local/qwen3.5-4b"),
+        );
+        assert_eq!(
+            paths["binary_path"],
+            format!(
+                "/journal/cache/providers/local/bin/{}/{}/{}",
+                expected["artifact_key"].as_str().unwrap(),
+                expected["release_tag"].as_str().unwrap(),
+                expected["binary_name"].as_str().unwrap(),
+            )
+        );
+    }
+    assert_eq!(
+        exported["cuda_server_pin"]["artifacts"],
+        Value::Array(
+            fixture["llama_server_cuda"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row["pin_identity"].clone())
+                .collect(),
+        )
+    );
+    for row in fixture["llama_server_cuda"].as_array().unwrap() {
+        let identity = &row["pin_identity"];
+        let paths = pins::paths(
+            std::path::Path::new("/journal"),
+            identity["artifact_key"].as_str().unwrap(),
+            None,
+        );
+        assert_eq!(
+            paths["cuda_binary_path"],
+            format!(
+                "/journal/cache/providers/local/cuda/{}/{}/llama-server",
+                identity["artifact_key"].as_str().unwrap(),
+                identity["sha256"].as_str().unwrap(),
+            )
+        );
+    }
+    assert_eq!(
+        pins::paths(
+            std::path::Path::new("/journal"),
+            PARAKEET_TEST_KEY,
+            Some("local/qwen3.5-4b"),
+        )["model_dir"],
+        fixture["paths"]["local_model_dir"]
+    );
+    for row in fixture["parakeet_server"].as_array().unwrap() {
+        let identity = &row["pin_identity"];
+        let paths = pins::parakeet_paths(
+            std::path::Path::new("/journal"),
+            identity["artifact_key"].as_str().unwrap(),
+        );
+        assert_eq!(
+            paths[format!("binary_path_{}", identity["backend"].as_str().unwrap())],
+            format!(
+                "/journal/cache/providers/parakeet/bin/{}/{}/{}/{}",
+                identity["artifact_key"].as_str().unwrap(),
+                identity["backend"].as_str().unwrap(),
+                identity["release_tag"].as_str().unwrap(),
+                identity["binary_name"].as_str().unwrap(),
+            )
+        );
+    }
+    assert_eq!(
+        pins::parakeet_paths(std::path::Path::new("/journal"), PARAKEET_TEST_KEY)["model_path"],
+        fixture["paths"]["parakeet_model_path"]
+    );
+}
+
+#[test]
+fn origin_urls_follow_the_catalog_for_every_rust_download_unit() {
+    let cases = [
+        (
+            "llama-server-vulkan",
+            Some(Platform::LinuxX64),
+            None,
+            "https://updates.solstone.app/assets/llama-server-vulkan/b10068/llama-b10068-bin-ubuntu-vulkan-x64.tar.gz",
+        ),
+        (
+            "llama-server-cuda",
+            Some(Platform::LinuxX64),
+            None,
+            "https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz",
+        ),
+        (
+            "local-model",
+            None,
+            None,
+            "https://updates.solstone.app/assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
+        ),
+        (
+            "parakeet-server",
+            Some(Platform::LinuxX64),
+            Some(Backend::Cpu),
+            "https://updates.solstone.app/assets/parakeet-server/v0.5.0/parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz",
+        ),
+        (
+            "parakeet-model",
+            None,
+            None,
+            "https://updates.solstone.app/assets/parakeet-model/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf",
+        ),
+    ];
+    for (unit, platform, backend, expected) in cases {
+        let artifact = resolve(unit, platform, backend).into_iter().next().unwrap();
+        assert_eq!(
+            archive::origin_url("https://updates.solstone.app", artifact),
+            expected
+        );
+    }
+}
+
+#[test]
+fn origin_url_for_arch_key_is_host_independent_and_catalog_derived() {
+    for (unit, key) in [
+        ("llama-server-vulkan", "aarch64-apple-darwin"),
+        ("llama-server-vulkan", "x86_64-unknown-linux-gnu"),
+        ("llama-server-vulkan", "aarch64-unknown-linux-gnu"),
+        ("llama-server-cuda", "x86_64-unknown-linux-gnu"),
+        ("llama-server-cuda", "aarch64-unknown-linux-gnu"),
+    ] {
+        let expected = catalog()
+            .iter()
+            .find(|artifact| artifact.unit == unit && artifact.artifact_key == Some(key))
+            .unwrap();
+        assert_eq!(
+            pins::origin_url_for_arch_key(unit, key),
+            Some(format!(
+                "https://updates.solstone.app/{}",
+                expected.origin_key
+            ))
+        );
+    }
+    assert_eq!(
+        pins::origin_url_for_arch_key("llama-server-vulkan", "unknown"),
+        None
+    );
 }
 
 struct ParakeetFixture {
@@ -1182,7 +1580,7 @@ fn download_digest_mismatch_removes_destination_and_partial_file() {
         archive::download_verified(
             &artifact,
             &destination,
-            &loopback_download_policy(),
+            &loopback_download_policy(&format!("http://{address}")),
             |_received, _total| {},
         ),
         Err(archive::ArchiveError::DigestMismatch)
@@ -1214,7 +1612,7 @@ fn download_artifact_refuses_disallowed_redirect_target_in_envelope() {
     let error = download_artifact(
         &artifact,
         &destination,
-        &loopback_download_policy(),
+        &loopback_download_policy(&format!("http://{address}")),
         |_received, _total| {},
         "download_failed",
     )
@@ -1253,7 +1651,7 @@ fn download_verified_follows_allowlisted_redirect_chain_and_commits_verified_byt
     archive::download_verified(
         &artifact,
         &destination,
-        &loopback_download_policy(),
+        &loopback_download_policy(&format!("http://{address}")),
         |received, total| progress.push((received, total)),
     )
     .unwrap();
@@ -1261,6 +1659,314 @@ fn download_verified_follows_allowlisted_redirect_chain_and_commits_verified_byt
     assert_eq!(fs::read(&destination).unwrap(), b"hello");
     assert!(!root.join(".artifact.part").exists());
     assert_eq!(progress.last(), Some(&(5, Some(5))));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn download_verified_requests_the_origin_key_not_the_catalog_upstream_url() {
+    let root = temp("download-origin-key");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let received = stream.read(&mut request).unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello")
+            .unwrap();
+        String::from_utf8_lossy(&request[..received]).into_owned()
+    });
+    let destination = root.join("artifact");
+    let artifact = fixture_artifact(
+        "https://github.com/upstream/that-must-not-be-contacted".to_owned(),
+        "artifact",
+        b"hello",
+    );
+    archive::download_verified(
+        &artifact,
+        &destination,
+        &loopback_download_policy(&format!("http://{address}")),
+        |_received, _total| {},
+    )
+    .unwrap();
+    assert!(
+        server
+            .join()
+            .unwrap()
+            .starts_with("GET /test-origin HTTP/1.1\r\n")
+    );
+    assert_eq!(fs::read(&destination).unwrap(), b"hello");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn origin_failures_have_a_distinct_reason_code_and_retain_the_host() {
+    let root = temp("download-origin-failures");
+
+    let dns_artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let dns_policy = archive::DownloadHostPolicy {
+        allowed_hosts: &["origin.invalid"],
+        allow_http: false,
+        origin_base_url: "https://origin.invalid",
+    };
+    let dns_error = archive::download_verified(
+        &dns_artifact,
+        &root.join("dns"),
+        &dns_policy,
+        |_received, _total| {},
+    )
+    .unwrap_err();
+    assert!(matches!(
+        dns_error,
+        archive::ArchiveError::OriginUnavailable { ref host, .. } if host == "origin.invalid"
+    ));
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let refused_address = listener.local_addr().unwrap();
+    drop(listener);
+    let refused_artifact =
+        fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let refused_base = format!("http://{refused_address}");
+    let refused_policy = loopback_download_policy(&refused_base);
+    let refused = download_artifact(
+        &refused_artifact,
+        &root.join("refused"),
+        &refused_policy,
+        |_received, _total| {},
+        "download_failed",
+    )
+    .unwrap_err();
+    assert_eq!(
+        refused.envelope.error.unwrap().reason_code,
+        "download_origin_unreachable"
+    );
+
+    let tls_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let tls_address = tls_listener.local_addr().unwrap();
+    let tls_server = thread::spawn(move || {
+        let (mut stream, _) = tls_listener.accept().unwrap();
+        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+    });
+    let tls_artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let tls_base = format!("https://{tls_address}");
+    let tls_policy = loopback_download_policy(&tls_base);
+    let tls = download_artifact(
+        &tls_artifact,
+        &root.join("tls"),
+        &tls_policy,
+        |_received, _total| {},
+        "download_failed",
+    )
+    .unwrap_err();
+    tls_server.join().unwrap();
+    assert_eq!(
+        tls.envelope.error.unwrap().reason_code,
+        "download_origin_unreachable"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn origin_http_statuses_map_to_origin_unreachable() {
+    for status in [403, 404, 500, 503] {
+        let root = temp(&format!("download-origin-status-{status}"));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+        });
+        let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+        let error = download_artifact(
+            &artifact,
+            &root.join("artifact"),
+            &loopback_download_policy(&format!("http://{address}")),
+            |_received, _total| {},
+            "download_failed",
+        )
+        .unwrap_err();
+        server.join().unwrap();
+        assert_eq!(
+            error.envelope.error.unwrap().reason_code,
+            "download_origin_unreachable",
+            "status={status}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn every_flipped_catalog_unit_contacts_only_its_origin_for_each_failure_class() {
+    let root = temp("origin-failure-contact-matrix");
+    let artifacts = flipped_origin_artifacts();
+    let connections = artifacts.len();
+
+    // DNS fails before a loopback listener can observe a socket. The structured
+    // origin error is therefore the observable attempted-host record.
+    let dns_policy = archive::DownloadHostPolicy {
+        allowed_hosts: &["origin.invalid"],
+        allow_http: false,
+        origin_base_url: "https://origin.invalid",
+    };
+    let mut dns_contacts = BTreeSet::new();
+    for artifact in &artifacts {
+        assert_origin_failure(
+            artifact,
+            &root.join(format!("dns-{}", artifact.filename)),
+            &dns_policy,
+            "download_origin_unreachable",
+            "origin.invalid",
+        );
+        dns_contacts.insert("origin.invalid".to_owned());
+    }
+    assert_only_origin_host(dns_contacts, "origin.invalid");
+
+    // A refused port likewise has no accepting server; the mapped error names
+    // the sole attempted loopback origin.
+    let refused_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let refused_address = refused_listener.local_addr().unwrap();
+    drop(refused_listener);
+    let refused_base = format!("http://{refused_address}");
+    let refused_policy = loopback_download_policy(&refused_base);
+    let refused_host = loopback_host(refused_address);
+    let mut refused_contacts = BTreeSet::new();
+    for artifact in &artifacts {
+        assert_origin_failure(
+            artifact,
+            &root.join(format!("refused-{}", artifact.filename)),
+            &refused_policy,
+            "download_origin_unreachable",
+            &refused_host,
+        );
+        refused_contacts.insert(refused_host.clone());
+    }
+    assert_only_origin_host(refused_contacts, &refused_host);
+
+    let tls_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let tls_address = tls_listener.local_addr().unwrap();
+    let tls_host = loopback_host(tls_address);
+    let tls_server = record_tls_hosts(tls_listener, connections);
+    let tls_base = format!("https://{tls_address}");
+    let tls_policy = loopback_download_policy(&tls_base);
+    for artifact in &artifacts {
+        assert_origin_failure(
+            artifact,
+            &root.join(format!("tls-{}", artifact.filename)),
+            &tls_policy,
+            "download_origin_unreachable",
+            &tls_host,
+        );
+    }
+    assert_only_origin_host(tls_server.join().unwrap(), &tls_host);
+
+    for status in [403, 404, 500, 503] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let host = loopback_host(address);
+        let server = record_http_hosts(
+            listener,
+            connections,
+            format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+        );
+        let base = format!("http://{address}");
+        let policy = loopback_download_policy(&base);
+        for artifact in &artifacts {
+            assert_origin_failure(
+                artifact,
+                &root.join(format!("status-{status}-{}", artifact.filename)),
+                &policy,
+                "download_origin_unreachable",
+                &host,
+            );
+        }
+        assert_only_origin_host(server.join().unwrap(), &host);
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let host = loopback_host(address);
+    let server = record_http_hosts(
+        listener,
+        connections,
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx".to_owned(),
+    );
+    let base = format!("http://{address}");
+    let policy = loopback_download_policy(&base);
+    for artifact in &artifacts {
+        assert_origin_failure(
+            artifact,
+            &root.join(format!("wrong-bytes-{}", artifact.filename)),
+            &policy,
+            "download_size_mismatch",
+            &host,
+        );
+    }
+    assert_only_origin_host(server.join().unwrap(), &host);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn origin_contact_assertion_rejects_a_test_double_upstream_fallback() {
+    let artifact = flipped_origin_artifacts()[0];
+    let root = temp("origin-fallback-double");
+    let origin_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin_address = origin_listener.local_addr().unwrap();
+    let origin_host = loopback_host(origin_address);
+    let origin_server = record_http_hosts(
+        origin_listener,
+        1,
+        "HTTP/1.1 503 Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
+    );
+    let upstream_listener = TcpListener::bind("127.0.0.2:0").unwrap();
+    let upstream_address = upstream_listener.local_addr().unwrap();
+    let upstream_server = record_http_hosts(
+        upstream_listener,
+        1,
+        "HTTP/1.1 503 Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
+    );
+
+    let origin_base = format!("http://{origin_address}");
+    let origin_policy = loopback_download_policy(&origin_base);
+    assert_origin_failure(
+        artifact,
+        &root.join("origin"),
+        &origin_policy,
+        "download_origin_unreachable",
+        &origin_host,
+    );
+
+    // This is a deliberately bad fallback double, not production behavior.
+    let upstream_base = format!("http://{upstream_address}");
+    let upstream_policy = archive::DownloadHostPolicy {
+        allowed_hosts: &["127.0.0.2"],
+        allow_http: true,
+        origin_base_url: &upstream_base,
+    };
+    assert_origin_failure(
+        artifact,
+        &root.join("upstream"),
+        &upstream_policy,
+        "download_origin_unreachable",
+        &loopback_host(upstream_address),
+    );
+
+    let contacted = origin_server
+        .join()
+        .unwrap()
+        .into_iter()
+        .chain(upstream_server.join().unwrap())
+        .collect();
+    assert!(
+        !contacted_only_origin_host(&contacted, &origin_host),
+        "the host-set assertion must reject fallback"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1291,7 +1997,7 @@ fn download_verified_resolves_relative_locations_for_redirect_statuses() {
         archive::download_verified(
             &artifact,
             &destination,
-            &loopback_download_policy(),
+            &loopback_download_policy(&format!("http://{address}")),
             |_received, _total| {},
         )
         .unwrap();
@@ -1325,7 +2031,7 @@ fn download_artifact_reports_redirect_hop_limit() {
     let error = download_artifact(
         &artifact,
         &destination,
-        &loopback_download_policy(),
+        &loopback_download_policy(&format!("http://{address}")),
         |_received, _total| {},
         "download_failed",
     )
@@ -1358,7 +2064,7 @@ fn download_verified_reports_size_mismatch_before_digest_mismatch() {
         archive::download_verified(
             &artifact,
             &destination,
-            &loopback_download_policy(),
+            &loopback_download_policy(&format!("http://{address}")),
             |_received, _total| {},
         ),
         Err(archive::ArchiveError::SizeMismatch {
@@ -1388,7 +2094,7 @@ fn download_verified_accepts_case_insensitive_allowed_host() {
     archive::download_verified(
         &artifact,
         &destination,
-        &loopback_download_policy(),
+        &loopback_download_policy(&format!("http://{address}")),
         |_received, _total| {},
     )
     .unwrap();
@@ -1402,13 +2108,19 @@ fn download_artifact_refuses_userinfo_url_with_distinct_envelope_reason() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
-    let artifact = fixture_artifact(format!("http://{address}@evil.example/x"), "artifact", b"");
+    let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let origin_base_url = format!("http://{address}@evil.example");
+    let policy = archive::DownloadHostPolicy {
+        allowed_hosts: &["evil.example"],
+        allow_http: true,
+        origin_base_url: &origin_base_url,
+    };
     let root = temp("download-userinfo");
     let destination = root.join("artifact");
     let error = download_artifact(
         &artifact,
         &destination,
-        &loopback_download_policy(),
+        &policy,
         |_received, _total| {},
         "download_failed",
     )

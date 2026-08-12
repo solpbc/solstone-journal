@@ -30,7 +30,7 @@ impl TempDir {
             .expect("clock")
             .as_nanos();
         let path = env::temp_dir().join(format!(
-            "solstone-core-journal-facet-navigate-cutover-{}-{stamp}",
+            "journal-facet-nav-cut-{}-{stamp}",
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("create temporary directory");

@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entries",
+    "topics",
+    "setting"
+  ],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start",
+          "speaker",
+          "text"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^\\d{2}:\\d{2}:\\d{2}$"
+          },
+          "speaker": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "topics": {
+      "type": "string"
+    },
+    "setting": {
+      "type": "string"
+    }
+  }
+}

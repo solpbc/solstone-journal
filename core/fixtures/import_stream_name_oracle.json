@@ -1,0 +1,39 @@
+{
+  "schema": "w1b-stream-name-oracle/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "instrumented the verb's own stream_name call site and drove _import_one_from_args with an explicit --timestamp so resolution reaches the derivation; the resolver corpus could not contain these because its file-importer rows return at the preview before a stream is derived"
+  },
+  "rule": "the stream source is the SELECTED REGISTRY SOURCE's name when one was selected, else text/audio BY EXTENSION. A non-registry --source never becomes a stream name.",
+  "cases": {
+    "source_ics": {
+      "import_source": "ics",
+      "stream": "import.ics"
+    },
+    "source_document": {
+      "import_source": "document",
+      "stream": "import.document"
+    },
+    "source_obsidian": {
+      "import_source": "obsidian",
+      "stream": "import.obsidian"
+    },
+    "source_recording_on_audio": {
+      "import_source": "audio",
+      "stream": "import.audio"
+    },
+    "source_recording_on_text": {
+      "import_source": "text",
+      "stream": "import.text"
+    },
+    "bare_audio": {
+      "import_source": "audio",
+      "stream": "import.audio"
+    },
+    "bare_text": {
+      "import_source": "text",
+      "stream": "import.text"
+    }
+  }
+}

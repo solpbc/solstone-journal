@@ -2,7 +2,7 @@
 
 ## Test Structure
 
-- **Framework**: pytest; coverage reporting comes from `make test-cov`, `make verify`, or `make coverage`, not `make test` or `make ci`
+- **Framework**: pytest for the Python suite and Cargo for the native Rust workspace
 - **Unit Tests**: live under `tests/` (and each app's `tests/` dir)
   - Fast, with mocked process/thread/clock/network/repository boundaries
   - No external API calls, real browser, heavyweight build, or shared fixture writes
@@ -10,16 +10,13 @@
     for any scan, index rebuild, or mutation
   - Test individual functions and modules
 - **Integration Tests**: marked `@pytest.mark.integration`
-  - Opt-in via `make test-integration`; excluded from `make test` and `make ci`
+  - Select directly with `pytest -m integration`; the former Python Make target is frozen
   - Real local processes/builds and persisted-index contracts
   - Still use disposable `tmp_path` state and never the owner's journal
 - **Release Tests**: marked `@pytest.mark.release`
-  - Run serially via `make test-release`; excluded from development `make test`
-    and `make ci`
+  - Select directly with `pytest -m release -n 0`; the former Python Make target is frozen
   - Cover release transactions, release entrypoints, packaging/install probes,
     and release-host tool contracts
-  - `make release-checks` combines them with the real advisory-policy liveness
-    and minisign gates; candidate construction runs that target automatically
 - **Naming**: Files `test_*.py`, functions `test_*`
 - **Fixtures**: Shared fixtures in `tests/conftest.py`
 
@@ -39,15 +36,16 @@ test that writes, scans, or rebuilds journal/index state must use the
 
 ## Running Tests
 
-- `make test` runs all unit tests — `tests/` + every `solstone/apps/*/tests/`, in one parallel run
-- `make test-cov` — the same suite with coverage reporting
-- `make test-integration` — opt-in real local build/process and persisted-index contracts
-- `make test-release` — serial release transactions and release-host probes
-- `make release-checks` — complete candidate-host validation, including the
-  release tests, advisory-policy liveness, and real minisign signing
-- `make test-app APP=<name>` and `make test-only TEST=path` are the focused development loop
-- `make coverage` to generate a coverage report
-- `make ci` once on the settled final tree before merge or release (install checks plus the full unit suite)
+- `make test` runs the Rust workspace tests only
+- `make ci` runs the Rust-only merge gate: formatting, MSRV, clippy, tests, the
+  iOS canary, and dependency policy
+- `make check-differentials` runs Rust tests that compare behavior with the
+  Python implementation; use it when a change touches a shared seam
+- Run Python tests directly with `pytest`, for example `pytest tests/test_doctor.py`
+  or `pytest solstone/apps/my_app/tests/`
+- The former Python Make targets, including `make test-cov`, `make test-app`,
+  `make test-only`, and the other `make test-*` targets, are frozen and fail
+  immediately during the Rust conversion
 - Always run `journal restart-convey` after editing `solstone/convey/` or `solstone/apps/` to reload code
 
 ## OpenAPI Verification Lanes
@@ -65,7 +63,7 @@ There are two API referees with different jobs:
 Run the Schemathesis lane directly with:
 
 ```bash
-make test-only TEST=tests/test_openapi_schemathesis.py
+pytest tests/test_openapi_schemathesis.py
 ```
 
 The operator live lane is:

@@ -281,4 +281,17 @@ mod tests {
         let args = process_args(spec, false, &owner);
         assert_eq!(args.last(), owner.last());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_process_args_preserve_non_utf8_owner_arguments() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let spec = crate::processes::native_process_spec_for("schedule")
+            .expect("schedule NativeProcessSpec");
+        let owner = vec![OsString::from_vec(vec![0xff])];
+        let args = native_process_args(spec, &owner);
+        assert_eq!(args.first(), Some(&OsString::from("schedule")));
+        assert_eq!(args.last(), owner.last());
+    }
 }

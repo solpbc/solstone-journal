@@ -12,7 +12,7 @@ use solstone_core_journal_io::{
 
 use super::ScheduleError;
 
-const RESERVED_METADATA_KEYS: [&str; 3] = ["daily_time", "weekly_day", "weekly_time"];
+pub(crate) const RESERVED_METADATA_KEYS: [&str; 3] = ["daily_time", "weekly_day", "weekly_time"];
 
 /// A validated enabled schedule entry. `every` intentionally retains its raw form.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,20 +115,10 @@ fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
 }
 
 fn validate(raw: Map<String, Value>) -> ConfigLoad {
-    let mut result = ConfigLoad::default();
-    result.config.daily_time = raw
-        .get("daily_time")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    result.config.weekly_time = raw
-        .get("weekly_time")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    result.config.weekly_day = raw
-        .get("weekly_day")
-        .and_then(Value::as_str)
-        .filter(|value| parse_weekly_day(value).is_some())
-        .map(str::to_owned);
+    let mut result = ConfigLoad {
+        config: metadata_from_raw(&raw),
+        ..ConfigLoad::default()
+    };
 
     for (name, value) in raw {
         if RESERVED_METADATA_KEYS.contains(&name.as_str()) {
@@ -188,6 +178,25 @@ fn validate(raw: Map<String, Value>) -> ConfigLoad {
         );
     }
     result
+}
+
+pub(crate) fn metadata_from_raw(raw: &Map<String, Value>) -> ScheduleConfig {
+    ScheduleConfig {
+        entries: BTreeMap::new(),
+        daily_time: raw
+            .get("daily_time")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        weekly_time: raw
+            .get("weekly_time")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        weekly_day: raw
+            .get("weekly_day")
+            .and_then(Value::as_str)
+            .filter(|value| parse_weekly_day(value).is_some())
+            .map(str::to_owned),
+    }
 }
 
 pub(crate) fn parse_weekly_day(raw: &str) -> Option<u32> {
@@ -271,7 +280,7 @@ fn diagnostic(message: &str) -> ConfigDiagnostic {
     }
 }
 
-fn json_truthy(value: &Value) -> bool {
+pub(crate) fn json_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,

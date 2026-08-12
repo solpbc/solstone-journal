@@ -19,27 +19,34 @@ use serde_json::{Map, Value, json};
 use solstone_core_cli::{
     BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
     BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
-    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CogitateCommand,
-    Command, ConveyOptions, EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP,
-    FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
-    GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE,
-    IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP,
-    IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, IndexerCommand, IndexerCountsOptions,
-    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
-    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
-    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, ServiceOptions,
+    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP,
+    CHECK_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP,
+    CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE,
+    CogitateCommand, Command, ContractCommand, ConveyOptions, EXPORT_HELP, EXPORT_USAGE,
+    ExportOptions, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE,
+    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP,
+    IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
+    IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP,
+    INSTALL_MODELS_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
+    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE,
+    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, ServiceOptions,
     SettingsParseError, SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
     TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
     TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
+mod contract;
 mod facet_candidates;
 mod identity;
 mod install_models;
+mod install_provider;
 mod navigate;
 mod settings;
 mod supervisor;
@@ -118,6 +125,11 @@ fn main() -> ExitCode {
             }
         }
         Ok(Command::Check { json }) => ExitCode::from(check::run(json)),
+        Ok(Command::CheckUsage) => render_usage_error(CHECK_USAGE, "journal check"),
+        Ok(Command::CheckHelp) => {
+            print!("{CHECK_HELP}");
+            ExitCode::SUCCESS
+        }
         Ok(Command::Doctor(args)) => run_doctor(args),
         Ok(Command::DoctorUsage(error)) => {
             eprintln!("solstone-core doctor: error: {}", error.0);
@@ -153,10 +165,59 @@ fn main() -> ExitCode {
         Ok(Command::Backfill(args)) => run_backfill(args),
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
+        Ok(Command::InstallModelsUsage) => {
+            render_usage_error(INSTALL_MODELS_USAGE, "journal install-models")
+        }
+        Ok(Command::InstallModelsHelp) => {
+            print!("{INSTALL_MODELS_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::InstallProvider(options)) => install_provider::run(options),
         Ok(Command::Convey(options)) => run_convey(options),
+        Ok(Command::ConveyHelp) => {
+            print!("{CONVEY_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ConveyUsage(error)) => {
+            eprint!("{CONVEY_USAGE}");
+            eprintln!("journal convey: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::RestartConvey(options)) => run_restart_convey(options),
+        Ok(Command::RestartConveyHelp) => {
+            print!("{RESTART_CONVEY_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::RestartConveyUsage(error)) => {
+            eprint!("{RESTART_CONVEY_USAGE}");
+            eprintln!("journal restart-convey: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::Schedule(options)) => run_schedule(options),
+        Ok(Command::ScheduleHelp) => {
+            print!("{SCHEDULE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ScheduleUsage(error)) => {
+            eprint!("{SCHEDULE_USAGE}");
+            eprintln!("journal schedule: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
+        Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
+        Ok(Command::SupervisorHelp) => {
+            print!("{SUPERVISOR_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::SupervisorLifecycleRedirect(verb)) => {
+            eprintln!(
+                "journal supervisor is the server-launch command (takes a port). \
+                 For lifecycle, use: journal service <verb>. Did you mean: journal service {verb} ?"
+            );
+            ExitCode::from(2)
+        }
         Ok(Command::Observer(command)) => run_observer(command),
         Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
         Ok(Command::NavigateHelp) => {
@@ -169,32 +230,57 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         Ok(Command::Identity(command)) => identity::run(command),
+        Ok(Command::Contract(ContractCommand::Build { check, root })) => {
+            contract::run_build(check, root)
+        }
+        Ok(Command::Contract(ContractCommand::Check { journals, root })) => {
+            contract::run_check(journals, root)
+        }
+        Ok(Command::ContractHelp) => {
+            print!("{CONTRACT_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ContractUsage) => contract_usage(CONTRACT_USAGE, "journal contract"),
+        Ok(Command::ContractBuildHelp) => {
+            print!("{CONTRACT_BUILD_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ContractBuildUsage) => {
+            contract_usage(CONTRACT_BUILD_USAGE, "journal contract build")
+        }
+        Ok(Command::ContractCheckHelp) => {
+            print!("{CONTRACT_CHECK_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ContractCheckUsage) => {
+            contract_usage(CONTRACT_CHECK_USAGE, "journal contract check")
+        }
         Ok(Command::IdentityHelp) => {
             print!("{IDENTITY_HELP}");
             ExitCode::SUCCESS
         }
-        Ok(Command::IdentityUsage) => identity_usage(IDENTITY_USAGE, "journal identity"),
+        Ok(Command::IdentityUsage) => render_usage_error(IDENTITY_USAGE, "journal identity"),
         Ok(Command::IdentityUnknownCommand(command)) => identity_unknown_command(&command),
         Ok(Command::IdentityPartnerHelp) => {
             print!("{IDENTITY_PARTNER_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::IdentityPartnerUsage) => {
-            identity_usage(IDENTITY_PARTNER_USAGE, "journal identity partner")
+            render_usage_error(IDENTITY_PARTNER_USAGE, "journal identity partner")
         }
         Ok(Command::IdentityHealthHelp) => {
             print!("{IDENTITY_HEALTH_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::IdentityHealthUsage) => {
-            identity_usage(IDENTITY_HEALTH_USAGE, "journal identity health")
+            render_usage_error(IDENTITY_HEALTH_USAGE, "journal identity health")
         }
         Ok(Command::IdentityBriefingHelp) => {
             print!("{IDENTITY_BRIEFING_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::IdentityBriefingUsage) => {
-            identity_usage(IDENTITY_BRIEFING_USAGE, "journal identity briefing")
+            render_usage_error(IDENTITY_BRIEFING_USAGE, "journal identity briefing")
         }
         Ok(Command::Settings(command)) => settings::run(command),
         Ok(Command::SettingsHelp) => {
@@ -267,7 +353,16 @@ fn main() -> ExitCode {
     }
 }
 
-fn identity_usage(usage: &str, command: &str) -> ExitCode {
+fn render_usage_error(usage: &str, command: &str) -> ExitCode {
+    // `UsageError` is unit-shaped, so these parsers deliberately use the house
+    // message instead of argparse's per-failure detail. Transcribe preserves detail
+    // through its separate crate's `CliError::Usage { message }`.
+    eprint!("{usage}");
+    eprintln!("{command}: error: invalid arguments");
+    ExitCode::from(2)
+}
+
+fn contract_usage(usage: &str, command: &str) -> ExitCode {
     eprint!("{usage}");
     eprintln!("{command}: error: invalid arguments");
     ExitCode::from(2)
@@ -862,6 +957,58 @@ fn run_convey(options: ConveyOptions) -> ExitCode {
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }
+}
+
+fn run_restart_convey(options: RestartConveyOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(None) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_convey_shell::restart_convey(
+        &journal,
+        solstone_core_convey_shell::RestartConveyOptions {
+            timeout: options.timeout,
+            verbose: options.verbose,
+        },
+    ) {
+        Ok(report) => {
+            print!("{}", report.stdout());
+            eprint!("{}", report.stderr());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            print!("{}", error.stdout());
+            eprint!("{}", error.stderr());
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_schedule(_options: ScheduleOptions) -> ExitCode {
+    let journal = match resolve_journal_config_path(None) {
+        Ok(line) => line.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let wall = chrono::Local::now();
+    let report = solstone_core_system::schedule::build_schedule_report(
+        journal.join("config/schedules.json"),
+        journal.join("health/scheduler.json"),
+        solstone_core_system::schedule::ScheduleNow {
+            local: wall.naive_local(),
+            unix_millis: wall.timestamp_millis(),
+        },
+    );
+    print!("{}", report.render());
+    for diagnostic in report.diagnostics {
+        eprintln!("{diagnostic}");
+    }
+    ExitCode::from(report.exit_code)
 }
 
 fn run_observer(command: ObserverCommand) -> ExitCode {

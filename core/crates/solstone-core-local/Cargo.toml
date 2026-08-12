@@ -43,3 +43,8 @@ required-features = ["differential"]
 name = "vulkan_differential"
 path = "tests/vulkan_differential.rs"
 required-features = ["differential"]
+
+[[test]]
+name = "install_provider_differential"
+path = "tests/install_provider_differential.rs"
+required-features = ["differential"]

@@ -32,7 +32,13 @@ fn first_claimed_uses_fixture_order_and_fixture_zip_claimants() {
     for row in [
         "bare::zip_takeout_ics_AND_gemini",
         "bare::zip_claude_AND_ics",
+        "bare::dir_vault_3md_AND_pdf",
     ] {
+        let claim_set = if row == "bare::dir_vault_3md_AND_pdf" {
+            ["obsidian", "document"].into_iter().collect()
+        } else {
+            claim_set.clone()
+        };
         let expected = resolver["passes"]["native_detector_answers_no"][row]["result"]["importer"]
             .as_str()
             .unwrap();

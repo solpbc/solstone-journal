@@ -3,10 +3,42 @@
 
 use serde_json::Value;
 use solstone_core_import::{
-    ImportPreview, ImportResult, PreviewRequest, SaveRequest, should_write_manifest,
+    AudioAuto, ImportPreview, ImportResult, PreviewRequest, SaveRequest, SyncBackendRequest,
+    SyncGuidance, should_write_manifest,
 };
+use std::path::PathBuf;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/import_reference_grammar.json");
+const W9_SURFACE: &str = concat!(
+    include_str!("../src/contract.rs"),
+    include_str!("../src/sync_state.rs"),
+    include_str!("../src/sync_plaud.rs"),
+    include_str!("../src/sync_obsidian.rs"),
+    include_str!("../src/sync_audio.rs"),
+    include_str!("../src/connect.rs"),
+    include_str!("../src/consent_gate.rs"),
+);
+
+const SYNC_SEAM_FIELDS: &[(&str, &[&str])] = &[
+    (
+        "PlaudPreviewSeams",
+        &[
+            "credential",
+            "catalogue",
+            "manifests",
+            "clock",
+            "state_writer",
+        ],
+    ),
+    ("PlaudSaveSeams", &["preview", "download", "pipeline"]),
+    (
+        "AudioPreviewSeams",
+        &["scanner", "probe", "manifests", "clock", "state_writer"],
+    ),
+    ("AudioSaveSeams", &["preview", "pipeline"]),
+    ("ObsidianPreviewSeams", &["candidates", "scanner", "clock"]),
+    ("ObsidianSaveSeams", &["preview", "writer"]),
+];
 
 #[test]
 fn contract_field_names_match_the_frozen_grammar() {
@@ -62,3 +94,58 @@ fn result(entries_written: u64, hard_failures: Vec<&str>) -> ImportResult {
 fn accepts_preview(_: PreviewRequest) {}
 
 fn accepts_save(_: SaveRequest) {}
+
+#[test]
+fn sync_backend_request_confines_window_days_to_the_native_variant() {
+    let path = PathBuf::from("journal");
+    let request = SyncBackendRequest::Oura {
+        journal_root: path.clone(),
+        save: true,
+        window_days: 14,
+        confirmed: true,
+        scheduled: false,
+    };
+    match request {
+        SyncBackendRequest::Oura { window_days, .. } => assert_eq!(window_days, 14),
+        _ => panic!("Oura request must retain window days"),
+    }
+    let request = SyncBackendRequest::Audio {
+        journal_root: path,
+        save: false,
+        source_path: Some(PathBuf::from("audio")),
+        force: false,
+        auto: AudioAuto::Enabled,
+    };
+    match request {
+        SyncBackendRequest::Audio { source_path, .. } => {
+            assert_eq!(source_path, Some(PathBuf::from("audio")))
+        }
+        _ => panic!("audio request must retain its source override"),
+    }
+}
+
+#[test]
+fn scheduling_guidance_is_pure_text_without_schedule_authority_in_any_sync_seam() {
+    let guidance = SyncGuidance::new("Run this on a cadence you choose.".to_owned());
+    assert_eq!(guidance.format_text(), "Run this on a cadence you choose.");
+    for (seam, expected_fields) in SYNC_SEAM_FIELDS {
+        assert_eq!(public_fields(seam), *expected_fields, "{seam} fields");
+    }
+    assert!(!W9_SURFACE.contains("ScheduleWriter"));
+    assert!(!W9_SURFACE.contains("schedule_path"));
+    assert!(!W9_SURFACE.contains("cron_hint"));
+}
+
+fn public_fields(seam: &str) -> Vec<&str> {
+    let declaration = format!("pub struct {seam}");
+    let (_, after_declaration) = W9_SURFACE
+        .split_once(&declaration)
+        .unwrap_or_else(|| panic!("missing {seam}"));
+    let (body, _) = after_declaration
+        .split_once('}')
+        .unwrap_or_else(|| panic!("unterminated {seam}"));
+    body.lines()
+        .filter_map(|line| line.trim().strip_prefix("pub "))
+        .filter_map(|line| line.split_once(':').map(|(field, _)| field.trim()))
+        .collect()
+}

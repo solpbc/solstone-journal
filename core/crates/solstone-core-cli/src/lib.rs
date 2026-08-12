@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 
 use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
@@ -14,13 +15,14 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  solstone-core convey --port PORT [--journal PATH]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
+    "  solstone-core contract <build|check> ...\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
-    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n",
+    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n",
     "  solstone-core streams [args...]\n",
     "  solstone-core segment [args...]\n",
     "  solstone-core journal-stats [args...]\n",
@@ -155,6 +157,34 @@ pub const SETTINGS_STATUS_HELP: &str = concat!(
     "options:\n",
     "  -h, --help  show this help message and exit\n",
     "  --json      Print machine-readable status.\n",
+);
+
+pub const CONTRACT_USAGE: &str = "usage: journal contract [-h] {build,check} ...\n";
+pub const CONTRACT_HELP: &str = concat!(
+    "usage: journal contract [-h] {build,check} ...\n\n",
+    "Build and validate the journal contract bundle.\n\n",
+    "positional arguments:\n  {build,check}\n",
+    "    build               Build the contract bundle.\n",
+    "    check               Check the bundle and journal files.\n\n",
+    "options:\n  -h, --help            show this help message and exit\n",
+);
+pub const CONTRACT_BUILD_USAGE: &str =
+    "usage: journal contract build [-h] [--check] [--root PATH]\n";
+pub const CONTRACT_BUILD_HELP: &str = concat!(
+    "usage: journal contract build [-h] [--check] [--root PATH]\n\n",
+    "Build the journal contract bundle.\n\n",
+    "options:\n  -h, --help            show this help message and exit\n",
+    "  --check               Check whether the bundle is current without writing.\n",
+    "  --root PATH           Contract checkout or installed-package root.\n",
+);
+pub const CONTRACT_CHECK_USAGE: &str =
+    "usage: journal contract check [-h] [--journal PATH]... [--root PATH]\n";
+pub const CONTRACT_CHECK_HELP: &str = concat!(
+    "usage: journal contract check [-h] [--journal PATH]... [--root PATH]\n\n",
+    "Check the bundle and journal files against their schemas.\n\n",
+    "options:\n  -h, --help            show this help message and exit\n",
+    "  --journal PATH        Additional journal root to validate (repeatable).\n",
+    "  --root PATH           Contract checkout or installed-package root.\n",
 );
 
 /// `journal grab --help`, verbatim from the reference. The native verb
@@ -338,6 +368,76 @@ pub const TRANSCRIBE_USAGE: &str = concat!(
     "                          [audio_path]\n",
 );
 
+pub const SUPERVISOR_USAGE: &str = concat!(
+    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                          [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
+    "                          [-v] [-d]\n",
+    "                          [port]\n",
+);
+
+pub const SUPERVISOR_HELP: &str = concat!(
+    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                          [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
+    "                          [-v] [-d]\n",
+    "                          [port]\n",
+    "\n",
+    "Monitor journaling health\n",
+    "\n",
+    "positional arguments:\n",
+    "  port               Convey port (0 = auto-select available port)\n",
+    "\n",
+    "options:\n",
+    "  -h, --help         show this help message and exit\n",
+    "  --no-daily         Disable daily processing run at midnight\n",
+    "  --no-cortex        Do not start the Cortex server (run it manually for\n",
+    "                     debugging)\n",
+    "  --no-spl           Do not start the spl tunnel service\n",
+    "  --no-convey        Do not start the Convey web application\n",
+    "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
+    "                     implemented)\n",
+    "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
+    "                     journal resolution.\n",
+    "  -v, --verbose      Enable verbose output\n",
+    "  -d, --debug        Enable debug logging\n",
+);
+
+pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
+
+pub const CHECK_HELP: &str = concat!(
+    "usage: journal check [-h] [--json]\n",
+    "\n",
+    "Readiness verdict for bundled local journal models.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --json      emit the readiness verdict as JSON for agents\n",
+);
+
+pub const INSTALL_MODELS_USAGE: &str = concat!(
+    "usage: journal install-models [-h] [--check | --force]\n",
+    "                              [--variant {auto,cpu,cuda,coreml}]\n",
+);
+
+pub const INSTALL_MODELS_HELP: &str = concat!(
+    "usage: journal install-models [-h] [--check | --force]\n",
+    "                              [--variant {auto,cpu,cuda,coreml}]\n",
+    "\n",
+    "Install and verify solstone's bundled ML models (local STT plus bundled\n",
+    "wespeaker/pyannote assets). Default action checks the local STT artifacts and\n",
+    "fetches if missing; --force re-fetches; --check verifies only and exits\n",
+    "nonzero on any problem.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --check               Verify bundled assets and local STT artifacts without\n",
+    "                        fetching.\n",
+    "  --force               Ignore readiness and refetch/verify local STT\n",
+    "                        artifacts.\n",
+    "  --variant {auto,cpu,cuda,coreml}\n",
+    "                        Journal variant to install or verify. auto honors\n",
+    "                        JOURNAL_VARIANT on linux/x86_64, then autodetects.\n",
+);
+
 /// `journal facet-candidates --help`, verbatim from the reference.
 pub const FACET_CANDIDATES_HELP: &str = concat!(
     "usage: journal facet-candidates [-h] [-v] [-d]\n",
@@ -352,6 +452,54 @@ pub const FACET_CANDIDATES_HELP: &str = concat!(
 
 /// The wrapped usage line argparse prints on a `journal facet-candidates` error.
 pub const FACET_CANDIDATES_USAGE: &str = "usage: journal facet-candidates [-h] [-v] [-d]\n";
+
+/// `journal convey --help`, captured verbatim from the retained owner command.
+pub const CONVEY_HELP: &str = concat!(
+    "usage: journal convey [-h] --port PORT [-v] [-d]\n",
+    "\n",
+    "Convey web interface\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  --port PORT    Port to serve on\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+/// The parse-error usage for `journal convey`.
+pub const CONVEY_USAGE: &str = "usage: journal convey [-h] --port PORT [-v] [-d]\n";
+
+/// `journal restart-convey --help`, captured verbatim from the retained owner command.
+pub const RESTART_CONVEY_HELP: &str = concat!(
+    "usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n",
+    "\n",
+    "Restart the Convey web service via supervisor\n",
+    "\n",
+    "options:\n",
+    "  -h, --help         show this help message and exit\n",
+    "  --timeout TIMEOUT  Maximum seconds to wait for restart (default: 30.0)\n",
+    "  -v, --verbose      Enable verbose output\n",
+    "  -d, --debug        Enable debug logging\n",
+);
+
+/// The parse-error usage for `journal restart-convey`.
+pub const RESTART_CONVEY_USAGE: &str =
+    "usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n";
+
+/// `journal schedule --help`, captured from the retained scheduler CLI.
+pub const SCHEDULE_HELP: &str = concat!(
+    "usage: journal schedule [-h] [-v] [-d]\n",
+    "\n",
+    "Show scheduled tasks\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
+/// The parse-error usage for `journal schedule`.
+pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
 
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
@@ -398,6 +546,8 @@ pub enum Command {
     Check {
         json: bool,
     },
+    CheckUsage,
+    CheckHelp,
     JournalPath(JournalPathOptions),
     Indexer(Box<IndexerCommand>),
     JournalConfig(JournalConfigCommand),
@@ -418,10 +568,24 @@ pub enum Command {
     Backfill(Vec<OsString>),
     FacetCandidates,
     InstallModels(InstallModelsOptions),
+    InstallModelsUsage,
+    InstallModelsHelp,
+    InstallProvider(InstallProviderOptions),
     Convey(ConveyOptions),
+    ConveyHelp,
+    ConveyUsage(ConveyUsageError),
+    RestartConvey(RestartConveyOptions),
+    RestartConveyHelp,
+    RestartConveyUsage(RestartConveyUsageError),
+    Schedule(ScheduleOptions),
+    ScheduleHelp,
+    ScheduleUsage(ScheduleUsageError),
     Grab(GrabCommand),
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
+    SupervisorUsage,
+    SupervisorHelp,
+    SupervisorLifecycleRedirect(&'static str),
     Observer(ObserverCommand),
     Navigate {
         path: Option<String>,
@@ -444,6 +608,13 @@ pub enum Command {
     SettingsConveyHelp,
     SettingsStatusHelp,
     SettingsParseError(SettingsParseError),
+    Contract(ContractCommand),
+    ContractUsage,
+    ContractHelp,
+    ContractBuildUsage,
+    ContractBuildHelp,
+    ContractCheckUsage,
+    ContractCheckHelp,
     ObserverUsage,
     ObserverPruneUsage,
     ObserverHelp,
@@ -473,11 +644,28 @@ pub struct InstallModelsOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallProviderOptions {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityCommand {
     Hydrate,
     Partner(IdentityPartnerOptions),
     Health(IdentityHealthOptions),
     Briefing(IdentityBriefingOptions),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractCommand {
+    Build {
+        check: bool,
+        root: Option<PathBuf>,
+    },
+    Check {
+        journals: Vec<PathBuf>,
+        root: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -614,6 +802,30 @@ pub struct ConveyOptions {
     pub port: u16,
     pub journal_override: Option<OsString>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConveyUsageError(pub String);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RestartConveyOptions {
+    pub timeout: f64,
+    pub verbose: bool,
+    pub debug: bool,
+}
+
+impl Eq for RestartConveyOptions {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestartConveyUsageError(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleOptions {
+    pub verbose: bool,
+    pub debug: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupervisorOptions {
@@ -903,9 +1115,19 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, flag] if command == OsStr::new("warm") && flag == OsStr::new("--json") => {
             Ok(Command::Warm { json: true })
         }
-        [command] if command == OsStr::new("check") => Ok(Command::Check { json: false }),
-        [command, flag] if command == OsStr::new("check") && flag == OsStr::new("--json") => {
-            Ok(Command::Check { json: true })
+        [command, rest @ ..] if command == OsStr::new("check") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                Ok(Command::CheckHelp)
+            } else {
+                match rest {
+                    [] => Ok(Command::Check { json: false }),
+                    [flag] if flag == OsStr::new("--json") => Ok(Command::Check { json: true }),
+                    _ => Ok(Command::CheckUsage),
+                }
+            }
         }
         [command, rest @ ..] if command == OsStr::new("journal-path") => {
             parse_journal_path(rest).map(Command::JournalPath)
@@ -984,6 +1206,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("identity") => parse_identity(rest),
         [command, rest @ ..] if command == OsStr::new("settings") => parse_settings(rest),
+        [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("streams") => {
             Ok(Command::Streams(rest.to_vec()))
@@ -1011,17 +1234,53 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 .map_or(Command::FacetCandidatesUsage, |_| Command::FacetCandidates))
         }
         [command, rest @ ..] if command == OsStr::new("install-models") => {
-            parse_install_models(rest).map(Command::InstallModels)
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::InstallModelsHelp);
+            }
+            Ok(parse_install_models(rest)
+                .map_or(Command::InstallModelsUsage, Command::InstallModels))
         }
-        [command, rest @ ..] if command == OsStr::new("convey") => {
-            parse_convey(rest).map(Command::Convey)
+        [command, rest @ ..] if command == OsStr::new("install-provider") => {
+            parse_install_provider(rest).map(Command::InstallProvider)
         }
+        [command, rest @ ..] if command == OsStr::new("convey") => match parse_convey(rest) {
+            Ok(ConveyParse::Run(options)) => Ok(Command::Convey(options)),
+            Ok(ConveyParse::Help) => Ok(Command::ConveyHelp),
+            Err(error) => Ok(Command::ConveyUsage(error)),
+        },
+        [command, rest @ ..] if command == OsStr::new("restart-convey") => {
+            match parse_restart_convey(rest) {
+                Ok(RestartConveyParse::Run(options)) => Ok(Command::RestartConvey(options)),
+                Ok(RestartConveyParse::Help) => Ok(Command::RestartConveyHelp),
+                Err(error) => Ok(Command::RestartConveyUsage(error)),
+            }
+        }
+        [command, rest @ ..] if command == OsStr::new("schedule") => match parse_schedule(rest) {
+            Ok(ScheduleParse::Run(options)) => Ok(Command::Schedule(options)),
+            Ok(ScheduleParse::Help) => Ok(Command::ScheduleHelp),
+            Err(error) => Ok(Command::ScheduleUsage(error)),
+        },
         [command, rest @ ..] if command == OsStr::new("grab") => {
             Ok(Command::Grab(parse_grab(rest)))
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
-            parse_supervisor(rest).map(Command::Supervisor)
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::SupervisorHelp);
+            }
+            Ok(match parse_supervisor(rest) {
+                Ok(options) => Command::Supervisor(options),
+                Err(_) => supervisor_lifecycle_redirect(rest).map_or(
+                    Command::SupervisorUsage,
+                    Command::SupervisorLifecycleRedirect,
+                ),
+            })
         }
         [command, rest @ ..] if command == OsStr::new("observer") => {
             // Help is not one of the observer parser's tokens, so it must be
@@ -1161,6 +1420,109 @@ fn parse_identity(args: &[OsString]) -> Result<Command, UsageError> {
         Some(command) => Ok(Command::IdentityUnknownCommand(command.to_owned())),
         None => Ok(Command::IdentityUsage),
     }
+}
+
+fn parse_contract(args: &[OsString]) -> Result<Command, UsageError> {
+    let Some((verb, rest)) = args.split_first() else {
+        return Ok(Command::ContractUsage);
+    };
+    if verb == OsStr::new("--help") || verb == OsStr::new("-h") {
+        return Ok(Command::ContractHelp);
+    }
+    match verb.to_str() {
+        Some("build") => parse_contract_build(rest),
+        Some("check") => parse_contract_check(rest),
+        _ => Ok(Command::ContractUsage),
+    }
+}
+
+fn parse_contract_build(args: &[OsString]) -> Result<Command, UsageError> {
+    if args
+        .iter()
+        .any(|arg| arg == OsStr::new("--help") || arg == OsStr::new("-h"))
+    {
+        return Ok(Command::ContractBuildHelp);
+    }
+    let mut check = false;
+    let mut root = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--check") {
+            check = true;
+            index += 1;
+        } else if argument == OsStr::new("--root") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_string_lossy().starts_with('-') || root.is_some() {
+                return Ok(Command::ContractBuildUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 2;
+        } else if let Some(value) = argument
+            .to_str()
+            .and_then(|value| value.strip_prefix("--root="))
+        {
+            if value.is_empty() || root.is_some() {
+                return Ok(Command::ContractBuildUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 1;
+        } else {
+            return Ok(Command::ContractBuildUsage);
+        }
+    }
+    Ok(Command::Contract(ContractCommand::Build { check, root }))
+}
+
+fn parse_contract_check(args: &[OsString]) -> Result<Command, UsageError> {
+    if args
+        .iter()
+        .any(|arg| arg == OsStr::new("--help") || arg == OsStr::new("-h"))
+    {
+        return Ok(Command::ContractCheckHelp);
+    }
+    let mut journals = Vec::new();
+    let mut root = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--journal") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_string_lossy().starts_with('-') {
+                return Ok(Command::ContractCheckUsage);
+            }
+            journals.push(PathBuf::from(value));
+            index += 2;
+        } else if argument == OsStr::new("--root") {
+            let value = args.get(index + 1).ok_or(UsageError)?;
+            if value.to_string_lossy().starts_with('-') || root.is_some() {
+                return Ok(Command::ContractCheckUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 2;
+        } else if let Some(value) = argument
+            .to_str()
+            .and_then(|value| value.strip_prefix("--journal="))
+        {
+            if value.is_empty() {
+                return Ok(Command::ContractCheckUsage);
+            }
+            journals.push(PathBuf::from(value));
+            index += 1;
+        } else if let Some(value) = argument
+            .to_str()
+            .and_then(|value| value.strip_prefix("--root="))
+        {
+            if value.is_empty() || root.is_some() {
+                return Ok(Command::ContractCheckUsage);
+            }
+            root = Some(PathBuf::from(value));
+            index += 1;
+        } else {
+            return Ok(Command::ContractCheckUsage);
+        }
+    }
+    Ok(Command::Contract(ContractCommand::Check { journals, root }))
 }
 
 fn parse_identity_partner(args: &[OsString]) -> Result<Command, UsageError> {
@@ -1481,6 +1843,19 @@ fn grab_parse_error(message: &str) -> GrabCommand {
     GrabCommand::ParseError(message.to_owned())
 }
 
+fn supervisor_lifecycle_redirect(args: &[OsString]) -> Option<&'static str> {
+    args.iter().find_map(|argument| match argument.as_os_str() {
+        value if value == OsStr::new("start") => Some("start"),
+        value if value == OsStr::new("stop") => Some("stop"),
+        value if value == OsStr::new("restart") => Some("restart"),
+        value if value == OsStr::new("status") => Some("status"),
+        value if value == OsStr::new("install") => Some("install"),
+        value if value == OsStr::new("uninstall") => Some("uninstall"),
+        value if value == OsStr::new("logs") => Some("logs"),
+        _ => None,
+    })
+}
+
 fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> {
     let mut port = 0;
     let mut port_consumed = false;
@@ -1790,48 +2165,172 @@ fn parse_facet_candidates(args: &[OsString]) -> Result<(), UsageError> {
     Ok(())
 }
 
-fn parse_convey(args: &[OsString]) -> Result<ConveyOptions, UsageError> {
+enum ConveyParse {
+    Run(ConveyOptions),
+    Help,
+}
+
+fn parse_convey(args: &[OsString]) -> Result<ConveyParse, ConveyUsageError> {
     let mut port = None;
     let mut journal_override = None;
     let mut index = 0;
     while index < args.len() {
         let argument = args[index].as_os_str();
+        if argument == OsStr::new("-h") || argument == OsStr::new("--help") {
+            return Ok(ConveyParse::Help);
+        }
+        if matches!(
+            argument.to_str(),
+            Some("-v" | "--verbose" | "-d" | "--debug")
+        ) {
+            index += 1;
+            continue;
+        }
         if argument == OsStr::new("--port") {
-            if port.is_some() {
-                return Err(UsageError);
+            let value = args.get(index + 1).ok_or_else(|| {
+                ConveyUsageError("argument --port: expected one argument".to_owned())
+            })?;
+            let value = value
+                .to_str()
+                .ok_or_else(|| ConveyUsageError("argument --port: invalid int value".to_owned()))?;
+            let parsed = value.parse::<i32>().map_err(|_| {
+                ConveyUsageError(format!("argument --port: invalid int value: '{value}'"))
+            })?;
+            if !(1..=65535).contains(&parsed) {
+                return Err(ConveyUsageError(
+                    "argument --port: must be between 1 and 65535".to_owned(),
+                ));
             }
-            let value = args.get(index + 1).ok_or(UsageError)?;
-            if value == OsStr::new("--port") || value == OsStr::new("--journal") {
-                return Err(UsageError);
-            }
-            port = Some(
-                value
-                    .to_str()
-                    .ok_or(UsageError)?
-                    .parse()
-                    .map_err(|_| UsageError)?,
-            );
+            port = Some(parsed as u16);
             index += 2;
             continue;
         }
+        if let Some(value) = argument
+            .to_str()
+            .and_then(|item| item.strip_prefix("--port="))
+        {
+            let parsed = value.parse::<i32>().map_err(|_| {
+                ConveyUsageError(format!("argument --port: invalid int value: '{value}'"))
+            })?;
+            if !(1..=65535).contains(&parsed) {
+                return Err(ConveyUsageError(
+                    "argument --port: must be between 1 and 65535".to_owned(),
+                ));
+            }
+            port = Some(parsed as u16);
+            index += 1;
+            continue;
+        }
         if argument == OsStr::new("--journal") {
-            if journal_override.is_some() {
-                return Err(UsageError);
-            }
-            let value = args.get(index + 1).ok_or(UsageError)?;
-            if value == OsStr::new("--port") || value == OsStr::new("--journal") {
-                return Err(UsageError);
-            }
+            let value = args.get(index + 1).ok_or_else(|| {
+                ConveyUsageError("argument --journal: expected one argument".to_owned())
+            })?;
             journal_override = Some(value.clone());
             index += 2;
             continue;
         }
-        return Err(UsageError);
+        return Err(ConveyUsageError(format!(
+            "unrecognized arguments: {}",
+            args[index..]
+                .iter()
+                .map(|value| value.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        )));
     }
-    Ok(ConveyOptions {
-        port: port.ok_or(UsageError)?,
+    Ok(ConveyParse::Run(ConveyOptions {
+        port: port.ok_or_else(|| {
+            ConveyUsageError("the following arguments are required: --port".to_owned())
+        })?,
         journal_override,
-    })
+    }))
+}
+
+enum RestartConveyParse {
+    Run(RestartConveyOptions),
+    Help,
+}
+
+fn parse_restart_convey(args: &[OsString]) -> Result<RestartConveyParse, RestartConveyUsageError> {
+    let mut timeout = 30.0;
+    let mut verbose = false;
+    let mut debug = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        match argument.to_str() {
+            Some("-h" | "--help") => return Ok(RestartConveyParse::Help),
+            Some("-v" | "--verbose") => verbose = true,
+            Some("-d" | "--debug") => debug = true,
+            Some("--timeout") => {
+                let value = args.get(index + 1).ok_or_else(|| {
+                    RestartConveyUsageError("argument --timeout: expected one argument".to_owned())
+                })?;
+                let value = value.to_str().ok_or_else(|| {
+                    RestartConveyUsageError("argument --timeout: invalid float value".to_owned())
+                })?;
+                timeout = value.parse::<f64>().map_err(|_| {
+                    RestartConveyUsageError(format!(
+                        "argument --timeout: invalid float value: '{value}'"
+                    ))
+                })?;
+                index += 2;
+                continue;
+            }
+            Some(argument) if argument.starts_with("--timeout=") => {
+                let value = &argument[10..];
+                timeout = value.parse::<f64>().map_err(|_| {
+                    RestartConveyUsageError(format!(
+                        "argument --timeout: invalid float value: '{value}'"
+                    ))
+                })?;
+            }
+            _ => {
+                return Err(RestartConveyUsageError(format!(
+                    "unrecognized arguments: {}",
+                    args[index..]
+                        .iter()
+                        .map(|value| value.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )));
+            }
+        }
+        index += 1;
+    }
+    Ok(RestartConveyParse::Run(RestartConveyOptions {
+        timeout,
+        verbose,
+        debug,
+    }))
+}
+
+enum ScheduleParse {
+    Run(ScheduleOptions),
+    Help,
+}
+
+fn parse_schedule(args: &[OsString]) -> Result<ScheduleParse, ScheduleUsageError> {
+    let mut verbose = false;
+    let mut debug = false;
+    for (index, argument) in args.iter().enumerate() {
+        match argument.to_str() {
+            Some("-h" | "--help") => return Ok(ScheduleParse::Help),
+            Some("-v" | "--verbose") => verbose = true,
+            Some("-d" | "--debug") => debug = true,
+            _ => {
+                return Err(ScheduleUsageError(format!(
+                    "unrecognized arguments: {}",
+                    args[index..]
+                        .iter()
+                        .map(|value| value.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )));
+            }
+        }
+    }
+    Ok(ScheduleParse::Run(ScheduleOptions { verbose, debug }))
 }
 
 fn parse_body(args: &[OsString]) -> Result<BodyCommand, UsageError> {
@@ -2235,6 +2734,15 @@ fn parse_install_models(args: &[OsString]) -> Result<InstallModelsOptions, Usage
         check,
         force,
         variant,
+    })
+}
+
+fn parse_install_provider(args: &[OsString]) -> Result<InstallProviderOptions, UsageError> {
+    let [name] = args else {
+        return Err(UsageError);
+    };
+    Ok(InstallProviderOptions {
+        name: name.to_str().ok_or(UsageError)?.to_owned(),
     })
 }
 
@@ -3676,11 +4184,20 @@ mod tests {
             &["convey", "--port"][..],
             &["convey", "--port", "not-a-port"][..],
             &["convey", "--port", "65536"][..],
-            &["convey", "--port", "5015", "--port", "5016"][..],
             &["convey", "--journal", "/tmp/journal", "--port", "--journal"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert!(
+                matches!(evaluate_args(&args(values)), Ok(Command::ConveyUsage(_))),
+                "{values:?}"
+            );
         }
+        assert_eq!(
+            evaluate_args(&args(&["convey", "--port", "5015", "--port", "5016"])),
+            Ok(Command::Convey(ConveyOptions {
+                port: 5016,
+                journal_override: None,
+            }))
+        );
     }
 
     #[test]
@@ -4666,16 +5183,17 @@ mod tests {
             "brain",
             "body",
             "transfer",
-            "convey",
             "grab",
             "spl",
             "supervisor",
             "navigate",
             "identity",
             "settings",
+            "contract",
             "export",
             "facet-candidates",
             "install-models",
+            "install-provider",
             "streams",
             "segment",
             "journal-stats",
@@ -4687,7 +5205,48 @@ mod tests {
                 "USAGE does not list `{command}`"
             );
         }
+        assert!(USAGE.contains("journal convey"));
+        assert!(USAGE.contains("journal restart-convey"));
+        assert!(USAGE.contains("journal schedule"));
         assert!(USAGE.starts_with("Usage:\n"));
+    }
+
+    #[test]
+    fn parses_contract_leaves_before_execution() {
+        assert_eq!(
+            evaluate_args(&args(&["contract", "build", "--check", "--root=/tmp/root"])),
+            Ok(Command::Contract(ContractCommand::Build {
+                check: true,
+                root: Some(PathBuf::from("/tmp/root")),
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "contract",
+                "check",
+                "--journal",
+                "/one",
+                "--journal=/two",
+                "--root",
+                "/root",
+            ])),
+            Ok(Command::Contract(ContractCommand::Check {
+                journals: vec![PathBuf::from("/one"), PathBuf::from("/two")],
+                root: Some(PathBuf::from("/root")),
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["contract", "--nonsense"])),
+            Ok(Command::ContractUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["contract", "build", "--nonsense"])),
+            Ok(Command::ContractBuildUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["contract", "check", "--nonsense"])),
+            Ok(Command::ContractCheckUsage)
+        );
     }
 
     #[test]
@@ -4764,6 +5323,49 @@ mod tests {
             &["install-models", "--variant"][..],
             &["install-models", "--variant", "bad"][..],
             &["install-models", "--variant", "cpu", "--variant", "cuda"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::InstallModelsUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_rejects_unknown_and_help_flags_with_verb_results() {
+        assert_eq!(
+            evaluate_args(&args(&["check", "--nonsense"])),
+            Ok(Command::CheckUsage)
+        );
+        for values in [
+            &["check", "--help"][..],
+            &["check", "-h"][..],
+            &["check", "--json", "--help"][..],
+            &["check", "--nonsense", "--help"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::CheckHelp),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_install_provider_name_without_validating_it() {
+        for name in ["parakeet", "local", "bogus"] {
+            assert_eq!(
+                evaluate_args(&args(&["install-provider", name])),
+                Ok(Command::InstallProvider(InstallProviderOptions {
+                    name: name.to_owned(),
+                })),
+                "{name}"
+            );
+        }
+        for values in [
+            &["install-provider"][..],
+            &["install-provider", "parakeet", "extra"][..],
         ] {
             assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }
@@ -4981,11 +5583,11 @@ mod tests {
         );
         assert_eq!(
             evaluate_args(&args(&["supervisor", "--journal"])),
-            Err(UsageError)
+            Ok(Command::SupervisorUsage)
         );
         assert_eq!(
             evaluate_args(&args(&["supervisor", "--wat"])),
-            Err(UsageError)
+            Ok(Command::SupervisorUsage)
         );
     }
 
@@ -5031,7 +5633,62 @@ mod tests {
             &["supervisor", "nope-a-port"][..],
             &["supervisor", "--unknown"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::SupervisorUsage),
+                "{values:?}"
+            );
         }
+    }
+
+    #[test]
+    fn supervisor_lifecycle_parse_failures_return_redirect() {
+        for verb in [
+            "start",
+            "stop",
+            "restart",
+            "status",
+            "install",
+            "uninstall",
+            "logs",
+        ] {
+            assert_eq!(
+                evaluate_args(&args(&["supervisor", verb])),
+                Ok(Command::SupervisorLifecycleRedirect(verb)),
+                "{verb}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_schedule_arguments_before_execution() {
+        assert_eq!(
+            SCHEDULE_HELP,
+            "usage: journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule"])),
+            Ok(Command::Schedule(ScheduleOptions {
+                verbose: false,
+                debug: false,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule", "-v", "--debug"])),
+            Ok(Command::Schedule(ScheduleOptions {
+                verbose: true,
+                debug: true,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule", "--help"])),
+            Ok(Command::ScheduleHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["schedule", "--nonsense"])),
+            Ok(Command::ScheduleUsage(ScheduleUsageError(
+                "unrecognized arguments: --nonsense".to_owned()
+            )))
+        );
     }
 }

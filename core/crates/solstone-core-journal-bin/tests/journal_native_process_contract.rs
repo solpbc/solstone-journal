@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -20,7 +20,7 @@ mod production_processes;
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
-printf '%s\n' "$0" > "$POISON_MARKER"
+printf '%s:%s\n' "${POISON_ROUTE:-reached}" "${0##*/}" >> "$POISON_MARKER"
 exit 97
 "#;
 const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
@@ -33,113 +33,154 @@ struct Probe {
     token: &'static str,
     argv: &'static [&'static str],
     expected_exit: i32,
+    stderr_anchor: Option<&'static [u8]>,
 }
+
+const SUPERVISOR_USAGE_ANCHOR: &[u8] =
+    b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 
 const PROBES: &[Probe] = &[
     Probe {
         token: "depict",
         argv: &[],
         expected_exit: 1,
+        stderr_anchor: None,
     },
     Probe {
         token: "spl",
         argv: &["--nope"],
         expected_exit: 64,
+        stderr_anchor: None,
     },
-    // NO PROBE FOR supervisor OR start, DELIBERATELY, AND THIS RED IS CORRECT.
+    Probe {
+        token: "schedule",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: None,
+    },
+    // supervisor and start were deliberately unprobed until a verb-level usage
+    // path existed for them. 1d1523b4b added both tokens to NATIVE_PROCESS_SPECS
+    // without probes; registering them at exit 64 would have made this contract
+    // green while making it check less, because 64 is the same code the binary
+    // emits for a verb it does not have at all -- a row expecting it certifies
+    // the token on a code that would survive deleting supervisor from the
+    // sibling entirely. parse_supervisor now has a verb-level usage path, so
+    // both tokens exit 2 with supervisor's own usage and are registered against
+    // that, with a stderr anchor. The red is resolved by proof, not by relaxing
+    // the guard. `spl` still carries the same defect -- its row above expects
+    // 64 -- and that fix is scoped separately.
     //
-    // 1d1523b4b added both tokens to NATIVE_PROCESS_SPECS without probes, so
-    // this contract is red. Registering them at exit 64 makes it green and
-    // makes it check less. Measured in a replica of this harness:
+    // `supervisor` and `start` share one native invocation shape by design:
+    // `native_process_args` prefixes both with `SUPERVISOR_SERVICE = ["supervisor"]`
+    // and drops the dispatcher token. Consequently `journal start --help` is required
+    // to identify itself as `usage: journal supervisor`; the sibling cannot recover the
+    // original `start` spelling. The dedicated help assertion records that prog ceiling.
     //
-    //   journal grab       --nonsense -> 2,  "usage: journal grab [-h] ..."
-    //   journal export     --nonsense -> 2,  "usage: journal export [-h] ..."
-    //   journal identity   --nonsense -> 2,  "usage: journal identity [-h] ..."
-    //   journal supervisor --nonsense -> 64, top-level "Usage:"
-    //   journal start      --nonsense -> 64, top-level "Usage:"
-    //   journal spl        --nope     -> 64, top-level "Usage:"
-    //   solstone-core bogus-verb --nonsense -> 64, top-level "Usage:"
-    //
-    // parse_supervisor and parse_spl have no verb-level usage variant, so every
-    // bad argv for those verbs falls through to the top-level arm -- the SAME
-    // arm that answers a verb the sibling does not have at all. A row expecting
-    // 64 therefore certifies the token on a code the binary would still emit
-    // with supervisor deleted from the sibling entirely. That is the exact
-    // failure class this guard exists to catch, reproduced inside the guard.
-    //
-    // The fix is to give parse_supervisor and parse_spl a verb-level usage path
-    // so a bad argv exits 2, then register against that. It is scoped and
-    // scope-checked as Lane Z's Z6-pre, which also covers spl -- whose existing
-    // row carries this same defect today. Leave this red for it.
+    // Both historical census rows are Service rows, so `dispatch_process` applies the
+    // installation coherence guard before selecting the native sibling. This contract
+    // assumes Harness::new provides a coherent installation; a guard failure is a launch
+    // failure and is not evidence about supervisor/start argument parsing.
+    Probe {
+        token: "supervisor",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(SUPERVISOR_USAGE_ANCHOR),
+    },
+    Probe {
+        token: "start",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(SUPERVISOR_USAGE_ANCHOR),
+    },
     Probe {
         token: "grab",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
+    },
+    Probe {
+        token: "contract",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "transfer",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "export",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "transcribe",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "observer",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "facet-candidates",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "navigate",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "identity",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "settings",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "streams",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "segment",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "journal-stats",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "reprocess",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
     Probe {
         token: "backfill-processing-records",
         argv: &["--nonsense"],
         expected_exit: 2,
+        stderr_anchor: None,
     },
 ];
 
@@ -158,6 +199,11 @@ enum Verdict {
         token: &'static str,
         expected: i32,
         actual: Option<i32>,
+    },
+    StderrAnchorMismatch {
+        token: &'static str,
+        expected: &'static [u8],
+        actual: Vec<u8>,
     },
     TimedOut {
         token: &'static str,
@@ -210,6 +256,7 @@ struct Harness {
     home: PathBuf,
     journal: PathBuf,
     poison_marker: PathBuf,
+    probe_stderr: PathBuf,
 }
 
 struct VerdictContext<'a> {
@@ -221,6 +268,7 @@ struct VerdictContext<'a> {
     home: &'a Path,
     journal: &'a Path,
     poison_marker: &'a Path,
+    probe_stderr: &'a Path,
 }
 
 impl Harness {
@@ -251,6 +299,7 @@ impl Harness {
         let home = temp.path.join("home");
         let journal = temp.path.join("journal");
         let poison_marker = temp.path.join("python-invoked.txt");
+        let probe_stderr = temp.path.join("probe-stderr.txt");
         Self {
             _temp: temp,
             dispatcher,
@@ -260,6 +309,7 @@ impl Harness {
             home,
             journal,
             poison_marker,
+            probe_stderr,
         }
     }
 
@@ -272,6 +322,7 @@ impl Harness {
             home: &self.home,
             journal: &self.journal,
             poison_marker: &self.poison_marker,
+            probe_stderr: &self.probe_stderr,
         }
     }
 }
@@ -371,6 +422,7 @@ fn run_dispatcher(
     argv: &[&str],
 ) -> io::Result<Option<ExitStatus>> {
     let _ = fs::remove_file(context.poison_marker);
+    let _ = fs::remove_file(context.probe_stderr);
     // PATH is pinned to the poisoned sibling directory, and that is an ADDITION
     // to the sibling poison rather than a substitute for it. The two poisons are
     // not interchangeable and must both hold:
@@ -390,6 +442,7 @@ fn run_dispatcher(
     // PATH at it closes that second route with the shims already present. The
     // dispatcher finds its sibling binary through current_exe(), not PATH, so
     // narrowing PATH does not affect the route under test.
+    let stderr = fs::File::create(context.probe_stderr)?;
     let mut child = Command::new(context.dispatcher)
         .arg(token)
         .args(argv)
@@ -398,7 +451,7 @@ fn run_dispatcher(
         .env("SOLSTONE_JOURNAL", context.journal)
         .env("PATH", context.sibling_dir)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr))
         .spawn()?;
     wait_for_child(&mut child, Instant::now() + PROBE_TIMEOUT)
 }
@@ -418,6 +471,40 @@ fn run_dispatcher_with_output(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
+}
+
+fn prove_poison_interpreters_live(context: &VerdictContext<'_>) {
+    let _ = fs::remove_file(context.poison_marker);
+    for name in ["python", "python3", "pytest", "uv", "ruff"] {
+        let sibling = Command::new(context.sibling_dir.join(name))
+            .env("POISON_MARKER", context.poison_marker)
+            .env("POISON_ROUTE", "sibling")
+            .status()
+            .expect("execute sibling poison shim");
+        assert_eq!(sibling.code(), Some(97), "{name}: sibling poison exit");
+
+        let path = Command::new(name)
+            .env("PATH", context.sibling_dir)
+            .env("POISON_MARKER", context.poison_marker)
+            .env("POISON_ROUTE", "path")
+            .status()
+            .expect("execute PATH poison shim");
+        assert_eq!(path.code(), Some(97), "{name}: PATH poison exit");
+    }
+    let observed = fs::read_to_string(context.poison_marker).expect("poison liveness record");
+    let expected = ["sibling", "path"]
+        .into_iter()
+        .flat_map(|route| {
+            ["python", "python3", "pytest", "uv", "ruff"]
+                .into_iter()
+                .map(move |name| format!("{route}:{name}"))
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        observed.lines().map(str::to_owned).collect::<BTreeSet<_>>(),
+        expected
+    );
+    fs::remove_file(context.poison_marker).expect("clear poison liveness record");
 }
 
 fn reference_block(name: &str) -> &str {
@@ -494,6 +581,24 @@ fn verdict_for(
             actual,
         };
     }
+    if let Some(anchor) = probe.stderr_anchor {
+        let actual = match fs::read(context.probe_stderr) {
+            Ok(stderr) => stderr,
+            Err(error) => {
+                return Verdict::LaunchFailure {
+                    token: spec.token,
+                    error: format!("read captured probe stderr: {error}"),
+                };
+            }
+        };
+        if !actual.starts_with(anchor) {
+            return Verdict::StderrAnchorMismatch {
+                token: spec.token,
+                expected: anchor,
+                actual,
+            };
+        }
+    }
     Verdict::Pass
 }
 
@@ -501,6 +606,7 @@ fn verdict_for(
 fn native_process_dispatch_and_poison_liveness_contract() {
     let harness = Harness::new();
     let context = harness.context();
+    prove_poison_interpreters_live(&context);
     let mut checked = BTreeSet::new();
     let verdicts = NATIVE_PROCESS_SPECS
         .iter()
@@ -558,6 +664,126 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         context.poison_marker.exists(),
         "{token}: poison-liveness expected the poisoned interpreter marker"
     );
+}
+
+#[test]
+fn native_schedule_dispatch_reaches_the_real_read_only_body() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal.join("config")).expect("schedule config directory");
+    fs::create_dir_all(context.journal.join("health")).expect("schedule health directory");
+    fs::write(
+        context.journal.join("config/journal.json"),
+        br#"{"setup":{"completed_at":1}}"#,
+    )
+    .expect("journal config");
+    fs::write(
+        context.journal.join("config/schedules.json"),
+        br#"{"daily_time":"03:17","alpha:daily":{"cmd":["journal","heartbeat"],"every":"daily"},"beta:minute":{"cmd":"journal think --cadence","every":"1m"},"omega:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
+    )
+    .expect("schedules config");
+    fs::write(
+        context.journal.join("health/scheduler.json"),
+        br#"{"alpha:daily":{"last_run":0},"beta:minute":{"last_run":0}}"#,
+    )
+    .expect("scheduler state");
+    let before = snapshot_tree(context.journal);
+
+    for argv in [Vec::<&str>::new(), vec!["-v", "-d"]] {
+        let output = run_dispatcher_with_output(&context, "schedule", &argv)
+            .expect("run native schedule through journal dispatcher");
+        assert_eq!(output.status.code(), Some(0));
+        assert!(output.stderr.is_empty());
+        let stdout = String::from_utf8(output.stdout).expect("schedule stdout");
+        assert!(stdout.contains("alpha:daily"));
+        assert!(stdout.contains("beta:minute"));
+        assert!(stdout.contains("5m"));
+        assert!(stdout.contains("omega:disabled"));
+        assert!(stdout.contains("disabled"));
+        assert!(
+            stdout.contains(
+                &context
+                    .journal
+                    .join("config/schedules.json")
+                    .display()
+                    .to_string()
+            )
+        );
+    }
+    let leading_verbose = Command::new(context.dispatcher)
+        .args(["-v", "schedule"])
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        .env("PATH", context.sibling_dir)
+        .output()
+        .expect("run leading verbose schedule");
+    assert_eq!(leading_verbose.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&leading_verbose.stdout).contains("alpha:daily"));
+
+    let invalid = run_dispatcher_with_output(&context, "schedule", &["--nonsense"])
+        .expect("run invalid native schedule through journal dispatcher");
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(invalid.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&invalid.stderr),
+        "usage: journal schedule [-h] [-v] [-d]\njournal schedule: error: unrecognized arguments: --nonsense\n"
+    );
+    assert_eq!(snapshot_tree(context.journal), before);
+    assert!(!context.poison_marker.exists());
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TreeEntry {
+    inode: u64,
+    mode: u32,
+    kind: &'static str,
+    content: Vec<u8>,
+}
+
+fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, TreeEntry> {
+    fn walk(root: &Path, path: &Path, entries: &mut BTreeMap<PathBuf, TreeEntry>) {
+        let metadata = fs::symlink_metadata(path).expect("snapshot metadata");
+        let relative = path.strip_prefix(root).expect("snapshot relative path");
+        let (kind, content) = if metadata.file_type().is_symlink() {
+            (
+                "symlink",
+                fs::read_link(path)
+                    .expect("snapshot symlink")
+                    .as_os_str()
+                    .as_encoded_bytes()
+                    .to_vec(),
+            )
+        } else if metadata.is_dir() {
+            ("directory", Vec::new())
+        } else {
+            ("file", fs::read(path).expect("snapshot file"))
+        };
+        entries.insert(
+            relative.to_path_buf(),
+            TreeEntry {
+                inode: metadata.ino(),
+                mode: metadata.permissions().mode(),
+                kind,
+                content,
+            },
+        );
+        if metadata.is_dir() {
+            let mut children = fs::read_dir(path)
+                .expect("snapshot directory")
+                .map(|entry| entry.expect("snapshot entry").path())
+                .collect::<Vec<_>>();
+            children.sort();
+            for child in children {
+                walk(root, &child, entries);
+            }
+        }
+    }
+
+    let mut entries = BTreeMap::new();
+    walk(root, root, &mut entries);
+    entries
 }
 
 #[test]
@@ -640,6 +866,7 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
         path: dispatcher.clone(),
     };
     let poison_marker = temp.path.join("poison-not-run");
+    let probe_stderr = temp.path.join("probe-stderr-not-run");
     let home = temp.path.join("home");
     let journal = temp.path.join("journal");
     let context = VerdictContext {
@@ -650,6 +877,7 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
         home: &home,
         journal: &journal,
         poison_marker: &poison_marker,
+        probe_stderr: &probe_stderr,
     };
     let synthetic = NativeProcessSpec {
         token: "synthetic-missing-native",
@@ -660,6 +888,7 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
         token: "synthetic-missing-native",
         argv: &[],
         expected_exit: 0,
+        stderr_anchor: None,
     };
     let mut checked = BTreeSet::new();
     let verdict = verdict_for(&synthetic, Some(&probe), &context, &mut checked);
@@ -679,6 +908,143 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
         checked.is_empty(),
         "synthetic-missing-native: missing sibling must not spawn a dispatcher"
     );
+}
+
+#[test]
+fn unregistered_native_probe_is_a_guard_verdict_without_a_spawn() {
+    // Coverage restoration, not fix verification: ProbeUnregistered returns from
+    // verdict_for's first statement, so checked-empty and marker-absent cannot
+    // fail today. They guard a future reordering that moves lookup below a spawn.
+    let temp = TempDir::new("unregistered-probe");
+    let dispatcher = temp.path.join("dispatcher-not-run");
+    let empty_artifacts = BTreeMap::new();
+    let dispatcher_artifact = Artifact {
+        path: dispatcher.clone(),
+    };
+    let poison_marker = temp.path.join("poison-not-run");
+    let probe_stderr = temp.path.join("probe-stderr-not-run");
+    let home = temp.path.join("home");
+    let journal = temp.path.join("journal");
+    let context = VerdictContext {
+        dispatcher: &dispatcher,
+        sibling_dir: &temp.path,
+        dispatcher_artifact: &dispatcher_artifact,
+        sibling_artifacts: &empty_artifacts,
+        home: &home,
+        journal: &journal,
+        poison_marker: &poison_marker,
+        probe_stderr: &probe_stderr,
+    };
+    let synthetic = NativeProcessSpec {
+        token: "synthetic-unregistered-native",
+        binary: "missing-native-helper",
+        preset_argv: &[],
+    };
+    let mut checked = BTreeSet::new();
+    let verdict = verdict_for(
+        &synthetic,
+        probe_for(synthetic.token),
+        &context,
+        &mut checked,
+    );
+
+    assert!(
+        probe_for("grab").is_some(),
+        "probe lookup seam must resolve real tokens"
+    );
+    assert!(
+        matches!(
+            verdict,
+            Verdict::ProbeUnregistered {
+                token: "synthetic-unregistered-native"
+            }
+        ),
+        "synthetic-unregistered-native: expected ProbeUnregistered, got {verdict:?}"
+    );
+    assert!(checked.is_empty());
+    assert!(!poison_marker.exists());
+}
+
+#[test]
+fn stderr_anchor_mismatch_is_a_guard_verdict() {
+    let temp = TempDir::new("stderr-anchor");
+    let sibling_dir = temp.path.join("bin");
+    fs::create_dir(&sibling_dir).expect("create sibling directory");
+    let dispatcher = temp.path.join("dispatcher");
+    fs::write(
+        &dispatcher,
+        "#!/bin/sh\nprintf 'wrong stderr\\n' >&2\nexit 2\n",
+    )
+    .expect("write dispatcher");
+    make_executable(&dispatcher);
+    let sibling = sibling_dir.join("synthetic-native");
+    fs::write(&sibling, "#!/bin/sh\nexit 0\n").expect("write sibling");
+    make_executable(&sibling);
+    let dispatcher_artifact = Artifact {
+        path: dispatcher.clone(),
+    };
+    let mut sibling_artifacts = BTreeMap::new();
+    sibling_artifacts.insert(
+        "synthetic-native",
+        Artifact {
+            path: sibling.clone(),
+        },
+    );
+    let poison_marker = temp.path.join("poison-not-run");
+    let probe_stderr = temp.path.join("probe-stderr");
+    let home = temp.path.join("home");
+    let journal = temp.path.join("journal");
+    let context = VerdictContext {
+        dispatcher: &dispatcher,
+        sibling_dir: &sibling_dir,
+        dispatcher_artifact: &dispatcher_artifact,
+        sibling_artifacts: &sibling_artifacts,
+        home: &home,
+        journal: &journal,
+        poison_marker: &poison_marker,
+        probe_stderr: &probe_stderr,
+    };
+    let synthetic = NativeProcessSpec {
+        token: "synthetic-stderr-anchor",
+        binary: "synthetic-native",
+        preset_argv: &[],
+    };
+    let probe = Probe {
+        token: "synthetic-stderr-anchor",
+        argv: &[],
+        expected_exit: 2,
+        stderr_anchor: Some(b"expected stderr\n"),
+    };
+    let mut checked = BTreeSet::new();
+    let verdict = verdict_for(&synthetic, Some(&probe), &context, &mut checked);
+
+    match verdict {
+        Verdict::StderrAnchorMismatch {
+            token,
+            expected,
+            actual,
+        } => {
+            assert_eq!(token, "synthetic-stderr-anchor");
+            assert_eq!(expected, b"expected stderr\n");
+            assert_eq!(actual, b"wrong stderr\n");
+        }
+        other => panic!("expected StderrAnchorMismatch, got {other:?}"),
+    }
+    assert_eq!(checked, BTreeSet::from(["synthetic-stderr-anchor"]));
+    assert!(!poison_marker.exists());
+}
+
+#[test]
+fn native_start_help_uses_supervisor_program_name() {
+    let harness = Harness::new();
+    let context = harness.context();
+    let output = run_dispatcher_with_output(&context, "start", &["--help"])
+        .expect("run start help through dispatcher");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stderr, b"");
+    assert!(output.stdout.starts_with(b"usage: journal supervisor"));
+    assert!(!context.poison_marker.exists());
 }
 
 #[test]

@@ -1,0 +1,48 @@
+{
+  "cases": {
+    "empty": {
+      "argv": [],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "No schedules configured.\n\nAdd schedules to: {journal}/config/schedules.json\n"
+    },
+    "help": {
+      "argv": [
+        "--help"
+      ],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "usage: journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+    },
+    "invalid_daily_time": {
+      "argv": [],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "  NAME                     EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-with-invalid-time  daily     2026-03-22 04:00    midnight    journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
+    },
+    "midnight": {
+      "argv": [],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "  NAME               EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-at-midnight  daily     2026-03-22 01:00    midnight    journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
+    },
+    "simple_table": {
+      "argv": [],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "  NAME        EVERY     LAST RUN            NEXT DUE    CMD\n\n  a:daily     daily     never               now         journal heartbeat\n  minute      5m        never               now         journal think --cadence\n  z:disabled  hourly    never               disabled    journal noop [disabled]\n\nConfig: {journal}/config/schedules.json\n"
+    },
+    "table": {
+      "argv": [],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "  NAME                            EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-with-configured-time      daily     2026-03-22 04:00    03:00       journal heartbeat\n  sub-floor-minute                5m        2026-03-22 10:27    10:32       journal think --cadence\n  unsupported-interval            fortnightly  never               ?           journal check\n  very-long-schedule-name:hourly  hourly    2026-03-22 10:15    11:00       journal think\n  weekly-status                   weekly    2026-03-16 09:00    Monday 08:15  journal maintenance\n  z:disabled                      hourly    never               disabled    journal noop [disabled]\n\nConfig: {journal}/config/schedules.json\n"
+    }
+  },
+  "provenance": {
+    "captured_from_rev": "3d2e593bd6ed349692e2ed5779f61a8b00408806",
+    "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port.",
+    "interpreter": "/home/jer/.hopper/worktrees/rfgkwqoa/.venv/bin/python"
+  },
+  "schema": "schedule-reference-output/1"
+}

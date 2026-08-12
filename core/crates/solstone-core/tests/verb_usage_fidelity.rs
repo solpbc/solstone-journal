@@ -15,6 +15,10 @@
 
 use std::process::Command;
 
+use solstone_core_cli::{
+    CHECK_HELP, CHECK_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE,
+};
 use tempfile::tempdir;
 
 /// Every one of these is rejected by the reference with exit 2.
@@ -26,6 +30,24 @@ const MALFORMED: &[&[&str]] = &[
     // and `--execute` is the write opt-in. The reference rejects it too.
     &["observer", "prune", "--all", "--dry-run"],
 ];
+
+fn run_core(args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(args)
+        .output()
+        .expect("run solstone-core")
+}
+
+fn expected_usage_error(usage: &str, command: &str) -> String {
+    format!("{usage}{command}: error: invalid arguments\n")
+}
+
+fn assert_help(args: &[&str], expected: &str) {
+    let output = run_core(args);
+    assert_eq!(output.status.code(), Some(0), "{args:?}");
+    assert_eq!(output.stderr, b"", "{args:?}");
+    assert_eq!(output.stdout, expected.as_bytes(), "{args:?}");
+}
 
 #[test]
 fn malformed_observer_invocations_exit_2_with_the_journal_observer_usage() {
@@ -117,6 +139,103 @@ fn prune_help_is_prunes_own_help() {
         stdout.contains("Exit codes: 0 clean, 2 refusals present, 1 usage/error."),
         "prune help lost its documented exit contract; got:\n{stdout}"
     );
+}
+
+#[test]
+fn malformed_supervisor_invocation_exits_2_with_its_own_usage() {
+    let output = run_core(&["supervisor", "--nonsense"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_usage_error(SUPERVISOR_USAGE, "journal supervisor")
+    );
+}
+
+#[test]
+fn supervisor_help_is_byte_identical_for_both_spellings() {
+    for args in [
+        ["supervisor", "--help"].as_slice(),
+        ["supervisor", "-h"].as_slice(),
+    ] {
+        assert_help(args, SUPERVISOR_HELP);
+    }
+}
+
+#[test]
+fn supervisor_lifecycle_redirects_after_parse_failure() {
+    for verb in [
+        "start",
+        "stop",
+        "restart",
+        "status",
+        "install",
+        "uninstall",
+        "logs",
+    ] {
+        let output = run_core(&["supervisor", verb]);
+        assert_eq!(output.status.code(), Some(2), "{verb}");
+        assert_eq!(output.stdout, b"", "{verb}");
+        assert_eq!(
+            String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+            format!(
+                "journal supervisor is the server-launch command (takes a port). \
+                 For lifecycle, use: journal service <verb>. Did you mean: journal service {verb} ?\n"
+            ),
+            "{verb}"
+        );
+    }
+
+    let output = run_core(&["supervisor", "--wat"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_usage_error(SUPERVISOR_USAGE, "journal supervisor")
+    );
+}
+
+#[test]
+fn malformed_check_invocation_exits_2_with_its_own_usage() {
+    let output = run_core(&["check", "--nonsense"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_usage_error(CHECK_USAGE, "journal check")
+    );
+}
+
+#[test]
+fn check_help_is_byte_identical_for_both_spellings() {
+    for args in [
+        ["check", "--help"].as_slice(),
+        ["check", "-h"].as_slice(),
+        ["check", "--json", "--help"].as_slice(),
+    ] {
+        assert_help(args, CHECK_HELP);
+    }
+}
+
+#[test]
+fn malformed_install_models_invocation_exits_2_with_its_own_usage() {
+    let output = run_core(&["install-models", "--nonsense"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_usage_error(INSTALL_MODELS_USAGE, "journal install-models")
+    );
+}
+
+#[test]
+fn install_models_help_is_byte_identical_for_both_spellings() {
+    for args in [
+        ["install-models", "--help"].as_slice(),
+        ["install-models", "-h"].as_slice(),
+    ] {
+        assert_help(args, INSTALL_MODELS_HELP);
+    }
 }
 
 // --- transfer -------------------------------------------------------------

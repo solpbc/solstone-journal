@@ -161,7 +161,7 @@ pub(crate) fn current_marks(
     )
 }
 
-fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
     let (hour, minute) = raw.split_once(':')?;
     if minute.contains(':') {
         return None;
@@ -171,7 +171,7 @@ fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
     (hour <= 23 && minute <= 59).then_some((hour, minute))
 }
 
-fn local_from_epoch(value: f64) -> Option<NaiveDateTime> {
+pub(crate) fn local_from_epoch(value: f64) -> Option<NaiveDateTime> {
     if !value.is_finite() || value < i64::MIN as f64 || value > i64::MAX as f64 {
         return None;
     }

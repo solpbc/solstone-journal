@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -187,13 +188,30 @@ class TestPackagedInstall:
         monkeypatch.setattr(
             doctor,
             "distribution",
-            lambda name: SimpleNamespace(metadata={"Requires-Python": ">=3.11"}),
+            lambda name: SimpleNamespace(metadata={"Requires-Python": ">=3.12"}),
         )
 
         result = doctor.python_sanity_check(args(doctor))
 
         assert result.status == "ok"
-        assert ">=3.11" in result.detail
+        assert ">=3.12" in result.detail
+
+    def test_python_version_fallback_rejects_python_311(
+        self, doctor, monkeypatch, tmp_path
+    ):
+        self.setup_packaged(doctor, monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            doctor,
+            "distribution",
+            Mock(side_effect=doctor.PackageNotFoundError),
+        )
+        monkeypatch.setattr(doctor.sys, "version_info", (3, 11, 9))
+
+        result = doctor.python_sanity_check(args(doctor))
+
+        assert result.status == "fail"
+        assert result.detail == "python 3.11.9 does not satisfy >=3.12"
+        assert result.fix == doctor.PYTHON_VERSION_FIX
 
     def test_sol_importable_uses_in_process_import(self, doctor, monkeypatch, tmp_path):
         self.setup_packaged(doctor, monkeypatch, tmp_path)
@@ -1663,6 +1681,7 @@ class TestJsonAndExitCodes:
         assert payload["checks"][0]["status"] == "warn"
         assert payload["checks"][0]["execution_error"] is None
 
+
 def test_doctor_import_does_not_pull_numpy_or_observe_layers():
     snippet = (
         "import sys\n"
@@ -1692,6 +1711,7 @@ def test_doctor_import_does_not_pull_numpy_or_observe_layers():
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "LEAKED" not in result.stdout
+
 
 def test_readiness_battery_does_not_import_inference_or_installer_layers():
     # Proves doctor's readiness battery does not import inference/installer layers.

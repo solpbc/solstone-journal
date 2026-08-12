@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -91,6 +91,8 @@ SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility ma
 # the GLIBC_2.27 floor and the same zig-GNU cross args.
 VAD_ANALYZE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
+PDF_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
+PDF_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Host link inputs for the ONNX-bundling helpers. There is exactly ONE staged
 # runtime directory per target — scripts/stage_speakers_analyze_runtime.py owns
 # the pinned URL/digest table — and the VAD targets reuse it rather than
@@ -100,6 +102,9 @@ ONNX_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
 ONNX_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/speakers-analyze-runtime-link/$(ONNX_RUNTIME_HOST_TARGET)
 VAD_ANALYZE_HOST_ORT_ENV := ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)" LD_LIBRARY_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"
 REQUIRE_ONNX_HOST_RUNTIME = test -f "$(ONNX_RUNTIME_HOST_LINK_DIR)/libonnxruntime.so.1" || { echo "the pinned host ONNX Runtime is required to build and test the shipped analysis helpers; run 'make check-rust-onnx-stage' once outside make ci, then retry" >&2; exit 1; }
+PDF_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
+PDF_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/pdfium-runtime-link/$(PDF_RUNTIME_HOST_TARGET)
+REQUIRE_PDF_HOST_RUNTIME = test -f "$(PDF_RUNTIME_HOST_LINK_DIR)/libpdfium.so" || { echo "the pinned host PDFium runtime is required to test solstone-core-pdf; run 'make check-rust-pdf-stage' once outside make ci, then retry" >&2; exit 1; }
 DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Derived, never written out: the helper's declared coverage lives in
@@ -283,6 +288,18 @@ wheel-vad-analyze-linux-aarch64:
 	rm -f dist/solstone_core_vad_analyze-*.whl
 	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-aarch64" MATURIN_PEP517_ARGS="$(VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vad-analyze --wheel
 
+wheel-pdf-linux: wheel-pdf-linux-x86_64
+
+wheel-pdf-linux-x86_64:
+	python3 scripts/stage_pdfium_runtime.py --target linux-x86_64 --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/linux-x86_64.json
+	rm -f dist/solstone_core_pdf-*.whl
+	MATURIN_PEP517_ARGS="$(PDF_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-pdf --wheel
+
+wheel-pdf-linux-aarch64:
+	python3 scripts/stage_pdfium_runtime.py --target linux-aarch64 --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/linux-aarch64.json
+	rm -f dist/solstone_core_pdf-*.whl
+	MATURIN_PEP517_ARGS="$(PDF_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-pdf --wheel
+
 wheel-vulkan-probe-linux: wheel-vulkan-probe-linux-x86_64
 
 wheel-vulkan-probe-linux-x86_64:
@@ -306,6 +323,15 @@ $(ONNX_RUNTIME_HOST_LINK_DIR):
 check-rust-onnx-stage: $(ONNX_RUNTIME_HOST_LINK_DIR)
 	@echo "host ONNX Runtime staged at $(ONNX_RUNTIME_HOST_LINK_DIR)"
 
+# Staging PDFium also shells to Python and verifies a GitHub attestation, so it
+# stays OUTSIDE ci/ci-under-poison. The runtime-loaded crate itself remains in
+# ordinary host Cargo selection; only its real binary tests require this stage.
+$(PDF_RUNTIME_HOST_LINK_DIR):
+	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
+
+check-rust-pdf-stage: $(PDF_RUNTIME_HOST_LINK_DIR)
+	@echo "host PDFium runtime staged at $(PDF_RUNTIME_HOST_LINK_DIR)"
+
 # The ONNX-linked crates' own #[test]s. This runs INSIDE ci: it requires the
 # staged runtime rather than building it, which is exactly the contract
 # check-rust-shipped-binaries has carried since it started building the shipped
@@ -320,6 +346,16 @@ check-rust-onnx-test:
 	fi; \
 	$(REQUIRE_ONNX_HOST_RUNTIME); \
 	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path $(RUST_MANIFEST) $(ONNX_HOST_TEST_PACKAGES) --locked -- --test-threads=1
+
+check-rust-pdf-test:
+	@$(REQUIRE_CARGO)
+	@set -eu; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "PDFium crate tests: not run on $$(uname -s); this helper ships on Linux in W4a"; \
+		exit 0; \
+	fi; \
+	$(REQUIRE_PDF_HOST_RUNTIME); \
+	SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/libpdfium.so" cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-pdf --locked -- --test-threads=1
 
 # Retained name: check-rust-shipped-binaries' recovery message named it for
 # months and it is in muscle memory. It now stages AND runs all three crates.
@@ -428,7 +464,7 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
-		"-p solstone-core-local --test admission_cross_process --test vulkan_differential -- --nocapture" \
+		"-p solstone-core-local --test admission_cross_process --test vulkan_differential --test install_provider_differential -- --nocapture" \
 		"-p solstone-core-observer --test observer_list_json_differential --test observer_status_differential --test observer_list_human_differential --test observer_reconcile_dry_run_differential --test observer_increment_stat_differential --test observer_resolve_identity_differential --test observer_prune_dry_run_differential" \
 		"-p solstone-core-system --test stt_backend_choice_differential --test partition_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
@@ -475,6 +511,7 @@ check-rust-shipped-binaries: build
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-retention-cli --bin solstone-retention --locked -- --help >/dev/null
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-sol-bin --bin solstone-core-sol --locked -- --version >/dev/null
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --bin solstone-core-describe --locked -- --version >/dev/null
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core-pdf --bin solstone-core-pdf --locked -- --version >/dev/null
 	@set -eu; \
 	if [ "$$(uname -s)" != "Linux" ]; then \
 		echo "Vulkan-probe smoke: not run on $$(uname -s); this wheel ships on Linux"; \
@@ -967,6 +1004,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-test
 	@$(MAKE) check-rust-onnx-test
+	@$(MAKE) check-rust-pdf-test
 	@$(MAKE) check-rust-shipped-binaries
 	@$(MAKE) check-rust-ios
 	@$(MAKE) check-rust-macos
@@ -1229,11 +1267,21 @@ check-removed-time-parser-ready:
 	python3 scripts/check_removed_time_parser_ready.py
 
 contract:
-	$(VENV_BIN)/python -m solstone.think.contract_cli build
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build
 
-check-contract: .installed
-	$(VENV_BIN)/python -m solstone.think.contract_cli check
-	$(VENV_BIN)/python -m solstone.think.contract_cli build --check
+# No .installed: both recipes are cargo-only now that the verb is native, and
+# the prerequisite was the last thing dragging a Python venv bootstrap into a
+# target that needs no interpreter. check-contract-parity keeps it -- that one
+# really does run the reference.
+check-contract:
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract check
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --check
+
+check-contract-parity: .installed
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; cp -R solstone "$$scratch/solstone"; \
+	$(VENV_BIN)/python -c 'from pathlib import Path; import sys; from solstone.think.contract.journal import build_bundle, render_bundle_json; print(render_bundle_json(build_bundle(Path(sys.argv[1]))), end="")' "$$scratch" > "$$scratch/python.json"; \
+	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --root "$$scratch" >/dev/null; \
+	cmp "$$scratch/python.json" "$$scratch/solstone/talent/journal/contract/bundle.json"
 
 core-fixtures:
 	$(VENV_BIN)/python scripts/build_core_fixtures.py

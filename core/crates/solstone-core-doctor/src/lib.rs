@@ -3,6 +3,7 @@
 pub mod args;
 pub mod checks;
 pub mod context;
+pub mod features;
 pub mod output;
 pub mod registry;
 pub mod vocabulary;
@@ -31,6 +32,9 @@ pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> 
     apply_conflict_policy(&mut results);
     results
 }
+
+#[cfg(test)]
+mod w3c_tests;
 fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResult> {
     if !entry.check.platforms.contains(&context.platform) {
         let mut r = make_result(
@@ -94,13 +98,20 @@ fn apply_conflict_policy(results: &mut [CheckResult]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use std::{
         fs,
+        os::unix::fs::{PermissionsExt, symlink},
+        process::Command,
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
 
     static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
+    const POISON_INTERPRETER: &str = r#"#!/bin/sh
+printf '%s\n' "$0" > "$POISON_MARKER"
+exit 97
+"#;
 
     fn context() -> CheckContext {
         let root = std::env::temp_dir().join(format!(
@@ -111,12 +122,21 @@ mod tests {
         let _ = fs::create_dir_all(&root);
         CheckContext {
             home_dir: root.join("home"),
+            install_bin_dir: root.join("install/bin"),
             journal_path: root.join("journal"),
             callosum_socket_path: root.join("journal/health/callosum.sock"),
             platform: Platform::Linux,
+            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            host_arch: "x86_64".into(),
+            hostname: "test-host".into(),
+            machine_id: Some("test-machine".into()),
+            checkout_root: None,
+            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
         }
     }
     #[test]
@@ -141,7 +161,7 @@ mod tests {
                         .is_some()
                 })
                 .count(),
-            26
+            0
         )
     }
     #[test]
@@ -196,7 +216,7 @@ mod tests {
             },
             &context(),
         );
-        assert!(results_failed(&[r.clone()]));
+        assert!(results_failed(std::slice::from_ref(&r)));
         assert_eq!(status_label(&r), "ERROR");
     }
     #[test]
@@ -865,5 +885,162 @@ mod tests {
             Some("run journal service restart; if it persists, run journal service logs")
         );
         assert!(r.execution_error.is_none());
+    }
+
+    #[test]
+    fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
+        if let Some(root) = std::env::var_os("SOLSTONE_DOCTOR_AC9_ROOT") {
+            run_ac9_child(std::path::PathBuf::from(root));
+            return;
+        }
+
+        let staged = checks::test_support::context();
+        let root = staged
+            .install_bin_dir
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("staged root")
+            .to_path_buf();
+        let poison_dir = root.join("poison");
+        let marker = root.join("poison-marker");
+        fs::create_dir_all(&poison_dir).expect("create poison directory");
+        for name in ["python", "python3", "pip", "uv"] {
+            let shim = poison_dir.join(name);
+            fs::write(&shim, POISON_INTERPRETER).expect("write poison PATH shim");
+            fs::set_permissions(&shim, fs::Permissions::from_mode(0o755))
+                .expect("make poison PATH shim executable");
+        }
+        stage_ac9_batteries(&staged.context);
+
+        let output = Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "tests::ac9_full_batteries_never_invoke_poisoned_interpreters",
+            ])
+            .env("SOLSTONE_DOCTOR_AC9_ROOT", &root)
+            .env("POISON_MARKER", &marker)
+            .env("PATH", &poison_dir)
+            .output()
+            .expect("run isolated poison-interpreter child");
+        assert!(
+            output.status.success(),
+            "child test failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !marker.exists(),
+            "native doctor invoked a poison interpreter: {}",
+            fs::read_to_string(&marker).unwrap_or_default()
+        );
+    }
+
+    fn run_ac9_child(root: std::path::PathBuf) {
+        let context = CheckContext {
+            home_dir: root.join("home"),
+            install_bin_dir: root.join("install/bin"),
+            journal_path: root.join("journal"),
+            callosum_socket_path: root.join("journal/health/callosum.sock"),
+            platform: Platform::Linux,
+            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            host_arch: "x86_64".into(),
+            hostname: "test-host".into(),
+            machine_id: Some("test-machine".into()),
+            checkout_root: None,
+            python_env_root: None,
+            port: 5015,
+            service_status_timeout: Duration::from_millis(10),
+            service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
+        };
+        for readiness in [false, true] {
+            let results = run(
+                &args::DoctorArgs {
+                    verbose: false,
+                    json: false,
+                    jsonl: false,
+                    port: 5015,
+                    feature: None,
+                    readiness,
+                },
+                &context,
+            );
+            assert_eq!(
+                results.len(),
+                registry::entries(if readiness {
+                    Battery::JournalReadiness
+                } else {
+                    Battery::Journal
+                })
+                .len(),
+                "entire battery must run"
+            );
+            assert!(
+                results
+                    .iter()
+                    .all(|result| result.execution_error.is_none()),
+                "a check failed before the battery completed: {results:?}"
+            );
+        }
+    }
+
+    fn stage_ac9_batteries(context: &CheckContext) {
+        fs::create_dir_all(&context.home_dir).expect("create staged home");
+        fs::create_dir_all(&context.journal_path).expect("create staged journal");
+        fs::create_dir_all(&context.install_bin_dir).expect("create staged install bin");
+        let site_packages = checks::test_support::site_packages(context, "python3.12");
+        checks::test_support::metadata(
+            &site_packages,
+            "solstone-1.2.3.dist-info",
+            "solstone",
+            "1.2.3",
+            Some(">=3.12"),
+        );
+        checks::test_support::metadata(
+            &site_packages,
+            "solstone_journal-1.2.3.dist-info",
+            "solstone-journal",
+            "1.2.3",
+            None,
+        );
+        for module in ["frontmatter", "flask", "onnxruntime"] {
+            fs::create_dir(site_packages.join(module)).expect("create host dependency module");
+        }
+        fs::write(
+            context
+                .install_bin_dir
+                .parent()
+                .expect("install prefix")
+                .join("pyvenv.cfg"),
+            "version = 3.12.0\n",
+        )
+        .expect("write staged pyvenv config");
+        for binary in ["sol", "journal", "python"] {
+            let path = context.install_bin_dir.join(binary);
+            fs::write(&path, POISON_INTERPRETER).expect("write staged executable");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .expect("make staged executable");
+        }
+        let aliases = context.home_dir.join(".local/bin");
+        fs::create_dir_all(&aliases).expect("create staged aliases");
+        symlink(context.install_bin_dir.join("sol"), aliases.join("sol")).expect("link staged sol");
+        symlink(
+            context.install_bin_dir.join("journal"),
+            aliases.join("journal"),
+        )
+        .expect("link staged journal");
+        let unit = context
+            .home_dir
+            .join(".config/systemd/user/solstone.service");
+        fs::create_dir_all(unit.parent().expect("unit parent")).expect("create unit parent");
+        fs::write(
+            unit,
+            format!(
+                "ExecStart={} start 5015\n",
+                context.install_bin_dir.join("journal").display()
+            ),
+        )
+        .expect("write staged service unit");
     }
 }

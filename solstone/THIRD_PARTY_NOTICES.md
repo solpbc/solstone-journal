@@ -280,3 +280,24 @@ redistribution remain subject to the NVIDIA CUDA Toolkit EULA. A verbatim
 copy of the package-accompanying EULA, including its third-party notices,
 is reproduced in `licenses/NVIDIA-CUDA-EULA-13.3.txt` and accompanies each
 runtime artifact. NVIDIA does not sponsor or endorse solstone.
+
+## runtime-downloaded provider artifacts (llama.cpp Vulkan/CPU)
+
+These artifacts are downloaded on demand into the journal provider cache for
+solstone's local inference runtime on supported macOS and Linux systems. They
+are distributed as application components, not as stand-alone runtime
+distributions.
+
+### llama.cpp Vulkan/CPU runtime
+
+Files: `llama-server`, extracted from
+`llama-b10068-bin-macos-arm64.tar.gz`,
+`llama-b10068-bin-ubuntu-vulkan-arm64.tar.gz`, and
+`llama-b10068-bin-ubuntu-vulkan-x64.tar.gz`.
+
+Source: https://github.com/ggml-org/llama.cpp
+
+License: MIT License.
+
+The complete llama.cpp MIT license and copyright notice is reproduced in
+`licenses/llama.cpp-LICENSE.txt` and accompanies each runtime artifact.

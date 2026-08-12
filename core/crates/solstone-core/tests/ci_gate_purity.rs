@@ -210,10 +210,13 @@ fn make_ci_never_executes_forbidden_interpreters() {
     let sentinel = temp.path.join("sentinel.log");
     let cargo_log = temp.path.join("cargo.log");
     let onnx_link_dir = temp.path.join("onnx-link");
+    let pdf_link_dir = temp.path.join("pdfium-link");
     fs::create_dir(&shim_dir).expect("create shim directory");
     fs::create_dir_all(&venv_bin).expect("create poison virtualenv bin directory");
     fs::create_dir(&onnx_link_dir).expect("create fake ONNX link directory");
+    fs::create_dir(&pdf_link_dir).expect("create fake PDFium link directory");
     fs::write(onnx_link_dir.join("libonnxruntime.so.1"), []).expect("write fake ONNX runtime");
+    fs::write(pdf_link_dir.join("libpdfium.so"), []).expect("write fake PDFium runtime");
     for name in ["python", "python3", "pytest", "ruff", "uv"] {
         write_forbidden_shim(&shim_dir.join(name));
         write_forbidden_shim(&venv_bin.join(name));
@@ -235,6 +238,10 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .arg(format!(
             "ONNX_RUNTIME_HOST_LINK_DIR={}",
             onnx_link_dir.display()
+        ))
+        .arg(format!(
+            "PDF_RUNTIME_HOST_LINK_DIR={}",
+            pdf_link_dir.display()
         ))
         .current_dir(root)
         .env("PATH", path)
@@ -271,9 +278,10 @@ fn make_ci_never_executes_forbidden_interpreters() {
     // target prints why it did not run and exits 0.
     if cfg!(target_os = "linux") {
         expected.push("test");
+        expected.push("test");
     }
     expected.push("build");
-    expected.extend(["run"; if cfg!(target_os = "linux") { 9 } else { 6 }]);
+    expected.extend(["run"; if cfg!(target_os = "linux") { 10 } else { 7 }]);
     if cfg!(target_os = "macos") {
         expected.push("check");
     }

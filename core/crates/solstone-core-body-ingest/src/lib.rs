@@ -12,6 +12,7 @@ mod oura_connect;
 mod oura_sync;
 
 pub use apple::{AppleImportOptions, detect_apple_source, preview_apple, save_apple};
+pub use approval::{OURA_CHECKLIST, OURA_PATH, oura_approval};
 pub use bundle::{BodyIngestError, BodyIngestErrorKind, BodyIngestReport};
 pub use oura::{
     OURA_SYNC_ENDPOINTS, OuraDocuments, OuraImportOptions, OuraNormalizedRow,

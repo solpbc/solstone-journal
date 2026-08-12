@@ -1,0 +1,42 @@
+[build-system]
+requires = ["maturin==1.14.1"]
+build-backend = "maturin"
+
+[project]
+name = "solstone-core-pdf"
+version = "1.0.22"
+description = "Native PDFium-backed sol-pdf/1 helper binary for solstone"
+requires-python = ">=3.12"
+license = {text = "AGPL-3.0-only"}
+
+[tool.maturin]
+bindings = "bin"
+manifest-path = "../../core/crates/solstone-core-pdf/Cargo.toml"
+profile = "release"
+strip = true
+data = "wheel-data"
+
+[tool.solstone-release]
+target-family = "pdf"
+
+# This package's build inputs live outside its directory (see manifest-path),
+# and its wheel payload includes staged PDFium shared-library bytes.
+# uv's default cache key for a path dependency is this pyproject.toml alone, so
+# a Rust-only or runtime-staging change could leave `uv sync` reporting "no
+# changes" and the environment kept serving the previously built binary.
+# Declaring the real inputs makes uv rebuild when they move. `[tool.uv]` is
+# never published, so wheel metadata is unaffected. Keep core/target/ out of
+# the list: the build writes it, and keying on it would leave every sync
+# permanently dirty. The `.rust-core-hash` stamp in the Makefile is the other
+# half — it is what makes `make install` run a `uv sync` at all after a
+# Rust-only change.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "wheel-data/**" },
+    { file = "../../scripts/stage_pdfium_runtime.py" },
+    { file = "../../core/Cargo.toml" },
+    { file = "../../core/Cargo.lock" },
+    { file = "../../core/crates/solstone-core-pdf/Cargo.toml" },
+    { file = "../../core/crates/solstone-core-pdf/**/*.rs" },
+]

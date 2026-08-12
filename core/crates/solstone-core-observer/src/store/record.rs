@@ -113,6 +113,23 @@ impl ObserverRecord {
     pub fn stats(&self) -> Option<&Map<String, Value>> {
         self.map.get("stats").and_then(Value::as_object)
     }
+    /// The active durable ingest rejection, if the observer recorded one.
+    pub fn ingest_rejection(&self) -> Option<&Map<String, Value>> {
+        self.map
+            .get("health")
+            .and_then(Value::as_object)
+            .and_then(|health| health.get("ingest_rejection"))
+            .and_then(Value::as_object)
+    }
+
+    /// The durable observer health beacon, if present.
+    pub fn health_beacon(&self) -> Option<&Map<String, Value>> {
+        self.map
+            .get("health")
+            .and_then(Value::as_object)
+            .and_then(|health| health.get("beacon"))
+            .and_then(Value::as_object)
+    }
 
     pub fn device_binding_device(&self) -> Option<&str> {
         self.device_binding()

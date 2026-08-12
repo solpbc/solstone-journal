@@ -405,9 +405,12 @@ CLI commands, a native `native/authority.toml` plus `native/command.rs`.
 | Observe (capture) | `transcribe`, `describe`, `sense`, `transfer`, `observer` |
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `restart-convey`, `maint` |
+| Schedule (read-only) | `schedule` |
 | Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter`, `detect-created` |
 | Installation | `doctor` |
 | Help | `help`, `chat` |
+
+`solstone-core install-provider parakeet` is native beside the existing Python-backed `journal install-provider` route; both remain live during cutover.
 
 `reprocess` is the on-demand reprocess command: process-now by default; `--from-scratch` re-runs already-complete units and, with `--through`, can queue an inclusive past-day range.
 

@@ -40,6 +40,15 @@ from scripts.stage_speakers_analyze_runtime import (
     notice_install_dir,
     runtime_install_dir,
 )
+from scripts.stage_pdfium_runtime import (
+    NOTICE_MEMBERS as PDFIUM_NOTICE_MEMBERS,
+)
+from scripts.stage_pdfium_runtime import (
+    notice_install_dir as pdfium_notice_install_dir,
+)
+from scripts.stage_pdfium_runtime import (
+    runtime_install_dir as pdfium_runtime_install_dir,
+)
 from solstone.think.probe import (
     SOLSTONE_CORE_COVERED_PLATFORMS,
     SOLSTONE_CORE_PLATFORM_TAGS,
@@ -71,6 +80,10 @@ MAX_SPEAKERS_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_VAD_ANALYZE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_DESCRIBE_WHEEL_BYTES = 30 * 1024 * 1024
 MAX_VULKAN_PROBE_WHEEL_BYTES = 30 * 1024 * 1024
+# Measured from the pinned chromium/7920 x86_64 wheel payload: 4,116,427 bytes.
+# Five MiB preserves roughly 27% compressed-size headroom without allowing a
+# second shared library or an accidental debug payload to slip into the wheel.
+MAX_PDF_WHEEL_BYTES = 5 * 1024 * 1024
 PARAKEET_HELPER_MEMBER = (
     "solstone/observe/transcribe/parakeet_helper/_bin/parakeet-helper"
 )
@@ -81,6 +94,8 @@ SPEAKERS_ANALYZE_SCRIPT_NAMES = ("solstone-core-speakers-analyze",)
 DESCRIBE_SCRIPT_NAME = "solstone-core-describe"
 VULKAN_PROBE_PACKAGE_NAME = "solstone-core-vulkan-probe"
 VULKAN_PROBE_SCRIPT_NAME = VULKAN_PROBE_PACKAGE_NAME
+PDF_PACKAGE_NAME = "solstone-core-pdf"
+PDF_SCRIPT_NAME = PDF_PACKAGE_NAME
 DESCRIBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
     ("linux", "x86_64"): "manylinux_2_27_x86_64",
     ("linux", "aarch64"): "manylinux_2_27_aarch64",
@@ -96,6 +111,13 @@ VAD_ANALYZE_PLATFORM_TAGS: dict[CorePlatform, str] = {
     ("linux", "x86_64"): "manylinux_2_27_x86_64",
     ("linux", "aarch64"): "manylinux_2_27_aarch64",
     ("darwin", "arm64"): "macosx_14_0_arm64",
+}
+# PDFium is packaged on the two GNU/Linux release lanes in this wave. The
+# macOS runtime archives are pinned by the staging script, but no macOS proof
+# host was reachable to validate and ship them yet.
+PDF_PLATFORM_TAGS: dict[CorePlatform, str] = {
+    ("linux", "x86_64"): "manylinux_2_27_x86_64",
+    ("linux", "aarch64"): "manylinux_2_27_aarch64",
 }
 ELF_MAGIC = b"\x7fELF"
 ELF_CLASS_64 = 2
@@ -224,6 +246,7 @@ SPEAKERS_ANALYZE_FORBIDDEN_PROVIDER_RE = re.compile(
 VAD_ANALYZE_TAG_PLATFORMS = {
     tag: platform for platform, tag in VAD_ANALYZE_PLATFORM_TAGS.items()
 }
+PDF_TAG_PLATFORMS = {tag: platform for platform, tag in PDF_PLATFORM_TAGS.items()}
 VULKAN_PROBE_TAG_PLATFORMS = {
     tag: platform for platform, tag in SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS.items()
 }
@@ -321,6 +344,10 @@ def _is_vulkan_probe_wheel(path: Path) -> bool:
     return path.name.startswith("solstone_core_vulkan_probe-") and path.name.endswith(
         ".whl"
     )
+
+
+def _is_pdf_wheel(path: Path) -> bool:
+    return path.name.startswith("solstone_core_pdf-") and path.name.endswith(".whl")
 
 
 def _is_core_sdist(path: Path) -> bool:
@@ -429,6 +456,12 @@ def _vad_analyze_rebuild_command(platform_tuple: CorePlatform | None) -> str:
     if platform_tuple is not None and platform_tuple[1] == "aarch64":
         return "make wheel-vad-analyze-linux-aarch64"
     return "make wheel-vad-analyze-linux-x86_64"
+
+
+def _pdf_rebuild_command(platform_tuple: CorePlatform | None) -> str:
+    if platform_tuple is not None and platform_tuple[1] == "aarch64":
+        return "make wheel-pdf-linux-aarch64"
+    return "make wheel-pdf-linux-x86_64"
 
 
 def check_base_wheel(path: Path, max_bytes: int) -> list[str]:
@@ -1702,6 +1735,249 @@ def check_vulkan_probe_wheel(path: Path, package: NativePackage) -> list[str]:
     return errors
 
 
+def _pdf_expected_members(path: Path) -> tuple[set[str], str, str]:
+    version = _wheel_version_from_name(path, "solstone_core_pdf")
+    data_prefix = f"solstone_core_pdf-{version}.data"
+    dist_info_prefix = f"solstone_core_pdf-{version}.dist-info"
+    binary_member = f"{data_prefix}/scripts/{PDF_SCRIPT_NAME}"
+    library_member = (
+        f"{data_prefix}/{pdfium_runtime_install_dir(PDF_PACKAGE_NAME).as_posix()}/"
+        "libpdfium.so"
+    )
+    notice_members = {
+        f"{data_prefix}/{pdfium_notice_install_dir(PDF_PACKAGE_NAME).as_posix()}/"
+        f"{Path(notice).name}"
+        for notice in PDFIUM_NOTICE_MEMBERS
+    }
+    return (
+        {
+            binary_member,
+            library_member,
+            *notice_members,
+            f"{dist_info_prefix}/METADATA",
+            f"{dist_info_prefix}/WHEEL",
+            f"{dist_info_prefix}/RECORD",
+            f"{dist_info_prefix}/sboms/{PDF_PACKAGE_NAME}.cyclonedx.json",
+        },
+        binary_member,
+        library_member,
+    )
+
+
+def _check_pdf_elf_member(
+    wheel_name: str,
+    content: bytes,
+    platform_tuple: CorePlatform,
+    tag: str,
+    *,
+    label: str,
+    require_interpreter: bool,
+    repair: str,
+) -> list[str]:
+    """Validate an ELF member in the runtime-dlopen PDFium wheel."""
+
+    if len(content) < 64 or content[:4] != ELF_MAGIC:
+        return [
+            _failure(
+                wheel_name,
+                f"{label} is not ELF64",
+                expected="ELF64 member",
+                actual=content[:4].hex(),
+                repair=repair,
+            )
+        ]
+
+    errors: list[str] = []
+    if content[4] != ELF_CLASS_64:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} is not ELF64",
+                expected=str(ELF_CLASS_64),
+                actual=str(content[4]),
+                repair=repair,
+            )
+        )
+    if content[5] != ELF_DATA_LITTLE_ENDIAN:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} is not little-endian",
+                expected=str(ELF_DATA_LITTLE_ENDIAN),
+                actual=str(content[5]),
+                repair=repair,
+            )
+        )
+    actual_machine = struct.unpack_from("<H", content, 18)[0]
+    expected_machine = ELF_MACHINE[platform_tuple[1]]
+    if actual_machine != expected_machine:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} ELF machine does not match wheel tag",
+                expected=f"{platform_tuple[1]} ({expected_machine:#06x})",
+                actual=f"{actual_machine:#06x}",
+                repair=repair,
+            )
+        )
+    has_interpreter = _has_program_header(content, PT_INTERP)
+    if require_interpreter and not has_interpreter:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} is missing PT_INTERP",
+                expected="PT_INTERP program header present",
+                actual="missing",
+                repair=repair,
+            )
+        )
+    if not require_interpreter and has_interpreter:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} unexpectedly has PT_INTERP",
+                expected="shared object without PT_INTERP",
+                actual="PT_INTERP present",
+                repair=repair,
+            )
+        )
+
+    _needed, runpath, rpath = _elf_dynamic_strings(content)
+    if runpath is not None or rpath is not None:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} embeds a runtime search path",
+                expected="no DT_RUNPATH or DT_RPATH",
+                actual=f"RUNPATH={runpath or '<none>'}, RPATH={rpath or '<none>'}",
+                repair=repair,
+            )
+        )
+    declared = _declared_manylinux_floor(tag)
+    measured = _max_glibc_version(content)
+    if declared is None:
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} wheel tag does not declare a manylinux floor",
+                expected="manylinux_N_M platform tag",
+                actual=tag,
+                repair=repair,
+            )
+        )
+    elif measured is not None and declared < (measured[0], measured[1]):
+        errors.append(
+            _failure(
+                wheel_name,
+                f"{label} wheel tag understates GLIBC floor",
+                expected=f"declared floor >= measured GLIBC_{_format_version(measured)}",
+                actual=f"{tag} declares glibc {declared[0]}.{declared[1]}",
+                repair=repair,
+            )
+        )
+    return errors
+
+
+def check_pdf_wheel(path: Path) -> list[str]:
+    """Validate the sol-pdf helper, its pinned PDFium library, and notices."""
+
+    errors: list[str] = []
+    tag = _core_wheel_tag(path)
+    platform_tuple = PDF_TAG_PLATFORMS.get(tag)
+    repair = _pdf_rebuild_command(platform_tuple)
+    size = path.stat().st_size
+    if size > MAX_PDF_WHEEL_BYTES:
+        errors.append(
+            _failure(
+                path.name,
+                "pdf wheel is too large",
+                expected=f"<= {MAX_PDF_WHEEL_BYTES} bytes",
+                actual=str(size),
+                repair=repair,
+            )
+        )
+    if platform_tuple is None:
+        errors.append(
+            _failure(
+                path.name,
+                "unsupported pdf wheel tag",
+                expected=", ".join(sorted(PDF_PLATFORM_TAGS.values())),
+                actual=tag,
+                repair=repair,
+            )
+        )
+        return errors
+    if "-linux_" in path.name:
+        errors.append(f"{path.name}: bare linux tag is not publishable")
+
+    expected_members, binary_member, library_member = _pdf_expected_members(path)
+    with zipfile.ZipFile(path) as wheel:
+        names = set(wheel.namelist())
+        if names != expected_members:
+            errors.append(
+                _failure(
+                    path.name,
+                    "pdf wheel member set is wrong",
+                    expected=", ".join(sorted(expected_members)),
+                    actual=", ".join(sorted(names)) or "<empty>",
+                    repair=repair,
+                )
+            )
+        binary_infos = [
+            info for info in wheel.infolist() if info.filename == binary_member
+        ]
+        if len(binary_infos) != 1:
+            errors.append(
+                _failure(
+                    path.name,
+                    "pdf binary member count is wrong",
+                    expected=f"exactly one {binary_member}",
+                    actual=str(len(binary_infos)),
+                    repair=repair,
+                )
+            )
+        elif (binary_infos[0].external_attr >> 16) & 0o111 == 0:
+            errors.append(
+                _failure(
+                    path.name,
+                    "pdf binary is not executable",
+                    expected="executable mode bit set",
+                    actual=oct((binary_infos[0].external_attr >> 16) & 0o777),
+                    repair=repair,
+                )
+            )
+
+        try:
+            library_content = wheel.read(library_member)
+        except KeyError:
+            library_content = b""
+        if binary_infos:
+            errors.extend(
+                _check_pdf_elf_member(
+                    f"{path.name}:{binary_member}",
+                    wheel.read(binary_member),
+                    platform_tuple,
+                    tag,
+                    label="pdf binary",
+                    require_interpreter=True,
+                    repair=repair,
+                )
+            )
+        errors.extend(
+            _check_pdf_elf_member(
+                f"{path.name}:{library_member}",
+                library_content,
+                platform_tuple,
+                tag,
+                label="bundled PDFium library",
+                require_interpreter=False,
+                repair=repair,
+            )
+        )
+        errors.extend(_check_record(path, wheel))
+    return errors
+
+
 def _speakers_analyze_expected_members(
     path: Path, platform_tuple: CorePlatform
 ) -> tuple[set[str], str, str]:
@@ -2440,6 +2716,11 @@ def _native_platform_tags(
             SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS[platform]
             for platform in SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS
         )
+    if package.target_family == "pdf":
+        return tuple(
+            PDF_PLATFORM_TAGS[platform]
+            for platform in sorted(PDF_PLATFORM_TAGS)
+        )
     return tuple(
         DESCRIBE_PLATFORM_TAGS[platform]
         for platform in sorted(DESCRIBE_PLATFORM_TAGS)
@@ -2580,6 +2861,7 @@ def check_dist(
     ]
     vad_analyze_wheels = [path for path in wheels if _is_vad_analyze_wheel(path)]
     describe_wheels = [path for path in wheels if _is_describe_wheel(path)]
+    pdf_wheels = [path for path in wheels if _is_pdf_wheel(path)]
     vulkan_probe_wheels = [path for path in wheels if _is_vulkan_probe_wheel(path)]
     vulkan_probe_packages = tuple(
         package
@@ -2595,6 +2877,7 @@ def check_dist(
             "solstone-core-describe",
             "solstone-core-speakers-analyze",
             "solstone-core-vad-analyze",
+            PDF_PACKAGE_NAME,
             VULKAN_PROBE_PACKAGE_NAME,
         }
     )
@@ -2610,6 +2893,7 @@ def check_dist(
             speakers_analyze_wheels
             or vad_analyze_wheels
             or describe_wheels
+            or pdf_wheels
             or vulkan_probe_wheels
             or any(generic_native_wheels.values())
         )
@@ -2659,6 +2943,8 @@ def check_dist(
         errors.extend(check_vad_analyze_wheel(path))
     for path in describe_wheels:
         errors.extend(check_describe_wheel(path))
+    for path in pdf_wheels:
+        errors.extend(check_pdf_wheel(path))
     for package in vulkan_probe_packages:
         for path in vulkan_probe_wheels:
             errors.extend(check_vulkan_probe_wheel(path, package))

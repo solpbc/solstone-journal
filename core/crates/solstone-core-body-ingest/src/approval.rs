@@ -12,9 +12,9 @@ use crate::bundle::BodyIngestError;
 const APPLE_PATH: &str = "imports/_approvals/health_import_preflight.json";
 const APPLE_SCHEMA: &str = "solstone.health_import_preflight.v1";
 const APPLE_CHECKLIST: &str = "solstone.health_import_preflight.checklist.v3";
-const OURA_PATH: &str = "imports/_approvals/oura_sync_preflight.json";
+pub const OURA_PATH: &str = "imports/_approvals/oura_sync_preflight.json";
 const OURA_SCHEMA: &str = "solstone.oura_sync_preflight.v1";
-const OURA_CHECKLIST: &str = "solstone.oura_sync_preflight.checklist.v2";
+pub const OURA_CHECKLIST: &str = "solstone.oura_sync_preflight.checklist.v2";
 const MAX_APPROVAL_BYTES: usize = 64 * 1024;
 
 pub(crate) fn pin_journal_target(journal: &Path) -> Result<PathBuf, BodyIngestError> {
@@ -96,7 +96,7 @@ pub(crate) fn apple_approval(
     Ok(retention)
 }
 
-pub(crate) fn oura_approval(
+pub fn oura_approval(
     journal: &Path,
     confirmed: bool,
     scheduled: bool,

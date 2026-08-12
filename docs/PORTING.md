@@ -111,6 +111,7 @@ for the helper release lanes.
 | Helper coverage | Status | Evidence |
 |-----------------|--------|----------|
 | `solstone/think/probe.py:SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS` | Platform coverage authority. | Build, content check, install into a bare venv, and real-inference smoke using the shipped `pyannote-segmentation-3.0.onnx` and `wespeaker-resnet34-256.onnx` assets for each covered helper platform. Linux helper lanes use zig GNU cross-link artifacts; macOS evidence is produced by the macOS build/proof hosts. Do not provision an emulator for the aarch64 Linux lane. |
+| `solstone-core-pdf` (`sol-pdf/1`) | Separately packaged inspect/extract helper; it runtime-`dlopen`s its bundled PDFium shared library rather than build-time-linking an ONNX-style runtime. | `scripts/stage_pdfium_runtime.py` pins and verifies PDFium `chromium/7920` (archive digest plus GitHub attestation) and carries its full notice bundle; `target-family = "pdf"` ships on Linux x86_64/aarch64. macOS arm64/x86_64 archives are pinned but remain an explicit unvalidated gap this wave: no macOS proof host was reachable, so no macOS PDF wheel is attempted. |
 
 | Evidence | Repository command | Class | Notes |
 |----------|--------------------|-------|-------|
@@ -373,8 +374,9 @@ design documents that hazard but does not change Python behavior.
 
 Native ports reserve process exit code 69 for inputs the native command cannot
 process. Wrappers should surface that code unless a command-specific design says
-otherwise. It is distinct from success, usage errors (64), empty-input codes, and
-temporary failures (75). Signal death is normalized to temporary failure (75).
+otherwise. It is distinct from success, the top-level usage fallthrough (64),
+command-level parser errors (such as supervisor/check/install-models, 2), empty-input
+codes, and temporary failures (75). Signal death is normalized to temporary failure (75).
 The supervisor intentionally keeps mapping non-zero scheduled-task exits to
 `error`; command stderr carries the operator-facing detail.
 

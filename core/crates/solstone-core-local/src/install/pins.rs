@@ -4,6 +4,12 @@
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use solstone_core_assets::{Platform, resolve};
+
+#[cfg(test)]
+use super::archive;
+
 pub const LLAMA_SERVER_PINS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "aarch64-apple-darwin",
@@ -227,6 +233,25 @@ pub fn parakeet_backend_identity(key: &str, backend: &str) -> Option<Value> {
     Some(
         json!({"unit":"parakeet-server","artifact_key":key,"backend":backend,"release_tag":release_tag,"filename":filename,"sha256":sha256,"binary_name":binary_name}),
     )
+}
+
+#[cfg(test)]
+pub(crate) fn origin_url_for_arch_key(unit: &str, arch_key: &str) -> Option<String> {
+    let platform = match arch_key {
+        "aarch64-apple-darwin" => Platform::MacosArm64,
+        "x86_64-unknown-linux-gnu" => Platform::LinuxX64,
+        "aarch64-unknown-linux-gnu" => Platform::LinuxArm64,
+        _ => return None,
+    };
+    resolve(unit, Some(platform), None)
+        .into_iter()
+        .find(|artifact| artifact.artifact_key == Some(arch_key))
+        .map(|artifact| {
+            archive::origin_url(
+                archive::PRODUCTION_DOWNLOAD_POLICY.origin_base_url,
+                artifact,
+            )
+        })
 }
 
 pub fn cache_root(journal: &Path) -> PathBuf {

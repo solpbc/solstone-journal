@@ -27,7 +27,11 @@ mod terminal;
 #[allow(dead_code)]
 mod transcript;
 
-pub use args::{CliError, ParsedArgs, parse_arguments, require_solstone};
+pub use args::{
+    CliError, ParsedArgs, check_speakers_analyze_installation,
+    check_speakers_analyze_installation_with, parse_arguments, require_solstone,
+    speakers_analyze_repair_text,
+};
 pub use model_assets::{
     ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SILERO_VAD_V6_SHA256, WESPEAKER_RESNET34_SHA256,
     resolve_model_asset,

@@ -1,0 +1,207 @@
+{
+  "schema": "w3-text-oracles/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "ran the reference process_transcript with the two LLM-backed segmenters stubbed to recorded output",
+    "why_stubbed": "detect_transcript_segment and detect_transcript_json BOTH call the model, so generic TEXT segmentation is not deterministic and a bytes-in/segments-out oracle is impossible. What IS deterministic, and what this pins, is the arithmetic behind the model boundary: relativizing entry timestamps, computing durations, naming segment directories, and the refusals."
+  },
+  "model_boundary": "the native body calls the native generate path for segmentation; it does not re-implement it.",
+  "cases": {
+    "gap_derived_durations_no_audio_duration": {
+      "label": "three segments; last gets the +5s default",
+      "segment_dirs": [
+        "120000_30",
+        "120030_270",
+        "120500_5"
+      ],
+      "created": [
+        {
+          "segment_dir": "120000_30",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt",
+              "topics": "t1",
+              "setting": "kitchen"
+            },
+            {
+              "start": "00:00:00",
+              "text": "first",
+              "source": "import"
+            },
+            {
+              "start": "00:00:12",
+              "text": "second",
+              "source": "import"
+            }
+          ]
+        },
+        {
+          "segment_dir": "120030_270",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt"
+            },
+            {
+              "start": "00:00:15",
+              "text": "third",
+              "source": "import"
+            }
+          ]
+        },
+        {
+          "segment_dir": "120500_5",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt",
+              "topics": "t3"
+            },
+            {
+              "start": "00:00:01",
+              "text": "fourth",
+              "source": "import"
+            }
+          ]
+        }
+      ]
+    },
+    "last_segment_uses_audio_duration": {
+      "label": "last segment duration = audio_duration - offset from recording start",
+      "segment_dirs": [
+        "120000_30",
+        "120030_270",
+        "120500_300"
+      ],
+      "created": [
+        {
+          "segment_dir": "120000_30",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt",
+              "topics": "t1",
+              "setting": "kitchen"
+            },
+            {
+              "start": "00:00:00",
+              "text": "first",
+              "source": "import"
+            },
+            {
+              "start": "00:00:00",
+              "text": "second",
+              "source": "import"
+            }
+          ]
+        },
+        {
+          "segment_dir": "120030_270",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt"
+            },
+            {
+              "start": "00:00:00",
+              "text": "third",
+              "source": "import"
+            }
+          ]
+        },
+        {
+          "segment_dir": "120500_300",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt",
+              "topics": "t3"
+            },
+            {
+              "start": "00:00:00",
+              "text": "fourth",
+              "source": "import"
+            }
+          ]
+        }
+      ]
+    },
+    "out_of_order_raises": {
+      "label": "second segment starts BEFORE the first",
+      "raised": {
+        "type": "ValueError",
+        "message": "Invalid segment duration: -300s for segment at 120500. Timestamps may be out of order or audio_duration is incorrect."
+      }
+    },
+    "audio_duration_too_short_raises": {
+      "label": "audio_duration less than the last segment's offset",
+      "raised": {
+        "type": "ValueError",
+        "message": "Invalid segment duration: -290s for segment at 120500. Timestamps may be out of order or audio_duration is incorrect."
+      }
+    },
+    "falsy_wrapper_is_skipped": {
+      "label": "model returned nothing for the middle segment",
+      "segment_dirs": [
+        "120000_30",
+        "120500_5"
+      ],
+      "created": [
+        {
+          "segment_dir": "120000_30",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt"
+            },
+            {
+              "start": "00:00:00",
+              "text": "x",
+              "source": "import"
+            }
+          ]
+        },
+        {
+          "segment_dir": "120500_5",
+          "file": "conversation_transcript.jsonl",
+          "rows": [
+            {
+              "imported": {
+                "id": "20260311_120000"
+              },
+              "raw": "../../../imports/20260311_120000/t.txt"
+            },
+            {
+              "start": "00:00:00",
+              "text": "z",
+              "source": "import"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

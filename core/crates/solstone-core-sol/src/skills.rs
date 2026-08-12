@@ -4,7 +4,7 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use solstone_core_sol_client::command::CommandOutput;
@@ -17,7 +17,6 @@ const ALL_AGENTS: &str = "all";
 const PROJECT_MULTI_AGENT: &str = "agents";
 const PROJECT_CLAUDE_SKILLS_REL: &str = ".claude/skills";
 const PROJECT_AGENTS_SKILLS_REL: &str = ".agents/skills";
-const ROUTER_SKILL_NAMES: [&str; 2] = ["sol", "journal"];
 const USER_SKILL_NAME: &str = "sol";
 const GLOBAL_SKIP_MESSAGE: &str =
     "no AI coding agent config directories found — skipping skill registration";
@@ -418,23 +417,6 @@ fn resolve_user_skill(project_root: &Path) -> Result<PathBuf, String> {
     Ok(skill_dir)
 }
 
-fn discover_project_sources(project_root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut sources = Vec::new();
-    for name in ROUTER_SKILL_NAMES {
-        let source = project_root.join("solstone").join("talent").join(name);
-        let skill_file = source.join("SKILL.md");
-        if !skill_file.is_file() {
-            return Err(format!(
-                "expected project skill at {}",
-                skill_file.display()
-            ));
-        }
-        sources.push(source);
-    }
-    sources.sort();
-    Ok(sources)
-}
-
 fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> InstallReport {
     let (selected, _default_all) = selection.user_agents();
     let mut report = InstallReport::default();
@@ -596,7 +578,7 @@ fn install_project(
     target: &Path,
     selection: AgentSelection,
 ) -> Result<InstallReport, String> {
-    let sources = discover_project_sources(project_root)?;
+    let sources = solstone_core_skill_state::discover_project_sources(project_root)?;
     let source_names = sources
         .iter()
         .filter_map(|source| source.file_name().map(OsString::from))
@@ -626,7 +608,7 @@ fn install_project_source(
         .and_then(OsStr::to_str)
         .unwrap_or_default();
     let link = link_parent.join(name);
-    let target = lexical_relpath(source, link_parent);
+    let target = solstone_core_skill_state::expected_link_target(source, link_parent);
     match fs::symlink_metadata(&link) {
         Ok(metadata) if metadata.file_type().is_symlink() => match fs::read_link(&link) {
             Ok(existing) if existing == Path::new(&target) => {
@@ -732,7 +714,7 @@ fn uninstall_project(
     target: &Path,
     selection: AgentSelection,
 ) -> Result<InstallReport, String> {
-    let sources = discover_project_sources(project_root)?;
+    let sources = solstone_core_skill_state::discover_project_sources(project_root)?;
     let mut report = InstallReport::default();
     for (agent, link_parent) in project_targets(target, selection)? {
         for source in &sources {
@@ -805,19 +787,12 @@ fn list_user_status(skill_dir: &Path, home: &Path) -> Vec<StatusRow> {
 }
 
 fn list_project_status(project_root: &Path, target: &Path) -> Result<Vec<StatusRow>, String> {
-    let sources = discover_project_sources(project_root)?;
     let mut rows = Vec::new();
     for (agent, link_parent) in project_targets(target, AgentSelection::All)? {
-        for source in &sources {
-            let name = source
-                .file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or_default();
-            let link = link_parent.join(name);
-            let expected = lexical_relpath(source, &link_parent);
-            let state = if fs::symlink_metadata(&link)
-                .is_ok_and(|metadata| metadata.file_type().is_symlink())
-                && fs::read_link(&link).is_ok_and(|value| value == Path::new(&expected))
+        for link in
+            solstone_core_skill_state::inspect_router_skill_links(project_root, &link_parent)?
+        {
+            let state = if link.state == solstone_core_skill_state::RouterSkillLinkState::Installed
             {
                 "installed"
             } else {
@@ -825,7 +800,7 @@ fn list_project_status(project_root: &Path, target: &Path) -> Result<Vec<StatusR
             };
             rows.push(StatusRow {
                 agent: agent.to_string(),
-                skill: name.to_string(),
+                skill: link.name,
                 state,
             });
         }
@@ -1068,54 +1043,6 @@ fn create_symlink(_target: &Path, _link: &Path) -> io::Result<()> {
     ))
 }
 
-fn lexical_relpath(target: &Path, base: &Path) -> String {
-    let (target_root, target_parts) = lexical_parts(target);
-    let (base_root, base_parts) = lexical_parts(base);
-    if target_root != base_root {
-        return target.to_string_lossy().to_string();
-    }
-    let mut common = 0;
-    while common < target_parts.len()
-        && common < base_parts.len()
-        && target_parts[common] == base_parts[common]
-    {
-        common += 1;
-    }
-    let mut out = PathBuf::new();
-    for _ in common..base_parts.len() {
-        out.push("..");
-    }
-    for part in &target_parts[common..] {
-        out.push(part);
-    }
-    if out.as_os_str().is_empty() {
-        ".".to_string()
-    } else {
-        out.to_string_lossy().to_string()
-    }
-}
-
-fn lexical_parts(path: &Path) -> (bool, Vec<OsString>) {
-    let mut rooted = false;
-    let mut parts = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::Prefix(prefix) => parts.push(prefix.as_os_str().to_os_string()),
-            Component::RootDir => rooted = true,
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if parts.last().is_some_and(|part| part != "..") {
-                    parts.pop();
-                } else {
-                    parts.push(OsString::from(".."));
-                }
-            }
-            Component::Normal(part) => parts.push(part.to_os_string()),
-        }
-    }
-    (rooted, parts)
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -1216,7 +1143,10 @@ mod tests {
                         fs::create_dir_all(&link_parent).expect("project link parent setup");
                         for name in ["journal", "sol"] {
                             let source = source_root().join("solstone/talent").join(name);
-                            let target = lexical_relpath(&source, &link_parent);
+                            let target = solstone_core_skill_state::expected_link_target(
+                                &source,
+                                &link_parent,
+                            );
                             create_symlink(Path::new(&target), &link_parent.join(name))
                                 .expect("project symlink setup");
                         }
@@ -1461,16 +1391,6 @@ mod tests {
         );
         assert!(link.join("SKILL.md").is_file());
         let _ = fs::remove_dir_all(temp);
-    }
-
-    #[test]
-    fn lexical_relpath_emits_multi_parent_string() {
-        let root = PathBuf::from("/tmp/solstone-root");
-        let source = root.join("solstone/talent/journal");
-        let base = root.join("scratch/skills-oracle/casework/p/deep/.claude/skills");
-        let target = lexical_relpath(&source, &base);
-        assert!(target.starts_with("../../.."), "{target}");
-        assert!(target.ends_with("solstone/talent/journal"), "{target}");
     }
 
     #[cfg(unix)]

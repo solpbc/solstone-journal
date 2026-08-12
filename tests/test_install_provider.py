@@ -10,10 +10,33 @@ import sys
 import pytest
 
 from solstone.think import install_provider
+from solstone.think.install_models import CED_DOWNLOAD_DISCLOSURE
 
 
 class _Readiness:
     ready = False
+
+
+def test_provider_download_disclosures_name_only_the_updates_origin():
+    old_hosts = [
+        "github.com",
+        "huggingface.co",
+        "release-assets.githubusercontent.com",
+        "us.aws.cdn.hf.co",
+    ]
+    for disclosure in (
+        install_provider.PARAKEET_DOWNLOAD_DISCLOSURE,
+        install_provider.LOCAL_DOWNLOAD_DISCLOSURE,
+    ):
+        assert "updates.solstone.app" in disclosure
+        assert not any(host in disclosure for host in old_hosts)
+
+
+def test_ced_download_disclosure_remains_pinned():
+    assert CED_DOWNLOAD_DISCLOSURE == (
+        "ced assets: downloading ced.cpp v0.1.0 engine from github.com (MIT) "
+        "and ced-tiny-q8_0 model from huggingface.co (Apache-2.0)"
+    )
 
 
 def _local_cli(monkeypatch, *, probe_free: bool = True) -> None:

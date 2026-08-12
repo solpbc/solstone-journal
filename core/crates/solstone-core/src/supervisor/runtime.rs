@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
@@ -119,6 +119,8 @@ pub(crate) struct ManagedAppProcess {
     pub restart_policy: RestartPolicy,
     pub restart_at: Option<Instant>,
     pub restart_requested: bool,
+    /// Correlates an accepted app restart with all ensuing app-process events.
+    pub restart_id: Arc<Mutex<Option<String>>>,
 }
 
 impl ManagedAppProcess {
@@ -147,6 +149,7 @@ impl ManagedAppProcess {
             restart_policy: RestartPolicy::default(),
             restart_at: None,
             restart_requested: false,
+            restart_id: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -210,9 +213,10 @@ fn fixture_argv(service: AppService, binary: &str, journal: &Path) -> Vec<String
 }
 
 fn ready_sleep_marker_path(argv: &[String]) -> Option<&str> {
-    (argv.get(1).map(String::as_str) == Some("ready-sleep"))
-        .then(|| argv.get(2).map(String::as_str))
-        .flatten()
+    match argv.get(1).map(String::as_str) {
+        Some("ready-sleep") | Some("ready-sleep-crash-once") => argv.get(2).map(String::as_str),
+        _ => None,
+    }
 }
 
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
@@ -418,7 +422,10 @@ pub(crate) fn spawn_app_process(
             journal_root: journal.to_path_buf(),
             reference: format!("supervisor-app-{}", app.service.as_str()),
             day: None,
-            sink: Some(Arc::new(SupervisorProcessSink(sink))),
+            sink: Some(Arc::new(SupervisorProcessSink {
+                server: sink,
+                restart_id: Arc::clone(&app.restart_id),
+            })),
             environment: BTreeMap::from([(
                 OsString::from("SOL_SUPERVISOR_SPAWNED"),
                 OsString::from("1"),
@@ -535,7 +542,10 @@ pub(crate) async fn boot_and_tick(
         cap_resolver: Arc::new(DefaultCapResolver::new(default_cap)),
         process_state_probe: Arc::new(SystemProcessStateProbe),
         queue_sink: Some(Arc::new(SupervisorTaskQueueSink(Arc::clone(&server)))),
-        process_sink: Some(Arc::new(SupervisorProcessSink(Arc::clone(&server)))),
+        process_sink: Some(Arc::new(SupervisorProcessSink {
+            server: Arc::clone(&server),
+            restart_id: Arc::new(Mutex::new(None)),
+        })),
         ready: true,
         before_deadline_commit: None,
     });

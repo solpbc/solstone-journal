@@ -88,7 +88,7 @@ impl PlatformApplicability {
 // site-packages, not a maturin bindings="bin" leaf or a sibling of solstone-core's current
 // executable. Locating it requires Python-package layout resolution outside this binary's
 // ownership.
-const INVENTORY: [InventoryRow; 9] = [
+const INVENTORY: [InventoryRow; 10] = [
     InventoryRow {
         binary_name: "solstone-core",
         distribution: "solstone-core",
@@ -120,6 +120,14 @@ const INVENTORY: [InventoryRow; 9] = [
         argv: &["--version"],
         expected: "--version exits 0",
         applicability: PlatformApplicability::All,
+    },
+    InventoryRow {
+        binary_name: "solstone-core-pdf",
+        distribution: "solstone-core-pdf",
+        crate_name: "solstone-core-pdf",
+        argv: &["--version"],
+        expected: "--version exits 0",
+        applicability: PlatformApplicability::Linux,
     },
     InventoryRow {
         binary_name: "solstone-retention",
