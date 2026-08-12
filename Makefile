@@ -406,7 +406,7 @@ check-rust-macos:
 	@$(REQUIRE_CARGO)
 	@$(REQUIRE_RUSTUP)
 	@rustup target list --installed 2>/dev/null | grep -qx "$(MACOS_TARGET)" || { echo "Rust target $(MACOS_TARGET) is required for the macOS gate; run rustup target add $(MACOS_TARGET)" >&2; exit 1; }
-	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core-system -p solstone-core-local -p solstone-core-journal-io --lib --target $(MACOS_TARGET) --locked
+	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core-system -p solstone-core-local -p solstone-core-journal-io -p solstone-core-steward-prune --lib --target $(MACOS_TARGET) --locked
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)

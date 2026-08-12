@@ -3481,6 +3481,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-steward-prune"
+version = "1.0.22"
+dependencies = [
+ "allocation-counter",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "solstone-core-streams-cli"
 version = "1.0.22"
 dependencies = [
