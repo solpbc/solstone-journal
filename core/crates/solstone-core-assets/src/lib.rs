@@ -80,10 +80,16 @@ pub fn check_version(version: &str) -> Result<(), VersionError> {
 /// its released objects are served under `runtimes/llama-cuda13/b10068/{filename}`.
 /// These are declarations only; this crate performs no fetches.
 ///
-/// MLX is excluded because it is a repository snapshot without per-file
-/// filenames and digests. nvattest is excluded because its three archive plus
-/// companion-manifest pairs are governed by `nvattest_authority_v1.json` and
-/// its own `url_prefix` contract; duplicating them here would be unbound truth.
+/// MLX is INCLUDED as of 2026-08-12: mirroring the two snapshots produced
+/// per-file filenames and digests, so the reason it was previously excluded no
+/// longer holds. ⚠ Its `origin_key` is intentionally exceptional in the same way
+/// CUDA's is -- `assets/mlx-snapshot/{repo-slug}/{revision}/{filename}` carries a
+/// repo segment the ordinary convention lacks, because a snapshot's filenames are
+/// unique only within a repository and the mirrored bytes already sit at those
+/// keys. `artifact_key` carries the source repo so a row is attributable.
+/// nvattest is excluded because its three archive plus companion-manifest pairs
+/// are governed by `nvattest_authority_v1.json` and its own `url_prefix`
+/// contract; duplicating them here would be unbound truth.
 pub static ARTIFACTS: &[Artifact] = &[
     Artifact {
         unit: "ced-engine",
@@ -347,6 +353,331 @@ pub static ARTIFACTS: &[Artifact] = &[
         backend: None,
         extracted_binary_sha256: None,
     },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: ".gitattributes",
+        sha256: "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+        size_bytes: 1570,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/.gitattributes",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/.gitattributes",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "README.md",
+        sha256: "0452c172aef10c9112d6c4fd39d2cc6a2bc2e5bdea201f8eced8008de1385ef9",
+        size_bytes: 2088,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/README.md",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/README.md",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "chat_template.jinja",
+        sha256: "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+        size_bytes: 7756,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/chat_template.jinja",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/chat_template.jinja",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "config.json",
+        sha256: "19082a0ef21dee3840a8bab56ee5325ead177085285c63ea47e79a204a566a53",
+        size_bytes: 3331,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/config.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "model-00001-of-00002.safetensors",
+        sha256: "0dcb3cdba0f43743875c861792685da5266aebcb58f7c0e345b9cd090bb0d289",
+        size_bytes: 5339522525,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/model-00001-of-00002.safetensors",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/model-00001-of-00002.safetensors",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "model-00002-of-00002.safetensors",
+        sha256: "5abf861e7a13e7af805105270b2648634b41fda02238ae8ee1bd64628acce9b1",
+        size_bytes: 5087069898,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/model-00002-of-00002.safetensors",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/model-00002-of-00002.safetensors",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "model.safetensors.index.json",
+        sha256: "87d95b037f57d101448b262059b7d28d65d55f60231100cdb1827d7cd44202cd",
+        size_bytes: 123593,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/model.safetensors.index.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/model.safetensors.index.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "preprocessor_config.json",
+        sha256: "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+        size_bytes: 390,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/preprocessor_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/preprocessor_config.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "processor_config.json",
+        sha256: "14932921ca485d458a04dafd8069fbb0a4505622a48208d19ed247115801385b",
+        size_bytes: 1300,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/processor_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/processor_config.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "tokenizer.json",
+        sha256: "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+        size_bytes: 19989343,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/tokenizer.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/tokenizer.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "tokenizer_config.json",
+        sha256: "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182",
+        size_bytes: 1139,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/tokenizer_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/tokenizer_config.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "video_preprocessor_config.json",
+        sha256: "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
+        size_bytes: 385,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/video_preprocessor_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/video_preprocessor_config.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "84f7c2deea248d8df56240f88102def51c7ed5d6",
+        filename: "vocab.json",
+        sha256: "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003",
+        size_bytes: 6722759,
+        upstream_url: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-8bit/resolve/84f7c2deea248d8df56240f88102def51c7ed5d6/vocab.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6/vocab.json",
+        artifact_key: Some("mlx-community/Qwen3.5-9B-MLX-8bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: ".gitattributes",
+        sha256: "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+        size_bytes: 1570,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/.gitattributes",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/.gitattributes",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "README.md",
+        sha256: "7f1ab1fb69c8fe2109e3eddf4ab98c8c3fb88a09406cad917944a3dc5490f232",
+        size_bytes: 737,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/README.md",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/README.md",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "chat_template.jinja",
+        sha256: "36e3a42e5cf14cd0020e72d92e1fdd9970f59b82170e421f0cbe1bb42bead3f0",
+        size_bytes: 17466,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/chat_template.jinja",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/chat_template.jinja",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "config.json",
+        sha256: "a64883e3afd8e8b76e7370ba1b288f6f2dc9a0e071337c9eddb420b747555209",
+        size_bytes: 33381,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/config.json",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "generation_config.json",
+        sha256: "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+        size_bytes: 208,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/generation_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/generation_config.json",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "model-00001-of-00003.safetensors",
+        sha256: "6a6cba167e5c630a69b527b2b095c0da623507511e43c05a57c5527d9b66fa0d",
+        size_bytes: 5275612587,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model-00001-of-00003.safetensors",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model-00001-of-00003.safetensors",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "model-00002-of-00003.safetensors",
+        sha256: "922461e4da8c9e3ae2dc5e4f0ccedf5a0259f1e81d3ebda20b3af39e28118f33",
+        size_bytes: 5296718232,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model-00002-of-00003.safetensors",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model-00002-of-00003.safetensors",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "model-00003-of-00003.safetensors",
+        sha256: "2e92af87837744c385101b71883b4af898be7a6ce03e5babca475899a8268347",
+        size_bytes: 5036507755,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model-00003-of-00003.safetensors",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model-00003-of-00003.safetensors",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "model.safetensors.index.json",
+        sha256: "5455e83705bbdd4e3702c7d4f9d49d4900e84533036628f74500538075dd5c80",
+        size_bytes: 176940,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model.safetensors.index.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/model.safetensors.index.json",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "processor_config.json",
+        sha256: "50c9cf588f1bda1c93d92ec69b03011bf101cc6867c6415fe5f07f1c87e49e72",
+        size_bytes: 627,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/processor_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/processor_config.json",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "tokenizer.json",
+        sha256: "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+        size_bytes: 32169626,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/tokenizer.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/tokenizer.json",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "mlx-snapshot",
+        version: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        filename: "tokenizer_config.json",
+        sha256: "90c3a3ba5bf53818383a58e1a776cbcacd2a038d4812eaa373e1522f2d06f3df",
+        size_bytes: 2095,
+        upstream_url: "https://huggingface.co/mlx-community/gemma-4-26b-a4b-it-4bit/resolve/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/tokenizer_config.json",
+        origin_key: "assets/mlx-snapshot/mlx-community-gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/tokenizer_config.json",
+        artifact_key: Some("mlx-community/gemma-4-26b-a4b-it-4bit"),
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
 ];
 
 static VALIDATED: LazyLock<()> = LazyLock::new(|| {
@@ -471,12 +802,108 @@ mod tests {
                 "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee",
                 63439488,
             ),
+            (
+                "0452c172aef10c9112d6c4fd39d2cc6a2bc2e5bdea201f8eced8008de1385ef9",
+                2088,
+            ),
+            (
+                "0dcb3cdba0f43743875c861792685da5266aebcb58f7c0e345b9cd090bb0d289",
+                5339522525,
+            ),
+            (
+                "14932921ca485d458a04dafd8069fbb0a4505622a48208d19ed247115801385b",
+                1300,
+            ),
+            (
+                "19082a0ef21dee3840a8bab56ee5325ead177085285c63ea47e79a204a566a53",
+                3331,
+            ),
+            (
+                "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+                390,
+            ),
+            (
+                "2e92af87837744c385101b71883b4af898be7a6ce03e5babca475899a8268347",
+                5036507755,
+            ),
+            (
+                "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+                1570,
+            ),
+            (
+                "36e3a42e5cf14cd0020e72d92e1fdd9970f59b82170e421f0cbe1bb42bead3f0",
+                17466,
+            ),
+            (
+                "50c9cf588f1bda1c93d92ec69b03011bf101cc6867c6415fe5f07f1c87e49e72",
+                627,
+            ),
+            (
+                "5455e83705bbdd4e3702c7d4f9d49d4900e84533036628f74500538075dd5c80",
+                176940,
+            ),
+            (
+                "5abf861e7a13e7af805105270b2648634b41fda02238ae8ee1bd64628acce9b1",
+                5087069898,
+            ),
+            (
+                "6a6cba167e5c630a69b527b2b095c0da623507511e43c05a57c5527d9b66fa0d",
+                5275612587,
+            ),
+            (
+                "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
+                385,
+            ),
+            (
+                "7f1ab1fb69c8fe2109e3eddf4ab98c8c3fb88a09406cad917944a3dc5490f232",
+                737,
+            ),
+            (
+                "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+                19989343,
+            ),
+            (
+                "87d95b037f57d101448b262059b7d28d65d55f60231100cdb1827d7cd44202cd",
+                123593,
+            ),
+            (
+                "90c3a3ba5bf53818383a58e1a776cbcacd2a038d4812eaa373e1522f2d06f3df",
+                2095,
+            ),
+            (
+                "922461e4da8c9e3ae2dc5e4f0ccedf5a0259f1e81d3ebda20b3af39e28118f33",
+                5296718232,
+            ),
+            (
+                "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+                7756,
+            ),
+            (
+                "a64883e3afd8e8b76e7370ba1b288f6f2dc9a0e071337c9eddb420b747555209",
+                33381,
+            ),
+            (
+                "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+                32169626,
+            ),
+            (
+                "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003",
+                6722759,
+            ),
+            (
+                "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+                208,
+            ),
+            (
+                "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182",
+                1139,
+            ),
         ]);
         let actual: BTreeSet<(&str, u64)> = catalog()
             .iter()
             .map(|artifact| (artifact.sha256, artifact.size_bytes))
             .collect();
-        assert_eq!(catalog().len(), 20);
+        assert_eq!(catalog().len(), 45);
         assert_eq!(actual, expected);
     }
 
@@ -547,15 +974,38 @@ mod tests {
     }
 
     #[test]
-    fn origin_keys_follow_the_mirror_convention_with_only_cuda_exceptions() {
+    fn origin_keys_follow_the_mirror_convention_with_only_cuda_and_mlx_exceptions() {
         let exceptions: Vec<_> = catalog()
             .iter()
             .filter(|artifact| artifact.unit == "llama-server-cuda")
             .collect();
         assert_eq!(exceptions.len(), 2);
 
+        // MLX is the second exception, and it is ASSERTED rather than skipped:
+        // a snapshot's filenames are unique only within a repository, so the key
+        // carries a repo segment. Skipping it here would let a malformed MLX key
+        // through silently, which is the failure this test exists to prevent.
+        let mlx: Vec<_> = catalog()
+            .iter()
+            .filter(|artifact| artifact.unit == "mlx-snapshot")
+            .collect();
+        assert_eq!(mlx.len(), 25);
+        for artifact in &mlx {
+            let repo = artifact
+                .artifact_key
+                .expect("an mlx row carries its source repo")
+                .replace('/', "-");
+            assert_eq!(
+                artifact.origin_key,
+                format!(
+                    "assets/{}/{}/{}/{}",
+                    artifact.unit, repo, artifact.version, artifact.filename
+                )
+            );
+        }
+
         for artifact in catalog() {
-            if artifact.unit == "llama-server-cuda" {
+            if artifact.unit == "llama-server-cuda" || artifact.unit == "mlx-snapshot" {
                 continue;
             }
             assert_eq!(
