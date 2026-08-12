@@ -307,7 +307,7 @@ pub fn build_mlx_fit_report(
     };
 
     let ram = mlx_ram_check(name, available_ram);
-    let known = vec![(format!("{name} snapshot"), size)];
+    let known = [(format!("{name} snapshot"), size)];
     let known_refs = known
         .iter()
         .map(|(label, size)| (label.as_str(), *size))
