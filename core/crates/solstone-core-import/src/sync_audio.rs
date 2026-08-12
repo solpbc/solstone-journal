@@ -32,7 +32,7 @@ pub trait DirectoryScanner {
 
 /// Caller-owned ffprobe-equivalent duration query.
 pub trait AudioProbe {
-    fn duration_seconds(&self, source: &Path) -> Result<Option<u64>, String>;
+    fn duration_seconds(&self, source: &Path) -> Result<Option<f64>, String>;
 }
 
 /// Caller-owned manifest lookup.
@@ -258,6 +258,24 @@ fn catalogue<M>(
             .root_mut()
             .insert("files".to_owned(), Value::Object(Map::new()));
     }
+    for entry in state
+        .files_mut()
+        .values_mut()
+        .filter_map(Value::as_object_mut)
+    {
+        if entry.get("status") != Some(&Value::String("available".to_owned())) {
+            continue;
+        }
+        let Some(hash) = entry.get("hash").and_then(Value::as_str) else {
+            continue;
+        };
+        if manifests.imported_hash(hash) {
+            entry.insert("status".to_owned(), Value::String("imported".to_owned()));
+            entry.insert("imported_at".to_owned(), Value::String(clock.now()));
+            entry.remove("last_error");
+            entry.remove("skip_reason");
+        }
+    }
     let candidates = scanner
         .audio_candidates(&request.source_path)
         .map_err(AudioSyncError::Scan)?;
@@ -291,7 +309,7 @@ fn catalogue<M>(
             continue;
         }
         match probe.duration_seconds(&candidate.source) {
-            Ok(Some(duration)) if duration >= 30 => {
+            Ok(Some(duration)) if duration >= 30.0 => {
                 entry.insert("status".to_owned(), Value::String("available".to_owned()));
                 entry.insert("duration".to_owned(), Value::from(duration));
                 entry.remove("last_error");
@@ -321,6 +339,9 @@ fn catalogue<M>(
     }
     for (relative, entry) in state.files_mut().iter_mut() {
         if !seen.iter().any(|path| path == relative)
+            && entry.as_object().is_none_or(|object| {
+                object.get("status") != Some(&Value::String("imported".to_owned()))
+            })
             && let Some(object) = entry.as_object_mut()
         {
             object.insert("status".to_owned(), Value::String("removed".to_owned()));

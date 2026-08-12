@@ -14,12 +14,13 @@ use crate::sync_plaud::SyncClock;
 use crate::sync_state::{BackendName, SyncState, SyncStateRead, read_sync_state, write_sync_state};
 
 /// A note prepared by a caller-owned directory scanner.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ObsidianNote {
     pub relative_path: String,
     pub filename: String,
     pub title: String,
-    pub modified_at: String,
+    /// Filesystem mtime as the reference stores it.
+    pub modified_at: f64,
     pub content_hash: String,
 }
 
@@ -196,6 +197,12 @@ fn catalogue<M>(
                     && entry.get("content_hash") == Some(&Value::String(note.content_hash.clone()))
             });
         if unchanged {
+            let entry = state
+                .files_mut()
+                .get_mut(&note.relative_path)
+                .and_then(Value::as_object_mut)
+                .expect("existing imported note exists");
+            entry.insert("mtime".to_owned(), Value::from(note.modified_at));
             continue;
         }
         let entry = state
@@ -205,7 +212,7 @@ fn catalogue<M>(
         let entry = entry.as_object_mut().expect("sync-state files are objects");
         entry.insert("filename".to_owned(), Value::String(note.filename.clone()));
         entry.insert("title".to_owned(), Value::String(note.title.clone()));
-        entry.insert("mtime".to_owned(), Value::String(note.modified_at.clone()));
+        entry.insert("mtime".to_owned(), Value::from(note.modified_at));
         entry.insert(
             "content_hash".to_owned(),
             Value::String(note.content_hash.clone()),
