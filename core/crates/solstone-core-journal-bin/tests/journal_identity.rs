@@ -886,7 +886,22 @@ fn journal_identity_universal_command_bypasses_coherence_mismatch() {
     let temp = TempDir::new("journal-universal-coherence");
     let layout = installed_layout(&temp);
     let record = temp.path.join("argv.nul");
+    // Every ProcessKind::Universal token -- and there are exactly three, doctor,
+    // check and contract -- now carries a NativeProcessSpec row, so a universal
+    // command no longer reaches the interpreter at all. The assertion this test
+    // exists for is unchanged: a universal token proceeds despite incoherent
+    // package metadata, where a Service token is refused
+    // (journal_identity_coherence_mismatch_blocks_the_interpreter covers that
+    // direction). Only the path it is observed on moved, from the interpreter to
+    // the native sibling.
+    //
+    // Both recorders stay staged and share one RECORD_FILE on purpose: the argv
+    // shape is what discriminates them. Native dispatch records ["doctor"];
+    // interpreter dispatch would record the -c bootstrap vector. So a regression
+    // that sent a universal token back through Python fails here on a readable
+    // argv mismatch rather than on a missing file.
     write_recording_interpreter(&layout.bin.join("python3"));
+    write_recording_interpreter(&layout.bin.join("solstone-core"));
     fs::write(
         layout
             .site_packages
@@ -896,22 +911,11 @@ fn journal_identity_universal_command_bypasses_coherence_mismatch() {
     .expect("write mismatched metadata");
 
     let mut command = Command::new(&layout.binary);
-    command.arg("check").env("RECORD_FILE", &record);
+    command.arg("doctor").env("RECORD_FILE", &record);
     let mut child = command.spawn().expect("universal command should start");
     let pid = child.id();
     let recorded = wait_for_record(&record);
-    assert_eq!(
-        recorded,
-        vec![
-            b"-c".to_vec(),
-            solstone_core_journal_cli::python_bootstrap_script()
-                .as_bytes()
-                .to_vec(),
-            b"solstone.think.check".to_vec(),
-            b"journal check".to_vec(),
-            b"0".to_vec(),
-        ]
-    );
+    assert_eq!(recorded, vec![b"doctor".to_vec()]);
     kill(Pid::from_raw(pid as i32), Signal::SIGTERM).expect("terminate replaced process");
     assert_eq!(
         child.wait().expect("wait for replaced process").signal(),
