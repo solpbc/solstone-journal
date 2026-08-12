@@ -15,6 +15,9 @@ use serde_json::{Value, json};
 use socket2::{Domain, SockAddr, Socket, Type};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 use solstone_core_convey_shell::{RouterMergeSet, merged_router};
+use solstone_core_ingest::{
+    INGEST_MANIFEST_DAY_PATH, INGEST_MANIFEST_PATH, INGEST_SEGMENTS_DAY_PATH, INGEST_UPLOAD_PATH,
+};
 use tower::ServiceExt;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -113,6 +116,44 @@ async fn request(
     (status, content_type, body)
 }
 
+async fn empty_request(
+    app: axum::Router,
+    method: Method,
+    path: &str,
+    basis: AccessBasis,
+) -> (StatusCode, Option<String>, String, String) {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .body(Body::empty())
+        .expect("request builds");
+    request.extensions_mut().insert(basis);
+    request.headers_mut().insert(
+        "X-Solstone-Protocol-Version",
+        "3".parse().expect("protocol header"),
+    );
+    let response = app.oneshot(request).await.expect("router responds");
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = String::from_utf8_lossy(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response reads"),
+    )
+    .into_owned();
+    (status, location, content_type, body)
+}
+
 fn multipart_upload_for(segment: &str, name: &str, bytes: &[u8]) -> (String, Vec<u8>) {
     let boundary = "composed-ingest-boundary";
     let envelope = json!({
@@ -185,6 +226,17 @@ fn drain_listener(listener: UnixListener) -> mpsc::Receiver<String> {
 async fn merged_surface_keeps_session_scopes_access_and_shell_fallback() {
     let unestablished = TempDir::new();
     assert_eq!(
+        empty_request(
+            app(&unestablished),
+            Method::GET,
+            "/does-not-exist",
+            AccessBasis::Localhost,
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
         request(
             app(&unestablished),
             Method::GET,
@@ -213,6 +265,17 @@ async fn merged_surface_keeps_session_scopes_access_and_shell_fallback() {
 
     let corrupt = TempDir::new();
     corrupt.corrupt();
+    assert_eq!(
+        empty_request(
+            app(&corrupt),
+            Method::GET,
+            "/does-not-exist",
+            AccessBasis::Localhost,
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
     assert_eq!(
         request(
             app(&corrupt),
@@ -290,6 +353,84 @@ async fn merged_surface_keeps_session_scopes_access_and_shell_fallback() {
 }
 
 #[tokio::test]
+async fn ac2_every_non_init_route_is_session_gated_and_keeps_its_surface() {
+    let routes = [
+        (Method::GET, "/app/network/api/devices".to_owned()),
+        (Method::GET, "/app/network/api/identity".to_owned()),
+        (Method::POST, INGEST_UPLOAD_PATH.to_owned()),
+        (Method::GET, INGEST_MANIFEST_PATH.to_owned()),
+        (
+            Method::GET,
+            INGEST_MANIFEST_DAY_PATH.replace("{day}", "20260811"),
+        ),
+        (
+            Method::GET,
+            INGEST_SEGMENTS_DAY_PATH.replace("{day}", "20260811"),
+        ),
+    ];
+    let unestablished = TempDir::new();
+    for (method, path) in &routes {
+        let (status, location, _, _) = empty_request(
+            app(&unestablished),
+            method.clone(),
+            path,
+            AccessBasis::Localhost,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FOUND, "{method} {path}");
+        assert_eq!(location.as_deref(), Some("/init"), "{method} {path}");
+    }
+
+    let established = TempDir::new();
+    established.establish();
+    for path in ["/app/network/api/devices", "/app/network/api/identity"] {
+        let (status, content_type, body) = request(
+            app(&established),
+            Method::GET,
+            path,
+            Body::empty(),
+            AccessBasis::Localhost,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert!(content_type.starts_with("application/json"), "{path}");
+        assert!(body.is_object(), "{path}");
+    }
+    for path in [
+        INGEST_MANIFEST_PATH,
+        &INGEST_MANIFEST_DAY_PATH.replace("{day}", "20260811"),
+        &INGEST_SEGMENTS_DAY_PATH.replace("{day}", "20260811"),
+    ] {
+        let (status, content_type, body) = request(
+            app(&established),
+            Method::GET,
+            path,
+            Body::empty(),
+            linked_device(),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert!(content_type.starts_with("application/json"), "{path}");
+        assert!(body.is_object(), "{path}");
+    }
+    let (content_type, body) = multipart_upload();
+    let (status, content_type, body) = request(
+        app(&established),
+        Method::POST,
+        INGEST_UPLOAD_PATH,
+        Body::from(body),
+        linked_device(),
+        Some(content_type),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("application/json"));
+    assert_eq!(body["status"], "ok");
+}
+
+#[tokio::test]
 async fn merged_link_identity_aliases_match() {
     let journal = TempDir::new();
     journal.establish();
@@ -343,16 +484,26 @@ async fn merged_init_mark_routes_pass_unestablished_and_stop_on_corruption() {
     assert_eq!(locked, StatusCode::OK);
 
     journal.corrupt();
-    let (status, _, _) = request(
+    let (status, _, _, _) = empty_request(
         app(&journal),
         Method::POST,
         "/init/mark/regenerate",
-        Body::empty(),
         AccessBasis::Localhost,
-        None,
     )
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let (status, _, _, detail) = empty_request(
+        app(&journal),
+        Method::POST,
+        "/init/mark/lock",
+        AccessBasis::Localhost,
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        detail,
+        solstone_core_convey_shell::session::corrupt_config_detail(&journal.0)
+    );
 }
 
 #[tokio::test]

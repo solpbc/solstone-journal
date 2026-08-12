@@ -394,6 +394,8 @@ fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
 }
 
 #[cfg(feature = "host")]
+// [check] Production may name the shell, ingest, and link routers only in this
+// merge set; tests may build their own routers directly.
 pub struct RouterMergeSet {
     shell: Router,
     ingest: Router,
@@ -415,6 +417,12 @@ impl RouterMergeSet {
 /// Merge the shell, ingest, and link HTTP surfaces under one session gate.
 #[cfg(feature = "host")]
 pub fn merged_router(journal_root: PathBuf, merge_set: RouterMergeSet) -> Router {
+    // [check] These sub-routers register absolute paths, so nesting would
+    // double-prefix them; merge keeps each route at its declared path.
+    // [check] Unmounted /app/network/api/status falls through as known-app JSON 501,
+    // while deferred observer register/health/deleteSource paths are unknown-app HTML 404.
+    // DID observers return None from Python find_observer_by_name, so they do not
+    // advance Python segments_observed or sync-history observed counters.
     session_gate::apply_layer(
         merge_set
             .shell

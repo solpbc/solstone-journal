@@ -61,6 +61,8 @@ impl IngestNotifier for CallosumIngestNotifier {
         match self.send(notice) {
             Ok(()) => Ok(()),
             Err(error) => {
+                // [check] No in-process retry: sense-repair (`journal sense --day <day>`)
+                // recovers this daily, so transcription can lag roughly 24 hours.
                 eprintln!("convey: observer ingest Callosum notify failed: {error}");
                 Err(error)
             }

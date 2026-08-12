@@ -375,6 +375,8 @@ fn required_string(
 /// The device display label is not carried on the wire at this protocol
 /// version. An empty label lets `bind_stream` fall back to its own default,
 /// disambiguated per (did, source) exactly like any other label.
+// [check] SegmentDir's `_default`/sense.py falsy-name divergence is real but
+// unreachable here because this route always passes the hardcoded empty label.
 const STREAM_LABEL: &str = "";
 
 /// Write one multipart envelope through the resolve/apply segment boundary.
@@ -480,6 +482,8 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             );
         }
         Err(_) => {
+            // [check] W2a/W2b leave this partial-hold I/O gap open: bytes can
+            // land without a device_ingest event or notification; track it on the lane board.
             return outcome_error(
                 "failed",
                 ReasonCode::JournalWriteFailed,
@@ -558,6 +562,8 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             meta: &envelope.meta,
         };
         if let Err(error) = state.notifier.notify(&notice) {
+            // [check] No in-process retry: sense-repair (`journal sense --day <day>`)
+            // recovers this daily, so transcription can lag roughly 24 hours.
             eprintln!("observer ingest notification degraded: {error}");
         }
     }
@@ -974,6 +980,28 @@ mod tests {
         let event: Value = serde_json::from_str(&events).unwrap();
         assert_eq!(event["did"], DID_A);
         assert_eq!(event["meta"]["did"], DID_B);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn upload_response_event_and_disk_bytes_share_one_sha256() {
+        let root = root();
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, response) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let expected = format!("{:x}", sha2::Sha256::digest(b"sound"));
+        let recorded =
+            fs::read(root.join("chronicle/20260804/device/120000_1/audio.flac")).unwrap();
+        let event: Value = serde_json::from_str(
+            &fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(format!("{:x}", sha2::Sha256::digest(recorded)), expected);
+        assert_eq!(response["file_descriptors"][0]["sha256"], expected);
+        assert_eq!(event["files"][0]["sha256"], expected);
         let _ = fs::remove_dir_all(root);
     }
 
