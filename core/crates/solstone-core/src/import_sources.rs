@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Top-level dispatch for source bodies that depend on the import contract.
+
+use std::env;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
+
+use solstone_core_generate::OneShotClient;
+use solstone_core_import::{
+    ImportResult, NativePublicationOperations, RegistrySource,
+    cli_argv::{CliRun, RegistryDispatch},
+    cli_render,
+};
+use solstone_core_import_sources::archive::{
+    ArchiveMergeOptions, FullReindexRequester, merge_journal_archive,
+};
+use solstone_core_import_sources::{
+    ImportSourcesError, chatgpt, claude, document, gemini, ics, image, kindle, obsidian,
+};
+
+const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
+
+pub fn run(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    match dispatch.source {
+        RegistrySource::Ics => preview_only(dispatch, ics::preview),
+        RegistrySource::Obsidian => preview_only(dispatch, obsidian::preview),
+        RegistrySource::Claude => preview_only(dispatch, claude::preview),
+        RegistrySource::Chatgpt => preview_only(dispatch, chatgpt::preview),
+        RegistrySource::Kindle => preview_only(dispatch, kindle::preview),
+        RegistrySource::Gemini => preview_only(dispatch, gemini::preview),
+        RegistrySource::Document => run_document(dispatch, journal),
+        RegistrySource::Image => run_image(dispatch, journal),
+        RegistrySource::JournalArchive => run_archive(dispatch, journal),
+        RegistrySource::AppleHealth | RegistrySource::Oura => {
+            unreachable!("resolver preempts body")
+        }
+    }
+}
+
+fn preview_only<E>(
+    dispatch: RegistryDispatch,
+    preview: impl FnOnce(&Path) -> Result<solstone_core_import::ImportPreview, E>,
+) -> CliRun
+where
+    E: std::fmt::Display,
+{
+    if !dispatch.dry_run {
+        return failure(cli_render::source_preview_only_refusal(dispatch.source));
+    }
+    match preview(&dispatch.media) {
+        Ok(preview) => success(cli_render::source_preview(dispatch.source, &preview)),
+        Err(error) => failure(format!(
+            "{} preview failed: {error}\n",
+            dispatch.source.name()
+        )),
+    }
+}
+
+fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    let worker_path = match pdf_worker_sibling() {
+        Ok(path) => path,
+        Err(error) => return failure(format!("{error}\n")),
+    };
+    let worker = document::SystemPdfWorker::new(worker_path, PDF_WORKER_TIMEOUT);
+    if dispatch.dry_run {
+        let preview = document::preview(
+            document::DocumentPreviewRequest {
+                source: &dispatch.media,
+                password: None,
+                now: SystemTime::now(),
+            },
+            &worker,
+        );
+        return success(cli_render::source_preview(dispatch.source, &preview));
+    }
+    let model = match OneShotClient::sibling() {
+        Ok(client) => document::SystemDocumentModelClient::new(
+            client.with_prefix_arguments(["generate".into()]),
+        ),
+        Err(error) => return failure(format!("{}\n", error_text(error))),
+    };
+    let import_dir = journal.join("imports").join(&dispatch.timestamp);
+    let publication = NativePublicationOperations;
+    let result = document::import(
+        document::DocumentImportRequest {
+            source: &dispatch.media,
+            journal_root: journal,
+            import_dir: &import_dir,
+            import_id: &dispatch.timestamp,
+            revision: None,
+            password: None,
+            force: dispatch.force,
+            now: SystemTime::now(),
+        },
+        &worker,
+        &model,
+        &publication,
+    );
+    render_result(dispatch.source, result)
+}
+
+fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    if dispatch.dry_run {
+        return success(cli_render::source_preview(
+            dispatch.source,
+            &image::preview(&dispatch.media),
+        ));
+    }
+    let wire = image::SystemWireClient;
+    match image::import_image(&dispatch.media, journal, &dispatch.timestamp, None, &wire) {
+        Ok(outcome) => render_result(
+            dispatch.source,
+            ImportResult {
+                entries_written: 1,
+                entities_seeded: 0,
+                files_created: outcome
+                    .files_created
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect(),
+                errors: Vec::new(),
+                summary: "Imported 1 image".to_owned(),
+                hard_failures: Vec::new(),
+                segments: None,
+                date_range: None,
+                merge_summary: None,
+                principal_collision: None,
+                merge_log_path: None,
+                merge_staging_path: None,
+                raw_retention: None,
+            },
+        ),
+        Err(error) => failure(format!(
+            "{} import failed: {error}\n",
+            dispatch.source.name()
+        )),
+    }
+}
+
+fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    if dispatch.dry_run {
+        return failure(cli_render::source_dry_run_unsupported(dispatch.source));
+    }
+    let options = ArchiveMergeOptions {
+        working_root: journal.join("imports").join("archive-merge-work"),
+        ..ArchiveMergeOptions::default()
+    };
+    match merge_journal_archive(
+        &dispatch.media,
+        journal,
+        &options,
+        None::<&dyn FullReindexRequester>,
+    ) {
+        Ok(outcome) => render_result(
+            dispatch.source,
+            ImportResult {
+                entries_written: outcome.entries_written as u64,
+                entities_seeded: 0,
+                files_created: Vec::new(),
+                errors: outcome.errors,
+                summary: format!(
+                    "merged archive: segments_copied={} imports_copied={}",
+                    outcome.merge_summary.segments_copied, outcome.merge_summary.imports_copied
+                ),
+                hard_failures: Vec::new(),
+                segments: None,
+                date_range: None,
+                merge_summary: None,
+                principal_collision: None,
+                merge_log_path: None,
+                merge_staging_path: None,
+                raw_retention: None,
+            },
+        ),
+        Err(error) => archive_failure(dispatch.source, error),
+    }
+}
+
+fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {
+    if result.entries_written > 0 && result.hard_failures.is_empty() {
+        success(cli_render::source_import_complete(source, &result))
+    } else {
+        failure(cli_render::source_import_failure(source, &result))
+    }
+}
+
+fn archive_failure(source: RegistrySource, error: ImportSourcesError) -> CliRun {
+    failure(format!("{} import failed: {error}\n", source.name()))
+}
+
+fn pdf_worker_sibling() -> Result<PathBuf, String> {
+    let current = env::current_exe().map_err(|error| error.to_string())?;
+    let parent = current
+        .parent()
+        .ok_or_else(|| "current executable has no parent".to_owned())?;
+    let path = parent.join("solstone-core-pdf");
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!("missing sibling executable {}", path.display()))
+    }
+}
+
+fn error_text(error: solstone_core_generate::ClientError) -> String {
+    match error {
+        solstone_core_generate::ClientError::Resolve(detail)
+        | solstone_core_generate::ClientError::Io(detail)
+        | solstone_core_generate::ClientError::Decode(detail) => detail,
+        solstone_core_generate::ClientError::Protocol(detail) => detail.detail,
+    }
+}
+
+fn success(stdout: String) -> CliRun {
+    CliRun {
+        stdout,
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+fn failure(stderr: String) -> CliRun {
+    CliRun {
+        stdout: String::new(),
+        stderr,
+        exit_code: 1,
+    }
+}

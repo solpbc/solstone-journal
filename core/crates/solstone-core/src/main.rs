@@ -45,6 +45,7 @@ mod check;
 mod contract;
 mod facet_candidates;
 mod identity;
+mod import_sources;
 mod install_models;
 mod install_provider;
 mod navigate;
@@ -571,7 +572,12 @@ fn run_streams(args: Vec<OsString>) -> ExitCode {
 
 fn run_importer(args: Vec<OsString>) -> ExitCode {
     run_storage_ops_verb("importer", args, |arguments, journal| {
-        let run = solstone_core_import::cli_argv::run_cli(arguments, journal);
+        let run = match solstone_core_import::cli_argv::run_cli(arguments, journal) {
+            solstone_core_import::cli_argv::CliOutcome::Rendered(run) => run,
+            solstone_core_import::cli_argv::CliOutcome::Registry(dispatch) => {
+                import_sources::run(dispatch, journal)
+            }
+        };
         (run.stdout, run.stderr, run.exit_code)
     })
 }

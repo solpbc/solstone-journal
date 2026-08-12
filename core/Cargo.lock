@@ -2462,6 +2462,7 @@ dependencies = [
  "solstone-core-grab",
  "solstone-core-identity",
  "solstone-core-import",
+ "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
@@ -3062,6 +3063,7 @@ dependencies = [
  "sha2",
  "solstone-core-cli",
  "solstone-core-journal-cli",
+ "zip",
 ]
 
 [[package]]

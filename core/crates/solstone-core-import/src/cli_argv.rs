@@ -19,8 +19,8 @@ use crate::cli_render;
 use crate::connect::{OuraConnectRequest, connect_oura};
 use crate::contract::{AudioAuto, SyncPreviewRequest};
 use crate::detect::{
-    ManifestSummary, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
-    resolve_import,
+    ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
+    ResolvedSource, resolve_import,
 };
 use crate::sync_audio::{
     AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSyncRequest, DirectoryScanner,
@@ -43,12 +43,31 @@ pub struct CliRun {
     pub exit_code: i32,
 }
 
+/// Result of parsing and resolving one importer invocation.
+#[derive(Debug, Eq, PartialEq)]
+pub enum CliOutcome {
+    /// The import crate fully handled this invocation.
+    Rendered(CliRun),
+    /// The top-level binary must invoke the source-specific body.
+    Registry(RegistryDispatch),
+}
+
+/// Source-body inputs that cross from the import grammar to the owning binary.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RegistryDispatch {
+    pub media: PathBuf,
+    pub source: RegistrySource,
+    pub timestamp: String,
+    pub dry_run: bool,
+    pub force: bool,
+}
+
 /// Run the importer grammar with the process environment and local supervisor probe.
-pub fn run_cli(args: &[String], journal_path: &Path) -> CliRun {
+pub fn run_cli(args: &[String], journal_path: &Path) -> CliOutcome {
     let parsed = match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => return success(cli_render::HELP.to_owned()),
+        Ok(ParsedCommand::Help) => return rendered(success(cli_render::HELP.to_owned())),
         Ok(parsed) => parsed,
-        Err(arguments) => return argparse_error(arguments),
+        Err(arguments) => return rendered(argparse_error(arguments)),
     };
     run_after_parse(parsed, journal_path, || require_solstone(journal_path))
 }
@@ -59,15 +78,15 @@ pub fn run_cli_with<E, C>(
     journal_path: &Path,
     lookup_env: E,
     connectivity: C,
-) -> CliRun
+) -> CliOutcome
 where
     E: Fn(&str) -> Option<String>,
     C: FnOnce() -> bool,
 {
     let parsed = match parse_arguments(args) {
-        Ok(ParsedCommand::Help) => return success(cli_render::HELP.to_owned()),
+        Ok(ParsedCommand::Help) => return rendered(success(cli_render::HELP.to_owned())),
         Ok(parsed) => parsed,
-        Err(arguments) => return argparse_error(arguments),
+        Err(arguments) => return rendered(argparse_error(arguments)),
     };
     run_after_parse(parsed, journal_path, || {
         require_solstone_with(lookup_env, connectivity)
@@ -78,21 +97,23 @@ fn run_after_parse(
     parsed: ParsedCommand,
     journal_path: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
-) -> CliRun {
+) -> CliOutcome {
     match preflight() {
         Ok(()) => {}
-        Err(SupervisorRefusal::SpawnedUnavailable) => return failure("", "", 75),
+        Err(SupervisorRefusal::SpawnedUnavailable) => return rendered(failure("", "", 75)),
         Err(SupervisorRefusal::Unavailable) => {
-            return failure("", &format!("{SUPERVISOR_MESSAGE}\n"), 1);
+            return rendered(failure("", &format!("{SUPERVISOR_MESSAGE}\n"), 1));
         }
     }
 
     match parsed {
         ParsedCommand::Help => unreachable!("help returns before supervisor preflight"),
-        ParsedCommand::ListImporters { json } => success(cli_render::importers(json)),
-        ParsedCommand::Backends => success(cli_render::backends()),
-        ParsedCommand::Connect { backend } => run_connect(&backend, journal_path),
-        ParsedCommand::Sync { backend, options } => run_sync(&backend, &options, journal_path),
+        ParsedCommand::ListImporters { json } => rendered(success(cli_render::importers(json))),
+        ParsedCommand::Backends => rendered(success(cli_render::backends())),
+        ParsedCommand::Connect { backend } => rendered(run_connect(&backend, journal_path)),
+        ParsedCommand::Sync { backend, options } => {
+            rendered(run_sync(&backend, &options, journal_path))
+        }
         ParsedCommand::Import(options) => run_import(options, journal_path),
     }
 }
@@ -154,43 +175,56 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_import(options: Options, journal_path: &Path) -> CliRun {
+fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
     let Some(media) = options.media.as_deref() else {
-        return argparse_error("the following arguments are required: media".to_owned());
+        return rendered(argparse_error(
+            "the following arguments are required: media".to_owned(),
+        ));
     };
     if media == "journal-source" {
-        return cli_journal_source::run_cli(&options.extra, journal_path);
+        return rendered(cli_journal_source::run_cli(&options.extra, journal_path));
     }
     let outcome = match resolve(options_ref(&options, media), journal_path) {
         Ok(outcome) => outcome,
-        Err(error) => return failure("", &format!("{error}\n"), 1),
+        Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
     };
     match outcome {
-        ResolutionOutcome::RouteAppleHealth => run_apple(media, &options, journal_path),
-        ResolutionOutcome::Skipped { reason, .. } => {
-            success(cli_render::resolution_skipped(&format!("{reason:?}")))
-        }
+        ResolutionOutcome::RouteAppleHealth => rendered(run_apple(media, &options, journal_path)),
+        ResolutionOutcome::Skipped { reason, .. } => rendered(success(
+            cli_render::resolution_skipped(&format!("{reason:?}")),
+        )),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::GenericAudio,
             timestamp,
             ..
-        } => run_audio(media, &options, journal_path, timestamp.as_str()),
+        } => rendered(run_audio(media, &options, journal_path, timestamp.as_str())),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::GenericText,
             timestamp,
             stream,
-        } => run_text(media, &options, journal_path, timestamp.as_str(), &stream),
+        } => rendered(run_text(
+            media,
+            &options,
+            journal_path,
+            timestamp.as_str(),
+            &stream,
+        )),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::Registry(source),
+            timestamp,
             ..
-        } => failure(
-            "",
-            &format!(
-                "native importer cannot invoke the {source:?} source body: solstone-core-import-sources depends on solstone-core-import\n"
-            ),
-            1,
-        ),
+        } => CliOutcome::Registry(RegistryDispatch {
+            media: PathBuf::from(media),
+            source,
+            timestamp: timestamp.as_str().to_owned(),
+            dry_run: options.dry_run,
+            force: options.force,
+        }),
     }
+}
+
+fn rendered(run: CliRun) -> CliOutcome {
+    CliOutcome::Rendered(run)
 }
 
 fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &str) -> CliRun {

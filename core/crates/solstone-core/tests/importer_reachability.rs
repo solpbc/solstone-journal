@@ -3,13 +3,15 @@
 
 //! Spawned-binary reachability coverage for the native journal importer.
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::Value;
 use solstone_core_segment::SUPERVISOR_MESSAGE;
 use tempfile::TempDir;
+use zip::write::SimpleFileOptions;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/import_reference_grammar.json");
 const ORACLE: &str = include_str!("../../../fixtures/import_cli_help_oracle.json");
@@ -24,6 +26,9 @@ enum Input {
     Pdf,
     Image,
     Archive,
+    Claude,
+    Chatgpt,
+    Gemini,
     AppleExport,
     Oura,
     AudioDirectory,
@@ -49,6 +54,18 @@ enum Invocation {
     JournalSourceList,
     JournalSourceStatus,
     JournalSourceRevoke,
+}
+
+impl Invocation {
+    fn writes_journal_state(self) -> bool {
+        matches!(
+            self,
+            Self::Structured {
+                source: "document" | "image" | "journal_archive",
+                ..
+            }
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -123,9 +140,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Ics,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Ics source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "2 events, 1 unique attendees",
                 },
             ),
             (
@@ -134,9 +151,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Vault,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Obsidian source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "1 daily notes, 2 knowledge notes, 1 unique wikilinks",
                 },
             ),
             (
@@ -145,9 +162,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Pdf,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Document source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "document import complete: entries_written=1",
                 },
             ),
             (
@@ -156,9 +173,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Image,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Image source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "image import complete: entries_written=1",
                 },
             ),
             (
@@ -167,42 +184,42 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Archive,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the JournalArchive source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "journal_archive import complete: entries_written=1",
                 },
             ),
             (
                 Invocation::Structured {
                     source: "chatgpt",
-                    input: Input::Archive,
+                    input: Input::Chatgpt,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Chatgpt source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "1 messages from ChatGPT export",
                 },
             ),
             (
                 Invocation::Structured {
                     source: "claude",
-                    input: Input::Archive,
+                    input: Input::Claude,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Claude source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "2 messages from Claude chat export",
                 },
             ),
             (
                 Invocation::Structured {
                     source: "gemini",
-                    input: Input::Archive,
+                    input: Input::Gemini,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Gemini source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "1 messages from Gemini export",
                 },
             ),
             (
@@ -211,9 +228,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Kindle,
                 },
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "native importer cannot invoke the Kindle source body",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "1 highlights from 1 books",
                 },
             ),
         ],
@@ -365,6 +382,9 @@ struct Inputs {
     pdf: PathBuf,
     image: PathBuf,
     archive: PathBuf,
+    claude: PathBuf,
+    chatgpt: PathBuf,
+    gemini: PathBuf,
     apple_export: PathBuf,
     oura: PathBuf,
     audio_directory: PathBuf,
@@ -385,10 +405,13 @@ impl Inputs {
         let text = directory.join("transcript.txt");
         fs::write(&text, "A short imported transcript.").expect("text input");
         let ics = directory.join("calendar.ics");
-        fs::write(&ics, "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR\n").expect("ICS input");
+        fs::write(&ics, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:20260311T120000Z\r\nCREATED:20260311T120000Z\r\nATTENDEE;CN=Taylor:mailto:taylor@example.com\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20260312T120000Z\r\nCREATED:20260312T120000Z\r\nATTENDEE;CN=Taylor:mailto:taylor@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").expect("ICS input");
         let vault = directory.join("vault");
         fs::create_dir(&vault).expect("vault directory");
-        fs::write(vault.join("note.md"), "# Imported note\n").expect("vault note");
+        fs::create_dir(vault.join(".obsidian")).expect("vault marker");
+        fs::write(vault.join("2026-03-11.md"), "# Daily\n[[Topic]]\n").expect("daily note");
+        fs::write(vault.join("Topic.md"), "# Topic\n").expect("topic note");
+        fs::write(vault.join("Other.md"), "# Other\n").expect("other note");
         let pdf = directory.join("document.pdf");
         fs::copy(root.join("core/fixtures/pdf_corpus/text.pdf"), &pdf).expect("copy PDF fixture");
         let image = directory.join("image.png");
@@ -396,13 +419,25 @@ impl Inputs {
             .save(&image)
             .expect("image input");
         let archive = directory.join("archive.zip");
+        write_zip(
+            &archive,
+            &[(
+                "archive/chronicle/20260311/120000_60/value",
+                b"archive import",
+            )],
+        );
+        let claude = directory.join("claude.zip");
+        write_zip(&claude, &[("conversations.json", br#"[{"created_at":"2026-03-11T12:00:00","chat_messages":[{"sender":"human","text":"Hello","created_at":"2026-03-11T12:00:00"},{"sender":"assistant","text":"Hi","created_at":"2026-03-11T12:01:00"}]}]"#)]);
+        let chatgpt = directory.join("chatgpt.zip");
+        write_zip(&chatgpt, &[("conversations.json", br#"[{"mapping":{"root":{"message":{"author":{"role":"user"},"content":{"parts":["Hello"]},"create_time":1773230400.0},"parent":null}},"current_node":"root"}]"#)]);
+        let gemini = directory.join("gemini.zip");
+        write_zip(&gemini, &[("Takeout/My Activity/Gemini Apps/MyActivity.json", br#"[{"time":"2026-03-11T12:00:00Z","subtitles":[{"value":"prompt"}],"products":["Gemini"],"header":"Gemini"}]"#)]);
+        let apple_export = directory.join("apple_health.zip");
         fs::copy(
             root.join("tests/fixtures/importers/health/apple_health_synthetic.zip"),
-            &archive,
+            &apple_export,
         )
-        .expect("copy archive fixture");
-        let apple_export = directory.join("apple_health.zip");
-        fs::copy(&archive, &apple_export).expect("copy Apple export");
+        .expect("copy Apple export");
         let oura = directory.join("daily_sleep.json");
         fs::copy(
             root.join("core/fixtures/body-source/inputs/oura/daily_sleep.json"),
@@ -413,10 +448,7 @@ impl Inputs {
         fs::create_dir(&audio_directory).expect("audio directory");
         fs::copy(&audio, audio_directory.join("audio.m4a")).expect("copy sync audio");
         let kindle = directory.join("My Clippings.txt");
-        fs::write(
-            &kindle,
-            "Book title\n- Your Highlight\nLocation 1\n\nText\n==========\n",
-        )
+        fs::write(&kindle, "A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n")
         .expect("Kindle input");
         Self {
             audio,
@@ -426,6 +458,9 @@ impl Inputs {
             pdf,
             image,
             archive,
+            claude,
+            chatgpt,
+            gemini,
             apple_export,
             oura,
             audio_directory,
@@ -442,6 +477,9 @@ impl Inputs {
             Input::Pdf => &self.pdf,
             Input::Image => &self.image,
             Input::Archive => &self.archive,
+            Input::Claude => &self.claude,
+            Input::Chatgpt => &self.chatgpt,
+            Input::Gemini => &self.gemini,
             Input::AppleExport => &self.apple_export,
             Input::Oura => &self.oura,
             Input::AudioDirectory => &self.audio_directory,
@@ -473,8 +511,16 @@ impl Invocation {
                 let mut args = vec![
                     "--source".to_owned(),
                     source.to_owned(),
+                    "--timestamp".to_owned(),
+                    "20260311_120000".to_owned(),
                     path(inputs.path(input)),
                 ];
+                if matches!(
+                    source,
+                    "ics" | "obsidian" | "claude" | "chatgpt" | "kindle" | "gemini"
+                ) {
+                    args.push("--dry-run".to_owned());
+                }
                 if source == "apple_health" {
                     args.extend(["--dry-run".to_owned(), "--json".to_owned()]);
                 }
@@ -517,6 +563,18 @@ impl Invocation {
             ],
         }
     }
+}
+
+fn write_zip(path: &Path, members: &[(&str, &[u8])]) {
+    let file = File::create(path).expect("create zip");
+    let mut writer = zip::ZipWriter::new(file);
+    for (name, bytes) in members {
+        writer
+            .start_file(*name, SimpleFileOptions::default())
+            .expect("zip member");
+        writer.write_all(bytes).expect("zip content");
+    }
+    writer.finish().expect("finish zip");
 }
 
 fn path(path: &Path) -> String {
@@ -573,9 +631,29 @@ fn run_in_column(column: SupervisorColumn, args: &[String], journal: &TempDir) -
     command
         .arg("importer")
         .args(args)
-        .env("SOLSTONE_JOURNAL", journal.path());
+        .env("SOLSTONE_JOURNAL", journal.path())
+        .env("SOLSTONE_CORE_PDF_LIBRARY", pdfium_library());
     column.configure(&mut command);
     command.output().expect("run importer")
+}
+
+fn pdfium_library() -> PathBuf {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join("target/pdfium-runtime-link/linux-x86_64/libpdfium.so");
+    assert!(
+        path.is_file(),
+        "PDFium runtime is not staged; run make check-rust-pdf-stage"
+    );
+    let worker = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core"))
+        .parent()
+        .expect("core binary parent")
+        .join("solstone-core-pdf");
+    assert!(
+        worker.is_file(),
+        "PDF worker is not built; run cargo build --manifest-path core/Cargo.toml -p solstone-core-pdf --locked"
+    );
+    path
 }
 
 fn run_case(
@@ -586,12 +664,16 @@ fn run_case(
     case.invocations
         .iter()
         .map(|(invocation, expected)| {
+            let isolated_journal = invocation
+                .writes_journal_state()
+                .then(|| TempDir::new().expect("pristine journal"));
+            let target_journal = isolated_journal.as_ref().unwrap_or(journal);
             (
                 expected,
                 run_in_column(
                     SupervisorColumn::GatePassed,
                     &invocation.args(inputs),
-                    journal,
+                    target_journal,
                 ),
             )
         })
@@ -621,6 +703,87 @@ fn every_mode_has_its_promised_observable() {
             assert!(quiet.is_empty(), "{} wrote to both streams", case.name);
         }
     }
+}
+
+#[test]
+fn document_import_writes_the_source_and_transcript() {
+    let journal = TempDir::new().expect("journal");
+    let inputs = Inputs::create(&journal);
+    let output = run_in_column(
+        SupervisorColumn::GatePassed,
+        &Invocation::Structured {
+            source: "document",
+            input: Input::Pdf,
+        }
+        .args(&inputs),
+        &journal,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let chronicle = journal.path().join("chronicle");
+    let original = find_named_file(&chronicle, "original.pdf").expect("installed PDF original");
+    let transcript = find_named_file(&chronicle, "document_transcript.md")
+        .expect("installed document transcript");
+    let segment = original.parent().expect("original segment");
+    assert_eq!(transcript.parent(), Some(segment));
+    assert_eq!(
+        segment.parent().and_then(Path::file_name),
+        Some("import.document".as_ref())
+    );
+    assert!(original.starts_with(&chronicle));
+    assert!(transcript.starts_with(&chronicle));
+}
+
+#[test]
+fn preview_only_sources_refuse_to_claim_a_write() {
+    let journal = TempDir::new().expect("journal");
+    let inputs = Inputs::create(&journal);
+    for (source, input) in [
+        ("ics", Input::Ics),
+        ("obsidian", Input::Vault),
+        ("claude", Input::Claude),
+        ("chatgpt", Input::Chatgpt),
+        ("kindle", Input::Kindle),
+        ("gemini", Input::Gemini),
+    ] {
+        let output = run_in_column(
+            SupervisorColumn::GatePassed,
+            &[
+                "--source".to_owned(),
+                source.to_owned(),
+                "--timestamp".to_owned(),
+                "20260311_120000".to_owned(),
+                path(inputs.path(input)),
+            ],
+            &journal,
+        );
+        assert_eq!(output.status.code(), Some(1), "{source}");
+        assert!(output.stdout.is_empty(), "{source} wrote stdout");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("{source} import previews only and writes nothing; rerun with --dry-run\n")
+        );
+    }
+}
+
+fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
+    let Ok(entries) = fs::read_dir(root) else {
+        return None;
+    };
+    entries.filter_map(Result::ok).find_map(|entry| {
+        let path = entry.path();
+        if path.file_name().is_some_and(|file_name| file_name == name) {
+            Some(path)
+        } else if path.is_dir() {
+            find_named_file(&path, name)
+        } else {
+            None
+        }
+    })
 }
 
 #[test]
