@@ -23,18 +23,18 @@ use solstone_core_system::process::{
 use solstone_core_system::provider_runtime::{
     CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig, ProbeStatus,
     ProviderName, ProviderRetryState, ProviderRuntimeEvent, ProviderRuntimeEventSink,
-    ProviderRuntimeNow, ReasonCode, ReconcileContext, RuntimePhase, RuntimeStore,
-    RuntimeStoreError, cancel_start, store_error_phase,
+    ProviderRuntimeNow, ProviderRuntimeState, ReasonCode, ReconcileContext, RuntimePhase,
+    RuntimeStore, RuntimeStoreError, cancel_start, store_error_phase,
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
-use solstone_core_system::schedule::ScheduleNow;
+use solstone_core_system::schedule::{ScheduleNow, ScheduleStatus};
 use solstone_core_system::status_wire::{
     CrashedServiceCandidate, ProcessObservation as WireProcessObservation, ServiceCandidate,
     StaleHeartbeatWireInput, SupervisorStatusWireInput, project_supervisor_status,
 };
 use solstone_core_system::{
     catchup::{CatchupError, eligible_catchup_days},
-    queue::TaskQueue,
+    queue::{TaskQueue, TaskQueueStatusSnapshot},
 };
 
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
@@ -50,6 +50,98 @@ struct AppProcessSample {
     service: AppService,
     process_count: usize,
     tuple: Option<ProcessObservationTuple<i32>>,
+}
+
+enum StatusEmissionPlan {
+    Errors(Vec<&'static str>),
+    Status(SupervisorStatusWireInput),
+}
+
+struct StatusEmissionInputs<'a> {
+    app_observations: Vec<(AppService, SystemProcessObservation)>,
+    local_observation: SystemProcessObservation,
+    parakeet_observation: SystemProcessObservation,
+    local_state: &'a ProviderRuntimeState,
+    parakeet_state: &'a ProviderRuntimeState,
+    supervisor_pid: u32,
+    supervisor_uptime_seconds: u64,
+    queue: TaskQueueStatusSnapshot,
+    stale_heartbeats: Vec<StaleHeartbeatWireInput>,
+    schedules: Vec<ScheduleStatus>,
+    callosum_clients: usize,
+}
+
+fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan {
+    let mut indeterminate_services = inputs
+        .app_observations
+        .iter()
+        .filter_map(|(service, observation)| {
+            matches!(observation, SystemProcessObservation::Indeterminate)
+                .then_some(service.as_str())
+        })
+        .collect::<Vec<_>>();
+    if matches!(
+        &inputs.local_observation,
+        SystemProcessObservation::Indeterminate
+    ) {
+        indeterminate_services.push(ProviderName::Local.as_str());
+    }
+    if matches!(
+        &inputs.parakeet_observation,
+        SystemProcessObservation::Indeterminate
+    ) {
+        indeterminate_services.push(ProviderName::Parakeet.as_str());
+    }
+    if !indeterminate_services.is_empty() {
+        return StatusEmissionPlan::Errors(indeterminate_services);
+    }
+
+    let providers = [
+        (inputs.local_state, inputs.local_observation),
+        (inputs.parakeet_state, inputs.parakeet_observation),
+    ];
+    let mut services = vec![ServiceCandidate::SupervisorSelf {
+        reference: "supervisor".into(),
+        pid: inputs.supervisor_pid,
+        uptime_seconds: inputs.supervisor_uptime_seconds,
+    }];
+    services.extend(
+        inputs
+            .app_observations
+            .into_iter()
+            .map(|(service, observation)| ServiceCandidate::App {
+                name: service.as_str().to_owned(),
+                observation: wire_observation(observation),
+            }),
+    );
+    services.extend(
+        providers
+            .iter()
+            .map(|(provider, observation)| ServiceCandidate::Provider {
+                provider: provider.provider,
+                observation: wire_observation(observation.clone()),
+                phase: provider.latest_phase,
+                reason_code: provider.latest_reason_code.clone(),
+            }),
+    );
+    let crashed = providers
+        .iter()
+        .filter(|(provider, _)| is_crashed_phase(provider.latest_phase))
+        .map(|(provider, _)| CrashedServiceCandidate {
+            name: provider.provider.as_str().to_owned(),
+            restart_attempts: provider.retry.attempt_count,
+            phase: provider.latest_phase,
+            reason_code: provider.latest_reason_code.clone(),
+        })
+        .collect();
+    StatusEmissionPlan::Status(SupervisorStatusWireInput {
+        services,
+        crashed,
+        queue: inputs.queue,
+        stale_heartbeats: inputs.stale_heartbeats,
+        schedules: inputs.schedules,
+        callosum_clients: inputs.callosum_clients,
+    })
 }
 
 pub(crate) async fn run(state: &mut SupervisorState) -> bool {
@@ -112,93 +204,52 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
                 .parakeet
                 .shared
                 .observe_current_process(&state.parakeet.processes, status_now);
-            let mut indeterminate_services = app_observations
-                .iter()
-                .filter_map(|(service, observation)| {
-                    matches!(observation, SystemProcessObservation::Indeterminate)
-                        .then_some(service.as_str())
-                })
-                .collect::<Vec<_>>();
-            if matches!(&local_observation, SystemProcessObservation::Indeterminate) {
-                indeterminate_services.push(ProviderName::Local.as_str());
-            }
-            if matches!(
-                &parakeet_observation,
-                SystemProcessObservation::Indeterminate
-            ) {
-                indeterminate_services.push(ProviderName::Parakeet.as_str());
-            }
-            if !indeterminate_services.is_empty() {
-                for service in indeterminate_services {
+            let queue = state.queue.collect_status_snapshot(status_now);
+            let wall = chrono::Local::now();
+            let schedules = state.scheduler.collect_status(ScheduleNow {
+                local: wall.naive_local(),
+                unix_millis: wall.timestamp_millis(),
+            });
+            match plan_status_emission(StatusEmissionInputs {
+                app_observations,
+                local_observation,
+                parakeet_observation,
+                local_state: &state.local.state,
+                parakeet_state: &state.parakeet.state,
+                supervisor_pid: std::process::id(),
+                supervisor_uptime_seconds: status_now
+                    .saturating_duration_since(state.started)
+                    .as_secs(),
+                queue,
+                stale_heartbeats: state
+                    .stale_heartbeats
+                    .iter()
+                    .map(stale_heartbeat_wire_input)
+                    .collect(),
+                schedules,
+                callosum_clients: state.server.client_count(),
+            }) {
+                StatusEmissionPlan::Errors(services) => {
+                    for service in services {
+                        emit(
+                            &state.server,
+                            "supervisor",
+                            "status-error",
+                            Map::from_iter([
+                                ("service".into(), json!(service)),
+                                ("reason".into(), json!("process-observation-failed")),
+                            ]),
+                        );
+                    }
+                }
+                StatusEmissionPlan::Status(input) => {
                     emit(
                         &state.server,
                         "supervisor",
-                        "status-error",
-                        Map::from_iter([
-                            ("service".into(), json!(service)),
-                            ("reason".into(), json!("process-observation-failed")),
-                        ]),
+                        "status",
+                        project_supervisor_status(input),
                     );
                 }
-            } else {
-                let providers = [
-                    (&state.local.state, local_observation),
-                    (&state.parakeet.state, parakeet_observation),
-                ];
-                let mut services = vec![ServiceCandidate::SupervisorSelf {
-                    reference: "supervisor".into(),
-                    pid: std::process::id(),
-                    uptime_seconds: status_now
-                        .saturating_duration_since(state.started)
-                        .as_secs(),
-                }];
-                services.extend(app_observations.into_iter().map(|(service, observation)| {
-                    ServiceCandidate::App {
-                        name: service.as_str().to_owned(),
-                        observation: wire_observation(observation),
-                    }
-                }));
-                services.extend(providers.iter().map(|(provider, observation)| {
-                    ServiceCandidate::Provider {
-                        provider: provider.provider,
-                        observation: wire_observation(observation.clone()),
-                        phase: provider.latest_phase,
-                        reason_code: provider.latest_reason_code.clone(),
-                    }
-                }));
-                let crashed = providers
-                    .iter()
-                    .filter(|(provider, _)| is_crashed_phase(provider.latest_phase))
-                    .map(|(provider, _)| CrashedServiceCandidate {
-                        name: provider.provider.as_str().to_owned(),
-                        restart_attempts: provider.retry.attempt_count,
-                        phase: provider.latest_phase,
-                        reason_code: provider.latest_reason_code.clone(),
-                    })
-                    .collect();
-                let queue = state.queue.collect_status_snapshot(status_now);
-                let wall = chrono::Local::now();
-                let schedules = state.scheduler.collect_status(ScheduleNow {
-                    local: wall.naive_local(),
-                    unix_millis: wall.timestamp_millis(),
-                });
-                emit(
-                    &state.server,
-                    "supervisor",
-                    "status",
-                    project_supervisor_status(SupervisorStatusWireInput {
-                        services,
-                        crashed,
-                        queue,
-                        stale_heartbeats: state
-                            .stale_heartbeats
-                            .iter()
-                            .map(stale_heartbeat_wire_input)
-                            .collect(),
-                        schedules,
-                        callosum_clients: state.server.client_count(),
-                    }),
-                );
             }
             last_status = status_now;
         }
@@ -1144,6 +1195,7 @@ fn sync_tick(state: &mut SupervisorState) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -1267,6 +1319,154 @@ mod tests {
             ),
             SystemProcessObservation::ConfirmedAbsent
         );
+    }
+
+    fn live_observation(reference: &str, pid: u32) -> SystemProcessObservation {
+        SystemProcessObservation::Live {
+            reference: reference.to_owned(),
+            pid,
+            uptime_seconds: 4,
+        }
+    }
+
+    fn provider_state(provider: ProviderName, phase: RuntimePhase) -> ProviderRuntimeState {
+        let mut state = ProviderRuntimeState::new(provider);
+        state.latest_phase = phase;
+        state
+    }
+
+    fn empty_queue_snapshot() -> TaskQueueStatusSnapshot {
+        TaskQueueStatusSnapshot {
+            tasks: Vec::new(),
+            recent_tasks: Vec::new(),
+            queues: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn status_emission_plan_composes_a_status_only_when_all_observations_are_determinate() {
+        let local = provider_state(ProviderName::Local, RuntimePhase::Ready);
+        let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Stopped);
+
+        let plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: vec![(
+                AppService::Convey,
+                live_observation("supervisor-app-convey", 11),
+            )],
+            local_observation: live_observation("local:12", 12),
+            parakeet_observation: SystemProcessObservation::ConfirmedAbsent,
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue: empty_queue_snapshot(),
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+        });
+
+        let StatusEmissionPlan::Status(input) = plan else {
+            panic!("determinate observations must produce a status plan");
+        };
+        assert_eq!(input.services.len(), 4);
+        assert!(matches!(
+            &input.services[0],
+            ServiceCandidate::SupervisorSelf {
+                reference,
+                pid: 10,
+                uptime_seconds: 8,
+            } if reference == "supervisor"
+        ));
+        assert!(matches!(
+            &input.services[1],
+            ServiceCandidate::App { name, .. } if name == "convey"
+        ));
+        assert!(matches!(
+            &input.services[2],
+            ServiceCandidate::Provider {
+                provider: ProviderName::Local,
+                phase: RuntimePhase::Ready,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn status_emission_plan_suppresses_status_for_indeterminate_observations() {
+        let local = provider_state(ProviderName::Local, RuntimePhase::Ready);
+        let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Ready);
+        let app_plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: vec![(AppService::Convey, SystemProcessObservation::Indeterminate)],
+            local_observation: live_observation("local:12", 12),
+            parakeet_observation: live_observation("parakeet:13", 13),
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue: empty_queue_snapshot(),
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+        });
+        assert!(matches!(app_plan, StatusEmissionPlan::Errors(services) if services == ["convey"]));
+
+        let provider_plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: Vec::new(),
+            local_observation: SystemProcessObservation::Indeterminate,
+            parakeet_observation: live_observation("parakeet:13", 13),
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue: empty_queue_snapshot(),
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+        });
+        assert!(
+            matches!(provider_plan, StatusEmissionPlan::Errors(services) if services == ["local"])
+        );
+    }
+
+    #[test]
+    fn status_emission_plan_uses_retry_attempts_for_crashed_provider_rows() {
+        let mut local = provider_state(ProviderName::Local, RuntimePhase::Ready);
+        local.retry.attempt_count = 3;
+        local.cleanup_attempt_count = 99;
+        let mut parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::CleanupFailed);
+        parakeet.retry.attempt_count = 3;
+        parakeet.cleanup_attempt_count = 99;
+
+        let plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: Vec::new(),
+            local_observation: live_observation("local:12", 12),
+            parakeet_observation: live_observation("parakeet:13", 13),
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue: empty_queue_snapshot(),
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+        });
+        let StatusEmissionPlan::Status(input) = plan else {
+            panic!("determinate observations must produce a status plan");
+        };
+
+        let projected = project_supervisor_status(input);
+        let services = projected["services"].as_array().expect("services array");
+        assert!(services.iter().any(|service| {
+            service["name"].as_str() == Some("local") && service["phase"].as_str() == Some("ready")
+        }));
+        assert!(services.iter().any(|service| {
+            service["name"].as_str() == Some("parakeet")
+                && service["phase"].as_str() == Some("cleanup-failed")
+        }));
+        let crashed = projected["crashed"].as_array().expect("crashed array");
+        assert_eq!(crashed.len(), 1);
+        assert_eq!(crashed[0]["name"].as_str(), Some("parakeet"));
+        assert_eq!(crashed[0]["restart_attempts"].as_u64(), Some(3));
     }
 
     fn pending(queue: &TaskQueue) -> usize {
