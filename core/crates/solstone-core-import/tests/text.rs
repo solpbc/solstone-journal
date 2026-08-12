@@ -347,11 +347,37 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
     let requests = wire.requests.borrow();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].context, "observe.detect.segment");
+    assert_eq!(
+        requests[0].system_instruction.as_deref(),
+        Some(include_str!("../src/text_assets/detect_transcript_segment.md"))
+    );
+    assert_eq!(requests[0].temperature, 0.3);
     assert_eq!(requests[0].max_output_tokens, 4096);
+    assert_eq!(requests[0].thinking_budget, Some(8192));
     assert!(requests[0].json_output);
+    assert!(
+        requests[0]
+            .json_schema
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|schema| !schema.is_empty())
+    );
     assert_eq!(requests[1].context, "observe.detect.json");
+    assert_eq!(
+        requests[1].system_instruction.as_deref(),
+        Some(include_str!("../src/text_assets/detect_transcript_json.md"))
+    );
+    assert_eq!(requests[1].temperature, 0.3);
     assert_eq!(requests[1].max_output_tokens, 8192);
+    assert_eq!(requests[1].thinking_budget, Some(8192));
     assert!(requests[1].json_output);
+    assert!(
+        requests[1]
+            .json_schema
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|schema| !schema.is_empty())
+    );
 }
 
 #[test]

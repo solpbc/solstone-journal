@@ -136,7 +136,9 @@ impl WireClient for SystemWireClient {
 /// `start_time` remains a raw `HH:MM:SS` value to preserve the Python import
 /// contract exactly. `audio_duration` is currently supplied by no native
 /// dispatcher, but remains public so the final-segment duration contract is
-/// available to its future owner.
+/// available to its future owner. A refused or unparseable boundary-detection
+/// response returns an empty result without writing files; a refused or
+/// unparseable per-segment response skips only that segment and continues.
 #[allow(clippy::too_many_arguments)]
 pub fn process_transcript(
     path: &Path,
@@ -162,6 +164,8 @@ pub fn process_transcript(
 }
 
 /// Process a generic transcript with an injected generate-boundary client.
+///
+/// This has the same refusal behavior as [`process_transcript`].
 #[allow(clippy::too_many_arguments)]
 pub fn process_transcript_with_wire(
     path: &Path,

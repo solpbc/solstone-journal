@@ -38,13 +38,16 @@ fn ac6_read_old_ai_chat_fixtures_drop_import_metadata_except_supported_fields() 
     let produced = produce_chunks(
         Family::AiChat,
         "20260101/import.chatgpt/100000_300/conversation_transcript.jsonl",
-        r#"{"raw":"../../../imports/id/t.txt","topics":"topic","setting":"setting","imported":{"id":"id","facet":"work"}}
+        r#"{"model":"claude-3","raw":"../../../imports/id/t.txt","topics":"topic","setting":"setting","imported":{"id":"id","facet":"work"}}
 {"speaker":"System","text":"metadata-like"}
 {"start":"00:00:00","speaker":"Human","text":"kept"}"#,
         &ChatLabels::default(),
     );
     let header = produced.header.unwrap();
-    assert_eq!(header, "# ChatGPT conversation\nFacet: work");
+    assert_eq!(
+        header,
+        "# ChatGPT conversation\nModel: claude-3\nFacet: work"
+    );
     assert_eq!(produced.chunks.len(), 1);
     assert_eq!(produced.chunks[0].content, "**Human:** kept");
 }
