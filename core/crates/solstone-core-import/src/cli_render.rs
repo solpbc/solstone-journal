@@ -7,6 +7,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::{ImportPreview, ImportResult, RegistrySource};
+
 #[derive(Clone, Copy, Serialize)]
 pub struct ImporterRow {
     pub name: &'static str,
@@ -162,4 +164,77 @@ pub fn obsidian_sync_preview(source: Option<&Path>, files: usize, errors: usize)
 
 pub fn plaud_sync_preview(files: usize) -> String {
     format!("Plaud sync preview complete: files={files}\n")
+}
+
+pub fn source_preview(source: RegistrySource, preview: &ImportPreview) -> String {
+    format!(
+        "{} preview: date_range={}..{} items={} entities={} summary={}\n",
+        source.name(),
+        preview.date_range.0,
+        preview.date_range.1,
+        preview.item_count,
+        preview.entity_count,
+        preview.summary,
+    )
+}
+
+pub fn source_preview_only_refusal(source: RegistrySource) -> String {
+    format!(
+        "{} import previews only and writes nothing; rerun with --dry-run\n",
+        source.name()
+    )
+}
+
+pub fn source_import_complete(source: RegistrySource, result: &ImportResult) -> String {
+    format!(
+        "{} import complete: entries_written={} files_created={} errors={} summary={}\n",
+        source.name(),
+        result.entries_written,
+        result.files_created.len(),
+        result.errors.len(),
+        result.summary,
+    )
+}
+
+pub fn source_import_failure(source: RegistrySource, result: &ImportResult) -> String {
+    let detail = result
+        .hard_failures
+        .first()
+        .or_else(|| result.errors.first())
+        .map(String::as_str)
+        .unwrap_or(result.summary.as_str());
+    format!("{} import failed: {detail}\n", source.name())
+}
+
+pub fn source_dry_run_unsupported(source: RegistrySource) -> String {
+    format!(
+        "{} import does not support --dry-run; rerun without --dry-run to merge the archive\n",
+        source.name()
+    )
+}
+
+pub fn source_archive_merge_complete(
+    source: RegistrySource,
+    segments_copied: usize,
+    imports_copied: usize,
+    entities_created: usize,
+    entities_merged: usize,
+    facets_created: usize,
+    facets_merged: usize,
+) -> String {
+    format!(
+        "{} import complete: segments_copied={segments_copied} imports_copied={imports_copied} entities_created={entities_created} entities_merged={entities_merged} facets_created={facets_created} facets_merged={facets_merged}\n",
+        source.name(),
+    )
+}
+
+pub fn source_archive_already_present(source: RegistrySource) -> String {
+    format!(
+        "{} import did not merge anything: archive content is already present\n",
+        source.name()
+    )
+}
+
+pub fn source_archive_incomplete(source: RegistrySource, detail: &str) -> String {
+    format!("{} import incomplete: {detail}\n", source.name())
 }

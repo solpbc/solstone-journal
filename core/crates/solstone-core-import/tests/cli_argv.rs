@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use solstone_core_import::cli_argv::run_cli_with;
+use solstone_core_import::cli_argv::{CliOutcome, CliRun, run_cli_with};
 use solstone_core_segment::SUPERVISOR_MESSAGE;
 
 #[test]
@@ -66,16 +66,12 @@ fn unknown_attached_option_is_rejected() {
     assert!(result.stderr.contains("usage: journal importer"));
 }
 
-fn run<E, C>(
-    args: &[&str],
-    lookup_env: E,
-    connectivity: C,
-) -> solstone_core_import::cli_argv::CliRun
+fn run<E, C>(args: &[&str], lookup_env: E, connectivity: C) -> CliRun
 where
     E: Fn(&str) -> Option<String>,
     C: FnOnce() -> bool,
 {
-    run_cli_with(
+    match run_cli_with(
         &args
             .iter()
             .map(|value| (*value).to_owned())
@@ -83,5 +79,8 @@ where
         Path::new("."),
         lookup_env,
         connectivity,
-    )
+    ) {
+        CliOutcome::Rendered(run) => run,
+        CliOutcome::Registry(_) => panic!("test invocation must not reach a registry body"),
+    }
 }

@@ -64,9 +64,10 @@ pub use events::{
 pub use metadata::{ImportMetadata, read_import_metadata, read_provenance, write_import_metadata};
 pub use publish::{
     CreatedSegment, DayMarkerOutcome, DayMarkerStatus, IndexPublicationOutcomes, IndexedFile,
-    IndexedFileError, PublicationInput, PublicationOperations, PublicationRecord,
-    PublicationStatus, PublishError, SegmentBindingOutcome, SegmentPublicationOutcome, publish,
-    publish_with_operations, read_publication_record, write_publication_record,
+    IndexedFileError, NativePublicationOperations, PublicationInput, PublicationOperations,
+    PublicationRecord, PublicationStatus, PublishError, SegmentBindingOutcome,
+    SegmentPublicationOutcome, publish, publish_with_operations, read_publication_record,
+    write_publication_record,
 };
 pub use staging::{
     SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,

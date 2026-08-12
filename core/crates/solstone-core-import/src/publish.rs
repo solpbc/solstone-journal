@@ -178,7 +178,7 @@ pub trait PublicationOperations {
     fn emit_drain(&self, journal: &Path, revision: Option<&str>, day: &str);
 }
 
-struct NativePublicationOperations;
+pub struct NativePublicationOperations;
 
 impl PublicationOperations for NativePublicationOperations {
     fn advance_stream(

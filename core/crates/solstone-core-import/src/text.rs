@@ -61,6 +61,12 @@ pub enum TextImportError {
     SegmentKeyUnavailable {
         candidate: String,
     },
+    /// The segmentation adapter is absent, so no segment boundary could be decided.
+    ///
+    /// This is deliberately an error rather than an empty success. Returning zero segments
+    /// here would print a completion banner over an import that wrote nothing, which an owner
+    /// cannot tell apart from a transcript that genuinely had no segments.
+    SegmentationUnavailable,
     Write {
         path: PathBuf,
         source: AtomicWriteError,
@@ -94,6 +100,9 @@ impl fmt::Display for TextImportError {
             Self::SegmentKeyUnavailable { candidate } => {
                 write!(formatter, "no available segment key for {candidate}")
             }
+            Self::SegmentationUnavailable => formatter.write_str(
+                "generic text import requires a native segmentation adapter; nothing was imported",
+            ),
             Self::Write { path, source } => write!(formatter, "{}: {source}", path.display()),
         }
     }
@@ -110,7 +119,8 @@ impl Error for TextImportError {
             | Self::InvalidTime { .. }
             | Self::Wire { .. }
             | Self::NegativeDuration { .. }
-            | Self::SegmentKeyUnavailable { .. } => None,
+            | Self::SegmentKeyUnavailable { .. }
+            | Self::SegmentationUnavailable => None,
         }
     }
 }
@@ -187,7 +197,9 @@ pub fn process_transcript_with_wire(
         })?;
     let segments = match segment_transcript(wire, &text, start_time) {
         Ok(segments) => segments,
-        Err(ModelDetectionError::Unavailable) => return Ok(Vec::new()),
+        Err(ModelDetectionError::Unavailable) => {
+            return Err(TextImportError::SegmentationUnavailable);
+        }
         Err(ModelDetectionError::Failed(source)) => {
             return Err(TextImportError::Wire {
                 phase: TextWirePhase::SegmentBoundary,

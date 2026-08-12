@@ -4,11 +4,14 @@
 #![cfg(unix)]
 
 use std::env;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use zip::write::SimpleFileOptions;
 
 const POISON_INTERPRETER: &str = "#!/bin/sh\nprintf '%s\\n' \"$0\" > \"$POISON_MARKER\"\nexit 97\n";
 
@@ -139,6 +142,9 @@ struct Inputs {
     pdf: PathBuf,
     image: PathBuf,
     archive: PathBuf,
+    claude: PathBuf,
+    chatgpt: PathBuf,
+    gemini: PathBuf,
     apple_export: PathBuf,
     oura: PathBuf,
     audio_directory: PathBuf,
@@ -159,31 +165,41 @@ impl Inputs {
         let text = directory.join("transcript.txt");
         fs::write(&text, "A short imported transcript.").expect("text input");
         let ics = directory.join("calendar.ics");
-        fs::write(&ics, "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR\n").expect("ICS input");
+        fs::write(&ics, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:20260311T120000Z\r\nCREATED:20260311T120000Z\r\nATTENDEE;CN=Taylor:mailto:taylor@example.com\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20260312T120000Z\r\nCREATED:20260312T120000Z\r\nATTENDEE;CN=Taylor:mailto:taylor@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").expect("ICS input");
         let vault = directory.join("vault");
         fs::create_dir(&vault).expect("vault directory");
-        fs::write(vault.join("note.md"), "# Imported note\n").expect("vault note");
+        fs::create_dir(vault.join(".obsidian")).expect("vault marker");
+        fs::write(vault.join("2026-03-11.md"), "# Daily\n[[Topic]]\n").expect("daily note");
+        fs::write(vault.join("Topic.md"), "# Topic\n").expect("topic note");
+        fs::write(vault.join("Other.md"), "# Other\n").expect("other note");
         let pdf = directory.join("document.pdf");
         fs::copy(root.join("core/fixtures/pdf_corpus/text.pdf"), &pdf).expect("copy PDF fixture");
         let image = directory.join("image.png");
-        fs::write(
+        fs::copy(
+            root.join("core/fixtures/describe_fiducials/four_tags_16px.png"),
             &image,
-            [
-                137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0,
-                1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 8, 215, 99, 248,
-                207, 192, 240, 31, 0, 5, 0, 1, 255, 137, 153, 61, 29, 0, 0, 0, 0, 73, 69, 78, 68,
-                174, 66, 96, 130,
-            ],
         )
-        .expect("image input");
+        .expect("copy image fixture");
         let archive = directory.join("archive.zip");
+        write_zip(
+            &archive,
+            &[(
+                "archive/chronicle/20260311/120000_60/value",
+                b"archive import",
+            )],
+        );
+        let claude = directory.join("claude.zip");
+        write_zip(&claude, &[("conversations.json", br#"[{"created_at":"2026-03-11T12:00:00","chat_messages":[{"sender":"human","text":"Hello","created_at":"2026-03-11T12:00:00"},{"sender":"assistant","text":"Hi","created_at":"2026-03-11T12:01:00"}]}]"#)]);
+        let chatgpt = directory.join("chatgpt.zip");
+        write_zip(&chatgpt, &[("conversations.json", br#"[{"mapping":{"root":{"message":{"author":{"role":"user"},"content":{"parts":["Hello"]},"create_time":1773230400.0},"parent":null}},"current_node":"root"}]"#)]);
+        let gemini = directory.join("gemini.zip");
+        write_zip(&gemini, &[("Takeout/My Activity/Gemini Apps/MyActivity.json", br#"[{"time":"2026-03-11T12:00:00Z","subtitles":[{"value":"prompt"}],"products":["Gemini"],"header":"Gemini"}]"#)]);
+        let apple_export = directory.join("apple_health.zip");
         fs::copy(
             root.join("tests/fixtures/importers/health/apple_health_synthetic.zip"),
-            &archive,
+            &apple_export,
         )
-        .expect("copy archive fixture");
-        let apple_export = directory.join("apple_health.zip");
-        fs::copy(&archive, &apple_export).expect("copy Apple export");
+        .expect("copy Apple export");
         let oura = directory.join("daily_sleep.json");
         fs::copy(
             root.join("core/fixtures/body-source/inputs/oura/daily_sleep.json"),
@@ -196,7 +212,7 @@ impl Inputs {
         let kindle = directory.join("My Clippings.txt");
         fs::write(
             &kindle,
-            "Book title\n- Your Highlight\nLocation 1\n\nText\n==========\n",
+            "A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n",
         )
         .expect("Kindle input");
         Self {
@@ -207,12 +223,27 @@ impl Inputs {
             pdf,
             image,
             archive,
+            claude,
+            chatgpt,
+            gemini,
             apple_export,
             oura,
             audio_directory,
             kindle,
         }
     }
+}
+
+fn write_zip(path: &Path, members: &[(&str, &[u8])]) {
+    let file = File::create(path).expect("create zip");
+    let mut writer = zip::ZipWriter::new(file);
+    for (name, bytes) in members {
+        writer
+            .start_file(*name, SimpleFileOptions::default())
+            .expect("zip member");
+        writer.write_all(bytes).expect("zip content");
+    }
+    writer.finish().expect("finish zip");
 }
 
 enum Stream {
@@ -272,9 +303,9 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                 },
                 Case {
                     args: vec![path(&inputs.text), "20260311_120000".to_owned()],
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Generic text import complete:",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    contains: "generic text import requires a native segmentation adapter",
                 },
                 Case {
                     args: vec![
@@ -307,35 +338,91 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
         (
             "structured sources",
             vec![
-                ("ics", &inputs.ics, "Ics"),
-                ("obsidian", &inputs.vault, "Obsidian"),
-                ("document", &inputs.pdf, "Document"),
-                ("image", &inputs.image, "Image"),
-                ("journal_archive", &inputs.archive, "JournalArchive"),
-                ("chatgpt", &inputs.archive, "Chatgpt"),
-                ("claude", &inputs.archive, "Claude"),
-                ("gemini", &inputs.archive, "Gemini"),
-                ("kindle", &inputs.kindle, "Kindle"),
+                (
+                    "ics",
+                    &inputs.ics,
+                    0,
+                    Stream::Stdout,
+                    "2 events, 1 unique attendees",
+                ),
+                (
+                    "obsidian",
+                    &inputs.vault,
+                    0,
+                    Stream::Stdout,
+                    "1 daily notes, 2 knowledge notes, 1 unique wikilinks",
+                ),
+                (
+                    "document",
+                    &inputs.pdf,
+                    1,
+                    Stream::Stderr,
+                    "missing sibling executable",
+                ),
+                (
+                    "image",
+                    &inputs.image,
+                    0,
+                    Stream::Stdout,
+                    "image import complete: entries_written=1",
+                ),
+                (
+                    "journal_archive",
+                    &inputs.archive,
+                    0,
+                    Stream::Stdout,
+                    "journal_archive import complete: segments_copied=1",
+                ),
+                (
+                    "chatgpt",
+                    &inputs.chatgpt,
+                    0,
+                    Stream::Stdout,
+                    "1 messages from ChatGPT export",
+                ),
+                (
+                    "claude",
+                    &inputs.claude,
+                    0,
+                    Stream::Stdout,
+                    "2 messages from Claude chat export",
+                ),
+                (
+                    "gemini",
+                    &inputs.gemini,
+                    0,
+                    Stream::Stdout,
+                    "1 messages from Gemini export",
+                ),
+                (
+                    "kindle",
+                    &inputs.kindle,
+                    0,
+                    Stream::Stdout,
+                    "1 highlights from 1 books",
+                ),
             ]
             .into_iter()
-            .map(|(source, input, name)| Case {
-                args: vec!["--source".to_owned(), source.to_owned(), path(input)],
-                exit: 1,
-                stream: Stream::Stderr,
-                contains: match name {
-                    "Ics" => "native importer cannot invoke the Ics source body",
-                    "Obsidian" => "native importer cannot invoke the Obsidian source body",
-                    "Document" => "native importer cannot invoke the Document source body",
-                    "Image" => "native importer cannot invoke the Image source body",
-                    "JournalArchive" => {
-                        "native importer cannot invoke the JournalArchive source body"
+            .map(|(source, input, exit, stream, contains)| Case {
+                args: {
+                    let mut args = vec![
+                        "--source".to_owned(),
+                        source.to_owned(),
+                        "--timestamp".to_owned(),
+                        "20260311_120000".to_owned(),
+                        path(input),
+                    ];
+                    if matches!(
+                        source,
+                        "ics" | "obsidian" | "chatgpt" | "claude" | "gemini" | "kindle"
+                    ) {
+                        args.push("--dry-run".to_owned());
                     }
-                    "Chatgpt" => "native importer cannot invoke the Chatgpt source body",
-                    "Claude" => "native importer cannot invoke the Claude source body",
-                    "Gemini" => "native importer cannot invoke the Gemini source body",
-                    "Kindle" => "native importer cannot invoke the Kindle source body",
-                    _ => unreachable!("structured source name"),
+                    args
                 },
+                exit,
+                stream,
+                contains,
             })
             .collect(),
         ),
@@ -467,6 +554,80 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
             assert_case(&harness, mode, &case);
         }
     }
+    for (source, input) in [
+        ("ics", &inputs.ics),
+        ("obsidian", &inputs.vault),
+        ("claude", &inputs.claude),
+        ("chatgpt", &inputs.chatgpt),
+        ("kindle", &inputs.kindle),
+        ("gemini", &inputs.gemini),
+    ] {
+        let case = Case {
+            args: vec![
+                "--source".to_owned(),
+                source.to_owned(),
+                "--timestamp".to_owned(),
+                "20260311_120000".to_owned(),
+                path(input),
+            ],
+            exit: 1,
+            stream: Stream::Stderr,
+            contains: "previews only and writes nothing; rerun with --dry-run",
+        };
+        assert_case(&harness, "preview-only refusal", &case);
+    }
+}
+
+#[test]
+fn writing_sources_use_pristine_journals() {
+    for (source, expected_file, completion) in [
+        (
+            "image",
+            "image_transcript.md",
+            "image import complete: entries_written=1",
+        ),
+        (
+            "journal_archive",
+            "value",
+            "journal_archive import complete: segments_copied=1",
+        ),
+    ] {
+        let harness = Harness::new();
+        let inputs = Inputs::create(&harness.journal);
+        let input = match source {
+            "image" => &inputs.image,
+            "journal_archive" => &inputs.archive,
+            _ => unreachable!("writing source table is exhaustive"),
+        };
+        let case = Case {
+            args: vec![
+                "--source".to_owned(),
+                source.to_owned(),
+                "--timestamp".to_owned(),
+                "20260311_120000".to_owned(),
+                path(input),
+            ],
+            exit: 0,
+            stream: Stream::Stdout,
+            contains: completion,
+        };
+        assert_case(&harness, "pristine writing source", &case);
+        assert!(contains_named_file(
+            &harness.journal.join("chronicle"),
+            expected_file
+        ));
+    }
+}
+
+fn contains_named_file(root: &Path, name: &str) -> bool {
+    let Ok(entries) = fs::read_dir(root) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        let path = entry.path();
+        path.file_name().is_some_and(|file_name| file_name == name)
+            || path.is_dir() && contains_named_file(&path, name)
+    })
 }
 
 #[test]

@@ -155,7 +155,10 @@ fn parent_treats_journal_source_as_media_and_authority_declares_an_argument() {
     )
     .unwrap();
 
-    let parent = cli_argv::run_cli(&args(&["journal-source"]), root.path());
+    let parent = match cli_argv::run_cli(&args(&["journal-source"]), root.path()) {
+        cli_argv::CliOutcome::Rendered(run) => run,
+        cli_argv::CliOutcome::Registry(_) => panic!("journal-source must remain import-owned"),
+    };
     assert_eq!(parent.exit_code, 1);
     assert!(parent.stderr.is_empty());
     assert!(
