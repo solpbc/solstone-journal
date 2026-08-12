@@ -21,6 +21,7 @@ import re
 import subprocess
 import tempfile
 import tomllib
+import urllib.parse
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -65,6 +66,12 @@ JWT_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{2,4096})\.([A-Za-z0-9_-]{2,4096})\.([A-Za-z0-9_-]{2,4096})(?![A-Za-z0-9_-])"
 )
 ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:[^\s\x00\"'<>]|\\ )+")
+OPERATOR_HOME_PATH = re.compile(
+    r"""(?:^|[\s=:"'(\[+@!-]|file://(?:localhost)?)/(?:home|Users)/"""
+)
+ESCAPED_CODEPOINT = re.compile(
+    r"\\+(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2}))"
+)
 
 
 class IntegrityError(RuntimeError):
@@ -73,6 +80,25 @@ class IntegrityError(RuntimeError):
     def __init__(self, guard: str, detail: str):
         super().__init__(f"{guard}: {detail}")
         self.guard = guard
+
+
+def contains_operator_path(text: str) -> bool:
+    normalized = text
+    while True:
+        unescaped = re.sub(r"\\+/", "/", normalized)
+        unescaped = ESCAPED_CODEPOINT.sub(
+            lambda match: chr(
+                int(match.group(1) or match.group(2) or match.group(3), 16)
+            ),
+            unescaped,
+        )
+        unescaped = urllib.parse.unquote(unescaped)
+        if unescaped == normalized:
+            break
+        normalized = unescaped
+    return (
+        bool(OPERATOR_HOME_PATH.search(normalized)) or ".hopper/worktrees" in normalized
+    )
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -440,11 +466,7 @@ def audit_corpus(
     dummy_occurrences = 0
     for path in sorted(evidence_root.rglob("*.json")):
         payload = read_json(path)
-        if (
-            "/home/" in path.read_text(encoding="utf-8")
-            or "/Users/" in path.read_text(encoding="utf-8")
-            or ".hopper/worktrees" in path.read_text(encoding="utf-8")
-        ):
+        if contains_operator_path(path.read_text(encoding="utf-8")):
             # Raw fixtures use the synthetic /opt HOME only; no evidence file has a
             # legitimate operator-home role.
             raise IntegrityError("operator-path", f"operator path found in {path}")
@@ -979,6 +1001,37 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
     baseline = read_json(fixture)
     if not isinstance(baseline, dict):
         raise AssertionError("control fixture is not an object")
+    for text in (
+        '"/home/operator/worktree"',
+        "ExecStart=/Users/operator/worktree/bin/sol",
+        "file:///home/operator/worktree",
+        "file:///Users/operator/worktree",
+        "ExecStart=-/home/operator/worktree/bin/sol",
+        "ExecStart=+/Users/operator/worktree/bin/sol",
+        "ExecStart=@/home/operator/worktree/bin/sol argv0",
+        "ExecStart=!/Users/operator/worktree/bin/sol",
+        "ExecStart=!!/home/operator/worktree/bin/sol",
+        r'"\/home\/operator\/worktree"',
+        r'"\/Users\/operator\/worktree"',
+        r'"{\"path\":\"\\/home\\/operator\\/worktree\"}"',
+        r'"{\"path\":\"\\u002fUsers\\u002foperator\\u002fworktree\"}"',
+        r'{"path":"/\u0068ome/operator/worktree"}',
+        r'{"path":"/\u0055sers/operator/worktree"}',
+        r'"{\"path\":\"/\\u0068ome/operator/worktree\"}"',
+        r'"{\"path\":\"/\\u0055sers/operator/worktree\"}"',
+        r"ExecStart=\x2fhome\x2foperator/worktree/bin/sol",
+        r"ExecStart=\U0000002fhome\U0000002foperator/worktree/bin/sol",
+        "file://localhost/home/operator/worktree",
+        "file:%2f%2f%2fUsers%2foperator%2fworktree",
+        "file:%252f%252f%252fhome%252foperator%252fworktree",
+        '"/tmp/.hopper/worktrees/poison"',
+    ):
+        if not contains_operator_path(text):
+            raise AssertionError(f"operator path control was missed: {text}")
+    if contains_operator_path(
+        '"/opt/solstone-service-legacy-evidence/blob/default/home/.local/bin/sol"'
+    ):
+        raise AssertionError("synthetic profile HOME was classified as operator state")
     with tempfile.TemporaryDirectory(
         prefix="service-legacy-integrity-test-"
     ) as temporary:
