@@ -1,0 +1,102 @@
+{
+  "schema": "w6-w8-source-oracles/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "ran each reference source's detect() and preview() over synthetic inputs; preview is read-only",
+    "note": "preview shape is (date_range, item_count, entity_count, summary). The summary string is owner-facing."
+  },
+  "cases": {
+    "ics": {
+      "input": "cal.ics",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "20260311",
+          "20260312"
+        ],
+        "item_count": 2,
+        "entity_count": 1,
+        "summary": "2 events, 1 unique attendees"
+      }
+    },
+    "obsidian": {
+      "input": "vault",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "20260811",
+          "20260811"
+        ],
+        "item_count": 3,
+        "entity_count": 1,
+        "summary": "1 daily notes, 2 knowledge notes, 1 unique wikilinks"
+      }
+    },
+    "claude": {
+      "input": "claude.zip",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "20260311",
+          "20260311"
+        ],
+        "item_count": 2,
+        "entity_count": 0,
+        "summary": "2 messages from Claude chat export"
+      }
+    },
+    "chatgpt": {
+      "input": "chatgpt.zip",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "20260311",
+          "20260311"
+        ],
+        "item_count": 1,
+        "entity_count": 0,
+        "summary": "1 conversations from ChatGPT export"
+      }
+    },
+    "kindle": {
+      "input": "My Clippings.txt",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "20260311",
+          "20260311"
+        ],
+        "item_count": 1,
+        "entity_count": 2,
+        "summary": "1 highlights from 1 books"
+      }
+    },
+    "gemini": {
+      "input": "gemini.zip",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "",
+          ""
+        ],
+        "item_count": 0,
+        "entity_count": 0,
+        "summary": "0 activities from Gemini export"
+      }
+    },
+    "journal_archive": {
+      "input": "archive.zip",
+      "detect": true,
+      "preview": {
+        "date_range": [
+          "20260311",
+          "20260311"
+        ],
+        "item_count": 1,
+        "entity_count": 0,
+        "summary": "Journal archive: 1 days, 0 entities, 0 facets (1 warnings)"
+      }
+    }
+  }
+}
