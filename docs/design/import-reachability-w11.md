@@ -8,11 +8,12 @@ seam, the thin binary handler, argv dispatch, pure CLI rendering, and
 spawned-binary reachability tests. It does not cut over the retained Python
 process row; that is W12.
 
-The scope's description of three unlanded bodies is stale. Generic audio landed
-after that scope in `import/src/audio.rs`, so it is a real generic-media route,
-not a refusal. Archive merge also landed after the scope. The only unlanded
-source bodies are the chat/reading exports: `chatgpt`, `claude`, `gemini`, and
-`kindle`.
+The scope's description of three unlanded bodies is stale. Generic audio,
+archive merge, and all four chat/reading export parsers have landed. The source
+crate still depends on `solstone-core-import`, however, so making `cli_argv`
+call it directly would introduce a Cargo dependency cycle. Until a dedicated
+adapter owns that direction, explicit registry-source routes validate through
+the resolver and then refuse by source name; they do not fabricate a preview.
 
 The boundary is explicit:
 
@@ -47,13 +48,13 @@ All argv below are passed to a freshly spawned
 
 | Mode | Gate-passed argv / subcases | Observable assertion |
 |---|---|---|
-| 1. Generic media path | `TEXT --timestamp YYYYMMDD_HHMMSS --dry-run --json`; `AUDIO --timestamp YYYYMMDD_HHMMSS --dry-run --json`; plus the two-positional timestamp spelling `TEXT YYYYMMDD_HHMMSS --dry-run --json` | Each controlled local input exits 0 on stdout with a JSON result identifying the generic text or audio route; stderr is empty. The parser coverage cases add every compatible generic option, but remain members of this mode. |
-| 2. Structured sources | `--source ics|obsidian|document|image|journal_archive SOURCE --dry-run --json`; `--source chatgpt|claude|gemini|kindle SOURCE` | Controlled landed-source previews exit 0 on stdout with their source identifier and empty stderr. The unlanded cases each require exit 1, empty stdout, and respectively `import-sources: unimplemented: chatgpt`, `import-sources: unimplemented: claude`, `import-sources: unimplemented: gemini`, and `import-sources: unimplemented: kindle` on stderr. |
+| 1. Generic media path | `TEXT YYYYMMDD_HHMMSS`; `AUDIO YYYYMMDD_HHMMSS` | Text calls the native transcript processor and reports its resulting segment count; audio calls the native audio importer. Both use the test-created media and keep stderr empty. |
+| 2. Structured sources | `--source ics|obsidian|document|image|journal_archive|chatgpt|claude|gemini|kindle SOURCE` | Each route first resolves the real input, then exits 1 with empty stdout and a named `native importer cannot invoke the <Source> source body` refusal. This is a dependency-boundary refusal, not an unimplemented-body claim or synthetic success. |
 | 3. Body/Apple native return | `--source apple_health APPLE_EXPORT --dry-run --json` | Exit 0 on stdout; parsed JSON identifies `schema: solstone.body.ingest.result.v1`, `source: apple_health`, and preview mode. Stderr is empty. |
 | 4. Body/Oura file-route refusal | `--source oura OURA_FILE` | Exit 1, empty stdout, and exactly `Oura body data imports through sync; use journal importer --sync oura` on stderr. |
 | 5. Importer listing | `--list-importers`; `--list-importers --json` | Both exit 0 with empty stderr. Human stdout equals the fixture block; JSON stdout parses and deep-equals the grammar fixture's `importers` array in its eleven-row order. |
 | 6. Backends | `--backends` | Exit 0, empty stderr, and stdout equals the fixture block containing Plaud, Obsidian, Audio, then Oura. |
-| 7. Sync | `--sync audio --path AUDIO_DIR`; `--sync obsidian --path VAULT`; `--sync plaud`; `--sync oura`, with `--save`, `--window-days`, `--scheduled`, and consent controls only where applicable | Local catalog previews exit 0 on stdout and name their backend. The deliberately credentialless Plaud control exits 1 on stderr with its named credential refusal; Oura returns its native result or named body refusal on stderr, never exit 64. Preview is default absent `--save`; `--window-days` is Oura-only and `--path` is local-path-only. |
+| 7. Sync | `--sync audio --path AUDIO_DIR`; `--sync obsidian --path VAULT`; `--sync plaud`; `--sync oura`, with `--save`, `--window-days`, `--scheduled`, and consent controls only where applicable | Audio and Obsidian previews call their filesystem-backed sync bodies and report the scanned source path and catalogue count. Plaud calls its body and reports the real missing-credential refusal when no credential adapter is configured. Oura uses its native body. Save requests that lack a landed pipeline or note-import adapter refuse by name rather than changing a rendered mode word. |
 | 8. Connect | `--connect oura` and `--connect unknown` | The controlled Oura route has the native owner-present outcome on its documented stream and never exit 64; the unknown-backend control exits 1 on stderr with `Unknown connect backend: unknown` and the connectable-backends line. |
 | 9. Positional journal-source sub-CLI | `journal-source create NAME`, `journal-source list`, `journal-source status NAME`, `journal-source revoke NAME` | Each command exits with its `cli_journal_source::run_cli` result on its documented stream; the create/list/status/revoke fixture sequence uses a test journal and is identifiable by the journal-source record/name. `journal-source --help` is separately an outer-help fixture case because help short-circuits before positional dispatch. |
 

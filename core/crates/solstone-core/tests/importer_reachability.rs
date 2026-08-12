@@ -18,6 +18,7 @@ const TOP_LEVEL_USAGE: &str = "solstone-core --version";
 #[derive(Clone, Copy)]
 enum Input {
     Audio,
+    Text,
     Ics,
     Vault,
     Pdf,
@@ -32,11 +33,13 @@ enum Input {
 #[derive(Clone, Copy)]
 enum Invocation {
     GenericAudio,
+    GenericText,
     Structured { source: &'static str, input: Input },
     ListImporters,
     ListImportersJson,
     Backends,
     SyncAudio,
+    SyncObsidian,
     ConnectUnknown,
     JournalSourceCreate,
     JournalSourceList,
@@ -64,14 +67,24 @@ struct ModeCase {
 const MODE_CASES: &[ModeCase] = &[
     ModeCase {
         name: "generic media",
-        invocations: &[(
-            Invocation::GenericAudio,
-            Expected {
-                exit: 0,
-                stream: Stream::Stdout,
-                identifies: "day: \"20260311\"",
-            },
-        )],
+        invocations: &[
+            (
+                Invocation::GenericAudio,
+                Expected {
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "day: \"20260311\"",
+                },
+            ),
+            (
+                Invocation::GenericText,
+                Expected {
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "Generic text import complete:",
+                },
+            ),
+        ],
     },
     ModeCase {
         name: "structured sources",
@@ -82,9 +95,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Ics,
                 },
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Import preview ready: ics",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "native importer cannot invoke the Ics source body",
                 },
             ),
             (
@@ -93,9 +106,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Vault,
                 },
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Import preview ready: obsidian",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "native importer cannot invoke the Obsidian source body",
                 },
             ),
             (
@@ -104,9 +117,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Pdf,
                 },
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Import preview ready: document",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "native importer cannot invoke the Document source body",
                 },
             ),
             (
@@ -115,9 +128,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Image,
                 },
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Import preview ready: image",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "native importer cannot invoke the Image source body",
                 },
             ),
             (
@@ -126,9 +139,9 @@ const MODE_CASES: &[ModeCase] = &[
                     input: Input::Archive,
                 },
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Import preview ready: journal_archive",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "native importer cannot invoke the JournalArchive source body",
                 },
             ),
             (
@@ -139,7 +152,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 1,
                     stream: Stream::Stderr,
-                    identifies: "import-sources: unimplemented: chatgpt",
+                    identifies: "native importer cannot invoke the Chatgpt source body",
                 },
             ),
             (
@@ -150,7 +163,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 1,
                     stream: Stream::Stderr,
-                    identifies: "import-sources: unimplemented: claude",
+                    identifies: "native importer cannot invoke the Claude source body",
                 },
             ),
             (
@@ -161,7 +174,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 1,
                     stream: Stream::Stderr,
-                    identifies: "import-sources: unimplemented: gemini",
+                    identifies: "native importer cannot invoke the Gemini source body",
                 },
             ),
             (
@@ -172,7 +185,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 1,
                     stream: Stream::Stderr,
-                    identifies: "import-sources: unimplemented: kindle",
+                    identifies: "native importer cannot invoke the Kindle source body",
                 },
             ),
         ],
@@ -239,14 +252,24 @@ const MODE_CASES: &[ModeCase] = &[
     },
     ModeCase {
         name: "sync",
-        invocations: &[(
-            Invocation::SyncAudio,
-            Expected {
-                exit: 0,
-                stream: Stream::Stdout,
-                identifies: "Syncing audio (catalog mode)...",
-            },
-        )],
+        invocations: &[
+            (
+                Invocation::SyncAudio,
+                Expected {
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "Audio sync preview complete: source=",
+                },
+            ),
+            (
+                Invocation::SyncObsidian,
+                Expected {
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "Obsidian sync preview complete: source=",
+                },
+            ),
+        ],
     },
     ModeCase {
         name: "connect",
@@ -300,6 +323,7 @@ const MODE_CASES: &[ModeCase] = &[
 
 struct Inputs {
     audio: PathBuf,
+    text: PathBuf,
     ics: PathBuf,
     vault: PathBuf,
     pdf: PathBuf,
@@ -322,6 +346,8 @@ impl Inputs {
             &audio,
         )
         .expect("copy audio fixture");
+        let text = directory.join("transcript.txt");
+        fs::write(&text, "A short imported transcript.").expect("text input");
         let ics = directory.join("calendar.ics");
         fs::write(&ics, "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR\n").expect("ICS input");
         let vault = directory.join("vault");
@@ -358,6 +384,7 @@ impl Inputs {
         .expect("Kindle input");
         Self {
             audio,
+            text,
             ics,
             vault,
             pdf,
@@ -373,6 +400,7 @@ impl Inputs {
     fn path(&self, input: Input) -> &Path {
         match input {
             Input::Audio => &self.audio,
+            Input::Text => &self.text,
             Input::Ics => &self.ics,
             Input::Vault => &self.vault,
             Input::Pdf => &self.pdf,
@@ -393,6 +421,7 @@ impl Invocation {
                 path(inputs.path(Input::Audio)),
                 "20260311_120000".to_owned(),
             ],
+            Self::GenericText => vec![path(inputs.path(Input::Text)), "20260311_120000".to_owned()],
             Self::Structured { source, input } => {
                 let mut args = vec![
                     "--source".to_owned(),
@@ -412,6 +441,12 @@ impl Invocation {
                 "audio".to_owned(),
                 "--path".to_owned(),
                 path(inputs.path(Input::AudioDirectory)),
+            ],
+            Self::SyncObsidian => vec![
+                "--sync".to_owned(),
+                "obsidian".to_owned(),
+                "--path".to_owned(),
+                path(inputs.path(Input::Vault)),
             ],
             Self::ConnectUnknown => vec!["--connect".to_owned(), "unknown".to_owned()],
             Self::JournalSourceCreate => vec![
@@ -439,32 +474,58 @@ fn path(path: &Path) -> String {
 }
 
 fn run(args: &[&str], journal: &TempDir) -> Output {
-    run_owned(
+    run_in_column(
+        SupervisorColumn::GatePassed,
         &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
         journal,
     )
 }
 
-fn run_owned(args: &[String], journal: &TempDir) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-        .arg("importer")
-        .args(args)
-        .env("SOLSTONE_JOURNAL", journal.path())
-        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
-        .env_remove("SOL_SUPERVISOR_SPAWNED")
-        .output()
-        .expect("run importer")
+#[derive(Clone, Copy)]
+enum SupervisorColumn {
+    GatePassed,
+    SolstoneDown,
+    SpawnedUnavailable,
 }
 
-fn run_down(args: &[String], journal: &TempDir) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+impl SupervisorColumn {
+    fn fixture_name(self) -> &'static str {
+        match self {
+            Self::GatePassed => "gate_passed",
+            Self::SolstoneDown => "solstone_down",
+            Self::SpawnedUnavailable => "supervisor_spawned",
+        }
+    }
+
+    fn configure(self, command: &mut Command) {
+        match self {
+            Self::GatePassed => {
+                command
+                    .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
+                    .env_remove("SOL_SUPERVISOR_SPAWNED");
+            }
+            Self::SolstoneDown => {
+                command
+                    .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
+                    .env_remove("SOL_SUPERVISOR_SPAWNED");
+            }
+            Self::SpawnedUnavailable => {
+                command
+                    .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
+                    .env("SOL_SUPERVISOR_SPAWNED", "1");
+            }
+        }
+    }
+}
+
+fn run_in_column(column: SupervisorColumn, args: &[String], journal: &TempDir) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
         .arg("importer")
         .args(args)
-        .env("SOLSTONE_JOURNAL", journal.path())
-        .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
-        .env_remove("SOL_SUPERVISOR_SPAWNED")
-        .output()
-        .expect("run importer")
+        .env("SOLSTONE_JOURNAL", journal.path());
+    column.configure(&mut command);
+    command.output().expect("run importer")
 }
 
 fn run_case(
@@ -474,7 +535,16 @@ fn run_case(
 ) -> Vec<(&'static Expected, Output)> {
     case.invocations
         .iter()
-        .map(|(invocation, expected)| (expected, run_owned(&invocation.args(inputs), journal)))
+        .map(|(invocation, expected)| {
+            (
+                expected,
+                run_in_column(
+                    SupervisorColumn::GatePassed,
+                    &invocation.args(inputs),
+                    journal,
+                ),
+            )
+        })
         .collect()
 }
 
@@ -494,6 +564,11 @@ fn every_mode_has_its_promised_observable() {
                 "{}: {payload}",
                 case.name
             );
+            let quiet = match expected.stream {
+                Stream::Stdout => &output.stderr,
+                Stream::Stderr => &output.stdout,
+            };
+            assert!(quiet.is_empty(), "{} wrote to both streams", case.name);
         }
     }
 }
@@ -557,9 +632,9 @@ fn list_and_backend_human_forms_match_the_usable_oracle_cases() {
 #[ignore = "help_long, help_short, and journal_source_help await a corrected help-oracle capture; see docs/design/import-reachability-w11.md"]
 fn help_fidelity_is_fixture_exact_when_the_capture_is_corrected() {
     let oracle: Value = serde_json::from_str(ORACLE).expect("help oracle");
-    for column in ["gate_passed", "solstone_down"] {
+    for column in [SupervisorColumn::GatePassed, SupervisorColumn::SolstoneDown] {
         for case in ["help_long", "help_short", "journal_source_help"] {
-            let fixture_case = format!("{column}/{case}");
+            let fixture_case = format!("{}/{case}", column.fixture_name());
             let expected = &oracle["cases"][&fixture_case];
             let args = expected["argv"]
                 .as_array()
@@ -568,11 +643,7 @@ fn help_fidelity_is_fixture_exact_when_the_capture_is_corrected() {
                 .map(|value| value.as_str().expect("fixture argv string").to_owned())
                 .collect::<Vec<_>>();
             let journal = TempDir::new().expect("journal");
-            let output = if column == "gate_passed" {
-                run_owned(&args, &journal)
-            } else {
-                run_down(&args, &journal)
-            };
+            let output = run_in_column(column, &args, &journal);
             assert_eq!(
                 output.status.code(),
                 expected["exit"].as_i64().map(|code| code as i32),
@@ -601,7 +672,11 @@ fn help_fidelity_is_fixture_exact_when_the_capture_is_corrected() {
 #[test]
 fn down_supervisor_reaches_the_shared_unavailable_refusal() {
     let journal = TempDir::new().expect("journal");
-    let output = run_down(&["--list-importers".to_owned()], &journal);
+    let output = run_in_column(
+        SupervisorColumn::SolstoneDown,
+        &["--list-importers".to_owned()],
+        &journal,
+    );
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert_eq!(output.stderr, format!("{SUPERVISOR_MESSAGE}\n").as_bytes());
@@ -610,7 +685,11 @@ fn down_supervisor_reaches_the_shared_unavailable_refusal() {
 #[test]
 fn down_supervisor_unknown_option_is_a_parse_error() {
     let journal = TempDir::new().expect("journal");
-    let output = run_down(&["--nonsense".to_owned()], &journal);
+    let output = run_in_column(
+        SupervisorColumn::SolstoneDown,
+        &["--nonsense".to_owned()],
+        &journal,
+    );
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized arguments: --nonsense"));
@@ -637,13 +716,11 @@ fn surplus_positionals_are_rejected_loudly() {
 #[test]
 fn spawned_unavailable_importer_is_silent() {
     let journal = TempDir::new().expect("journal");
-    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-        .args(["importer", "file"])
-        .env("SOLSTONE_JOURNAL", journal.path())
-        .env("SOL_SUPERVISOR_SPAWNED", "1")
-        .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
-        .output()
-        .expect("run importer");
+    let output = run_in_column(
+        SupervisorColumn::SpawnedUnavailable,
+        &["file".to_owned()],
+        &journal,
+    );
     assert_eq!(output.status.code(), Some(75));
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());

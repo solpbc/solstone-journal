@@ -3,10 +3,12 @@
 
 //! Journal importer argv parsing and dispatch.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::NaiveDateTime;
+use chrono::{Local, NaiveDateTime};
+use ffmpeg_next as ffmpeg;
 use serde_json::json;
 use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
@@ -15,7 +17,23 @@ use solstone_core_segment::{
 use crate::cli_journal_source;
 use crate::cli_render;
 use crate::connect::{OuraConnectRequest, connect_oura};
-use crate::detect::OURA_SYNC_REMEDY;
+use crate::contract::{AudioAuto, SyncPreviewRequest};
+use crate::detect::{
+    ManifestSummary, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
+    resolve_import,
+};
+use crate::sync_audio::{
+    AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSyncRequest, DirectoryScanner,
+    FilesystemAudioStateWriter, ManifestLookup, sync_audio_preview,
+};
+use crate::sync_obsidian::{
+    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianScanner,
+    ObsidianSyncRequest, sync_obsidian_preview,
+};
+use crate::sync_plaud::{
+    FilesystemPlaudStateWriter, PlaudCatalogue, PlaudCredential, PlaudFailureKind,
+    PlaudManifestLookup, PlaudPreviewSeams, PlaudSyncRequest, SyncClock, sync_plaud_preview,
+};
 
 /// Observable result of a library-hosted journal importer invocation.
 #[derive(Debug, Eq, PartialEq)]
@@ -123,10 +141,9 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
                 Err(error) => failure("", &format!("{error}\n"), 1),
             }
         }
-        "plaud" | "obsidian" | "audio" => success(format!(
-            "Syncing {backend} ({} mode)...\n",
-            if options.save { "save" } else { "catalog" }
-        )),
+        "plaud" => run_plaud_sync(journal_path, options),
+        "obsidian" => run_obsidian_sync(journal_path, options),
+        "audio" => run_audio_sync(journal_path, options),
         _ => failure(
             "",
             &format!(
@@ -144,47 +161,42 @@ fn run_import(options: Options, journal_path: &Path) -> CliRun {
     if media == "journal-source" {
         return cli_journal_source::run_cli(&options.extra, journal_path);
     }
-    let source = options.source.as_deref();
-    if matches!(source, Some("chatgpt" | "claude" | "gemini" | "kindle")) {
-        return failure(
+    let outcome = match resolve(options_ref(&options, media), journal_path) {
+        Ok(outcome) => outcome,
+        Err(error) => return failure("", &format!("{}\n", error.message()), 1),
+    };
+    match outcome {
+        ResolutionOutcome::RouteAppleHealth => run_apple(media, &options, journal_path),
+        ResolutionOutcome::Skipped { reason, .. } => {
+            success(cli_render::resolution_skipped(&format!("{reason:?}")))
+        }
+        ResolutionOutcome::Resolved {
+            source: ResolvedSource::GenericAudio,
+            timestamp,
+            ..
+        } => run_audio(media, &options, journal_path, timestamp.as_str()),
+        ResolutionOutcome::Resolved {
+            source: ResolvedSource::GenericText,
+            timestamp,
+            stream,
+        } => run_text(media, &options, journal_path, timestamp.as_str(), &stream),
+        ResolutionOutcome::Resolved {
+            source: ResolvedSource::Registry(source),
+            ..
+        } => failure(
             "",
             &format!(
-                "import-sources: unimplemented: {}\n",
-                source.expect("matched source")
+                "native importer cannot invoke the {source:?} source body: solstone-core-import-sources depends on solstone-core-import\n"
             ),
             1,
-        );
+        ),
     }
-    if source == Some("oura") {
-        return failure("", &format!("{OURA_SYNC_REMEDY}\n"), 1);
-    }
-    if source == Some("apple_health") {
-        return run_apple(media, &options, journal_path);
-    }
-    if let Some(source) = source {
-        return success(format!("Import preview ready: {source}\n"));
-    }
-    if Path::new(media)
-        .extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value.eq_ignore_ascii_case("m4a"))
-    {
-        return run_audio(media, &options, journal_path);
-    }
-    failure(
-        "",
-        "generic text import requires the native text dispatch adapter\n",
-        1,
-    )
 }
 
-fn run_audio(media: &str, options: &Options, journal_path: &Path) -> CliRun {
+fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &str) -> CliRun {
     if options.dry_run {
         return success("Audio import preview: no journal writes requested.\n".to_owned());
     }
-    let Some(timestamp) = options.timestamp.as_deref() else {
-        return failure("", "timestamp must be YYYYMMDD_HHMMSS format\n", 1);
-    };
     let base_timestamp = match NaiveDateTime::parse_from_str(timestamp, "%Y%m%d_%H%M%S") {
         Ok(value) => value,
         Err(_) => return failure("", "timestamp must be YYYYMMDD_HHMMSS format\n", 1),
@@ -203,14 +215,47 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path) -> CliRun {
         base_timestamp,
         import_id: timestamp.to_owned(),
         stream: "import.audio".to_owned(),
-        facet: None,
-        setting: None,
+        facet: options.facet.clone(),
+        setting: options.setting.clone(),
         wait_for_processing: false,
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
     match runtime.block_on(crate::import_audio(request)) {
         Ok(outcome) => success(format!("Generic audio import complete: {outcome:?}\n")),
+        Err(error) => failure("", &format!("{error}\n"), 1),
+    }
+}
+
+fn run_text(
+    media: &str,
+    options: &Options,
+    journal_path: &Path,
+    timestamp: &str,
+    stream: &str,
+) -> CliRun {
+    if options.dry_run {
+        return failure(
+            "",
+            "generic text preview requires a native preview adapter\n",
+            1,
+        );
+    }
+    let day_dir = journal_path.join("chronicle").join(&timestamp[..8]);
+    if let Err(error) = fs::create_dir_all(&day_dir) {
+        return failure("", &format!("{error}\n"), 1);
+    }
+    match crate::process_transcript(
+        Path::new(media),
+        &day_dir,
+        &timestamp[9..],
+        timestamp,
+        stream,
+        options.facet.as_deref(),
+        options.setting.as_deref(),
+        None,
+    ) {
+        Ok(created) => success(cli_render::generic_text_complete(created.len())),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
 }
@@ -249,6 +294,366 @@ fn run_apple(media: &str, options: &Options, journal_path: &Path) -> CliRun {
     }
 }
 
+fn options_ref<'a>(options: &'a Options, media: &'a str) -> ResolutionOptions<'a> {
+    ResolutionOptions {
+        media: Path::new(media),
+        source: options.source.as_deref(),
+        timestamp: options.timestamp.as_deref(),
+        auto: crate::AutoTimestamp::from_raw(options.auto.as_ref().map(|value| value.as_deref())),
+        dry_run: options.dry_run,
+        deterministic_only: options.deterministic_only,
+        force: options.force,
+    }
+}
+
+fn resolve(
+    options: ResolutionOptions<'_>,
+    _journal_path: &Path,
+) -> Result<ResolutionOutcome, crate::ResolutionError<solstone_core_body_ingest::BodyIngestError, ()>>
+{
+    let mut seams = ResolutionSeams {
+        apple_detector: solstone_core_body_ingest::detect_apple_source,
+        // The source crate depends on this crate, so a direct call here would
+        // introduce a Cargo cycle. Explicit source selection still reaches the
+        // resolver and then returns the named boundary refusal below.
+        claims: no_registry_claim,
+        deterministic_detector: no_deterministic_timestamp,
+        model_detector: unavailable_model_timestamp,
+        manifest_lookup: no_manifest_match,
+        generated_timestamp: || {
+            crate::validate_timestamp(&Local::now().format("%Y%m%d_%H%M%S").to_string())
+                .expect("current local timestamp is valid")
+        },
+    };
+    resolve_import(&options, &mut seams)
+}
+
+fn no_registry_claim(_: crate::RegistrySource, _: &Path) -> Result<bool, ()> {
+    Ok(false)
+}
+
+fn no_deterministic_timestamp(_: &Path, _: Option<&str>) -> Option<crate::DetectedTimestamp> {
+    None
+}
+
+fn unavailable_model_timestamp(
+    _: &Path,
+    _: Option<&str>,
+) -> Result<Option<crate::DetectedTimestamp>, crate::ModelDetectionError<()>> {
+    Ok(None)
+}
+
+fn no_manifest_match(_: &crate::SourceHash) -> Option<ManifestSummary> {
+    None
+}
+
+fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
+    if options.save {
+        return failure(
+            "",
+            "audio sync save requires a native import pipeline adapter\n",
+            1,
+        );
+    }
+    let source_path = options.path.clone().unwrap_or_default();
+    let request = AudioSyncRequest::<SyncPreviewRequest>::new(
+        journal_path.to_path_buf(),
+        source_path.clone(),
+        options.force,
+        audio_auto(options),
+    );
+    let scanner = FilesystemAudioScanner;
+    let probe = FilesystemAudioProbe;
+    let manifests = FilesystemManifestLookup { journal_path };
+    let clock = SystemSyncClock;
+    let mut state_writer = FilesystemAudioStateWriter;
+    let mut seams = AudioPreviewSeams {
+        scanner: &scanner,
+        probe: &probe,
+        manifests: &manifests,
+        clock: &clock,
+        state_writer: &mut state_writer,
+    };
+    match sync_audio_preview(&request, &mut seams) {
+        Ok(outcome) => success(cli_render::audio_sync_preview(
+            &source_path,
+            state_file_count(&outcome.state),
+            outcome.errors.len(),
+        )),
+        Err(error) => failure("", &format!("{error}\n"), 1),
+    }
+}
+
+fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
+    if options.save {
+        return failure(
+            "",
+            "Obsidian sync save requires a native note import adapter\n",
+            1,
+        );
+    }
+    let source_path = options.path.clone();
+    let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
+        journal_path.to_path_buf(),
+        source_path.clone(),
+        options.force,
+    );
+    let candidates = EmptyObsidianCandidates;
+    let scanner = FilesystemObsidianScanner;
+    let clock = SystemSyncClock;
+    let mut seams = ObsidianPreviewSeams {
+        candidates: &candidates,
+        scanner: &scanner,
+        clock: &clock,
+    };
+    match sync_obsidian_preview(&request, &mut seams) {
+        Ok(outcome) => success(cli_render::obsidian_sync_preview(
+            source_path.as_deref(),
+            state_file_count(&outcome.state),
+            outcome.errors.len(),
+        )),
+        Err(error) => failure("", &format!("{error}\n"), 1),
+    }
+}
+
+fn run_plaud_sync(journal_path: &Path, _options: &Options) -> CliRun {
+    let credential = MissingPlaudCredential;
+    let mut catalogue = UnusedPlaudCatalogue;
+    let manifests = EmptyPlaudManifestLookup;
+    let clock = SystemSyncClock;
+    let mut state_writer = FilesystemPlaudStateWriter;
+    let mut seams = PlaudPreviewSeams {
+        credential: &credential,
+        catalogue: &mut catalogue,
+        manifests: &manifests,
+        clock: &clock,
+        state_writer: &mut state_writer,
+    };
+    let request = PlaudSyncRequest::<SyncPreviewRequest>::new(journal_path.to_path_buf());
+    match sync_plaud_preview(&request, &mut seams) {
+        Ok(outcome) => success(cli_render::plaud_sync_preview(state_file_count(
+            &outcome.state,
+        ))),
+        Err(error) => failure("", &format!("{error}\n"), 1),
+    }
+}
+
+fn audio_auto(options: &Options) -> AudioAuto {
+    match options.auto.as_ref() {
+        Some(None) => AudioAuto::Enabled,
+        Some(Some(value)) => AudioAuto::Value(value.clone()),
+        None => AudioAuto::Disabled,
+    }
+}
+
+fn state_file_count(state: &crate::SyncState) -> usize {
+    state
+        .root()
+        .get("files")
+        .and_then(serde_json::Value::as_object)
+        .map_or(0, serde_json::Map::len)
+}
+
+struct SystemSyncClock;
+
+impl SyncClock for SystemSyncClock {
+    fn now(&self) -> String {
+        Local::now().to_rfc3339()
+    }
+}
+
+struct FilesystemAudioScanner;
+
+impl DirectoryScanner for FilesystemAudioScanner {
+    fn audio_candidates(&self, root: &Path) -> Result<Vec<AudioCandidate>, String> {
+        let mut candidates = Vec::new();
+        collect_audio_candidates(root, root, &mut candidates)?;
+        Ok(candidates)
+    }
+}
+
+fn collect_audio_candidates(
+    root: &Path,
+    directory: &Path,
+    candidates: &mut Vec<AudioCandidate>,
+) -> Result<(), String> {
+    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_audio_candidates(root, &path, candidates)?;
+            continue;
+        }
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_ascii_lowercase);
+        if !path.is_file() || !matches!(extension.as_deref(), Some("m4a" | "mp3" | "wav" | "opus"))
+        {
+            continue;
+        }
+        let relative_path = path
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .into_owned();
+        let filename = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| format!("audio filename is not UTF-8: {}", path.display()))?
+            .to_owned();
+        let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+        let source_hash = crate::hash_source(&path)
+            .map_err(|error| error.to_string())?
+            .into_inner();
+        candidates.push(AudioCandidate {
+            relative_path,
+            source: path,
+            filename,
+            filesize: metadata.len(),
+            source_hash,
+        });
+    }
+    Ok(())
+}
+
+struct FilesystemAudioProbe;
+
+impl AudioProbe for FilesystemAudioProbe {
+    fn duration_seconds(&self, source: &Path) -> Result<Option<f64>, String> {
+        ffmpeg::init().map_err(|error| error.to_string())?;
+        let input = ffmpeg::format::input(source).map_err(|error| error.to_string())?;
+        let duration = input.duration();
+        if duration == ffmpeg::ffi::AV_NOPTS_VALUE {
+            return Ok(None);
+        }
+        Ok(Some(duration as f64 / f64::from(ffmpeg::ffi::AV_TIME_BASE)))
+    }
+}
+
+struct FilesystemManifestLookup<'a> {
+    journal_path: &'a Path,
+}
+
+impl ManifestLookup for FilesystemManifestLookup<'_> {
+    fn imported_hash(&self, source_hash: &str) -> bool {
+        crate::find_manifest_by_hash(
+            self.journal_path,
+            &crate::SourceHash::new(source_hash.to_owned()),
+        )
+        .ok()
+        .and_then(|scan| scan.found)
+        .is_some()
+    }
+}
+
+struct EmptyObsidianCandidates;
+
+impl ObsidianHomeCandidates for EmptyObsidianCandidates {
+    fn candidates(&self) -> &[PathBuf] {
+        &[]
+    }
+}
+
+struct FilesystemObsidianScanner;
+
+impl ObsidianScanner for FilesystemObsidianScanner {
+    fn is_directory(&self, path: &Path) -> bool {
+        path.is_dir()
+    }
+
+    fn notes(&self, vault: &Path) -> Result<Vec<ObsidianNote>, String> {
+        let mut notes = Vec::new();
+        collect_obsidian_notes(vault, vault, &mut notes)?;
+        Ok(notes)
+    }
+}
+
+fn collect_obsidian_notes(
+    root: &Path,
+    directory: &Path,
+    notes: &mut Vec<ObsidianNote>,
+) -> Result<(), String> {
+    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_obsidian_notes(root, &path, notes)?;
+            continue;
+        }
+        if path.extension().and_then(|value| value.to_str()) != Some("md") {
+            continue;
+        }
+        let content = fs::read(&path).map_err(|error| error.to_string())?;
+        let title = String::from_utf8_lossy(&content)
+            .lines()
+            .find_map(|line| line.strip_prefix("# "))
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("note")
+            })
+            .to_owned();
+        let relative_path = path
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .into_owned();
+        let filename = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| format!("note filename is not UTF-8: {}", path.display()))?
+            .to_owned();
+        let modified_at = fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .map_err(|error| error.to_string())?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_secs_f64();
+        let content_hash = crate::hash_source(&path)
+            .map_err(|error| error.to_string())?
+            .into_inner();
+        notes.push(ObsidianNote {
+            relative_path,
+            filename,
+            title,
+            modified_at,
+            content_hash,
+        });
+    }
+    Ok(())
+}
+
+struct MissingPlaudCredential;
+
+impl PlaudCredential for MissingPlaudCredential {
+    fn access_token(&self) -> Option<&str> {
+        None
+    }
+}
+
+struct UnusedPlaudCatalogue;
+
+impl PlaudCatalogue for UnusedPlaudCatalogue {
+    fn list_files(
+        &mut self,
+        _token: &str,
+    ) -> Result<Vec<crate::sync_plaud::PlaudFile>, PlaudFailureKind> {
+        unreachable!("Plaud catalogue is not called without a credential")
+    }
+}
+
+struct EmptyPlaudManifestLookup;
+
+impl PlaudManifestLookup for EmptyPlaudManifestLookup {
+    fn matching_imports(
+        &self,
+        _files: &[crate::sync_plaud::PlaudFile],
+    ) -> Result<std::collections::BTreeMap<String, String>, PlaudFailureKind> {
+        Ok(std::collections::BTreeMap::new())
+    }
+}
+
 #[derive(Default)]
 struct Options {
     media: Option<String>,
@@ -259,6 +664,9 @@ struct Options {
     date_from: Option<String>,
     date_to: Option<String>,
     path: Option<PathBuf>,
+    facet: Option<String>,
+    setting: Option<String>,
+    auto: Option<Option<String>>,
     window_days: Option<u64>,
     force: bool,
     dry_run: bool,
@@ -268,6 +676,7 @@ struct Options {
     list_importers: bool,
     backends: bool,
     json: bool,
+    deterministic_only: bool,
     extra: Vec<String>,
 }
 
@@ -302,12 +711,14 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
             assign_value(&mut options, argument, value)?;
             index += 1;
         } else if argument == "--auto" {
-            if args
+            let value = args
                 .get(index + 1)
-                .is_some_and(|value| !value.starts_with('-'))
-            {
+                .filter(|value| !value.starts_with('-'))
+                .cloned();
+            if value.is_some() {
                 index += 1;
             }
+            options.auto = Some(value);
         } else if assign_flag(&mut options, argument) {
         } else if argument.starts_with('-') {
             return Err(format!("unrecognized arguments: {argument}"));
@@ -384,7 +795,8 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
                     .map_err(|_| format!("argument --window-days: invalid int value: '{value}'"))?,
             )
         }
-        "--facet" | "--setting" => {}
+        "--facet" => options.facet = Some(value.to_owned()),
+        "--setting" => options.setting = Some(value.to_owned()),
         _ => return Err(format!("unrecognized arguments: {name}={value}")),
     }
     Ok(())
@@ -395,8 +807,8 @@ fn assign_flag(options: &mut Options, argument: &str) -> bool {
         "--force" => options.force = true,
         "--dry-run" => options.dry_run = true,
         "--confirm-body-save" | "--confirm-health-save" => options.confirm_body_save = true,
-        "--with-day-summaries" | "--deterministic-only" | "-v" | "--verbose" | "-d" | "--debug" => {
-        }
+        "--with-day-summaries" | "-v" | "--verbose" | "-d" | "--debug" => {}
+        "--deterministic-only" => options.deterministic_only = true,
         "--backends" => options.backends = true,
         "--save" => options.save = true,
         "--scheduled" => options.scheduled = true,

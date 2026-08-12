@@ -3,6 +3,8 @@
 
 //! Pure owner-facing rendering for the journal importer.
 
+use std::path::Path;
+
 use serde::Serialize;
 
 #[derive(Clone, Copy, Serialize)]
@@ -134,4 +136,30 @@ pub fn backends() -> String {
         output.push_str(&format!("  {backend}\n"));
     }
     output
+}
+
+pub fn resolution_skipped(reason: &str) -> String {
+    format!("Import skipped: {reason}\n")
+}
+
+pub fn generic_text_complete(segments: usize) -> String {
+    format!("Generic text import complete: segments={segments}\n")
+}
+
+pub fn audio_sync_preview(source: &Path, files: usize, errors: usize) -> String {
+    format!(
+        "Audio sync preview complete: source={} files={files} errors={errors}\n",
+        source.display()
+    )
+}
+
+pub fn obsidian_sync_preview(source: Option<&Path>, files: usize, errors: usize) -> String {
+    let source = source
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "configured vault".to_owned());
+    format!("Obsidian sync preview complete: source={source} files={files} errors={errors}\n")
+}
+
+pub fn plaud_sync_preview(files: usize) -> String {
+    format!("Plaud sync preview complete: files={files}\n")
 }
