@@ -165,9 +165,6 @@ pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
 
 /// The complete inventory of importer modules that remain unimplemented.
 pub const MODULE_STUBS: &[ModuleStub] = &[
-    ("contract", contract::reserved_seam),
-    ("detect", detect::reserved_seam),
-    ("timestamp", timestamp::reserved_seam),
     ("audio", audio::reserved_seam),
     ("text", text::reserved_seam),
     ("consent_gate", consent_gate::reserved_seam),

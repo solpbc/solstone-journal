@@ -351,7 +351,3 @@ fn has_extension(path: &Path, expected: &str) -> bool {
 fn has_extension_in(path: &Path, expected: &[&str]) -> bool {
     extension(path).is_some_and(|extension| expected.contains(&extension.as_str()))
 }
-
-pub fn reserved_seam() -> Result<(), crate::ImportError> {
-    Err(crate::ImportError::Unimplemented { module: "detect" })
-}

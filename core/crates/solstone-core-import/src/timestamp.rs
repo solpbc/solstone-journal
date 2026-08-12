@@ -138,9 +138,3 @@ pub fn validate_timestamp(raw: &str) -> Result<Timestamp, TimestampError> {
     }
     Ok(Timestamp(raw.to_owned()))
 }
-
-pub fn reserved_seam() -> Result<(), crate::ImportError> {
-    Err(crate::ImportError::Unimplemented {
-        module: "timestamp",
-    })
-}

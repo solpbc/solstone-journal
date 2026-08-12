@@ -275,8 +275,3 @@ fn collect_entries(
     }
     Ok(())
 }
-
-/// Reserved contract seam; its real operation signature is defined by a later wave.
-pub fn reserved_seam() -> Result<(), ImportError> {
-    Err(ImportError::Unimplemented { module: "contract" })
-}
