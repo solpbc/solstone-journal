@@ -103,7 +103,7 @@ pub fn gemini_archive(tree: &TempTree) -> PathBuf {
     let path = tree.path().join("gemini.zip");
     let activities = json!([
         {"time": "2026-03-11T12:00:00Z", "subtitles": [{"value": "prompt only"}], "products": ["Gemini"], "header": "Gemini"},
-        {"time": "2026-03-11T12:01:00Z", "safeHtmlItem": [{"html": "<p>response only &amp; decoded</p>"}], "products": ["Gemini"], "header": "Gemini"},
+        {"time": "2026-03-11T12:01:00Z", "safeHtmlItem": [{"html": "<p>response only &amp;&nbsp;&#33;&#x3F;</p>"}], "products": ["Gemini"], "header": "Gemini"},
         {"time": "2026-03-11T12:02:00Z", "subtitles": [{"name": "name fallback"}], "safeHtmlItem": [{"html": "<p>both</p>"}], "products": ["Bard"], "header": "Gemini"},
         {"time": "2026-03-11T12:03:00Z", "safeHtmlItem": [{"html": "<p></p>"}], "products": ["Gemini"], "header": "Bard activity"},
         {"time": "2026-03-11T12:04:00Z", "subtitles": [], "safeHtmlItem": []},

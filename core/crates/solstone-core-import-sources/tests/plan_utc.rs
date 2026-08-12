@@ -3,8 +3,9 @@
 
 mod support;
 
+use serde_json::json;
 use solstone_core_import_sources::{chatgpt, claude};
-use support::TempTree;
+use support::{TempTree, write_zip};
 
 #[test]
 fn conversation_entries_keep_roles_timestamps_and_utc_windows() {
@@ -23,4 +24,33 @@ fn conversation_entries_keep_roles_timestamps_and_utc_windows() {
         assert_eq!(plan.segments[0].entries[0].start, "00:00:00");
         assert_eq!(plan.segments[0].entries[1].start, "00:01:00");
     }
+}
+
+#[test]
+fn explicit_offsets_are_normalized_to_utc_before_day_and_window_derivation() {
+    let tree = TempTree::new();
+    let path = tree.path().join("offset.zip");
+    write_zip(
+        &path,
+        &[(
+            "conversations.json".to_owned(),
+            json!([{
+                "chat_messages": [{
+                    "sender": "human",
+                    "text": "offset message",
+                    "created_at": "2026-03-11T23:30:00-08:00"
+                }]
+            }])
+            .to_string()
+            .into_bytes(),
+        )],
+    );
+
+    let plan = claude::plan(&path).unwrap();
+    assert_eq!(
+        plan.date_range,
+        ("20260312".to_owned(), "20260312".to_owned())
+    );
+    assert_eq!(plan.segments[0].day, "20260312");
+    assert_eq!(plan.segments[0].segment_key, "073000_300");
 }

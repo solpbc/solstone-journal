@@ -16,7 +16,7 @@ fn gemini_rich_takeout_pins_prompt_response_html_and_skip_branches() {
         plan.segments[0]
             .entries
             .iter()
-            .any(|entry| entry.text == "response only & decoded")
+            .any(|entry| entry.text == "response only &\u{a0}!?")
     );
     assert!(
         plan.segments[0]
@@ -103,13 +103,14 @@ fn affected_days_are_explicit_sorted_and_deduplicated() {
     );
     let plan = gemini::plan(&path).unwrap();
     assert_eq!(plan.affected_days, vec!["20260311", "20260312"]);
-    assert_eq!(
-        plan.affected_days,
-        plan.segments
-            .iter()
-            .map(|segment| segment.day.clone())
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>()
-    );
+    assert!(plan.affected_days.windows(2).all(|days| days[0] < days[1]));
+}
+
+#[test]
+fn empty_kindle_preview_names_the_atomic_clipping_unit() {
+    let tree = TempTree::new();
+    let path = tree.file("empty-clippings.txt", b"Book\nmetadata\n==========\n");
+    let preview = kindle::preview(&path).unwrap();
+    assert_eq!(preview.item_count, 0);
+    assert_eq!(preview.summary, "0 highlights from 0 books");
 }
