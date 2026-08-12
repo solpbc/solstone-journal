@@ -2912,7 +2912,9 @@ dependencies = [
 name = "solstone-core-import"
 version = "1.0.22"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
+ "getrandom 0.3.4",
  "regex",
  "serde",
  "serde_json",

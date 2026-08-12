@@ -174,7 +174,6 @@ pub const MODULE_STUBS: &[ModuleStub] = &[
     ("sync_audio", sync_audio::reserved_seam),
     ("connect", connect::reserved_seam),
     ("cli_argv", cli_argv::reserved_seam),
-    ("cli_journal_source", cli_journal_source::reserved_seam),
     ("cli_render", cli_render::reserved_seam),
 ];
 
