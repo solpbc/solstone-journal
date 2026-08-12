@@ -7,8 +7,6 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::ImportError;
-
 /// A preview request is distinct from a save request at the type boundary.
 #[derive(Debug, Default)]
 pub struct PreviewRequest;
