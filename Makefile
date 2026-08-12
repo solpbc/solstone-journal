@@ -464,7 +464,7 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
-		"-p solstone-core-local --test admission_cross_process --test vulkan_differential --test install_provider_differential -- --nocapture" \
+		"-p solstone-core-local --test admission_cross_process --test vulkan_differential --test install_provider_differential --test downloading_installers_differential -- --nocapture" \
 		"-p solstone-core-observer --test observer_list_json_differential --test observer_status_differential --test observer_list_human_differential --test observer_reconcile_dry_run_differential --test observer_increment_stat_differential --test observer_resolve_identity_differential --test observer_prune_dry_run_differential" \
 		"-p solstone-core-system --test stt_backend_choice_differential --test partition_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \

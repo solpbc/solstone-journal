@@ -106,44 +106,139 @@ pub fn build_parakeet_fit_report_with_free_bytes(
         },
     };
     let cache = pins::parakeet_cache_root(journal);
-    let disk = disk_check(&cache, available);
+    let disk = disk_check(
+        &cache,
+        available,
+        &[("parakeet GGUF model", pins::PARAKEET_MODEL.4)],
+        &[
+            "parakeet CPU server tarball",
+            "parakeet Vulkan server tarball",
+        ],
+    );
     FitReport {
         artifact: "parakeet.cpp artifacts",
         checks: vec![platform, disk],
     }
 }
 
-fn disk_check(cache: &Path, available: Result<u64, String>) -> FitCheck {
-    let required = pins::PARAKEET_MODEL.4;
-    let unknown =
-        "unknown download size for parakeet CPU server tarball, parakeet Vulkan server tarball";
+pub fn build_rfdetr_fit_report(journal: &Path, os_name: &str, arch: &str) -> FitReport {
+    build_rfdetr_fit_report_with_free_bytes(
+        journal,
+        os_name,
+        arch,
+        free_bytes(&journal.join("cache/providers/rfdetr")),
+    )
+}
+
+pub fn build_rfdetr_fit_report_with_free_bytes(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+    available: Result<u64, String>,
+) -> FitReport {
+    let platform = if os_name == "linux" && matches!(arch, "amd64" | "x64" | "x86_64") {
+        FitCheck {
+            name: "platform",
+            severity: FitSeverity::Ok,
+            detail: "pinned rf-detr.cpp artifacts are available for x86_64-linux".to_owned(),
+        }
+    } else {
+        FitCheck {
+            name: "platform",
+            severity: FitSeverity::Blocked,
+            detail: format!("rf-detr.cpp requires x86_64 Linux, got {os_name}/{arch}"),
+        }
+    };
+    let cache = journal.join("cache/providers/rfdetr");
+    let disk = disk_check(
+        &cache,
+        available,
+        &[
+            ("rf-detr GGUF model", 63_439_488),
+            ("rf-detr CLI binary", 1_048_576),
+        ],
+        &[],
+    );
+    FitReport {
+        artifact: "rf-detr.cpp artifacts",
+        checks: vec![platform, disk],
+    }
+}
+
+fn disk_check(
+    cache: &Path,
+    available: Result<u64, String>,
+    known: &[(&str, u64)],
+    unknown: &[&str],
+) -> FitCheck {
+    let required = known.iter().map(|(_, size)| size).sum::<u64>();
+    let known_names = known
+        .iter()
+        .map(|(name, _)| *name)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let unknown = if unknown.is_empty() {
+        String::new()
+    } else {
+        format!("unknown download size for {}", unknown.join(", "))
+    };
     match available {
         Err(error) => FitCheck {
             name: "disk",
             severity: FitSeverity::Unknown,
-            detail: format!(
-                "available disk space could not be verified at {}: {error}; {unknown}",
-                cache.display()
-            ),
+            detail: if unknown.is_empty() {
+                format!(
+                    "available disk space could not be verified at {}: {error}",
+                    cache.display()
+                )
+            } else {
+                format!(
+                    "available disk space could not be verified at {}: {error}; {unknown}",
+                    cache.display()
+                )
+            },
         },
-        Ok(available) if available < required => FitCheck {
-            name: "disk",
-            severity: FitSeverity::Blocked,
-            detail: format!(
-                "insufficient disk space for known downloads (need {} GB, have {} GB free): parakeet GGUF model; {unknown}",
+        Ok(available) if available < required => {
+            let mut detail = format!(
+                "insufficient disk space for known downloads (need {} GB, have {} GB free){}{}",
                 gb_label(required),
-                gb_label(available)
-            ),
-        },
-        Ok(available) => FitCheck {
-            name: "disk",
-            severity: FitSeverity::Warning,
-            detail: format!(
-                "{} GB free; known downloads need {} GB; {unknown}",
                 gb_label(available),
-                gb_label(required)
-            ),
-        },
+                if known_names.is_empty() { "" } else { ": " },
+                known_names,
+            );
+            if !unknown.is_empty() {
+                detail.push_str(&format!("; {unknown}"));
+            }
+            FitCheck {
+                name: "disk",
+                severity: FitSeverity::Blocked,
+                detail,
+            }
+        }
+        Ok(available) => {
+            let detail = if unknown.is_empty() {
+                format!(
+                    "{} GB free for {} GB known downloads",
+                    gb_label(available),
+                    gb_label(required)
+                )
+            } else {
+                format!(
+                    "{} GB free; known downloads need {} GB; {unknown}",
+                    gb_label(available),
+                    gb_label(required)
+                )
+            };
+            FitCheck {
+                name: "disk",
+                severity: if unknown.is_empty() {
+                    FitSeverity::Ok
+                } else {
+                    FitSeverity::Warning
+                },
+                detail,
+            }
+        }
     }
 }
 
