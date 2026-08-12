@@ -247,15 +247,26 @@ fn observe_existing(
     target_sha: &str,
     stderr: Vec<String>,
 ) -> InstallProviderOutcome {
-    observe_existing_with(journal, target_sha, stderr, |state, stderr| {
-        stderr.push(progress_line(state));
-    })
+    observe_existing_with(
+        journal,
+        target_sha,
+        stderr,
+        OBSERVE_POLL_INTERVAL,
+        OBSERVE_TIMEOUT,
+        OBSERVE_PROGRESS_INTERVAL,
+        |state, stderr| {
+            stderr.push(progress_line(state));
+        },
+    )
 }
 
 fn observe_existing_with<P>(
     journal: &Path,
     target_sha: &str,
     mut stderr: Vec<String>,
+    poll_interval: Duration,
+    timeout: Duration,
+    progress_interval: Duration,
     mut progress: P,
 ) -> InstallProviderOutcome
 where
@@ -279,9 +290,9 @@ where
         journal,
         "parakeet",
         target_sha,
-        OBSERVE_POLL_INTERVAL,
-        OBSERVE_TIMEOUT,
-        OBSERVE_PROGRESS_INTERVAL,
+        poll_interval,
+        timeout,
+        progress_interval,
         |state| progress(state, &mut stderr),
     ) {
         Ok(status::ObserveAttempt::Terminal(status))
@@ -525,18 +536,94 @@ mod tests {
         current.target_fingerprint_sha256 = Some(target_sha.clone());
         let current = status::transition(current, "resolving", None, None).unwrap();
         status::write_status(journal.path(), current.clone()).unwrap();
-        let observed =
-            observe_existing_with(journal.path(), &target_sha, Vec::new(), |state, _| {
+        let observed = observe_existing_with(
+            journal.path(),
+            &target_sha,
+            Vec::new(),
+            Duration::ZERO,
+            OBSERVE_TIMEOUT,
+            OBSERVE_PROGRESS_INTERVAL,
+            |state, _| {
                 let mut next = state.clone();
                 next.target_fingerprint_sha256 = Some("different".to_owned());
                 next.install_state = "downloading".to_owned();
                 status::write_status(journal.path(), next).unwrap();
-            });
+            },
+        );
         assert_eq!(observed.exit_code, 1);
         assert!(!observed.stdout.is_empty(), "{observed:?}");
         assert_eq!(
             serde_json::from_str::<Value>(&observed.stdout[0]).unwrap()["install_state"],
             "downloading"
+        );
+    }
+
+    #[test]
+    fn ac2_direct_failed_status_exits_one() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with(
+            options("parakeet"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| Ok(json!({"status": status_value("failed")})),
+        );
+        assert_eq!(outcome.exit_code, 1);
+    }
+
+    #[test]
+    fn ac2_observed_terminal_installed_exits_zero_with_status() {
+        let journal = tempfile::tempdir().unwrap();
+        let target_sha = parakeet_target_sha(journal.path()).unwrap();
+        let mut current = status::idle_status("parakeet");
+        current.target_fingerprint_sha256 = Some(target_sha.clone());
+        let current = status::transition(current, "resolving", None, None).unwrap();
+        status::write_status(journal.path(), current).unwrap();
+
+        let outcome = observe_existing_with(
+            journal.path(),
+            &target_sha,
+            Vec::new(),
+            Duration::ZERO,
+            OBSERVE_TIMEOUT,
+            OBSERVE_PROGRESS_INTERVAL,
+            |state, _| {
+                let installed = status::transition(state.clone(), "installed", None, None).unwrap();
+                status::write_status(journal.path(), installed).unwrap();
+            },
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(
+            serde_json::from_str::<Value>(&outcome.stdout[0]).unwrap()["install_state"],
+            "installed"
+        );
+    }
+
+    #[test]
+    fn ac2_observed_timeout_exits_one() {
+        let journal = tempfile::tempdir().unwrap();
+        let target_sha = parakeet_target_sha(journal.path()).unwrap();
+        let mut current = status::idle_status("parakeet");
+        current.target_fingerprint_sha256 = Some(target_sha.clone());
+        let current = status::transition(current, "resolving", None, None).unwrap();
+        status::write_status(journal.path(), current).unwrap();
+
+        let outcome = observe_existing_with(
+            journal.path(),
+            &target_sha,
+            Vec::new(),
+            Duration::ZERO,
+            Duration::ZERO,
+            OBSERVE_PROGRESS_INTERVAL,
+            |_, _| {},
+        );
+        assert_eq!(outcome.exit_code, 1);
+        assert!(outcome.stdout.is_empty());
+        assert!(
+            outcome
+                .stderr
+                .iter()
+                .any(|line| line == "timed out observing parakeet install")
         );
     }
 
@@ -597,6 +684,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn ac4_ready_short_circuits_and_unsound_readiness_does_not() {
         let journal = tempfile::tempdir().unwrap();
@@ -635,16 +723,9 @@ mod tests {
             assert_eq!(binary_before.ino(), binary_after.ino());
             assert_eq!(manifest_before.ino(), manifest_after.ino());
         }
-        assert!(
-            solstone_core_local::install::pins::parakeet_cache_root(journal.path())
-                .read_dir()
-                .unwrap()
-                .all(|entry| !entry
-                    .unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .contains(".tmp"))
-        );
+        assert_no_temporary_files(&solstone_core_local::install::pins::parakeet_cache_root(
+            journal.path(),
+        ));
 
         fs::write(&cpu_path, b"not a runnable binary").unwrap();
         let unsound = run_inner_with(
@@ -772,5 +853,20 @@ mod tests {
             },
             exit_code: 74,
         })
+    }
+
+    fn assert_no_temporary_files(root: &Path) {
+        for entry in fs::read_dir(root).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            assert!(
+                !entry.file_name().to_string_lossy().contains(".tmp"),
+                "temporary artifact leaked under {}",
+                path.display()
+            );
+            if path.is_dir() {
+                assert_no_temporary_files(&path);
+            }
+        }
     }
 }
