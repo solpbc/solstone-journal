@@ -20,7 +20,9 @@ placement semantics, not ported here.
 
 The implementation adds `icalendar = "0.17.13"` to
 `core/crates/solstone-core-import-sources/Cargo.toml`, with its default
-`parser` feature. `icalendar` has MSRV 1.88 (below the workspace's 1.95), is
+`parser` feature and `chrono-tz` feature. The latter uses the existing workspace
+`chrono-tz` dependency to resolve TZID-qualified event times. `icalendar` has
+MSRV 1.88 (below the workspace's 1.95), is
 MIT/Apache-2.0, and is actively maintained. Its public API supplies
 `Calendar::events()` for VEVENT iteration and the public `Component` trait's
 `properties()`, `multi_properties()`, `property_value()`, and `Property`
@@ -71,11 +73,11 @@ an in-repo test precedent.
 
 | AC | Test location and concrete test function(s) |
 |---|---|
-| 1 | New `solstone-core-import-sources/tests/ics.rs`: `ics_oracle_detect_and_preview_match_fixture`, `ics_preview_uses_utc_creation_days`. |
+| 1 | New `solstone-core-import-sources/tests/ics.rs`: `ics_oracle_detect_and_preview_match_fixture`, `ics_preview_uses_utc_creation_days`; `tests/obsidian.rs::source_detect_rejects_corpus_no_match_directories` directly checks both source detectors against the four corpus no-match directory shapes. |
 | 2 | New `solstone-core-import-sources/tests/obsidian.rs`: `obsidian_oracle_detect_and_preview_match_fixture`, `obsidian_preview_uses_constructed_mtimes_not_the_clock`. |
 | 3 | `ics.rs`: `parse_events_uses_creation_timestamp_priority_and_computes_duration`, `calendar_attendee_entities_require_name_and_email`. |
 | 4 | `obsidian.rs`: `collect_notes_and_wikilink_entities_preserve_type_precedence`. |
-| 5 | Existing `registry_fixture_contract.rs::registry_and_auxiliary_grammar_match_the_frozen_fixture_contract` and `routing_order.rs::first_claimed_uses_fixture_order_and_fixture_zip_claimants`; no duplicate W6 routing fixture or detector. |
+| 5 | Existing `registry_fixture_contract.rs::registry_and_auxiliary_grammar_match_the_frozen_fixture_contract`, `routing_order.rs::first_claimed_uses_fixture_order_and_fixture_zip_claimants`, `solstone-core-import/tests/resolution.rs::ac16_corpus_directory_and_extension_boundaries` for routing-level predicate stand-ins, and `tests/obsidian.rs::source_detect_rejects_corpus_no_match_directories` for direct ICS/Obsidian no-match detector certification. |
 | 6 | `ics.rs::calendar_entries_expose_writer_day` and `obsidian.rs::note_entries_use_mtime_day_for_daily_and_knowledge_notes`. |
 | 7 | Extend `source_immutability.rs` with `implemented_source_reads_leave_the_owner_source_unchanged`. |
 | 8 | Existing `routing_order.rs::first_claimed_uses_fixture_order_and_fixture_zip_claimants` remains the first-claim regression guard; the design's open-question record is the acceptance evidence, not a new product-routing test. |
@@ -175,8 +177,9 @@ fixed `solstone_core_import::ImportPreview` fields. No source module returns
 
 1. `detect` uses the reference directory marker/visible-Markdown heuristic.
 2. `collect_notes` uses the reference collection walk, reads UTF-8 with BOM
-   handling, ignores empty readable content, and records relative path, title,
-   tags, links, daily-name information, folder type, and mtime-derived `day`.
+   handling, and records relative path, title, tags, links, daily-name
+   information, folder type, and mtime-derived `day`. Empty or unreadable notes
+   remain entries with empty content-derived facts so preview counts match Python.
 3. `wikilink_entities` first builds the title-to-folder-type map, then applies
    Python's `@` and Topic precedence to all links and `@` filenames.
 4. `preview` aggregates daily/knowledge count and unique wikilinks from the

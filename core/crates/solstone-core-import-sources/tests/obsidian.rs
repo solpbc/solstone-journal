@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local, TimeZone, Utc};
 use serde_json::Value;
-use solstone_core_import_sources::obsidian;
+use solstone_core_import_sources::{ics, obsidian};
 
 static NEXT_TREE: AtomicUsize = AtomicUsize::new(0);
 const ORACLE: &str = include_str!("../../../fixtures/import_source_preview_oracle.json");
@@ -22,7 +22,8 @@ fn obsidian_oracle_detect_and_preview_match_fixture() {
     let daily = tree.file("vault-oracle/2026-08-11.md", "# Daily\n[[Shared Topic]]\n");
     let idea = tree.file("vault-oracle/Idea.md", "# Idea\n");
     let reference = tree.file("vault-oracle/Reference.md", "# Reference\n");
-    for path in [&daily, &idea, &reference] {
+    let expected_day = local_day(set_modified(&daily, 2026, 8, 11));
+    for path in [&idea, &reference] {
         set_modified(path, 2026, 8, 11);
     }
     let oracle: Value = serde_json::from_str(ORACLE).unwrap();
@@ -33,14 +34,8 @@ fn obsidian_oracle_detect_and_preview_match_fixture() {
         expected["detect"].as_bool().unwrap()
     );
     let preview = obsidian::preview(&vault).unwrap();
-    assert_eq!(
-        preview.date_range.0,
-        expected["preview"]["date_range"][0].as_str().unwrap()
-    );
-    assert_eq!(
-        preview.date_range.1,
-        expected["preview"]["date_range"][1].as_str().unwrap()
-    );
+    assert_eq!(preview.date_range.0, expected_day);
+    assert_eq!(preview.date_range.1, expected_day);
     assert_eq!(
         preview.item_count,
         expected["preview"]["item_count"].as_u64().unwrap()
@@ -72,6 +67,33 @@ fn obsidian_preview_uses_constructed_mtimes_not_the_clock() {
         preview.date_range,
         (local_day(daily_day), local_day(knowledge_day))
     );
+}
+
+#[test]
+fn source_detect_rejects_corpus_no_match_directories() {
+    let tree = Tree::new();
+    let pdf_in_subdir = tree.directory("dir_pdf_in_subdir");
+    tree.file("dir_pdf_in_subdir/nested/document.pdf", "pdf");
+    let hidden_vault = tree.directory("dir_vault_3md_hidden");
+    for index in 0..3 {
+        tree.file(
+            &format!("dir_vault_3md_hidden/.hidden/{index}.md"),
+            "markdown",
+        );
+    }
+    let only_images = tree.directory("dir_only_images");
+    tree.file("dir_only_images/image.png", "image");
+    let one_note_vault = tree.directory("dir_vault_1md");
+    tree.file("dir_vault_1md/note.md", "markdown");
+
+    for path in [&pdf_in_subdir, &hidden_vault, &only_images, &one_note_vault] {
+        assert!(!ics::detect(path), "ICS must not claim {}", path.display());
+        assert!(
+            !obsidian::detect(path),
+            "Obsidian must not claim {}",
+            path.display()
+        );
+    }
 }
 
 #[test]
