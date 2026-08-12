@@ -7,6 +7,7 @@ pub mod cap;
 pub mod catchup;
 pub mod error;
 pub mod lifecycle;
+pub mod operational_log_parse;
 pub mod partition;
 pub mod process;
 pub mod provider_runtime;

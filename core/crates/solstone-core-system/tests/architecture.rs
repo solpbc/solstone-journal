@@ -13,6 +13,7 @@ const LIB: &str = include_str!("../src/lib.rs");
 const CAP: &str = include_str!("../src/cap.rs");
 const CATCHUP: &str = include_str!("../src/catchup.rs");
 const ERROR: &str = include_str!("../src/error.rs");
+const OPERATIONAL_LOG_PARSE: &str = include_str!("../src/operational_log_parse.rs");
 const PARTITION: &str = include_str!("../src/partition.rs");
 const QUEUE: &str = include_str!("../src/queue.rs");
 const REQUEST: &str = include_str!("../src/request.rs");
@@ -154,6 +155,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("catchup", CATCHUP),
         ("error", ERROR),
         ("lifecycle", LIFECYCLE),
+        ("operational_log_parse", OPERATIONAL_LOG_PARSE),
         ("partition", PARTITION),
         ("process", PROCESS_MOD),
         ("queue", QUEUE),
