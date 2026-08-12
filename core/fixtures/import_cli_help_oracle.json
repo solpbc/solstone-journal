@@ -162,7 +162,12 @@
   "provenance": {
     "argv0": "journal importer",
     "captured_by": "executing the reference cli.main() with redirected streams",
-    "note": "byte-exact stdout/stderr and exit code per case, captured in BOTH supervisor states. solstone_down is the state the interpreter-poison contract test runs in: it sets only the poison marker, HOME, the journal path and PATH, and never sets SOL_SKIP_SUPERVISOR_CHECK. Do not regenerate in a build worktree -- it has no importable environment."
+    "captured_from": "a detached worktree at the recorded rev, not a long-lived dev checkout",
+    "drift_note": "An earlier capture ran against a checkout 569 commits behind this rev, whose cli.py differs (sha f3afa32416501bf0 vs b25790f7b63f5105). Every case here is byte-identical to that capture, so the intervening changes did not alter the rendered help, listing or backends output. That is a measured result, not an assumption: re-derive it rather than trusting this note if the reference moves again.",
+    "note": "byte-exact stdout/stderr and exit code per case, captured in BOTH supervisor states. solstone_down is the state the interpreter-poison contract test runs in: it sets only the poison marker, HOME, the journal path and PATH, and never sets SOL_SKIP_SUPERVISOR_CHECK. Do not regenerate in a build worktree -- it has no importable environment.",
+    "reference_cli_path": "/tmp/ref-current/solstone/think/importers/cli.py",
+    "reference_cli_sha256": "b25790f7b63f51051167e2ee92145e94e288f8117ae86b9cca5542584dca9a2d",
+    "reference_rev": "242ee667c4d5d4718a1d3f8eaac8f7f1db5fe048"
   },
   "schema": "import-cli-help-fixture/2"
 }
