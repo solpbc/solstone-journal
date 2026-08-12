@@ -251,7 +251,7 @@
   "schema": "service-legacy-packaging-provenance",
   "schema_version": 1,
   "source": {
-    "commit": "8b70b8d23fa8d44faf677f8e301b0ec78b9ae2a0"
+    "commit": "a93faaff9122816dd5c16543e8d8b4f6b6ad037b"
   },
   "wheels": {
     "solstone_core_journal": {

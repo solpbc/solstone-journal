@@ -1,5 +1,5 @@
 {
-  "capture_input": "8b70b8d23fa8d44faf677f8e301b0ec78b9ae2a0",
+  "capture_input": "a93faaff9122816dd5c16543e8d8b4f6b6ad037b",
   "git": {
     "executable": "/usr/bin/git",
     "executable_sha256": "2a8c18fbf43da9f692d75474c72bea9dfd796c260b0f3dfe456376abc3bbd668",
@@ -8,7 +8,6 @@
     "https_helper_sha256": "8353a5124ddb2281838bc54bd97c21cbecfe900615fdb60b281198c5058ddb5b"
   },
   "remote": {
-    "main": "8b70b8d23fa8d44faf677f8e301b0ec78b9ae2a0",
     "repository": "https://github.com/solpbc/solstone-journal.git",
     "tags": [
       {
@@ -344,5 +343,5 @@
     ]
   },
   "schema": "service-legacy-capture-input",
-  "schema_version": 1
+  "schema_version": 2
 }
