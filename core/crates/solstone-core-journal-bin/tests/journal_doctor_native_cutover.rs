@@ -113,6 +113,7 @@ impl Harness {
             .env("POISON_MARKER", &self.poison_marker)
             .env("HOME", &self.home)
             .env("SOLSTONE_JOURNAL", &self.journal)
+            .env("PATH", self.binary.parent().expect("binary parent"))
             .env_remove("SOL_SKIP_SUPERVISOR_CHECK")
             .env_remove("SOL_SUPERVISOR_SPAWNED")
             .output()
