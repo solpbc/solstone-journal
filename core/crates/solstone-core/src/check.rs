@@ -131,8 +131,13 @@ fn free_disk(path: &Path) -> Result<u64, String> {
         root = root.parent().unwrap_or(&root).to_path_buf();
     }
     let stat = statvfs(&root).map_err(|error| error.to_string())?;
-    stat.blocks_available()
-        .checked_mul(stat.fragment_size())
+    // Cast explicitly: `statvfs`'s field widths differ by platform (u64 on Linux,
+    // u32 on Darwin), so multiplying them unconverted only compiles on Linux.
+    // `solstone-core-local::install::fit_report::free_bytes` already does this.
+    let blocks = stat.blocks_available() as u64;
+    let fragment_size = stat.fragment_size() as u64;
+    blocks
+        .checked_mul(fragment_size)
         .ok_or_else(|| "free space overflow".into())
 }
 fn render_nodes_present_but_inaccessible(root: &Path) -> bool {
