@@ -73,6 +73,34 @@ load average and orphaned fixtures are not a quiet-host baseline. If the host
 differs materially, override the worker count rather than changing W4b's
 threshold or test budgets.
 
+### Quiet, defined as a number
+
+"Established quiet" (AC1) means, measured immediately before the run, on a
+16-core host: **all three `uptime` load averages below 2.0**, and **no other
+`cargo` or test process running in a different worktree** (checked via
+`ps`). `check-rust-race` itself then adds 12 spinners plus up to 5 concurrent
+`cargo test` processes on top of that baseline — the 2.0 ceiling is genuine
+headroom before the run starts, not "less than the last spike." A host
+reading above this bar, or carrying live `cargo`/test processes from another
+worktree, is not quiet regardless of how low a single sampled number briefly
+dips.
+
+Prefer the Fedora host for AC1/AC3 evidence: it is the host where the
+`BINDGEN_EXTRA_CLANG_ARGS` scoped-export list (Makefile line ~80) has teeth,
+because `CLANG_BUILTIN_INCLUDE` resolves to a real path there. A SUSE-family
+host that keeps clang's builtin headers only under `/usr/lib64` resolves
+`CLANG_BUILTIN_INCLUDE` empty, so the `ifneq` guard skips the whole export —
+`check-rust-race` still runs there (AC1/AC3 are about races, not about the
+export), but a SUSE-host run is not evidence that the export list itself
+works, and must not be cited as such. Do not chase quiet on a host that
+would require disrupting another lane's parked lode to get there.
+
+If no window at or below this bar opens, do not force a run and do not
+soften the bar: report AC1/AC3 as **COULD NOT RUN**, with the measured load
+figures and the exact command that would have been run. A clearly reported
+could-not-run is a complete answer; a green produced by ignoring this bar,
+or a FAILED produced by a noisy host rather than the tree under test, is not.
+
 ## 2. K and what runs in parallel with what
 
 RUST_RACE_RUNS ?= 5 is the repeat count. Each one of those K runs is one
@@ -397,6 +425,59 @@ execution.
    drift guard plus target/echo wiring assertions; leave the pinned CI Cargo
    vector and existing serialization guard unchanged.
 6. docs/testing.md: the narrow future-test convention.
+
+## 15. AC3 hardening: converting unmarked timeout sites (Option A)
+
+A direct, twice-reproduced `check-rust-race` run on the unmodified tree
+surfaced real hard-FAILED runs under the documented synthetic load,
+violating AC3: not every wait in the three registered files went through
+W4b's dilation-aware `panic_for_wait`. Two patterns were unmarked: plain
+`tokio::time::timeout(Duration::from_secs(N), ...)` sites (8 in
+`supervisor_tick.rs`, 1 in `supervisor_app_stack.rs`), and a derived-state
+gap in `supervisor_shutdown.rs`'s `ac14` test, where `Held` triggered on
+process exit alone while `ready_removed`/`pid_removed`/`socket_removed`
+bookkeeping could still be `None`, letting downstream asserts panic
+unmarked.
+
+Both were converted to route through the existing `panic_for_wait`, reusing
+`WaitMetrics`/`WaitOutcome`/`.dilation()` — all `pub(crate)` in
+`support/await_outcome.rs` and safely constructible from a file that
+includes that module, without touching it — via a local
+`await_bounded_read` helper (`tokio::select!` racing the pinned operation
+against a per-tick sleep, avoiding the `tokio::spawn`/`'static` lifetime
+conflict a borrowed socket reader would otherwise create) and a
+`wait_outcome_from_dilation` helper that recomputes the same 1.10x threshold
+`WaitTracker::is_dilated` uses internally (that method is private and not
+reusable; the threshold itself is not secret, already cited above). Every
+conversion preserves its original budget exactly: `interval * iterations`
+equals the prior fixed `Duration`, to the millisecond, in every case.
+`ac14`'s `Held` condition was broadened to require all three marker
+removals plus process exit, same 5ms/6000 budget, unchanged.
+
+Left unconverted, each independently justified (see the commit for the full
+per-site list): `supervisor_shutdown.rs:317`'s 2s fixed sleep before
+`foreign_heartbeat` is a genuine **limitation** — it waits on an opaque
+internal "sync baseline established" state with no observable marker to
+poll, and exposing one would require a product-code change, out of scope.
+Three fixed 300ms sleeps in `supervisor_tick.rs` (731, 909, 995) gate
+negative-polarity assertions, where load can only extend the effective
+observation window, not shrink it — no plausible false-FAILED mechanism.
+Several `supervisor_shutdown.rs` asserts downstream of the now-fixed `ac14`
+wait are deterministic re-confirmations of state the wait already
+established, correctly left unwrapped.
+
+**On the socket-closed HardFail messages observed during revalidation**
+(`"the connection closed before <event>"`): these are **not** a new gap.
+W4b's own earlier work already converted six previously-unhandled EOF sites
+(`supervisor_tick.rs` 197, 223, 350, 417, 602; `supervisor_shutdown.rs` 106)
+to detect `Ok(0)` as end-of-stream and report a clear, named message instead
+of an opaque timeout. Seeing that message under an extremely noisy host
+(measured load average up to 46 on a 16-core machine, from unrelated
+sessions) is the mechanism doing exactly what it should: per the truth
+table, a genuine `HardFail` must always classify FAILED and must never be
+softened toward INCONCLUSIVE by dilation, on any host, at any load. Do not
+add dilation-based softening to a HardFail path to make a noisy host green —
+that would invert the entire design this wave exists to protect.
 
 ## Operational constraint: Hopper fleet contention
 
