@@ -141,6 +141,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["identity"],
     },
     NativeProcessSpec {
+        token: "importer",
+        binary: "solstone-core",
+        preset_argv: &["importer"],
+    },
+    NativeProcessSpec {
         token: "settings",
         binary: "solstone-core",
         preset_argv: &["settings"],

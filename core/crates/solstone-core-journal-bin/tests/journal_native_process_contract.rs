@@ -180,6 +180,12 @@ const PROBES: &[Probe] = &[
         stderr_anchor: None,
     },
     Probe {
+        token: "importer",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal importer [-h] [options] media [timestamp]\n"),
+    },
+    Probe {
         token: "settings",
         argv: &["--nonsense"],
         expected_exit: 2,
