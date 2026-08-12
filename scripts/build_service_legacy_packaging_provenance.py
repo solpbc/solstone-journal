@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import csv
 import hashlib
+import io
 import json
 import os
 import platform
@@ -39,6 +40,7 @@ SCRATCH_ROOT = Path(
     os.environ.get("SERVICE_LEGACY_WHEEL_SCRATCH_ROOT", ROOT / "scratch")
 ).resolve()
 SOURCE_DATE_EPOCH = "0"
+CANONICAL_SBOM_SOURCE_ROOT = "/opt/solstone-service-legacy-evidence/source"
 SCHEMA = "service-legacy-packaging-provenance"
 SCHEMA_VERSION = 1
 JOURNAL_PACKAGE = "solstone-journal"
@@ -648,6 +650,58 @@ def build_wheel(
     return wheels[0]
 
 
+def canonicalize_wheel_sbom(path: Path, *, source_root: Path = ROOT) -> None:
+    """Replace checkout identities in generated SBOMs and repair RECORD."""
+
+    with zipfile.ZipFile(path) as wheel:
+        infos = wheel.infolist()
+        members = {info.filename: wheel.read(info.filename) for info in infos}
+    sboms = [name for name in members if name.endswith(".cyclonedx.json")]
+    if not sboms:
+        return
+    record_paths = [name for name in members if name.endswith(".dist-info/RECORD")]
+    if len(record_paths) != 1:
+        raise ProvenanceError(f"expected one RECORD in {path.name}")
+    source_root_bytes = str(source_root).encode()
+    canonical_root = CANONICAL_SBOM_SOURCE_ROOT.encode()
+    for member in sboms:
+        contents = members[member]
+        if source_root_bytes not in contents:
+            raise ProvenanceError(f"wheel SBOM lacks checkout identity: {member}")
+        canonical = contents.replace(source_root_bytes, canonical_root)
+        if source_root_bytes in canonical:
+            raise ProvenanceError(f"wheel SBOM retained checkout identity: {member}")
+        members[member] = canonical
+
+    record_path = record_paths[0]
+    rows = list(csv.reader(io.StringIO(members[record_path].decode("utf-8"))))
+    seen = set()
+    for row in rows:
+        if row and row[0] in sboms:
+            contents = members[row[0]]
+            digest = base64.urlsafe_b64encode(hashlib.sha256(contents).digest())
+            row[1] = "sha256=" + digest.decode().rstrip("=")
+            row[2] = str(len(contents))
+            seen.add(row[0])
+    if seen != set(sboms):
+        raise ProvenanceError("wheel RECORD does not enumerate every SBOM")
+    record = io.StringIO(newline="")
+    csv.writer(record, lineterminator="\n").writerows(rows)
+    members[record_path] = record.getvalue().encode()
+
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        with zipfile.ZipFile(temporary, "w") as wheel:
+            for info in infos:
+                wheel.writestr(info, members[info.filename])
+        temporary.chmod(path.stat().st_mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def record_entry(
     rows: dict[str, tuple[str, str]], member: str, contents: bytes
 ) -> dict[str, Any]:
@@ -833,6 +887,7 @@ def build_once(bundle: Path, facts: dict[str, Any], ordinal: int) -> dict[str, A
             toolchain_name=facts["toolchain_name"],
             host_target=facts["host_target"],
         )
+        canonicalize_wheel_sbom(core_path)
         core = core_journal_wheel_fact(core_path)
     return {"solstone_core_journal": core, "solstone_journal": journal}
 
@@ -1145,6 +1200,49 @@ def environment_self_test() -> None:
         (bundle / "python/backend").write_bytes(b"mutated")
         if tree_fact(bundle) == digest_before:
             raise ProvenanceError("bundle-content mutation did not change its digest")
+
+        sbom_member = "example-1.0.dist-info/sboms/example.cyclonedx.json"
+        record_member = "example-1.0.dist-info/RECORD"
+
+        def controlled_wheel(path: Path, source_root: Path) -> None:
+            sbom = json.dumps(
+                {
+                    "bom-ref": f"path+file://{source_root}/core/crates/example#1.0",
+                    "dependencies": [
+                        {"ref": f"path+file://{source_root}/core/crates/dependency#1.0"}
+                    ],
+                },
+                indent=2,
+            ).encode()
+            digest = base64.urlsafe_b64encode(hashlib.sha256(sbom).digest())
+            record = (
+                f"{sbom_member},sha256={digest.decode().rstrip('=')},{len(sbom)}\n"
+                f"{record_member},,\n"
+            ).encode()
+            with zipfile.ZipFile(path, "w") as wheel:
+                for name, contents in ((sbom_member, sbom), (record_member, record)):
+                    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    wheel.writestr(info, contents)
+            canonicalize_wheel_sbom(path, source_root=source_root)
+
+        first_source = root / "checkout-one"
+        second_source = root / "checkout-two"
+        first_wheel = root / "first.whl"
+        second_wheel = root / "second.whl"
+        controlled_wheel(first_wheel, first_source)
+        controlled_wheel(second_wheel, second_source)
+        if first_wheel.read_bytes() != second_wheel.read_bytes():
+            raise ProvenanceError("canonical SBOM wheel still depends on checkout root")
+        with zipfile.ZipFile(first_wheel) as wheel:
+            canonical_sbom = wheel.read(sbom_member)
+            if CANONICAL_SBOM_SOURCE_ROOT.encode() not in canonical_sbom:
+                raise ProvenanceError("canonical SBOM source identity is absent")
+            rows = {
+                row[0]: (row[1], row[2])
+                for row in csv.reader(wheel.read(record_member).decode().splitlines())
+            }
+            record_entry(rows, sbom_member, canonical_sbom)
     print("service legacy wheel environment self-test passed")
 
 
