@@ -12,6 +12,7 @@ use serde_json::Value;
 pub enum MaintTaskStatus {
     Pending,
     InProgress,
+    Unreadable,
     Success,
     Failed,
 }
@@ -88,9 +89,12 @@ fn sorted_entries(path: &Path) -> Result<Vec<std::path::PathBuf>, std::io::Error
 
 fn read_task_state(path: &Path) -> (MaintTaskStatus, Option<i64>, Option<i64>) {
     let Ok(text) = fs::read_to_string(path) else {
-        return (MaintTaskStatus::InProgress, None, None);
+        return (MaintTaskStatus::Unreadable, None, None);
     };
     let events = latest_attempt_events(&text);
+    if events.is_empty() && text.lines().any(|line| !line.trim().is_empty()) {
+        return (MaintTaskStatus::Unreadable, None, None);
+    }
     let mut exec_ts = None;
     let mut last = None;
     for event in &events {
@@ -188,6 +192,24 @@ mod tests {
         let result = read_maint_task_states(root.path());
         assert_eq!(result[0].status, MaintTaskStatus::InProgress);
         assert_eq!(result[0].ran_ts, Some(5));
+    }
+
+    #[test]
+    fn distinguishes_unreadable_state_from_missing_exec_timestamp() {
+        let root = tempdir().unwrap();
+        let app = root.path().join("maint/app");
+        fs::create_dir_all(&app).unwrap();
+        fs::write(app.join("unreadable.jsonl"), "not json\n").unwrap();
+        fs::write(
+            app.join("missing-timestamp.jsonl"),
+            "{\"event\":\"exec\"}\n",
+        )
+        .unwrap();
+
+        let states = read_maint_task_states(root.path());
+        assert_eq!(states[0].status, MaintTaskStatus::InProgress);
+        assert_eq!(states[0].ran_ts, None);
+        assert_eq!(states[1].status, MaintTaskStatus::Unreadable);
     }
 
     #[test]

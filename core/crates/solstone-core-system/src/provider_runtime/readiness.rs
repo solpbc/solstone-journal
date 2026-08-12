@@ -24,11 +24,8 @@ pub struct ParakeetCppArtifacts {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParakeetCppReadiness {
-    NotApplicable { detail: String },
-    ArtifactsMissing { detail: String },
     BinaryUnstartable { detail: String },
     OpenMpRuntimeUnavailable { detail: String },
-    ServerUnreachable { detail: String },
     Ready,
 }
 
@@ -125,6 +122,7 @@ pub fn probe_parakeet_cpp_binary(binary: &Path, timeout: Duration) -> ParakeetCp
             }
             Ok(None) if start.elapsed() >= timeout => {
                 let _ = child.kill();
+                let _ = child.wait();
                 return ParakeetCppReadiness::BinaryUnstartable {
                     detail: format!("timed out after {}s", timeout.as_secs()),
                 };
@@ -241,5 +239,32 @@ mod tests {
             probe_parakeet_cpp_binary(&binary, Duration::from_secs(1)),
             ParakeetCppReadiness::OpenMpRuntimeUnavailable { .. }
         ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn binary_probe_reaps_a_timed_out_child() {
+        let root = tempdir().unwrap();
+        let binary = root.path().join("parakeet-server");
+        let pid = root.path().join("pid");
+        fs::write(
+            &binary,
+            format!("#!/bin/sh\necho $$ > {}\nsleep 60\n", pid.display()),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&binary).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&binary, permissions).unwrap();
+
+        assert!(matches!(
+            probe_parakeet_cpp_binary(&binary, Duration::from_millis(100)),
+            ParakeetCppReadiness::BinaryUnstartable { .. }
+        ));
+        let child_pid = fs::read_to_string(&pid).unwrap();
+        let status = Command::new("sh")
+            .args(["-c", &format!("kill -0 {} 2>/dev/null", child_pid.trim())])
+            .status()
+            .unwrap();
+        assert!(!status.success(), "timed-out child must be reaped");
     }
 }

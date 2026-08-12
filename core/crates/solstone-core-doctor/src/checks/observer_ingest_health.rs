@@ -5,6 +5,17 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result, truncate},
 };
+
+fn rejection_date(rejection: &serde_json::Map<String, serde_json::Value>) -> String {
+    rejection
+        .get("first_ts")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|timestamp| timestamp.is_finite())
+        .and_then(|timestamp| chrono::DateTime::from_timestamp_millis(timestamp as i64))
+        .map(|timestamp| timestamp.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "unknown".into())
+}
+
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let records = match common::observers(context) {
         Ok(records) => common::enabled(records),
@@ -35,7 +46,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     .map(|value| format!("v{value}"))
                     .unwrap_or_else(|| "version unknown".into());
                 format!(
-                    "observer {} ({version}) failing ingest: {}, {}x since unknown",
+                    "observer {} ({version}) failing ingest: {}, {}x since {}",
                     record.name().unwrap_or("unknown"),
                     rejection
                         .get("summary")
@@ -44,7 +55,8 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     rejection
                         .get("active_count")
                         .and_then(serde_json::Value::as_i64)
-                        .unwrap_or(0)
+                        .unwrap_or(0),
+                    rejection_date(rejection)
                 )
             })
         })

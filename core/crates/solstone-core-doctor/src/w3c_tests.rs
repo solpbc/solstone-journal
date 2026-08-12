@@ -295,6 +295,18 @@ fn stage_maint(context: &CheckContext, exit_code: Option<i64>) {
     fs::write(state, contents).unwrap();
 }
 
+fn stage_backlog_pending(context: &CheckContext) {
+    screen_segment(context, "20251231");
+    health(
+        context,
+        "20251231",
+        &[
+            r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
+        ],
+    );
+    incomplete(context, "20251231");
+}
+
 #[cfg(unix)]
 fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
     config_backend(context, backend);
@@ -311,6 +323,18 @@ fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
     executable(&artifacts.binary_vulkan, "#!/bin/sh\necho v\n");
     fs::write(&artifacts.model, "model").unwrap();
     context.parakeet_server_probe_override = Some(parakeet_ready_probe);
+}
+
+#[cfg(unix)]
+fn stage_speakers_analyze(context: &mut CheckContext, ready: bool) {
+    context.speakers_analyze_resolvers = Some((
+        if ready {
+            speakers_binary_ready
+        } else {
+            speakers_binary_missing
+        },
+        speakers_model_ready,
+    ));
 }
 
 #[cfg(unix)]
@@ -411,44 +435,28 @@ enum SecondBranch {
     DifferentDetail,
 }
 
-fn coverage_result(name: &str, ok: bool) -> CheckResult {
+fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
+    let mut context = fixture();
     match name {
         "journal_sync" => {
-            let context = fixture();
             if !ok {
                 fs::remove_dir_all(&context.journal_path).unwrap();
             }
-            result(name, &context)
         }
         "journal_caught_up" => {
-            let context = fixture();
             if !ok {
-                screen_segment(&context, "20251231");
-                health(
-                    &context,
-                    "20251231",
-                    &[
-                        r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
-                    ],
-                );
-                incomplete(&context, "20251231");
+                stage_backlog_pending(&context);
             }
-            result(name, &context)
         }
-        "journal_maint_tasks" => {
-            let context = fixture();
-            stage_maint(&context, Some(if ok { 0 } else { 3 }));
-            result(name, &context)
-        }
+        "journal_maint_tasks" => stage_maint(&context, Some(if ok { 0 } else { 3 })),
         "task_pace" => {
-            if ok {
+            return if ok {
                 task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
             } else {
-                result(name, &fixture())
-            }
+                result(name, &context)
+            };
         }
         "brain" => {
-            let context = fixture();
             if ok {
                 stage_brain_ready(&context);
             } else {
@@ -456,10 +464,8 @@ fn coverage_result(name: &str, ok: bool) -> CheckResult {
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
                 fs::write(path, "{").unwrap();
             }
-            result(name, &context)
         }
         "capture_health" => {
-            let context = fixture();
             if ok {
                 observer(&context, "phone", context.now.timestamp_millis() - 1);
             } else {
@@ -469,10 +475,8 @@ fn coverage_result(name: &str, ok: bool) -> CheckResult {
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-31_000,"health":{"ingest_rejection":{"active_count":1}}}),
                 );
             }
-            result(name, &context)
         }
         "observer_binding" => {
-            let context = fixture();
             if ok {
                 write_observer(
                     &context,
@@ -482,20 +486,16 @@ fn coverage_result(name: &str, ok: bool) -> CheckResult {
             } else {
                 observer(&context, "phone", context.now.timestamp_millis() - 1);
             }
-            result(name, &context)
         }
         "observer_delivery_stall" => {
-            let context = fixture();
             let upload_age = if ok { 1_000 } else { 21_600_001 };
             write_observer(
                 &context,
                 "abcdefgh",
                 serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-1_000,"last_segment_received_at":context.now.timestamp_millis()-upload_age}),
             );
-            result(name, &context)
         }
         "observer_ingest_health" => {
-            let context = fixture();
             observer(&context, "phone", context.now.timestamp_millis() - 1);
             if !ok {
                 write_observer(
@@ -504,10 +504,8 @@ fn coverage_result(name: &str, ok: bool) -> CheckResult {
                     serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"health":{"ingest_rejection":{"version":"1.2","summary":"bad payload","active_count":2}}}),
                 );
             }
-            result(name, &context)
         }
         "orphan_segment_pdf" => {
-            let context = fixture();
             let chronicle = context.journal_path.join("chronicle");
             fs::create_dir_all(&chronicle).unwrap();
             if !ok {
@@ -515,54 +513,33 @@ fn coverage_result(name: &str, ok: bool) -> CheckResult {
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
                 fs::write(path, "pdf").unwrap();
             }
-            result(name, &context)
         }
         "default_stt_ready" => {
-            let mut context = fixture();
             if ok {
                 #[cfg(unix)]
                 stage_parakeet_ready(&mut context, "parakeet");
             } else {
                 config_backend(&context, "whisper");
             }
-            result(name, &context)
         }
         "parakeet_cpp_stt_ready" => {
-            let mut context = fixture();
             if ok {
                 #[cfg(unix)]
                 stage_parakeet_ready(&mut context, "parakeet-cpp");
             }
-            result(name, &context)
         }
         "speakers_analyze_installation" => {
-            let mut context = fixture();
             #[cfg(unix)]
-            {
-                context.speakers_analyze_resolvers = Some((
-                    if ok {
-                        speakers_binary_ready
-                    } else {
-                        speakers_binary_missing
-                    },
-                    speakers_model_ready,
-                ));
-            }
-            result(name, &context)
+            stage_speakers_analyze(&mut context, ok);
         }
         "skill_state" => {
-            let mut context = fixture();
             #[cfg(unix)]
             stage_router_skills(&mut context, !ok);
-            result(name, &context)
         }
-        "feature:pdf-import" | "feature:pdf-export" => {
-            let mut context = fixture();
-            stage_feature(&mut context, name, ok);
-            result(name, &context)
-        }
+        "feature:pdf-import" | "feature:pdf-export" => stage_feature(&mut context, name, ok),
         _ => unreachable!("unknown W3c check {name}"),
     }
+    result(name, &context)
 }
 #[test]
 fn w3c_registry_replaces_exact_deferred_set_with_runners() {
@@ -701,8 +678,8 @@ fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
         "every registry check must be classified as W3a, W3b, or W3c"
     );
     for (name, kind) in coverage {
-        let ok = coverage_result(name, true);
-        let second = coverage_result(name, false);
+        let ok = staged_coverage_result(name, true);
+        let second = staged_coverage_result(name, false);
         assert_eq!(ok.status, Status::Ok, "{name} OK branch: {}", ok.detail);
         match kind {
             SecondBranch::DifferentStatus => assert_ne!(
@@ -747,6 +724,73 @@ fn w3c_no_enabled_observers_skip_observer_trio() {
     ] {
         assert_eq!(status(name, &c), Status::Skip);
     }
+}
+
+#[test]
+fn w3c_observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
+    let dated = fixture();
+    write_observer(
+        &dated,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-dated", "name":"dated", "enabled":true, "created_at":1,
+            "health":{"ingest_rejection":{
+                "version":"1.2", "summary":"bad payload", "active_count":2,
+                "first_ts": dated.now.timestamp_millis()
+            }}
+        }),
+    );
+    let row = result("observer_ingest_health", &dated);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "observer dated (v1.2) failing ingest: bad payload, 2x since 2026-01-01"
+    );
+
+    let unknown = fixture();
+    write_observer(
+        &unknown,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-unknown", "name":"unknown", "enabled":true, "created_at":1,
+            "health":{"ingest_rejection":{
+                "version":"1.2", "summary":"bad payload", "active_count":2
+            }}
+        }),
+    );
+    let row = result("observer_ingest_health", &unknown);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "observer unknown (v1.2) failing ingest: bad payload, 2x since unknown"
+    );
+}
+
+#[test]
+fn w3c_maint_unreadable_state_uses_reference_detail() {
+    let unreadable = fixture();
+    let state = unreadable.journal_path.join("maint/settings/reindex.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(&state, "not json\n").unwrap();
+    let row = result("journal_maint_tasks", &unreadable);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "couldn't fully determine — maint state unreadable: settings.reindex"
+    );
+
+    let missing_timestamp = fixture();
+    let state = missing_timestamp
+        .journal_path
+        .join("maint/settings/reindex.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(&state, "{\"event\":\"exec\"}\n").unwrap();
+    let row = result("journal_maint_tasks", &missing_timestamp);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "couldn't fully determine — maint state unreadable: settings.reindex"
+    );
 }
 #[test]
 fn w3c_setup_json_and_jsonl_filters_receive_advisory_warning() {
@@ -884,55 +928,14 @@ fn w3c_brain_ready_and_checking_records_are_healthy() {
 
 #[test]
 fn w3c_task_pace_uses_callosum_status_fixture() {
-    use serde_json::{Map, Value};
-    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
-
-    let mut context = fixture();
-    fs::create_dir_all(context.callosum_socket_path.parent().unwrap()).unwrap();
-    context.service_status_timeout = Duration::from_millis(250);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let server = runtime
-        .block_on(CallosumSocketServer::bind(&context.callosum_socket_path))
-        .unwrap();
-    let run_with = |tasks: Value| {
-        let context = context.clone();
-        let handle = std::thread::spawn(move || result("task_pace", &context));
-        runtime.block_on(async {
-            tokio::time::timeout(Duration::from_millis(100), async {
-                while server.client_count() == 0 {
-                    tokio::time::sleep(Duration::from_millis(2)).await;
-                }
-            })
-            .await
-            .unwrap();
-        });
-        let envelope = CallosumEnvelope {
-            tract: "supervisor".into(),
-            event: "status".into(),
-            ts: None,
-            extra: Map::from_iter([("tasks".into(), tasks)]),
-        };
-        for _ in 0..20 {
-            assert!(server.broadcast(envelope.clone()));
-            runtime.block_on(async { tokio::time::sleep(Duration::from_millis(5)).await });
-            if handle.is_finished() {
-                break;
-            }
-        }
-        handle.join().unwrap()
-    };
-    let ok = run_with(serde_json::json!([{ "name":"index", "slow":false }]));
+    let ok = task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]));
     assert_eq!(ok.status, Status::Ok);
     assert_eq!(ok.detail, "tasks on pace");
-    let warn = run_with(serde_json::json!([{
+    let warn = task_pace_with(serde_json::json!([{
         "name":"index", "slow":true, "duration_seconds":12, "max_runtime_seconds":10
     }]));
     assert_eq!(warn.status, Status::Warn);
     assert_eq!(warn.detail, "running long: index (12s of 10s cap)");
-    runtime.block_on(server.stop());
     assert_eq!(result("task_pace", &fixture()).status, Status::Skip);
 }
 
@@ -959,15 +962,7 @@ fn w3c_caught_up_native_backlog_fixture_states() {
     );
 
     let pending = fixture();
-    screen_segment(&pending, "20251231");
-    health(
-        &pending,
-        "20251231",
-        &[
-            r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}"#,
-        ],
-    );
-    incomplete(&pending, "20251231");
+    stage_backlog_pending(&pending);
     let row = result("journal_caught_up", &pending);
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
@@ -1054,19 +1049,7 @@ fn w3c_parakeet_cpp_fixture_states_are_distinct() {
     );
 
     let mut unreachable = fixture();
-    config_backend(&unreachable, "parakeet-cpp");
-    let artifacts = solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
-        &unreachable.journal_path,
-        "linux",
-        "x86_64",
-    )
-    .unwrap();
-    fs::create_dir_all(artifacts.binary_cpu.parent().unwrap()).unwrap();
-    fs::create_dir_all(artifacts.binary_vulkan.parent().unwrap()).unwrap();
-    fs::create_dir_all(artifacts.model.parent().unwrap()).unwrap();
-    executable(&artifacts.binary_cpu, "#!/bin/sh\necho v\n");
-    executable(&artifacts.binary_vulkan, "#!/bin/sh\necho v\n");
-    fs::write(&artifacts.model, "model").unwrap();
+    stage_parakeet_ready(&mut unreachable, "parakeet-cpp");
     unreachable.parakeet_server_probe_override = Some(parakeet_unreachable_probe);
     let unreachable_row = result("parakeet_cpp_stt_ready", &unreachable);
     assert_eq!(unreachable_row.status, Status::Warn);
@@ -1105,19 +1088,7 @@ fn w3c_default_stt_fixture_matrix_delegates_and_checks_coreml() {
 
     let mut linux = fixture();
     config_backend(&linux, "parakeet");
-    let artifacts = solstone_core_system::provider_runtime::parakeet_cpp_artifacts(
-        &linux.journal_path,
-        "linux",
-        "x86_64",
-    )
-    .unwrap();
-    fs::create_dir_all(artifacts.binary_cpu.parent().unwrap()).unwrap();
-    fs::create_dir_all(artifacts.binary_vulkan.parent().unwrap()).unwrap();
-    fs::create_dir_all(artifacts.model.parent().unwrap()).unwrap();
-    executable(&artifacts.binary_cpu, "#!/bin/sh\necho v\n");
-    executable(&artifacts.binary_vulkan, "#!/bin/sh\necho v\n");
-    fs::write(&artifacts.model, "model").unwrap();
-    linux.parakeet_server_probe_override = Some(parakeet_ready_probe);
+    stage_parakeet_ready(&mut linux, "parakeet");
     let delegated = result("default_stt_ready", &linux);
     let direct = result("parakeet_cpp_stt_ready", &{
         let direct = linux.clone();
@@ -1184,30 +1155,8 @@ fn w3c_skill_state_fixture_branches() {
     use std::os::unix::fs::symlink;
 
     let mut installed = fixture();
-    let root = installed.journal_path.parent().unwrap().join("checkout");
-    for name in ["sol", "journal"] {
-        fs::create_dir_all(root.join("solstone/talent").join(name)).unwrap();
-        fs::write(
-            root.join("solstone/talent").join(name).join("SKILL.md"),
-            "x",
-        )
-        .unwrap();
-    }
-    for parent in [
-        installed.journal_path.join(".claude/skills"),
-        installed.journal_path.join(".agents/skills"),
-    ] {
-        fs::create_dir_all(&parent).unwrap();
-        for name in ["sol", "journal"] {
-            let source = root.join("solstone/talent").join(name);
-            symlink(
-                solstone_core_skill_state::expected_link_target(&source, &parent),
-                parent.join(name),
-            )
-            .unwrap();
-        }
-    }
-    installed.checkout_root = Some(root.clone());
+    stage_router_skills(&mut installed, false);
+    let root = installed.checkout_root.clone().unwrap();
     let row = result("skill_state", &installed);
     assert_eq!(row.status, Status::Ok);
     assert_eq!(
@@ -1244,12 +1193,12 @@ fn w3c_skill_state_fixture_branches() {
 #[cfg(unix)]
 fn w3c_speakers_installation_uses_injected_resolvers() {
     let mut ready = fixture();
-    ready.speakers_analyze_resolvers = Some((speakers_binary_ready, speakers_model_ready));
+    stage_speakers_analyze(&mut ready, true);
     let row = result("speakers_analyze_installation", &ready);
     assert_eq!(row.status, Status::Ok);
     assert_eq!(row.detail, "speakers-analyze installation ready");
 
-    ready.speakers_analyze_resolvers = Some((speakers_binary_missing, speakers_model_ready));
+    stage_speakers_analyze(&mut ready, false);
     let row = result("speakers_analyze_installation", &ready);
     assert_eq!(row.status, Status::Fail);
     assert_eq!(

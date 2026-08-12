@@ -53,14 +53,23 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             Some(FIX),
         ));
     }
-    if tasks.iter().any(|task| {
-        task.status == solstone_core_system_health::MaintTaskStatus::InProgress
-            && task.ran_ts.is_none()
-    }) {
+    let unreadable = tasks
+        .iter()
+        .filter(|task| {
+            task.status == solstone_core_system_health::MaintTaskStatus::Unreadable
+                || (task.status == solstone_core_system_health::MaintTaskStatus::InProgress
+                    && task.ran_ts.is_none())
+        })
+        .map(|task| format!("{}.{}", task.app, task.task))
+        .collect::<Vec<_>>();
+    if !unreadable.is_empty() {
         return Ok(make_result(
             check,
             Status::Warn,
-            "couldn't fully determine — maint task started without a timestamp",
+            format!(
+                "couldn't fully determine — maint state unreadable: {}",
+                unreadable.join(", ")
+            ),
             Some(FIX),
         ));
     }

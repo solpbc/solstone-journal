@@ -91,7 +91,8 @@ until it can be determined.
 `journal setup` step 1 runs `journal doctor --readiness`: the client readiness
 checks (`python_version`, `sol_importable`, `local_bin_sol_reachable`,
 `stale_alias_symlink`, `disk_space`, `journal_dir_writable`) plus
-`host_dependencies`, `default_stt_ready`, `feature:pdf-import`, `feature:pdf-export`, and `feature:whisper`.
+`host_dependencies`, `default_stt_ready`, `parakeet_cpp_stt_ready`,
+`speakers_analyze_installation`, `feature:pdf-import`, `feature:pdf-export`, and `feature:whisper`.
 It does not run runtime service, sync, config-dir, or launchd checks. A blocker
 failure still stops setup early; feature advisories stay advisory and include
 the exact extra-install command. An execution error in any readiness check also

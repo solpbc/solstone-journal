@@ -29,7 +29,32 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
     {
         return Ok(make_result(check, Status::Warn, error, Some(INSTALL)));
     }
-    match solstone_core_system::provider_runtime::probe_parakeet_cpp_binary(&artifacts.binary_cpu, solstone_core_system::provider_runtime::PARAKEET_CPP_PROBE_TIMEOUT) { solstone_core_system::provider_runtime::ParakeetCppReadiness::Ready => {}, solstone_core_system::provider_runtime::ParakeetCppReadiness::OpenMpRuntimeUnavailable { .. } => return Ok(make_result(check, Status::Warn, "parakeet-cpp cannot start: OpenMP runtime unavailable (libgomp.so.1)", Some("install the system OpenMP runtime that provides libgomp.so.1, then rerun journal doctor"))), solstone_core_system::provider_runtime::ParakeetCppReadiness::BinaryUnstartable { .. } => return Ok(make_result(check, Status::Warn, "parakeet-cpp binary cannot start", Some(INSTALL))), _ => return Ok(make_result(check, Status::Warn, "parakeet-cpp binary cannot start", Some(INSTALL))) };
+    match solstone_core_system::provider_runtime::probe_parakeet_cpp_binary(
+        &artifacts.binary_cpu,
+        solstone_core_system::provider_runtime::PARAKEET_CPP_PROBE_TIMEOUT,
+    ) {
+        solstone_core_system::provider_runtime::ParakeetCppReadiness::Ready => {}
+        solstone_core_system::provider_runtime::ParakeetCppReadiness::OpenMpRuntimeUnavailable {
+            ..
+        } => {
+            return Ok(make_result(
+                check,
+                Status::Warn,
+                "parakeet-cpp cannot start: OpenMP runtime unavailable (libgomp.so.1)",
+                Some(
+                    "install the system OpenMP runtime that provides libgomp.so.1, then rerun journal doctor",
+                ),
+            ));
+        }
+        solstone_core_system::provider_runtime::ParakeetCppReadiness::BinaryUnstartable { .. } => {
+            return Ok(make_result(
+                check,
+                Status::Warn,
+                "parakeet-cpp binary cannot start",
+                Some(INSTALL),
+            ));
+        }
+    };
     let probe = context
         .parakeet_server_probe_override
         .unwrap_or(solstone_core_system::provider_runtime::probe_parakeet_cpp_server);
