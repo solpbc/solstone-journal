@@ -255,7 +255,12 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         stream: "import.audio".to_owned(),
         facet: options.facet.clone(),
         setting: options.setting.clone(),
-        wait_for_processing: false,
+        // The reference waits by default; only the audio-folder sync backend turns this off.
+        // Returning immediately told an owner the import was complete while its segments were
+        // still unprocessed, so nothing had reached a stream or the index yet and a failed or
+        // stalled segment was never reported at all. The verb already requires a running
+        // solstone, so the consumer these segments wait on is guaranteed to exist.
+        wait_for_processing: true,
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
@@ -402,18 +407,51 @@ fn resolve(
     resolve_import(&options, &mut seams).map_err(|error| error.message().into_owned())
 }
 
+/// Extensions the reference classifies as audio, plus the video containers its own classifier
+/// routes to the audio path (`media_type.startswith(("audio/", "video/"))`).
+///
+/// The reference sweeps the file-importer registry for these and, when nothing claims them,
+/// falls through to the generic audio import. Listing only `m4a` here refused an owner's
+/// `.mp3` outright, with a message naming `--source` as the remedy — and no `--source` value
+/// reaches generic audio, so the advice could not be followed.
+const GENERIC_AUDIO_EXTENSIONS: &[&str] = &[
+    "flac", //
+    "m4a",  //
+    "mov",  //
+    "mp3",  //
+    "mp4",  //
+    "ogg",  //
+    "opus", //
+    "wav",  //
+    "webm", //
+];
+
+/// Extensions the reference treats as a generic transcript.
+const GENERIC_TEXT_EXTENSIONS: &[&str] = &[
+    "md",  //
+    "txt", //
+];
+
+fn lowercase_extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+}
+
 fn requires_registry_classification(path: &Path) -> bool {
-    !matches!(
-        path.extension().and_then(|value| value.to_str()),
-        Some("m4a" | "txt" | "md" | "pdf")
-    )
+    let Some(extension) = lowercase_extension(path) else {
+        return true;
+    };
+    !(GENERIC_AUDIO_EXTENSIONS.contains(&extension.as_str())
+        || GENERIC_TEXT_EXTENSIONS.contains(&extension.as_str())
+        || extension == "pdf")
 }
 
 fn is_generic_media(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|value| value.to_str()),
-        Some("m4a" | "txt" | "md")
-    )
+    lowercase_extension(path).is_some_and(|extension| {
+        GENERIC_AUDIO_EXTENSIONS.contains(&extension.as_str())
+            || GENERIC_TEXT_EXTENSIONS.contains(&extension.as_str())
+    })
 }
 
 fn generic_manifest_summary(
