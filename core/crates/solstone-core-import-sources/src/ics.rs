@@ -57,13 +57,6 @@ pub enum IcsError {
         path: std::path::PathBuf,
         source: zip::result::ZipError,
     },
-    Decode {
-        path: std::path::PathBuf,
-        source: std::string::FromUtf8Error,
-    },
-    Calendar {
-        source: String,
-    },
 }
 
 impl fmt::Display for IcsError {
@@ -71,8 +64,6 @@ impl fmt::Display for IcsError {
         match self {
             Self::Read { path, source } => write!(formatter, "{}: {source}", path.display()),
             Self::Archive { path, source } => write!(formatter, "{}: {source}", path.display()),
-            Self::Decode { path, source } => write!(formatter, "{}: {source}", path.display()),
-            Self::Calendar { source } => write!(formatter, "ICS calendar: {source}"),
         }
     }
 }
@@ -82,8 +73,6 @@ impl Error for IcsError {
         match self {
             Self::Read { source, .. } => Some(source),
             Self::Archive { source, .. } => Some(source),
-            Self::Decode { source, .. } => Some(source),
-            Self::Calendar { .. } => None,
         }
     }
 }
@@ -114,7 +103,7 @@ pub fn detect(path: &Path) -> bool {
 
 /// Read source calendars into in-memory event facts without mutating the source.
 pub fn parse_events(path: &Path) -> Result<Vec<CalendarEntry>, IcsError> {
-    parse_ics_data(extract_ics_data(path)?, path)
+    Ok(parse_ics_data(extract_ics_data(path)?))
 }
 
 /// Aggregate a calendar source into the fixed import preview contract.
@@ -128,7 +117,7 @@ pub fn preview(path: &Path) -> Result<ImportPreview, IcsError> {
             summary: "No ICS data found".to_owned(),
         });
     }
-    let entries = parse_ics_data(data, path)?;
+    let entries = parse_ics_data(data);
     if entries.is_empty() {
         return Ok(ImportPreview {
             date_range: (String::new(), String::new()),
@@ -163,19 +152,20 @@ pub fn preview(path: &Path) -> Result<ImportPreview, IcsError> {
     })
 }
 
-fn parse_ics_data(data: Vec<Vec<u8>>, path: &Path) -> Result<Vec<CalendarEntry>, IcsError> {
+fn parse_ics_data(data: Vec<Vec<u8>>) -> Vec<CalendarEntry> {
     let mut entries = Vec::new();
     for data in data {
-        let contents = String::from_utf8(data).map_err(|source| IcsError::Decode {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        let calendar: Calendar = contents
-            .parse()
-            .map_err(|source| IcsError::Calendar { source })?;
+        // Python treats an unreadable calendar blob as a zero-event calendar, so one malformed
+        // member cannot prevent previewing the other members of an archive.
+        let Ok(contents) = String::from_utf8(data) else {
+            continue;
+        };
+        let Ok(calendar) = contents.parse::<Calendar>() else {
+            continue;
+        };
         entries.extend(calendar.events().filter_map(parse_event));
     }
-    Ok(entries)
+    entries
 }
 
 /// Project named calendar attendees to deterministic Person entity facts.
@@ -276,9 +266,8 @@ fn parse_event(event: &icalendar::Event) -> Option<CalendarEntry> {
         end_ts: end.as_ref().and_then(date_perhaps_time_iso),
         duration_minutes: start
             .as_ref()
-            .and_then(date_perhaps_time_utc)
-            .zip(end.as_ref().and_then(date_perhaps_time_utc))
-            .and_then(|(start, end)| duration_minutes(&start, &end)),
+            .zip(end.as_ref())
+            .and_then(|(start, end)| duration_minutes(start, end)),
         location: nonempty(event.property_value("LOCATION")).map(str::to_owned),
         attendees,
         recurrence: event.property_value("RRULE").and_then(describe_rrule),
@@ -328,8 +317,29 @@ fn date_perhaps_time_iso(value: &DatePerhapsTime) -> Option<String> {
     }
 }
 
-fn duration_minutes(start: &DateTime<Utc>, end: &DateTime<Utc>) -> Option<i64> {
-    Some((end.signed_duration_since(*start).num_seconds() / 60).max(0))
+fn duration_minutes(start: &DatePerhapsTime, end: &DatePerhapsTime) -> Option<i64> {
+    let duration = if has_offset(start) != has_offset(end) {
+        naive_wall_time(end).signed_duration_since(naive_wall_time(start))
+    } else {
+        date_perhaps_time_utc(end)?.signed_duration_since(date_perhaps_time_utc(start)?)
+    };
+    Some((duration.num_seconds() / 60).max(0))
+}
+
+fn naive_wall_time(value: &DatePerhapsTime) -> NaiveDateTime {
+    match value {
+        DatePerhapsTime::Date(date) => date.and_hms_opt(0, 0, 0).expect("midnight is valid"),
+        DatePerhapsTime::DateTime(CalendarDateTime::Floating(date_time)) => *date_time,
+        DatePerhapsTime::DateTime(CalendarDateTime::Utc(date_time)) => date_time.naive_utc(),
+        DatePerhapsTime::DateTime(CalendarDateTime::WithTimezone { date_time, .. }) => *date_time,
+    }
+}
+
+fn has_offset(value: &DatePerhapsTime) -> bool {
+    matches!(
+        value,
+        DatePerhapsTime::DateTime(CalendarDateTime::Utc(_) | CalendarDateTime::WithTimezone { .. })
+    )
 }
 
 fn parse_attendee(property: &icalendar::Property) -> Option<CalendarAttendee> {

@@ -101,6 +101,28 @@ fn ics_preview_distinguishes_missing_data_from_empty_calendar() {
 }
 
 #[test]
+fn ics_preview_skips_malformed_calendar_data() {
+    let tree = Tree::new();
+    let calendar = tree.file("malformed.ics", "this is not a calendar");
+
+    let preview = ics::preview(&calendar).unwrap();
+    assert_eq!(preview.item_count, 0);
+    assert_eq!(preview.summary, "No events found in ICS data");
+}
+
+#[test]
+fn duration_uses_wall_time_for_mixed_awareness() {
+    let tree = Tree::new();
+    let calendar = tree.file(
+        "mixed-awareness.ics",
+        "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Asia/Kolkata:20260311T090000\r\nDTEND:20260311T100000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    );
+
+    let entries = ics::parse_events(&calendar).unwrap();
+    assert_eq!(entries[0].duration_minutes, Some(60));
+}
+
+#[test]
 fn parse_events_uses_creation_timestamp_priority_and_computes_duration() {
     let tree = Tree::new();
     let calendar = tree.file(
