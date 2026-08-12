@@ -166,35 +166,74 @@ fn raw_entries_preserve_display_only_cases() {
     bed.write_config(json!({
         "daily_time": "03:00",
         "non-object": 1,
-        "bad-cmd": {"cmd": ["journal", 1], "every": "daily"},
+        "bad-cmd-array": {"cmd": ["journal", 1], "every": "daily"},
+        "bad-cmd-missing": {"every": "daily"},
+        "bad-cmd-null": {"cmd": null, "every": "daily"},
+        "bad-cmd-number": {"cmd": 1, "every": "daily"},
+        "bad-cmd-object": {"cmd": {}, "every": "daily"},
         "unknown": {"cmd": "journal heartbeat", "every": "yearly"},
-        "disabled": {"cmd": ["journal", "noop"], "every": "daily", "enabled": false},
+        "disabled-false": {"cmd": ["journal", "noop"], "every": "daily", "enabled": false},
+        "disabled-zero": {"cmd": ["journal", "noop"], "every": "daily", "enabled": 0},
+        "disabled-empty": {"cmd": ["journal", "noop"], "every": "daily", "enabled": ""},
+        "disabled-null": {"cmd": ["journal", "noop"], "every": "daily", "enabled": null},
         "normal": {"cmd": "journal heartbeat", "every": "daily"}
     }));
     let report = read_only_report(&bed);
     assert_eq!(report.exit_code, 1);
-    assert_eq!(report.diagnostics.len(), 2);
+    assert_eq!(report.diagnostics.len(), 6);
     assert!(report.rows.iter().all(|row| row.name != "non-object"));
-    let bad = report
-        .rows
-        .iter()
-        .find(|row| row.name == "bad-cmd")
-        .expect("bad row");
-    assert_eq!(bad.cmd, "<invalid>");
-    assert_eq!(bad.next_due, "?");
+    for name in [
+        "bad-cmd-array",
+        "bad-cmd-missing",
+        "bad-cmd-null",
+        "bad-cmd-number",
+        "bad-cmd-object",
+    ] {
+        let bad = report
+            .rows
+            .iter()
+            .find(|row| row.name == name)
+            .expect("bad row");
+        assert_eq!(bad.cmd, "<invalid>");
+        assert_eq!(bad.next_due, "?");
+    }
     let unknown = report
         .rows
         .iter()
         .find(|row| row.name == "unknown")
         .expect("unknown row");
     assert_eq!(unknown.next_due, "?");
-    let disabled = report
-        .rows
-        .iter()
-        .find(|row| row.name == "disabled")
-        .expect("disabled row");
-    assert!(disabled.disabled);
-    assert_eq!(disabled.next_due, "disabled");
+    for name in [
+        "disabled-false",
+        "disabled-zero",
+        "disabled-empty",
+        "disabled-null",
+    ] {
+        let disabled = report
+            .rows
+            .iter()
+            .find(|row| row.name == name)
+            .expect("disabled row");
+        assert!(disabled.disabled);
+        assert_eq!(disabled.next_due, "disabled");
+    }
+}
+
+#[test]
+fn daily_next_due_parses_metadata_before_displaying_it() {
+    for (daily_time, expected) in [("25:00", "midnight"), ("3:5", "03:05")] {
+        let bed = Bed::new("daily-time-display");
+        bed.write_config(json!({
+            "daily_time": daily_time,
+            "daily": {"cmd": ["journal", "heartbeat"], "every": "daily"}
+        }));
+        bed.write_state(
+            json!({"daily": {"last_run": now(2026, 3, 22, 4, 0).unix_millis as f64 / 1_000.0}}),
+        );
+        let report = read_only_report(&bed);
+        assert_eq!(report.exit_code, 0);
+        assert_eq!(report.rows.first().expect("daily row").next_due, expected);
+    }
 }
 
 #[test]
@@ -250,6 +289,67 @@ fn non_object_and_unreadable_state_are_loud_and_invalid() {
 }
 
 #[test]
+#[cfg(unix)]
+fn permission_denied_paths_are_loud_when_metadata_is_denied() {
+    use std::io::ErrorKind;
+    use std::os::unix::fs::PermissionsExt;
+
+    let bed = Bed::new("permission-denied");
+    bed.write_config(json!({"normal": {"cmd": ["journal", "heartbeat"], "every": "daily"}}));
+    let locked = bed.root.join("locked");
+    fs::create_dir(&locked).expect("locked directory");
+    let state = locked.join("scheduler.json");
+    fs::write(&state, b"{}").expect("state");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("lock directory");
+    let denied = fs::metadata(&state)
+        .err()
+        .is_some_and(|error| error.kind() == ErrorKind::PermissionDenied);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("unlock directory");
+    if !denied {
+        eprintln!("skipping permission-denied assertion: metadata access is not denied");
+        return;
+    }
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("relock directory");
+    let report = build_schedule_report(bed.config(), &state, now(2026, 3, 22, 10, 0));
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore directory");
+    assert_eq!(report.exit_code, 1);
+    assert_eq!(report.diagnostics.len(), 1);
+    let row = report.rows.first().expect("normal row");
+    assert_eq!(row.last_run, "invalid");
+    assert_eq!(row.next_due, "invalid");
+
+    let locked_config = bed.root.join("locked-config");
+    fs::create_dir(&locked_config).expect("locked config directory");
+    let config = locked_config.join("schedules.json");
+    fs::write(
+        &config,
+        br#"{"normal":{"cmd":["journal","heartbeat"],"every":"daily"}}"#,
+    )
+    .expect("config");
+    fs::set_permissions(&locked_config, fs::Permissions::from_mode(0o000))
+        .expect("lock config directory");
+    let denied = fs::metadata(&config)
+        .err()
+        .is_some_and(|error| error.kind() == ErrorKind::PermissionDenied);
+    fs::set_permissions(&locked_config, fs::Permissions::from_mode(0o700))
+        .expect("unlock config directory");
+    if !denied {
+        eprintln!("skipping config permission-denied assertion: metadata access is not denied");
+        return;
+    }
+
+    fs::set_permissions(&locked_config, fs::Permissions::from_mode(0o000))
+        .expect("relock config directory");
+    let report = build_schedule_report(&config, bed.state(), now(2026, 3, 22, 10, 0));
+    fs::set_permissions(&locked_config, fs::Permissions::from_mode(0o700))
+        .expect("restore config directory");
+    assert_eq!(report.exit_code, 1);
+    assert!(report.rows.is_empty());
+    assert_eq!(report.diagnostics.len(), 1);
+}
+
+#[test]
 fn trusted_epoch_failures_are_soft_and_do_not_write_journal_state() {
     let bed = Bed::new("epochs");
     bed.write_config(json!({
@@ -288,4 +388,42 @@ fn trusted_epoch_failures_are_soft_and_do_not_write_journal_state() {
             .last_run,
         "invalid"
     );
+}
+
+#[test]
+fn trusted_epoch_values_cover_null_and_normal_ranges() {
+    let bed = Bed::new("epoch-values");
+    let current = now(2026, 3, 22, 10, 0);
+    bed.write_config(json!({
+        "null": {"cmd": ["journal", "heartbeat"], "every": "hourly"},
+        "negative": {"cmd": ["journal", "heartbeat"], "every": "hourly"},
+        "current": {"cmd": ["journal", "heartbeat"], "every": "hourly"},
+        "future": {"cmd": ["journal", "heartbeat"], "every": "hourly"}
+    }));
+    bed.write_state(json!({
+        "null": {"last_run": null},
+        "negative": {"last_run": -1.0},
+        "current": {"last_run": current.unix_millis as f64 / 1_000.0},
+        "future": {"last_run": current.unix_millis as f64 / 1_000.0 + 3_600.0}
+    }));
+    let report = read_only_report(&bed);
+    assert_eq!(report.exit_code, 0);
+    assert_eq!(
+        report
+            .rows
+            .iter()
+            .find(|row| row.name == "null")
+            .expect("null")
+            .last_run,
+        "never"
+    );
+    for name in ["negative", "current", "future"] {
+        let row = report
+            .rows
+            .iter()
+            .find(|row| row.name == name)
+            .expect("row");
+        assert_ne!(row.last_run, "never");
+        assert_ne!(row.last_run, "invalid");
+    }
 }

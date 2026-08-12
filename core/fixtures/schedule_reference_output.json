@@ -14,6 +14,12 @@
       "stderr": "",
       "stdout": "usage: journal schedule [-h] [-v] [-d]\n\nShow scheduled tasks\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
     },
+    "invalid_daily_time": {
+      "argv": [],
+      "exit": 0,
+      "stderr": "",
+      "stdout": "  NAME                     EVERY     LAST RUN            NEXT DUE    CMD\n\n  daily-with-invalid-time  daily     2026-03-22 04:00    midnight    journal heartbeat\n\nConfig: {journal}/config/schedules.json\n"
+    },
     "midnight": {
       "argv": [],
       "exit": 0,
@@ -34,7 +40,7 @@
     }
   },
   "provenance": {
-    "captured_from_rev": "ba64177d35213b59616dbc249558f239f166ccd1",
+    "captured_from_rev": "3d2e593bd6ed349692e2ed5779f61a8b00408806",
     "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port.",
     "interpreter": "/home/jer/.hopper/worktrees/rfgkwqoa/.venv/bin/python"
   },

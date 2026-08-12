@@ -129,7 +129,12 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
     let corpus = corpus();
     let expected_table = &corpus.cases["table"];
     let expected_midnight = &corpus.cases["midnight"];
-    for expected in [expected_table, expected_midnight] {
+    let expected_invalid_daily_time = &corpus.cases["invalid_daily_time"];
+    for expected in [
+        expected_table,
+        expected_midnight,
+        expected_invalid_daily_time,
+    ] {
         assert_eq!(expected.exit, 0);
         assert!(expected.stderr.is_empty());
         assert!(expected.stdout.contains("2026-03-"));
@@ -151,6 +156,7 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
     );
     assert!(expected_table.stdout.contains("Monday 08:15"));
     assert!(expected_midnight.stdout.contains("midnight"));
+    assert!(expected_invalid_daily_time.stdout.contains("midnight"));
 
     let journal = journal();
     write_detailed_schedule(journal.path());
@@ -250,6 +256,41 @@ fn captured_stateful_cases_match_native_columns_and_runtime_forms() {
     );
     assert_eq!(
         cell(header, row(&stdout, "daily-at-midnight"), "NEXT DUE", 10),
+        "midnight"
+    );
+
+    fs::write(
+        journal.path().join("config/schedules.json"),
+        r#"{"daily_time":"25:00","daily-with-invalid-time":{"cmd":["journal","heartbeat"],"every":"daily"}}"#,
+    )
+    .expect("invalid daily-time config");
+    fs::write(
+        journal.path().join("health/scheduler.json"),
+        format!(
+            r#"{{"daily-with-invalid-time":{{"last_run":{}}}}}"#,
+            chrono::Local::now().timestamp()
+        ),
+    )
+    .expect("invalid daily-time state");
+    let output = run(journal.path(), &["schedule"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let header = stdout.lines().next().expect("invalid daily-time header");
+    assert_eq!(output.status.code(), Some(expected_invalid_daily_time.exit));
+    assert_eq!(
+        header,
+        expected_invalid_daily_time
+            .stdout
+            .lines()
+            .next()
+            .expect("captured invalid daily-time header")
+    );
+    assert_eq!(
+        cell(
+            header,
+            row(&stdout, "daily-with-invalid-time"),
+            "NEXT DUE",
+            10
+        ),
         "midnight"
     );
 }

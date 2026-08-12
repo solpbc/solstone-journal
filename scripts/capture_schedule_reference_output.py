@@ -134,6 +134,29 @@ def main() -> int:
             encoding="utf-8",
         )
         cases["midnight"] = run_case(args.python, journal, [])
+        (journal / "config/schedules.json").write_text(
+            json.dumps(
+                {
+                    "daily_time": "25:00",
+                    "daily-with-invalid-time": {
+                        "cmd": ["journal", "heartbeat"],
+                        "every": "daily",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (journal / "health/scheduler.json").write_text(
+            json.dumps(
+                {
+                    "daily-with-invalid-time": {
+                        "last_run": datetime(2026, 3, 22, 4, 0).timestamp()
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        cases["invalid_daily_time"] = run_case(args.python, journal, [])
     payload = {"schema": "schedule-reference-output/1", "provenance": {"captured_from_rev": subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip(), "interpreter": str(args.python), "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port."}, "cases": cases}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

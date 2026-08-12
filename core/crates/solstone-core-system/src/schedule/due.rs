@@ -161,7 +161,7 @@ pub(crate) fn current_marks(
     )
 }
 
-fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_daily_time(raw: &str) -> Option<(u32, u32)> {
     let (hour, minute) = raw.split_once(':')?;
     if minute.contains(':') {
         return None;

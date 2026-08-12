@@ -93,6 +93,27 @@ fn schedule_read_path_has_no_spawn_or_ambient_reach() {
             );
         }
     }
+    for (name, source) in [
+        (
+            "schedule-journal-resolution",
+            function_source(MAIN, "fn resolve_journal_config_path"),
+        ),
+        (
+            "process-journal-resolution",
+            function_source(MAIN, "fn resolve_process_journal_path"),
+        ),
+        (
+            "schedule-journal-error",
+            function_source(MAIN, "fn eprint_journal_path_error"),
+        ),
+    ] {
+        for forbidden in ["Command::new", "std::process", "python", "python3"] {
+            assert!(
+                !source.contains(forbidden),
+                "{name} reaches forbidden surface {forbidden}"
+            );
+        }
+    }
     assert!(CLI.contains("Schedule(ScheduleOptions)"));
     assert!(CLI.contains("command == OsStr::new(\"schedule\")"));
 }

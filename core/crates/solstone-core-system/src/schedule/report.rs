@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::path::Path;
+use std::{fs, io, path::Path};
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{MalformedPolicy, ReadError, read_json};
 
 use super::config::{RESERVED_METADATA_KEYS, is_interval, json_truthy, metadata_from_raw};
-use super::due::{compute_next_run, effective_every, local_from_epoch, state_entry};
+use super::due::{
+    compute_next_run, effective_every, local_from_epoch, parse_daily_time, state_entry,
+};
 use super::{ScheduleConfig, ScheduleEntry, ScheduleNow};
 
 /// One rendered schedule table row.
@@ -177,8 +179,15 @@ pub fn build_schedule_report(
 }
 
 fn load_raw_config(path: &Path) -> Result<Option<Map<String, Value>>, String> {
-    if !path.exists() {
-        return Ok(None);
+    match fs::metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => {
+            return Err(format!(
+                "schedules config at {} is unreadable",
+                path.display()
+            ));
+        }
     }
     match read_json::<Value>(path, Value::Null, MalformedPolicy::Raise) {
         Ok(Value::Object(raw)) => Ok(Some(raw)),
@@ -198,8 +207,18 @@ fn load_raw_config(path: &Path) -> Result<Option<Map<String, Value>>, String> {
 }
 
 fn load_report_state(path: &Path) -> (Map<String, Value>, Option<String>) {
-    if !path.exists() {
-        return (Map::new(), None);
+    match fs::metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return (Map::new(), None),
+        Err(_) => {
+            return (
+                Map::new(),
+                Some(format!(
+                    "scheduler state at {} is unreadable",
+                    path.display()
+                )),
+            );
+        }
     }
     match read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise) {
         Ok(Value::Object(state)) => (state, None),
@@ -254,7 +273,12 @@ fn format_last_run(state: Option<&Value>) -> String {
     }
     last_run
         .as_f64()
-        .and_then(local_from_epoch)
+        .map(format_epoch)
+        .unwrap_or_else(|| "invalid".to_owned())
+}
+
+fn format_epoch(value: f64) -> String {
+    local_from_epoch(value)
         .map(|value| value.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "invalid".to_owned())
 }
@@ -274,11 +298,23 @@ fn format_next_due(
             "hourly" => value.format("%H:%M").to_string(),
             "daily" => config
                 .daily_time
-                .clone()
-                .filter(|value| !value.is_empty())
+                .as_deref()
+                .and_then(parse_daily_time)
+                .map(|(hour, minute)| format!("{hour:02}:{minute:02}"))
                 .unwrap_or_else(|| "midnight".to_owned()),
             "weekly" => value.format("%A %H:%M").to_string(),
             _ => value.format("%H:%M").to_string(),
         })
         .unwrap_or_else(|| "invalid".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_epoch;
+
+    #[test]
+    fn non_finite_epoch_values_are_invalid() {
+        assert_eq!(format_epoch(f64::NAN), "invalid");
+        assert_eq!(format_epoch(f64::INFINITY), "invalid");
+    }
 }
