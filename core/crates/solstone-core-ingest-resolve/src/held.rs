@@ -9,8 +9,8 @@ use std::path::Path;
 use serde_json::{Map, Value};
 use solstone_core_segment::{ContentName, SegmentDir, TerminalProofVerifier};
 
-use crate::IngestFile;
 use crate::terminal_proof::SegmentTerminalProof;
+use crate::{HeldEvidence, IngestFile};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ResolveManifestEntry {
@@ -90,10 +90,11 @@ pub(crate) fn absent_target_held(
 pub(crate) fn is_currently_held(
     segment: &SegmentDir,
     file: &IngestFile<'_>,
-) -> Result<bool, io::Error> {
+) -> Result<Option<HeldEvidence>, io::Error> {
     let target = segment.path().join(file.name.as_str());
     match fs::read(&target) {
-        Ok(bytes) => Ok(sha256(&bytes) == sha256(file.bytes)),
+        Ok(bytes) if sha256(&bytes) == sha256(file.bytes) => Ok(Some(HeldEvidence::OnDisk)),
+        Ok(_) => Ok(None),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let manifest = read_lenient_manifest(segment.path());
             Ok(absent_target_held(
@@ -102,7 +103,8 @@ pub(crate) fn is_currently_held(
                 &sha256(file.bytes),
                 file.bytes.len() as u64,
                 &manifest,
-            ))
+            )
+            .then_some(HeldEvidence::TerminalProof))
         }
         Err(error) => Err(error),
     }

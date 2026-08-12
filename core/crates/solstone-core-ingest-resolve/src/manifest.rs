@@ -85,12 +85,14 @@ mod tests {
                     sha256: "new".to_owned(),
                     size: 5,
                     disposition: AppliedDisposition::Written,
+                    evidence: None,
                 },
                 AppliedFile {
                     name: ContentName::new("notes.json").unwrap(),
                     sha256: "ignored".to_owned(),
                     size: 7,
                     disposition: AppliedDisposition::Unwritten,
+                    evidence: None,
                 },
             ],
         )

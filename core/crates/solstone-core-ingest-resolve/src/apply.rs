@@ -13,7 +13,7 @@ use solstone_core_segment::{
 
 use crate::held::is_currently_held;
 use crate::manifest::write_ingest_manifest;
-use crate::{ApplyPlan, FileDisposition, IngestFile, PlanStatus};
+use crate::{ApplyPlan, FileDisposition, HeldEvidence, IngestFile, PlanStatus};
 
 /// Final file disposition published in the ingest event and response.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +30,7 @@ pub struct AppliedFile {
     pub sha256: String,
     pub size: u64,
     pub disposition: AppliedDisposition,
+    pub evidence: Option<HeldEvidence>,
 }
 
 /// One successful, manifest-committed application of an accepted resolution plan.
@@ -104,6 +105,7 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
                             content.sha256,
                             content.size,
                             AppliedDisposition::Written,
+                            None,
                         ));
                     }
                     ContentWriteOutcome::AlreadyHeld(content) => {
@@ -112,17 +114,19 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
                             content.sha256,
                             content.size,
                             AppliedDisposition::AlreadyHeld,
+                            Some(HeldEvidence::OnDisk),
                         ));
                     }
                     ContentWriteOutcome::Conflict { .. } => return Err(ApplyError::Stale),
                 }
             }
-            FileDisposition::Held { .. } => {
+            FileDisposition::Held { evidence } => {
                 applied.push(applied_file(
                     file.name.clone(),
                     planned.sha256.clone(),
                     planned.size,
                     AppliedDisposition::AlreadyHeld,
+                    Some(evidence),
                 ));
             }
             FileDisposition::Unwritten { .. } => {
@@ -131,18 +135,20 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
                     planned.sha256.clone(),
                     planned.size,
                     AppliedDisposition::Unwritten,
+                    None,
                 ));
             }
         }
     }
-    for (planned, file) in plan.files.iter().zip(files) {
-        if matches!(planned.disposition, FileDisposition::Held { .. })
-            && !is_currently_held(&plan.segment, file).map_err(|source| ApplyError::Io {
-                path: plan.segment.path().join(file.name.as_str()),
-                source,
-            })?
-        {
-            return Err(ApplyError::Stale);
+    for ((planned, file), applied_file) in plan.files.iter().zip(files).zip(applied.iter_mut()) {
+        if matches!(planned.disposition, FileDisposition::Held { .. }) {
+            let evidence = is_currently_held(&plan.segment, file)
+                .map_err(|source| ApplyError::Io {
+                    path: plan.segment.path().join(file.name.as_str()),
+                    source,
+                })?
+                .ok_or(ApplyError::Stale)?;
+            applied_file.evidence = Some(evidence);
         }
     }
     write_ingest_manifest(&plan.segment, &plan.requested_segment, &applied)?;
@@ -170,12 +176,14 @@ fn applied_file(
     sha256: String,
     size: u64,
     disposition: AppliedDisposition,
+    evidence: Option<HeldEvidence>,
 ) -> AppliedFile {
     AppliedFile {
         name,
         sha256,
         size,
         disposition,
+        evidence,
     }
 }
 
@@ -186,7 +194,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use solstone_core_segment::ContentName;
 
     use crate::{IngestFile, Resolution, resolve_ingest};
@@ -211,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn held_drift_is_stale_and_never_commits_a_manifest() {
+    fn stale_evidence_recheck_is_rejected_before_manifest_commit() {
         let root = root();
         let segment = root.join("chronicle/20260804/device/120000_1");
         fs::create_dir_all(&segment).unwrap();
@@ -226,6 +234,69 @@ mod tests {
         fs::write(segment.join("audio.flac"), b"drift").unwrap();
         assert!(matches!(apply_plan(&plan, &files), Err(ApplyError::Stale)));
         assert!(!segment.join("ingest.json").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn needs_write_race_records_on_disk_evidence() {
+        let root = root();
+        let files = [file(b"sound")];
+        let Resolution::Apply(plan) =
+            resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
+        else {
+            panic!("expected apply plan");
+        };
+        fs::create_dir_all(plan.segment.path()).unwrap();
+        fs::write(plan.segment.path().join("audio.flac"), b"sound").unwrap();
+
+        let result = apply_plan(&plan, &files).unwrap();
+
+        assert_eq!(result.files[0].disposition, AppliedDisposition::AlreadyHeld);
+        assert_eq!(result.files[0].evidence, Some(HeldEvidence::OnDisk));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn held_recheck_replaces_on_disk_evidence_with_terminal_proof() {
+        let root = root();
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("audio.flac"), b"sound").unwrap();
+        let files = [file(b"sound")];
+        let Resolution::Apply(plan) =
+            resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
+        else {
+            panic!("expected apply plan");
+        };
+        assert!(matches!(
+            plan.files[0].disposition,
+            FileDisposition::Held {
+                evidence: HeldEvidence::OnDisk
+            }
+        ));
+        fs::write(
+            plan.segment
+                .path()
+                .join("audio.flac")
+                .with_extension("jsonl"),
+            json!({
+                "_solstone_processing": {
+                    "schema": "solstone.processing.v1",
+                    "state": "analyzed",
+                    "handler": "transcribe",
+                    "input_size": 5,
+                }
+            })
+            .to_string()
+                + "\n",
+        )
+        .unwrap();
+        fs::remove_file(plan.segment.path().join("audio.flac")).unwrap();
+
+        let result = apply_plan(&plan, &files).unwrap();
+
+        assert_eq!(result.files[0].disposition, AppliedDisposition::AlreadyHeld);
+        assert_eq!(result.files[0].evidence, Some(HeldEvidence::TerminalProof));
         let _ = fs::remove_dir_all(root);
     }
 
