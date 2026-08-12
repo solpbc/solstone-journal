@@ -255,7 +255,12 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         stream: "import.audio".to_owned(),
         facet: options.facet.clone(),
         setting: options.setting.clone(),
-        wait_for_processing: false,
+        // The reference waits by default; only the audio-folder sync backend turns this off.
+        // Returning immediately told an owner the import was complete while its segments were
+        // still unprocessed, so nothing had reached a stream or the index yet and a failed or
+        // stalled segment was never reported at all. The verb already requires a running
+        // solstone, so the consumer these segments wait on is guaranteed to exist.
+        wait_for_processing: true,
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
