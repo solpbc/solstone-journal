@@ -34,8 +34,10 @@ fn implemented_import_modules_have_no_unimplemented_seam() {
         "publish",
         "events",
     ] {
-        assert!(MODULE_STUBS
-            .iter()
-            .all(|(module, _)| *module != implemented));
+        assert!(
+            MODULE_STUBS
+                .iter()
+                .all(|(module, _)| *module != implemented)
+        );
     }
 }
