@@ -340,6 +340,8 @@ pub(crate) fn install_ced_assets_with_policy(
         let stage_dir = stage(journal, key);
         let _ = fs::remove_dir_all(&extract_dir);
         let _ = fs::remove_dir_all(&stage_dir);
+        fs::create_dir_all(&extract_dir)
+            .map_err(|error| CedInstallError::new("install_failed", error.to_string(), 74))?;
         archive::extract_tar_gz(&archive_path, &extract_dir).map_err(|error| {
             CedInstallError::new(
                 if matches!(error, archive::ArchiveError::PathEscape(_)) {

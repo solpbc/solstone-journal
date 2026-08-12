@@ -394,6 +394,14 @@ mod tests {
         }
         assert!(leaked_temps(&root).is_empty());
 
+        fs::write(root.join(TOKENIZER), vec![b'x'; tokenizer_bytes.len()]).unwrap();
+        assert_eq!(
+            check_rerank_model_with_rows(temp.path(), &references)
+                .unwrap_err()
+                .reason_code,
+            "sha256_mismatch"
+        );
+        fs::write(root.join(TOKENIZER), tokenizer_bytes).unwrap();
         fs::write(root.join(MODEL), b"corrupt model").unwrap();
         assert_eq!(
             check_rerank_model_with_rows(temp.path(), &references)

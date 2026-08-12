@@ -122,10 +122,11 @@ fn model() -> Result<&'static Artifact, RfdetrInstallError> {
     })
 }
 fn tarball(journal: &Path) -> Result<PathBuf, RfdetrInstallError> {
-    Ok(binary_path(journal)
-        .parent()
-        .unwrap()
-        .join(engine()?.filename))
+    Ok(tarball_for(journal, engine()?))
+}
+
+fn tarball_for(journal: &Path, engine: &Artifact) -> PathBuf {
+    binary_path(journal).parent().unwrap().join(engine.filename)
 }
 
 fn verify(
@@ -369,14 +370,13 @@ fn install_rfdetr_with_policy_and_report(
         log::info!("rf-detr.cpp platform unavailable on {os_name}/{arch}");
         return Ok(record);
     }
-    let ready = match artifact_override {
-        Some((engine, model)) => {
-            check_rfdetr_model_with_artifacts(journal, os_name, arch, engine, model)
-        }
-        None => check_rfdetr_model(journal, os_name, arch),
+    let (engine, model) = match artifact_override {
+        Some(rows) => rows,
+        None => (engine()?, model()?),
     };
-    if !force && ready.is_ok() {
-        return Ok(RfdetrInstallRecord::Installed);
+    let ready = check_rfdetr_model_with_artifacts(journal, os_name, arch, engine, model);
+    if !force && let Ok(record) = ready {
+        return Ok(record);
     }
     let report = report_override
         .unwrap_or_else(|| fit_report::build_rfdetr_fit_report(journal, os_name, arch));
@@ -389,12 +389,13 @@ fn install_rfdetr_with_policy_and_report(
     }
     cleanup(journal);
     let result = (|| {
-        let engine = engine()?;
-        let archive_path = tarball(journal)?;
+        let archive_path = tarball_for(journal, engine);
         download_artifact(engine, &archive_path, policy, |_, _| {}, "download_failed")
             .map_err(dispatch_error)?;
         let extract = extract_path(journal);
         let _ = fs::remove_dir_all(&extract);
+        fs::create_dir_all(&extract)
+            .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
         archive::extract_tar_gz(&archive_path, &extract).map_err(|error| {
             let path_escape = matches!(error, archive::ArchiveError::PathEscape(_));
             RfdetrInstallError::new(
@@ -438,7 +439,6 @@ fn install_rfdetr_with_policy_and_report(
             .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
         let _ = fs::remove_dir_all(&extract);
         let _ = fs::remove_file(&archive_path);
-        let model = model()?;
         download_artifact(
             model,
             &model_path(journal),
@@ -504,9 +504,14 @@ mod tests {
     use super::*;
     use crate::install::test_support::{leaked_temps, prove_temp_sweep};
 
+    use flate2::{Compression, write::GzEncoder};
+    use sha2::{Digest, Sha256};
     use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::net::TcpListener;
     #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
+    use std::thread;
 
     const DENY_ALL_POLICY: archive::DownloadHostPolicy<'static> = archive::DownloadHostPolicy {
         allowed_hosts: &["example.invalid"],
@@ -540,6 +545,20 @@ mod tests {
     }
 
     #[test]
+    fn sound_platform_unavailable_sidecar_is_returned_on_a_supported_host() {
+        let temp = tempfile::tempdir().unwrap();
+        write_sidecar(temp.path(), &RfdetrInstallRecord::PlatformUnavailable).unwrap();
+
+        assert_eq!(
+            install_rfdetr_with_policy(temp.path(), "linux", "x86_64", false, &DENY_ALL_POLICY,)
+                .unwrap(),
+            RfdetrInstallRecord::PlatformUnavailable
+        );
+        assert!(!binary_path(temp.path()).exists());
+        assert!(!model_path(temp.path()).exists());
+    }
+
+    #[test]
     fn extracted_binary_digest_is_catalogued_and_rejects_tampering() {
         let temp = tempfile::tempdir().unwrap();
         let engine = engine().unwrap();
@@ -560,6 +579,98 @@ mod tests {
             .reason_code,
             "sha256_mismatch"
         );
+    }
+
+    #[test]
+    fn extracted_binary_digest_mismatch_cleans_install_outputs() {
+        let temp = tempfile::tempdir().unwrap();
+        let stale_model = model_path(temp.path());
+        fs::create_dir_all(stale_model.parent().unwrap()).unwrap();
+        fs::write(&stale_model, b"partial model").unwrap();
+        write_sidecar(temp.path(), &RfdetrInstallRecord::Installed).unwrap();
+        let tarball = temp.path().join("fixture.tar.gz");
+        let payload = b"tampered rfdetr binary";
+        let file = fs::File::create(&tarball).unwrap();
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(payload.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, BINARY, payload.as_slice())
+            .unwrap();
+        archive.into_inner().unwrap().finish().unwrap();
+        let bytes = fs::read(&tarball).unwrap();
+        let bytes_len = bytes.len();
+        let tarball_sha = Box::leak(format!("{:x}", Sha256::digest(&bytes)).into_boxed_str());
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        bytes_len
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+            stream.write_all(&bytes).unwrap();
+        });
+        let upstream_url = Box::leak(format!("http://{address}/fixture.tar.gz").into_boxed_str());
+        let engine = Artifact {
+            unit: ENGINE_UNIT,
+            version: ENGINE_REF,
+            filename: "fixture.tar.gz",
+            sha256: tarball_sha,
+            size_bytes: bytes_len as u64,
+            upstream_url,
+            origin_key: "test",
+            artifact_key: Some("linux-cpu-x64"),
+            platform: Some(Platform::LinuxX64),
+            backend: Some(Backend::Cpu),
+            extracted_binary_sha256: Some(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            ),
+        };
+        let model = Artifact {
+            unit: MODEL_UNIT,
+            version: MODEL_REVISION,
+            filename: MODEL_FILE,
+            sha256: "unused",
+            size_bytes: 0,
+            upstream_url: "https://example.invalid/model",
+            origin_key: "test",
+            artifact_key: None,
+            platform: None,
+            backend: None,
+            extracted_binary_sha256: None,
+        };
+        let origin_base = format!("http://{address}");
+        let policy = archive::DownloadHostPolicy {
+            allowed_hosts: &["127.0.0.1"],
+            allow_http: true,
+            origin_base_url: &origin_base,
+        };
+
+        let error = install_rfdetr_with_policy_and_report(
+            temp.path(),
+            "linux",
+            "x86_64",
+            true,
+            &policy,
+            None,
+            Some((&engine, &model)),
+        )
+        .unwrap_err();
+        server.join().unwrap();
+        assert_eq!(error.reason_code, "sha256_mismatch");
+        assert!(!binary_path(temp.path()).exists());
+        assert!(!model_path(temp.path()).exists());
+        assert!(!sidecar_path(temp.path()).exists());
     }
 
     #[test]
