@@ -37,7 +37,8 @@ use super::model::{
 };
 use super::seams::{LifecycleSeam, ProbeSeam};
 use super::store::{
-    CurrentProcessResolution, FenceKey, ReadyProcess, ReadyProcessLookup, RuntimeClock,
+    CurrentProcessResolution, FenceKey, ReadyChild, ReadyChildIdentity, ReadyProcess,
+    ReadyProcessLookup, RuntimeClock, insert_ready_tuple, remove_ready_tuple,
     resolve_current_process,
 };
 
@@ -98,6 +99,8 @@ pub struct ParakeetRuntimeShared {
     launch_requests: Mutex<BTreeMap<Option<String>, ParakeetLaunchConfig>>,
     results: Mutex<ParakeetRuntimeResults>,
     result_available: Condvar,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     children: Mutex<BTreeMap<String, Child>>,
 }
@@ -266,22 +269,57 @@ impl ParakeetRuntimeShared {
             .insert(FenceKey::from(fence), process);
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn register_ready_process(&self, fence: &ProviderFence, child: Child, process: ReadyProcess) {
+    #[cfg(test)]
+    fn record_ready_observation_for_test(
+        &self,
+        fence: &ProviderFence,
+        process: ReadyProcess,
+        started_at: Instant,
+    ) {
         let key = FenceKey::from(fence);
-        let started_at = Instant::now();
+        self.ready_processes
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .insert(key.clone(), process);
+        self.started_at
+            .lock()
+            .expect("parakeet runtime shared lock")
+            .insert(key, started_at);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn register_ready_process(
+        &self,
+        fence: &ProviderFence,
+        child: Child,
+        process: ReadyProcess,
+        started_at: Instant,
+    ) {
+        let key = FenceKey::from(fence);
         let mut ready_processes = self
             .ready_processes
             .lock()
             .expect("parakeet runtime shared lock");
-        let mut children = self.children.lock().expect("parakeet runtime shared lock");
+        let mut ready_children = self
+            .ready_children
+            .lock()
+            .expect("parakeet runtime shared lock");
         let mut started = self
             .started_at
             .lock()
             .expect("parakeet runtime shared lock");
-        children.insert(process.process_id.clone(), child);
-        ready_processes.insert(key.clone(), process);
-        started.insert(key, started_at);
+        insert_ready_tuple(
+            key,
+            process.clone(),
+            ReadyChild {
+                process_id: process.process_id.clone(),
+                child,
+            },
+            started_at,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -302,20 +340,20 @@ impl ParakeetRuntimeShared {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, Child)> {
-        let ready_processes = self
-            .ready_processes
+        let mut ready_children = self
+            .ready_children
             .lock()
             .expect("parakeet runtime shared lock");
-        let process_id = ready_processes
-            .get(&FenceKey::from(fence))?
-            .process_id
-            .clone();
-        let child = self
-            .children
+        let ready_child = ready_children.remove(&FenceKey::from(fence))?;
+        Some((ready_child.process_id, ready_child.child))
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn retain_ready_child(&self, fence: &ProviderFence, process_id: String, child: Child) {
+        self.ready_children
             .lock()
             .expect("parakeet runtime shared lock")
-            .remove(&process_id)?;
-        Some((process_id, child))
+            .insert(FenceKey::from(fence), ReadyChild { process_id, child });
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -325,15 +363,20 @@ impl ParakeetRuntimeShared {
             .ready_processes
             .lock()
             .expect("parakeet runtime shared lock");
-        let mut children = self.children.lock().expect("parakeet runtime shared lock");
+        let mut ready_children = self
+            .ready_children
+            .lock()
+            .expect("parakeet runtime shared lock");
         let mut started = self
             .started_at
             .lock()
             .expect("parakeet runtime shared lock");
-        if let Some(process) = ready_processes.remove(&key) {
-            children.remove(&process.process_id);
-        }
-        started.remove(&key);
+        remove_ready_tuple(
+            &key,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -357,19 +400,43 @@ impl ParakeetRuntimeShared {
         let Ok(ready_processes) = self.ready_processes.lock() else {
             return ProcessObservation::Indeterminate;
         };
-        let Ok(started) = self.started_at.lock() else {
-            return ProcessObservation::Indeterminate;
-        };
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
-            let Ok(mut children) = self.children.lock() else {
+            let Ok(mut ready_children) = self.ready_children.lock() else {
                 return ProcessObservation::Indeterminate;
             };
-            let child_process_ids = children.keys().cloned().collect();
-            match resolve_current_process(processes, &ready_processes, &started, &child_process_ids)
-            {
-                CurrentProcessResolution::Coherent { ready, started_at } => {
-                    let Some(child) = children.get_mut(&ready.process_id) else {
+            let Ok(started) = self.started_at.lock() else {
+                return ProcessObservation::Indeterminate;
+            };
+            let Ok(children) = self.children.lock() else {
+                return ProcessObservation::Indeterminate;
+            };
+            let ready_child_identities = ready_children
+                .iter()
+                .map(|(key, child)| {
+                    (
+                        key.clone(),
+                        ReadyChildIdentity {
+                            process_id: child.process_id.clone(),
+                            pid: child.child.id(),
+                        },
+                    )
+                })
+                .collect();
+            let unfenced_child_ids = children.keys().cloned().collect();
+            match resolve_current_process(
+                processes,
+                &ready_processes,
+                &started,
+                &ready_child_identities,
+                &unfenced_child_ids,
+            ) {
+                CurrentProcessResolution::Coherent {
+                    fence,
+                    ready,
+                    started_at,
+                } => {
+                    let Some(child) = ready_children.get_mut(&fence) else {
                         return ProcessObservation::Indeterminate;
                     };
                     classify_process_observation(
@@ -379,7 +446,7 @@ impl ParakeetRuntimeShared {
                             reference: ready.process_id,
                             pid: ready.pid,
                             started_at,
-                            poll: child.try_wait(),
+                            poll: child.child.try_wait(),
                         }),
                         now,
                     )
@@ -390,8 +457,18 @@ impl ParakeetRuntimeShared {
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
+            let Ok(started) = self.started_at.lock() else {
+                return ProcessObservation::Indeterminate;
+            };
+            let no_ready_children = BTreeMap::new();
             let no_children = BTreeSet::new();
-            match resolve_current_process(processes, &ready_processes, &started, &no_children) {
+            match resolve_current_process(
+                processes,
+                &ready_processes,
+                &started,
+                &no_ready_children,
+                &no_children,
+            ) {
                 CurrentProcessResolution::Absent => ProcessObservation::ConfirmedAbsent,
                 CurrentProcessResolution::Coherent { .. } | CurrentProcessResolution::Ambiguous => {
                     ProcessObservation::Indeterminate
@@ -641,6 +718,7 @@ fn start_parakeet(
         Ok(child) => child,
         Err(_) => return launch_failed(),
     };
+    let started_at = Instant::now();
     let process_id = format!("parakeet:{}", child.id());
     let pid = child.id();
     let deadline = std::time::Instant::now() + warmup_timeout;
@@ -657,7 +735,7 @@ fn start_parakeet(
                 id: process_id.clone(),
                 name: PARAKEET_SERVER_PROCESS_NAME.into(),
                 running: true,
-                fence: None,
+                fence: Some(fence.clone()),
             };
             shared.register_ready_process(
                 fence,
@@ -668,6 +746,7 @@ fn start_parakeet(
                     pid,
                     port,
                 },
+                started_at,
             );
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Ready,
@@ -799,7 +878,11 @@ fn stop_parakeet(
                 }
             }
             Err(_) => {
-                shared.retain_child(process_id, child);
+                if let Some(fence) = fence {
+                    shared.retain_ready_child(fence, process_id, child);
+                } else {
+                    shared.retain_child(process_id, child);
+                }
                 ProviderStopCleanupOutcome {
                     status: StopCleanupStatus::CleanupFailed,
                     reason_code: ReasonCode::known("cleanup-attempt-failed"),
@@ -834,7 +917,8 @@ mod tests {
     use std::process::Command;
 
     use super::*;
-    use crate::provider_runtime::model::ProviderStopCleanupRequest;
+    use crate::process::ProcessObservation;
+    use crate::provider_runtime::model::{ProviderStopCleanupRequest, RuntimePhase};
 
     fn stop_request(managed_id: &str) -> ProviderStopCleanupRequest {
         ProviderStopCleanupRequest {
@@ -872,5 +956,52 @@ mod tests {
         let second = stop_parakeet(&shared, Some(&request), false, Duration::from_secs(5));
         assert_eq!(second.status, StopCleanupStatus::Stopped);
         assert_eq!(second.managed, None);
+    }
+
+    #[test]
+    fn already_gone_ready_cleanup_removes_parakeet_observation_residue() {
+        let shared = ParakeetRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "incarnation".to_owned(),
+            generation: 2,
+            fingerprint: Some("fingerprint".to_owned()),
+            attempt: 1,
+        };
+        shared.record_ready_observation_for_test(
+            &fence,
+            ReadyProcess {
+                process_id: "parakeet:42".to_owned(),
+                process_name: PARAKEET_SERVER_PROCESS_NAME.to_owned(),
+                pid: 42,
+                port: 5016,
+            },
+            Instant::now(),
+        );
+        let request = ProviderStopCleanupRequest {
+            managed: ManagedProcess {
+                id: "parakeet:42".to_owned(),
+                name: PARAKEET_SERVER_PROCESS_NAME.to_owned(),
+                running: true,
+                fence: Some(fence),
+            },
+            reason_code: ReasonCode::known("stale-result-ignored"),
+            target_phase: RuntimePhase::Stopped,
+            target_reason_code: None,
+            admission_exclusive: false,
+            orphaned_start_outcome: true,
+        };
+
+        assert_eq!(
+            shared.observe_current_process(&[], Instant::now()),
+            ProcessObservation::Indeterminate,
+        );
+        assert_eq!(
+            stop_parakeet(&shared, Some(&request), false, Duration::ZERO).status,
+            StopCleanupStatus::Stopped,
+        );
+        assert_eq!(
+            shared.observe_current_process(&[], Instant::now()),
+            ProcessObservation::ConfirmedAbsent,
+        );
     }
 }

@@ -91,10 +91,48 @@ pub struct ReadyProcess {
     pub port: u16,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReadyChildIdentity {
+    pub process_id: String,
+    pub pid: u32,
+}
+
+#[derive(Debug)]
+pub(crate) struct ReadyChild {
+    pub process_id: String,
+    pub child: Child,
+}
+
+pub(crate) fn insert_ready_tuple<T>(
+    key: FenceKey,
+    process: ReadyProcess,
+    child: T,
+    start: Instant,
+    ready_processes: &mut BTreeMap<FenceKey, ReadyProcess>,
+    ready_children: &mut BTreeMap<FenceKey, T>,
+    started_at: &mut BTreeMap<FenceKey, Instant>,
+) {
+    ready_children.insert(key.clone(), child);
+    ready_processes.insert(key.clone(), process);
+    started_at.insert(key, start);
+}
+
+pub(crate) fn remove_ready_tuple<T>(
+    key: &FenceKey,
+    ready_processes: &mut BTreeMap<FenceKey, ReadyProcess>,
+    ready_children: &mut BTreeMap<FenceKey, T>,
+    started_at: &mut BTreeMap<FenceKey, Instant>,
+) {
+    ready_processes.remove(key);
+    ready_children.remove(key);
+    started_at.remove(key);
+}
+
 /// Fence-keyed result of resolving the one process a status sample may inspect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CurrentProcessResolution {
     Coherent {
+        fence: FenceKey,
         ready: ReadyProcess,
         started_at: Instant,
     },
@@ -107,7 +145,8 @@ pub(crate) fn resolve_current_process(
     processes: &[ManagedProcess],
     ready_processes: &BTreeMap<FenceKey, ReadyProcess>,
     started_at: &BTreeMap<FenceKey, Instant>,
-    child_process_ids: &BTreeSet<String>,
+    ready_children: &BTreeMap<FenceKey, ReadyChildIdentity>,
+    unfenced_child_ids: &BTreeSet<String>,
 ) -> CurrentProcessResolution {
     let current = processes
         .iter()
@@ -116,7 +155,8 @@ pub(crate) fn resolve_current_process(
     if current.is_empty() {
         return if ready_processes.is_empty()
             && started_at.is_empty()
-            && child_process_ids.is_empty()
+            && ready_children.is_empty()
+            && unfenced_child_ids.is_empty()
         {
             CurrentProcessResolution::Absent
         } else {
@@ -126,7 +166,8 @@ pub(crate) fn resolve_current_process(
     if current.len() != 1
         || ready_processes.len() != 1
         || started_at.len() != 1
-        || child_process_ids.len() != 1
+        || ready_children.len() != 1
+        || !unfenced_child_ids.is_empty()
     {
         return CurrentProcessResolution::Ambiguous;
     }
@@ -134,13 +175,22 @@ pub(crate) fn resolve_current_process(
         return CurrentProcessResolution::Ambiguous;
     };
     let key = FenceKey::from(fence);
-    let (Some(ready), Some(started_at)) = (ready_processes.get(&key), started_at.get(&key)) else {
+    let (Some(ready), Some(started_at), Some(child)) = (
+        ready_processes.get(&key),
+        started_at.get(&key),
+        ready_children.get(&key),
+    ) else {
         return CurrentProcessResolution::Ambiguous;
     };
-    if !child_process_ids.contains(&ready.process_id) {
+    if current[0].id != ready.process_id
+        || current[0].name != ready.process_name
+        || child.process_id != ready.process_id
+        || child.pid != ready.pid
+    {
         return CurrentProcessResolution::Ambiguous;
     }
     CurrentProcessResolution::Coherent {
+        fence: key,
         ready: ready.clone(),
         started_at: *started_at,
     }
@@ -153,6 +203,7 @@ pub struct LocalRuntimeShared {
     launch_requests: Mutex<BTreeMap<Option<String>, LocalLaunchConfig>>,
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
+    ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     children: Mutex<BTreeMap<String, Child>>,
 }
 
@@ -328,24 +379,54 @@ impl LocalRuntimeShared {
             .insert(FenceKey::from(fence), process);
     }
 
+    #[cfg(test)]
+    pub(crate) fn record_ready_observation_for_test(
+        &self,
+        fence: &ProviderFence,
+        process: ReadyProcess,
+        started_at: Instant,
+    ) {
+        let key = FenceKey::from(fence);
+        self.ready_processes
+            .lock()
+            .expect("local runtime shared lock")
+            .insert(key.clone(), process);
+        self.started_at
+            .lock()
+            .expect("local runtime shared lock")
+            .insert(key, started_at);
+    }
+
     /// Atomically publish the in-memory tuple a status read needs for a ready child.
     pub(crate) fn register_ready_process(
         &self,
         fence: &ProviderFence,
         child: Child,
         process: ReadyProcess,
+        started_at: Instant,
     ) {
         let key = FenceKey::from(fence);
-        let started_at = Instant::now();
         let mut ready_processes = self
             .ready_processes
             .lock()
             .expect("local runtime shared lock");
-        let mut children = self.children.lock().expect("local runtime shared lock");
+        let mut ready_children = self
+            .ready_children
+            .lock()
+            .expect("local runtime shared lock");
         let mut started = self.started_at.lock().expect("local runtime shared lock");
-        children.insert(process.process_id.clone(), child);
-        ready_processes.insert(key.clone(), process);
-        started.insert(key, started_at);
+        insert_ready_tuple(
+            key,
+            process.clone(),
+            ReadyChild {
+                process_id: process.process_id.clone(),
+                child,
+            },
+            started_at,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
     }
 
     pub(crate) fn retain_child(&self, process_id: String, child: Child) {
@@ -363,20 +444,24 @@ impl LocalRuntimeShared {
     }
 
     pub(crate) fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, Child)> {
-        let ready_processes = self
-            .ready_processes
+        let mut ready_children = self
+            .ready_children
             .lock()
             .expect("local runtime shared lock");
-        let process_id = ready_processes
-            .get(&FenceKey::from(fence))?
-            .process_id
-            .clone();
-        let child = self
-            .children
+        let ready_child = ready_children.remove(&FenceKey::from(fence))?;
+        Some((ready_child.process_id, ready_child.child))
+    }
+
+    pub(crate) fn retain_ready_child(
+        &self,
+        fence: &ProviderFence,
+        process_id: String,
+        child: Child,
+    ) {
+        self.ready_children
             .lock()
             .expect("local runtime shared lock")
-            .remove(&process_id)?;
-        Some((process_id, child))
+            .insert(FenceKey::from(fence), ReadyChild { process_id, child });
     }
 
     pub(crate) fn remove_ready_process(&self, fence: &ProviderFence) {
@@ -385,12 +470,17 @@ impl LocalRuntimeShared {
             .ready_processes
             .lock()
             .expect("local runtime shared lock");
-        let mut children = self.children.lock().expect("local runtime shared lock");
+        let mut ready_children = self
+            .ready_children
+            .lock()
+            .expect("local runtime shared lock");
         let mut started = self.started_at.lock().expect("local runtime shared lock");
-        if let Some(process) = ready_processes.remove(&key) {
-            children.remove(&process.process_id);
-        }
-        started.remove(&key);
+        remove_ready_tuple(
+            &key,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
     }
 
     pub fn observe_current_process(
@@ -401,16 +491,41 @@ impl LocalRuntimeShared {
         let Ok(ready_processes) = self.ready_processes.lock() else {
             return ProcessObservation::Indeterminate;
         };
-        let Ok(mut children) = self.children.lock() else {
+        let Ok(mut ready_children) = self.ready_children.lock() else {
             return ProcessObservation::Indeterminate;
         };
         let Ok(started) = self.started_at.lock() else {
             return ProcessObservation::Indeterminate;
         };
-        let child_process_ids = children.keys().cloned().collect();
-        match resolve_current_process(processes, &ready_processes, &started, &child_process_ids) {
-            CurrentProcessResolution::Coherent { ready, started_at } => {
-                let Some(child) = children.get_mut(&ready.process_id) else {
+        let Ok(children) = self.children.lock() else {
+            return ProcessObservation::Indeterminate;
+        };
+        let ready_child_identities = ready_children
+            .iter()
+            .map(|(key, child)| {
+                (
+                    key.clone(),
+                    ReadyChildIdentity {
+                        process_id: child.process_id.clone(),
+                        pid: child.child.id(),
+                    },
+                )
+            })
+            .collect();
+        let unfenced_child_ids = children.keys().cloned().collect();
+        match resolve_current_process(
+            processes,
+            &ready_processes,
+            &started,
+            &ready_child_identities,
+            &unfenced_child_ids,
+        ) {
+            CurrentProcessResolution::Coherent {
+                fence,
+                ready,
+                started_at,
+            } => {
+                let Some(child) = ready_children.get_mut(&fence) else {
                     return ProcessObservation::Indeterminate;
                 };
                 classify_process_observation(
@@ -420,7 +535,7 @@ impl LocalRuntimeShared {
                         reference: ready.process_id,
                         pid: ready.pid,
                         started_at,
-                        poll: child.try_wait(),
+                        poll: child.child.try_wait(),
                     }),
                     now,
                 )
@@ -1177,14 +1292,17 @@ mod tests {
     ) -> (
         BTreeMap<FenceKey, ReadyProcess>,
         BTreeMap<FenceKey, Instant>,
-        BTreeSet<String>,
+        BTreeMap<FenceKey, ReadyChildIdentity>,
     ) {
         let key = FenceKey::from(fence);
-        let child_process_ids = BTreeSet::from([ready.process_id.clone()]);
+        let child = ReadyChildIdentity {
+            process_id: ready.process_id.clone(),
+            pid: ready.pid,
+        };
         (
             BTreeMap::from([(key.clone(), ready)]),
-            BTreeMap::from([(key, started_at)]),
-            child_process_ids,
+            BTreeMap::from([(key.clone(), started_at)]),
+            BTreeMap::from([(key, child)]),
         )
     }
 
@@ -1193,17 +1311,23 @@ mod tests {
         let fence = fence(1);
         let ready = ready_process(4312);
         let started_at = Instant::now();
-        let (ready_processes, started, child_process_ids) =
+        let (ready_processes, started, ready_children) =
             coherent_maps(&fence, ready.clone(), started_at);
+        let key = FenceKey::from(&fence);
 
         assert_eq!(
             resolve_current_process(
                 &[current_process(Some(fence))],
                 &ready_processes,
                 &started,
-                &child_process_ids,
+                &ready_children,
+                &BTreeSet::new(),
             ),
-            CurrentProcessResolution::Coherent { ready, started_at }
+            CurrentProcessResolution::Coherent {
+                fence: key,
+                ready,
+                started_at,
+            }
         );
     }
 
@@ -1211,25 +1335,50 @@ mod tests {
     fn current_process_resolution_classifies_absent_and_residual_states() {
         let empty_ready = BTreeMap::new();
         let empty_started = BTreeMap::new();
+        let empty_ready_children = BTreeMap::new();
         let empty_children = BTreeSet::new();
         assert_eq!(
-            resolve_current_process(&[], &empty_ready, &empty_started, &empty_children),
+            resolve_current_process(
+                &[],
+                &empty_ready,
+                &empty_started,
+                &empty_ready_children,
+                &empty_children,
+            ),
             CurrentProcessResolution::Absent
         );
 
         let fence = fence(1);
-        let (ready_processes, started, child_process_ids) =
+        let (ready_processes, started, ready_children) =
             coherent_maps(&fence, ready_process(4312), Instant::now());
         assert_eq!(
-            resolve_current_process(&[], &ready_processes, &empty_started, &empty_children),
+            resolve_current_process(
+                &[],
+                &ready_processes,
+                &empty_started,
+                &ready_children,
+                &empty_children,
+            ),
             CurrentProcessResolution::Ambiguous,
         );
         assert_eq!(
-            resolve_current_process(&[], &empty_ready, &started, &empty_children),
+            resolve_current_process(
+                &[],
+                &empty_ready,
+                &started,
+                &empty_ready_children,
+                &empty_children,
+            ),
             CurrentProcessResolution::Ambiguous,
         );
         assert_eq!(
-            resolve_current_process(&[], &empty_ready, &empty_started, &child_process_ids),
+            resolve_current_process(
+                &[],
+                &empty_ready,
+                &empty_started,
+                &ready_children,
+                &empty_children,
+            ),
             CurrentProcessResolution::Ambiguous,
         );
     }
@@ -1239,7 +1388,7 @@ mod tests {
         let current_fence = fence(1);
         let ready = ready_process(4312);
         let started_at = Instant::now();
-        let (ready_processes, started, child_process_ids) =
+        let (ready_processes, started, ready_children) =
             coherent_maps(&current_fence, ready.clone(), started_at);
         let current = current_process(Some(current_fence.clone()));
 
@@ -1248,7 +1397,8 @@ mod tests {
                 &[current_process(None)],
                 &ready_processes,
                 &started,
-                &child_process_ids
+                &ready_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );
@@ -1257,7 +1407,8 @@ mod tests {
                 std::slice::from_ref(&current),
                 &BTreeMap::new(),
                 &started,
-                &child_process_ids
+                &ready_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );
@@ -1266,7 +1417,8 @@ mod tests {
                 std::slice::from_ref(&current),
                 &ready_processes,
                 &started,
-                &BTreeSet::from(["local:other".to_owned()])
+                &BTreeMap::new(),
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );
@@ -1275,7 +1427,8 @@ mod tests {
                 &[current.clone(), current],
                 &ready_processes,
                 &started,
-                &child_process_ids
+                &ready_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );
@@ -1288,10 +1441,100 @@ mod tests {
                 &[current_process(Some(current_fence))],
                 &stale_ready,
                 &started,
-                &child_process_ids,
+                &ready_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );
+    }
+
+    #[test]
+    fn current_process_resolution_rejects_every_mismatched_identity_member() {
+        let current_fence = fence(1);
+        let ready = ready_process(4312);
+        let started_at = Instant::now();
+        let (ready_processes, started, ready_children) =
+            coherent_maps(&current_fence, ready, started_at);
+        let current = current_process(Some(current_fence.clone()));
+
+        let mut wrong_id = current.clone();
+        wrong_id.id = "local:99".to_owned();
+        let mut wrong_name = current.clone();
+        wrong_name.name = "parakeet-server".to_owned();
+        let mut wrong_pid_children = ready_children.clone();
+        wrong_pid_children
+            .get_mut(&FenceKey::from(&current_fence))
+            .expect("ready child")
+            .pid += 1;
+        for (managed, children) in [
+            (wrong_id, ready_children.clone()),
+            (wrong_name, ready_children.clone()),
+            (current, wrong_pid_children),
+        ] {
+            assert_eq!(
+                resolve_current_process(
+                    &[managed],
+                    &ready_processes,
+                    &started,
+                    &children,
+                    &BTreeSet::new(),
+                ),
+                CurrentProcessResolution::Ambiguous,
+            );
+        }
+    }
+
+    #[test]
+    fn ready_tuple_insert_and_cleanup_are_fence_isolated_under_reused_identity() {
+        let old_fence = fence(1);
+        let new_fence = fence(2);
+        let old_key = FenceKey::from(&old_fence);
+        let new_key = FenceKey::from(&new_fence);
+        let old_start = Instant::now();
+        let new_start = old_start + Duration::from_secs(7);
+        let mut ready_processes = BTreeMap::new();
+        let mut ready_children = BTreeMap::new();
+        let mut started = BTreeMap::new();
+
+        insert_ready_tuple(
+            old_key.clone(),
+            ready_process(4312),
+            ReadyChildIdentity {
+                process_id: "local:42".to_owned(),
+                pid: 42,
+            },
+            old_start,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
+        insert_ready_tuple(
+            new_key.clone(),
+            ready_process(4312),
+            ReadyChildIdentity {
+                process_id: "local:42".to_owned(),
+                pid: 42,
+            },
+            new_start,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
+
+        assert_eq!(started.get(&old_key), Some(&old_start));
+        assert_eq!(started.get(&new_key), Some(&new_start));
+        remove_ready_tuple(
+            &old_key,
+            &mut ready_processes,
+            &mut ready_children,
+            &mut started,
+        );
+        assert!(!ready_processes.contains_key(&old_key));
+        assert!(!ready_children.contains_key(&old_key));
+        assert!(!started.contains_key(&old_key));
+        assert!(ready_processes.contains_key(&new_key));
+        assert!(ready_children.contains_key(&new_key));
+        assert_eq!(started.get(&new_key), Some(&new_start));
     }
 
     #[test]
@@ -1313,8 +1556,10 @@ mod tests {
                 &old_ready_processes,
                 &old_started,
                 &old_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Coherent {
+                fence: FenceKey::from(&old_fence),
                 ready: old_ready,
                 started_at: old_started_at,
             }
@@ -1325,8 +1570,10 @@ mod tests {
                 &new_ready_processes,
                 &new_started,
                 &new_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Coherent {
+                fence: FenceKey::from(&new_fence),
                 ready: new_ready.clone(),
                 started_at: new_started_at,
             }
@@ -1337,6 +1584,7 @@ mod tests {
                 &new_ready_processes,
                 &new_started,
                 &new_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );
@@ -1351,6 +1599,7 @@ mod tests {
                 &both_ready,
                 &both_started,
                 &new_children,
+                &BTreeSet::new(),
             ),
             CurrentProcessResolution::Ambiguous,
         );

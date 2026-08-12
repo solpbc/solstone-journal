@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_fingerprint};
@@ -700,6 +700,7 @@ fn start_local(
         Ok(child) => child,
         Err(_) => return launch_failed(),
     };
+    let started_at = Instant::now();
     let process_id = format!("local:{}", child.id());
     let pid = child.id();
     let deadline = clock.monotonic_seconds() + warmup_timeout.as_secs_f64();
@@ -716,7 +717,7 @@ fn start_local(
                 id: process_id.clone(),
                 name: "local".into(),
                 running: true,
-                fence: None,
+                fence: Some(fence.clone()),
             };
             shared.register_ready_process(
                 fence,
@@ -727,6 +728,7 @@ fn start_local(
                     pid,
                     port,
                 },
+                started_at,
             );
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Ready,
@@ -833,7 +835,11 @@ fn stop_local(
             }
         }
         Err(_) => {
-            shared.retain_child(process_id, child);
+            if let Some(fence) = fence {
+                shared.retain_ready_child(fence, process_id, child);
+            } else {
+                shared.retain_child(process_id, child);
+            }
             ProviderStopCleanupOutcome {
                 status: StopCleanupStatus::CleanupFailed,
                 reason_code: ReasonCode::known("cleanup-attempt-failed"),
@@ -884,4 +890,58 @@ fn warmup_health_probe(port: u16) -> WarmupHealth {
         return WarmupHealth::Loading;
     }
     WarmupHealth::Failed
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+    use crate::process::ProcessObservation;
+    use crate::provider_runtime::model::{ProviderFence, ProviderStopCleanupRequest, RuntimePhase};
+
+    #[test]
+    fn already_gone_ready_cleanup_removes_local_observation_residue() {
+        let shared = LocalRuntimeShared::default();
+        let fence = ProviderFence {
+            incarnation: "incarnation".to_owned(),
+            generation: 2,
+            fingerprint: Some("fingerprint".to_owned()),
+            attempt: 1,
+        };
+        shared.record_ready_observation_for_test(
+            &fence,
+            ReadyProcess {
+                process_id: "local:42".to_owned(),
+                process_name: "local".to_owned(),
+                pid: 42,
+                port: 5015,
+            },
+            Instant::now(),
+        );
+        let request = ProviderStopCleanupRequest {
+            managed: ManagedProcess {
+                id: "local:42".to_owned(),
+                name: "local".to_owned(),
+                running: true,
+                fence: Some(fence),
+            },
+            reason_code: ReasonCode::known("stale-result-ignored"),
+            target_phase: RuntimePhase::Stopped,
+            target_reason_code: None,
+            admission_exclusive: false,
+            orphaned_start_outcome: true,
+        };
+
+        assert_eq!(
+            shared.observe_current_process(&[], Instant::now()),
+            ProcessObservation::Indeterminate,
+        );
+        assert_eq!(
+            stop_local(&shared, Some(&request), false, Duration::ZERO).status,
+            StopCleanupStatus::Stopped,
+        );
+        assert_eq!(
+            shared.observe_current_process(&[], Instant::now()),
+            ProcessObservation::ConfirmedAbsent,
+        );
+    }
 }

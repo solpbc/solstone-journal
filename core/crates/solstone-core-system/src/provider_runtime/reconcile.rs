@@ -433,10 +433,15 @@ impl ProviderRuntimeCoordinator {
         let Some(in_flight) = state.start.take() else {
             return;
         };
-        let Some(result) = in_flight.result else {
+        let Some(mut result) = in_flight.result else {
             state.start = Some(in_flight);
             return;
         };
+        if result.status == LaunchOutcomeStatus::Ready
+            && let Some(managed) = result.managed.as_mut()
+        {
+            managed.fence = Some(in_flight.fence.clone());
+        }
         if let Some(gate) = gate.as_deref_mut() {
             gate.on_start_result(state.provider, result.status);
         }
@@ -473,8 +478,7 @@ impl ProviderRuntimeCoordinator {
         let result_reason_code = result.reason_code.clone();
         match result.status {
             LaunchOutcomeStatus::Ready => {
-                if let Some(mut managed) = managed.take() {
-                    managed.fence = Some(in_flight.fence.clone());
+                if let Some(managed) = managed.take() {
                     processes.push(managed);
                     state.latest_phase = RuntimePhase::Ready;
                     state.latest_reason_code = Some(result_reason_code.clone());
@@ -541,7 +545,7 @@ impl ProviderRuntimeCoordinator {
         match result.status {
             StopCleanupStatus::Stopped => {
                 if let Some(request) = state.pending_stop_request.take() {
-                    processes.retain(|process| process.id != request.managed.id);
+                    processes.retain(|process| process != &request.managed);
                     if !request.orphaned_start_outcome {
                         state.latest_phase = request.target_phase;
                         state.latest_reason_code = Some(result.reason_code.clone());
@@ -1554,6 +1558,54 @@ mod tests {
     }
 
     #[test]
+    fn orphaned_stop_completion_does_not_remove_reused_id_from_newer_fence() {
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
+        let mut state = state_for(ProviderName::Local);
+        let old_fence = coordinator.fence(&state, 0);
+        state.generation += 1;
+        let current_fence = coordinator.fence(&state, 0);
+        let old = ManagedProcess {
+            id: "local:42".to_owned(),
+            name: "local".to_owned(),
+            running: true,
+            fence: Some(old_fence),
+        };
+        let current = ManagedProcess {
+            id: "local:42".to_owned(),
+            name: "local".to_owned(),
+            running: true,
+            fence: Some(current_fence.clone()),
+        };
+        state.pending_stop_request = Some(make_stop_request(
+            &state,
+            old,
+            ReasonCode::known("stale-result-ignored"),
+            RuntimePhase::Ready,
+            Some(ReasonCode::known("probe-ready")),
+            true,
+        ));
+        state.stop_cleanup = Some(InFlight {
+            fence: current_fence,
+            result: Some(stop(StopCleanupStatus::Stopped)),
+        });
+        let mut processes = vec![current.clone()];
+        let mut store = InMemoryRuntimeStore::default();
+        let mut sink = VecEventSink::default();
+
+        assert!(coordinator.handle_stop_cleanup_result(
+            now(0.0),
+            &mut state,
+            &mut processes,
+            &mut store,
+            &mut sink,
+            None,
+        ));
+
+        assert_eq!(processes, vec![current]);
+        assert!(state.pending_stop_request.is_none());
+    }
+
+    #[test]
     fn stale_probe_fence_discards_result() {
         let coordinator = ProviderRuntimeCoordinator::with_incarnation("test");
         let mut state = state_for(ProviderName::Local);
@@ -2293,7 +2345,7 @@ mod tests {
         state.retry.attempt_count = 1;
         let fence = coordinator.fence(&state, 1);
         state.start = Some(InFlight {
-            fence,
+            fence: fence.clone(),
             result: Some(launch(LaunchOutcomeStatus::Ready)),
         });
         state.start_cancelled = true;
@@ -2320,6 +2372,13 @@ mod tests {
         assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
         assert_ne!(state.latest_phase, RuntimePhase::Ready);
         assert!(processes.is_empty());
+        assert_eq!(
+            state
+                .pending_stop_request
+                .as_ref()
+                .and_then(|request| request.managed.fence.as_ref()),
+            Some(&fence),
+        );
     }
 
     #[test]
@@ -2333,7 +2392,7 @@ mod tests {
         let fence = coordinator.fence(&state, 1);
         state.generation += 1;
         state.start = Some(InFlight {
-            fence,
+            fence: fence.clone(),
             result: Some(launch(LaunchOutcomeStatus::Ready)),
         });
         let workers = RecordingWorkers::default();
@@ -2359,6 +2418,13 @@ mod tests {
         assert_eq!(state.latest_phase, RuntimePhase::Ready);
         assert_eq!(*workers.calls.borrow(), ["stop-dispatch"]);
         assert!(processes.is_empty());
+        assert_eq!(
+            state
+                .pending_stop_request
+                .as_ref()
+                .and_then(|request| request.managed.fence.as_ref()),
+            Some(&fence),
+        );
     }
 
     #[test]
