@@ -1,11 +1,206 @@
 {
   "build": {
+    "bundle": {
+      "backend": {
+        "files": 500,
+        "sha256": "f0209fc3468acec22aec19dc81a3edc4d449b6e78a1a1a7da0649f970e6bedb5",
+        "size": 30172741
+      },
+      "backend_archives": {
+        "maturin": {
+          "filename": "maturin-1.14.1-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl",
+          "sha256": "dfc54ae32e6fcb18302193ab9a30b0b25eefffba994ae13238974805533ef75e",
+          "url": "https://files.pythonhosted.org/packages/1a/bd/9c0d5d6983905ce2c9edaa073a7e89355a9cf7f396988e05d32f1c37785d/maturin-1.14.1-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl"
+        },
+        "packaging": {
+          "filename": "packaging-26.3-py3-none-any.whl",
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+          "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl"
+        },
+        "setuptools": {
+          "filename": "setuptools-83.0.0-py3-none-any.whl",
+          "sha256": "29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3",
+          "url": "https://files.pythonhosted.org/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl"
+        },
+        "uv": {
+          "filename": "uv-0.11.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "a599dd5f563da775ca9ab9385a3d9b14f02de3c85c7ce7b41ec27996f03b137c",
+          "url": "https://files.pythonhosted.org/packages/45/f1/9c211df705e5414c631f836e45c6f98c4dc8ef6b9f4f704971483f08bb1c/uv-0.11.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+        },
+        "wheel": {
+          "filename": "wheel-0.47.0-py3-none-any.whl",
+          "sha256": "212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced",
+          "url": "https://files.pythonhosted.org/packages/87/1b/9e33c09813d65e248f7f773119148a612516a4bea93e9c6f545f78455b7c/wheel-0.47.0-py3-none-any.whl"
+        }
+      },
+      "backend_wheels": {
+        "files": 5,
+        "sha256": "cf44038560216f4724fde3c64199bc4a7614d793eae83c705b6053e98fa95bb9",
+        "size": 36431290
+      },
+      "bundle_inventory": {
+        "files": 18189,
+        "sha256": "045775420a31b1e157a5f2ebe33886e83febc2a2b4fc6989312678f7c280b383",
+        "size": 2117013071
+      },
+      "cargo_vendor": {
+        "files": 16981,
+        "sha256": "5f0c5b88db0ac87651145fedc6f388319e71bc98fa6a0805d8825f5fc4e61fca",
+        "size": 344824220
+      },
+      "compiler_helpers": {
+        "files": 7,
+        "sha256": "f90de333ce8cff053b0d6a70db4be1d13ab0265bea22ee95b09c0161f102a050",
+        "size": 93988352
+      },
+      "compiler_runtime": {
+        "files": 203,
+        "sha256": "cd7b4e52b49c6e73350db1a4c261e85745e9fe498e6a508e71db8b5a3ba54ef0",
+        "size": 63911875
+      },
+      "host_target": "x86_64-unknown-linux-gnu",
+      "host_tools": {
+        "ar": {
+          "selected_path": "/usr/bin/ar",
+          "sha256": "6452af2eea333b8c65e1adb92964fc8f97863ab003fa13f9d12bff5345cd7dbe"
+        },
+        "as": {
+          "selected_path": "/usr/bin/as",
+          "sha256": "21aff249b692b5c31a44007491f922dcb49f41323e362c57d2ada3f52eddb7f0"
+        },
+        "cc": {
+          "selected_path": "/usr/bin/cc",
+          "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26"
+        },
+        "ld": {
+          "selected_path": "/usr/bin/ld",
+          "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b"
+        },
+        "sh": {
+          "selected_path": "/bin/sh",
+          "sha256": "86d31f6fb799e91fa21bad341484564510ca287703a16e9e46c53338776f4f42"
+        },
+        "strip": {
+          "selected_path": "/usr/bin/strip",
+          "sha256": "0d980587ada7ab12193f39271f060d5663aa2f289b0e80d2a0274ce7306e4e42"
+        }
+      },
+      "linker": {
+        "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+        "version": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+      },
+      "maturin_version": "maturin 1.14.1",
+      "python": {
+        "path": "/usr/bin/python3",
+        "sha256": "1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118",
+        "version": "Python 3.12.3"
+      },
+      "rust_toolchain": {
+        "files": 485,
+        "sha256": "1eaefef7e5fe822220556c48bbd08f6bf21f700f908c6131e0a98de9e4c1392b",
+        "size": 1484820421
+      },
+      "rustup": {
+        "sha256": "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10",
+        "version": "rustup 1.29.0 (28d1352db 2026-03-05)"
+      },
+      "toolchain_name": "1.97.1-x86_64-unknown-linux-gnu",
+      "uv": {
+        "sha256": "c99f46f5fa3b09602e680f522e06ff752a87fd574d6dec5536dd654aa83913cb",
+        "version": "uv 0.11.4 (x86_64-unknown-linux-gnu)"
+      }
+    },
+    "environment": {
+      "AR": "<BUNDLE_BIN>/ar",
+      "CARGO": "<RUST_TOOLCHAIN_BIN>/cargo",
+      "CARGO_BUILD_TARGET": "x86_64-unknown-linux-gnu",
+      "CARGO_HOME": "<CARGO_HOME>",
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_NET_OFFLINE": "true",
+      "CARGO_TARGET_DIR": "<TARGET>",
+      "CC": "<BUNDLE_BIN>/cc",
+      "COMPILER_PATH": "<COMPILER_HELPERS>",
+      "C_INCLUDE_PATH": "<COMPILER_RUNTIME>/include",
+      "HOME": "<HOME>",
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "LD": "<BUNDLE_BIN>/ld",
+      "LIBRARY_PATH": "<COMPILER_RUNTIME>",
+      "PATH": "<BUNDLE_BIN>:<PYTHON_BACKENDS_BIN>:<RUST_TOOLCHAIN_BIN>",
+      "PYTHONPATH": "<PYTHON_BACKENDS>",
+      "RUSTC": "<RUST_TOOLCHAIN_BIN>/rustc",
+      "RUSTFLAGS": "--remap-path-prefix=<SOURCE_CHECKOUT>=<SOURCE_ROOT> --remap-path-prefix=<RUN_ROOT>=<BUILD_ROOT>",
+      "RUSTUP_HOME": "<RUSTUP_HOME>",
+      "SOURCE_DATE_EPOCH": "0",
+      "STRIP": "<BUNDLE_BIN>/strip",
+      "TMPDIR": "<TMPDIR>",
+      "TZ": "UTC",
+      "UV_CACHE_DIR": "<UV_CACHE>",
+      "UV_LINK_MODE": "copy",
+      "UV_NO_BUILD_ISOLATION": "1",
+      "UV_NO_CONFIG": "1",
+      "UV_NO_PROGRESS": "1",
+      "UV_OFFLINE": "1",
+      "UV_PYTHON_DOWNLOADS": "never",
+      "XDG_CONFIG_HOME": "<XDG_CONFIG>"
+    },
+    "host": {
+      "architecture": "x86_64",
+      "kernel": "7.0.0-28-generic",
+      "libc": [
+        "glibc",
+        "2.39"
+      ],
+      "system": "Linux"
+    },
     "source_date_epoch": "0",
     "tools": {
       "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
       "maturin": "maturin 1.14.1",
+      "python": {
+        "path": "/usr/bin/python3",
+        "sha256": "1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118",
+        "version": "Python 3.12.3"
+      },
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6",
+      "rustup": {
+        "sha256": "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10",
+        "version": "rustup 1.29.0 (28d1352db 2026-03-05)"
+      },
       "uv": "uv 0.11.4 (x86_64-unknown-linux-gnu)"
-    }
+    },
+    "wheel_commands": [
+      [
+        "<BUNDLE_BIN>/uv",
+        "build",
+        "--package",
+        "solstone-journal",
+        "--wheel",
+        "--out-dir",
+        "<OUTPUT>",
+        "--no-build-isolation",
+        "--offline",
+        "--no-config",
+        "--no-progress",
+        "--python",
+        "/usr/bin/python3"
+      ],
+      [
+        "<BUNDLE_BIN>/uv",
+        "build",
+        "--package",
+        "solstone-core-journal",
+        "--wheel",
+        "--out-dir",
+        "<OUTPUT>",
+        "--no-build-isolation",
+        "--offline",
+        "--no-config",
+        "--no-progress",
+        "--python",
+        "/usr/bin/python3"
+      ]
+    ]
   },
   "launcher_chain": {
     "journal_launcher": {
@@ -23,10 +218,10 @@
     "native_binary": {
       "name": "solstone-core-journal",
       "wheel": {
-        "content_sha256": "c6f1881bd88ba2c326398881cf2df845d04d446fcdd40d4ce1975f5a8363d97e",
+        "content_sha256": "65ca76f7446c43c492f7ea21a1b1f5f41701420ebc23f0a5de528ba30bdd9eb9",
         "path": "solstone_core_journal-1.0.22.data/scripts/solstone-core-journal",
-        "record_sha256": "xvGIG9iLosMmOYiBzy34RdBNRG_N1A1M4ZdfWoNj2X4",
-        "record_size": 10249400
+        "record_sha256": "Zcp290RsQ8SS9-ohobH19BcBQg68I_Cl3lKLowvdnrk",
+        "record_size": 10128984
       }
     },
     "native_dispatch": {
@@ -40,7 +235,7 @@
     "native_dispatch_sources": [
       {
         "path": "core/crates/solstone-core-journal-cli/src/processes.rs",
-        "sha256": "187a8a33c7be846bc1d9919c00358d3be00db26c8536a74026fef5bd7c39ef72"
+        "sha256": "9f16d7c173f0ff3d92243896fa9bfcd67e14d487844613f4b76e9b28358ee54f"
       },
       {
         "path": "core/crates/solstone-core-journal-cli/src/runner.rs",
@@ -56,15 +251,15 @@
   "schema": "service-legacy-packaging-provenance",
   "schema_version": 1,
   "source": {
-    "commit": "26b84ac366cd0d5a7ab3f7f27564be0b64d25bfc"
+    "commit": "8b70b8d23fa8d44faf677f8e301b0ec78b9ae2a0"
   },
   "wheels": {
     "solstone_core_journal": {
       "binary": {
-        "content_sha256": "c6f1881bd88ba2c326398881cf2df845d04d446fcdd40d4ce1975f5a8363d97e",
+        "content_sha256": "65ca76f7446c43c492f7ea21a1b1f5f41701420ebc23f0a5de528ba30bdd9eb9",
         "path": "solstone_core_journal-1.0.22.data/scripts/solstone-core-journal",
-        "record_sha256": "xvGIG9iLosMmOYiBzy34RdBNRG_N1A1M4ZdfWoNj2X4",
-        "record_size": 10249400
+        "record_sha256": "Zcp290RsQ8SS9-ohobH19BcBQg68I_Cl3lKLowvdnrk",
+        "record_size": 10128984
       },
       "filename": "solstone_core_journal-1.0.22-py3-none-linux_x86_64.whl",
       "metadata": {
@@ -79,10 +274,10 @@
         "version": "1.0.22"
       },
       "record": {
-        "content_sha256": "46e1451c37182612529f6aa72097c524aea31761f1943a1c2239a5731b994224",
+        "content_sha256": "e7a99ef877cf7b737031e092bbf119a2a1bac67eee72389909f17c35e271dfb6",
         "path": "solstone_core_journal-1.0.22.dist-info/RECORD"
       },
-      "sha256": "9b6a0e80d34e174123df4844fcab42c411f426c943cf629093165a7c52efd7d3"
+      "sha256": "337454a5a2aa54687f777cb8116f74c77d221329de66a14b5cced473371292e8"
     },
     "solstone_journal": {
       "filename": "solstone_journal-1.0.22-py3-none-any.whl",

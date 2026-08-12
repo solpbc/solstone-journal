@@ -8,11 +8,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/4a040848ed98616ab23c334e0da39da9862cae47/linux.json",
-          "sha256": "bfcff3e9ca6885f9021f601c547c6357321e4210726727ef29277b1ad423fbcc"
+          "sha256": "6f4dfb21fb723414583fc8b1d94eaa21119f0a62734103015e78de7e99cc395a"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/4a040848ed98616ab23c334e0da39da9862cae47/macos.json",
-          "sha256": "b21d3d2bfca637e9ab592c80055c3013a34e5afdb51b83ff3bdcd094c95c9965"
+          "sha256": "177fc9924f66c491c395a1a4b2fdaede946d59ba27b1569e924d90cae37d6858"
         }
       },
       "normalized": {
@@ -32,11 +32,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/default.json",
-              "sha256": "f5d673e7f2ba57b95a4c24da208eb051fe9c5637e8c086e79eb7b6e1b26f4d15"
+              "sha256": "760d27b2f4003bb6929628a64f40b0f6ad9253404f99e16bee26bc3df15a3447"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/default.json",
-              "sha256": "fc5a522db17ae570cb3c31b6e0c4351ad2484f801d5522b0eea44257e3e33877"
+              "sha256": "249ae9d4f99b6f85e5ae6af992d2f200792bf9eac40a5c740ce2e8347a04a8e8"
             }
           }
         },
@@ -45,11 +45,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/spaces_nonascii.json",
-              "sha256": "56114e6efd81ada5e4470782f8677ce02ca9759497eba5f85bbd90441637bbbb"
+              "sha256": "251721e2d3e08ce0e45159db303cd3ddedd49d48ae6f9488ac94cc4c19ac3a81"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/spaces_nonascii.json",
-              "sha256": "f8dc49895dd75ea51e54ce41afd40a1213c5c67f26436b86e7b7dcd46fe174c7"
+              "sha256": "edd147292a665d658e4597c6c251c1282376695e0a2cd624c3252ab51d4104c9"
             }
           }
         },
@@ -58,11 +58,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/alt_port_path.json",
-              "sha256": "196d4466d1f6b1ca160db470ad01656dcfafcc4eb337eff2d107bc31b89e5ec2"
+              "sha256": "36d2b9354e016a8d1045ff1c043e3f6d3838b3a029921bb6f3969b0074065b05"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/alt_port_path.json",
-              "sha256": "ced47e75c231205f996c7692d7ab280e9446606866356544cc3bf63d9256704f"
+              "sha256": "c7758d59d63595ba90ba3ccf5ef12ef245a41c2be8d8c4b33b065143de472851"
             }
           }
         },
@@ -71,11 +71,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/keys_present.json",
-              "sha256": "57779b2931c6a8ef6c756149dbd94aaaddbcde88a049956073f17116e8dd1a5e"
+              "sha256": "22bfe600a2e4aaadc019a33fe1e75923e4a7c0c5493688fda4b13c87d051886d"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/keys_present.json",
-              "sha256": "1b3ffede06ff82a09176220376d00c2a36cabbcb59bbccd6b699b27d5e4c0a03"
+              "sha256": "44598bb382ef59a854906274ea8a96b16dc7be3b80f4eb048deeceaade968f00"
             }
           }
         },
@@ -84,11 +84,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/keys_absent.json",
-              "sha256": "5cce7fe31543296eada49f36e99a0613896e9e1a4aeba9bde897a1a6e26bcaaa"
+              "sha256": "29cdfa3d0d4079020d3f06b85ab099cc5fa5a74f5d91ae6255988e891e42aa26"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/keys_absent.json",
-              "sha256": "65c8842409739657a6b9582a27c9819f6b3b1821c0486fc041756724d38555d9"
+              "sha256": "237c6fe344625c081845a1615fa749c8843a7982ea3d1fb60ef882fc898b24f7"
             }
           }
         }
@@ -112,11 +112,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux.json",
-          "sha256": "14e8772af6e24ba77d8fa6f523340a8b17782d6533a030af616f79dc8a56c2ad"
+          "sha256": "fd9ef66622294fd78e7ba4735d8f36607df9ec86c64c2f1fe7876e2aed851de7"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos.json",
-          "sha256": "498fb4b7dd979ad7bfe9dad71fdc6e83e316f46a778dd24f51842169c66f5b3a"
+          "sha256": "56a33ef42c1aea522b791a43545d4e321456ad8a7ae5bfd8a85301288ee3bf86"
         }
       },
       "normalized": {
@@ -136,11 +136,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/default.json",
-              "sha256": "7cfe3a3bf9ffe1a9a45f472a9bdc7e0051a0b365ac549bb5d9f08e4e5bfce1d2"
+              "sha256": "ee4ff2b92c024a9a823fa35c670b13f8909a1d9afa2734ba120e681498078d0b"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/default.json",
-              "sha256": "921394d6ed848f3781341d682a1c93e362392bc28abfb42a2f0a43ce1b705a1a"
+              "sha256": "26e4cf2fa561dbb5a052b1d3ccb2a93fa50ef8514f62c6a76761690a3a6a0058"
             }
           }
         },
@@ -149,11 +149,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/spaces_nonascii.json",
-              "sha256": "8f125d3c4b47dde7ce8d5a3236897f4e21475cab3ac84dd359ddfcdfe1769b2b"
+              "sha256": "10a2223f367d3dbff74499c9eb7250d15471ef3b2c1af980fcabb6a88cff773d"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/spaces_nonascii.json",
-              "sha256": "c1ed2607ba55331289672b7e60753cdc1e650067ed0e2040f8d1a71c5ae77e7a"
+              "sha256": "5824b6962c1bd4563ab718f12d3e2e947e2e6ae4d416b3dd82918830c29835e3"
             }
           }
         },
@@ -162,11 +162,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/alt_port_path.json",
-              "sha256": "fd4b7f1dbb79b8114b42c614ea9cdc634a0d63bd8a199965751bb01b9baea22d"
+              "sha256": "425befb3c97afda2811281b879ddd0df87a38b4d311deb5919fb32d7839b406c"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/alt_port_path.json",
-              "sha256": "fa2f2448887dec7c9c1c2c4814483ca0021fba5d55fb422d72cf88a0f2a56276"
+              "sha256": "7a4db42f38345526981f224d54b06eb774d5244f8ae2dae9cf62c5ef6bb45b1b"
             }
           }
         },
@@ -175,11 +175,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/keys_present.json",
-              "sha256": "ee7628edb443906265717a4f136e9f789fdff2c42f1c9165e36dfb1f301f9554"
+              "sha256": "c2d76f8bd468c9a1be36bd240a25455d13108544871890916dfea87054e16df3"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/keys_present.json",
-              "sha256": "515133bb4c015f061f835024c9836328e513eab3115065474f2a0d73da5b68e0"
+              "sha256": "01a79e2ece0d97bc33202fb66ef8d2bfec4e031495a49a60a4e4a0652f0505f4"
             }
           }
         },
@@ -188,11 +188,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/keys_absent.json",
-              "sha256": "a882de060a24d0be52b6eb67b9b67e2151ba153b4e5d3c8b97fb353c621875e3"
+              "sha256": "759555d5498ec30fe1684591f3a36bc7e39ce21394233d3218eac36e350acd46"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/keys_absent.json",
-              "sha256": "7836076176877c19e33c6753c5b9c9cad830e709028e45f049c3ce4a321c31cc"
+              "sha256": "e18a872860cc2248f308ad2ed31b7bd33fd218c4f55621b4b4d9eff9c26419da"
             }
           }
         }
@@ -216,11 +216,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux.json",
-          "sha256": "7d13c1ddfe27e8db8a591cef29192c0cade277a6f84b1bf41d580ffdabe8309d"
+          "sha256": "0376c7d5ee56d220d9711fed43d948be07bc715d1ec310f323398f20feca59cb"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos.json",
-          "sha256": "0ed398853b017b788e27e4398a3b32e8b332c36935b5a32cbc70bb33ddd6949d"
+          "sha256": "af924b99f3cc390d22bbc43ebf798ff1e38385ea9fd2f2de6c293c1fa76233ac"
         }
       },
       "normalized": {
@@ -240,11 +240,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/default.json",
-              "sha256": "e2b2508179676cba4445a23bb97068f478742e34a42d501078dd69b6241b35bd"
+              "sha256": "e32c57f8acbe6000a2ff271c98ba77a40c693d2e00567d040e328a9cc16c085b"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/default.json",
-              "sha256": "4f5ed93de45bc1d5f967a751ddc9b2efa7f7e863fdecdf6c4977ed883f47a48c"
+              "sha256": "bbfc59bce0b622180d682cf1fc5c34bb8555914c7aaefd3eece01b9b7def47f8"
             }
           }
         },
@@ -253,11 +253,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/spaces_nonascii.json",
-              "sha256": "0fe35aeb2c621c25101b6c01383a9291ae4829cd83442512e0c40bb29452fae4"
+              "sha256": "9ff4dd5ee756075bc3b046c92fbb8054be8bcac506dc15bbd03d5ae2ba1e1d8d"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/spaces_nonascii.json",
-              "sha256": "c5b11dfadef44a10c16d68cb40fbbe0cbaa47ebd1de0cfb02f932297e4d5c201"
+              "sha256": "74300c1970204c7c7cd99b1eec467d03718d77d34a826e8396917c539564afaa"
             }
           }
         },
@@ -266,11 +266,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/alt_port_path.json",
-              "sha256": "1f018305719fe12c0ec848de617cd5fffd600e3e11a3171d8a5299a4754cce76"
+              "sha256": "73a787af18aa86ffc772260fb5762868fe56387387dc382d7d89b9111ca4c6b6"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/alt_port_path.json",
-              "sha256": "629e15cc73361147d314d4c8a3ba1354d299cf8b46adc19cd393e403cd1376ea"
+              "sha256": "37045b9c4e700b5e080b7c504adb6387ccf1abb39676f358d5c1950c1fc9cf38"
             }
           }
         },
@@ -279,11 +279,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/keys_present.json",
-              "sha256": "b5a4a0f34051b87952b981694ca78fbea50dab8536a0da4d650508b9c33290d8"
+              "sha256": "52ab841e03c772c76e4d77ef384359c6c67e887b199def07ac44e390991b2f7e"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/keys_present.json",
-              "sha256": "c6b8b6f692981abd0e42c7a05d8cf46a602831f9d6dd0ed0bad808e7e3ccf0d2"
+              "sha256": "e623aeb09bbe583a04d7851cd3ec1fb496b3896c3e34b948484cc0c12dd45d3d"
             }
           }
         },
@@ -292,11 +292,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/keys_absent.json",
-              "sha256": "78084190470d1f96a91e7c8b75d56ff4fbea1f18ab733058b9661ba4bb6b3527"
+              "sha256": "fbda530ccfbb0103acfde11886defa4bd0452f453519da9b618abc3571884dfe"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/keys_absent.json",
-              "sha256": "8e5f8a8b9916d9150cc8c9ce1976db62382a2e4c3ca7bd9267e6ba9f709e54d5"
+              "sha256": "847ce03616a3d80d1333da79c9cb956074b9794879e96cb93694249938856a37"
             }
           }
         }
@@ -320,11 +320,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux.json",
-          "sha256": "6e764d9f3e9565a7502c5bb6d320b0b5406e1acd85402f8914f72601bc32596a"
+          "sha256": "c9cf52b0b49765f31d9e710a024ad46fea52c12d83a93629f323141b6fbd0e80"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos.json",
-          "sha256": "79c8263f4c8db20228563c29241fb01f4fb4b64178b7142aef26901c677b51a2"
+          "sha256": "c8c69885cf933d927f61a7dcf2ba62ffa09f492f3af76afc1c706848da50b900"
         }
       },
       "normalized": {
@@ -344,11 +344,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/default.json",
-              "sha256": "6304516e48f4487cf056dab915d9fdfcf3dff3e7bffbf68a747bb8266dff7b08"
+              "sha256": "3f0e60e9cb604ae0e528c520f948e12951b89747a48351b9e5432372e54dafd1"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/default.json",
-              "sha256": "32c4f62bd91a531f7cfd7f4f9e9603e1126f3959b03332ba08597c344877c616"
+              "sha256": "d04ba976069a36c7a7df1a669bd7376611d450a2e66ce144d572538e73ce5aa8"
             }
           }
         },
@@ -357,11 +357,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/spaces_nonascii.json",
-              "sha256": "0141a9ba9f1870713d02e706a2deeb4c6e4810a8e6f45f8582b7559aa3692036"
+              "sha256": "222536850c1db7139fb7f9d5ccaa555e66baa43cee81eea6e0bcd6ff69885242"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/spaces_nonascii.json",
-              "sha256": "a2ae53cf3ce2a411395fb9cb7954bb771b0a165ead39dad6f7405c63a278714e"
+              "sha256": "61f9739096c3f41a3d6b54755ee7cbf31190520ec96acddf8ff5af009b172157"
             }
           }
         },
@@ -370,11 +370,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/alt_port_path.json",
-              "sha256": "8c21e7f18f325a282d701835c658ac3b8df4d7a238a32634c6dc872c744dbb2e"
+              "sha256": "142bfa015e066a9195770535fc30565a6d897a50db86f5421699163fa57d1006"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/alt_port_path.json",
-              "sha256": "5746e7561ad9e1860e909935f4c807dd819724aafcea215c22c11a365686c7f0"
+              "sha256": "c6addcbec67afd064b6fdd97c5d3e26ce9b7a3a4fc31e19ff8bfbcdc5030f3db"
             }
           }
         },
@@ -383,11 +383,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/keys_present.json",
-              "sha256": "d1ed0485c3fba00735284ad81878ab3de351d40fd8dac825500df09f838dabda"
+              "sha256": "c4e452fdf43720537b42ac2e3234a2de464de4cdab4e878e624e133b59e6d4a9"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/keys_present.json",
-              "sha256": "0aa7450ef88ea6d933d3489830205b7051f163faf1baa4c9aae9a37d74ad5dbe"
+              "sha256": "7a3b85d6467053a40b9e51d360cf21594fbeea52987cd9ff017c9bb622abde31"
             }
           }
         },
@@ -396,11 +396,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/keys_absent.json",
-              "sha256": "3265d735d744b4c0548dcd9582c3c0a9abdad8555cac6726de9fd572e0066ee1"
+              "sha256": "9150ae7cba8a0bbb98c4d341cdfdbc51ae52a06ac54e4a94e6e7f961a9cf75f0"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/keys_absent.json",
-              "sha256": "54d5e37c0e47c7cf8c5a97535af69ad1befa04b8795632cd56ec70f54c3ed799"
+              "sha256": "66f2ef8b73a1aae108c5c3e93b98b9b38fbc182ac9240d7d2970d6bb48713d4f"
             }
           }
         }
@@ -424,11 +424,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux.json",
-          "sha256": "8d9d8c6c24060efe007477b62095ceacb1b6c2f531c1a5fa55fcf4247f3dfabe"
+          "sha256": "a6ca71c237f94619fd1d89a00f60d41a3b699571f9fc77237d7c6103819885a9"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos.json",
-          "sha256": "d3eb2c3c5278674f52a09dfdd3717058fd09d812985e22d7a0a6a0253e095aa8"
+          "sha256": "b167656e5173dee76ecee0d56de7801437e0fdcc7a22e832dbc8815ac053bbea"
         }
       },
       "normalized": {
@@ -448,11 +448,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/default.json",
-              "sha256": "f1b30e060396602fc51dc3620e35c5a9cee9bb68309ff2b845c8a1e57c8663e2"
+              "sha256": "acd5038474585e4d48ba6fe5e6cd3ce82f09fc23d89a29d8d3db588f480dc58e"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/default.json",
-              "sha256": "6057d6e75d19f61b34b873b9e45cffa6015f724801ce5a5d0bd8e8a7ddb33fcd"
+              "sha256": "d85bfdaafd82f5ae14fa8394ffe4edd174279ecfc501eb0fd5383d43e5ed5f88"
             }
           }
         },
@@ -461,11 +461,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/spaces_nonascii.json",
-              "sha256": "06c88cffec8797e58dd316771132b7fddb269b216577c3eafd3167191e0df5a6"
+              "sha256": "bc183ce159266e860c1d4d33735bdbb275f6482f4befbe886a3ef3e05937a814"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/spaces_nonascii.json",
-              "sha256": "e4376a9f1463df41267fa63c72284eb4423e34dfd5f96f84492d3a5c77991f2c"
+              "sha256": "9e996ad72088627d7085e381b54ba168c00831aa132061789ab2ced7259e64c9"
             }
           }
         },
@@ -474,11 +474,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/alt_port_path.json",
-              "sha256": "36f0e19294221b41e55ede4944bc12b243fbf5e448e7efedc0ac6cd37c7130b2"
+              "sha256": "0abcf6daf6b1164613f4392deb30a97e019537ddbbede97df2861208e2c984fe"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/alt_port_path.json",
-              "sha256": "b536ccb325be8bef3d31bbc78ca30ad9d0db82ece0480b9e28b6706803447f91"
+              "sha256": "4c0f3886d808cc66626ded49850d4a71acd1498669522a740baf0a14d081496e"
             }
           }
         },
@@ -487,11 +487,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/keys_present.json",
-              "sha256": "b778ae0e22115f9fa47e2538a27a70c237ef2efd2fd81bac406cf5478576e38a"
+              "sha256": "6a6504e5cb529b5cab2fe1beaec5f9fb0ed9c03c41e1f10151b1cc97a2da2bb9"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/keys_present.json",
-              "sha256": "2552a5d5dcf3704bce0dd4aa5001936a45ca03e76cc46b3762aba2caf36fb8af"
+              "sha256": "7ea8e1118d5a4c72672948df9b91521f82d5c1d8f635a7998a8e670c66ab7d80"
             }
           }
         },
@@ -500,11 +500,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/keys_absent.json",
-              "sha256": "c3154fa32440fef8ee1f7327da9b060642b70c3d0fdb346b3cc1c9e14cf58de6"
+              "sha256": "558c184ed80e759f8b26193ba9db3ec7db52c8b3c163d2ae511f9e28c63002df"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/keys_absent.json",
-              "sha256": "b1e0ca3663947f998d3bc28359491eaf639120c3fcc6f137eff5161b26e6e133"
+              "sha256": "9147d400fa675dc21dd45d85579dc39d3bb936d9a19c769159e35e135e883fca"
             }
           }
         }
@@ -528,11 +528,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux.json",
-          "sha256": "0bbc59e69159c2d1647fa4305a441f8f086e6fe37ed0f3de2ef418fdfbe02cdd"
+          "sha256": "af7ef7c1c27c4df30d0c143b968c33ed3e3a4143183faec5b9f6eedbaeb1f8d6"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos.json",
-          "sha256": "a453c4302ecbd30e91c878cd95357c77f8c803384ce4648e3e84df5f76e58911"
+          "sha256": "bb46b4f82b79ddafef99850aeb503ba5914426e771765f30e76105ef8a27a4ba"
         }
       },
       "normalized": {
@@ -552,11 +552,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/default.json",
-              "sha256": "ca8d5018a7a7610f9bb912a18efa3f3688237d48eb3d1a9dabee184fc14b1c23"
+              "sha256": "8cc9b1fb5b95550051e15ba81b77b3c18cfc5d331a15d22edfa936a6809af7a1"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/default.json",
-              "sha256": "c3f25a4804433d14286a2ed19d8c33dcf4a3247930ce0c4ccc59dd8f06b9d641"
+              "sha256": "b21e7375c2b9f311cf832bd14775d46c25ed6115ca8992164c1ab1b0f7a8e9e5"
             }
           }
         },
@@ -565,11 +565,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/spaces_nonascii.json",
-              "sha256": "6e6d1fc0b6136cc8e79e241c19e92254df51466e7e9365b55d256882ee4db63c"
+              "sha256": "75dd3ef05a1e6045890fe83e737a0457b8cc3d534ec38b3e5e64712743593a97"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/spaces_nonascii.json",
-              "sha256": "1a96287dba0b5bd1a0a13c3f883e84aa62e1a115cdcb6c252aad23b24a4d2180"
+              "sha256": "829548bfc8a1a037fddeeb8d64a91e71fe3109835cf6fa943060971a6d5ff7e0"
             }
           }
         },
@@ -578,11 +578,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/alt_port_path.json",
-              "sha256": "bef9655710ab4a606536b717d319fbc0284993b40b92817424bb44bc649d440b"
+              "sha256": "e96b3b58871c6058c87a04e5d30cc62585269f5a42a1304ec9f9cfcc39f4eca5"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/alt_port_path.json",
-              "sha256": "d256b765cea716dfc3474e9910561e343bb638c84e15c017457974780c7bda25"
+              "sha256": "ac421b4d7d8d850f695638192176bb65f13f85356a493846ef0be817f5b3cfe8"
             }
           }
         },
@@ -591,11 +591,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/keys_present.json",
-              "sha256": "9e5e95d9444b29e5be39ca0aa5402b5fc63e2c71398add8a7a7de286104c758c"
+              "sha256": "b840979e23d841a0c179a4938c5dbccd4f9a3736e899948fd02ba6b7ddeff0fe"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/keys_present.json",
-              "sha256": "54a6c646ade804ffe3d4f2b2e585ccd24beef91810a71566956cc2ac576a5ab1"
+              "sha256": "b3d690a258ca4b7321675c3247d739c26865c5ad679e78e4f59a5246d4e98a82"
             }
           }
         },
@@ -604,11 +604,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/keys_absent.json",
-              "sha256": "8b6ea5c120c222d67864c4cee9ed80049c6e52004db4813a946ba32c1b54efbe"
+              "sha256": "db8ac4da472c791c8c6af581e155d7d3f8655be0c76c8a915d9102a9a2edd49e"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/keys_absent.json",
-              "sha256": "8437a880c3f423c011bd8ea310ed00aa3d985ac5101a93a1bfa6f00ba7f1df7c"
+              "sha256": "f340b9da24ee1a3244d5e71b288b7cf8105f71c339f3ce3c7a58cbf8a489784f"
             }
           }
         }
@@ -632,11 +632,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux.json",
-          "sha256": "d6c4bad39924a57c3eb416dd734a168db34769bc5659a3c162beac84b9904ff3"
+          "sha256": "98ed8d56f51b6453d49087f7f63de482ba4840f86cd2f341f5bd1e7162e16496"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos.json",
-          "sha256": "1b272c2e24aea480e06c47d100e94dc0c8d56057c2aca9f2a574e7884cd3a13f"
+          "sha256": "1b8530efa1de6bd4639df940dac23beb00b6adfd1f78967788843219cfefde76"
         }
       },
       "normalized": {
@@ -656,11 +656,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/default.json",
-              "sha256": "05d937e4041c90e3f7807476fbc576825fd7fa3ed76c4f1e1643b7f0df3d5fab"
+              "sha256": "39296268f1500b447bda8e2b33fd4219edd108a149fdd16e161cacecfb0fcc66"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/default.json",
-              "sha256": "c11dbe77e280f7fcc0dbd5fcceee9ea103830397cb730335905cf5b097e04c3a"
+              "sha256": "7ddbe63737c5ec95d9cbf1a7f008ba039763f568e2e631a50f0f046b06c9ef20"
             }
           }
         },
@@ -669,11 +669,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/spaces_nonascii.json",
-              "sha256": "543ed7fc5537179d3d95e9a3efd128cfc5662b947e842724f9aafa9c89b6fd95"
+              "sha256": "a4e2f8d7c37048906e09f4b7f56d6341abed3ad1fe25ee5aba24505df920b5a4"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/spaces_nonascii.json",
-              "sha256": "3a087a80703903a73afed9432e647e83bacc5493759058e9652c53b582065547"
+              "sha256": "21c26871f29e7d5c1fc7985399d45b1218d15c8be495492758ad069b0f0de216"
             }
           }
         },
@@ -682,11 +682,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/alt_port_path.json",
-              "sha256": "718a8d4b7f4271903fd17ff3ba7ee3b90bbb90e97b7fd4274ea67841d2d86fa2"
+              "sha256": "9ec852487f79abea9afcbaa09025d138775a9fca0ce45d0752a4c5a4c121390f"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/alt_port_path.json",
-              "sha256": "c45884565d4654f0ae300034575bcaa4acefd51e915255be57680ead95757d62"
+              "sha256": "0947f34cd2741e1bd65fae6a41db3791b920043b964d336d778afd8252b4791b"
             }
           }
         },
@@ -695,11 +695,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/keys_present.json",
-              "sha256": "5907f8c70557c33d629e08c6dae5ca2a90aa8ddc29f504827d7c751781daddd3"
+              "sha256": "8241dfe32b3b2f3b4a1a3d9fd30c3e993961de4c6a78cae118f08a8c82c5ecc0"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/keys_present.json",
-              "sha256": "f1eb80523c5a4d23e5f443b59ab42e344a6e32cd0adb6f40bc2ae7c40f335273"
+              "sha256": "2fd6ccb8a1c1f9f6944db29e2dface9ef0f3713248596acefb022ff059483345"
             }
           }
         },
@@ -708,11 +708,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/keys_absent.json",
-              "sha256": "af3f9c010e4f49c2f7c09773b65836b9028dde65087ea854f93840e66c1504da"
+              "sha256": "6348d8ae4f4b14dfcaa335d3e187f4f61ebd50b06868e4a534c821a13c9e3fb9"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/keys_absent.json",
-              "sha256": "735152b9c68cdc74f884f21fecec0f8499be670ebbe2449b384be21ca2d768af"
+              "sha256": "245c0c84e8ea64915a4e628f07cb8d780f627cc3960a080703454bf7f41b1b42"
             }
           }
         }
@@ -736,11 +736,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux.json",
-          "sha256": "0571c95c0fd0e34dfcf107c17483a2548cbfbd31ab9960239e268b4997f3cb01"
+          "sha256": "f57cfdeb295ea6294f946fe62194169365bea9a1e58dc61c7cfa46c43b5e2980"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos.json",
-          "sha256": "cae4dfebcdeb38ba9c0cc56edf9d278df9544d5568a6ebfacbe5ce750f823dbd"
+          "sha256": "009bce79f8dc90cf61cb947b245e0452516e2e0b256f296cf0e1d0050355a7c0"
         }
       },
       "normalized": {
@@ -760,11 +760,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/default.json",
-              "sha256": "4a4d06bb4bdd6621f2c1820ce764bdd00773aacb7402aeb09775689d4cf98e38"
+              "sha256": "7e8f16f9502175a519d7d83ba44c8619b8668ea635b9aefa29a5eed9a4dda66f"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/default.json",
-              "sha256": "a26d97e544bda5b230332b32fc45e7639c20374a1269e87623896235e20d8044"
+              "sha256": "3ab1e515f74a38703bdfbf0ae8fdbcb15af7be838308d457f58310d22481a357"
             }
           }
         },
@@ -773,11 +773,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/spaces_nonascii.json",
-              "sha256": "2b4224799d0b09d8cc426042d581b99e1fbfa7e67fe7c9594a5896f0284954b9"
+              "sha256": "0088509e915f5620e486383517eeba407390cf509122260aae376d05c1765ebd"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/spaces_nonascii.json",
-              "sha256": "329f51532c569ddd4e906363f2347306437ccec580b81c7cf71a31c0b84066a1"
+              "sha256": "ebd13acb10a2ab3aa2d1f3a7f53c2ecb0372da08d612e119360be7064bdabaf8"
             }
           }
         },
@@ -786,11 +786,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/alt_port_path.json",
-              "sha256": "e6a802db1aef3e1375bb0c84beed2fa721b03463836c76ad97366dce225390a9"
+              "sha256": "00ac78960660029179546f027be55cc8856cbfe6ecb74b222fed0ebf6caee5cc"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/alt_port_path.json",
-              "sha256": "bcd2c4b34fb593ffa2e4eb9424fff661aedc54eb77afcd8075d3aedca51044cb"
+              "sha256": "80e96fce0d496105046b93f9ddbecf90f98332c12ea436fa7b7f5ca91b326883"
             }
           }
         },
@@ -799,11 +799,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/keys_present.json",
-              "sha256": "124923e5cd232d04220e1a4051a7684a4b12c8ad9f13f5ff8ca0a97cb3774567"
+              "sha256": "45bd80c9c3545206eb6deedededffb044f3c458f1f2780481c810b0c9b622fec"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/keys_present.json",
-              "sha256": "34a72744fa5bb2584b37c56e3d599aee021c61bc3e9bc921da6de7977a2f33a3"
+              "sha256": "119f8ad1a79b312a215fb5ff25c0ac1959f02aa57627769652775ab93cae0968"
             }
           }
         },
@@ -812,11 +812,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/keys_absent.json",
-              "sha256": "4085f6164563f8582dd3a427dd4b6f20cf109a5dd40553bb49dbaad50551fe5e"
+              "sha256": "4fbf0c9174f5c20909feb85a57d3b3fe334d7f8cfbe5b2122ae2badc33c2a20e"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/keys_absent.json",
-              "sha256": "de2feb7ac5d2b990c4b49bd0dd64116456fd105f5e759221ec5e347edbbc9d5d"
+              "sha256": "c2915c7a09e16eda594f309da2c022101793e97aaf756cfb6ab9780ac3b89faf"
             }
           }
         }
@@ -840,11 +840,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux.json",
-          "sha256": "0841c9f82313ac1e1671bd01bf8691b70430aab9a6e10d9310dceb40ec6a7504"
+          "sha256": "69873b48609ff1f103a448a62d40504b50b6cbfb0394f38eae6740e95dbd6365"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos.json",
-          "sha256": "10bfa511fc5eacf0d8c81cdbc3359c4ec3647bdba8f1229ff5c40e60e04ac2ac"
+          "sha256": "91e3379468b0011d763f357150f120a13263d8d8e2c239279f8288355e07a5de"
         }
       },
       "normalized": {
@@ -864,11 +864,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/default.json",
-              "sha256": "741b8fcc655f352db7587b7af830beb6deee349cb849867165ad28581d6211e6"
+              "sha256": "b24863d329fde3eab1fbe1294cf78da11dd099d4c9bc5dec9cdd38a0be3b92ac"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/default.json",
-              "sha256": "ba73ed52a04b86fe0e5c119f0d7af0437c6c9add7553a44ac410472bbd90863c"
+              "sha256": "4693ca2b0ce489899447dfeb3664c6f057b219553fc5967d54c1bb64eab67e32"
             }
           }
         },
@@ -877,11 +877,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/spaces_nonascii.json",
-              "sha256": "6907cff42690976cc5f3cc44de7ad37e948862ad8c1a1493b50f0320af75a0d3"
+              "sha256": "7ed735c4ddab1dd1aeb96b224d837a604b4deea0e5b3f4e1308e0ba267aebd51"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/spaces_nonascii.json",
-              "sha256": "497757d0a0bf348d9aaa51aa89cf23de93f9cb4b70f218d72aeda631617a184a"
+              "sha256": "bcfdedd485ad1fd18e1ff590bc72d20258fae231a4f32875a8465aadd3591725"
             }
           }
         },
@@ -890,11 +890,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/alt_port_path.json",
-              "sha256": "1d3433e64ffab5c26bd915e02db26af7112184b3e4915fc8a1e90a85785085e9"
+              "sha256": "254dee92c9e51390ebd8db90a5da66565a02eb2a309911eb3e2c9cebd8dfb8eb"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/alt_port_path.json",
-              "sha256": "8a2922694e3b53cf088bc7642258c8ba3c93ef8f627a18e6937d5d3b8ea88ad0"
+              "sha256": "7fc1dc68cb82048f8115de63dea265bd1d0702d2a253cb6dc077b14102d30246"
             }
           }
         },
@@ -903,11 +903,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/keys_present.json",
-              "sha256": "8ed4db7b949e803bfa7de4e1e1033da19cd0ccb8b77ac6514e74597fd067e4c3"
+              "sha256": "ea29e31fd6673664f26b601b60acf216f9110d9dbf688efe563d4c3daa3f2a24"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/keys_present.json",
-              "sha256": "1478bead30eb0a18b56ba3c738f1af1ee8f6934d153c80a1f6e5f380770cbd0f"
+              "sha256": "884ac4c5e0c05e6daf14e9183589f372f8c31ab3197c3e3778bdbecbd76fa44f"
             }
           }
         },
@@ -916,11 +916,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/keys_absent.json",
-              "sha256": "d0a29f5de449701d336e5c3b1ef533a4959d1ba5896fc86fc24275656bc43df5"
+              "sha256": "80c5861dca5d59f932b5b03ca4f280bc851421b2298aa3e7faee55fd460e59ab"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/keys_absent.json",
-              "sha256": "a4e4b5272ebf515730e1e30707379e8e38167eb8ce659766f136b78575ffb154"
+              "sha256": "9f071962ccd4f24bc8d51b364088e3a924edc97cf339bcf8d9ef52acea312613"
             }
           }
         }
@@ -944,11 +944,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/41431b1d274ed1aa69334cdebff80d2d8242af76/linux.json",
-          "sha256": "245325b97eacfee2e8bbb890f926fbe0ecdea499a117f4e2b87d4476951844e2"
+          "sha256": "6ca6694827ceb33a773cd17ff3bec246f850f03aec183dbcb905850eaa6047a9"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/41431b1d274ed1aa69334cdebff80d2d8242af76/macos.json",
-          "sha256": "aab5f17e4a2a6a2496d9d578613781de9c9181675677a50ce4c6e981c8f212fe"
+          "sha256": "9661d8bb481c57c0035fa8fb6b2a3a7c13004dc2c3ebe3f9582e3930b4e6f0d5"
         }
       },
       "normalized": {
@@ -968,11 +968,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/default.json",
-              "sha256": "1b00041b864604c223d39c44a9c2dfc6f85cbc40a4457b357b3a8908e1dfbae6"
+              "sha256": "bb8dd8c1951f3d4816e617c515db9bced73e275babcb8e44b626d775539de730"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/default.json",
-              "sha256": "601ea87ac325ce002f99ac38e4de0550c2c59808488d3034b3a34cb72345a027"
+              "sha256": "a69aa329686f9cb6167723577c3cdaa5b46c6bb786a3dddd67862f83a5fda4cf"
             }
           }
         },
@@ -981,11 +981,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/spaces_nonascii.json",
-              "sha256": "48dd1da2960fea6c386172be6b965176b92357e00c1e6483eab87950e4474498"
+              "sha256": "ffed3f07f42bb1fea2fc734ade42ac88aad0dbba1066a9f4c2b0e4099c8e74ee"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/spaces_nonascii.json",
-              "sha256": "a80b444e3daca326e38d9750881b8940d341bbe3b2bccabd37cd66cbc83c3f6a"
+              "sha256": "6a4e685eceb5c24e9c9c3091fb960c22283940563c3061303b7471c80ab52691"
             }
           }
         },
@@ -994,11 +994,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/alt_port_path.json",
-              "sha256": "30cde715ef98e37662a54d959abd68a0d925df4a466d49c47d04751f4edf4f89"
+              "sha256": "3da3e605013b9c7bee3fee68c20fea9c1310420503aedb882bd44218fe7c83bf"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/alt_port_path.json",
-              "sha256": "15b36e71ce5739c79b2cf1a1c1a132cfabd302b54704af3846d061e54466e7c9"
+              "sha256": "de13952fa8c2b08328b0dbe9c32de84d4812ee67d6413881292394809965a56f"
             }
           }
         },
@@ -1007,11 +1007,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/keys_present.json",
-              "sha256": "a3f05d4e610d77b511bf4472de39538213700778f23145cabc6f31a84cba7a33"
+              "sha256": "5bf1ac615d25776ebe449defc108be7d2bbd9e068f7c7619dee8806858ee5453"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/keys_present.json",
-              "sha256": "d6cf570d934822c33e89f3914d3237aa745659727d4d5255476ed763aaa4fa08"
+              "sha256": "dc46cbe487d2ccd330e207b2d892defeb1ae08531940b41d84576ae196f638bc"
             }
           }
         },
@@ -1020,11 +1020,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/keys_absent.json",
-              "sha256": "84334260e1bdd96e5d814382f6dd1d5a4556ed352eb5786b87c868675666fd8a"
+              "sha256": "735d04a650122c5d360ba12c3be1ea7e1f6a216443b2a30ab95932062d808212"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/keys_absent.json",
-              "sha256": "fa11762196915517ea9ee2ed189a85502e502c8f523ebf5844eb412d7448bf07"
+              "sha256": "424fea90fb19d7103aee06bba43135a8268a9006e54b8dbf02d9a111f5bde341"
             }
           }
         }
@@ -1048,11 +1048,11 @@
       "negative": {
         "linux": {
           "path": "core/fixtures/service_legacy_evidence/negative/329c4b1d6265ae387144c655c4157c77f3737527/linux.json",
-          "sha256": "5249b38a15a4fd4bc3e0996b19084c999a08fc6b24dbde8728a8250be20cb679"
+          "sha256": "8f2cbe363558da012fa27b3eb782834648aa37093d0a93c70bef7f3013bd73a1"
         },
         "macos": {
           "path": "core/fixtures/service_legacy_evidence/negative/329c4b1d6265ae387144c655c4157c77f3737527/macos.json",
-          "sha256": "fe8da80fb6aa111b22beb846690e584a601b2773867d76da685e5bc344de9212"
+          "sha256": "e939ca1a10115ffcccf3b0fcf6f80c181c20266d97a1d502a98ba1fd9aa9b6a2"
         }
       },
       "normalized": {
@@ -1072,11 +1072,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/default.json",
-              "sha256": "110dd3f1e5d4eeee25888a30c37adda2074dded662514421736865f1f9d6a760"
+              "sha256": "04c1296afc8107031ad9ba640fb79afb43302c0b20d4c1b03ad8b679e0f17086"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/default.json",
-              "sha256": "763741c8707f8c2fd178e04aa6319e9ec0e0e2a125e9335eda1aacc6b506fd0e"
+              "sha256": "298951070172c1e1c1c0d430797c60ef0d9037877fbf9f1427626699dc6accca"
             }
           }
         },
@@ -1085,11 +1085,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/spaces_nonascii.json",
-              "sha256": "14feb9d0822ea8323eac5db310b51057829f9bb4c417a30141234ba6d7b044fa"
+              "sha256": "a95bf4d681700409e4ae38eeacbd12e7ac09bba0eeb9d8ba809c55c8b762c8be"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/spaces_nonascii.json",
-              "sha256": "537aa638651f85d08ffcfeea721b16847f8a074b80aae6998172766d39584bc0"
+              "sha256": "9c6bc9a54e766777fd9b7a1b9f6d20eab791f9ad27c0af5d1cefeadcabf700f6"
             }
           }
         },
@@ -1098,11 +1098,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/alt_port_path.json",
-              "sha256": "da284e234df194ae54b75dc0dbc9736bf78f49a08d58e78b3bf3098dab80c279"
+              "sha256": "2c32ed62f623e15959257b7d4e381327b8954c19026e0e73a6c53b6227ae6e40"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/alt_port_path.json",
-              "sha256": "46cfa17e84a8a5642b004f619ba44d67928eb253d1ab12bd02313abaf228064b"
+              "sha256": "ac8c8c856fc9c7f7c386166e62d5d22e2a9e8878c91e67158acb85a67579cfb0"
             }
           }
         },
@@ -1111,11 +1111,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/keys_present.json",
-              "sha256": "84f5aec6b33982f06f4e32917d10e6e1f1ded43fe8b610d3065712fdb750c424"
+              "sha256": "974e19c466881ac59af4966cb06dc9effd741bbc67dca7f2d6900579f78cfe88"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/keys_present.json",
-              "sha256": "d891231f6daec226ebbe9677d0b6f8772d0dfda564424f9ae6628aeeeebf52c3"
+              "sha256": "f2caeccb53fdb386b16b77b4897a2375b7d17c84dc3442122da6236acdc1282a"
             }
           }
         },
@@ -1124,11 +1124,11 @@
           "raw": {
             "linux": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/keys_absent.json",
-              "sha256": "1daa32a018380793d7c03b419d6d5e3ffef04e3261948d61ac9b56cf274245a9"
+              "sha256": "b5d221744dcef76b37812563a196d305dcfafd084d34f9a070ede7a234297cf5"
             },
             "macos": {
               "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/keys_absent.json",
-              "sha256": "5c9cbdafe92ca831ec31d620c7f25deb96a59c175ef98cbfa7b525ff91906f86"
+              "sha256": "fe596e3e6c55cfdfa03963e6efbea92358125b45aeab728269947cbe9569d872"
             }
           }
         }
@@ -3943,24 +3943,28 @@
   },
   "interpreters": {
     "path": "core/fixtures/service_legacy_evidence/interpreters.json",
-    "sha256": "5fa4f5beb997a371c767af5d3ea8f006dc031e79dffec564a92fd9b59c10523a"
+    "sha256": "8c62b0f752aabdd07b08ab0fd5db259c4bf5a05c92f20de26a209ee551c60b65"
   },
   "inventory": [
+    {
+      "path": "core/fixtures/service_legacy_evidence/capture-input.json",
+      "sha256": "a95763613767ff235d4786f76dff3a5063261770431053a2c2dd66594215644b"
+    },
     {
       "path": "core/fixtures/service_legacy_evidence/follow-census.json",
       "sha256": "51308e75f2de9881239d3d4fb0f6e2d1d65995e53dfd012328761027750a4843"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/interpreters.json",
-      "sha256": "5fa4f5beb997a371c767af5d3ea8f006dc031e79dffec564a92fd9b59c10523a"
+      "sha256": "8c62b0f752aabdd07b08ab0fd5db259c4bf5a05c92f20de26a209ee551c60b65"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux.json",
-      "sha256": "14e8772af6e24ba77d8fa6f523340a8b17782d6533a030af616f79dc8a56c2ad"
+      "sha256": "fd9ef66622294fd78e7ba4735d8f36607df9ec86c64c2f1fe7876e2aed851de7"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos.json",
-      "sha256": "498fb4b7dd979ad7bfe9dad71fdc6e83e316f46a778dd24f51842169c66f5b3a"
+      "sha256": "56a33ef42c1aea522b791a43545d4e321456ad8a7ae5bfd8a85301288ee3bf86"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/05f1cb377cb8323ec4209d1db25f93561e3cdad5/linux.json",
@@ -4028,19 +4032,19 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/329c4b1d6265ae387144c655c4157c77f3737527/linux.json",
-      "sha256": "5249b38a15a4fd4bc3e0996b19084c999a08fc6b24dbde8728a8250be20cb679"
+      "sha256": "8f2cbe363558da012fa27b3eb782834648aa37093d0a93c70bef7f3013bd73a1"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/329c4b1d6265ae387144c655c4157c77f3737527/macos.json",
-      "sha256": "fe8da80fb6aa111b22beb846690e584a601b2773867d76da685e5bc344de9212"
+      "sha256": "e939ca1a10115ffcccf3b0fcf6f80c181c20266d97a1d502a98ba1fd9aa9b6a2"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux.json",
-      "sha256": "6e764d9f3e9565a7502c5bb6d320b0b5406e1acd85402f8914f72601bc32596a"
+      "sha256": "c9cf52b0b49765f31d9e710a024ad46fea52c12d83a93629f323141b6fbd0e80"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos.json",
-      "sha256": "79c8263f4c8db20228563c29241fb01f4fb4b64178b7142aef26901c677b51a2"
+      "sha256": "c8c69885cf933d927f61a7dcf2ba62ffa09f492f3af76afc1c706848da50b900"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/389daf68fd18a8ce64ff3b3b77896984ce8699ec/linux.json",
@@ -4060,11 +4064,11 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/41431b1d274ed1aa69334cdebff80d2d8242af76/linux.json",
-      "sha256": "245325b97eacfee2e8bbb890f926fbe0ecdea499a117f4e2b87d4476951844e2"
+      "sha256": "6ca6694827ceb33a773cd17ff3bec246f850f03aec183dbcb905850eaa6047a9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/41431b1d274ed1aa69334cdebff80d2d8242af76/macos.json",
-      "sha256": "aab5f17e4a2a6a2496d9d578613781de9c9181675677a50ce4c6e981c8f212fe"
+      "sha256": "9661d8bb481c57c0035fa8fb6b2a3a7c13004dc2c3ebe3f9582e3930b4e6f0d5"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/437dfa804bed892ca9ec722c031a3eb4c9355445/linux.json",
@@ -4076,11 +4080,11 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/4a040848ed98616ab23c334e0da39da9862cae47/linux.json",
-      "sha256": "bfcff3e9ca6885f9021f601c547c6357321e4210726727ef29277b1ad423fbcc"
+      "sha256": "6f4dfb21fb723414583fc8b1d94eaa21119f0a62734103015e78de7e99cc395a"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/4a040848ed98616ab23c334e0da39da9862cae47/macos.json",
-      "sha256": "b21d3d2bfca637e9ab592c80055c3013a34e5afdb51b83ff3bdcd094c95c9965"
+      "sha256": "177fc9924f66c491c395a1a4b2fdaede946d59ba27b1569e924d90cae37d6858"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/4b2cfbaa5a2e7b293d2e42096009fcb7cc753c9b/linux.json",
@@ -4100,19 +4104,19 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux.json",
-      "sha256": "0bbc59e69159c2d1647fa4305a441f8f086e6fe37ed0f3de2ef418fdfbe02cdd"
+      "sha256": "af7ef7c1c27c4df30d0c143b968c33ed3e3a4143183faec5b9f6eedbaeb1f8d6"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos.json",
-      "sha256": "a453c4302ecbd30e91c878cd95357c77f8c803384ce4648e3e84df5f76e58911"
+      "sha256": "bb46b4f82b79ddafef99850aeb503ba5914426e771765f30e76105ef8a27a4ba"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux.json",
-      "sha256": "0571c95c0fd0e34dfcf107c17483a2548cbfbd31ab9960239e268b4997f3cb01"
+      "sha256": "f57cfdeb295ea6294f946fe62194169365bea9a1e58dc61c7cfa46c43b5e2980"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos.json",
-      "sha256": "cae4dfebcdeb38ba9c0cc56edf9d278df9544d5568a6ebfacbe5ce750f823dbd"
+      "sha256": "009bce79f8dc90cf61cb947b245e0452516e2e0b256f296cf0e1d0050355a7c0"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/5e43ae13459111ad67baa6a60c84640de43fc9b1/linux.json",
@@ -4124,11 +4128,11 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux.json",
-      "sha256": "0841c9f82313ac1e1671bd01bf8691b70430aab9a6e10d9310dceb40ec6a7504"
+      "sha256": "69873b48609ff1f103a448a62d40504b50b6cbfb0394f38eae6740e95dbd6365"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos.json",
-      "sha256": "10bfa511fc5eacf0d8c81cdbc3359c4ec3647bdba8f1229ff5c40e60e04ac2ac"
+      "sha256": "91e3379468b0011d763f357150f120a13263d8d8e2c239279f8288355e07a5de"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/6e55afb7b7934b45f44a317c5bc335338271724d/linux.json",
@@ -4148,11 +4152,11 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux.json",
-      "sha256": "7d13c1ddfe27e8db8a591cef29192c0cade277a6f84b1bf41d580ffdabe8309d"
+      "sha256": "0376c7d5ee56d220d9711fed43d948be07bc715d1ec310f323398f20feca59cb"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos.json",
-      "sha256": "0ed398853b017b788e27e4398a3b32e8b332c36935b5a32cbc70bb33ddd6949d"
+      "sha256": "af924b99f3cc390d22bbc43ebf798ff1e38385ea9fd2f2de6c293c1fa76233ac"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/858e378930b48d057391dd4f806cea5f505ff629/linux.json",
@@ -4196,11 +4200,11 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux.json",
-      "sha256": "8d9d8c6c24060efe007477b62095ceacb1b6c2f531c1a5fa55fcf4247f3dfabe"
+      "sha256": "a6ca71c237f94619fd1d89a00f60d41a3b699571f9fc77237d7c6103819885a9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos.json",
-      "sha256": "d3eb2c3c5278674f52a09dfdd3717058fd09d812985e22d7a0a6a0253e095aa8"
+      "sha256": "b167656e5173dee76ecee0d56de7801437e0fdcc7a22e832dbc8815ac053bbea"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/c22e08d72718a35466ce1fe049058f237d61798c/linux.json",
@@ -4228,11 +4232,11 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux.json",
-      "sha256": "d6c4bad39924a57c3eb416dd734a168db34769bc5659a3c162beac84b9904ff3"
+      "sha256": "98ed8d56f51b6453d49087f7f63de482ba4840f86cd2f341f5bd1e7162e16496"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos.json",
-      "sha256": "1b272c2e24aea480e06c47d100e94dc0c8d56057c2aca9f2a574e7884cd3a13f"
+      "sha256": "1b8530efa1de6bd4639df940dac23beb00b6adfd1f78967788843219cfefde76"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/negative/e4f92dae159c16d45010d25f46a8029df0cc81bb/linux.json",
@@ -4660,47 +4664,47 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/packaging-provenance.json",
-      "sha256": "336b55d4c57657771591e931eba95d89c9c25226a807ff76aac97df7813a426a"
+      "sha256": "a280e2e625f94fb06e25c72017932ec97db54fc01f1d8b5fb1ae2ea3abb74a94"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/alt_port_path.json",
-      "sha256": "fd4b7f1dbb79b8114b42c614ea9cdc634a0d63bd8a199965751bb01b9baea22d"
+      "sha256": "425befb3c97afda2811281b879ddd0df87a38b4d311deb5919fb32d7839b406c"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/default.json",
-      "sha256": "7cfe3a3bf9ffe1a9a45f472a9bdc7e0051a0b365ac549bb5d9f08e4e5bfce1d2"
+      "sha256": "ee4ff2b92c024a9a823fa35c670b13f8909a1d9afa2734ba120e681498078d0b"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/keys_absent.json",
-      "sha256": "a882de060a24d0be52b6eb67b9b67e2151ba153b4e5d3c8b97fb353c621875e3"
+      "sha256": "759555d5498ec30fe1684591f3a36bc7e39ce21394233d3218eac36e350acd46"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/keys_present.json",
-      "sha256": "ee7628edb443906265717a4f136e9f789fdff2c42f1c9165e36dfb1f301f9554"
+      "sha256": "c2d76f8bd468c9a1be36bd240a25455d13108544871890916dfea87054e16df3"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/linux/spaces_nonascii.json",
-      "sha256": "8f125d3c4b47dde7ce8d5a3236897f4e21475cab3ac84dd359ddfcdfe1769b2b"
+      "sha256": "10a2223f367d3dbff74499c9eb7250d15471ef3b2c1af980fcabb6a88cff773d"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/alt_port_path.json",
-      "sha256": "fa2f2448887dec7c9c1c2c4814483ca0021fba5d55fb422d72cf88a0f2a56276"
+      "sha256": "7a4db42f38345526981f224d54b06eb774d5244f8ae2dae9cf62c5ef6bb45b1b"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/default.json",
-      "sha256": "921394d6ed848f3781341d682a1c93e362392bc28abfb42a2f0a43ce1b705a1a"
+      "sha256": "26e4cf2fa561dbb5a052b1d3ccb2a93fa50ef8514f62c6a76761690a3a6a0058"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/keys_absent.json",
-      "sha256": "7836076176877c19e33c6753c5b9c9cad830e709028e45f049c3ce4a321c31cc"
+      "sha256": "e18a872860cc2248f308ad2ed31b7bd33fd218c4f55621b4b4d9eff9c26419da"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/keys_present.json",
-      "sha256": "515133bb4c015f061f835024c9836328e513eab3115065474f2a0d73da5b68e0"
+      "sha256": "01a79e2ece0d97bc33202fb66ef8d2bfec4e031495a49a60a4e4a0652f0505f4"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/0407aa2d8475c24c4d34410fd3e8768cd6fc6173/macos/spaces_nonascii.json",
-      "sha256": "c1ed2607ba55331289672b7e60753cdc1e650067ed0e2040f8d1a71c5ae77e7a"
+      "sha256": "5824b6962c1bd4563ab718f12d3e2e947e2e6ae4d416b3dd82918830c29835e3"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/05f1cb377cb8323ec4209d1db25f93561e3cdad5/linux/alt_port_path.json",
@@ -4896,83 +4900,83 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/alt_port_path.json",
-      "sha256": "da284e234df194ae54b75dc0dbc9736bf78f49a08d58e78b3bf3098dab80c279"
+      "sha256": "2c32ed62f623e15959257b7d4e381327b8954c19026e0e73a6c53b6227ae6e40"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/default.json",
-      "sha256": "110dd3f1e5d4eeee25888a30c37adda2074dded662514421736865f1f9d6a760"
+      "sha256": "04c1296afc8107031ad9ba640fb79afb43302c0b20d4c1b03ad8b679e0f17086"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/keys_absent.json",
-      "sha256": "1daa32a018380793d7c03b419d6d5e3ffef04e3261948d61ac9b56cf274245a9"
+      "sha256": "b5d221744dcef76b37812563a196d305dcfafd084d34f9a070ede7a234297cf5"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/keys_present.json",
-      "sha256": "84f5aec6b33982f06f4e32917d10e6e1f1ded43fe8b610d3065712fdb750c424"
+      "sha256": "974e19c466881ac59af4966cb06dc9effd741bbc67dca7f2d6900579f78cfe88"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/linux/spaces_nonascii.json",
-      "sha256": "14feb9d0822ea8323eac5db310b51057829f9bb4c417a30141234ba6d7b044fa"
+      "sha256": "a95bf4d681700409e4ae38eeacbd12e7ac09bba0eeb9d8ba809c55c8b762c8be"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/alt_port_path.json",
-      "sha256": "46cfa17e84a8a5642b004f619ba44d67928eb253d1ab12bd02313abaf228064b"
+      "sha256": "ac8c8c856fc9c7f7c386166e62d5d22e2a9e8878c91e67158acb85a67579cfb0"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/default.json",
-      "sha256": "763741c8707f8c2fd178e04aa6319e9ec0e0e2a125e9335eda1aacc6b506fd0e"
+      "sha256": "298951070172c1e1c1c0d430797c60ef0d9037877fbf9f1427626699dc6accca"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/keys_absent.json",
-      "sha256": "5c9cbdafe92ca831ec31d620c7f25deb96a59c175ef98cbfa7b525ff91906f86"
+      "sha256": "fe596e3e6c55cfdfa03963e6efbea92358125b45aeab728269947cbe9569d872"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/keys_present.json",
-      "sha256": "d891231f6daec226ebbe9677d0b6f8772d0dfda564424f9ae6628aeeeebf52c3"
+      "sha256": "f2caeccb53fdb386b16b77b4897a2375b7d17c84dc3442122da6236acdc1282a"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/329c4b1d6265ae387144c655c4157c77f3737527/macos/spaces_nonascii.json",
-      "sha256": "537aa638651f85d08ffcfeea721b16847f8a074b80aae6998172766d39584bc0"
+      "sha256": "9c6bc9a54e766777fd9b7a1b9f6d20eab791f9ad27c0af5d1cefeadcabf700f6"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/alt_port_path.json",
-      "sha256": "8c21e7f18f325a282d701835c658ac3b8df4d7a238a32634c6dc872c744dbb2e"
+      "sha256": "142bfa015e066a9195770535fc30565a6d897a50db86f5421699163fa57d1006"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/default.json",
-      "sha256": "6304516e48f4487cf056dab915d9fdfcf3dff3e7bffbf68a747bb8266dff7b08"
+      "sha256": "3f0e60e9cb604ae0e528c520f948e12951b89747a48351b9e5432372e54dafd1"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/keys_absent.json",
-      "sha256": "3265d735d744b4c0548dcd9582c3c0a9abdad8555cac6726de9fd572e0066ee1"
+      "sha256": "9150ae7cba8a0bbb98c4d341cdfdbc51ae52a06ac54e4a94e6e7f961a9cf75f0"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/keys_present.json",
-      "sha256": "d1ed0485c3fba00735284ad81878ab3de351d40fd8dac825500df09f838dabda"
+      "sha256": "c4e452fdf43720537b42ac2e3234a2de464de4cdab4e878e624e133b59e6d4a9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/linux/spaces_nonascii.json",
-      "sha256": "0141a9ba9f1870713d02e706a2deeb4c6e4810a8e6f45f8582b7559aa3692036"
+      "sha256": "222536850c1db7139fb7f9d5ccaa555e66baa43cee81eea6e0bcd6ff69885242"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/alt_port_path.json",
-      "sha256": "5746e7561ad9e1860e909935f4c807dd819724aafcea215c22c11a365686c7f0"
+      "sha256": "c6addcbec67afd064b6fdd97c5d3e26ce9b7a3a4fc31e19ff8bfbcdc5030f3db"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/default.json",
-      "sha256": "32c4f62bd91a531f7cfd7f4f9e9603e1126f3959b03332ba08597c344877c616"
+      "sha256": "d04ba976069a36c7a7df1a669bd7376611d450a2e66ce144d572538e73ce5aa8"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/keys_absent.json",
-      "sha256": "54d5e37c0e47c7cf8c5a97535af69ad1befa04b8795632cd56ec70f54c3ed799"
+      "sha256": "66f2ef8b73a1aae108c5c3e93b98b9b38fbc182ac9240d7d2970d6bb48713d4f"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/keys_present.json",
-      "sha256": "0aa7450ef88ea6d933d3489830205b7051f163faf1baa4c9aae9a37d74ad5dbe"
+      "sha256": "7a3b85d6467053a40b9e51d360cf21594fbeea52987cd9ff017c9bb622abde31"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/34cd9adeb599cd2ac53e53a827af988ce88f66aa/macos/spaces_nonascii.json",
-      "sha256": "a2ae53cf3ce2a411395fb9cb7954bb771b0a165ead39dad6f7405c63a278714e"
+      "sha256": "61f9739096c3f41a3d6b54755ee7cbf31190520ec96acddf8ff5af009b172157"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/389daf68fd18a8ce64ff3b3b77896984ce8699ec/linux/alt_port_path.json",
@@ -5040,43 +5044,43 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/alt_port_path.json",
-      "sha256": "30cde715ef98e37662a54d959abd68a0d925df4a466d49c47d04751f4edf4f89"
+      "sha256": "3da3e605013b9c7bee3fee68c20fea9c1310420503aedb882bd44218fe7c83bf"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/default.json",
-      "sha256": "1b00041b864604c223d39c44a9c2dfc6f85cbc40a4457b357b3a8908e1dfbae6"
+      "sha256": "bb8dd8c1951f3d4816e617c515db9bced73e275babcb8e44b626d775539de730"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/keys_absent.json",
-      "sha256": "84334260e1bdd96e5d814382f6dd1d5a4556ed352eb5786b87c868675666fd8a"
+      "sha256": "735d04a650122c5d360ba12c3be1ea7e1f6a216443b2a30ab95932062d808212"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/keys_present.json",
-      "sha256": "a3f05d4e610d77b511bf4472de39538213700778f23145cabc6f31a84cba7a33"
+      "sha256": "5bf1ac615d25776ebe449defc108be7d2bbd9e068f7c7619dee8806858ee5453"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/linux/spaces_nonascii.json",
-      "sha256": "48dd1da2960fea6c386172be6b965176b92357e00c1e6483eab87950e4474498"
+      "sha256": "ffed3f07f42bb1fea2fc734ade42ac88aad0dbba1066a9f4c2b0e4099c8e74ee"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/alt_port_path.json",
-      "sha256": "15b36e71ce5739c79b2cf1a1c1a132cfabd302b54704af3846d061e54466e7c9"
+      "sha256": "de13952fa8c2b08328b0dbe9c32de84d4812ee67d6413881292394809965a56f"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/default.json",
-      "sha256": "601ea87ac325ce002f99ac38e4de0550c2c59808488d3034b3a34cb72345a027"
+      "sha256": "a69aa329686f9cb6167723577c3cdaa5b46c6bb786a3dddd67862f83a5fda4cf"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/keys_absent.json",
-      "sha256": "fa11762196915517ea9ee2ed189a85502e502c8f523ebf5844eb412d7448bf07"
+      "sha256": "424fea90fb19d7103aee06bba43135a8268a9006e54b8dbf02d9a111f5bde341"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/keys_present.json",
-      "sha256": "d6cf570d934822c33e89f3914d3237aa745659727d4d5255476ed763aaa4fa08"
+      "sha256": "dc46cbe487d2ccd330e207b2d892defeb1ae08531940b41d84576ae196f638bc"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/41431b1d274ed1aa69334cdebff80d2d8242af76/macos/spaces_nonascii.json",
-      "sha256": "a80b444e3daca326e38d9750881b8940d341bbe3b2bccabd37cd66cbc83c3f6a"
+      "sha256": "6a4e685eceb5c24e9c9c3091fb960c22283940563c3061303b7471c80ab52691"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/437dfa804bed892ca9ec722c031a3eb4c9355445/linux/alt_port_path.json",
@@ -5104,43 +5108,43 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/alt_port_path.json",
-      "sha256": "196d4466d1f6b1ca160db470ad01656dcfafcc4eb337eff2d107bc31b89e5ec2"
+      "sha256": "36d2b9354e016a8d1045ff1c043e3f6d3838b3a029921bb6f3969b0074065b05"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/default.json",
-      "sha256": "f5d673e7f2ba57b95a4c24da208eb051fe9c5637e8c086e79eb7b6e1b26f4d15"
+      "sha256": "760d27b2f4003bb6929628a64f40b0f6ad9253404f99e16bee26bc3df15a3447"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/keys_absent.json",
-      "sha256": "5cce7fe31543296eada49f36e99a0613896e9e1a4aeba9bde897a1a6e26bcaaa"
+      "sha256": "29cdfa3d0d4079020d3f06b85ab099cc5fa5a74f5d91ae6255988e891e42aa26"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/keys_present.json",
-      "sha256": "57779b2931c6a8ef6c756149dbd94aaaddbcde88a049956073f17116e8dd1a5e"
+      "sha256": "22bfe600a2e4aaadc019a33fe1e75923e4a7c0c5493688fda4b13c87d051886d"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/linux/spaces_nonascii.json",
-      "sha256": "56114e6efd81ada5e4470782f8677ce02ca9759497eba5f85bbd90441637bbbb"
+      "sha256": "251721e2d3e08ce0e45159db303cd3ddedd49d48ae6f9488ac94cc4c19ac3a81"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/alt_port_path.json",
-      "sha256": "ced47e75c231205f996c7692d7ab280e9446606866356544cc3bf63d9256704f"
+      "sha256": "c7758d59d63595ba90ba3ccf5ef12ef245a41c2be8d8c4b33b065143de472851"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/default.json",
-      "sha256": "fc5a522db17ae570cb3c31b6e0c4351ad2484f801d5522b0eea44257e3e33877"
+      "sha256": "249ae9d4f99b6f85e5ae6af992d2f200792bf9eac40a5c740ce2e8347a04a8e8"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/keys_absent.json",
-      "sha256": "65c8842409739657a6b9582a27c9819f6b3b1821c0486fc041756724d38555d9"
+      "sha256": "237c6fe344625c081845a1615fa749c8843a7982ea3d1fb60ef882fc898b24f7"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/keys_present.json",
-      "sha256": "1b3ffede06ff82a09176220376d00c2a36cabbcb59bbccd6b699b27d5e4c0a03"
+      "sha256": "44598bb382ef59a854906274ea8a96b16dc7be3b80f4eb048deeceaade968f00"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4a040848ed98616ab23c334e0da39da9862cae47/macos/spaces_nonascii.json",
-      "sha256": "f8dc49895dd75ea51e54ce41afd40a1213c5c67f26436b86e7b7dcd46fe174c7"
+      "sha256": "edd147292a665d658e4597c6c251c1282376695e0a2cd624c3252ab51d4104c9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/4b2cfbaa5a2e7b293d2e42096009fcb7cc753c9b/linux/alt_port_path.json",
@@ -5224,83 +5228,83 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/alt_port_path.json",
-      "sha256": "bef9655710ab4a606536b717d319fbc0284993b40b92817424bb44bc649d440b"
+      "sha256": "e96b3b58871c6058c87a04e5d30cc62585269f5a42a1304ec9f9cfcc39f4eca5"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/default.json",
-      "sha256": "ca8d5018a7a7610f9bb912a18efa3f3688237d48eb3d1a9dabee184fc14b1c23"
+      "sha256": "8cc9b1fb5b95550051e15ba81b77b3c18cfc5d331a15d22edfa936a6809af7a1"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/keys_absent.json",
-      "sha256": "8b6ea5c120c222d67864c4cee9ed80049c6e52004db4813a946ba32c1b54efbe"
+      "sha256": "db8ac4da472c791c8c6af581e155d7d3f8655be0c76c8a915d9102a9a2edd49e"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/keys_present.json",
-      "sha256": "9e5e95d9444b29e5be39ca0aa5402b5fc63e2c71398add8a7a7de286104c758c"
+      "sha256": "b840979e23d841a0c179a4938c5dbccd4f9a3736e899948fd02ba6b7ddeff0fe"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/linux/spaces_nonascii.json",
-      "sha256": "6e6d1fc0b6136cc8e79e241c19e92254df51466e7e9365b55d256882ee4db63c"
+      "sha256": "75dd3ef05a1e6045890fe83e737a0457b8cc3d534ec38b3e5e64712743593a97"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/alt_port_path.json",
-      "sha256": "d256b765cea716dfc3474e9910561e343bb638c84e15c017457974780c7bda25"
+      "sha256": "ac421b4d7d8d850f695638192176bb65f13f85356a493846ef0be817f5b3cfe8"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/default.json",
-      "sha256": "c3f25a4804433d14286a2ed19d8c33dcf4a3247930ce0c4ccc59dd8f06b9d641"
+      "sha256": "b21e7375c2b9f311cf832bd14775d46c25ed6115ca8992164c1ab1b0f7a8e9e5"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/keys_absent.json",
-      "sha256": "8437a880c3f423c011bd8ea310ed00aa3d985ac5101a93a1bfa6f00ba7f1df7c"
+      "sha256": "f340b9da24ee1a3244d5e71b288b7cf8105f71c339f3ce3c7a58cbf8a489784f"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/keys_present.json",
-      "sha256": "54a6c646ade804ffe3d4f2b2e585ccd24beef91810a71566956cc2ac576a5ab1"
+      "sha256": "b3d690a258ca4b7321675c3247d739c26865c5ad679e78e4f59a5246d4e98a82"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/588f4985789f9fb2b3af99029e6b850cf8ee1f30/macos/spaces_nonascii.json",
-      "sha256": "1a96287dba0b5bd1a0a13c3f883e84aa62e1a115cdcb6c252aad23b24a4d2180"
+      "sha256": "829548bfc8a1a037fddeeb8d64a91e71fe3109835cf6fa943060971a6d5ff7e0"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/alt_port_path.json",
-      "sha256": "e6a802db1aef3e1375bb0c84beed2fa721b03463836c76ad97366dce225390a9"
+      "sha256": "00ac78960660029179546f027be55cc8856cbfe6ecb74b222fed0ebf6caee5cc"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/default.json",
-      "sha256": "4a4d06bb4bdd6621f2c1820ce764bdd00773aacb7402aeb09775689d4cf98e38"
+      "sha256": "7e8f16f9502175a519d7d83ba44c8619b8668ea635b9aefa29a5eed9a4dda66f"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/keys_absent.json",
-      "sha256": "4085f6164563f8582dd3a427dd4b6f20cf109a5dd40553bb49dbaad50551fe5e"
+      "sha256": "4fbf0c9174f5c20909feb85a57d3b3fe334d7f8cfbe5b2122ae2badc33c2a20e"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/keys_present.json",
-      "sha256": "124923e5cd232d04220e1a4051a7684a4b12c8ad9f13f5ff8ca0a97cb3774567"
+      "sha256": "45bd80c9c3545206eb6deedededffb044f3c458f1f2780481c810b0c9b622fec"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/linux/spaces_nonascii.json",
-      "sha256": "2b4224799d0b09d8cc426042d581b99e1fbfa7e67fe7c9594a5896f0284954b9"
+      "sha256": "0088509e915f5620e486383517eeba407390cf509122260aae376d05c1765ebd"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/alt_port_path.json",
-      "sha256": "bcd2c4b34fb593ffa2e4eb9424fff661aedc54eb77afcd8075d3aedca51044cb"
+      "sha256": "80e96fce0d496105046b93f9ddbecf90f98332c12ea436fa7b7f5ca91b326883"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/default.json",
-      "sha256": "a26d97e544bda5b230332b32fc45e7639c20374a1269e87623896235e20d8044"
+      "sha256": "3ab1e515f74a38703bdfbf0ae8fdbcb15af7be838308d457f58310d22481a357"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/keys_absent.json",
-      "sha256": "de2feb7ac5d2b990c4b49bd0dd64116456fd105f5e759221ec5e347edbbc9d5d"
+      "sha256": "c2915c7a09e16eda594f309da2c022101793e97aaf756cfb6ab9780ac3b89faf"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/keys_present.json",
-      "sha256": "34a72744fa5bb2584b37c56e3d599aee021c61bc3e9bc921da6de7977a2f33a3"
+      "sha256": "119f8ad1a79b312a215fb5ff25c0ac1959f02aa57627769652775ab93cae0968"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5a3ac1648922b1fc5e21b25d96fd3a4e1de84533/macos/spaces_nonascii.json",
-      "sha256": "329f51532c569ddd4e906363f2347306437ccec580b81c7cf71a31c0b84066a1"
+      "sha256": "ebd13acb10a2ab3aa2d1f3a7f53c2ecb0372da08d612e119360be7064bdabaf8"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/5e43ae13459111ad67baa6a60c84640de43fc9b1/linux/alt_port_path.json",
@@ -5328,43 +5332,43 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/alt_port_path.json",
-      "sha256": "1d3433e64ffab5c26bd915e02db26af7112184b3e4915fc8a1e90a85785085e9"
+      "sha256": "254dee92c9e51390ebd8db90a5da66565a02eb2a309911eb3e2c9cebd8dfb8eb"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/default.json",
-      "sha256": "741b8fcc655f352db7587b7af830beb6deee349cb849867165ad28581d6211e6"
+      "sha256": "b24863d329fde3eab1fbe1294cf78da11dd099d4c9bc5dec9cdd38a0be3b92ac"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/keys_absent.json",
-      "sha256": "d0a29f5de449701d336e5c3b1ef533a4959d1ba5896fc86fc24275656bc43df5"
+      "sha256": "80c5861dca5d59f932b5b03ca4f280bc851421b2298aa3e7faee55fd460e59ab"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/keys_present.json",
-      "sha256": "8ed4db7b949e803bfa7de4e1e1033da19cd0ccb8b77ac6514e74597fd067e4c3"
+      "sha256": "ea29e31fd6673664f26b601b60acf216f9110d9dbf688efe563d4c3daa3f2a24"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/linux/spaces_nonascii.json",
-      "sha256": "6907cff42690976cc5f3cc44de7ad37e948862ad8c1a1493b50f0320af75a0d3"
+      "sha256": "7ed735c4ddab1dd1aeb96b224d837a604b4deea0e5b3f4e1308e0ba267aebd51"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/alt_port_path.json",
-      "sha256": "8a2922694e3b53cf088bc7642258c8ba3c93ef8f627a18e6937d5d3b8ea88ad0"
+      "sha256": "7fc1dc68cb82048f8115de63dea265bd1d0702d2a253cb6dc077b14102d30246"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/default.json",
-      "sha256": "ba73ed52a04b86fe0e5c119f0d7af0437c6c9add7553a44ac410472bbd90863c"
+      "sha256": "4693ca2b0ce489899447dfeb3664c6f057b219553fc5967d54c1bb64eab67e32"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/keys_absent.json",
-      "sha256": "a4e4b5272ebf515730e1e30707379e8e38167eb8ce659766f136b78575ffb154"
+      "sha256": "9f071962ccd4f24bc8d51b364088e3a924edc97cf339bcf8d9ef52acea312613"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/keys_present.json",
-      "sha256": "1478bead30eb0a18b56ba3c738f1af1ee8f6934d153c80a1f6e5f380770cbd0f"
+      "sha256": "884ac4c5e0c05e6daf14e9183589f372f8c31ab3197c3e3778bdbecbd76fa44f"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/617ea8d8ccfa3d3621241e04d9a04a7890e8ca08/macos/spaces_nonascii.json",
-      "sha256": "497757d0a0bf348d9aaa51aa89cf23de93f9cb4b70f218d72aeda631617a184a"
+      "sha256": "bcfdedd485ad1fd18e1ff590bc72d20258fae231a4f32875a8465aadd3591725"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/6e55afb7b7934b45f44a317c5bc335338271724d/linux/alt_port_path.json",
@@ -5432,43 +5436,43 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/alt_port_path.json",
-      "sha256": "1f018305719fe12c0ec848de617cd5fffd600e3e11a3171d8a5299a4754cce76"
+      "sha256": "73a787af18aa86ffc772260fb5762868fe56387387dc382d7d89b9111ca4c6b6"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/default.json",
-      "sha256": "e2b2508179676cba4445a23bb97068f478742e34a42d501078dd69b6241b35bd"
+      "sha256": "e32c57f8acbe6000a2ff271c98ba77a40c693d2e00567d040e328a9cc16c085b"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/keys_absent.json",
-      "sha256": "78084190470d1f96a91e7c8b75d56ff4fbea1f18ab733058b9661ba4bb6b3527"
+      "sha256": "fbda530ccfbb0103acfde11886defa4bd0452f453519da9b618abc3571884dfe"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/keys_present.json",
-      "sha256": "b5a4a0f34051b87952b981694ca78fbea50dab8536a0da4d650508b9c33290d8"
+      "sha256": "52ab841e03c772c76e4d77ef384359c6c67e887b199def07ac44e390991b2f7e"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/linux/spaces_nonascii.json",
-      "sha256": "0fe35aeb2c621c25101b6c01383a9291ae4829cd83442512e0c40bb29452fae4"
+      "sha256": "9ff4dd5ee756075bc3b046c92fbb8054be8bcac506dc15bbd03d5ae2ba1e1d8d"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/alt_port_path.json",
-      "sha256": "629e15cc73361147d314d4c8a3ba1354d299cf8b46adc19cd393e403cd1376ea"
+      "sha256": "37045b9c4e700b5e080b7c504adb6387ccf1abb39676f358d5c1950c1fc9cf38"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/default.json",
-      "sha256": "4f5ed93de45bc1d5f967a751ddc9b2efa7f7e863fdecdf6c4977ed883f47a48c"
+      "sha256": "bbfc59bce0b622180d682cf1fc5c34bb8555914c7aaefd3eece01b9b7def47f8"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/keys_absent.json",
-      "sha256": "8e5f8a8b9916d9150cc8c9ce1976db62382a2e4c3ca7bd9267e6ba9f709e54d5"
+      "sha256": "847ce03616a3d80d1333da79c9cb956074b9794879e96cb93694249938856a37"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/keys_present.json",
-      "sha256": "c6b8b6f692981abd0e42c7a05d8cf46a602831f9d6dd0ed0bad808e7e3ccf0d2"
+      "sha256": "e623aeb09bbe583a04d7851cd3ec1fb496b3896c3e34b948484cc0c12dd45d3d"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/727c25d80643e24eabcfad2c2f6e7057b5fdbccc/macos/spaces_nonascii.json",
-      "sha256": "c5b11dfadef44a10c16d68cb40fbbe0cbaa47ebd1de0cfb02f932297e4d5c201"
+      "sha256": "74300c1970204c7c7cd99b1eec467d03718d77d34a826e8396917c539564afaa"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/858e378930b48d057391dd4f806cea5f505ff629/linux/alt_port_path.json",
@@ -5608,43 +5612,43 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/alt_port_path.json",
-      "sha256": "36f0e19294221b41e55ede4944bc12b243fbf5e448e7efedc0ac6cd37c7130b2"
+      "sha256": "0abcf6daf6b1164613f4392deb30a97e019537ddbbede97df2861208e2c984fe"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/default.json",
-      "sha256": "f1b30e060396602fc51dc3620e35c5a9cee9bb68309ff2b845c8a1e57c8663e2"
+      "sha256": "acd5038474585e4d48ba6fe5e6cd3ce82f09fc23d89a29d8d3db588f480dc58e"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/keys_absent.json",
-      "sha256": "c3154fa32440fef8ee1f7327da9b060642b70c3d0fdb346b3cc1c9e14cf58de6"
+      "sha256": "558c184ed80e759f8b26193ba9db3ec7db52c8b3c163d2ae511f9e28c63002df"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/keys_present.json",
-      "sha256": "b778ae0e22115f9fa47e2538a27a70c237ef2efd2fd81bac406cf5478576e38a"
+      "sha256": "6a6504e5cb529b5cab2fe1beaec5f9fb0ed9c03c41e1f10151b1cc97a2da2bb9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/linux/spaces_nonascii.json",
-      "sha256": "06c88cffec8797e58dd316771132b7fddb269b216577c3eafd3167191e0df5a6"
+      "sha256": "bc183ce159266e860c1d4d33735bdbb275f6482f4befbe886a3ef3e05937a814"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/alt_port_path.json",
-      "sha256": "b536ccb325be8bef3d31bbc78ca30ad9d0db82ece0480b9e28b6706803447f91"
+      "sha256": "4c0f3886d808cc66626ded49850d4a71acd1498669522a740baf0a14d081496e"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/default.json",
-      "sha256": "6057d6e75d19f61b34b873b9e45cffa6015f724801ce5a5d0bd8e8a7ddb33fcd"
+      "sha256": "d85bfdaafd82f5ae14fa8394ffe4edd174279ecfc501eb0fd5383d43e5ed5f88"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/keys_absent.json",
-      "sha256": "b1e0ca3663947f998d3bc28359491eaf639120c3fcc6f137eff5161b26e6e133"
+      "sha256": "9147d400fa675dc21dd45d85579dc39d3bb936d9a19c769159e35e135e883fca"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/keys_present.json",
-      "sha256": "2552a5d5dcf3704bce0dd4aa5001936a45ca03e76cc46b3762aba2caf36fb8af"
+      "sha256": "7ea8e1118d5a4c72672948df9b91521f82d5c1d8f635a7998a8e670c66ab7d80"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c200c97d40e163c6d2af6774035cb348a4b71d6e/macos/spaces_nonascii.json",
-      "sha256": "e4376a9f1463df41267fa63c72284eb4423e34dfd5f96f84492d3a5c77991f2c"
+      "sha256": "9e996ad72088627d7085e381b54ba168c00831aa132061789ab2ced7259e64c9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/c22e08d72718a35466ce1fe049058f237d61798c/linux/alt_port_path.json",
@@ -5720,43 +5724,43 @@
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/alt_port_path.json",
-      "sha256": "718a8d4b7f4271903fd17ff3ba7ee3b90bbb90e97b7fd4274ea67841d2d86fa2"
+      "sha256": "9ec852487f79abea9afcbaa09025d138775a9fca0ce45d0752a4c5a4c121390f"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/default.json",
-      "sha256": "05d937e4041c90e3f7807476fbc576825fd7fa3ed76c4f1e1643b7f0df3d5fab"
+      "sha256": "39296268f1500b447bda8e2b33fd4219edd108a149fdd16e161cacecfb0fcc66"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/keys_absent.json",
-      "sha256": "af3f9c010e4f49c2f7c09773b65836b9028dde65087ea854f93840e66c1504da"
+      "sha256": "6348d8ae4f4b14dfcaa335d3e187f4f61ebd50b06868e4a534c821a13c9e3fb9"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/keys_present.json",
-      "sha256": "5907f8c70557c33d629e08c6dae5ca2a90aa8ddc29f504827d7c751781daddd3"
+      "sha256": "8241dfe32b3b2f3b4a1a3d9fd30c3e993961de4c6a78cae118f08a8c82c5ecc0"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/linux/spaces_nonascii.json",
-      "sha256": "543ed7fc5537179d3d95e9a3efd128cfc5662b947e842724f9aafa9c89b6fd95"
+      "sha256": "a4e2f8d7c37048906e09f4b7f56d6341abed3ad1fe25ee5aba24505df920b5a4"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/alt_port_path.json",
-      "sha256": "c45884565d4654f0ae300034575bcaa4acefd51e915255be57680ead95757d62"
+      "sha256": "0947f34cd2741e1bd65fae6a41db3791b920043b964d336d778afd8252b4791b"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/default.json",
-      "sha256": "c11dbe77e280f7fcc0dbd5fcceee9ea103830397cb730335905cf5b097e04c3a"
+      "sha256": "7ddbe63737c5ec95d9cbf1a7f008ba039763f568e2e631a50f0f046b06c9ef20"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/keys_absent.json",
-      "sha256": "735152b9c68cdc74f884f21fecec0f8499be670ebbe2449b384be21ca2d768af"
+      "sha256": "245c0c84e8ea64915a4e628f07cb8d780f627cc3960a080703454bf7f41b1b42"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/keys_present.json",
-      "sha256": "f1eb80523c5a4d23e5f443b59ab42e344a6e32cd0adb6f40bc2ae7c40f335273"
+      "sha256": "2fd6ccb8a1c1f9f6944db29e2dface9ef0f3713248596acefb022ff059483345"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/de2b6f0479f198c76ab14a22704a5a6be7b5b55f/macos/spaces_nonascii.json",
-      "sha256": "3a087a80703903a73afed9432e647e83bacc5493759058e9652c53b582065547"
+      "sha256": "21c26871f29e7d5c1fc7985399d45b1218d15c8be495492758ad069b0f0de216"
     },
     {
       "path": "core/fixtures/service_legacy_evidence/raw/e4f92dae159c16d45010d25f46a8029df0cc81bb/linux/alt_port_path.json",
@@ -6033,7 +6037,7 @@
   ],
   "packaging_provenance": {
     "path": "core/fixtures/service_legacy_evidence/packaging-provenance.json",
-    "sha256": "336b55d4c57657771591e931eba95d89c9c25226a807ff76aac97df7813a426a"
+    "sha256": "a280e2e625f94fb06e25c72017932ec97db54fc01f1d8b5fb1ae2ea3abb74a94"
   },
   "schema": "service-legacy-evidence",
   "schema_version": 1,
@@ -6043,19 +6047,35 @@
     "sha256": "fd808d236c8035ace1d68a11c596b242f08c6a3f8501faa9e84ee9434f483cf3"
   },
   "source": {
-    "commit": "26b84ac366cd0d5a7ab3f7f27564be0b64d25bfc",
+    "commit": "8b70b8d23fa8d44faf677f8e301b0ec78b9ae2a0",
     "tooling": [
       {
+        "path": "Makefile",
+        "sha256": "b24ae1a67b4c713797b61e2fe431b38157e42c0b7f520246672f47869cc0ffa6"
+      },
+      {
+        "path": "rust-toolchain.toml",
+        "sha256": "3d3417191c1207e1f2ade423bfb5475a95749a956ab4370d9103a197805178a1"
+      },
+      {
+        "path": "core/Cargo.toml",
+        "sha256": "a0ada8dd0f2fe2f6d733f70652efffd8f14c469ada807449b6141b22cf1dbd44"
+      },
+      {
+        "path": "core/Cargo.lock",
+        "sha256": "bfe699e319dd564503f04a21a63ca63576df8ce553de95b56b3d96e42c48abad"
+      },
+      {
         "path": "scripts/capture_service_legacy_commit_census.py",
-        "sha256": "0f52b6d2d5abf9b2be0011de41a4ab55d189f6b5675d42c19174c08d62c3699d"
+        "sha256": "a16401ce7efa4d454ca6129a789034af8f040b17df0ffd117b147b880ec339e6"
       },
       {
         "path": "scripts/capture_service_legacy_tag_census.py",
-        "sha256": "babc7074266dbdaeb9a1dd1a11235d57efce1b938038d3ea2e86f5716960e446"
+        "sha256": "7f7e1131d2c4307e5ec6fad576d385032f5f8c14bbb245e9ee7df9fe9860f2dc"
       },
       {
         "path": "scripts/acquire_service_legacy_cpython.py",
-        "sha256": "2c3364ae566de5a337a8c1b98c7377fd2fd5a6de47c18ed33396d649902ce19e"
+        "sha256": "22e7a424ef72eb18608ce53caf83fa410356e5e884930a829d6f8b4f5380d2ad"
       },
       {
         "path": "scripts/extract_service_legacy_generator_closure.py",
@@ -6063,7 +6083,7 @@
       },
       {
         "path": "scripts/capture_service_legacy_raw.py",
-        "sha256": "b9487776183088b189a9871bf110643a9fea57d06e4ff07173d3cd0c26bc3c15"
+        "sha256": "c601b3b442d403bd83a00014431158f7eadc29442acddb6ac9d7528ab290ed7d"
       },
       {
         "path": "scripts/promote_service_legacy_evidence_tree.py",
@@ -6071,23 +6091,71 @@
       },
       {
         "path": "scripts/normalize_service_legacy_evidence.py",
-        "sha256": "a555d1b88af35cc69df6822cca91fc953c3fd6e348109dc7b657fee98de4291c"
+        "sha256": "b680e83be4a4cb7a80d26015faf19501ff9127fc6790dd8af79fb5d4654d02f5"
       },
       {
         "path": "scripts/generate_service_legacy_negative_twins.py",
-        "sha256": "2fd45a8f9b97612c07e26d98398611390a9bf45bd660a8988d7f5e59fb8ca7f2"
+        "sha256": "5010682038aeefc942aae8866f61d4603baa4030ad88bb6772c7b7bad4d2b900"
       },
       {
         "path": "scripts/derive_service_legacy_semantic_deltas.py",
-        "sha256": "d0672533e75781c01685df38a0a63355a6efd014359bc543c6bb829fae177495"
+        "sha256": "3a0e81ca296f122e35e598b4ad66e6a151fa902deb9c5c23c4c20b9570198807"
       },
       {
         "path": "scripts/build_service_legacy_packaging_provenance.py",
-        "sha256": "ec0322a8cdf115b9d0615f1c8ce36804cb9c49dead0017140291778aa8fdf0c7"
+        "sha256": "5a8243fe94753d0e9805e373779ceb5e04b27dd495842f3d8b0d35ab42a482af"
+      },
+      {
+        "path": "scripts/service_legacy_capture.py",
+        "sha256": "abb52e5250ac28695d3282f0764e11fc405d4103e95728edbd32caaca350bb67"
+      },
+      {
+        "path": "scripts/service_legacy_git.py",
+        "sha256": "3485a6828824f730686444a091faf8b84cab4cca3ba2f66d4449731dcb711da9"
+      },
+      {
+        "path": "scripts/service_legacy_integrity.py",
+        "sha256": "a4a79103de318dee8e9b3f53d2022f1395c7cb9cf82aacd1c822756d65fdf759"
+      },
+      {
+        "path": "scripts/service_legacy_paths.py",
+        "sha256": "98eb5851a9a4beaddd90d6a16589cd3088b8444126938bcce7680d3a56939521"
+      },
+      {
+        "path": "scripts/fixtures/service_legacy_path_role_oracle.json",
+        "sha256": "1d2038f6e89b0d4c764c3c407795b05b9fda3405849f9bba9d6026cfa7c7559c"
       },
       {
         "path": "scripts/write_service_legacy_manifest.py",
-        "sha256": "bab13a8f52e8112f203471fb6dcb46c8a78c4e604f2a317b71f07484ce892ffe"
+        "sha256": "518a08566182a4fd56f8b5e524bdb9ab53fa77f3563c15b304e2ec67e2ea0159"
+      },
+      {
+        "path": "core/crates/solstone-core-service-legacy-evidence/Cargo.toml",
+        "sha256": "7b4c75fb0e92dd1771271a7452dc83e3bc1dca27334ac559e75c3530b19f85bc"
+      },
+      {
+        "path": "core/crates/solstone-core-service-legacy-evidence/Cargo.lock",
+        "sha256": "bf7f4961a22fdd44f1c27b4c43c3e8a6c18fead5d4fd2e35fdba59bc1819847a"
+      },
+      {
+        "path": "core/crates/solstone-core-service-legacy-evidence/build.rs",
+        "sha256": "ca25de9945e3ace26da1fb5c4bb9e1ea4dcbf655fa451c18c4fed2a02e6fcd22"
+      },
+      {
+        "path": "core/crates/solstone-core-service-legacy-evidence/src/lib.rs",
+        "sha256": "b580b7bff38d7cc1bb68f2687a81ec6459993aba48f7fd6abe1b16aa45f13112"
+      },
+      {
+        "path": "core/crates/solstone-core-service-legacy-evidence/tests/evidence.rs",
+        "sha256": "d356ea12f7fb1656ef533e4c6ba04664a13c499145ca0c3d749f970614dcc1ea"
+      },
+      {
+        "path": "core/crates/solstone-core-service-legacy-evidence/tests/tooling.rs",
+        "sha256": "4fd8f3fef49742dd6906ca57ea3a0ce0823223113d7bb4c815d2eb87d1c96007"
+      },
+      {
+        "path": "core/crates/solstone-core/tests/service_legacy_gate_purity.rs",
+        "sha256": "95abb110850c50b8ae91d1dad815e5768f989085674999a22a89d8674fcfe3e2"
       }
     ]
   },
