@@ -89,27 +89,7 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
             let providers = [&state.local.state, &state.parakeet.state];
             let services = json!(providers.iter().map(|provider| json!({"name": provider.provider.as_str(), "phase": provider.latest_phase.as_str(), "reason_code": provider.latest_reason_code.as_ref().map(|reason| reason.as_str())})).collect::<Vec<_>>());
             let crashed = json!(providers.iter().filter(|provider| matches!(provider.latest_phase, solstone_core_system::provider_runtime::RuntimePhase::Failed | solstone_core_system::provider_runtime::RuntimePhase::CleanupFailed | solstone_core_system::provider_runtime::RuntimePhase::StateCorrupt | solstone_core_system::provider_runtime::RuntimePhase::StateUnavailable)).map(|provider| json!({"name": provider.provider.as_str(), "reason_code": provider.latest_reason_code.as_ref().map(|reason| reason.as_str())})).collect::<Vec<_>>());
-            let tasks = json!(
-                state
-                    .queue
-                    .collect_task_status(Instant::now())
-                    .iter()
-                    .map(|task| task.reference.clone())
-                    .collect::<Vec<_>>()
-            );
-            let recent_tasks = json!(
-                state
-                    .queue
-                    .history()
-                    .iter()
-                    .map(|task| json!({
-                        "ref": task.reference,
-                        "exit_status": task.exit_status,
-                        "scheduler_name": task.scheduler_name,
-                    }))
-                    .collect::<Vec<_>>()
-            );
-            let queues = json!(state.queue.collect_queue_counts());
+            let queue = state.queue.collect_status_snapshot(Instant::now());
             let wall = chrono::Local::now();
             let schedules = json!(
                 state
@@ -129,9 +109,7 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
                 status::values(status::StatusFields {
                     services,
                     crashed,
-                    tasks,
-                    recent_tasks,
-                    queues,
+                    queue,
                     stale: state.stale_heartbeats.clone(),
                     schedules,
                     clients: state.server.client_count(),

@@ -264,6 +264,10 @@ struct QueueInner {
     state: Mutex<QueueState>,
     reaped: Condvar,
     worker_spawner: Mutex<QueueProcessSpawner>,
+    #[cfg(test)]
+    worker_threads: Mutex<Vec<thread::JoinHandle<()>>>,
+    #[cfg(test)]
+    worker_threads_changed: Condvar,
 }
 
 struct QueueOptions {
@@ -396,6 +400,10 @@ impl TaskQueue {
                 }),
                 reaped: Condvar::new(),
                 worker_spawner: Mutex::new(Arc::new(spawn_managed_queue_process)),
+                #[cfg(test)]
+                worker_threads: Mutex::new(Vec::new()),
+                #[cfg(test)]
+                worker_threads_changed: Condvar::new(),
             }),
         }
     }
@@ -697,6 +705,45 @@ impl TaskQueue {
             .lock()
             .expect("queue worker spawner lock poisoned") = spawner;
     }
+
+    #[cfg(test)]
+    fn join_test_workers(&self, expected: usize, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        let mut handles = self
+            .inner
+            .worker_threads
+            .lock()
+            .expect("queue worker registry lock poisoned");
+        while handles.len() < expected {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(format!(
+                    "timed out waiting for {expected} queue workers; observed {}",
+                    handles.len()
+                ));
+            }
+            let (next, wait) = self
+                .inner
+                .worker_threads_changed
+                .wait_timeout(handles, remaining)
+                .expect("queue worker registry lock poisoned");
+            handles = next;
+            if wait.timed_out() && handles.len() < expected {
+                return Err(format!(
+                    "timed out waiting for {expected} queue workers; observed {}",
+                    handles.len()
+                ));
+            }
+        }
+        let worker_handles = handles.drain(..expected).collect::<Vec<_>>();
+        drop(handles);
+        for handle in worker_handles {
+            handle
+                .join()
+                .map_err(|_| "queue worker panicked".to_owned())?;
+        }
+        Ok(())
+    }
 }
 
 fn task_status_flags(duration_seconds: u64, cap_seconds: u64) -> (bool, bool) {
@@ -782,14 +829,29 @@ fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
         };
         run_worker(worker_inner, dispatch);
     });
-    if spawned.is_err() {
-        let next = finish_worker(
-            &inner,
-            &rollback.submission.partition,
-            &rollback.submission.reference,
-        );
-        if let Some(next) = next {
-            start_dispatch(inner, next);
+    match spawned {
+        Ok(handle) => {
+            #[cfg(test)]
+            {
+                inner
+                    .worker_threads
+                    .lock()
+                    .expect("queue worker registry lock poisoned")
+                    .push(handle);
+                inner.worker_threads_changed.notify_all();
+            }
+            #[cfg(not(test))]
+            drop(handle);
+        }
+        Err(_) => {
+            let next = finish_worker(
+                &inner,
+                &rollback.submission.partition,
+                &rollback.submission.reference,
+            );
+            if let Some(next) = next {
+                start_dispatch(inner, next);
+            }
         }
     }
 }
@@ -1066,7 +1128,7 @@ fn unix_seconds() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Barrier;
+    use std::sync::{Barrier, Condvar, mpsc};
 
     use super::*;
     use crate::request::{BusTaskRequest, TaskArgv};
@@ -1080,6 +1142,7 @@ mod tests {
 
     enum Poll {
         Error,
+        Complete(i32),
         Gate {
             arrived: Arc<Barrier>,
             release: Arc<Barrier>,
@@ -1113,6 +1176,15 @@ mod tests {
             }
         }
 
+        fn complete(pid: u32, cleanups: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+            Self {
+                pid,
+                polls: VecDeque::from([Poll::Complete(0)]),
+                terminate_error: false,
+                cleanups,
+            }
+        }
+
         fn gated(
             arrived: Arc<Barrier>,
             release: Arc<Barrier>,
@@ -1139,6 +1211,7 @@ mod tests {
         fn poll(&mut self) -> io::Result<Option<i32>> {
             match self.polls.pop_front() {
                 Some(Poll::Error) => Err(io::Error::other("poll failure")),
+                Some(Poll::Complete(code)) => Ok(Some(code)),
                 Some(Poll::Gate {
                     arrived,
                     release,
@@ -1194,17 +1267,185 @@ mod tests {
     }
 
     fn queue(ready: bool, cap: u64, plans: VecDeque<SpawnPlan>) -> TaskQueue {
+        queue_with_sink(ready, cap, plans, None)
+    }
+
+    fn queue_with_sink(
+        ready: bool,
+        cap: u64,
+        plans: VecDeque<SpawnPlan>,
+        queue_sink: Option<Arc<dyn TaskQueueEventSink>>,
+    ) -> TaskQueue {
         let queue = TaskQueue::new(TaskQueueOptions {
             journal_root: PathBuf::new(),
             cap_resolver: Arc::new(FixedCap(cap)),
             process_state_probe: Arc::new(SystemProcessStateProbe),
-            queue_sink: None,
+            queue_sink,
             process_sink: None,
             ready,
             before_deadline_commit: None,
         });
         queue.set_worker_spawner(plan_spawner(plans));
         queue
+    }
+
+    const TEST_TRANSITION_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum StatusSeam {
+        SentinelStarted = 1,
+        SentinelCompleted = 2,
+        FollowerPopped = 3,
+        FollowerStarted = 4,
+        FollowerReleased = 5,
+    }
+
+    impl StatusSeam {
+        fn rank(self) -> u8 {
+            self as u8
+        }
+    }
+
+    #[derive(Default)]
+    struct SeamControl {
+        released: u8,
+        cancelled: bool,
+    }
+
+    struct StatusSeamSink {
+        events: mpsc::Sender<StatusSeam>,
+        control: StatusSeamControl,
+    }
+
+    type StatusSeamControl = Arc<(Mutex<SeamControl>, Condvar)>;
+    type StatusSeamParts = (
+        Arc<dyn TaskQueueEventSink>,
+        mpsc::Receiver<StatusSeam>,
+        StatusSeamControl,
+    );
+
+    impl TaskQueueEventSink for StatusSeamSink {
+        fn emit(&self, event: TaskQueueEvent) {
+            let seam = match event {
+                TaskQueueEvent::Started { reference, .. } if reference == "sentinel" => {
+                    Some(StatusSeam::SentinelStarted)
+                }
+                TaskQueueEvent::Stopped { reference, .. } if reference == "sentinel" => {
+                    Some(StatusSeam::SentinelCompleted)
+                }
+                TaskQueueEvent::QueueChanged {
+                    running_reference: Some(reference),
+                    queued_depth: 0,
+                    ..
+                } if reference == "follower" => Some(StatusSeam::FollowerPopped),
+                TaskQueueEvent::Started { reference, .. } if reference == "follower" => {
+                    Some(StatusSeam::FollowerStarted)
+                }
+                TaskQueueEvent::QueueChanged {
+                    running_reference: None,
+                    queued_depth: 0,
+                    ..
+                } => Some(StatusSeam::FollowerReleased),
+                _ => None,
+            };
+            let Some(seam) = seam else {
+                return;
+            };
+            if self.events.send(seam).is_err() {
+                return;
+            }
+            let (lock, changed) = &*self.control;
+            let control = lock.lock().expect("status seam control poisoned");
+            let (control, wait) = changed
+                .wait_timeout_while(control, TEST_TRANSITION_TIMEOUT, |control| {
+                    !control.cancelled && control.released < seam.rank()
+                })
+                .expect("status seam control poisoned");
+            assert!(
+                control.cancelled || control.released >= seam.rank() || !wait.timed_out(),
+                "timed out waiting to release status seam {seam:?}"
+            );
+        }
+    }
+
+    struct StatusSeamHarness {
+        queue: TaskQueue,
+        events: mpsc::Receiver<StatusSeam>,
+        control: StatusSeamControl,
+        expected_workers: usize,
+        finished: bool,
+    }
+
+    impl StatusSeamHarness {
+        fn new(
+            queue: TaskQueue,
+            events: mpsc::Receiver<StatusSeam>,
+            control: StatusSeamControl,
+        ) -> Self {
+            Self {
+                queue,
+                events,
+                control,
+                expected_workers: 0,
+                finished: false,
+            }
+        }
+
+        fn expect_workers(&mut self, expected: usize) {
+            self.expected_workers = expected;
+        }
+
+        fn wait_for(&self, expected: StatusSeam) {
+            let actual = self
+                .events
+                .recv_timeout(TEST_TRANSITION_TIMEOUT)
+                .unwrap_or_else(|error| {
+                    panic!("timed out waiting for status seam {expected:?}: {error}")
+                });
+            assert_eq!(actual, expected, "unexpected queue status seam");
+        }
+
+        fn release(&self, seam: StatusSeam) {
+            let (lock, changed) = &*self.control;
+            let mut control = lock.lock().expect("status seam control poisoned");
+            control.released = control.released.max(seam.rank());
+            changed.notify_all();
+        }
+
+        fn finish(mut self) {
+            let result = self
+                .queue
+                .join_test_workers(self.expected_workers, TEST_TRANSITION_TIMEOUT);
+            self.finished = true;
+            result.unwrap_or_else(|error| panic!("failed to join queue workers: {error}"));
+        }
+    }
+
+    impl Drop for StatusSeamHarness {
+        fn drop(&mut self) {
+            if self.finished {
+                return;
+            }
+            let (lock, changed) = &*self.control;
+            lock.lock().expect("status seam control poisoned").cancelled = true;
+            changed.notify_all();
+            let _ = self
+                .queue
+                .join_test_workers(self.expected_workers, TEST_TRANSITION_TIMEOUT);
+        }
+    }
+
+    fn status_seam_sink() -> StatusSeamParts {
+        let (events, receiver) = mpsc::channel();
+        let control = Arc::new((Mutex::new(SeamControl::default()), Condvar::new()));
+        (
+            Arc::new(StatusSeamSink {
+                events,
+                control: Arc::clone(&control),
+            }),
+            receiver,
+            control,
+        )
     }
 
     fn dispatch(reference: &str) -> Dispatch {
@@ -1374,53 +1615,84 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_race_never_combines_active_old_history_and_empty_queue() {
-        let sentinel_arrived = Arc::new(Barrier::new(2));
-        let sentinel_release = Arc::new(Barrier::new(2));
-        let follower_arrived = Arc::new(Barrier::new(2));
-        let follower_release = Arc::new(Barrier::new(2));
+    fn status_snapshot_covers_every_normal_completion_seam_and_rejects_torn_reads() {
+        let (sink, events, control) = status_seam_sink();
         let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let queue = queue(
+        let queue = queue_with_sink(
             true,
             10,
             VecDeque::from([
-                gated_plan(
-                    Arc::clone(&sentinel_arrived),
-                    Arc::clone(&sentinel_release),
-                    Arc::clone(&cleanups),
-                ),
-                gated_plan(
-                    Arc::clone(&follower_arrived),
-                    Arc::clone(&follower_release),
-                    cleanups,
-                ),
+                SpawnPlan::Process(FakeProcess::complete(1, Arc::clone(&cleanups))),
+                SpawnPlan::Process(FakeProcess::complete(2, cleanups)),
             ]),
+            Some(sink),
         );
+        let mut harness = StatusSeamHarness::new(queue.clone(), events, control);
+        harness.expect_workers(1);
+
         queue.submit(request("sentinel"));
+        harness.wait_for(StatusSeam::SentinelStarted);
         queue.submit(request("follower"));
-        sentinel_arrived.wait();
-        let reader = {
-            let queue = queue.clone();
-            thread::spawn(move || queue.collect_status_snapshot(Instant::now()))
+        harness.expect_workers(2);
+        let active = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(
+            active
+                .tasks
+                .iter()
+                .map(|task| task.reference.as_str())
+                .collect::<Vec<_>>(),
+            ["sentinel"]
+        );
+        assert!(active.recent_tasks.is_empty());
+        assert_eq!(active.queues.get("svc"), Some(&1));
+        harness.release(StatusSeam::SentinelStarted);
+
+        harness.wait_for(StatusSeam::SentinelCompleted);
+        let completed = queue.collect_status_snapshot(Instant::now());
+        assert!(completed.tasks.is_empty());
+        assert_eq!(completed.recent_tasks[0].reference, "sentinel");
+        assert_eq!(completed.queues.get("svc"), Some(&1));
+        harness.release(StatusSeam::SentinelCompleted);
+
+        harness.wait_for(StatusSeam::FollowerPopped);
+        let popped = queue.collect_status_snapshot(Instant::now());
+        assert!(popped.tasks.is_empty());
+        assert_eq!(popped.recent_tasks[0].reference, "sentinel");
+        assert!(popped.queues.is_empty());
+
+        let legacy_torn = TaskQueueStatusSnapshot {
+            tasks: active.tasks.clone(),
+            recent_tasks: popped.recent_tasks.clone(),
+            queues: popped.queues.clone(),
         };
-        sentinel_release.wait();
-        let snapshot = reader.join().expect("snapshot thread");
-        let sentinel_active = snapshot
-            .tasks
-            .iter()
-            .any(|task| task.reference == "sentinel");
-        let completed = snapshot
-            .recent_tasks
-            .iter()
-            .any(|task| task.reference == "sentinel");
-        let depth = snapshot.queues.get("svc").copied().unwrap_or(0);
-        assert!(!(sentinel_active && completed && depth == 0));
-        assert!(matches!(
-            (sentinel_active, completed, depth),
-            (true, false, 1) | (false, true, 1) | (false, true, 0)
-        ));
-        follower_arrived.wait();
-        follower_release.wait();
+        assert_eq!(legacy_torn.tasks[0].reference, "sentinel");
+        assert_eq!(legacy_torn.recent_tasks[0].reference, "sentinel");
+        assert!(legacy_torn.queues.is_empty());
+        assert_ne!(legacy_torn, active);
+        assert_ne!(legacy_torn, completed);
+        assert_ne!(legacy_torn, popped);
+        harness.release(StatusSeam::FollowerPopped);
+
+        harness.wait_for(StatusSeam::FollowerStarted);
+        let follower = queue.collect_status_snapshot(Instant::now());
+        assert_eq!(follower.tasks[0].reference, "follower");
+        assert_eq!(follower.recent_tasks[0].reference, "sentinel");
+        assert!(follower.queues.is_empty());
+        harness.release(StatusSeam::FollowerStarted);
+
+        harness.wait_for(StatusSeam::FollowerReleased);
+        let idle = queue.collect_status_snapshot(Instant::now());
+        assert!(idle.tasks.is_empty());
+        assert_eq!(
+            idle.recent_tasks
+                .iter()
+                .map(|task| task.reference.as_str())
+                .collect::<Vec<_>>(),
+            ["sentinel", "follower"]
+        );
+        assert!(idle.queues.is_empty());
+        harness.release(StatusSeam::FollowerReleased);
+        harness.finish();
     }
 
     #[test]
