@@ -38,6 +38,7 @@ const SCHEDULE_COMPLETION: &str = include_str!("../src/schedule/completion.rs");
 const SCHEDULE_CONFIG: &str = include_str!("../src/schedule/config.rs");
 const SCHEDULE_DUE: &str = include_str!("../src/schedule/due.rs");
 const SCHEDULE_ENGINE: &str = include_str!("../src/schedule/engine.rs");
+const SCHEDULE_REPORT: &str = include_str!("../src/schedule/report.rs");
 const SCHEDULE_STATUS: &str = include_str!("../src/schedule/status.rs");
 const SCHEDULE_SUBMISSION: &str = include_str!("../src/schedule/submission.rs");
 const PROVIDER_RUNTIME: &str = include_str!("../src/provider_runtime/mod.rs");
@@ -182,6 +183,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("config", SCHEDULE_CONFIG),
         ("due", SCHEDULE_DUE),
         ("engine", SCHEDULE_ENGINE),
+        ("report", SCHEDULE_REPORT),
         ("status", SCHEDULE_STATUS),
         ("submission", SCHEDULE_SUBMISSION),
     ];
