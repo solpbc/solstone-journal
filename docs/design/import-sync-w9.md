@@ -77,17 +77,19 @@ from the preparation schema tables and states this substitution explicitly.
    | Seam | Contract | Conformance test |
    |---|---|---|
    | `PlaudCredential` | caller supplies an optional token; it is never serialized, rendered, or logged | fake credential proves missing-token refusal and a recording logger/state writer proves the supplied token is absent |
-   | `PlaudHttp` | `&mut` catalogue, temporary-URL, and streaming-download operations, with explicit retry/backoff policy | scripted fake asserts request shapes and proves no live transport is needed |
-   | `SyncClock` | supplies sync `last_sync` timestamps and Plaud inactivity observations | fixed clock asserts state times and inactivity boundaries without ambient time |
+   | `PlaudCatalogue` / `PlaudDownload` | catalogue is preview-safe; temporary-URL and streaming-download operations exist only in save seams | scripted fakes prove no live transport is needed and preview has no download field |
+   | `PlaudManifestLookup` | caller matches remote metadata to existing imports before catalogue state is assigned | fake manifest lookup proves matched recordings are not downloaded |
+   | `SyncClock` | supplies sync `last_sync`, match, and import timestamps | fixed clock asserts state times without ambient time |
    | `ObsidianHomeCandidates` | caller provides the ordered fallback candidates; the library never reads home/environment | candidate fake selects the first existing directory and proves no candidate means named no-vault refusal |
    | `DirectoryScanner` | supplies Obsidian markdown and audio candidate enumeration | fake scanner asserts filtering and proves no direct recursive scan is required by orchestration |
    | `AudioProbe` | returns a duration or unreadable answer for an audio path | fake probe drives `unreadable`, short-skip, and available outcomes |
    | `ImportPipeline` | caller performs one approved Plaud/audio import and returns a typed result | fake pipeline drives success, skip, no-result, and failure without importing data |
 
-   `LivePlaudHttp` is not constructed by W9. W10's process adapter constructs
-   it after it has obtained the credential and chooses the live operation; W9
-   receives it only as `&mut dyn PlaudHttp`. This is the same testability split
-   as `OuraHttp`/`LiveOuraHttp`/`sync_with_http`, while avoiding a library-owned
+   Live Plaud catalogue and download adapters are not constructed by W9. W10's
+   process adapter constructs them after it has obtained the credential and
+   chooses the live operation; W9 receives only the narrow trait references.
+   This follows the same injected-transport split as
+   `OuraHttp`/`LiveOuraHttp`/`sync_with_http`, while avoiding a library-owned
    environment read or process decision.
 
 3. **Route consent directly to `solstone-core-body-ingest`; do not fork it.**
@@ -111,25 +113,25 @@ from the preparation schema tables and states this substitution explicitly.
    clock parameter would widen an out-of-scope API without improving
    conformance. `SyncClock` is for sync state and Plaud progress only.
 
-4. **Encode preview and save as separate request types.** `SyncPreviewRequest`
+4. **Encode preview and save as separate request types and seams.** `SyncPreviewRequest`
    and `SyncSaveRequest` are distinct zero-sized mode markers, mirroring
    `PreviewRequest` and `SaveRequest`. Backend APIs accept the marker in their
    request generic or mode enum conversion occurs only in constructors:
-   `PlaudSyncRequest<SyncPreviewRequest>` has no import-pipeline access;
-   `PlaudSyncRequest<SyncSaveRequest>` does. The analogous audio request has
-   the same split; Obsidian's save writer is only reachable through its save
-   request. No `bool save` is accepted by the public operation. The AC2 negative
-   twin attempts the preview path with a pipeline/download fake that fails if
-   called.
+   `PlaudPreviewSeams` has no download or import-pipeline field, while
+   `PlaudSaveSeams` extends it with both. The analogous audio and Obsidian save
+   seam types alone carry their pipeline and note-writer authority. No `bool
+   save` is accepted by a public or internal operation. The AC2 negative twin
+   uses preview seam construction itself: adding a download-by-default call no
+   longer compiles.
 
-5. **Use loss-preserving sync-state records, with an explicit compatible writer.**
-   State types retain known root fields and `files`, while root and per-file
-   records capture all unrecognized JSON members with `#[serde(flatten)]` (or
-   an equivalent ordered map). Known state records retain only the reference's
-   union fields: Plaud's remote metadata/match/skip/import fields; Obsidian's
-   source/title/hash/edit/segment fields; and audio's hash/probe/skip/error
-   fields. Status is an explicit closed enum with the reference vocabulary;
-   optional fields model the documented `pop()` behavior.
+5. **Use a loss-preserving raw sync-state map, with an explicit compatible writer.**
+   `SyncState` deliberately holds an ordered `serde_json::Map` rather than
+   typed records plus `flatten`: the raw map preserves unknown root and per-file
+   members without claiming arbitrary reference key-order preservation. The
+   orchestration code authors only the reference union keys: Plaud metadata,
+   match, skip, and import keys; Obsidian source/title/hash/edit/segment keys;
+   and audio hash/probe/skip/error keys. Status remains the reference string
+   vocabulary in that raw map so unknown future values survive a round-trip.
 
    Two byte-compatibility hazards are deliberate:
 
@@ -147,12 +149,12 @@ from the preparation schema tables and states this substitution explicitly.
      non-byte-compatible divergence. AC7 requires preservation, not identical
      reference round-trip bytes.
    - Untyped `serde_json::Value` does not impose the `i64` overflow boundary and
-     cannot read Python's bare non-finite floats. W9's typed known numeric fields
-     are `i64` at the JSON boundary and reject overflow; extras remain raw JSON
-     values to preserve ordinary unknown data. A non-finite float is a strict
-     sync-state decode failure, hence benign recatalogue; it is not silently
-     transformed. This is documented as the intentional one-way incompatibility
-     measured by `docs/PORTING.md`.
+     cannot read Python's bare non-finite floats. W9 checks the reference's known
+     integer-valued fields at the JSON boundary and rejects overflow; extras
+     remain raw JSON values to preserve ordinary unknown data. A non-finite float
+     is a strict sync-state decode failure, hence benign recatalogue; it is not
+     silently transformed. This is documented as the intentional one-way
+     incompatibility measured by `docs/PORTING.md`.
 
    The reader distinction is structural: `read_sync_state` returns a
    `SyncStateRead` value for every missing/unreadable/loaded condition, while
@@ -170,9 +172,9 @@ from the preparation schema tables and states this substitution explicitly.
    all six retired module names; its loop continues to require every remaining
    row to return its own `ImportError::Unimplemented`. The live Plaud transport
    is W10 adapter work, but `sync_plaud` is nevertheless wholly complete at its
-   library boundary: it owns the typed operation and accepts a complete
-   `PlaudHttp` seam; constructing production transport is expressly outside
-   that boundary.
+   library boundary: it owns the typed operation and accepts complete catalogue,
+   download, match, state, and pipeline seams; constructing production transport
+   is expressly outside that boundary.
 
    The complete workspace scan finds these `MODULE_STUBS`/stub-table touch
    points. Only the first two files change for W9:
@@ -243,6 +245,13 @@ from the preparation schema tables and states this substitution explicitly.
    owner consumes raw-retention policy under its own lock, and W9 has no
    consumer for that policy value.
 
+12. **Preserve the body owner's connect error type.** `connect_oura` returns
+    `BodyIngestError` directly rather than wrapping it in a crate-local error.
+    It is the exact body-owner authorization failure and the route performs no
+    import-specific recovery or translation; wrapping it would obscure the
+    public `kind()` and `stage()` vocabulary without giving a caller another
+    actionable distinction.
+
 ## Public library surface
 
 All new source files receive the repository SPDX header.
@@ -250,9 +259,9 @@ All new source files receive the repository SPDX header.
 | Module | Public surface |
 |---|---|
 | `sync_state.rs` | `BackendName::{Plaud, Obsidian, Audio, Oura}` and ordered `SYNC_BACKEND_INVENTORY`, plus `read_sync_state(root, BackendName) -> SyncStateRead` and `write_sync_state(root, &SyncState) -> Result<(), SyncStateWriteError>`; an ordered raw JSON root retains known and unknown state fields alike. `SyncStateRead::{Absent, Unreadable { class }, Loaded(SyncState)}` makes benign recatalogue explicit and is not a `Result`. |
-| `sync_plaud.rs` | `sync_plaud_preview(request, seams)` and `sync_plaud_save(request, seams)` return `Result<PlaudSyncOutcome, PlaudSyncError>`; `PlaudSyncRequest<M>` where `M` is `SyncPreviewRequest` or `SyncSaveRequest`; named `PlaudSyncSeams { credential, http, clock, pipeline }`; `PlaudHttp` has catalogue, temporary-URL, and streamed-download methods. |
-| `sync_obsidian.rs` | `sync_obsidian_preview(request, seams)` and `sync_obsidian_save(request, seams)` return `Result<ObsidianSyncOutcome, ObsidianSyncError>`; request carries source override/force and mode marker; named seams provide clock, retained-state path candidates, scanner, and segment/entity writer operations. |
-| `sync_audio.rs` | `sync_audio_preview(request, seams)` and `sync_audio_save(request, seams)` return `Result<AudioSyncOutcome, AudioSyncError>`; request carries required explicit source path, force, auto, and mode marker; named seams provide scanner, hash/manifest lookup, probe, clock, state writer, and pipeline. |
+| `sync_plaud.rs` | `sync_plaud_preview(request, PlaudPreviewSeams)` and `sync_plaud_save(request, PlaudSaveSeams)` return `Result<PlaudSyncOutcome, PlaudSyncError>`; preview has credential, catalogue, manifest lookup, clock, and state writer only; save adds temporary-URL/download and pipeline authority. Closed `PlaudFailureKind` values are the only operation error detail rendered or persisted. |
+| `sync_obsidian.rs` | `sync_obsidian_preview(request, ObsidianPreviewSeams)` and `sync_obsidian_save(request, ObsidianSaveSeams)` return `Result<ObsidianSyncOutcome, ObsidianSyncError>`; request carries source override/force and mode marker; preview seams provide clock, retained-state path candidates, and scanner, while save adds the segment writer. |
+| `sync_audio.rs` | `sync_audio_preview(request, AudioPreviewSeams)` and `sync_audio_save(request, AudioSaveSeams)` return `Result<AudioSyncOutcome, AudioSyncError>`; request carries required explicit source path, force, auto, and mode marker; preview seams provide scanner, hash/manifest lookup, fractional-duration probe, clock, and state writer, while save adds pipeline authority. |
 | `connect.rs` | `connect_oura(request) -> Result<OuraConnectOutcome, BodyIngestError>` delegates to the already-public native body-owner `connect_oura` operation and returns data only. No token path is introduced. |
 | `consent_gate.rs` | `CONSENT_GATE_EXIT_CODE: i32 = 2`; `check_oura_sync_save(request) -> ConsentGateOutcome`; `ConsentGateOutcome::{Allowed, Blocked(GateFailure)}`; pure `GateFailure::format_text` and `GateFailure::to_python_payload`. It calls the re-exported body-owned approval check and uses the body owner's `OURA_PATH` and `OURA_CHECKLIST`; it has no clock seam. |
 | `contract.rs` | Adds `SyncPreviewRequest` and `SyncSaveRequest` mode markers beside existing preview/save request types; one `SyncBackendRequest` enum; shared backend/summary/status values; and `SyncGuidance::format_text`. `window_days` exists only on the Oura request variant, while source-path override exists only on Obsidian and audio variants. |
@@ -261,8 +270,8 @@ All new source files receive the repository SPDX header.
 
 The live Plaud transport belongs to W10's adapter. Its construction consumes the
 caller-provided credential, configures the documented retries/timeouts/streaming
-posture, and passes `&mut dyn PlaudHttp` into W9. W9 itself has no `std::env`
-read, no global clock, and no transport construction.
+posture, and passes separate narrow catalogue/download references into W9. W9
+itself has no `std::env` read, no global clock, and no transport construction.
 
 ## State machines
 
@@ -282,27 +291,32 @@ read, no global clock, and no transport construction.
 
 1. Obtain the caller-supplied credential. Missing credential returns a named
    configuration refusal; its value is never placed in state or an error string.
-2. Ask `PlaudHttp` for the catalogue, load prior state, and match new/available
-   remote IDs against existing import metadata.
-3. Preserve existing entries while refreshing `filename` and `filesize`; create
-   new ID-keyed entries with remote metadata. Classify matched as `imported`,
+2. Ask the preview-safe catalogue seam for remote metadata, load prior state,
+   then call `PlaudManifestLookup` on new/available remote IDs before assigning
+   any new state.
+3. Preserve existing entries while refreshing `filename` and `filesize`; promote
+   an existing `available` entry to `imported` when it matches. New ID-keyed
+   entries record `fullname`, numeric `start_time`, `duration`, and `is_trash`.
+   Classify matched as `imported` with `import_timestamp`/`matched_at`,
    trash/short as `skipped`, otherwise `available`. Do not synthesize `removed`.
 4. Preview returns/saves the catalogue state and never requests a temporary URL,
    bytes, or pipeline import.
-5. Save orders available entries by descending start time; asks for a temporary
-   URL, streams into the import destination, calls the pipeline, checkpoints
-   after each successful import, and performs a final state write. The outer
-   inactivity timer uses `SyncClock` and the injected transport refresh signal.
+5. Save orders available entries by descending numeric start time, derives the
+   reference timestamp, asks for a temporary URL, streams into its timestamped
+   import destination, calls the pipeline with that timestamp, checkpoints after
+   each successful import, and performs a final state write. Transport failures
+   use only closed safe kinds in state and presentation.
 
 ### Obsidian
 
 1. Select vault source in order: explicit path, previously retained `source_path`,
    then caller-supplied ordered candidates. Missing/non-directory source is a
    named refusal.
-2. Scan eligible markdown paths through the scanner; read content, mtime,
-   frontmatter tags, wikilinks, and daily-note identity through caller-owned
-   operations.
-3. Preserve imported entries when mtime/content hash says unchanged; otherwise
+2. Scan caller-prepared eligible markdown notes. Each carries its relative path,
+   title, numeric mtime, and content hash; content/frontmatter rendering remains
+   behind the save writer rather than W9 state orchestration.
+3. Preserve imported entries when content hash says unchanged while refreshing
+   numeric mtime; otherwise
    make/update an `available` entry keyed by vault-relative path. Mark previous
    unseen paths `removed`.
 4. Preview returns/saves state only. Save writes note segments and optional
@@ -312,8 +326,10 @@ read, no global clock, and no transport construction.
 
 ### Audio
 
-1. Require an explicit source directory; reject missing tools, an invalid
-   directory, and a scan with no audio candidates before state publication.
+1. Require an explicit source path and reject a scanner result with no audio
+   candidates before state publication. Tool and filesystem-directory checks
+   belong to the caller-owned scanner/probe adapters; W9 introduces no ambient
+   process or filesystem policy seam for them.
 2. Scan with the caller seam, excluding entries resolved under journal imports;
    key entries by POSIX relative path.
 3. First promote previously available manifest matches to `imported`; then
@@ -342,13 +358,13 @@ read, no global clock, and no transport construction.
 
 | AC | Test location | Assertion and negative twin |
 |---|---|---|
-| 1 | `core/crates/solstone-core-import/tests/sync_inventory.rs` | Assert `SYNC_BACKEND_INVENTORY` is exactly `plaud`, `obsidian`, `audio`, `oura`, in the order formed by `import_reference_grammar.json`'s `syncable_backends_instantiated` followed by `native_sync_backends`; the vendored oracle `.sync` is corroborating data. A list missing `oura`, reordered, or containing a retired backend fails the literal fixture comparison. W10's later rendering is a dispatcher-only residual. |
+| 1 | `core/crates/solstone-core-import/tests/sync_state.rs` | Assert `SYNC_BACKEND_INVENTORY` is exactly `plaud`, `obsidian`, `audio`, `oura`, in the order formed by `import_reference_grammar.json`'s `syncable_backends_instantiated` followed by `native_sync_backends`; the vendored oracle `.sync` is corroborating data. A list missing `oura`, reordered, or containing a retired backend fails the literal fixture comparison. W10's later rendering is a dispatcher-only residual. |
 | 2 | `core/crates/solstone-core-import/tests/sync_plaud.rs` and `sync_audio.rs` | Preview requests receive panic download/pipeline seams and make neither call; matching save requests do. The panic seams are the negative twin for download-by-default. |
 | 3 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs`, `sync_obsidian.rs`, and `sync_audio.rs` | `SyncBackendRequest` directly models one selected backend: an Obsidian or audio source-path override reaches only that variant, while the Oura variant alone carries `window_days`. A compile-fail request-shape check proves Plaud cannot receive `window_days`; construction assertions prove both native-window and local-source directions. W10 argv parsing is the sole dispatcher residual. |
 | 4 | `core/crates/solstone-core-import/tests/consent_gate.rs` | Missing confirmation returns `Blocked`, `CONSENT_GATE_EXIT_CODE` is 2, and pure formatted text names the remedy. A real body approval fixture with `scheduled=true`, `confirmed=true`, and no valid `scheduled_sync` block returns the `scheduled_sync_consent_missing` reason family. The negative twin fails if either condition is treated as approval. |
-| 5 | `core/crates/solstone-core-import/tests/consent_gate.rs` | Unsupported/unknown approval schema, absent artifact, and unreadable/malformed artifact each become `Blocked`; no save-route effect occurs. A test-only fail-open mapping is rejected by asserting no body sync/pipeline invocation. |
-| 6 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs` | A backend outcome carrying `SyncGuidance` renders its text through W9's pure formatter. The public-surface shape assertion enumerates every W9 seam and request field and proves there is no schedule-writer seam or schedule path. This does not add a `cron_hint` producer: the retained Oura branch remains an early return before its dead consumer. W10 later chooses whether to print the already-rendered text. |
-| 7 | `core/crates/solstone-core-import/tests/sync_state.rs` | A reference-shaped fixture from `import_sync_reference_oracle.json` round-trips with parsed field-for-field equality across known/unknown root and entry keys. Separately, library-authored state compares byte-for-byte for two-space indent, ASCII escaping, insertion order, and no trailing newline. Assert file mode `0o600` through `AtomicWriteOptions { mode: Some(0o600) }` and parent/import directories `0o700` through `create_directory_with_mode`; interruption/replace testing proves atomic write posture. |
+| 5 | `core/crates/solstone-core-import/tests/consent_gate.rs` | Unsupported/unknown approval schema, absent artifact, and unreadable/malformed artifact each become `Blocked`; the test asserts no `imports` directory was created, proving the pre-flight gate did not reach a W9 save route. |
+| 6 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs` | A backend outcome carrying `SyncGuidance` renders its text through W9's pure formatter. A surface assertion rejects schedule-writer, schedule-path, and `cron_hint` symbols. This does not add a `cron_hint` producer: the retained Oura branch remains an early return before its dead consumer. W10 later chooses whether to print the already-rendered text. |
+| 7 | `core/crates/solstone-core-import/tests/sync_state.rs` | The vendored oracle supplies the agreed sync path/backends while a checked-in, prep-table-derived fixture covers every Plaud, Obsidian, and audio union key plus unknown members; each round-trips with parsed field-for-field equality. Separately, library-authored state compares byte-for-byte for two-space indent, ASCII escaping, insertion order, and no trailing newline. Assert file mode `0o600` through `AtomicWriteOptions { mode: Some(0o600) }` and parent/import directories `0o700` through `create_directory_with_mode`. |
 | 8 | `core/crates/solstone-core-import/tests/connect.rs` and existing `tests/resolution.rs` resolver-corpus coverage | `connect.rs` routes once to the native owner-present connection operation and returns its typed authorization result. The paired resolver-corpus assertion for `source=oura::plain.txt` remains the W1b refusal at `cli.py:582-588` (`OuraRequiresSync` / sync remedy), proving connect does not revive the retired file-import route. W10 later parses `--connect`, but has no ownership of either semantic. |
 | 9 | `core/crates/solstone-core-import/tests/sync_audio.rs` and `sync_plaud.rs` | Script an already-imported match plus a later failure. Assert the matched record remains `imported`, the failed item remains `available` with `last_error`, `AudioItemOutcome` names the missing item, aggregate `errors` includes it, and the per-item checkpoint precedes the next item. A completion summary that reports success despite the failed item fails the test. |
 | 10 | `core/crates/solstone-core-import/tests/sync_plaud.rs`, `connect.rs`, and `consent_gate.rs` | Recording state/error/render seams prove credentials never enter state, paths, or diagnostics; only caller-supplied reference paths are touched. No W9 operation has an outbound transport other than the injected Plaud API calls, and body sync/connect are direct native owner calls rather than a new body-data egress route. |
