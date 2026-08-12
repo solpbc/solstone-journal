@@ -131,9 +131,13 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::Doctor(args)) => run_doctor(args),
+        Ok(Command::DoctorHelp) => {
+            print!("{}", solstone_core_doctor::args::HELP);
+            ExitCode::SUCCESS
+        }
         Ok(Command::DoctorUsage(error)) => {
-            eprintln!("solstone-core doctor: error: {}", error.0);
             eprint!("{}", solstone_core_doctor::args::USAGE);
+            eprintln!("journal doctor: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
@@ -159,6 +163,7 @@ fn main() -> ExitCode {
         Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
         Ok(Command::Streams(args)) => run_streams(args),
+        Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
@@ -560,6 +565,13 @@ fn run_storage_ops_verb(
 fn run_streams(args: Vec<OsString>) -> ExitCode {
     run_storage_ops_verb("streams", args, |arguments, journal| {
         let run = solstone_core_streams_cli::run_cli(arguments, journal);
+        (run.stdout, run.stderr, run.exit_code)
+    })
+}
+
+fn run_importer(args: Vec<OsString>) -> ExitCode {
+    run_storage_ops_verb("importer", args, |arguments, journal| {
+        let run = solstone_core_import::cli_argv::run_cli(arguments, journal);
         (run.stdout, run.stderr, run.exit_code)
     })
 }

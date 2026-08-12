@@ -13,7 +13,35 @@ pub struct DoctorArgs {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorUsageError(pub String);
-pub const USAGE: &str = "Usage: solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n";
+/// The usage the owner-facing `journal doctor` error path prints.
+/// It names `journal doctor`, not `solstone-core doctor`, because that is the
+/// command the owner typed before the journal dispatcher execed the native sibling.
+pub const USAGE: &str = concat!(
+    "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
+    "                      [--feature FEATURE] [--readiness]\n",
+);
+
+/// The help `journal doctor` prints in the owner-facing command vocabulary.
+/// It names `journal doctor`, not `solstone-core doctor`, because that is the
+/// command the owner typed before the journal dispatcher execed the native sibling.
+pub const HELP: &str = concat!(
+    "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
+    "                      [--feature FEATURE] [--readiness]\n",
+    "\n",
+    "Run solstone diagnostics.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help         show this help message and exit\n",
+    "  --verbose          print every check result\n",
+    "  --json             emit JSON instead of text\n",
+    "  --jsonl            emit one-JSON-per-line events instead of text\n",
+    "  --port PORT        port to probe (default: 5015)\n",
+    "  --feature FEATURE  Run only the named feature check (pdf-export, pdf-import)\n",
+    "  --readiness        run the setup readiness battery\n",
+    "\n",
+    "If 'journal doctor' is unavailable (e.g. before 'make install' completes), run\n",
+    "'python3 scripts/doctor.py' from the repo root for the same diagnostic.\n",
+);
 pub fn parse_doctor_args(args: &[OsString]) -> Result<DoctorArgs, DoctorUsageError> {
     let mut parsed = DoctorArgs {
         verbose: false,

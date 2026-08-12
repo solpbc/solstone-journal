@@ -26,6 +26,7 @@ tokio = { workspace = true, optional = true, features = ["io-util", "macros", "n
 [dev-dependencies]
 regex.workspace = true
 solstone-core-cogitate-wire.workspace = true
+solstone-core-system = { workspace = true }
 
 [[test]]
 name = "callosum_cross_process"

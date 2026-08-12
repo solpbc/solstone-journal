@@ -2461,6 +2461,7 @@ dependencies = [
  "solstone-core-generate-wire",
  "solstone-core-grab",
  "solstone-core-identity",
+ "solstone-core-import",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
@@ -2472,6 +2473,7 @@ dependencies = [
  "solstone-core-npy",
  "solstone-core-observer",
  "solstone-core-reprocess-cli",
+ "solstone-core-segment",
  "solstone-core-segment-cli",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
@@ -2596,6 +2598,7 @@ dependencies = [
  "serde_json",
  "solstone-core-cogitate-wire",
  "solstone-core-journal-io",
+ "solstone-core-system",
  "tokio",
 ]
 
@@ -2926,6 +2929,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
+ "solstone-core-import-sources",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
@@ -3175,6 +3179,20 @@ dependencies = [
  "solstone-core-ingest-resolve",
  "solstone-core-journal-io",
  "solstone-core-segment",
+]
+
+[[package]]
+name = "solstone-core-origin"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-assets",
+ "solstone-core-local",
+ "thiserror 2.0.20",
+ "ureq",
 ]
 
 [[package]]
@@ -3452,6 +3470,15 @@ dependencies = [
  "solstone-core-spp-attest",
  "thiserror 2.0.20",
  "x509-parser",
+]
+
+[[package]]
+name = "solstone-core-steward-prune"
+version = "1.0.22"
+dependencies = [
+ "allocation-counter",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

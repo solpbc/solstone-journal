@@ -18,6 +18,11 @@ pub mod kindle;
 pub mod obsidian;
 pub mod oura;
 pub mod registry;
+pub mod shared;
+
+pub use shared::{
+    ImportPlan, PlannedEntry, PlannedSegment, SkipLocator, SkipReason, SkippedEntry, SourceError,
+};
 
 /// The independent safety layer that rejected an archive entry.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -232,10 +237,6 @@ pub type ModuleStub = (&'static str, fn() -> Result<(), ImportSourcesError>);
 /// The remaining importer source modules with reserved skeleton seams.
 pub const MODULE_STUBS: &[ModuleStub] = &[
     ("registry", registry::reserved_seam),
-    ("chatgpt", chatgpt::reserved_seam),
-    ("claude", claude::reserved_seam),
-    ("gemini", gemini::reserved_seam),
-    ("kindle", kindle::reserved_seam),
     ("apple_health", apple_health::reserved_seam),
     ("oura", oura::reserved_seam),
 ];

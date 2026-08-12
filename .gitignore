@@ -1,5 +1,6 @@
 .env
 .venv
+/.cache/
 *.egg-info/
 __pycache__/
 *.pyc
@@ -29,6 +30,7 @@ tests/fixtures/journal/chronicle/*/health/*.jsonl
 .sandbox.journal
 build/
 core/target/
+core/crates/solstone-core-service-legacy-evidence/target/
 /dist/
 /target/
 tmp/

@@ -327,11 +327,8 @@ impl std::error::Error for ImportError {}
 /// One importer module name and its reserved skeleton seam.
 pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
 
-/// The complete inventory of importer modules that remain unimplemented.
-pub const MODULE_STUBS: &[ModuleStub] = &[
-    ("cli_argv", cli_argv::reserved_seam),
-    ("cli_render", cli_render::reserved_seam),
-];
+/// The importer crate has no remaining reserved module seams.
+pub const MODULE_STUBS: &[ModuleStub] = &[];
 
 /// Ordered metadata retained for one staged import.
 pub type OrderedMetadata = Map<String, Value>;

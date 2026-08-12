@@ -1,0 +1,21 @@
+[package]
+name = "solstone-core-service-legacy-evidence"
+version = "1.0.22"
+edition = "2024"
+rust-version = "1.95"
+license = "AGPL-3.0-only"
+publish = false
+build = "build.rs"
+
+[workspace]
+resolver = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+sha2 = "=0.10.9"
+
+[dev-dependencies]
+plist = "=1.10.0"
+serde_json = { version = "=1.0.151", features = ["preserve_order", "float_roundtrip"] }

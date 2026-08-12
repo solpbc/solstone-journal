@@ -67,6 +67,16 @@ const PROBES: &[Probe] = &[
         expected_exit: 2,
         stderr_anchor: None,
     },
+    // Doctor's invalid-argument path exits 2 only after the sibling recognizes
+    // the verb and emits its owner-facing usage. If the doctor arm were absent,
+    // this invocation would fall through to top-level USAGE and exit 64 instead;
+    // the journal-doctor anchor makes that regression distinguishable.
+    Probe {
+        token: "doctor",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal doctor [-h]"),
+    },
     // Exit 2 and the parser-owned usage anchors distinguish each present verb
     // from top-level exit 64, which would also result if the sibling lacked it.
     Probe {
@@ -168,6 +178,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: None,
+    },
+    Probe {
+        token: "importer",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal importer [-h] [options] media [timestamp]\n"),
     },
     Probe {
         token: "settings",

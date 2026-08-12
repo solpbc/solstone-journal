@@ -13,6 +13,7 @@ pub mod provider_runtime;
 pub mod queue;
 pub mod request;
 pub mod schedule;
+pub mod status_wire;
 pub mod stt_backend_choice;
 
 /// Task-service tokens shared with the native journal process census.

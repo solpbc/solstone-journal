@@ -16,9 +16,8 @@ fn check_never_reaches_a_sibling_or_path_interpreter() {
     let core = bin.join("solstone-core");
     fs::copy(env!("CARGO_BIN_EXE_solstone-core"), &core).expect("copy core");
     fs::set_permissions(&core, fs::Permissions::from_mode(0o755)).expect("make core executable");
-    let helper = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/solstone-core-vulkan-probe");
-    fs::copy(helper, bin.join("solstone-core-vulkan-probe")).expect("copy Vulkan helper");
+    let helper = build_vulkan_probe();
+    fs::copy(&helper, bin.join("solstone-core-vulkan-probe")).expect("copy Vulkan helper");
     let marker = temp.path().join("python-invoked.txt");
     for name in ["python", "python3", "uv", "pytest", "ruff"] {
         let shim = bin.join(name);
@@ -55,4 +54,56 @@ fn check_never_reaches_a_sibling_or_path_interpreter() {
         "native check reached poison interpreter: {}",
         marker.display()
     );
+}
+
+/// Build the Vulkan probe and return the executable cargo actually produced.
+///
+/// The previous form joined a hardcoded `../../target/debug/` path and assumed
+/// something had already built it. That passes in a warm worktree and fails in a
+/// fresh one with `NotFound`, so `make ci` was red for every new lode. Building
+/// here also makes the path correct under a non-default profile or
+/// `CARGO_TARGET_DIR`. Mirrors `locate_workspace_binary` in
+/// `journal_native_process_contract.rs`.
+#[cfg(unix)]
+fn build_vulkan_probe() -> std::path::PathBuf {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_manifest = manifest_dir
+        .parent()
+        .expect("crates dir")
+        .parent()
+        .expect("core dir")
+        .join("Cargo.toml");
+    let output = Command::new(env!("CARGO"))
+        .args(["build", "--manifest-path"])
+        .arg(&workspace_manifest)
+        .args([
+            "-p",
+            "solstone-core-vulkan-probe",
+            "--bin",
+            "solstone-core-vulkan-probe",
+            "--message-format=json",
+        ])
+        .output()
+        .expect("cargo build solstone-core-vulkan-probe should execute");
+    assert!(
+        output.status.success(),
+        "cargo build -p solstone-core-vulkan-probe failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if message["reason"] != "compiler-artifact" {
+            continue;
+        }
+        if let Some(executable) = message["executable"].as_str()
+            && std::path::Path::new(executable)
+                .file_name()
+                .is_some_and(|name| name == "solstone-core-vulkan-probe")
+        {
+            return std::path::PathBuf::from(executable);
+        }
+    }
+    panic!("cargo did not report a solstone-core-vulkan-probe executable");
 }

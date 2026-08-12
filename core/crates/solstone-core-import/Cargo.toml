@@ -34,4 +34,5 @@ tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [dev-dependencies]
 solstone-core-format.workspace = true
+solstone-core-import-sources.workspace = true
 tempfile = "3.24.0"

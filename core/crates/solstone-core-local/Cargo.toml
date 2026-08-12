@@ -46,6 +46,11 @@ path = "tests/vulkan_differential.rs"
 required-features = ["differential"]
 
 [[test]]
+name = "local_fit_report_differential"
+path = "tests/local_fit_report_differential.rs"
+required-features = ["differential"]
+
+[[test]]
 name = "install_provider_differential"
 path = "tests/install_provider_differential.rs"
 required-features = ["differential"]

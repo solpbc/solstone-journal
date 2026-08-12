@@ -156,8 +156,13 @@ fn parent_treats_journal_source_as_media_and_authority_declares_an_argument() {
     .unwrap();
 
     let parent = cli_argv::run_cli(&args(&["journal-source"]), root.path());
-    assert!(parent.stderr.contains("import: unimplemented: cli_argv"));
-    assert!(!parent.stderr.contains("unrecognized arguments"));
+    assert_eq!(parent.exit_code, 1);
+    assert!(parent.stderr.is_empty());
+    assert!(
+        parent
+            .stdout
+            .contains("usage: journal importer journal-source")
+    );
     assert!(AUTHORITY.contains("journal_source"));
     let block = AUTHORITY.split("journal_source").nth(1).unwrap();
     assert!(block.contains("kind = \"argument\""));

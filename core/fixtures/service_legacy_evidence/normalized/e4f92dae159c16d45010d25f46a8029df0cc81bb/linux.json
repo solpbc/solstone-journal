@@ -1,0 +1,58 @@
+{
+  "blob": "e4f92dae159c16d45010d25f46a8029df0cc81bb",
+  "commit": "0f11a421d1451e578828bb20042553624460d5d3",
+  "path": "think/service.py",
+  "platform": "linux",
+  "schema": "service-legacy-normalized-evidence",
+  "schema_version": 1,
+  "variants": {
+    "optional_keys_absent": {
+      "plist": {
+        "EnvironmentVariables": {
+          "HOME": "<HOME>",
+          "PATH": "<PATH>"
+        },
+        "KeepAlive": true,
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "supervisor",
+          "<PORT>"
+        ],
+        "RunAtLoad": true
+      },
+      "profiles": [
+        "alt_port_path",
+        "default",
+        "keys_absent",
+        "spaces_nonascii"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=<LAUNCHER_BIN> supervisor <PORT>\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=<HOME>\nEnvironment=PATH=<PATH>\n\n[Install]\nWantedBy=default.target\n"
+    },
+    "optional_keys_present": {
+      "plist": {
+        "EnvironmentVariables": {
+          "ANTHROPIC_API_KEY": "<API_KEY:ANTHROPIC_API_KEY>",
+          "GOOGLE_API_KEY": "<API_KEY:GOOGLE_API_KEY>",
+          "HOME": "<HOME>",
+          "OPENAI_API_KEY": "<API_KEY:OPENAI_API_KEY>",
+          "PATH": "<PATH>",
+          "PLAUD_ACCESS_TOKEN": "<API_KEY:PLAUD_ACCESS_TOKEN>",
+          "REVAI_ACCESS_TOKEN": "<API_KEY:REVAI_ACCESS_TOKEN>"
+        },
+        "KeepAlive": true,
+        "Label": "org.solpbc.solstone",
+        "ProgramArguments": [
+          "<LAUNCHER_BIN>",
+          "supervisor",
+          "<PORT>"
+        ],
+        "RunAtLoad": true
+      },
+      "profiles": [
+        "keys_present"
+      ],
+      "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=<LAUNCHER_BIN> supervisor <PORT>\nRestart=on-failure\nRestartSec=5\nEnvironment=ANTHROPIC_API_KEY=<API_KEY:ANTHROPIC_API_KEY>\nEnvironment=GOOGLE_API_KEY=<API_KEY:GOOGLE_API_KEY>\nEnvironment=HOME=<HOME>\nEnvironment=OPENAI_API_KEY=<API_KEY:OPENAI_API_KEY>\nEnvironment=PATH=<PATH>\nEnvironment=PLAUD_ACCESS_TOKEN=<API_KEY:PLAUD_ACCESS_TOKEN>\nEnvironment=REVAI_ACCESS_TOKEN=<API_KEY:REVAI_ACCESS_TOKEN>\n\n[Install]\nWantedBy=default.target\n"
+    }
+  }
+}

@@ -12,6 +12,7 @@ use solstone_core_import::{
     ResolutionError, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
     SkipReason, SourceHash, Timestamp, validate_timestamp,
 };
+use solstone_core_import_sources::registry::claims as source_claims;
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 const CORPUS: &str = include_str!("../../../fixtures/import_resolver_corpus.json");
@@ -78,6 +79,12 @@ fn yes_apple(_: &Path) -> Result<bool, ()> {
 }
 fn no_claim(_: RegistrySource, _: &Path) -> Result<bool, ()> {
     Ok(false)
+}
+fn source_claim(
+    source: RegistrySource,
+    path: &Path,
+) -> Result<bool, solstone_core_import_sources::SourceError> {
+    source_claims(source, path)
 }
 fn document(source: RegistrySource, _: &Path) -> Result<bool, ()> {
     Ok(source == RegistrySource::Document)
@@ -313,6 +320,51 @@ fn ac3_non_registry_source_is_ignored_on_files() {
             );
         }
     }
+}
+
+#[test]
+fn kindle_clippings_resolve_as_generic_text_unless_explicitly_selected() {
+    let tree = Tree::new();
+    let path = tree.0.join("My Clippings.txt");
+    fs::write(
+        &path,
+        b"A Book (An Author)\n- Your Highlight on page 1 | Added on Wednesday, March 11, 2026 12:00:00 PM\n\nA highlight\n==========\n",
+    )
+    .unwrap();
+
+    let mut generic_seams = ResolutionSeams {
+        apple_detector: no_apple,
+        claims: source_claim,
+        deterministic_detector: deterministic,
+        model_detector: no_model,
+        manifest_lookup: lookup_none,
+        generated_timestamp,
+    };
+    assert!(matches!(
+        solstone_core_import::detect::resolve_import(&opt(&path), &mut generic_seams),
+        Ok(ResolutionOutcome::Resolved {
+            source: ResolvedSource::GenericText,
+            ..
+        })
+    ));
+
+    let mut explicit = opt(&path);
+    explicit.source = Some("kindle");
+    let mut kindle_seams = ResolutionSeams {
+        apple_detector: no_apple,
+        claims: source_claim,
+        deterministic_detector: deterministic,
+        model_detector: no_model,
+        manifest_lookup: lookup_none,
+        generated_timestamp,
+    };
+    assert!(matches!(
+        solstone_core_import::detect::resolve_import(&explicit, &mut kindle_seams),
+        Ok(ResolutionOutcome::Resolved {
+            source: ResolvedSource::Registry(RegistrySource::Kindle),
+            ..
+        })
+    ));
 }
 
 #[test]

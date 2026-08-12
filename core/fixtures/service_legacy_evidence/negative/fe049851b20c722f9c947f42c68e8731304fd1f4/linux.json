@@ -1,0 +1,1089 @@
+{
+  "base_profile": "default",
+  "blob": "fe049851b20c722f9c947f42c68e8731304fd1f4",
+  "platform": "linux",
+  "schema": "service-legacy-negative-twins",
+  "schema_version": 1,
+  "twins": [
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables",
+      "id": "b0b1cdacf1f1dcd477adcd3a4cafeea6fac90269b3b83441740a59600b72694c",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+S2VlcEFsaXZlPC9rZXk+Cgk8dHJ1ZS8+Cgk8a2V5PkxhYmVsPC9rZXk+Cgk8c3RyaW5nPm9yZy5zb2xwYmMuc29sc3RvbmU8L3N0cmluZz4KCTxrZXk+UHJvZ3JhbUFyZ3VtZW50czwva2V5PgoJPGFycmF5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZS8ubG9jYWwvYmluL3NvbDwvc3RyaW5nPgoJCTxzdHJpbmc+c3VwZXJ2aXNvcjwvc3RyaW5nPgoJCTxzdHJpbmc+NTAxNTwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables",
+      "id": "36f530a55c0e6be4e56ed7be6570d18897e76b206f24bcee56e82edb99c9894d",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PkVudmlyb25tZW50VmFyaWFibGVzPC9rZXk+Cgk8ZGljdD4KCQk8a2V5PkhPTUU8L2tleT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWU8L3N0cmluZz4KCQk8a2V5PlBBVEg8L2tleT4KCQk8c3RyaW5nPi91c3IvYmluOi9iaW48L3N0cmluZz4KCTwvZGljdD4KCTxrZXk+S2VlcEFsaXZlPC9rZXk+Cgk8dHJ1ZSAvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUgLz4KPC9kaWN0Pgo8L3BsaXN0Pg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables",
+      "id": "2855bf33c729c49e77e4c530a680d2f207a9fe2887f8983dc59035d55bc6ea60",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxzdHJpbmc+X19TRVJWSUNFX0xFR0FDWV9UV0lOX1dST05HX1RZUEVfXzwvc3RyaW5nPgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.EnvironmentVariables",
+      "id": "0cb97b0295343d3510696003bc9a5503a936664ec348070b24765c9722c0dcca",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+X19TRVJWSUNFX0xFR0FDWV9UV0lOX0NIQU5HRURfXzwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables",
+      "id": "683755a103bb8fab4bebb93b791863e8e5eff198e997fdd037fdef7e44f36456",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX0Vudmlyb25tZW50VmFyaWFibGVzPC9rZXk+Cgk8c3RyaW5nPl9fU0VSVklDRV9MRUdBQ1lfVFdJTl9FWFRSQV9fPC9zdHJpbmc+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.HOME",
+      "id": "d04c1a0ca62c21eb5d2dc86f55d4082bd977fbe67b679781b48c19e86ee34eae",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.HOME",
+      "id": "d7eb20afe7700ad73de35bd698a7a1719885c96de97f537ef6b729d4e8abd13f",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUgLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlIC8+CjwvZGljdD4KPC9wbGlzdD4=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.HOME",
+      "id": "eac81f0353c2155af60b315d44a542be18d84e10eb2d7ba6ec43c9043250378d",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxhcnJheS8+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.EnvironmentVariables.HOME",
+      "id": "9c91472f1d724a1d0000f0dba992cd8125de47fbc5fbff3027f48277800ac759",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+X19TRVJWSUNFX0xFR0FDWV9UV0lOX0NIQU5HRURfXzwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.HOME",
+      "id": "192b1bffc93015b82cf75ea8a9d05934ccba7630e38a1a9da824bf6c6df23a75",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX0hPTUU8L2tleT4KCQk8c3RyaW5nPl9fU0VSVklDRV9MRUdBQ1lfVFdJTl9FWFRSQV9fPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.PATH",
+      "id": "431f3408968ecc48baa5ff77394109dda04c52dd5ec7985c890ac16cff1da7ae",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.PATH",
+      "id": "761f77c0e77fe7625d9a5bd9f64f87910777329f88b28903330d73acd2f8eda0",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8a2V5PlBBVEg8L2tleT4KCQk8c3RyaW5nPi91c3IvYmluOi9iaW48L3N0cmluZz4KCTwvZGljdD4KCTxrZXk+S2VlcEFsaXZlPC9rZXk+Cgk8dHJ1ZSAvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUgLz4KPC9kaWN0Pgo8L3BsaXN0Pg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.PATH",
+      "id": "3b8859032541539eb5ebfcb7064e4ee04a325bd221d7b9a491fef7016201cb66",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxhcnJheS8+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.EnvironmentVariables.PATH",
+      "id": "70644ae08c662ef002629dc822664e836a1fb090401a08c67bdb468ddb9f4a0b",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+X19TRVJWSUNFX0xFR0FDWV9UV0lOX0NIQU5HRURfXzwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.EnvironmentVariables.PATH",
+      "id": "8dd01ae0183473990e95b9f4c895c1eb0955783c50da2042e2846d99ab816821",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX1BBVEg8L2tleT4KCQk8c3RyaW5nPl9fU0VSVklDRV9MRUdBQ1lfVFdJTl9FWFRSQV9fPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.KeepAlive",
+      "id": "ad181f8db2c92827a752ec026be1e019c3a069de0f8e6dd23887166bc1666d0c",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.KeepAlive",
+      "id": "cb622b15bd4cedda6d7632eafcba1d4a01c2eac18ff2f7d28cade6774cb55c89",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUgLz4KCTxrZXk+S2VlcEFsaXZlPC9rZXk+Cgk8dHJ1ZSAvPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUgLz4KPC9kaWN0Pgo8L3BsaXN0Pg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.KeepAlive",
+      "id": "0c579d8dc6c06b1550945d041755ca750a33f30881b4020649ca91c3acb5d8b9",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTxhcnJheS8+Cgk8a2V5PkxhYmVsPC9rZXk+Cgk8c3RyaW5nPm9yZy5zb2xwYmMuc29sc3RvbmU8L3N0cmluZz4KCTxrZXk+UHJvZ3JhbUFyZ3VtZW50czwva2V5PgoJPGFycmF5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZS8ubG9jYWwvYmluL3NvbDwvc3RyaW5nPgoJCTxzdHJpbmc+c3VwZXJ2aXNvcjwvc3RyaW5nPgoJCTxzdHJpbmc+NTAxNTwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.KeepAlive",
+      "id": "f0e69fed14ccb7db7418fad444d742503091da8c90027c7f0513887075655359",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTxmYWxzZS8+Cgk8a2V5PkxhYmVsPC9rZXk+Cgk8c3RyaW5nPm9yZy5zb2xwYmMuc29sc3RvbmU8L3N0cmluZz4KCTxrZXk+UHJvZ3JhbUFyZ3VtZW50czwva2V5PgoJPGFycmF5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZS8ubG9jYWwvYmluL3NvbDwvc3RyaW5nPgoJCTxzdHJpbmc+c3VwZXJ2aXNvcjwvc3RyaW5nPgoJCTxzdHJpbmc+NTAxNTwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.KeepAlive",
+      "id": "c031837e70b13893bf644a7e79935123f605d2763c2d759fd15dde9e6e2eb8df",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX0tlZXBBbGl2ZTwva2V5PgoJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fRVhUUkFfXzwvc3RyaW5nPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.Label",
+      "id": "38b8f51a40ad9bec0c159d921bcc327889a6d0c6e4ee675dafb779959b1a37e6",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+UHJvZ3JhbUFyZ3VtZW50czwva2V5PgoJPGFycmF5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZS8ubG9jYWwvYmluL3NvbDwvc3RyaW5nPgoJCTxzdHJpbmc+c3VwZXJ2aXNvcjwvc3RyaW5nPgoJCTxzdHJpbmc+NTAxNTwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.Label",
+      "id": "31cb323b15bb67cbdc383d42e4cc15759c8e9e6c299688d31907a374adf979c0",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUgLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5MYWJlbDwva2V5PgoJPHN0cmluZz5vcmcuc29scGJjLnNvbHN0b25lPC9zdHJpbmc+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUgLz4KPC9kaWN0Pgo8L3BsaXN0Pg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.Label",
+      "id": "5dd60808f5858865e744c8969288b875af1d32083135fc07f1d2e802d66a11af",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxhcnJheS8+Cgk8a2V5PlByb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxhcnJheT4KCQk8c3RyaW5nPi9vcHQvc29sc3RvbmUtc2VydmljZS1sZWdhY3ktZXZpZGVuY2UvZmUwNDk4NTFiMjBjNzIyZjljOTQ3ZjQyYzY4ZTg3MzEzMDRmZDFmNC9kZWZhdWx0L2hvbWUvLmxvY2FsL2Jpbi9zb2w8L3N0cmluZz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.Label",
+      "id": "1c59866c0a6489747c78b938329deb811de0c845ac78d1a37bcde2c049d8f697",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+X19TRVJWSUNFX0xFR0FDWV9UV0lOX0NIQU5HRURfXzwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.Label",
+      "id": "23157499b45a60be4b9c562a6330a274496120f72f811a600485fa333e2710d2",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX0xhYmVsPC9rZXk+Cgk8c3RyaW5nPl9fU0VSVklDRV9MRUdBQ1lfVFdJTl9FWFRSQV9fPC9zdHJpbmc+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments",
+      "id": "8383cc4df4716e7845031d19e00f20742a1fcf2cf3963c2f848dcf6b5ed1e119",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments",
+      "id": "fe895be4016cdba77c82fdad15a8a2f944625f815c7773d6eb93a6d3cdb26354",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUgLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlIC8+CjwvZGljdD4KPC9wbGlzdD4=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments",
+      "id": "0e266bbe073201cb903b025ba00b2fbf218c8e2f25057366dda22b6e8ba6f099",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8ZGljdD4KCQk8a2V5Pndyb25nPC9rZXk+CgkJPHN0cmluZz50eXBlPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.ProgramArguments",
+      "id": "b892e74964d9d269501d468a95713288e1c44507e97a4f97759ba88596fcb126",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fQ0hBTkdFRF9fPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments",
+      "id": "875ae50b045e75ce19295e0176d4a142560bcf02820846db8e4129f52eef3c64",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX1Byb2dyYW1Bcmd1bWVudHM8L2tleT4KCTxzdHJpbmc+X19TRVJWSUNFX0xFR0FDWV9UV0lOX0VYVFJBX188L3N0cmluZz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.0",
+      "id": "cb265193cfd4933cc373e599cacfec8982cc786dccff53e022cfa33dcda7e339",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.0",
+      "id": "25adc06e21114e13986c657e3bac7a4f157bcc43a629ee691594f5a6b15a203a",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.0",
+      "id": "19e843295d45b363fe0b149500e614a160e0343e50a848f0a0685c442f5442a9",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPGFycmF5Lz4KCQk8c3RyaW5nPnN1cGVydmlzb3I8L3N0cmluZz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.ProgramArguments.0",
+      "id": "e69d79ba2a39caace1051e3208c9ef4e7800b088ed1e47d2515ed4ac1655e16b",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fQ0hBTkdFRF9fPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.0",
+      "id": "21b973498f1d81391ec6aa3e5b893e65c9987f65dddcf4231880ad34aac16434",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fRVhUUkFfXzwvc3RyaW5nPgoJCTxzdHJpbmc+c3VwZXJ2aXNvcjwvc3RyaW5nPgoJCTxzdHJpbmc+NTAxNTwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.1",
+      "id": "5e5e7b7c75989f30255e67a05df5f5d05835b50f7b2a13731c03452cfc8e15bf",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.1",
+      "id": "a7c892fa34005f2b56c1d978e6e03459aa4eac1752f9ef46aa5cc876fbf07515",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.1",
+      "id": "15c0e5e70df3d8c7116b1bb524bfb8c75c9e002dca706fc42512103fe010d9db",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPGFycmF5Lz4KCQk8c3RyaW5nPjUwMTU8L3N0cmluZz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.ProgramArguments.1",
+      "id": "ab7cdf998408d99b56c22811cf5a1a666fb3c2f636be8db5b2ac7c99030c59f7",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fQ0hBTkdFRF9fPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.1",
+      "id": "86ab902e344b684b2de55add7d80fab44af87f512b6c8ce155995d2bddff2bf1",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fRVhUUkFfXzwvc3RyaW5nPgoJCTxzdHJpbmc+NTAxNTwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.2",
+      "id": "30b6831918cd85f2aa56925aa120b84efaf53ff1778cfabaf432da6181049eba",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.2",
+      "id": "ec0cbbafeffc13aa0ae19fdfaba60c101a87279586a9107cedf0340d3c181d4e",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.2",
+      "id": "f687b7adc84053029ad1e6abfb004801c75cc539fd069346687e1426823e9560",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPGFycmF5Lz4KCTwvYXJyYXk+Cgk8a2V5PlJ1bkF0TG9hZDwva2V5PgoJPHRydWUvPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.ProgramArguments.2",
+      "id": "bbb8fef66d96be9f466a7e976f0df4249577c5323134cfd383e9b9ab39064826",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fQ0hBTkdFRF9fPC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.ProgramArguments.2",
+      "id": "a5891706a5bc48cb939fd345f0cf3071943c8ab5f0bdff3b176ad9ee3a229b20",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+CgkJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fRVhUUkFfXzwvc3RyaW5nPgoJPC9hcnJheT4KCTxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.RunAtLoad",
+      "id": "c97d6f61dcf6451f68219b2f4ae6b89255a6a5e9991663c9102b7bb4183b71bd",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5Pgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.RunAtLoad",
+      "id": "12632adf20193c4e8996c44cd679b26e54cf83ea211745541887c5cb4fda74ac",
+      "mutated": {
+        "plist_base64": "PHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgoJPGtleT5FbnZpcm9ubWVudFZhcmlhYmxlczwva2V5PgoJPGRpY3Q+CgkJPGtleT5IT01FPC9rZXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lPC9zdHJpbmc+CgkJPGtleT5QQVRIPC9rZXk+CgkJPHN0cmluZz4vdXNyL2JpbjovYmluPC9zdHJpbmc+Cgk8L2RpY3Q+Cgk8a2V5PktlZXBBbGl2ZTwva2V5PgoJPHRydWUgLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlIC8+CjxrZXk+UnVuQXRMb2FkPC9rZXk+Cgk8dHJ1ZSAvPgo8L2RpY3Q+CjwvcGxpc3Q+",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.RunAtLoad",
+      "id": "828402e594269b49e6e11f9c8cb46abadc13ac411b43c0195f211247aeb1b673",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTxhcnJheS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "plist.RunAtLoad",
+      "id": "c729c84c508d8900fb5b55327043fa9e806d763cac8045bde95e729a1a5e7c46",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTxmYWxzZS8+CjwvZGljdD4KPC9wbGlzdD4K",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "plist.RunAtLoad",
+      "id": "e700b9c13e174840b73cd5a4c9168c390b602e8e0248feb63698248b44906cb0",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KCTxrZXk+X19VTlJFTEFURURfRVhUUkFfX1J1bkF0TG9hZDwva2V5PgoJPHN0cmluZz5fX1NFUlZJQ0VfTEVHQUNZX1RXSU5fRVhUUkFfXzwvc3RyaW5nPgo8L2RpY3Q+CjwvcGxpc3Q+Cg==",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Unit",
+      "id": "804b5823e8a524418b83d0d26bd07e7877f31084f14a8d40982787f59ffb99b1",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "Description=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Unit",
+      "id": "51f6f2d280a006f27135d6a1372706d1fad063583c87eb7f9abb4647c9af41a8",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\n[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Unit",
+      "id": "08e5368ff28251e0931fcff07086fcaa26f9f3010aa36ea9fc595a6a291c2c5f",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "Unit\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Unit",
+      "id": "70679499443acc6eca74a58cce3111255ce90e58b30c7e5dabaf127e9f2abd23",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit_TWIN]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Unit",
+      "id": "03623028180c92c35c38617de655c4a3f4fc4797df828e2e868e47d979bfa5bd",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\n[UNRELATED_EXTRA]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.Description",
+      "id": "9de12b7a5f871b450681c8f0ea64b301bd657abb1a318d8d146d3d5185eef949",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.Description",
+      "id": "363c8d7fe069fe65c8ef6f70cd2c421c2c32678e932b1605062e73ce6e399e8f",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.Description",
+      "id": "6d4cae31e41a99804ee3b618633e56697f81c36432ec1de9b96632151d0f6feb",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Unit.Description",
+      "id": "c0458bc9544f0221a5b8971cda2360ba90288fc32fb7d2b37900f17d134b4559",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=__SERVICE_LEGACY_TWIN_CHANGED__\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.Description",
+      "id": "f5575353a30aa8ab2463530818f61f2312dba74526f204e99f130001cca0f197",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nUNRELATED_EXTRA=1\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.After",
+      "id": "98ebd666a50a4129d1d9f1eb61e4a3640404ce3400d2b4cebe336770a0246c4c",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.After",
+      "id": "983fb2b5c0f545885062e965f269f1b8c252c167ba209c5db8bc13ae66a847ed",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.After",
+      "id": "f43c5544a9d2ceec0367e97142ec4bb15b6fd1b4f66e1fffc757fdd6ff243748",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Unit.After",
+      "id": "2568773929fa3456fd993755202cc2611b20efecaa37d8f943aa0255c3bda076",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=__SERVICE_LEGACY_TWIN_CHANGED__\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Unit.After",
+      "id": "dcae38033f8960c9ec85df5827ee2b1a64ff8d2116552d73e1e46622aaaf9f0a",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nUNRELATED_EXTRA=1\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Service",
+      "id": "6ecf1f436ef77a05b824afd3b6ede8dafe9ca0f777741196c4d4a797bbe1c3c1",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Service",
+      "id": "7fd407eac8626e9af30269189a5a9d22add6e3dd0a03a579e94e3a678d5f838d",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Service",
+      "id": "652f9f7b0722ad4431d9c9f7f5a35f0813f11d99386d70c32304e76dfde0ce67",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\nService\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Service",
+      "id": "fa598e2c57dbac551e288bca7a756c2bba242e6a5a0c4b7b766d83a2688badba",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service_TWIN]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Service",
+      "id": "6504e7d46385ef108eb31a2b174920b8a5dd2da5b2cff37248320a675fe1bf22",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\n[UNRELATED_EXTRA]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Type",
+      "id": "6b78d17cea6f8cd2a5c25075770d4af9260899bff55905ffbc21277383be6ce1",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Type",
+      "id": "1934aa03e7208b348f868004d3b76890ec5871583c1f5186e7881c672ffe69d4",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Type",
+      "id": "3790fcee664880b7d18de30e1e01522dea79ebe07bf64b97b3454ef2ea3967b6",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Service.Type",
+      "id": "2ddf6d3106c3605829d30353efd5a9e902f47a21c5dec7e3f6cabac9d38e0738",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=__SERVICE_LEGACY_TWIN_CHANGED__\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Type",
+      "id": "4f633b559e5293a516ed6335a1ba3a3c18adffc5dfb83de87e2e7c3788ddf067",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nUNRELATED_EXTRA=1\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.ExecStart",
+      "id": "49fc0ee048c5399fe746bdb1358d8eabcc6c55cb55bfd582643495edd251f9a6",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.ExecStart",
+      "id": "f715d23d2e9d68146d954ef7d9b9bc204904b47ab1d88b06d5156a4ff425e79e",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.ExecStart",
+      "id": "638cf8926d6d7413a6d640144a66070406721dbee81ac8fd65039f0e70854150",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Service.ExecStart",
+      "id": "62faa80406999919e6d79a9777ce976657dd326db31a2549898140f575f45cf0",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=__SERVICE_LEGACY_TWIN_CHANGED__\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.ExecStart",
+      "id": "469205c06d844197fcb961ed1dc7b4f1e480350de57077b36222f9b3b5e7c0da",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nUNRELATED_EXTRA=1\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Restart",
+      "id": "b6af623278f9c3df5ded05d0a03385b0252fef67e578d295132c79c04e7b616d",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Restart",
+      "id": "2746ccbbda29cd287c1b912382c557f4e3b33dc5e935e1e55662c0439210fc58",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Restart",
+      "id": "e76a8c8286c7a71a219ddd6579e6f7261af0cb6ca6ece5e56e6573157d956b6f",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Service.Restart",
+      "id": "6a44c127adcf62aa82ce811edcd0475416e22fafc4199f99f184f117ea4869b6",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=__SERVICE_LEGACY_TWIN_CHANGED__\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Restart",
+      "id": "16c931060c1da247763fb9ddb43821fa74d04c0c1e5a39915691a5692370cd28",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nUNRELATED_EXTRA=1\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.RestartSec",
+      "id": "e17a922bfc587eb76c72c923cf64c54b3f03b627a132fa55e7e5d92a9b540843",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.RestartSec",
+      "id": "378f957041fa94fa96ad8d965f1738ff3965986674fb9a0cb781625c9bc8f2c8",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.RestartSec",
+      "id": "7c4becd1a239b161b1781ca3162dc1b82673d001ca83687487df061d34536790",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Service.RestartSec",
+      "id": "ce1dc194735c1dccfbbc9fa7117a9ba1f8f78fcc8caaa40ba49dd6848a5684b4",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=__SERVICE_LEGACY_TWIN_CHANGED__\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.RestartSec",
+      "id": "aad7a742565ec4fa49edbb748a7c46ca865b2e279bd0a47564d52571ed95a125",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nUNRELATED_EXTRA=1\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Environment.HOME",
+      "id": "54498078701d285e49e9d6d622591a70e64a76b1a9bdad65f417475efd6b7ca8",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Environment.HOME",
+      "id": "9a43a001795204c108806308c24568ecff924526833ed57de61a231de900f1b9",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Service.Environment.HOME",
+      "id": "3cafb7026787c3cf5fcf1bf0b67a06952d59d4fcc2775ede36beacfa18901616",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=__SERVICE_LEGACY_TWIN_CHANGED__\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Environment.HOME",
+      "id": "0befc9f302d86cb0e054eafd061e94fa4f416bd6405103ef8e70a045291947f9",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nUNRELATED_EXTRA=1\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Environment.PATH",
+      "id": "b332f481df2121248681bfe5c0adec99d6446b78ade465f36b9521af8e2ddcf4",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Environment.PATH",
+      "id": "6b81a363fa7f786de9770f4ede5af005c41dfe36615d08a92018c17b55dd69eb",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Service.Environment.PATH",
+      "id": "7643b492cc04e295bbef118e83b9be7cc11cddd62d62fe19fbc25e2668cca938",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=__SERVICE_LEGACY_TWIN_CHANGED__\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Service.Environment.PATH",
+      "id": "2a09103491f7781622004aa7f38a4d3b6c57dc3170b2850b98d0e7ba1887ab81",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\nUNRELATED_EXTRA=1\n\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Install",
+      "id": "f89c3c452054649e47bb4e4eedf304d150f0a10b1105c0abe1b6538391838a8b",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Install",
+      "id": "a9a4fed5ad17bf05f3531f94471345ce488cb1edf0dc387dc832ee1f401daca6",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\n[Install]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Install",
+      "id": "b60e7058b137387983597dd1b75eeffbd9a480bb642ad915c484957de16a0d11",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\nInstall\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Install",
+      "id": "cde9b44e9c68dc40fb10ad8c34e460db4424a49bf5228fea81f600ddb4e2ee77",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install_TWIN]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.section.Install",
+      "id": "036780de30955ade5fe7ed72813b7ab12fbc1ed0269e66569ded9c886f6cc3f3",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\n[UNRELATED_EXTRA]\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Install.WantedBy",
+      "id": "1bc658357a89fdf3d6f3c173d6f3d609a652392ba55ecc0f3844c782f874738c",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\n"
+      },
+      "mutation_kind": "missing"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Install.WantedBy",
+      "id": "3975a68569543bab0600ee4e3f4000ee9c332a742230d796dcb1608e43e32f26",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\nWantedBy=default.target\n"
+      },
+      "mutation_kind": "duplicate"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Install.WantedBy",
+      "id": "51826f96d43563acdf57479ce54351ae4f95dfc6cafb221e32ae3c48c6ab86a1",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy\n"
+      },
+      "mutation_kind": "wrong-type"
+    },
+    {
+      "expected_rejection": "normalization_not_member",
+      "field": "systemd.Install.WantedBy",
+      "id": "9102694ba7b293b512dad504584876e6dcfb7d11f56da3880ccb937c97086718",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=__SERVICE_LEGACY_TWIN_CHANGED__\n"
+      },
+      "mutation_kind": "changed-value"
+    },
+    {
+      "expected_rejection": "shape_rejected",
+      "field": "systemd.Install.WantedBy",
+      "id": "c3e0d89c0ba8a3cf0c044a850e998cac36215af36285107dda6f2363ea8ae300",
+      "mutated": {
+        "plist_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCFET0NUWVBFIHBsaXN0IFBVQkxJQyAiLS8vQXBwbGUvL0RURCBQTElTVCAxLjAvL0VOIiAiaHR0cDovL3d3dy5hcHBsZS5jb20vRFREcy9Qcm9wZXJ0eUxpc3QtMS4wLmR0ZCI+CjxwbGlzdCB2ZXJzaW9uPSIxLjAiPgo8ZGljdD4KCTxrZXk+RW52aXJvbm1lbnRWYXJpYWJsZXM8L2tleT4KCTxkaWN0PgoJCTxrZXk+SE9NRTwva2V5PgoJCTxzdHJpbmc+L29wdC9zb2xzdG9uZS1zZXJ2aWNlLWxlZ2FjeS1ldmlkZW5jZS9mZTA0OTg1MWIyMGM3MjJmOWM5NDdmNDJjNjhlODczMTMwNGZkMWY0L2RlZmF1bHQvaG9tZTwvc3RyaW5nPgoJCTxrZXk+UEFUSDwva2V5PgoJCTxzdHJpbmc+L3Vzci9iaW46L2Jpbjwvc3RyaW5nPgoJPC9kaWN0PgoJPGtleT5LZWVwQWxpdmU8L2tleT4KCTx0cnVlLz4KCTxrZXk+TGFiZWw8L2tleT4KCTxzdHJpbmc+b3JnLnNvbHBiYy5zb2xzdG9uZTwvc3RyaW5nPgoJPGtleT5Qcm9ncmFtQXJndW1lbnRzPC9rZXk+Cgk8YXJyYXk+CgkJPHN0cmluZz4vb3B0L3NvbHN0b25lLXNlcnZpY2UtbGVnYWN5LWV2aWRlbmNlL2ZlMDQ5ODUxYjIwYzcyMmY5Yzk0N2Y0MmM2OGU4NzMxMzA0ZmQxZjQvZGVmYXVsdC9ob21lLy5sb2NhbC9iaW4vc29sPC9zdHJpbmc+CgkJPHN0cmluZz5zdXBlcnZpc29yPC9zdHJpbmc+CgkJPHN0cmluZz41MDE1PC9zdHJpbmc+Cgk8L2FycmF5PgoJPGtleT5SdW5BdExvYWQ8L2tleT4KCTx0cnVlLz4KPC9kaWN0Pgo8L3BsaXN0Pgo=",
+        "systemd_unit": "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\n\n[Service]\nType=simple\nExecStart=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home/.local/bin/sol supervisor 5015\nRestart=on-failure\nRestartSec=5\nEnvironment=HOME=/opt/solstone-service-legacy-evidence/fe049851b20c722f9c947f42c68e8731304fd1f4/default/home\nEnvironment=PATH=/usr/bin:/bin\n\n[Install]\nWantedBy=default.target\nUNRELATED_EXTRA=1\n"
+      },
+      "mutation_kind": "unrelated-extra"
+    }
+  ]
+}

@@ -1,0 +1,336 @@
+{
+  "schema": "service-legacy-tag-census",
+  "schema_version": 1,
+  "tags": [
+    {
+      "tag": "v0.0.1",
+      "path": null,
+      "blob": null
+    },
+    {
+      "tag": "v0.3.0",
+      "path": "solstone/think/service.py",
+      "blob": "8fe72a78c2217f29010f29614cb34a8c9552b88a"
+    },
+    {
+      "tag": "v0.3.1",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.2",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.3",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.4",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.5",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.6",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.8",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.3.9",
+      "path": "solstone/think/service.py",
+      "blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "tag": "v0.4.0",
+      "path": "solstone/think/service.py",
+      "blob": "5e43ae13459111ad67baa6a60c84640de43fc9b1"
+    },
+    {
+      "tag": "v0.4.1",
+      "path": "solstone/think/service.py",
+      "blob": "5e43ae13459111ad67baa6a60c84640de43fc9b1"
+    },
+    {
+      "tag": "v0.4.2",
+      "path": "solstone/think/service.py",
+      "blob": "5e43ae13459111ad67baa6a60c84640de43fc9b1"
+    },
+    {
+      "tag": "v0.4.3",
+      "path": "solstone/think/service.py",
+      "blob": "5e43ae13459111ad67baa6a60c84640de43fc9b1"
+    },
+    {
+      "tag": "v0.4.4",
+      "path": "solstone/think/service.py",
+      "blob": "3b109f17470471a39d83ed4234ef0bdf6c35fdde"
+    },
+    {
+      "tag": "v0.4.5",
+      "path": "solstone/think/service.py",
+      "blob": "cec26ffb20aa480112d8b818997a981c79036f75"
+    },
+    {
+      "tag": "v0.4.6",
+      "path": "solstone/think/service.py",
+      "blob": "cec26ffb20aa480112d8b818997a981c79036f75"
+    },
+    {
+      "tag": "v0.4.7",
+      "path": "solstone/think/service.py",
+      "blob": "cec26ffb20aa480112d8b818997a981c79036f75"
+    },
+    {
+      "tag": "v0.4.8",
+      "path": "solstone/think/service.py",
+      "blob": "2580b866f4b388382a8d07f35353eb2959c0022e"
+    },
+    {
+      "tag": "v0.4.9",
+      "path": "solstone/think/service.py",
+      "blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6"
+    },
+    {
+      "tag": "v0.4.10",
+      "path": "solstone/think/service.py",
+      "blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6"
+    },
+    {
+      "tag": "v0.5.0",
+      "path": "solstone/think/service.py",
+      "blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6"
+    },
+    {
+      "tag": "v0.5.1",
+      "path": "solstone/think/service.py",
+      "blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6"
+    },
+    {
+      "tag": "v0.5.2",
+      "path": "solstone/think/service.py",
+      "blob": "2fa8351ec20ac80c7d37806478ad0da2365ed33f"
+    },
+    {
+      "tag": "v0.5.3",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.5.4",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.5.5",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.5.6",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.6.0",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.6.1",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.6.2",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.6.3",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.6.4",
+      "path": "solstone/think/service.py",
+      "blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "tag": "v0.6.5",
+      "path": "solstone/think/service.py",
+      "blob": "e88f56f2e13f7ae1256b6df59ee974eec32b4c40"
+    },
+    {
+      "tag": "v0.6.6",
+      "path": "solstone/think/service.py",
+      "blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5"
+    },
+    {
+      "tag": "v0.6.7",
+      "path": "solstone/think/service.py",
+      "blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5"
+    },
+    {
+      "tag": "v0.6.8",
+      "path": "solstone/think/service.py",
+      "blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5"
+    },
+    {
+      "tag": "v0.6.9",
+      "path": "solstone/think/service.py",
+      "blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5"
+    },
+    {
+      "tag": "v0.6.10",
+      "path": "solstone/think/service.py",
+      "blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5"
+    },
+    {
+      "tag": "v0.6.11",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.12",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.13",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.14",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.15",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.16",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.17",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.18",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.19",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.20",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.21",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.22",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.23",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.6.24",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.7.0",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.0",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.1",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.2",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.3",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.4",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.5",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.6",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.7",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.8",
+      "path": "solstone/think/service.py",
+      "blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "tag": "v0.8.9",
+      "path": "solstone/think/service.py",
+      "blob": "72787af4b4bca72ce72c24f035ca9bde1900444f"
+    },
+    {
+      "tag": "v0.9.0",
+      "path": "solstone/think/service.py",
+      "blob": "72787af4b4bca72ce72c24f035ca9bde1900444f"
+    },
+    {
+      "tag": "v0.9.1",
+      "path": "solstone/think/service.py",
+      "blob": "baa4f68d18830e92aa6ae215ffbf86cc8e14513f"
+    }
+  ]
+}

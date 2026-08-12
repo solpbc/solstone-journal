@@ -5,6 +5,9 @@ provider artifacts downloaded at runtime into the journal provider cache. The
 solstone source code remains AGPL-3.0-only; the notices below apply only to the
 listed model files and runtime provider artifacts.
 
+<!-- Six runtime sections previously said "not bundled"; CUDA and Vulkan/CPU
+used application-component wording. Each section below states its own redistribution terms. -->
+
 ## PDF extraction engine
 
 The PDF import worker uses pypdfium2, whose wheel bundles Google's PDFium
@@ -42,9 +45,9 @@ License notice: BSD 3-Clause License (BSD-3-Clause).
 
 ## runtime-downloaded provider artifacts (parakeet-cpp)
 
-These artifacts are fetched on demand into the journal provider cache when an
-owner opts into the `parakeet-cpp` transcription backend; they are not bundled
-in this repository.
+sol pbc redistributes these artifacts from `updates.solstone.app` on demand
+into the journal provider cache when an owner opts into the `parakeet-cpp`
+transcription backend. They are not bundled in this repository.
 
 ### parakeet.cpp server binary
 
@@ -56,6 +59,8 @@ Source:
 - Project: https://github.com/mudler/parakeet.cpp
 
 License notice: MIT.
+
+The MIT license permits sol pbc's redistribution of this server binary.
 
 ### parakeet TDT 0.6B v3 GGUF model
 
@@ -70,11 +75,14 @@ Source:
 License notice: Creative Commons Attribution 4.0 International (CC-BY-4.0).
 License text: https://creativecommons.org/licenses/by/4.0/legalcode.txt
 
+sol pbc redistributes this model under CC-BY-4.0. The attribution above and
+the CC-BY-4.0 license URI accompany the redistributed copy.
+
 ## runtime-downloaded provider artifacts (local model)
 
-These artifacts are fetched on demand into the journal provider cache when an
-owner installs the local inference provider; they are not bundled in this
-repository.
+sol pbc redistributes these artifacts from `updates.solstone.app` on demand
+into the journal provider cache when an owner installs the local inference
+provider. They are not bundled in this repository.
 
 ### Qwen3.5-4B GGUF model
 
@@ -90,10 +98,14 @@ Source:
 
 License notice: Apache License 2.0 (Apache-2.0).
 
+Apache-2.0 permits sol pbc's redistribution of these model files with its
+required notice and license terms.
+
 ## runtime-downloaded provider artifacts (ced.cpp sound-tag engine)
 
-These artifacts are fetched on demand into the journal provider cache for local
-ambient sound tagging; they are not bundled in this repository.
+sol pbc redistributes these artifacts from `updates.solstone.app` on demand
+into the journal provider cache for local ambient sound tagging. They are not
+bundled in this repository.
 
 ### ced.cpp v0.1.0 engine
 
@@ -112,10 +124,13 @@ Source:
 
 License notice: MIT.
 
+The MIT license permits sol pbc's redistribution of this engine binary.
+
 ## runtime-downloaded provider artifacts (ced-tiny sound-tag model)
 
-This artifact is fetched on demand into the journal provider cache for local
-ambient sound tagging; it is not bundled in this repository.
+sol pbc redistributes this artifact from `updates.solstone.app` on demand into
+the journal provider cache for local ambient sound tagging. It is not bundled
+in this repository.
 
 ### ced-tiny-q8_0 GGUF model
 
@@ -130,10 +145,14 @@ Source:
 
 License notice: Apache License 2.0 (Apache-2.0).
 
+Apache-2.0 permits sol pbc's redistribution of this model file with its
+required notice and license terms.
+
 ## runtime-downloaded provider artifacts (rerank cross-encoder)
 
-These artifacts are fetched on demand into the journal provider cache for local
-rerank scoring; they are not bundled in this repository.
+sol pbc redistributes these artifacts from `updates.solstone.app` on demand
+into the journal provider cache for local rerank scoring. They are not bundled
+in this repository.
 
 ### rerank cross-encoder ONNX model
 
@@ -148,10 +167,14 @@ Source:
 
 License notice: Apache License 2.0 (Apache-2.0).
 
+Apache-2.0 permits sol pbc's redistribution of these model files with its
+required notice and license terms.
+
 ## runtime-downloaded provider artifacts (rf-detr.cpp)
 
-These artifacts are fetched on demand into the journal provider cache for local
-object detection. They are not bundled in this repository.
+sol pbc redistributes these artifacts from `updates.solstone.app` on demand
+into the journal provider cache for local object detection. They are not
+bundled in this repository.
 
 ### rf-detr.cpp engine binary
 
@@ -167,6 +190,9 @@ Source:
 
 License notice: Apache License 2.0 (Apache-2.0).
 
+Apache-2.0 permits sol pbc's redistribution of this engine binary with its
+required notice and license terms.
+
 ### RF-DETR nano GGUF model weights
 
 Attribution: RF-DETR (Roboflow); GGUF conversion mudler/rfdetr-cpp-nano.
@@ -178,6 +204,9 @@ Source:
 - Downloaded file: `rfdetr-nano-f16.gguf`
 
 License notice: Apache License 2.0 (Apache-2.0).
+
+Apache-2.0 permits sol pbc's redistribution of these model weights with its
+required notice and license terms.
 
 ## WeSpeaker ResNet34 / VoxCeleb
 
@@ -248,6 +277,8 @@ SOFTWARE.
 These artifacts are downloaded on demand into the journal provider cache for
 solstone's local inference runtime on supported NVIDIA GPU systems. They are
 distributed as application components, not as a stand-alone CUDA distribution.
+sol pbc redistributes them from `updates.solstone.app`; they are not bundled in
+this repository.
 
 ### llama.cpp and ggml runtime
 
@@ -262,6 +293,8 @@ License: MIT License.
 
 The complete llama.cpp MIT license and copyright notice is reproduced in
 `licenses/llama.cpp-LICENSE.txt` and accompanies each runtime artifact.
+The MIT license permits sol pbc's redistribution of these llama.cpp runtime
+files.
 
 ### NVIDIA CUDA runtime components
 
@@ -281,12 +314,20 @@ copy of the package-accompanying EULA, including its third-party notices,
 is reproduced in `licenses/NVIDIA-CUDA-EULA-13.3.txt` and accompanies each
 runtime artifact. NVIDIA does not sponsor or endorse solstone.
 
+sol pbc redistributes these CUDA components from `updates.solstone.app` only as
+Attachment-A distributable portions: unmodified except for unzipping, inside
+the solstone application with material additional functionality, and not as a
+stand-alone SDK distribution. Their redistribution is permitted only within
+those NVIDIA CUDA Toolkit EULA 13.3 bounds.
+
 ## runtime-downloaded provider artifacts (llama.cpp Vulkan/CPU)
 
 These artifacts are downloaded on demand into the journal provider cache for
 solstone's local inference runtime on supported macOS and Linux systems. They
 are distributed as application components, not as stand-alone runtime
 distributions.
+sol pbc redistributes them from `updates.solstone.app`; they are not bundled in
+this repository.
 
 ### llama.cpp Vulkan/CPU runtime
 
@@ -301,3 +342,5 @@ License: MIT License.
 
 The complete llama.cpp MIT license and copyright notice is reproduced in
 `licenses/llama.cpp-LICENSE.txt` and accompanies each runtime artifact.
+The MIT license permits sol pbc's redistribution of these Vulkan/CPU runtime
+files.

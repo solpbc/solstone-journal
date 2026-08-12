@@ -9,9 +9,16 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use solstone_core_cli::InstallProviderOptions;
+use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::install::{
-    DispatchError, fingerprint, fit_report, install_parakeet_with_lease, lease, readiness, status,
+    DispatchError, InstallVerb, dispatch, fingerprint, fit_report, install_parakeet_with_lease,
+    lease, local_backend_choice, pins, readiness, status,
 };
+use solstone_core_local::{
+    LocalEndpointResolution, MemorySource, detect_gpus, discrete_hardware_gpu_count, gpu_probe_ok,
+    is_discrete, probe_nvidia_gpu, resolve_local_endpoint, select_device,
+};
+use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
 
 use crate::{EXIT_UNAVAILABLE, eprint_journal_path_error, resolve_process_journal_path};
 
@@ -19,6 +26,8 @@ const OBSERVE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const OBSERVE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two external artifacts into this journal's provider cache before it can run: the parakeet.cpp server binary from github.com (MIT) and the speech model from huggingface.co (CC-BY-4.0).";
+const LOCAL_DOWNLOAD_DISCLOSURE: &str = "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries NVIDIA-licensed runtime components) and the model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
+const LOCAL_DARWIN_UNAVAILABLE: &str = "local provider install is unavailable on Darwin in the native installer; use the Python-backed journal install-provider local route";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallProviderOutcome {
@@ -47,6 +56,7 @@ impl InstallProviderOutcome {
 
 /// Collect process inputs only; command decisions live in `run_inner`.
 pub fn run(options: InstallProviderOptions) -> ExitCode {
+    let is_local = options.name == "local";
     let outcome = run_inner(
         options,
         || match resolve_process_journal_path() {
@@ -56,15 +66,19 @@ pub fn run(options: InstallProviderOptions) -> ExitCode {
                 Err(())
             }
         },
-        |journal| {
-            readiness::inspect_parakeet(
-                json!({"journal": journal.display().to_string()})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            )
+        move |journal| {
+            let input = json!({"journal": journal.display().to_string()})
+                .as_object()
+                .unwrap()
+                .clone();
+            if is_local {
+                readiness::inspect_local(input)
+            } else {
+                readiness::inspect_parakeet(input)
+            }
         },
         install_parakeet,
+        install_local,
     );
     for line in outcome.stdout {
         println!("{line}");
@@ -75,44 +89,53 @@ pub fn run(options: InstallProviderOptions) -> ExitCode {
     ExitCode::from(outcome.exit_code)
 }
 
-fn run_inner<J, R, I>(
+fn run_inner<J, R, P, L>(
     options: InstallProviderOptions,
     journal_resolver: J,
     readiness_provider: R,
-    install_executor: I,
+    parakeet_executor: P,
+    local_executor: L,
 ) -> InstallProviderOutcome
 where
     J: FnOnce() -> Result<PathBuf, ()>,
     R: FnOnce(&Path) -> Value,
-    I: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
+    P: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
+    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
 {
     run_inner_with(
         options,
         journal_resolver,
         readiness_provider,
         None,
-        install_executor,
+        parakeet_executor,
+        local_executor,
     )
 }
 
-fn run_inner_with<J, R, I>(
+fn run_inner_with<J, R, P, L>(
     options: InstallProviderOptions,
     journal_resolver: J,
     readiness_provider: R,
     report_override: Option<fit_report::FitReport>,
-    install_executor: I,
+    parakeet_executor: P,
+    local_executor: L,
 ) -> InstallProviderOutcome
 where
     J: FnOnce() -> Result<PathBuf, ()>,
     R: FnOnce(&Path) -> Value,
-    I: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
+    P: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
+    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
 {
     match options.name.as_str() {
         "parakeet" => {}
         "local" => {
-            return InstallProviderOutcome::failure(
-                EXIT_UNAVAILABLE,
-                "local provider install is not native yet",
+            return run_local_inner_with_platform(
+                journal_resolver,
+                readiness_provider,
+                report_override,
+                local_executor,
+                normalized_os(std::env::consts::OS),
+                normalized_arch(std::env::consts::ARCH),
             );
         }
         name => {
@@ -139,7 +162,7 @@ where
     if readiness_status == "ready" {
         let install = match status::read_status(&journal, "parakeet") {
             Ok(install) => install,
-            Err(error) => return unavailable_status_error(stderr, error),
+            Err(error) => return unavailable_status_error("parakeet", stderr, error),
         };
         stderr.push("parakeet already installed".to_owned());
         return InstallProviderOutcome::success(vec![render_status(&install)], stderr);
@@ -181,7 +204,7 @@ where
         }
     };
     let Some(held) = held else {
-        return observe_existing(&journal, &target_sha, stderr);
+        return observe_existing(&journal, "parakeet", &target_sha, stderr);
     };
 
     // Unlike install-models, this owner-facing Python-parity command reports
@@ -202,7 +225,7 @@ where
         };
     }
 
-    match install_executor(&journal, held) {
+    match parakeet_executor(&journal, held) {
         Ok(result) => {
             let install = result["status"].clone();
             // The direct installer reports failure only for a terminal failed
@@ -214,7 +237,7 @@ where
                 stderr,
             }
         }
-        Err(error) => install_failure(&journal, *error, stderr),
+        Err(error) => install_failure(&journal, "parakeet", *error, stderr),
     }
 }
 
@@ -231,6 +254,316 @@ fn install_parakeet(
     .map_err(Box::new)
 }
 
+fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
+    let envelope = dispatch(
+        InstallVerb::RunLocal,
+        json!({"journal": journal.display().to_string()}),
+    )
+    .map_err(Box::new)?;
+    Ok(envelope
+        .result
+        .expect("successful install dispatch has a result"))
+}
+
+fn run_local_inner_with_platform<J, R, L>(
+    journal_resolver: J,
+    readiness_provider: R,
+    report_override: Option<fit_report::FitReport>,
+    install_executor: L,
+    os_name: &str,
+    arch: &str,
+) -> InstallProviderOutcome
+where
+    J: FnOnce() -> Result<PathBuf, ()>,
+    R: FnOnce(&Path) -> Value,
+    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
+{
+    run_local_inner_with_platform_and_target_sha(
+        journal_resolver,
+        readiness_provider,
+        report_override,
+        install_executor,
+        local_target_sha,
+        os_name,
+        arch,
+    )
+}
+
+fn run_local_inner_with_platform_and_target_sha<J, R, L, T>(
+    journal_resolver: J,
+    readiness_provider: R,
+    report_override: Option<fit_report::FitReport>,
+    install_executor: L,
+    target_sha_provider: T,
+    os_name: &str,
+    arch: &str,
+) -> InstallProviderOutcome
+where
+    J: FnOnce() -> Result<PathBuf, ()>,
+    R: FnOnce(&Path) -> Value,
+    L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
+    T: Fn(&Path) -> Result<String, String>,
+{
+    let journal = match journal_resolver() {
+        Ok(journal) => journal,
+        Err(()) => {
+            return InstallProviderOutcome {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            };
+        }
+    };
+    if os_name == "darwin" {
+        return InstallProviderOutcome::failure(EXIT_UNAVAILABLE, LOCAL_DARWIN_UNAVAILABLE);
+    }
+    let readiness = readiness_provider(&journal);
+    let mut stderr = vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()];
+    let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
+    if readiness_status == "ready" {
+        let install = match status::read_status(&journal, "local") {
+            Ok(install) => install,
+            Err(error) => return unavailable_status_error("local", stderr, error),
+        };
+        stderr.push("local already installed".to_owned());
+        return InstallProviderOutcome::success(vec![render_status(&install)], stderr);
+    }
+    if matches!(readiness_status, "proof-unavailable" | "host-ineligible") {
+        stderr.push(
+            readiness["reason_code"]
+                .as_str()
+                .unwrap_or("readiness_unavailable")
+                .to_owned(),
+        );
+        return InstallProviderOutcome {
+            exit_code: 1,
+            stdout: Vec::new(),
+            stderr,
+        };
+    }
+    let target_sha = if report_override.is_some() {
+        // The report override is a synthetic test seam, so it must not inspect
+        // live local-backend facts merely to build the attempt fingerprint.
+        None
+    } else {
+        match target_sha_provider(&journal) {
+            Ok(target_sha) => Some(target_sha),
+            Err(error) => {
+                stderr.push(error);
+                return InstallProviderOutcome {
+                    exit_code: 1,
+                    stdout: Vec::new(),
+                    stderr,
+                };
+            }
+        }
+    };
+    match lease::is_held(&journal, "local") {
+        Ok(true) => {
+            let target_sha = match target_sha {
+                Some(target_sha) => target_sha,
+                None => match target_sha_provider(&journal) {
+                    Ok(target_sha) => target_sha,
+                    Err(error) => {
+                        stderr.push(error);
+                        return InstallProviderOutcome {
+                            exit_code: 1,
+                            stdout: Vec::new(),
+                            stderr,
+                        };
+                    }
+                },
+            };
+            return observe_existing(&journal, "local", &target_sha, stderr);
+        }
+        Ok(false) => {}
+        Err(error) => {
+            stderr.push(error.to_string());
+            return InstallProviderOutcome {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr,
+            };
+        }
+    }
+    let report = match report_override {
+        Some(report) => report,
+        None => match build_local_report(&journal, os_name, arch) {
+            Ok(report) => report,
+            Err(error) => {
+                stderr.push(error);
+                return InstallProviderOutcome {
+                    exit_code: 1,
+                    stdout: Vec::new(),
+                    stderr,
+                };
+            }
+        },
+    };
+    stderr.push(fit_report::render_fit_report(&report));
+    match install_executor(&journal) {
+        Ok(result) => {
+            let install = result["status"].clone();
+            let exit_code = u8::from(install["install_state"] == "failed");
+            InstallProviderOutcome {
+                exit_code,
+                stdout: vec![render_value(&install)],
+                stderr,
+            }
+        }
+        Err(error) if is_install_busy(&error) => {
+            let target_sha = match target_sha {
+                Some(target_sha) => target_sha,
+                None => match target_sha_provider(&journal) {
+                    Ok(target_sha) => target_sha,
+                    Err(error) => {
+                        stderr.push(error);
+                        return InstallProviderOutcome {
+                            exit_code: 1,
+                            stdout: Vec::new(),
+                            stderr,
+                        };
+                    }
+                },
+            };
+            observe_existing(&journal, "local", &target_sha, stderr)
+        }
+        Err(error) => install_failure(&journal, "local", *error, stderr),
+    }
+}
+
+fn build_local_report(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> Result<fit_report::FitReport, String> {
+    let nvidia_probe = probe_nvidia_gpu();
+    let devices = detect_gpus();
+    let (override_index, brain_lane_active) =
+        local_override_and_brain_lane(journal).map_err(|error| error.to_string())?;
+    let selected = select_device(&devices, override_index);
+    let unified_memory = nvidia_probe.memory_source() == MemorySource::SystemAvailable;
+    let force_cpu = decide_parakeet_auto_placement(
+        selected
+            .as_ref()
+            .and_then(|device| u32::try_from(device.vram_mib).ok()),
+        selected.as_ref().is_some_and(is_discrete),
+        discrete_hardware_gpu_count(&devices),
+        unified_memory,
+        brain_lane_active,
+    )
+    .force_cpu;
+    let choice = local_backend_choice(journal, Some(nvidia_probe.clone()));
+    Ok(fit_report::build_local_fit_report(
+        journal,
+        "local/qwen3.5-4b",
+        os_name,
+        arch,
+        fit_report::free_bytes(&pins::cache_root(journal)),
+        available_memory_bytes(),
+        &nvidia_probe,
+        &choice,
+        gpu_probe_ok(),
+        &devices,
+        override_index,
+        force_cpu,
+    ))
+}
+
+fn local_override_and_brain_lane(
+    journal: &Path,
+) -> Result<(Option<u32>, bool), solstone_core_journal_config::ConfigLoadError> {
+    let brain_lane_active = match read_journal_config(journal) {
+        Ok(read) => {
+            let config = read.config.unwrap_or_default();
+            let local_needed = config
+                .get("providers")
+                .and_then(Value::as_object)
+                .and_then(|providers| providers.get("active"))
+                .and_then(Value::as_object)
+                .and_then(|active| active.get("provider"))
+                .and_then(Value::as_str)
+                == Some("local");
+            let bundled = matches!(
+                resolve_local_endpoint(&config),
+                LocalEndpointResolution::Bundled
+            );
+            local_needed && bundled
+        }
+        Err(_) => {
+            // Python's `brain_lane_active` predicate uses `except Exception:
+            // True`; keep that parity fallback only for this predicate.
+            true
+        }
+    };
+    let config = read_journal_config(journal)?.config.unwrap_or_default();
+    let override_index = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("local"))
+        .and_then(Value::as_object)
+        .and_then(|local| local.get("vulkan_device_index"))
+        .and_then(local_vulkan_device_index);
+    Ok((override_index, brain_lane_active))
+}
+
+fn local_vulkan_device_index(value: &Value) -> Option<u32> {
+    match value {
+        Value::Bool(value) => Some(u32::from(*value)),
+        Value::String(value) => value
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .and_then(|index| u64::try_from(index).ok())
+            .map(saturating_vulkan_device_index),
+        Value::Number(value) => {
+            if let Some(index) = value.as_i64() {
+                return u64::try_from(index)
+                    .ok()
+                    .map(saturating_vulkan_device_index);
+            }
+            if let Some(index) = value.as_u64() {
+                return Some(saturating_vulkan_device_index(index));
+            }
+            let index = value.as_f64()?.trunc();
+            if !index.is_finite() || index < 0.0 {
+                return None;
+            }
+            Some(saturating_vulkan_device_index(index as u64))
+        }
+        _ => None,
+    }
+}
+
+fn saturating_vulkan_device_index(index: u64) -> u32 {
+    // No real device index is u32::MAX, so this preserves an explicit nonmatching override.
+    u32::try_from(index).unwrap_or(u32::MAX)
+}
+
+fn available_memory_bytes() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let memory = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let mut available = None;
+        let mut total = None;
+        for line in memory.lines() {
+            let mut fields = line.split_whitespace();
+            match (fields.next(), fields.next()) {
+                (Some("MemAvailable:"), Some(value)) => available = value.parse::<u64>().ok(),
+                (Some("MemTotal:"), Some(value)) => total = value.parse::<u64>().ok(),
+                _ => {}
+            }
+        }
+        let available = available?.checked_mul(1024)?;
+        let total = total?.checked_mul(1024)?;
+        (available > 0 && total > 0 && available <= total).then_some(available)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 fn parakeet_target_sha(journal: &Path) -> Result<String, String> {
     let target = solstone_core_local::install::parakeet_target_for_platform(
         journal,
@@ -242,26 +575,47 @@ fn parakeet_target_sha(journal: &Path) -> Result<String, String> {
     Ok(fingerprint::sha256(&text))
 }
 
+fn local_target_sha(journal: &Path) -> Result<String, String> {
+    let envelope = dispatch(
+        InstallVerb::FingerprintLocal,
+        json!({"journal": journal.display().to_string(), "model_id": "local/qwen3.5-4b"}),
+    )
+    .map_err(dispatch_message)?;
+    envelope
+        .result
+        .and_then(|result| {
+            result
+                .get("target_fingerprint_sha256")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .ok_or_else(|| "local fingerprint dispatch omitted target_fingerprint_sha256".to_owned())
+}
+
 fn observe_existing(
     journal: &Path,
+    provider: &str,
     target_sha: &str,
     stderr: Vec<String>,
 ) -> InstallProviderOutcome {
     observe_existing_with(
         journal,
+        provider,
         target_sha,
         stderr,
         OBSERVE_POLL_INTERVAL,
         OBSERVE_TIMEOUT,
         OBSERVE_PROGRESS_INTERVAL,
         |state, stderr| {
-            stderr.push(progress_line(state));
+            stderr.push(progress_line(provider, state));
         },
     )
 }
 
+#[allow(clippy::too_many_arguments)] // Provider parameterization plus the injected poll/timeout test seam.
 fn observe_existing_with<P>(
     journal: &Path,
+    provider: &str,
     target_sha: &str,
     mut stderr: Vec<String>,
     poll_interval: Duration,
@@ -272,14 +626,16 @@ fn observe_existing_with<P>(
 where
     P: FnMut(&status::InstallStatus, &mut Vec<String>),
 {
-    let current = match status::read_status(journal, "parakeet") {
+    let current = match status::read_status(journal, provider) {
         Ok(status) => status,
-        Err(error) => return unavailable_status_error(stderr, error),
+        Err(error) => return unavailable_status_error(provider, stderr, error),
     };
     if !status::is_in_flight(&current.install_state)
         || current.target_fingerprint_sha256.as_deref() != Some(target_sha)
     {
-        stderr.push("parakeet install already running for a different target".to_owned());
+        stderr.push(format!(
+            "{provider} install already running for a different target"
+        ));
         return InstallProviderOutcome {
             exit_code: 1,
             stdout: Vec::new(),
@@ -288,7 +644,7 @@ where
     }
     match status::observe_attempt(
         journal,
-        "parakeet",
+        provider,
         target_sha,
         poll_interval,
         timeout,
@@ -307,18 +663,18 @@ where
             }
         }
         Ok(status::ObserveAttempt::TimedOut) => {
-            stderr.push("timed out observing parakeet install".to_owned());
+            stderr.push(format!("timed out observing {provider} install"));
             InstallProviderOutcome {
                 exit_code: 1,
                 stdout: Vec::new(),
                 stderr,
             }
         }
-        Err(error) => unavailable_status_error(stderr, error),
+        Err(error) => unavailable_status_error(provider, stderr, error),
     }
 }
 
-fn progress_line(state: &status::InstallStatus) -> String {
+fn progress_line(provider: &str, state: &status::InstallStatus) -> String {
     let suffix = state
         .progress_bytes_received
         .map(|received| match state.progress_bytes_total {
@@ -327,34 +683,36 @@ fn progress_line(state: &status::InstallStatus) -> String {
         })
         .unwrap_or_default();
     format!(
-        "observing parakeet install: {}{suffix}",
+        "observing {provider} install: {}{suffix}",
         state.install_state
     )
 }
 
 fn install_failure(
     journal: &Path,
+    provider: &str,
     error: DispatchError,
     mut stderr: Vec<String>,
 ) -> InstallProviderOutcome {
     stderr.push(dispatch_message(error));
-    match status::read_status(journal, "parakeet") {
+    match status::read_status(journal, provider) {
         Ok(status) => InstallProviderOutcome {
             exit_code: 1,
             stdout: vec![render_status(&status)],
             stderr,
         },
-        Err(error) => unavailable_status_error(stderr, error),
+        Err(error) => unavailable_status_error(provider, stderr, error),
     }
 }
 
 fn unavailable_status_error(
+    provider: &str,
     error_lines: Vec<String>,
     error: impl ToString,
 ) -> InstallProviderOutcome {
     let mut stderr = error_lines;
     stderr.push(format!(
-        "could not read persisted parakeet install status: {}",
+        "could not read persisted {provider} install status: {}",
         error.to_string()
     ));
     InstallProviderOutcome {
@@ -362,6 +720,14 @@ fn unavailable_status_error(
         stdout: Vec::new(),
         stderr,
     }
+}
+
+fn is_install_busy(error: &DispatchError) -> bool {
+    error
+        .envelope
+        .error
+        .as_ref()
+        .is_some_and(|error| error.reason_code == "install_busy")
 }
 
 fn dispatch_message(error: DispatchError) -> String {
@@ -494,6 +860,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked must not install"),
+            |_| panic!("local must not install"),
         );
         assert_eq!(blocked.exit_code, 1);
         assert!(
@@ -509,6 +876,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Warning)),
             |_, _| Ok(json!({"status": status_value("installed")})),
+            |_| panic!("local must not install"),
         );
         assert_eq!(warning.exit_code, 0);
         assert!(
@@ -528,6 +896,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("downloading")})),
+            |_| panic!("local must not install"),
         );
         assert_eq!(direct.exit_code, 0);
 
@@ -538,6 +907,7 @@ mod tests {
         status::write_status(journal.path(), current.clone()).unwrap();
         let observed = observe_existing_with(
             journal.path(),
+            "parakeet",
             &target_sha,
             Vec::new(),
             Duration::ZERO,
@@ -567,6 +937,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("failed")})),
+            |_| panic!("local must not install"),
         );
         assert_eq!(outcome.exit_code, 1);
     }
@@ -582,6 +953,7 @@ mod tests {
 
         let outcome = observe_existing_with(
             journal.path(),
+            "parakeet",
             &target_sha,
             Vec::new(),
             Duration::ZERO,
@@ -610,6 +982,7 @@ mod tests {
 
         let outcome = observe_existing_with(
             journal.path(),
+            "parakeet",
             &target_sha,
             Vec::new(),
             Duration::ZERO,
@@ -651,6 +1024,7 @@ mod tests {
                 entered.store(true, Ordering::SeqCst);
                 Ok(json!({"status": status_value("installed")}))
             },
+            |_| panic!("local must not install"),
         );
         assert_eq!(direct.exit_code, 0);
         assert!(executor_entered.load(Ordering::SeqCst));
@@ -673,6 +1047,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("held lease must not delegate"),
+            |_| panic!("local must not install"),
         );
         drop(held);
         assert_eq!(observed.exit_code, 1);
@@ -704,6 +1079,7 @@ mod tests {
             },
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("ready must not install"),
+            |_| panic!("local must not install"),
         );
         let binary_after = fs::metadata(&cpu_path).unwrap();
         let manifest_after = fs::metadata(&cpu_manifest).unwrap();
@@ -741,6 +1117,7 @@ mod tests {
             },
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked report proves non-ready reached install path"),
+            |_| panic!("local must not install"),
         );
         assert_eq!(unsound.exit_code, 1);
         assert!(unsound.stderr.iter().any(|line| line.contains("fit check")));
@@ -766,6 +1143,7 @@ mod tests {
                     called.store(true, Ordering::SeqCst);
                     panic!("unavailable must not install")
                 },
+                |_| panic!("local must not install"),
             );
             assert_eq!(outcome.exit_code, 1, "{reason}");
             assert!(outcome.stderr.iter().any(|line| line == reason));
@@ -777,20 +1155,254 @@ mod tests {
     }
 
     #[test]
-    fn ac6_local_and_unknown_provider_surface() {
-        let local = run_inner(
+    fn local_blocked_report_still_reaches_executor() {
+        let journal = tempfile::tempdir().unwrap();
+        let entered = Arc::new(AtomicBool::new(false));
+        let called = entered.clone();
+        let local = run_inner_with(
             options("local"),
-            || panic!("local must not resolve journal"),
-            |_| panic!("local must not inspect"),
-            |_, _| panic!("local must not install"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(fit_report::FitReport {
+                artifact: "local provider artifacts",
+                checks: vec![fit_report::FitCheck {
+                    name: "disk",
+                    severity: fit_report::FitSeverity::Blocked,
+                    detail: "too small".to_owned(),
+                }],
+            }),
+            |_, _| panic!("parakeet executor must not run"),
+            move |_| {
+                called.store(true, Ordering::SeqCst);
+                Ok(json!({"status": status_value("installed")}))
+            },
+        );
+        assert_eq!(local.exit_code, 0);
+        assert_eq!(
+            local.stderr[1].lines().next(),
+            Some("local provider artifacts fit check: blocked")
+        );
+        assert!(entered.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn local_failure_reads_persisted_status_or_names_local_status_error() {
+        let journal = tempfile::tempdir().unwrap();
+        let persisted = run_inner_with(
+            options("local"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| panic!("parakeet executor must not run"),
+            |_| Err(dispatch_error("download failed")),
+        );
+        assert_eq!(persisted.exit_code, 1);
+        assert_eq!(
+            serde_json::from_str::<Value>(&persisted.stdout[0]).unwrap()["provider"],
+            "local"
+        );
+        assert!(
+            persisted
+                .stderr
+                .iter()
+                .any(|line| line == "download failed")
+        );
+
+        fs::create_dir_all(
+            status::status_path(journal.path(), "local")
+                .parent()
+                .unwrap(),
+        )
+        .unwrap();
+        fs::write(status::status_path(journal.path(), "local"), b"not-json").unwrap();
+        let unreadable = run_inner_with(
+            options("local"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| panic!("parakeet executor must not run"),
+            |_| Err(dispatch_error("download failed")),
+        );
+        assert_eq!(unreadable.exit_code, 1);
+        assert!(unreadable.stdout.is_empty());
+        assert!(
+            unreadable
+                .stderr
+                .iter()
+                .any(|line| { line.starts_with("could not read persisted local install status:") })
+        );
+    }
+
+    #[test]
+    fn local_install_busy_observes_the_existing_local_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let target_sha = "local-target".to_owned();
+        let mut current = status::idle_status("local");
+        current.target_fingerprint_sha256 = Some(target_sha.clone());
+        let current = status::transition(current, "resolving", None, None).unwrap();
+        status::write_status(journal.path(), current).unwrap();
+        let status_path = journal.path().to_path_buf();
+        assert!(is_install_busy(&install_busy_error()));
+        let updater = std::thread::spawn(move || {
+            let current = status::read_status(&status_path, "local").unwrap();
+            let installed = status::transition(current, "installed", None, None).unwrap();
+            status::write_status(&status_path, installed).unwrap();
+        });
+
+        let outcome = observe_existing_with(
+            journal.path(),
+            "local",
+            &target_sha,
+            Vec::new(),
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            |_, _| {},
+        );
+        updater.join().unwrap();
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(
+            serde_json::from_str::<Value>(&outcome.stdout[0]).unwrap()["install_state"],
+            "installed"
+        );
+    }
+
+    #[test]
+    fn local_preheld_lease_observes_the_existing_local_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let target_sha = "local-target";
+        let mut current = status::idle_status("local");
+        current.target_fingerprint_sha256 = Some(target_sha.to_owned());
+        let current = status::transition(current, "resolving", None, None).unwrap();
+        status::write_status(journal.path(), current).unwrap();
+        let status_path = journal.path().to_path_buf();
+        let held = lease::acquire(journal.path(), "local").unwrap().unwrap();
+        let updater = std::thread::spawn(move || {
+            let current = status::read_status(&status_path, "local").unwrap();
+            let installed = status::transition(current, "installed", None, None).unwrap();
+            status::write_status(&status_path, installed).unwrap();
+        });
+
+        let outcome = observe_existing_with(
+            journal.path(),
+            "local",
+            target_sha,
+            Vec::new(),
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            |_, _| {},
+        );
+        updater.join().unwrap();
+        drop(held);
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(
+            serde_json::from_str::<Value>(&outcome.stdout[0]).unwrap()["install_state"],
+            "installed"
+        );
+    }
+
+    #[test]
+    fn local_override_accepts_python_integer_strings_but_corrupt_config_surfaces() {
+        let configured = json!({"providers":{"local":{"vulkan_device_index":" 2 "}}});
+        let value = configured["providers"]["local"]["vulkan_device_index"].clone();
+        assert_eq!(local_vulkan_device_index(&value), Some(2));
+        assert_eq!(local_vulkan_device_index(&json!("-0")), Some(0));
+        assert_eq!(local_vulkan_device_index(&json!(true)), Some(1));
+        assert_eq!(local_vulkan_device_index(&json!(2.0)), Some(2));
+        assert_eq!(local_vulkan_device_index(&json!(-0.5)), Some(0));
+        assert_eq!(
+            local_vulkan_device_index(&json!(u64::from(u32::MAX) + 1)),
+            Some(u32::MAX)
+        );
+        assert_eq!(
+            local_vulkan_device_index(&json!("4294967296")),
+            Some(u32::MAX)
+        );
+        assert_eq!(local_vulkan_device_index(&json!(-1)), None);
+        assert_eq!(local_vulkan_device_index(&json!("not-an-index")), None);
+
+        let journal = tempfile::tempdir().unwrap();
+        let config = journal.path().join("config");
+        fs::create_dir_all(&config).unwrap();
+        fs::write(config.join("journal.json"), b"not-json").unwrap();
+        // The Python-parity fallback applies only to the brain-lane predicate;
+        // the separately read override must still surface corrupt settings.
+        assert!(local_override_and_brain_lane(journal.path()).is_err());
+    }
+
+    #[test]
+    fn local_darwin_refusal_is_a_deliberate_python_parity_divergence() {
+        // Python on Darwin routes to _install_mlx_local() and installs; native
+        // local deliberately refuses because the native pool has no mac host.
+        let journal = tempfile::tempdir().unwrap();
+        let local = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| panic!("Darwin must not inspect readiness"),
+            None,
+            |_| panic!("Darwin must not install"),
+            "darwin",
+            "arm64",
         );
         assert_eq!(local.exit_code, EXIT_UNAVAILABLE);
-        assert_eq!(local.stderr, ["local provider install is not native yet"]);
+        assert_eq!(local.stderr, [LOCAL_DARWIN_UNAVAILABLE]);
+    }
+
+    #[test]
+    fn local_inactive_brain_lane_cannot_add_the_placement_suffix() {
+        // Keep this composition-level check: copying the -check hardcoded
+        // `true` would make the placement suffix incorrectly reappear.
+        let force_cpu = decide_parakeet_auto_placement(Some(6144), true, 1, false, false).force_cpu;
+        assert!(!force_cpu);
+        let report = fit_report::build_local_fit_report(
+            Path::new("/journal"),
+            "local/qwen3.5-4b",
+            "linux",
+            "x86_64",
+            Ok(20_u64 * 1024 * 1024 * 1024),
+            Some(8_u64 * 1024 * 1024 * 1024),
+            &solstone_core_local::NvidiaProbe {
+                schema: "test".to_owned(),
+                detected: true,
+                gpu_index: None,
+                gpu_name: None,
+                compute_cap: None,
+                arch: None,
+                driver_cuda_major: None,
+                vram_mib: Some(6144),
+                unified_memory_mib: None,
+                probe_error: None,
+            },
+            &solstone_core_local::BackendChoice {
+                backend: solstone_core_local::Backend::Cuda,
+                reason: "test choice".to_owned(),
+            },
+            true,
+            &[solstone_core_local::VulkanDevice {
+                index: 0,
+                name: "Test GPU".to_owned(),
+                device_type: Some(2),
+                vram_mib: 6144,
+            }],
+            None,
+            force_cpu,
+        );
+        let gpu = report
+            .checks
+            .iter()
+            .find(|check| check.name == "gpu")
+            .unwrap();
+        assert!(!gpu.detail.contains(solstone_core_local::CPU_PLACEMENT_COPY));
+    }
+
+    #[test]
+    fn ac6_unknown_provider_surface() {
         let unknown = run_inner(
             options("bogus"),
             || panic!("unknown must not resolve journal"),
             |_| panic!("unknown must not inspect"),
             |_, _| panic!("unknown must not install"),
+            |_| panic!("local must not install"),
         );
         assert_eq!(unknown.exit_code, 2);
         assert_eq!(
@@ -808,6 +1420,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Err(dispatch_error("download failed")),
+            |_| panic!("local must not install"),
         );
         assert_eq!(persisted.exit_code, 1);
         assert_eq!(
@@ -828,6 +1441,7 @@ mod tests {
             |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Err(dispatch_error("download failed")),
+            |_| panic!("local must not install"),
         );
         assert_eq!(unreadable.exit_code, 1);
         assert!(unreadable.stdout.is_empty());
@@ -852,6 +1466,22 @@ mod tests {
                 }),
             },
             exit_code: 74,
+        })
+    }
+
+    fn install_busy_error() -> Box<DispatchError> {
+        Box::new(DispatchError {
+            envelope: solstone_core_local::install::InstallEnvelope {
+                schema: "solstone-local-install-v1",
+                outcome: "error",
+                result: None,
+                error: Some(solstone_core_local::install::InstallError {
+                    kind: "busy".to_owned(),
+                    reason_code: "install_busy".to_owned(),
+                    message: "local install lease is held".to_owned(),
+                }),
+            },
+            exit_code: lease::BUSY_EXIT_CODE,
         })
     }
 

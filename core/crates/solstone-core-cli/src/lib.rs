@@ -24,6 +24,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
     "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n",
     "  solstone-core streams [args...]\n",
+    "  solstone-core importer [args...]\n",
     "  solstone-core segment [args...]\n",
     "  solstone-core journal-stats [args...]\n",
     "  solstone-core reprocess [args...]\n",
@@ -552,6 +553,7 @@ pub const TRANSFER_SEND_HELP: &str = concat!(
 pub enum Command {
     Doctor(solstone_core_doctor::args::DoctorArgs),
     DoctorUsage(solstone_core_doctor::args::DoctorUsageError),
+    DoctorHelp,
     Version,
     Assets,
     Warm {
@@ -576,6 +578,7 @@ pub enum Command {
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
     Streams(Vec<OsString>),
+    Importer(Vec<OsString>),
     Segment(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
@@ -1122,8 +1125,15 @@ pub struct UsageError;
 pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
     match args {
         [command, rest @ ..] if command == OsStr::new("doctor") => {
-            Ok(solstone_core_doctor::args::parse_doctor_args(rest)
-                .map_or_else(Command::DoctorUsage, Command::Doctor))
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                Ok(Command::DoctorHelp)
+            } else {
+                Ok(solstone_core_doctor::args::parse_doctor_args(rest)
+                    .map_or_else(Command::DoctorUsage, Command::Doctor))
+            }
         }
         [flag] if flag == OsStr::new("--version") => Ok(Command::Version),
         [command] if command == OsStr::new("assets") => Ok(Command::Assets),
@@ -1226,6 +1236,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("streams") => {
             Ok(Command::Streams(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("importer") => {
+            Ok(Command::Importer(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("segment") => {
             Ok(Command::Segment(rest.to_vec()))
@@ -5197,6 +5210,7 @@ mod tests {
             "assets",
             "warm",
             "check",
+            "doctor",
             "journal-path",
             "indexer",
             "journal-config",
@@ -5221,6 +5235,7 @@ mod tests {
             "install-models",
             "install-provider",
             "streams",
+            "importer",
             "segment",
             "journal-stats",
             "reprocess",
@@ -5373,6 +5388,26 @@ mod tests {
             assert_eq!(
                 evaluate_args(&args(values)),
                 Ok(Command::CheckHelp),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn doctor_rejects_unknown_and_help_flags_with_verb_results() {
+        assert!(matches!(
+            evaluate_args(&args(&["doctor", "--nonsense"])),
+            Ok(Command::DoctorUsage(_))
+        ));
+        for values in [
+            &["doctor", "--help"][..],
+            &["doctor", "-h"][..],
+            &["doctor", "--json", "--help"][..],
+            &["doctor", "--nonsense", "--help"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::DoctorHelp),
                 "{values:?}"
             );
         }

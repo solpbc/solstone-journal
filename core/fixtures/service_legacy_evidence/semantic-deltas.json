@@ -1,0 +1,582 @@
+{
+  "deltas": [
+    {
+      "changes": [],
+      "from_blob": "4a040848ed98616ab23c334e0da39da9862cae47",
+      "to_blob": "0407aa2d8475c24c4d34410fd3e8768cd6fc6173"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.ProgramArguments[2]",
+          "new_value": "<PORT>",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.ExecStart",
+          "new_value": "<LAUNCHER_BIN> supervisor <PORT>",
+          "old_value": "<LAUNCHER_BIN> supervisor",
+          "operation": "replace",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.ProgramArguments[2]",
+          "new_value": "<PORT>",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.ExecStart",
+          "new_value": "<LAUNCHER_BIN> supervisor <PORT>",
+          "old_value": "<LAUNCHER_BIN> supervisor",
+          "operation": "replace",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "0407aa2d8475c24c4d34410fd3e8768cd6fc6173",
+      "to_blob": "727c25d80643e24eabcfad2c2f6e7057b5fdbccc"
+    },
+    {
+      "changes": [],
+      "from_blob": "727c25d80643e24eabcfad2c2f6e7057b5fdbccc",
+      "to_blob": "34cd9adeb599cd2ac53e53a827af988ce88f66aa"
+    },
+    {
+      "changes": [],
+      "from_blob": "34cd9adeb599cd2ac53e53a827af988ce88f66aa",
+      "to_blob": "c200c97d40e163c6d2af6774035cb348a4b71d6e"
+    },
+    {
+      "changes": [],
+      "from_blob": "c200c97d40e163c6d2af6774035cb348a4b71d6e",
+      "to_blob": "588f4985789f9fb2b3af99029e6b850cf8ee1f30"
+    },
+    {
+      "changes": [],
+      "from_blob": "588f4985789f9fb2b3af99029e6b850cf8ee1f30",
+      "to_blob": "de2b6f0479f198c76ab14a22704a5a6be7b5b55f"
+    },
+    {
+      "changes": [],
+      "from_blob": "de2b6f0479f198c76ab14a22704a5a6be7b5b55f",
+      "to_blob": "5a3ac1648922b1fc5e21b25d96fd3a4e1de84533"
+    },
+    {
+      "changes": [],
+      "from_blob": "5a3ac1648922b1fc5e21b25d96fd3a4e1de84533",
+      "to_blob": "617ea8d8ccfa3d3621241e04d9a04a7890e8ca08"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.EnvironmentVariables._SOLSTONE_JOURNAL_OVERRIDE",
+          "new_value": null,
+          "old_value": "<JOURNAL>",
+          "operation": "remove",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.Environment._SOLSTONE_JOURNAL_OVERRIDE",
+          "new_value": null,
+          "old_value": "<JOURNAL>",
+          "operation": "remove",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.EnvironmentVariables._SOLSTONE_JOURNAL_OVERRIDE",
+          "new_value": null,
+          "old_value": "<JOURNAL>",
+          "operation": "remove",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.Environment._SOLSTONE_JOURNAL_OVERRIDE",
+          "new_value": null,
+          "old_value": "<JOURNAL>",
+          "operation": "remove",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "617ea8d8ccfa3d3621241e04d9a04a7890e8ca08",
+      "to_blob": "41431b1d274ed1aa69334cdebff80d2d8242af76"
+    },
+    {
+      "changes": [],
+      "from_blob": "41431b1d274ed1aa69334cdebff80d2d8242af76",
+      "to_blob": "329c4b1d6265ae387144c655c4157c77f3737527"
+    },
+    {
+      "changes": [],
+      "from_blob": "329c4b1d6265ae387144c655c4157c77f3737527",
+      "to_blob": "4b2cfbaa5a2e7b293d2e42096009fcb7cc753c9b"
+    },
+    {
+      "changes": [],
+      "from_blob": "4b2cfbaa5a2e7b293d2e42096009fcb7cc753c9b",
+      "to_blob": "f418d708470c499e46475847d85ecd5dfe480c95"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.StandardErrorPath",
+          "new_value": null,
+          "old_value": "<JOURNAL>/health/launchd-stderr.log",
+          "operation": "remove",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.StandardOutPath",
+          "new_value": null,
+          "old_value": "<JOURNAL>/health/launchd-stdout.log",
+          "operation": "remove",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.StandardErrorPath",
+          "new_value": null,
+          "old_value": "<JOURNAL>/health/launchd-stderr.log",
+          "operation": "remove",
+          "platform": "macos"
+        },
+        {
+          "field": "plist.StandardOutPath",
+          "new_value": null,
+          "old_value": "<JOURNAL>/health/launchd-stdout.log",
+          "operation": "remove",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "f418d708470c499e46475847d85ecd5dfe480c95",
+      "to_blob": "fe049851b20c722f9c947f42c68e8731304fd1f4"
+    },
+    {
+      "changes": [],
+      "from_blob": "fe049851b20c722f9c947f42c68e8731304fd1f4",
+      "to_blob": "e4f92dae159c16d45010d25f46a8029df0cc81bb"
+    },
+    {
+      "changes": [
+        {
+          "field": "systemd.Service.KillMode",
+          "new_value": "control-group",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.TimeoutStopSec",
+          "new_value": "30",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.KillMode",
+          "new_value": "control-group",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.TimeoutStopSec",
+          "new_value": "30",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "e4f92dae159c16d45010d25f46a8029df0cc81bb",
+      "to_blob": "88da6eb6e6994c390d9ee0ca2048cb9198b9d9ba"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.KeepAlive",
+          "new_value": null,
+          "old_value": true,
+          "operation": "remove",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.KeepAlive.SuccessfulExit",
+          "new_value": false,
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.KeepAlive",
+          "new_value": null,
+          "old_value": true,
+          "operation": "remove",
+          "platform": "macos"
+        },
+        {
+          "field": "plist.KeepAlive.SuccessfulExit",
+          "new_value": false,
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "88da6eb6e6994c390d9ee0ca2048cb9198b9d9ba",
+      "to_blob": "4ccb41c1da728667bf933a81a2592328fb0a582a"
+    },
+    {
+      "changes": [],
+      "from_blob": "4ccb41c1da728667bf933a81a2592328fb0a582a",
+      "to_blob": "6e55afb7b7934b45f44a317c5bc335338271724d"
+    },
+    {
+      "changes": [],
+      "from_blob": "6e55afb7b7934b45f44a317c5bc335338271724d",
+      "to_blob": "389daf68fd18a8ce64ff3b3b77896984ce8699ec"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.EnvironmentVariables.PYTHONUNBUFFERED",
+          "new_value": "1",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.StandardErrorPath",
+          "new_value": "<JOURNAL>/health/service.log",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.StandardOutPath",
+          "new_value": "<JOURNAL>/health/service.log",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.Environment.PYTHONUNBUFFERED",
+          "new_value": "1",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.StandardError",
+          "new_value": "inherit",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.StandardOutput",
+          "new_value": "append:<JOURNAL>/health/service.log",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Unit.StartLimitBurst",
+          "new_value": "10",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Unit.StartLimitIntervalSec",
+          "new_value": "120",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.EnvironmentVariables.PYTHONUNBUFFERED",
+          "new_value": "1",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "plist.StandardErrorPath",
+          "new_value": "<JOURNAL>/health/service.log",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "plist.StandardOutPath",
+          "new_value": "<JOURNAL>/health/service.log",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.Environment.PYTHONUNBUFFERED",
+          "new_value": "1",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.StandardError",
+          "new_value": "inherit",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.StandardOutput",
+          "new_value": "append:<JOURNAL>/health/service.log",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Unit.StartLimitBurst",
+          "new_value": "10",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Unit.StartLimitIntervalSec",
+          "new_value": "120",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "389daf68fd18a8ce64ff3b3b77896984ce8699ec",
+      "to_blob": "f307b615c9e3072297ea7b9699e74fdacdfa76dc"
+    },
+    {
+      "changes": [
+        {
+          "field": "systemd.Service.Type",
+          "new_value": "notify",
+          "old_value": "simple",
+          "operation": "replace",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.Type",
+          "new_value": "notify",
+          "old_value": "simple",
+          "operation": "replace",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "f307b615c9e3072297ea7b9699e74fdacdfa76dc",
+      "to_blob": "e7633acc7d0422a014b1eeba908b8a92df8bfc11"
+    },
+    {
+      "changes": [],
+      "from_blob": "e7633acc7d0422a014b1eeba908b8a92df8bfc11",
+      "to_blob": "437dfa804bed892ca9ec722c031a3eb4c9355445"
+    },
+    {
+      "changes": [],
+      "from_blob": "437dfa804bed892ca9ec722c031a3eb4c9355445",
+      "to_blob": "b661fb884b76368cd8e37c8e272dfbe6abdf5155"
+    },
+    {
+      "changes": [],
+      "from_blob": "b661fb884b76368cd8e37c8e272dfbe6abdf5155",
+      "to_blob": "8fe72a78c2217f29010f29614cb34a8c9552b88a"
+    },
+    {
+      "changes": [],
+      "from_blob": "8fe72a78c2217f29010f29614cb34a8c9552b88a",
+      "to_blob": "08344a6d481e965993372c42945771db8f1e9e22"
+    },
+    {
+      "changes": [],
+      "from_blob": "08344a6d481e965993372c42945771db8f1e9e22",
+      "to_blob": "e7bf40e833dd14640130c2fa066736b2234394e4"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.ProgramArguments[1]",
+          "new_value": "start",
+          "old_value": "supervisor",
+          "operation": "replace",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.ExecStart",
+          "new_value": "<LAUNCHER_BIN> start <PORT>",
+          "old_value": "<LAUNCHER_BIN> supervisor <PORT>",
+          "operation": "replace",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.ProgramArguments[1]",
+          "new_value": "start",
+          "old_value": "supervisor",
+          "operation": "replace",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.ExecStart",
+          "new_value": "<LAUNCHER_BIN> start <PORT>",
+          "old_value": "<LAUNCHER_BIN> supervisor <PORT>",
+          "operation": "replace",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "e7bf40e833dd14640130c2fa066736b2234394e4",
+      "to_blob": "5e43ae13459111ad67baa6a60c84640de43fc9b1"
+    },
+    {
+      "changes": [],
+      "from_blob": "5e43ae13459111ad67baa6a60c84640de43fc9b1",
+      "to_blob": "3b109f17470471a39d83ed4234ef0bdf6c35fdde"
+    },
+    {
+      "changes": [],
+      "from_blob": "3b109f17470471a39d83ed4234ef0bdf6c35fdde",
+      "to_blob": "2a530a9e61bdd09115f10e2978f9d3a0e41d6864"
+    },
+    {
+      "changes": [],
+      "from_blob": "2a530a9e61bdd09115f10e2978f9d3a0e41d6864",
+      "to_blob": "cec26ffb20aa480112d8b818997a981c79036f75"
+    },
+    {
+      "changes": [],
+      "from_blob": "cec26ffb20aa480112d8b818997a981c79036f75",
+      "to_blob": "2580b866f4b388382a8d07f35353eb2959c0022e"
+    },
+    {
+      "changes": [],
+      "from_blob": "2580b866f4b388382a8d07f35353eb2959c0022e",
+      "to_blob": "21dcea1574734a1f0721309ce4a8362d99a3d527"
+    },
+    {
+      "changes": [
+        {
+          "field": "plist.SoftResourceLimits.NumberOfFiles",
+          "new_value": 4096,
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.LimitNOFILE",
+          "new_value": "4096",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "plist.SoftResourceLimits.NumberOfFiles",
+          "new_value": 4096,
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        },
+        {
+          "field": "systemd.Service.LimitNOFILE",
+          "new_value": "4096",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "21dcea1574734a1f0721309ce4a8362d99a3d527",
+      "to_blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6"
+    },
+    {
+      "changes": [],
+      "from_blob": "e8ce1268eee5ecd86efbfab0b6b63803b254b8b6",
+      "to_blob": "2fa8351ec20ac80c7d37806478ad0da2365ed33f"
+    },
+    {
+      "changes": [],
+      "from_blob": "2fa8351ec20ac80c7d37806478ad0da2365ed33f",
+      "to_blob": "858e378930b48d057391dd4f806cea5f505ff629"
+    },
+    {
+      "changes": [],
+      "from_blob": "858e378930b48d057391dd4f806cea5f505ff629",
+      "to_blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e"
+    },
+    {
+      "changes": [],
+      "from_blob": "ffc701c80c1b80d5535f0b29c0fd32ea6131e66e",
+      "to_blob": "e88f56f2e13f7ae1256b6df59ee974eec32b4c40"
+    },
+    {
+      "changes": [
+        {
+          "field": "systemd.Service.TimeoutStartSec",
+          "new_value": "120",
+          "old_value": null,
+          "operation": "add",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.TimeoutStartSec",
+          "new_value": "120",
+          "old_value": null,
+          "operation": "add",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "e88f56f2e13f7ae1256b6df59ee974eec32b4c40",
+      "to_blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5"
+    },
+    {
+      "changes": [
+        {
+          "field": "systemd.Service.StandardError",
+          "new_value": "append:<JOURNAL>/health/service.log",
+          "old_value": "inherit",
+          "operation": "replace",
+          "platform": "linux"
+        },
+        {
+          "field": "systemd.Service.StandardError",
+          "new_value": "append:<JOURNAL>/health/service.log",
+          "old_value": "inherit",
+          "operation": "replace",
+          "platform": "macos"
+        }
+      ],
+      "from_blob": "05f1cb377cb8323ec4209d1db25f93561e3cdad5",
+      "to_blob": "c22e08d72718a35466ce1fe049058f237d61798c"
+    },
+    {
+      "changes": [],
+      "from_blob": "c22e08d72718a35466ce1fe049058f237d61798c",
+      "to_blob": "72787af4b4bca72ce72c24f035ca9bde1900444f"
+    },
+    {
+      "changes": [],
+      "from_blob": "72787af4b4bca72ce72c24f035ca9bde1900444f",
+      "to_blob": "db12518b7533a85bb08f2f553e7fb6efeec78530"
+    },
+    {
+      "changes": [],
+      "from_blob": "db12518b7533a85bb08f2f553e7fb6efeec78530",
+      "to_blob": "2ea1c5633aa7bca115367330d70bb08afd23a78a"
+    },
+    {
+      "changes": [],
+      "from_blob": "2ea1c5633aa7bca115367330d70bb08afd23a78a",
+      "to_blob": "22fa1b58288f129576df8391c518d0da9e87b682"
+    },
+    {
+      "changes": [],
+      "from_blob": "22fa1b58288f129576df8391c518d0da9e87b682",
+      "to_blob": "baa4f68d18830e92aa6ae215ffbf86cc8e14513f"
+    }
+  ],
+  "schema": "service-legacy-semantic-deltas",
+  "schema_version": 1
+}

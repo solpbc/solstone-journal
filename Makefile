@@ -25,6 +25,7 @@ VENV_BIN := $(VENV)/bin
 VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
+SERVICE_LEGACY_EVIDENCE_ROOT := core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
 MACOS_TARGET := aarch64-apple-darwin
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
@@ -477,7 +478,7 @@ check-rust-macos:
 	@$(REQUIRE_CARGO)
 	@$(REQUIRE_RUSTUP)
 	@rustup target list --installed 2>/dev/null | grep -qx "$(MACOS_TARGET)" || { echo "Rust target $(MACOS_TARGET) is required for the macOS gate; run rustup target add $(MACOS_TARGET)" >&2; exit 1; }
-	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core-system -p solstone-core-local -p solstone-core-journal-io --lib --target $(MACOS_TARGET) --locked
+	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core-system -p solstone-core-local -p solstone-core-journal-io -p solstone-core-steward-prune --lib --target $(MACOS_TARGET) --locked
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)
@@ -522,6 +523,20 @@ check-rust-deny:
 # The Vulkan differential fails without a loader unless the operator explicitly
 # sets SOLSTONE_VULKAN_DIFFERENTIAL_NO_LOADER=1; its --nocapture mode makes the
 # resulting RUN or SKIP report visible in this gate's output.
+.PHONY: check-service-legacy-evidence service-legacy-evidence-capture
+# Hand-run immutable-evidence regeneration. This deliberately has no `install`
+# prerequisite: every leg is either stdlib Python, its own pinned interpreter
+# acquisition, uv/maturin, or Cargo, and adding install would create unrelated
+# journal/runtime side effects. It is intentionally not a CI prerequisite.
+check-service-legacy-evidence:
+	cargo fmt --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml --all -- --check
+	cargo clippy --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml --all-targets --locked -- -D warnings
+	cargo test --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml --locked -- --test-threads=1
+
+service-legacy-evidence-capture:
+	@test -n "$(CAPTURE_INPUT)" || { echo "CAPTURE_INPUT=<pushed-commit> is required" >&2; exit 2; }
+	python3 scripts/service_legacy_capture.py --capture-input "$(CAPTURE_INPUT)"
+
 .PHONY: check-differentials
 check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
 	@$(REQUIRE_CARGO)
@@ -536,7 +551,7 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
-		"-p solstone-core-local --test admission_cross_process --test vulkan_differential --test install_provider_differential --test downloading_installers_differential -- --nocapture" \
+		"-p solstone-core-local --test admission_cross_process --test vulkan_differential --test local_fit_report_differential --test install_provider_differential --test downloading_installers_differential -- --nocapture" \
 		"-p solstone-core-observer --test observer_list_json_differential --test observer_status_differential --test observer_list_human_differential --test observer_reconcile_dry_run_differential --test observer_increment_stat_differential --test observer_resolve_identity_differential --test observer_prune_dry_run_differential" \
 		"-p solstone-core-system --test stt_backend_choice_differential --test partition_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
