@@ -44,6 +44,10 @@ const ALLOWED: &[(&str, &str)] = &[
         "alias and email dedupe keys, reproducing the reference's own dedupe",
     ),
     (
+        "solstone-core-entity/src/archive_dedupe.rs",
+        "narrow archive alias and email dedupe keys, deliberately reproducing merge reference semantics",
+    ),
+    (
         "solstone-core-entity/src/store/undo.rs",
         "the inverse of that same dedupe, so undo removes exactly what merge added",
     ),

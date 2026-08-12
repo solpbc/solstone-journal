@@ -9,13 +9,13 @@ const IMPLEMENTED_SOURCE_MODULES: &[&str] = &["document", "image", "ics", "obsid
 
 #[test]
 fn every_source_module_stub_is_unique_and_unimplemented() {
-    assert_eq!(MODULE_STUBS.len(), 8);
+    assert_eq!(MODULE_STUBS.len(), 7);
     let names = MODULE_STUBS
         .iter()
         .map(|(name, _)| *name)
         .collect::<BTreeSet<_>>();
     assert_eq!(names.len(), MODULE_STUBS.len());
-    assert!(names.contains("archive"));
+    assert!(!names.contains("archive"));
     assert!(!names.contains("journal_archive"));
 
     for (name, stub) in MODULE_STUBS {
