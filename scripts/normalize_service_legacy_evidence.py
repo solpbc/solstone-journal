@@ -14,11 +14,13 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import os
 import plistlib
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from promote_service_legacy_evidence_tree import promote_tree
 from service_legacy_paths import evidence_root
@@ -303,18 +305,77 @@ def normalize_all(output_root: Path) -> int:
     return count
 
 
-def main() -> int:
+def publish_normalized_tree(
+    builder: Callable[[Path], int] = normalize_all,
+) -> int:
+    if os.environ.get("SERVICE_LEGACY_FULL_TREE_STAGING") == "1":
+        if NORMALIZED_ROOT.exists():
+            raise NormalizationError(
+                "full-tree transaction normalized destination already exists"
+            )
+        return builder(NORMALIZED_ROOT)
+
     staging_parent = Path(
         tempfile.mkdtemp(prefix=".normalized-staging.", dir=EVIDENCE_ROOT)
     )
     staging = staging_parent / "normalized"
     try:
-        count = normalize_all(staging)
+        count = builder(staging)
         promote_tree(staging, NORMALIZED_ROOT, 88)
         staging_parent.rmdir()
+        return count
     finally:
         if staging_parent.exists():
             shutil.rmtree(staging_parent)
+
+
+def self_test() -> None:
+    global EVIDENCE_ROOT, NORMALIZED_ROOT
+
+    original_evidence = EVIDENCE_ROOT
+    original_normalized = NORMALIZED_ROOT
+    original_flag = os.environ.get("SERVICE_LEGACY_FULL_TREE_STAGING")
+    with tempfile.TemporaryDirectory(prefix="service-legacy-normalize-") as temporary:
+        EVIDENCE_ROOT = Path(temporary)
+        NORMALIZED_ROOT = EVIDENCE_ROOT / "normalized"
+        os.environ["SERVICE_LEGACY_FULL_TREE_STAGING"] = "1"
+
+        def controlled_builder(destination: Path) -> int:
+            destination.mkdir()
+            (destination / "proof.json").write_text("{}\n", encoding="utf-8")
+            return 1
+
+        try:
+            if publish_normalized_tree(controlled_builder) != 1:
+                raise NormalizationError("controlled full-tree count changed")
+            if not (NORMALIZED_ROOT / "proof.json").is_file():
+                raise NormalizationError("full-tree destination was not written")
+            try:
+                publish_normalized_tree(controlled_builder)
+            except NormalizationError as exc:
+                if "already exists" not in str(exc):
+                    raise
+            else:
+                raise NormalizationError(
+                    "full-tree transaction accepted an existing destination"
+                )
+        finally:
+            EVIDENCE_ROOT = original_evidence
+            NORMALIZED_ROOT = original_normalized
+            if original_flag is None:
+                os.environ.pop("SERVICE_LEGACY_FULL_TREE_STAGING", None)
+            else:
+                os.environ["SERVICE_LEGACY_FULL_TREE_STAGING"] = original_flag
+    print("service-legacy normalization staging self-test passed")
+
+
+def main() -> int:
+    if "--self-test" in sys.argv[1:]:
+        if sys.argv[1:] != ["--self-test"]:
+            raise NormalizationError("--self-test does not accept other arguments")
+        self_test()
+        return 0
+    count = publish_normalized_tree()
     print(f"wrote {count} normalized fixtures")
     return 0
 

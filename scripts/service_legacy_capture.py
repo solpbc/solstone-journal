@@ -88,6 +88,7 @@ def capture_environment(
         "PYTHONNOUSERSITE": "1",
         "SERVICE_LEGACY_CAPTURE_INPUT": capture_input,
         "SERVICE_LEGACY_EVIDENCE_ROOT": str(evidence),
+        "SERVICE_LEGACY_FULL_TREE_STAGING": "1",
         "SERVICE_LEGACY_PYTHON_CACHE_ROOT": str(python_cache),
         "SERVICE_LEGACY_RUSTUP": str(rustup),
         "SERVICE_LEGACY_TAG_NAMESPACE": TAG_NAMESPACE,

@@ -68,6 +68,18 @@ fn full_tree_exchange_control_is_atomic() {
 }
 
 #[test]
+fn normalization_can_build_inside_a_fresh_full_tree_transaction() {
+    let root = repository_root();
+    python(
+        &root,
+        &[
+            "scripts/normalize_service_legacy_evidence.py",
+            "--self-test",
+        ],
+    );
+}
+
+#[test]
 fn git_authority_adapter_rejects_local_rewrites() {
     let root = repository_root();
     python(&root, &["scripts/service_legacy_git.py", "--self-test"]);
