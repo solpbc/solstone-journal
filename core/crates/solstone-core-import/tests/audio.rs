@@ -8,7 +8,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use chrono::NaiveDateTime;
+use serde_json::Map;
 use serde_json::{Value, json};
+use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
+use solstone_core_import::events::observing_fields;
 use solstone_core_import::{
     AudioImportOutcome, AudioImportRequest, AudioImportSeams, AudioProbeError,
     AudioProcessingState, AudioSliceError, AudioWaitRecord, ImportError, ObservingSegment,
@@ -41,11 +44,29 @@ async fn fake_import(
     failed_chunk: Option<u64>,
     emitted: Rc<RefCell<Vec<ObservingSegment>>>,
 ) -> Result<AudioImportOutcome, ImportError> {
+    fake_import_with_calls(
+        request,
+        duration,
+        failed_chunk,
+        emitted,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await
+}
+
+async fn fake_import_with_calls(
+    request: AudioImportRequest,
+    duration: f64,
+    failed_chunk: Option<u64>,
+    emitted: Rc<RefCell<Vec<ObservingSegment>>>,
+    calls: Rc<RefCell<Vec<(f64, f64)>>>,
+) -> Result<AudioImportOutcome, ImportError> {
     import_audio_with_seams(
         request,
         AudioImportSeams {
             duration_probe: move |_: &Path| Ok(duration),
-            slice: move |_: &Path, output: &Path, start: f64, _: f64| {
+            slice: move |_: &Path, output: &Path, start: f64, chunk_duration: f64| {
+                calls.borrow_mut().push((start, chunk_duration));
                 if failed_chunk == Some((start / 300.0) as u64) {
                     return Err(AudioSliceError::Remux {
                         error: ffmpeg_next::Error::InvalidData,
@@ -80,26 +101,30 @@ async fn ac1_integral_segment_arithmetic_matches_the_vendored_oracle() {
     for (name, duration) in cases {
         let temp = TempDir::new().unwrap();
         let emitted = Rc::new(RefCell::new(Vec::new()));
-        let outcome = fake_import(request(&temp, name), duration, None, emitted.clone())
-            .await
-            .unwrap();
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let outcome = fake_import_with_calls(
+            request(&temp, name),
+            duration,
+            None,
+            emitted.clone(),
+            calls.clone(),
+        )
+        .await
+        .unwrap();
         let expected = oracle["cases"][name]["segments_returned"].as_u64().unwrap() as usize;
         assert_eq!(created(&outcome).segments.len(), expected, "{name}");
-        let record = read_audio_import_record(&request(&temp, name).journal_root, name)
-            .unwrap()
-            .unwrap();
-        let expected_last = oracle["cases"][name]["slice_calls"]
+        let expected_calls = oracle["cases"][name]["slice_calls"]
             .as_array()
             .unwrap()
-            .last()
-            .unwrap()["chunk_duration"]
-            .as_f64()
-            .unwrap();
-        assert_eq!(
-            record.created_segments.last().unwrap().duration_seconds,
-            expected_last,
-            "{name}"
-        );
+            .iter()
+            .map(|call| {
+                (
+                    call["start_seconds"].as_f64().unwrap(),
+                    call["chunk_duration"].as_f64().unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(*calls.borrow(), expected_calls, "{name}");
         assert_eq!(
             emitted.borrow().len(),
             oracle["cases"][name]["slice_attempts"].as_u64().unwrap() as usize,
@@ -115,11 +140,13 @@ async fn ac2_fractional_segment_arithmetic_uses_the_oracle_authority() {
         let duration = case["duration"].as_f64().unwrap();
         let temp = TempDir::new().unwrap();
         let emitted = Rc::new(RefCell::new(Vec::new()));
-        let _outcome = fake_import(
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let _outcome = fake_import_with_calls(
             request(&temp, &format!("fractional-{duration}")),
             duration,
             None,
             emitted,
+            calls.clone(),
         )
         .await
         .unwrap();
@@ -136,6 +163,30 @@ async fn ac2_fractional_segment_arithmetic_uses_the_oracle_authority() {
         let actual = record.created_segments.last().unwrap().duration_seconds;
         let expected = case["last_chunk_seconds"].as_f64().unwrap();
         assert!((actual - expected).abs() < 0.000_001, "duration {duration}");
+        let expected_calls = (0..record.created_segments.len())
+            .map(|index| {
+                (
+                    index as f64 * 300.0,
+                    if index + 1 == record.created_segments.len() {
+                        expected
+                    } else {
+                        300.0
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let actual_calls = calls.borrow();
+        assert_eq!(
+            actual_calls.len(),
+            expected_calls.len(),
+            "duration {duration}"
+        );
+        for ((actual_start, actual_duration), (expected_start, expected_duration)) in
+            actual_calls.iter().zip(expected_calls)
+        {
+            assert!((actual_start - expected_start).abs() < 0.000_001);
+            assert!((actual_duration - expected_duration).abs() < 0.000_001);
+        }
     }
 }
 
@@ -194,7 +245,7 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
     assert_eq!(partial.dropped_chunks.len(), 1);
     assert_eq!(partial.dropped_chunks[0].index, 1);
     assert_eq!(partial.dropped_chunks[0].start_offset_seconds, 300.0);
-    assert_eq!(partial.dropped_chunks[0].duration_seconds, 600.0);
+    assert_eq!(partial.dropped_chunks[0].duration_seconds, 300.0);
     assert!(!AudioImportOutcome::Partial(partial.clone()).writes_dedupe_manifest());
 
     let complete_temp = TempDir::new().unwrap();
@@ -211,8 +262,9 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
     assert!(complete.writes_dedupe_manifest());
 
     let failed_temp = TempDir::new().unwrap();
+    let all_failed_request = request(&failed_temp, "all-failed");
     let all_failed = import_audio_with_seams(
-        request(&failed_temp, "all-failed"),
+        all_failed_request.clone(),
         AudioImportSeams {
             duration_probe: |_: &Path| Ok(900.0),
             slice: |_: &Path, _: &Path, _: f64, _: f64| {
@@ -228,6 +280,56 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
         all_failed,
         Err(ImportError::NoAudioSegmentsCreated { .. })
     ));
+    let total_loss_record = read_audio_import_record(
+        &all_failed_request.journal_root,
+        &all_failed_request.import_id,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(total_loss_record.created_segments.len(), 0);
+    assert_eq!(total_loss_record.dropped_chunks.len(), 3);
+    assert!(total_loss_record.abort.is_some());
+
+    let destination_temp = TempDir::new().unwrap();
+    let destination_request = request(&destination_temp, "destination-error");
+    let destination_error = import_audio_with_seams(
+        destination_request.clone(),
+        AudioImportSeams {
+            duration_probe: |_: &Path| Ok(601.0),
+            slice: |_: &Path, output: &Path, start: f64, _: f64| {
+                if start == 0.0 {
+                    fs::write(output, b"audio").unwrap();
+                    Ok(())
+                } else {
+                    Err(AudioSliceError::Remux {
+                        error: ffmpeg_next::Error::Other {
+                            errno: ffmpeg_next::error::EACCES,
+                        },
+                    })
+                }
+            },
+            emit_observing: |_: &ObservingSegment| {},
+        },
+    )
+    .await;
+    assert!(matches!(
+        destination_error,
+        Err(ImportError::AudioSliceRejected {
+            chunk_index: 1,
+            start_offset_seconds: 300.0,
+            duration_seconds: 300.0,
+            ..
+        })
+    ));
+    let destination_record = read_audio_import_record(
+        &destination_request.journal_root,
+        &destination_request.import_id,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(destination_record.created_segments.len(), 1);
+    assert!(destination_record.dropped_chunks.is_empty());
+    assert_eq!(destination_record.abort.unwrap().chunk_index, Some(1));
 }
 
 #[tokio::test]
@@ -316,6 +418,38 @@ async fn ac6_allocation_is_exclusive_bounded_and_cleans_failed_leaves() {
         Err(ImportError::AudioSegmentCollision { attempts: 60, .. })
     ));
 
+    let mid_loop = TempDir::new().unwrap();
+    let mid_loop_request = request(&mid_loop, "mid-loop-collision");
+    let mid_loop_parent = mid_loop_request
+        .journal_root
+        .join("chronicle")
+        .join(&mid_loop_request.day)
+        .join(&mid_loop_request.stream);
+    for second in 0..60 {
+        fs::create_dir_all(mid_loop_parent.join(format!("1205{second:02}_300"))).unwrap();
+    }
+    let mid_loop_error = fake_import(
+        mid_loop_request.clone(),
+        601.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    assert!(matches!(
+        mid_loop_error,
+        Err(ImportError::AudioSegmentCollision { .. })
+    ));
+    let mid_loop_record =
+        read_audio_import_record(&mid_loop_request.journal_root, &mid_loop_request.import_id)
+            .unwrap()
+            .unwrap();
+    assert_eq!(mid_loop_record.created_segments.len(), 1);
+    assert_eq!(mid_loop_record.abort.unwrap().chunk_index, Some(1));
+    assert!(
+        mid_loop_record.created_segments[0].file_path.is_file(),
+        "the already-created audio remains recorded rather than being deleted"
+    );
+
     let midnight = TempDir::new().unwrap();
     let mut midnight_request = request(&midnight, "midnight");
     midnight_request.base_timestamp =
@@ -343,6 +477,12 @@ async fn ac6_allocation_is_exclusive_bounded_and_cleans_failed_leaves() {
 async fn ac7_record_keeps_true_source_range_independent_of_the_key() {
     let temp = TempDir::new().unwrap();
     let request = request(&temp, "true-range");
+    let parent = request
+        .journal_root
+        .join("chronicle")
+        .join(&request.day)
+        .join(&request.stream);
+    fs::create_dir_all(parent.join("120000_300")).unwrap();
     let outcome = fake_import(
         request.clone(),
         601.482,
@@ -354,6 +494,10 @@ async fn ac7_record_keeps_true_source_range_independent_of_the_key() {
     let record = read_audio_import_record(&request.journal_root, &request.import_id)
         .unwrap()
         .unwrap();
+    let first = record.created_segments.first().unwrap();
+    assert_eq!(first.start_offset_seconds, 0.0);
+    assert_eq!(first.start_timestamp, "2026-08-11T12:00:00");
+    assert_ne!(&first.key[..6], "120000");
     let last = record.created_segments.last().unwrap();
     assert_eq!(last.start_offset_seconds, 600.0);
     assert_eq!(last.start_timestamp, "2026-08-11T12:10:00");
@@ -380,11 +524,16 @@ async fn ac8_emit_seam_receives_one_complete_observing_event_per_segment() {
             assert_eq!(event.segment, segment.segment);
             assert_eq!(event.day, segment.day);
             assert_eq!(event.stream, segment.stream);
-            assert_eq!(event.files.len(), 1);
+            assert_eq!(event.files, vec!["imported_audio.m4a".to_owned()]);
             assert_eq!(event.meta.import_id, import_request.import_id);
             assert_eq!(event.meta.stream, import_request.stream);
             assert_eq!(event.meta.facet.as_deref(), Some("work"));
             assert_eq!(event.meta.setting.as_deref(), Some("desk"));
+            let fields = observing_fields(event);
+            assert_eq!(fields["batch"], true);
+            assert_eq!(fields["files"], json!(["imported_audio.m4a"]));
+            assert_eq!(fields["meta"]["facet"], "work");
+            assert_eq!(fields["meta"]["setting"], "desk");
         }
     }
 
@@ -400,6 +549,10 @@ async fn ac8_emit_seam_receives_one_complete_observing_event_per_segment() {
     .unwrap();
     assert!(emitted_without_meta.borrow()[0].meta.facet.is_none());
     assert!(emitted_without_meta.borrow()[0].meta.setting.is_none());
+    let fields = observing_fields(&emitted_without_meta.borrow()[0]);
+    assert_eq!(fields["files"], json!(["imported_audio.m4a"]));
+    assert!(fields["meta"].get("facet").is_none());
+    assert!(fields["meta"].get("setting").is_none());
 }
 
 #[tokio::test]
@@ -459,6 +612,62 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     assert!(matches!(success, AudioImportOutcome::Complete(_)));
     assert!(created(&success).processing.failed_segments.is_empty());
     assert!(created(&success).processing.stalled_segments.is_empty());
+    let success_record =
+        read_audio_import_record(&success_request.journal_root, &success_request.import_id)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        success_record.created_segments[0].processing,
+        AudioProcessingState::Succeeded
+    );
+
+    let during_temp = TempDir::new().unwrap();
+    let mut during_request = request(&during_temp, "during-loop");
+    during_request.wait_for_processing = true;
+    during_request.stall_timeout = Duration::from_millis(50);
+    during_request.poll_interval = Duration::from_millis(1);
+    let during_sidecar = during_request
+        .journal_root
+        .join("chronicle/20260811/import.audio/120000_120/imported_audio.jsonl");
+    let writer = std::thread::spawn(move || {
+        for _ in 0..100 {
+            if during_sidecar.parent().is_some_and(Path::exists) {
+                std::thread::sleep(Duration::from_millis(5));
+                fs::write(
+                    during_sidecar,
+                    "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":5}}\n",
+                )
+                .unwrap();
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        panic!("audio slice did not create its sidecar directory");
+    });
+    let during = import_audio_with_seams(
+        during_request.clone(),
+        AudioImportSeams {
+            duration_probe: |_: &Path| Ok(120.0),
+            slice: |_: &Path, output: &Path, _: f64, _: f64| {
+                fs::write(output, b"audio").unwrap();
+                Ok(())
+            },
+            emit_observing: |_: &ObservingSegment| {},
+        },
+    )
+    .await
+    .unwrap();
+    writer.join().unwrap();
+    assert!(created(&during).processing.failed_segments.is_empty());
+    assert!(created(&during).processing.stalled_segments.is_empty());
+    let during_record =
+        read_audio_import_record(&during_request.journal_root, &during_request.import_id)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        during_record.created_segments[0].processing,
+        AudioProcessingState::Succeeded
+    );
 
     let failure_temp = TempDir::new().unwrap();
     let mut failure_request = request(&failure_temp, "processing-failure");
@@ -492,6 +701,14 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     .unwrap();
     assert!(matches!(failure, AudioImportOutcome::Complete(_)));
     assert_eq!(created(&failure).processing.failed_segments.len(), 1);
+    let failure_record =
+        read_audio_import_record(&failure_request.journal_root, &failure_request.import_id)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        failure_record.created_segments[0].processing,
+        AudioProcessingState::Failed
+    );
 
     let stalled_temp = TempDir::new().unwrap();
     let mut stalled_request = request(&stalled_temp, "stall");
@@ -507,4 +724,66 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     .await
     .unwrap();
     assert_eq!(created(&stalled).processing.stalled_segments.len(), 1);
+    let stalled_record = read_audio_import_record(&stalled_temp.path().join("journal"), "stall")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stalled_record.created_segments[0].processing,
+        AudioProcessingState::Stalled
+    );
+
+    let event_temp = TempDir::new().unwrap();
+    let mut event_request = request(&event_temp, "event-without-sidecar");
+    event_request.wait_for_processing = true;
+    event_request.stall_timeout = Duration::from_millis(100);
+    event_request.poll_interval = Duration::from_millis(1);
+    let server =
+        CallosumSocketServer::bind(event_request.journal_root.join("health/callosum.sock"))
+            .await
+            .unwrap();
+    let wait_for_client = async {
+        while server.client_count() == 0 {
+            tokio::task::yield_now().await;
+        }
+        assert!(server.broadcast(CallosumEnvelope {
+            tract: "observe".to_owned(),
+            event: "observed".to_owned(),
+            ts: None,
+            extra: Map::from_iter([(String::from("segment"), json!("120000_120"))]),
+        }));
+    };
+    let import = import_audio_with_seams(
+        event_request.clone(),
+        AudioImportSeams {
+            duration_probe: |_: &Path| Ok(120.0),
+            slice: |_: &Path, output: &Path, _: f64, _: f64| {
+                fs::write(output, b"audio").unwrap();
+                Ok(())
+            },
+            emit_observing: |_: &ObservingSegment| {},
+        },
+    );
+    let (event_outcome, ()) = tokio::join!(import, wait_for_client);
+    server.stop().await;
+    let event_outcome = event_outcome.unwrap();
+    assert!(
+        created(&event_outcome)
+            .processing
+            .failed_segments
+            .is_empty()
+    );
+    assert!(
+        created(&event_outcome)
+            .processing
+            .stalled_segments
+            .is_empty()
+    );
+    let event_record =
+        read_audio_import_record(&event_request.journal_root, &event_request.import_id)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        event_record.created_segments[0].processing,
+        AudioProcessingState::Succeeded
+    );
 }

@@ -238,7 +238,7 @@ pub fn emit_observe_observed(emitter: &EventEmitter<'_>, value: &ObservedSegment
     emitter.send("observe", "observed", observed_fields(value));
 }
 
-pub(crate) fn observing_fields(value: &ObservingSegment) -> Map<String, Value> {
+pub fn observing_fields(value: &ObservingSegment) -> Map<String, Value> {
     let mut meta = object(json!({
         "import_id": value.meta.import_id,
         "stream": value.meta.stream,

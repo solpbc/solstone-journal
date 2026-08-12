@@ -31,9 +31,9 @@ pub mod text;
 pub mod timestamp;
 
 pub use audio::{
-    AudioImportComplete, AudioImportOutcome, AudioImportPartial, AudioImportRecord,
-    AudioImportRecordSegment, AudioImportRequest, AudioImportSeams, AudioProbeError,
-    AudioProcessingState, AudioSliceError, AudioWaitRecord, DroppedAudioChunk,
+    AudioImportAbort, AudioImportComplete, AudioImportOutcome, AudioImportPartial,
+    AudioImportRecord, AudioImportRecordSegment, AudioImportRequest, AudioImportSeams,
+    AudioProbeError, AudioProcessingState, AudioSliceError, AudioWaitRecord, DroppedAudioChunk,
     ProcessingWaitOutcome, import_audio, import_audio_with_seams, read_audio_import_record,
     write_audio_import_record,
 };
@@ -161,6 +161,13 @@ pub enum ImportError {
         path: PathBuf,
         detail: String,
     },
+    AudioSliceRejected {
+        path: PathBuf,
+        chunk_index: u64,
+        start_offset_seconds: f64,
+        duration_seconds: f64,
+        detail: String,
+    },
     AudioSegmentDirectory {
         path: PathBuf,
         message: String,
@@ -272,6 +279,18 @@ impl fmt::Display for ImportError {
                     path.display()
                 )
             }
+            Self::AudioSliceRejected {
+                path,
+                chunk_index,
+                start_offset_seconds,
+                duration_seconds,
+                detail,
+            } => write!(
+                formatter,
+                "audio slice rejected for chunk {chunk_index} [{start_offset_seconds}, {}) of {}: {detail}",
+                start_offset_seconds + duration_seconds,
+                path.display()
+            ),
             Self::AudioSegmentDirectory { path, message } => {
                 write!(
                     formatter,

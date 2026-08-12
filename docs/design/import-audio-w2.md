@@ -189,15 +189,21 @@ The strict serde record shape (`#[serde(deny_unknown_fields)]`) is:
   `stalled`);
 * `dropped_chunks`: for each, `chunk_index`, `start_offset_seconds`,
   `duration_seconds`, and the named `reason`;
+* optional `abort`: the chunk index/range when known and the named abort
+  reason, preserving work completed before a later allocation or slice abort;
 * `wait`: `not_requested` or an outcome carrying terminal failed/stalled
   segment keys.
 
 The start values are the requested source range and corresponding
 `base_timestamp + offset`; they, not the rounded key, are the authoritative
-range for AC7.  The record is written atomically after all slice attempts and
-before the first `observe.observing` emit.  If waiting is requested, every
-durable completion reconciliation atomically rewrites this same record with
-the per-segment processing state; there is no append-only second record.  That
+range for AC7.  A normal record is written atomically after all slice attempts
+and before the first `observe.observing` emit.  An abort after any prior
+created or dropped chunk writes the same record first, with its `abort`
+context; created audio is never deleted merely because a later chunk cannot be
+allocated or remuxed.  This also retains total-loss drops before
+`NoAudioSegmentsCreated` returns.  If waiting is requested, every durable
+completion reconciliation atomically rewrites this same record with the
+per-segment processing state; there is no append-only second record.  That
 makes both AC5 drops and AC10 wait failures/recoveries re-readable.
 
 Rejected: extend `PublicationRecord`.  `publish.rs` owns that W1c record and
@@ -216,6 +222,9 @@ Add these `ImportError` variants and matching `Display` arms in `lib.rs`:
   duration <path>: <detail>"`;
 * `AudioInputUnreadable { path, detail }` — `"could not read audio input
   <path>: <detail>"`;
+* `AudioSliceRejected { path, chunk_index, start_offset_seconds,
+  duration_seconds, detail }` — names the rejected source range and the
+  underlying output/remux detail;
 * `AudioSegmentDirectory { path, message }` — `"could not create audio segment
   directory <path>: <message>"`;
 * `AudioSegmentCollision { day, stream, start, attempts }` — `"audio segment
@@ -223,6 +232,8 @@ Add these `ImportError` variants and matching `Display` arms in `lib.rs`:
 * `AudioSegmentDayOverflow { day, stream, start }` — `"audio segment collision
   probe crosses day boundary for <day>/<stream> at <start>"`;
 * `NoAudioSegmentsCreated { path }` — `"no audio segments created from <path>"`.
+* `AudioRecordRead { path, message }` and `AudioRecordWrite { path, message
+  }` — durable audio-record read/write failures.
 
 Abort the import for: an unknown/sentinel duration; `format::input` failures
 such as `InvalidData`, `DemuxerNotFound`, `ProtocolNotFound`, or
@@ -232,13 +243,14 @@ where no slice succeeded.  This retains the reference's `cli.py:1256-1267`
 whole-import boundary without a broad catch.
 
 Tolerate only errors produced while slicing/remuxing an individual allocated
-chunk: mux/header/packet/trailer `MuxerNotFound`, `InvalidData`,
-`OutputChanged`, `External`, and `Other { errno: EINVAL|EIO|EACCES|ENOSPC|
-EROFS }`.  They produce a `DroppedAudioChunk` with a stable reason name and
-continue to later chunks.  `DecoderNotFound`/`EncoderNotFound` are not a
-stream-copy recovery route; they are aborting input/configuration failures if
-encountered before a usable remux, not a blanket chunk catch.  The native error
-vocabulary is `ffmpeg-next/src/util/error.rs:40-81`.
+chunk: packet/remux `InvalidData`, `OutputChanged`, and
+`Other { errno: EINVAL }`.  They produce a `DroppedAudioChunk` with a
+stable reason name and continue to later chunks.  `MuxerNotFound`,
+`External`, destination errors such as `EACCES`, `EIO`, `ENOSPC`, and
+`EROFS`, and `DecoderNotFound`/`EncoderNotFound` are whole-output or
+input/configuration failures, so they abort with `AudioSliceRejected` rather
+than draining into partial drops.  The native error vocabulary is
+`ffmpeg-next/src/util/error.rs:40-81`.
 
 Do **not** port Python's re-encode fallback (`audio.py:57-75`).  W2 is a
 lossless stream-copy import; AC11 forbids silently re-encoding.  A muxer that
@@ -307,8 +319,9 @@ processing state machine: `processing-record` already owns the vocabulary and
 failure predicate.  A lower-level reader crate does not exist, so a local
 bounded reader is the smallest dependency direction.
 
-An `observe.observed` message can mark a pending segment terminal, but it is
-not proof by itself; disk reconciliation is authoritative.  Specifically, the
+When it has a terminal answer, the disk record decides the state.  When disk is
+silent, an `observe.observed` event with `error` marks failure and one
+without `error` marks success; either event resets last-progress.  The
 after-loop reconciliation catches AC10's dropped-event case where
 `imported_audio.jsonl` already proves success before remaining pending keys are
 reported stalled/failed.  Connection methods and feature gate are in
@@ -372,11 +385,11 @@ serde_json, following `tests/stream_name_oracle.rs`.
 
 | AC | Test and seam |
 |---|---|
-| 1–2 | Oracle-driven unit cases for all integral/fractional counts, keys, calls, and final durations; `duration_probe` and `slice` are pure fakes. |
+| 1–2 | Oracle-driven unit cases for every integral `(start_seconds, chunk_duration)` call in order and the derived fractional call sequence; `duration_probe` and `slice` are pure fakes. |
 | 3 | Probe returns its named unavailable/error result; assert `AudioDurationUnavailable` and no allocation/slice. |
 | 4–5 | Three-or-more chunk input with `slice` failing only the non-first, non-last middle chunk; assert later slice continues, `Partial` identifies that true range, and `read_audio_import_record` returns its named drop. |
-| 6–7 | Construct collision directories; assert exclusive allocation, deterministic forward probe, no literal random key, parsed rounded key, and record-held exact start/duration.  Exhaustion creates 60 occupied candidate leaves; midnight starts at `23:59:59` with its first leaf occupied, so the next forward probe refuses. |
-| 8 | Recording `emit_observing` seam receives exactly one `ObservingSegment` per successful slice; assert its segment/day/files/stream and optional facet/setting values.  The production closure delegates to `emit_observe_observing`. |
+| 6–7 | Construct collision directories; assert exclusive allocation, deterministic forward probe, no literal random key, parsed rounded key, and record-held true start/duration that differs from a deconflicted key.  Exhaustion creates 60 occupied candidate leaves; midnight starts at `23:59:59` with its first leaf occupied, so the next forward probe refuses. |
+| 8 | Recording `emit_observing` seam receives exactly one `ObservingSegment` per successful slice; assert its segment/day/basename files/stream and optional facet/setting values, plus the serialized `observing_fields()` shape.  The production closure delegates to `emit_observe_observing`. |
 | 9 | `wait=false` uses the recording emitter seam, returns after emissions, and never starts a listener loop. |
 | 10 | Fake callosum listener omits an event while the test writes a valid sibling processing record; before/during/after reconciliation marks success.  Separate millisecond-scale no-progress test proves the stall bound, durable record rewrite, and recorded transcription failures without changing `Complete` to `Partial`. |
 | 11 | Manual stream-copy check described below. |

@@ -72,16 +72,10 @@ impl AudioSliceError {
             self,
             Self::Remux {
                 error: ffmpeg::Error::InvalidData
-                    | ffmpeg::Error::MuxerNotFound
-                    | ffmpeg::Error::OutputChanged
-                    | ffmpeg::Error::External
                     | ffmpeg::Error::Other {
-                        errno: ffmpeg::error::EACCES
-                            | ffmpeg::error::EIO
-                            | ffmpeg::error::EINVAL
-                            | ffmpeg::error::ENOSPC
-                            | ffmpeg::error::EROFS
+                        errno: ffmpeg::error::EINVAL
                     }
+                    | ffmpeg::Error::OutputChanged
             }
         )
     }
@@ -179,7 +173,19 @@ pub struct AudioImportRecord {
     pub import_id: String,
     pub created_segments: Vec<AudioImportRecordSegment>,
     pub dropped_chunks: Vec<DroppedAudioChunk>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abort: Option<AudioImportAbort>,
     pub wait: AudioWaitRecord,
+}
+
+/// Context retained when audio preparation cannot complete.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AudioImportAbort {
+    pub chunk_index: Option<u64>,
+    pub start_offset_seconds: Option<f64>,
+    pub duration_seconds: Option<f64>,
+    pub reason: String,
 }
 
 /// A created segment's true source-time data, independent of its collision key.
@@ -295,12 +301,32 @@ where
 
     for index in 0..count {
         let start_offset_seconds = index as f64 * CHUNK_SECONDS;
-        let chunk_duration_seconds = duration - start_offset_seconds;
+        let chunk_duration_seconds = if index + 1 == count {
+            duration - start_offset_seconds
+        } else {
+            CHUNK_SECONDS
+        };
         let true_start = request.base_timestamp
             + chrono::Duration::seconds((index * CHUNK_SECONDS as u64) as i64);
         let key_duration = chunk_duration_seconds.ceil().max(1.0) as u64;
         let (segment, segment_dir) =
-            allocate_segment_directory(&request, &segment_parent, true_start, key_duration)?;
+            match allocate_segment_directory(&request, &segment_parent, true_start, key_duration) {
+                Ok(allocation) => allocation,
+                Err(error) => {
+                    write_aborted_audio_import_record(
+                        &request,
+                        created_records,
+                        dropped_chunks,
+                        AudioImportAbort {
+                            chunk_index: Some(index),
+                            start_offset_seconds: Some(start_offset_seconds),
+                            duration_seconds: Some(chunk_duration_seconds),
+                            reason: error.to_string(),
+                        },
+                    )?;
+                    return Err(error);
+                }
+            };
         let output = segment_dir.join(format!("imported_audio.{extension}"));
 
         match (seams.slice)(
@@ -340,7 +366,7 @@ where
                 observing.push(ObservingSegment {
                     segment,
                     day: request.day.clone(),
-                    files: vec![output.display().to_string()],
+                    files: vec![format!("imported_audio.{extension}")],
                     meta: ObservingMeta {
                         import_id: request.import_id.clone(),
                         stream: request.stream.clone(),
@@ -351,12 +377,24 @@ where
                 });
             }
             Err(error) if error.is_tolerated() => {
-                fs::remove_dir_all(&segment_dir).map_err(|remove_error| {
-                    ImportError::AudioSegmentDirectory {
-                        path: segment_dir.clone(),
+                if let Err(remove_error) = fs::remove_dir_all(&segment_dir) {
+                    let error = ImportError::AudioSegmentDirectory {
+                        path: segment_dir,
                         message: remove_error.to_string(),
-                    }
-                })?;
+                    };
+                    write_aborted_audio_import_record(
+                        &request,
+                        created_records,
+                        dropped_chunks,
+                        AudioImportAbort {
+                            chunk_index: Some(index),
+                            start_offset_seconds: Some(start_offset_seconds),
+                            duration_seconds: Some(chunk_duration_seconds),
+                            reason: error.to_string(),
+                        },
+                    )?;
+                    return Err(error);
+                }
                 dropped_chunks.push(DroppedAudioChunk {
                     index,
                     start_offset_seconds,
@@ -366,18 +404,45 @@ where
             }
             Err(error) => {
                 let _ = fs::remove_dir_all(&segment_dir);
-                return Err(ImportError::AudioInputUnreadable {
+                let error = ImportError::AudioSliceRejected {
                     path: request.source_media.clone(),
+                    chunk_index: index,
+                    start_offset_seconds,
+                    duration_seconds: chunk_duration_seconds,
                     detail: error.detail(),
-                });
+                };
+                write_aborted_audio_import_record(
+                    &request,
+                    created_records,
+                    dropped_chunks,
+                    AudioImportAbort {
+                        chunk_index: Some(index),
+                        start_offset_seconds: Some(start_offset_seconds),
+                        duration_seconds: Some(chunk_duration_seconds),
+                        reason: error.to_string(),
+                    },
+                )?;
+                return Err(error);
             }
         }
     }
 
     if created.is_empty() {
-        return Err(ImportError::NoAudioSegmentsCreated {
+        let error = ImportError::NoAudioSegmentsCreated {
             path: request.source_media.clone(),
-        });
+        };
+        write_aborted_audio_import_record(
+            &request,
+            created_records,
+            dropped_chunks,
+            AudioImportAbort {
+                chunk_index: None,
+                start_offset_seconds: None,
+                duration_seconds: None,
+                reason: error.to_string(),
+            },
+        )?;
+        return Err(error);
     }
 
     let mut record = AudioImportRecord {
@@ -388,6 +453,7 @@ where
         import_id: request.import_id.clone(),
         created_segments: created_records,
         dropped_chunks: dropped_chunks.clone(),
+        abort: None,
         wait: if request.wait_for_processing {
             AudioWaitRecord::Waiting
         } else {
@@ -421,6 +487,26 @@ where
             dropped_chunks,
         }))
     }
+}
+
+fn write_aborted_audio_import_record(
+    request: &AudioImportRequest,
+    created_segments: Vec<AudioImportRecordSegment>,
+    dropped_chunks: Vec<DroppedAudioChunk>,
+    abort: AudioImportAbort,
+) -> Result<(), ImportError> {
+    let record = AudioImportRecord {
+        schema: AUDIO_RECORD_SCHEMA.to_owned(),
+        source_media: request.source_media.clone(),
+        day: request.day.clone(),
+        stream: request.stream.clone(),
+        import_id: request.import_id.clone(),
+        created_segments,
+        dropped_chunks,
+        abort: Some(abort),
+        wait: AudioWaitRecord::NotRequested,
+    };
+    write_audio_import_record(&request.journal_root, &request.import_id, &record).map(|_| ())
 }
 
 /// Read the audio-owned durable record for one import, if it exists.
@@ -609,10 +695,14 @@ async fn wait_for_processing(
         }
         let remaining = deadline - now;
         let poll_timeout = request.poll_interval.min(remaining);
-        if let Ok(Some(envelope)) = timeout(poll_timeout, connection.next_message()).await
-            && apply_observed_event(record, &envelope.tract, &envelope.event, &envelope.extra)
-        {
-            last_progress = Instant::now();
+        if let Ok(Some(envelope)) = timeout(poll_timeout, connection.next_message()).await {
+            let disk_progress = reconcile_processing_from_disk(record);
+            let event_progress =
+                apply_observed_event(record, &envelope.tract, &envelope.event, &envelope.extra);
+            if disk_progress || event_progress {
+                last_progress = Instant::now();
+                write_audio_record_at(record_path, record)?;
+            }
         }
         if reconcile_processing_from_disk(record) {
             last_progress = Instant::now();
