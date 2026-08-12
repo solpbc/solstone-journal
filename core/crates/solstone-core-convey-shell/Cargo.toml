@@ -14,6 +14,8 @@ workspace = true
 default = ["host"]
 host = [
     "dep:solstone-core-callosum",
+    "dep:solstone-core-ingest",
+    "dep:solstone-core-ingest-resolve",
     "dep:solstone-core-sol-link",
     "solstone-core-sol-link/host",
     "dep:rustls",
@@ -40,6 +42,8 @@ solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-ingest = { workspace = true, optional = true }
+solstone-core-ingest-resolve = { workspace = true, optional = true }
 solstone-core-npy.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
