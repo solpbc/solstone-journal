@@ -438,6 +438,20 @@ pub const INSTALL_MODELS_HELP: &str = concat!(
     "                        JOURNAL_VARIANT on linux/x86_64, then autodetects.\n",
 );
 
+pub const INSTALL_PROVIDER_USAGE: &str = "usage: journal install-provider [-h] name\n";
+
+pub const INSTALL_PROVIDER_HELP: &str = concat!(
+    "usage: journal install-provider [-h] name\n",
+    "\n",
+    "Install or retry a provider runtime.\n",
+    "\n",
+    "positional arguments:\n",
+    "  name        Provider to install: 'local' or 'parakeet'.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+);
+
 /// `journal facet-candidates --help`, verbatim from the reference.
 pub const FACET_CANDIDATES_HELP: &str = concat!(
     "usage: journal facet-candidates [-h] [-v] [-d]\n",
@@ -571,6 +585,8 @@ pub enum Command {
     InstallModelsUsage,
     InstallModelsHelp,
     InstallProvider(InstallProviderOptions),
+    InstallProviderUsage,
+    InstallProviderHelp,
     Convey(ConveyOptions),
     ConveyHelp,
     ConveyUsage(ConveyUsageError),
@@ -1244,7 +1260,14 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 .map_or(Command::InstallModelsUsage, Command::InstallModels))
         }
         [command, rest @ ..] if command == OsStr::new("install-provider") => {
-            parse_install_provider(rest).map(Command::InstallProvider)
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::InstallProviderHelp);
+            }
+            Ok(parse_install_provider(rest)
+                .map_or(Command::InstallProviderUsage, Command::InstallProvider))
         }
         [command, rest @ ..] if command == OsStr::new("convey") => match parse_convey(rest) {
             Ok(ConveyParse::Run(options)) => Ok(Command::Convey(options)),
@@ -2741,6 +2764,9 @@ fn parse_install_provider(args: &[OsString]) -> Result<InstallProviderOptions, U
     let [name] = args else {
         return Err(UsageError);
     };
+    if name.as_os_str().as_encoded_bytes().starts_with(b"-") {
+        return Err(UsageError);
+    }
     Ok(InstallProviderOptions {
         name: name.to_str().ok_or(UsageError)?.to_owned(),
     })
@@ -5366,8 +5392,29 @@ mod tests {
         for values in [
             &["install-provider"][..],
             &["install-provider", "parakeet", "extra"][..],
+            &["install-provider", "--wat"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::InstallProviderUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn install_provider_rejects_unknown_and_serves_help_with_verb_results() {
+        for values in [
+            &["install-provider", "--help"][..],
+            &["install-provider", "-h"][..],
+            &["install-provider", "bogus", "--help"][..],
+            &["install-provider", "--wat", "--help"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::InstallProviderHelp),
+                "{values:?}"
+            );
         }
     }
 
