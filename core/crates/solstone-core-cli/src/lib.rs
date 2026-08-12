@@ -24,6 +24,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
     "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n",
     "  solstone-core streams [args...]\n",
+    "  solstone-core importer [args...]\n",
     "  solstone-core segment [args...]\n",
     "  solstone-core journal-stats [args...]\n",
     "  solstone-core reprocess [args...]\n",
@@ -577,6 +578,7 @@ pub enum Command {
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
     Streams(Vec<OsString>),
+    Importer(Vec<OsString>),
     Segment(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
@@ -1234,6 +1236,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("streams") => {
             Ok(Command::Streams(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("importer") => {
+            Ok(Command::Importer(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("segment") => {
             Ok(Command::Segment(rest.to_vec()))
@@ -5230,6 +5235,7 @@ mod tests {
             "install-models",
             "install-provider",
             "streams",
+            "importer",
             "segment",
             "journal-stats",
             "reprocess",
