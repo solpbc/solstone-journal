@@ -18,6 +18,31 @@ use thiserror::Error;
 use crate::gate::{GateError, GateTarget, verify_targets};
 
 pub const MULTIPART_THRESHOLD_BYTES: u64 = 300 * 1024 * 1024;
+const MAX_REDIRECT_HOPS: u8 = 5;
+const UPSTREAM_ALLOWED_HOSTS: &[&str] = &[
+    "github.com",
+    "api.github.com",
+    "huggingface.co",
+    "release-assets.githubusercontent.com",
+    "cdn-lfs.huggingface.co",
+    "cas-bridge.xethub.hf.co",
+];
+// These are redirect targets of the two upstream hosts and may change upstream;
+// a refusal means this list needs updating. Never widen this into the installer's
+// origin policy.
+const SIZE_ONLY_ORIGIN_KEYS: &[&str] =
+    &["assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json"];
+
+#[derive(Debug, Clone, Copy)]
+pub struct UpstreamHostPolicy<'a> {
+    pub allowed_hosts: &'a [&'a str],
+    pub allow_http: bool,
+}
+
+pub const PRODUCTION_UPSTREAM_POLICY: UpstreamHostPolicy<'static> = UpstreamHostPolicy {
+    allowed_hosts: UPSTREAM_ALLOWED_HOSTS,
+    allow_http: false,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublishMode {
@@ -116,6 +141,16 @@ pub enum MirrorError {
     UpstreamDigestMismatch { origin_key: String },
     #[error("unsupported upstream URL {url}")]
     UnsupportedUpstream { url: String },
+    #[error("upstream host refused: {host}")]
+    UpstreamHostRefused { host: String },
+    #[error("upstream scheme refused for {host}: {scheme}")]
+    UpstreamInsecureScheme { scheme: String, host: String },
+    #[error("upstream redirect hop limit exceeded: {limit}")]
+    UpstreamRedirectHopLimitExceeded { limit: u8 },
+    #[error("upstream URL authority must not include userinfo: {authority}")]
+    UpstreamUrlUserinfoRefused { authority: String },
+    #[error("invalid upstream URL: {detail}")]
+    UpstreamUrlInvalid { detail: String },
     #[error(transparent)]
     OriginReadBack(#[from] GateError),
     #[error("cannot append provenance {path}: {source}")]
@@ -127,20 +162,22 @@ pub enum MirrorError {
     ProvenanceSerialize { source: serde_json::Error },
 }
 
-pub fn current_mirror_targets() -> Vec<MirrorTarget> {
+pub fn current_mirror_targets() -> Result<Vec<MirrorTarget>, MirrorError> {
     solstone_core_assets::catalog()
         .iter()
         .filter(|artifact| artifact.unit != "llama-server-cuda")
-        .map(|artifact| MirrorTarget {
-            origin_key: artifact.origin_key.to_owned(),
-            sha256: artifact.sha256.to_owned(),
-            size_bytes: artifact.size_bytes,
-            upstream_url: artifact.upstream_url.to_owned(),
-            unit: artifact.unit.to_owned(),
-            version: artifact.version.to_owned(),
-            filename: artifact.filename.to_owned(),
-            metadata_kind: metadata_kind(artifact.upstream_url),
-            metadata_url: metadata_url(artifact.upstream_url),
+        .map(|artifact| {
+            Ok(MirrorTarget {
+                origin_key: artifact.origin_key.to_owned(),
+                sha256: artifact.sha256.to_owned(),
+                size_bytes: artifact.size_bytes,
+                upstream_url: artifact.upstream_url.to_owned(),
+                unit: artifact.unit.to_owned(),
+                version: artifact.version.to_owned(),
+                filename: artifact.filename.to_owned(),
+                metadata_kind: metadata_kind(artifact.upstream_url),
+                metadata_url: metadata_url(artifact.upstream_url)?,
+            })
         })
         .collect()
 }
@@ -150,6 +187,7 @@ pub fn mirror_current_catalog(
     staging_dir: &Path,
     provenance_log: &Path,
     origin_policy: &DownloadHostPolicy<'_>,
+    upstream_policy: &UpstreamHostPolicy<'_>,
 ) -> Result<Vec<MirrorOutcome>, MirrorError> {
     let mut outcomes = Vec::new();
     for artifact in solstone_core_assets::catalog() {
@@ -162,13 +200,14 @@ pub fn mirror_current_catalog(
             });
         }
     }
-    for target in current_mirror_targets() {
+    for target in current_mirror_targets()? {
         outcomes.push(mirror_one(
             &target,
             backend,
             staging_dir,
             provenance_log,
             origin_policy,
+            upstream_policy,
         )?);
     }
     Ok(outcomes)
@@ -180,14 +219,15 @@ pub fn mirror_one(
     staging_dir: &Path,
     provenance_log: &Path,
     origin_policy: &DownloadHostPolicy<'_>,
+    upstream_policy: &UpstreamHostPolicy<'_>,
 ) -> Result<MirrorOutcome, MirrorError> {
-    let verification = verify_upstream_metadata(target)?;
+    let verification = verify_upstream_metadata(target, upstream_policy)?;
     fs::create_dir_all(staging_dir).map_err(|source| MirrorError::StagingCreate {
         path: staging_dir.to_path_buf(),
         source,
     })?;
     let source = staging_dir.join("mirror-source");
-    download_upstream(target, &source)?;
+    download_upstream(target, &source, upstream_policy)?;
     backend.publish(
         select_publish_mode(target.size_bytes),
         PublishRequest {
@@ -220,16 +260,22 @@ fn read_back_before_logging(
     Ok(())
 }
 
-fn verify_upstream_metadata(target: &MirrorTarget) -> Result<UpstreamVerification, MirrorError> {
+fn verify_upstream_metadata(
+    target: &MirrorTarget,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<UpstreamVerification, MirrorError> {
     match target.metadata_kind {
-        UpstreamMetadataKind::GithubRelease => verify_github_metadata(target),
-        UpstreamMetadataKind::HuggingFace => verify_huggingface_metadata(target),
+        UpstreamMetadataKind::GithubRelease => verify_github_metadata(target, policy),
+        UpstreamMetadataKind::HuggingFace => verify_huggingface_metadata(target, policy),
     }
 }
 
-fn verify_github_metadata(target: &MirrorTarget) -> Result<UpstreamVerification, MirrorError> {
+fn verify_github_metadata(
+    target: &MirrorTarget,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<UpstreamVerification, MirrorError> {
     let url = &target.metadata_url;
-    let response = request(url)?;
+    let response = request(url, policy)?;
     let body =
         response
             .into_body()
@@ -259,8 +305,11 @@ fn verify_github_metadata(target: &MirrorTarget) -> Result<UpstreamVerification,
         })
 }
 
-fn verify_huggingface_metadata(target: &MirrorTarget) -> Result<UpstreamVerification, MirrorError> {
-    let response = request(&target.metadata_url)?;
+fn verify_huggingface_metadata(
+    target: &MirrorTarget,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<UpstreamVerification, MirrorError> {
+    let response = request(&target.metadata_url, policy)?;
     let etag = response
         .headers()
         .get("x-linked-etag")
@@ -277,7 +326,10 @@ fn verify_huggingface_metadata(target: &MirrorTarget) -> Result<UpstreamVerifica
         .get("content-length")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
-    if is_git_blob_sha1 && content_length == Some(target.size_bytes) {
+    if SIZE_ONLY_ORIGIN_KEYS.contains(&target.origin_key.as_str())
+        && is_git_blob_sha1
+        && content_length == Some(target.size_bytes)
+    {
         Ok(UpstreamVerification::SizeOnly)
     } else {
         Err(MirrorError::UnverifiedUpstream {
@@ -286,8 +338,12 @@ fn verify_huggingface_metadata(target: &MirrorTarget) -> Result<UpstreamVerifica
     }
 }
 
-fn download_upstream(target: &MirrorTarget, destination: &Path) -> Result<(), MirrorError> {
-    let response = request(&target.upstream_url)?;
+fn download_upstream(
+    target: &MirrorTarget,
+    destination: &Path,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<(), MirrorError> {
+    let response = request(&target.upstream_url, policy)?;
     let mut body = response.into_body().into_reader();
     let mut file = OpenOptions::new()
         .create(true)
@@ -335,33 +391,183 @@ fn download_upstream(target: &MirrorTarget, destination: &Path) -> Result<(), Mi
     Ok(())
 }
 
-fn request(url: &str) -> Result<ureq::http::Response<ureq::Body>, MirrorError> {
-    let response = ureq::agent()
-        .get(url)
-        .config()
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .build()
-        .call()
-        .map_err(|error| MirrorError::UpstreamRequest {
-            url: url.to_owned(),
-            message: error.to_string(),
-        })?;
-    if response.status().is_success() {
-        Ok(response)
-    } else {
-        Err(MirrorError::UpstreamRequest {
-            url: url.to_owned(),
+fn request(
+    url: &str,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<ureq::http::Response<ureq::Body>, MirrorError> {
+    let mut current = validate_url(url, policy)?;
+    let agent = ureq::agent();
+    let mut followed = 0_u8;
+    loop {
+        let response = agent
+            .get(current.as_str())
+            .config()
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .build()
+            .call()
+            .map_err(|error| MirrorError::UpstreamRequest {
+                url: current.as_str(),
+                message: error.to_string(),
+            })?;
+        if response.status().is_redirection() {
+            if followed == MAX_REDIRECT_HOPS {
+                return Err(MirrorError::UpstreamRedirectHopLimitExceeded {
+                    limit: MAX_REDIRECT_HOPS,
+                });
+            }
+            let location = response
+                .headers()
+                .get("location")
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| MirrorError::UpstreamUrlInvalid {
+                    detail: "redirect response has no Location header".to_owned(),
+                })?;
+            current = validate_url(&resolve_location(&current, location)?.as_str(), policy)?;
+            followed += 1;
+            continue;
+        }
+        if response.status().is_success() {
+            return Ok(response);
+        }
+        return Err(MirrorError::UpstreamRequest {
+            url: current.as_str(),
             message: format!("unexpected HTTP status {}", response.status()),
-        })
+        });
     }
 }
 
-fn metadata_url(upstream_url: &str) -> String {
+fn metadata_url(upstream_url: &str) -> Result<String, MirrorError> {
     if upstream_url.contains("github.com/") {
-        github_release_api_url(upstream_url).unwrap_or_else(|_| upstream_url.to_owned())
+        github_release_api_url(upstream_url)
     } else {
-        upstream_url.to_owned()
+        Ok(upstream_url.to_owned())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AbsoluteUrl {
+    scheme: String,
+    authority: String,
+    host: String,
+    path_and_query: String,
+}
+
+impl AbsoluteUrl {
+    fn as_str(&self) -> String {
+        format!(
+            "{}://{}{}",
+            self.scheme, self.authority, self.path_and_query
+        )
+    }
+}
+
+fn validate_url(url: &str, policy: &UpstreamHostPolicy<'_>) -> Result<AbsoluteUrl, MirrorError> {
+    let parsed = parse_absolute_url(url)?;
+    if !policy
+        .allowed_hosts
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(&parsed.host))
+    {
+        return Err(MirrorError::UpstreamHostRefused { host: parsed.host });
+    }
+    if parsed.scheme == "http" && !policy.allow_http {
+        return Err(MirrorError::UpstreamInsecureScheme {
+            scheme: parsed.scheme,
+            host: parsed.host,
+        });
+    }
+    Ok(parsed)
+}
+
+fn parse_absolute_url(url: &str) -> Result<AbsoluteUrl, MirrorError> {
+    let url = url.split('#').next().unwrap_or_default();
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| invalid_url("URL must be absolute http(s) URL"))?;
+    let scheme = scheme.to_ascii_lowercase();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return Err(invalid_url("unsupported URL scheme"));
+    }
+    let authority_end = rest.find(['/', '?']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.contains('@') {
+        return Err(MirrorError::UpstreamUrlUserinfoRefused {
+            authority: authority.to_owned(),
+        });
+    }
+    let (host, authority) = parse_authority(authority)?;
+    let path_and_query = match &rest[authority_end..] {
+        "" => "/".to_owned(),
+        query if query.starts_with('?') => format!("/{query}"),
+        path => path.to_owned(),
+    };
+    Ok(AbsoluteUrl {
+        scheme,
+        authority,
+        host,
+        path_and_query,
+    })
+}
+
+fn parse_authority(authority: &str) -> Result<(String, String), MirrorError> {
+    if authority.is_empty() || authority.bytes().any(|byte| byte.is_ascii_whitespace()) {
+        return Err(invalid_url("URL has malformed authority"));
+    }
+    let (host, port) = match authority.split_once(':') {
+        Some((host, port)) if !port.contains(':') && !port.is_empty() => {
+            if !port.bytes().all(|byte| byte.is_ascii_digit()) || port.parse::<u16>().is_err() {
+                return Err(invalid_url("URL has malformed port"));
+            }
+            (host, Some(port))
+        }
+        Some(_) => return Err(invalid_url("URL has malformed host")),
+        None => (authority, None),
+    };
+    if host.is_empty() {
+        return Err(invalid_url("URL has empty host"));
+    }
+    let host = host.to_ascii_lowercase();
+    let authority = port.map_or_else(|| host.clone(), |port| format!("{host}:{port}"));
+    Ok((host, authority))
+}
+
+fn resolve_location(current: &AbsoluteUrl, location: &str) -> Result<AbsoluteUrl, MirrorError> {
+    let location = location.split('#').next().unwrap_or_default();
+    if location.is_empty() {
+        return Err(invalid_url("redirect Location is empty"));
+    }
+    if location.contains("://") {
+        return parse_absolute_url(location);
+    }
+    if location.starts_with("//") {
+        return parse_absolute_url(&format!("{}:{location}", current.scheme));
+    }
+    let path_and_query =
+        if location.starts_with('/') {
+            location.to_owned()
+        } else if location.starts_with('?') {
+            format!(
+                "{}{}",
+                current.path_and_query.split('?').next().unwrap_or("/"),
+                location
+            )
+        } else {
+            let current_path = current.path_and_query.split('?').next().unwrap_or("/");
+            let base = current_path.rsplit_once('/').map_or("/", |(parent, _)| {
+                if parent.is_empty() { "/" } else { parent }
+            });
+            format!("{base}/{location}")
+        };
+    parse_absolute_url(&format!(
+        "{}://{}{}",
+        current.scheme, current.authority, path_and_query
+    ))
+}
+
+fn invalid_url(detail: &str) -> MirrorError {
+    MirrorError::UpstreamUrlInvalid {
+        detail: detail.to_owned(),
     }
 }
 

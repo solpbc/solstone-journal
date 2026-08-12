@@ -14,15 +14,15 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use solstone_core_local::install::archive::DownloadHostPolicy;
 
-use crate::gate::{GateTarget, assert_head_targets_correspond, verify_targets};
+use crate::gate::{GateTarget, assert_head_targets_correspond, head_gate_targets, verify_targets};
 use crate::guard::{
     GuardError, PinOwner, PruneAssessment, assess_prune, assess_prune_with_current_support,
     require_prunable,
 };
 use crate::mirror::{
     MULTIPART_THRESHOLD_BYTES, MirrorError, MirrorTarget, PublishBackend, PublishMode,
-    PublishRequest, UpstreamMetadataKind, UpstreamVerification, current_mirror_targets, mirror_one,
-    select_publish_mode,
+    PublishRequest, UpstreamHostPolicy, UpstreamMetadataKind, UpstreamVerification,
+    current_mirror_targets, mirror_one, select_publish_mode,
 };
 use crate::pins::{
     PinsError, authority_origin_pins_from_test_path, historical_origin_pins, snapshot_versions,
@@ -49,6 +49,13 @@ fn policy(base: &str) -> DownloadHostPolicy<'_> {
         allowed_hosts: &["127.0.0.1"],
         allow_http: true,
         origin_base_url: base,
+    }
+}
+
+fn upstream_policy() -> UpstreamHostPolicy<'static> {
+    UpstreamHostPolicy {
+        allowed_hosts: &["127.0.0.1"],
+        allow_http: true,
     }
 }
 
@@ -98,6 +105,29 @@ where
     format!("http://{address}")
 }
 
+fn status_server<F>(requests: usize, response: F) -> String
+where
+    F: Fn(&str) -> (u16, String, Vec<u8>) + Send + 'static,
+{
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    thread::spawn(move || {
+        for stream in listener.incoming().take(requests) {
+            let mut stream = stream.unwrap();
+            let request = read_request(&mut stream);
+            let (status, headers, body) = response(&request);
+            write!(
+                stream,
+                "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\n{headers}Connection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(&body).unwrap();
+        }
+    });
+    format!("http://{address}")
+}
+
 fn target(key: &str, bytes: &[u8]) -> GateTarget {
     GateTarget {
         origin_key: key.to_owned(),
@@ -140,6 +170,20 @@ fn gate_rejects_short_body_even_when_digest_would_be_checked_later() {
 #[test]
 fn head_target_derivation_corresponds_without_a_growing_count() {
     assert_head_targets_correspond().unwrap();
+}
+
+#[test]
+fn full_head_target_set_can_be_verified_when_authority_sizes_are_absent() {
+    let body = b"head-target-fixture";
+    let mut targets = head_gate_targets().unwrap();
+    for target in &mut targets {
+        target.sha256 = sha256(body);
+        if target.size_bytes.is_some() {
+            target.size_bytes = Some(body.len() as u64);
+        }
+    }
+    let base = server(targets.len(), |_| (String::new(), body.to_vec()));
+    verify_targets(&targets, &temp("full-head-target-set"), &policy(&base)).unwrap();
 }
 
 #[test]
@@ -223,6 +267,7 @@ fn mirror_uses_loopback_github_digest_metadata_then_reads_back() {
         &root,
         &root.join("log.jsonl"),
         &policy(&base),
+        &upstream_policy(),
     )
     .unwrap();
     assert_eq!(
@@ -232,6 +277,88 @@ fn mirror_uses_loopback_github_digest_metadata_then_reads_back() {
             verification: UpstreamVerification::UpstreamSha256,
         }
     );
+}
+
+#[test]
+fn mirror_follows_validated_loopback_redirects() {
+    let body = b"redirected-object".to_vec();
+    let digest = sha256(&body);
+    let base = status_server(4, move |request| {
+        if request.starts_with("GET /metadata ") {
+            (
+                200,
+                String::new(),
+                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
+                    .into_bytes(),
+            )
+        } else if request.starts_with("GET /upstream ") {
+            (302, "Location: /object\r\n".to_owned(), Vec::new())
+        } else {
+            (200, String::new(), body.clone())
+        }
+    });
+    let target = mirror_target(
+        &base,
+        b"redirected-object",
+        UpstreamMetadataKind::GithubRelease,
+    );
+    let backend = FixtureBackend {
+        modes: Mutex::new(Vec::new()),
+    };
+    let root = temp("mirror-redirect");
+    assert!(matches!(
+        mirror_one(
+            &target,
+            &backend,
+            &root,
+            &root.join("log.jsonl"),
+            &policy(&base),
+            &upstream_policy(),
+        ),
+        Ok(crate::mirror::MirrorOutcome::Mirrored { .. })
+    ));
+}
+
+#[test]
+fn mirror_refuses_redirect_to_a_disallowed_host() {
+    let body = b"redirect-refusal".to_vec();
+    let digest = sha256(&body);
+    let base = status_server(2, move |request| {
+        if request.starts_with("GET /metadata ") {
+            (
+                200,
+                String::new(),
+                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
+                    .into_bytes(),
+            )
+        } else {
+            (
+                302,
+                "Location: http://127.0.0.2:9/object\r\n".to_owned(),
+                Vec::new(),
+            )
+        }
+    });
+    let target = mirror_target(
+        &base,
+        b"redirect-refusal",
+        UpstreamMetadataKind::GithubRelease,
+    );
+    let backend = FixtureBackend {
+        modes: Mutex::new(Vec::new()),
+    };
+    let root = temp("mirror-redirect-refusal");
+    assert!(matches!(
+        mirror_one(
+            &target,
+            &backend,
+            &root,
+            &root.join("log.jsonl"),
+            &policy(&base),
+            &upstream_policy(),
+        ),
+        Err(MirrorError::UpstreamHostRefused { .. })
+    ));
 }
 
 #[test]
@@ -250,7 +377,9 @@ fn mirror_uses_loopback_huggingface_size_only_metadata() {
             (String::new(), body.clone())
         }
     });
-    let target = mirror_target(&base, b"mirror-hf", UpstreamMetadataKind::HuggingFace);
+    let mut target = mirror_target(&base, b"mirror-hf", UpstreamMetadataKind::HuggingFace);
+    target.origin_key =
+        "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json".to_owned();
     let backend = FixtureBackend {
         modes: Mutex::new(Vec::new()),
     };
@@ -261,6 +390,7 @@ fn mirror_uses_loopback_huggingface_size_only_metadata() {
         &root,
         &root.join("log.jsonl"),
         &policy(&base),
+        &upstream_policy(),
     )
     .unwrap();
     assert!(matches!(
@@ -269,6 +399,36 @@ fn mirror_uses_loopback_huggingface_size_only_metadata() {
             verification: UpstreamVerification::SizeOnly,
             ..
         }
+    ));
+}
+
+#[test]
+fn mirror_refuses_unlisted_huggingface_sha1_etag() {
+    let body = b"unlisted-hf".to_vec();
+    let size = body.len();
+    let base = server(1, move |_| {
+        (
+            format!(
+                "x-linked-etag: 688882a700000000000000000000000000000000\r\nContent-Length: {size}\r\n"
+            ),
+            Vec::new(),
+        )
+    });
+    let target = mirror_target(&base, b"unlisted-hf", UpstreamMetadataKind::HuggingFace);
+    let backend = FixtureBackend {
+        modes: Mutex::new(Vec::new()),
+    };
+    let root = temp("mirror-unlisted-size-only");
+    assert!(matches!(
+        mirror_one(
+            &target,
+            &backend,
+            &root,
+            &root.join("log.jsonl"),
+            &policy(&base),
+            &upstream_policy(),
+        ),
+        Err(MirrorError::UnverifiedUpstream { .. })
     ));
 }
 
@@ -299,13 +459,24 @@ fn mirror_read_back_failure_leaves_no_provenance_row() {
     };
     let root = temp("mirror-readback-failure");
     let log = root.join("log.jsonl");
-    assert!(mirror_one(&target, &backend, &root, &log, &policy(&base)).is_err());
+    assert!(
+        mirror_one(
+            &target,
+            &backend,
+            &root,
+            &log,
+            &policy(&base),
+            &upstream_policy()
+        )
+        .is_err()
+    );
     assert!(!log.exists());
 }
 
 #[test]
 fn current_mirror_targets_exclude_the_cuda_origin_rows_by_name() {
     let mirrored = current_mirror_targets()
+        .unwrap()
         .into_iter()
         .map(|target| target.origin_key)
         .collect::<std::collections::BTreeSet<_>>();
@@ -394,6 +565,30 @@ fn guard_names_all_pinning_releases_and_head_for_a_cuda_key() {
 }
 
 #[test]
+fn guard_refusal_display_names_releases_and_head_for_operators() {
+    let key = solstone_core_assets::catalog()
+        .iter()
+        .find(|artifact| artifact.unit == "llama-server-cuda")
+        .unwrap()
+        .origin_key;
+    let owners = historical_origin_pins()
+        .unwrap()
+        .into_keys()
+        .map(PinOwner::Release)
+        .chain(std::iter::once(PinOwner::HeadUnreleased))
+        .map(|owner| match owner {
+            PinOwner::Release(version) => version,
+            PinOwner::HeadUnreleased => "HEAD (unreleased)".to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert_eq!(
+        require_prunable(key).unwrap_err().to_string(),
+        format!("refusing to prune {key}: pinned by {owners}")
+    );
+}
+
+#[test]
 fn guard_unknown_is_not_convertible_to_permission() {
     let unknown: Result<(), GuardError> = require_prunable("assets/mlx-model/unknown");
     assert!(matches!(unknown, Err(GuardError::Refused { .. })));
@@ -415,7 +610,7 @@ fn mirror_selects_single_shot_at_threshold_and_multipart_one_byte_above() {
 }
 
 #[test]
-fn mirror_reads_back_through_the_same_path_for_single_shot_and_multipart() {
+fn mirror_read_back_is_shared_after_single_shot_publish() {
     let body = b"shared-read-back".to_vec();
     let digest = sha256(&body);
     let base = server(6, move |request| {
@@ -439,7 +634,7 @@ fn mirror_reads_back_through_the_same_path_for_single_shot_and_multipart() {
     };
     let root = temp("mirror-shared-read-back");
     let first_log = root.join("single.jsonl");
-    let second_log = root.join("multipart.jsonl");
+    let second_log = root.join("second-single.jsonl");
     // `PublishMode` is selected solely at the backend call. Both calls below
     // therefore take the unconditional shared read-back below that call.
     mirror_one(
@@ -448,6 +643,7 @@ fn mirror_reads_back_through_the_same_path_for_single_shot_and_multipart() {
         &root.join("single"),
         &first_log,
         &policy(&base),
+        &upstream_policy(),
     )
     .unwrap();
     mirror_one(
@@ -456,6 +652,7 @@ fn mirror_reads_back_through_the_same_path_for_single_shot_and_multipart() {
         &root.join("multipart"),
         &second_log,
         &policy(&base),
+        &upstream_policy(),
     )
     .unwrap();
     let first: Value = serde_json::from_str(fs::read_to_string(first_log).unwrap().trim()).unwrap();
@@ -537,6 +734,16 @@ fn pins_fail_loudly_when_the_authority_is_missing_or_malformed() {
 }
 
 #[test]
+fn pins_fail_loudly_when_the_authority_has_no_targets() {
+    let path = temp("authority-empty").join("authority.json");
+    fs::write(&path, r#"{"targets":{}}"#).unwrap();
+    assert!(matches!(
+        authority_origin_pins_from_test_path(&path),
+        Err(PinsError::AuthorityTargetsEmpty { .. })
+    ));
+}
+
+#[test]
 fn pins_fail_loudly_when_the_transparency_log_is_missing_or_malformed() {
     let root = temp("transparency-errors");
     let missing = root.join("missing.jsonl");
@@ -551,6 +758,16 @@ fn pins_fail_loudly_when_the_transparency_log_is_missing_or_malformed() {
     assert!(matches!(
         malformed_result,
         Err(PinsError::TransparencyLogParse { .. })
+    ));
+}
+
+#[test]
+fn pins_fail_loudly_when_the_transparency_log_has_no_release_rows() {
+    let path = temp("transparency-empty").join("log.jsonl");
+    fs::write(&path, "\n").unwrap();
+    assert!(matches!(
+        supported_release_versions_from_test_path(&path),
+        Err(PinsError::TransparencyLogEmpty { .. })
     ));
 }
 

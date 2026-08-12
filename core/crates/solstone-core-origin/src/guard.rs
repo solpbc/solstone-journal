@@ -5,8 +5,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use thiserror::Error;
-
 use crate::pins::{
     PinsError, head_origin_pins, historical_origin_pins, supported_release_versions,
 };
@@ -24,11 +22,9 @@ pub enum PruneAssessment {
     Unknown,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum GuardError {
-    #[error(transparent)]
-    Pins(#[from] PinsError),
-    #[error("refusing to prune {origin_key}: {assessment:?}")]
+    Pins(PinsError),
     Refused {
         origin_key: String,
         assessment: PruneAssessment,
@@ -43,7 +39,7 @@ pub fn assess_prune_with_current_support(origin_key: &str) -> Result<PruneAssess
 
 /// Assess a caller-supplied release set. Production reaches this only through
 /// `assess_prune_with_current_support`; it is exposed for policy tests.
-pub fn assess_prune(
+pub(crate) fn assess_prune(
     origin_key: &str,
     supported_releases: &BTreeSet<String>,
 ) -> Result<PruneAssessment, GuardError> {
@@ -69,6 +65,56 @@ pub fn assess_prune(
         Some(owners) => Ok(PruneAssessment::PinnedBy {
             owners: owners.clone(),
         }),
+    }
+}
+
+impl std::fmt::Display for GuardError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pins(error) => error.fmt(formatter),
+            Self::Refused {
+                origin_key,
+                assessment: PruneAssessment::PinnedBy { owners },
+            } => write!(
+                formatter,
+                "refusing to prune {origin_key}: pinned by {}",
+                owners
+                    .iter()
+                    .map(PinOwner::display_name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Self::Refused { origin_key, .. } => {
+                write!(
+                    formatter,
+                    "refusing to prune {origin_key}: unknown origin key"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for GuardError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Pins(error) => Some(error),
+            Self::Refused { .. } => None,
+        }
+    }
+}
+
+impl From<PinsError> for GuardError {
+    fn from(error: PinsError) -> Self {
+        Self::Pins(error)
+    }
+}
+
+impl PinOwner {
+    fn display_name(&self) -> &str {
+        match self {
+            Self::Release(version) => version,
+            Self::HeadUnreleased => "HEAD (unreleased)",
+        }
     }
 }
 

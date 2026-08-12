@@ -6,8 +6,9 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use solstone_core_assets::Artifact;
-use solstone_core_local::install::archive::{ArchiveError, DownloadHostPolicy, download_verified};
+use solstone_core_local::install::archive::{
+    ArchiveError, DownloadHostPolicy, download_verified_origin,
+};
 use thiserror::Error;
 
 use crate::pins::{
@@ -28,8 +29,6 @@ pub struct GateTarget {
 pub enum GateError {
     #[error(transparent)]
     Pins(#[from] PinsError),
-    #[error("origin target {origin_key} has no declared size")]
-    TargetMissingSize { origin_key: String },
     #[error("cannot create gate destination {path}: {source}")]
     DestinationCreate {
         path: PathBuf,
@@ -62,18 +61,20 @@ pub fn verify_targets(
         source,
     })?;
     for (index, target) in targets.iter().enumerate() {
-        let size_bytes = target
-            .size_bytes
-            .ok_or_else(|| GateError::TargetMissingSize {
-                origin_key: target.origin_key.clone(),
-            })?;
-        let artifact = artifact_for(target, size_bytes);
         let destination = destination_dir.join(format!("origin-target-{index}"));
-        download_verified(&artifact, &destination, policy, |_, _| {}).map_err(|source| {
-            GateError::Download {
-                origin_key: target.origin_key.clone(),
-                source,
-            }
+        // nvattest companion manifests have an authority pin but no declared
+        // size, so only their streamed SHA-256 is mandatory.
+        download_verified_origin(
+            &target.origin_key,
+            &target.sha256,
+            target.size_bytes,
+            &destination,
+            policy,
+            |_, _| {},
+        )
+        .map_err(|source| GateError::Download {
+            origin_key: target.origin_key.clone(),
+            source,
         })?;
     }
     Ok(())
@@ -118,24 +119,4 @@ impl From<OriginPin> for GateTarget {
             upstream_url: pin.upstream_url,
         }
     }
-}
-
-fn artifact_for(target: &GateTarget, size_bytes: u64) -> Artifact {
-    Artifact {
-        unit: leak(&target.unit),
-        version: leak(target.version.as_deref().unwrap_or("head")),
-        filename: leak(&target.origin_key),
-        sha256: leak(&target.sha256),
-        size_bytes,
-        upstream_url: leak(target.upstream_url.as_deref().unwrap_or("")),
-        origin_key: leak(&target.origin_key),
-        artifact_key: None,
-        platform: None,
-        backend: None,
-        extracted_binary_sha256: None,
-    }
-}
-
-fn leak(value: &str) -> &'static str {
-    Box::leak(value.to_owned().into_boxed_str())
 }

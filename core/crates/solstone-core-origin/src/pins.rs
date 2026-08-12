@@ -62,6 +62,8 @@ pub enum PinsError {
         line: usize,
         source: serde_json::Error,
     },
+    #[error("transparency log {path} has no release rows")]
+    TransparencyLogEmpty { path: PathBuf },
     #[error("cannot parse pin snapshot for release {release_version}: {source}")]
     SnapshotParse {
         release_version: String,
@@ -81,6 +83,8 @@ pub enum PinsError {
     },
     #[error("nvattest authority has invalid target {target}: {detail}")]
     AuthorityTargetInvalid { target: String, detail: String },
+    #[error("nvattest authority {path} has no targets")]
+    AuthorityTargetsEmpty { path: PathBuf },
     #[error("head pin set repeats origin key {origin_key}")]
     HeadDuplicateOriginKey { origin_key: String },
 }
@@ -133,7 +137,8 @@ fn supported_release_versions_from_path(path: &Path) -> Result<BTreeSet<String>,
         path: path.to_path_buf(),
         source,
     })?;
-    text.lines()
+    let versions = text
+        .lines()
         .enumerate()
         .filter(|(_, line)| !line.trim().is_empty())
         .map(|(index, line)| {
@@ -145,7 +150,13 @@ fn supported_release_versions_from_path(path: &Path) -> Result<BTreeSet<String>,
                     source,
                 })
         })
-        .collect()
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if versions.is_empty() {
+        return Err(PinsError::TransparencyLogEmpty {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(versions)
 }
 
 #[cfg(test)]
@@ -257,6 +268,11 @@ fn authority_origin_pins_from_path(path: &Path) -> Result<Vec<OriginPin>, PinsEr
             target: "targets".to_owned(),
             detail: "missing object".to_owned(),
         })?;
+    if targets.is_empty() {
+        return Err(PinsError::AuthorityTargetsEmpty {
+            path: path.to_path_buf(),
+        });
+    }
     let mut pins = Vec::new();
     for (target, entry) in targets {
         let source = entry

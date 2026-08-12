@@ -76,9 +76,30 @@ pub fn download_verified(
     artifact: &Artifact,
     destination: &Path,
     policy: &DownloadHostPolicy<'_>,
+    progress: impl FnMut(u64, Option<u64>),
+) -> Result<(), ArchiveError> {
+    download_verified_origin(
+        artifact.origin_key,
+        artifact.sha256,
+        Some(artifact.size_bytes),
+        destination,
+        policy,
+        progress,
+    )
+}
+
+/// Downloads an origin object whose authoritative pin may omit a size. A
+/// declared size remains mandatory when present; nvattest companion manifests
+/// are verified by their authority-provided SHA-256 without one.
+pub fn download_verified_origin(
+    origin_key: &str,
+    sha256: &str,
+    expected_size: Option<u64>,
+    destination: &Path,
+    policy: &DownloadHostPolicy<'_>,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<(), ArchiveError> {
-    let origin = origin_url(policy.origin_base_url, artifact);
+    let origin = origin_url(policy.origin_base_url, origin_key);
     let mut current = validate_url(&origin, policy)?;
     let agent = ureq::agent();
     let mut followed = 0_u8;
@@ -143,16 +164,18 @@ pub fn download_verified(
             }
             out.write_all(&chunk[..size])?;
             received += size as u64;
-            progress(received, Some(artifact.size_bytes));
+            progress(received, expected_size);
         }
         out.sync_all()?;
-        if received != artifact.size_bytes {
+        if let Some(expected) = expected_size
+            && received != expected
+        {
             return Err(ArchiveError::SizeMismatch {
-                expected: artifact.size_bytes,
+                expected,
                 actual: received,
             });
         }
-        verify_sha256(&temporary, artifact.sha256)?;
+        verify_sha256(&temporary, sha256)?;
         fs::rename(&temporary, destination)?;
         Ok(())
     })();
@@ -179,8 +202,8 @@ impl AbsoluteUrl {
     }
 }
 
-pub fn origin_url(base: &str, artifact: &Artifact) -> String {
-    format!("{base}/{}", artifact.origin_key)
+pub fn origin_url(base: &str, origin_key: &str) -> String {
+    format!("{base}/{origin_key}")
 }
 
 fn validate_url(url: &str, policy: &DownloadHostPolicy<'_>) -> Result<AbsoluteUrl, ArchiveError> {
