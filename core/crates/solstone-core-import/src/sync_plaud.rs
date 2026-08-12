@@ -15,7 +15,7 @@ use solstone_core_journal_io::create_directory_with_mode;
 use crate::contract::{SyncPreviewRequest, SyncSaveRequest};
 use crate::sync_state::{BackendName, SyncState, SyncStateRead, read_sync_state, write_sync_state};
 
-const MIN_DURATION_MS: i64 = 30_000;
+const MIN_DURATION_MS: f64 = 30_000.0;
 
 /// Caller-owned Plaud access credential. It is never persisted or rendered.
 pub trait PlaudCredential {
@@ -23,16 +23,16 @@ pub trait PlaudCredential {
 }
 
 /// Remote Plaud file metadata needed for the state catalogue.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlaudFile {
     pub id: String,
     pub filename: String,
     pub fullname: String,
     pub filesize: u64,
     /// Epoch seconds or milliseconds, as supplied by Plaud.
-    pub start_time: i64,
+    pub start_time: f64,
     /// Recording duration in milliseconds.
-    pub duration: i64,
+    pub duration: f64,
     pub is_trash: bool,
 }
 
@@ -40,6 +40,7 @@ pub struct PlaudFile {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlaudFailureKind {
     Catalogue,
+    Manifest,
     TemporaryUrl,
     Download,
     Pipeline,
@@ -49,6 +50,7 @@ impl PlaudFailureKind {
     const fn message(self) -> &'static str {
         match self {
             Self::Catalogue => "catalogue failed",
+            Self::Manifest => "import matching failed",
             Self::TemporaryUrl => "failed to get download URL",
             Self::Download => "download failed",
             Self::Pipeline => "import failed",
@@ -70,7 +72,10 @@ pub trait PlaudDownload {
 /// Caller-owned match against prior import metadata.
 pub trait PlaudManifestLookup {
     /// Return the import timestamp for each matched remote file ID.
-    fn matching_imports(&self, files: &[PlaudFile]) -> Result<BTreeMap<String, String>, String>;
+    fn matching_imports(
+        &self,
+        files: &[PlaudFile],
+    ) -> Result<BTreeMap<String, String>, PlaudFailureKind>;
 }
 
 /// Sync time is caller owned.
@@ -169,7 +174,6 @@ pub struct PlaudSyncOutcome {
 pub enum PlaudSyncError {
     MissingCredential,
     Operation(PlaudFailureKind),
-    Manifest { message: String },
     State { message: String },
 }
 
@@ -178,9 +182,6 @@ impl fmt::Display for PlaudSyncError {
         match self {
             Self::MissingCredential => formatter.write_str("Plaud credential is not configured"),
             Self::Operation(kind) => write!(formatter, "Plaud {}", kind.message()),
-            Self::Manifest { message } => {
-                write!(formatter, "Plaud import matching failed: {message}")
-            }
             Self::State { message } => write!(formatter, "Plaud sync state failed: {message}"),
         }
     }
@@ -216,12 +217,10 @@ pub fn sync_plaud_save(
         .credential
         .access_token()
         .ok_or(PlaudSyncError::MissingCredential)?;
-    catalogued.available.sort_by(|left, right| {
-        right
-            .start_time
-            .cmp(&left.start_time)
-            .then_with(|| left.id.cmp(&right.id))
-    });
+    // `sort_by` is stable, preserving catalogue order for equal start times.
+    catalogued
+        .available
+        .sort_by(|left, right| right.start_time.total_cmp(&left.start_time));
 
     let mut downloaded = 0;
     let mut errors = Vec::new();
@@ -312,7 +311,7 @@ fn catalogue<M>(
     let matches = seams
         .manifests
         .matching_imports(&needs_matching)
-        .map_err(|message| PlaudSyncError::Manifest { message })?;
+        .map_err(PlaudSyncError::Operation)?;
 
     let mut available = Vec::new();
     for file in remote {
@@ -336,6 +335,9 @@ fn catalogue<M>(
                 object.insert("matched_at".to_owned(), Value::String(seams.clock.now()));
                 object.remove("last_error");
             }
+            if object.get("status") == Some(&Value::String("available".to_owned())) {
+                available.push(file);
+            }
             continue;
         }
 
@@ -356,7 +358,7 @@ fn catalogue<M>(
                 "skip_reason".to_owned(),
                 Value::String("trashed".to_owned()),
             );
-        } else if file.duration > 0 && file.duration < MIN_DURATION_MS {
+        } else if file.duration > 0.0 && file.duration < MIN_DURATION_MS {
             object.insert("status".to_owned(), Value::String("skipped".to_owned()));
             object.insert(
                 "skip_reason".to_owned(),
@@ -399,17 +401,20 @@ fn import_file(
     }
 }
 
-fn import_timestamp(start_time: i64) -> Option<String> {
-    if start_time <= 0 {
+fn import_timestamp(start_time: f64) -> Option<String> {
+    if !start_time.is_finite() || start_time <= 0.0 {
         return None;
     }
-    let seconds = if start_time > 1_000_000_000_000 {
-        start_time / 1000
+    let seconds = if start_time > 1_000_000_000_000.0 {
+        start_time / 1000.0
     } else {
         start_time
     };
+    if seconds > i64::MAX as f64 {
+        return None;
+    }
     Local
-        .timestamp_opt(seconds, 0)
+        .timestamp_opt(seconds as i64, 0)
         .single()
         .map(|timestamp| timestamp.format("%Y%m%d_%H%M%S").to_string())
 }

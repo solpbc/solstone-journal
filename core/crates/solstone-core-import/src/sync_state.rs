@@ -219,7 +219,7 @@ fn validate_known_numbers(
     root: &Map<String, Value>,
 ) -> Result<(), SyncStateReadClass> {
     let fields: &[&str] = match backend {
-        BackendName::Plaud => &["filesize", "start_time", "duration"],
+        BackendName::Plaud => &["filesize"],
         BackendName::Obsidian => &["edit_count", "segments"],
         BackendName::Audio => &["filesize", "duration"],
         BackendName::Oura => &[],
