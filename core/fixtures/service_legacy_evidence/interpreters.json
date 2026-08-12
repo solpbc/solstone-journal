@@ -1,0 +1,28 @@
+{
+  "schema": "service-legacy-cpython-interpreters",
+  "schema_version": 1,
+  "buckets": {
+    "cpython37": {
+      "archive_sha256": "b33feb5ce0d7f9c4aca8621a9d231dfd9d2f6e26eccb56b63f07041ff573d5a5",
+      "declared_floor": "3.7",
+      "executable": "python/bin/python3.8",
+      "executable_sha256": "a48a236a663868ec7cc12c12abc349687ae3ba4de1fed1ad58cb745536dab3dd",
+      "pin_rationale": "python-build-standalone publishes no linux x86_64 install_only artifact for CPython 3.7; only pgo/debug full-build tar.zst variants exist through release tag 20200823 (for example, 3.7.7 at 20200418/20200517 and 3.7.9 at 20200822). All 3.7-bucket blobs are confirmed pure-stdlib (plistlib.dumps + common 3.7+ syntax only per source review), so 3.8.19 install_only was selected as the nearest compatible pinned build. This substitution is deliberate and documented, not silent.",
+      "platform": "linux-x86_64",
+      "pinned_version": "3.8.19",
+      "release_tag": "20240415",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20240415/cpython-3.8.19%2B20240415-x86_64-unknown-linux-gnu-install_only.tar.gz"
+    },
+    "cpython39": {
+      "archive_sha256": "00f698873804863dedc0e2b2c2cc4303b49ab0703af2e5883e11340cb8079d0f",
+      "declared_floor": "3.9",
+      "executable": "python/bin/python3.9",
+      "executable_sha256": "3ce6ce1d62807f1da502adddca916288247a67250f7480699a9d91308c1eaafb",
+      "pin_rationale": null,
+      "platform": "linux-x86_64",
+      "pinned_version": "3.9.19",
+      "release_tag": "20240415",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20240415/cpython-3.9.19%2B20240415-x86_64-unknown-linux-gnu-install_only.tar.gz"
+    }
+  }
+}
