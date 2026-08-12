@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -42,6 +42,17 @@ RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solston
 # ci_gate_purity::every_host_excluded_crate_is_tested_by_a_ci_target keeps the
 # two lists in step: adding a fourth --exclude without adding it here reds.
 ONNX_HOST_TEST_PACKAGES := -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze
+
+# Only W4b-converted supervisor tests belong here: their positive waits turn
+# load-dilated exhaustion into an explicit inconclusive outcome. The three
+# supervisor-domain raw-poll tests (supervisor_boot, supervisor_providers, and
+# restart_convey_supervisor_seam), the two session races (cogitate_session and
+# generate_session), and the two non-race tests (convey_restart_no_python_spawn
+# and convey_process) remain out of scope because load could make their hard
+# assertions report a false FAILED.
+RUST_RACE_TEST_TARGETS := --test supervisor_app_stack --test supervisor_shutdown --test supervisor_tick
+RUST_RACE_RUNS ?= 5
+RUST_RACE_LOAD_JOBS ?= 12
 
 # bindgen (inside ffmpeg-sys-next, which solstone-core-describe pulls in) asks
 # libclang for its builtin-header directory, and libclang derives that path from
@@ -78,7 +89,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and check-differentials inherits it when it
 # shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-test check-rust-onnx-test check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-onnx-test check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -143,7 +154,7 @@ JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu
 # report uv-absence themselves. Rust-only and frozen/gated goals are likewise
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
-UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-ios check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-deny audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
+UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-ios check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-deny check-service-legacy-evidence service-legacy-evidence-capture audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
 ifndef UV
 ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -394,6 +405,67 @@ check-rust-clippy:
 check-rust-test:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked -- --test-threads=1
+
+# Deliberately manual: this runs the W4b-converted supervisor integration
+# targets repeatedly under bounded CPU contention. Its printed verdicts, rather
+# than Make's flattened nonzero exit code, distinguish FAILED from INCONCLUSIVE.
+check-rust-race: build
+	@$(REQUIRE_CARGO)
+	@set -u; \
+	case "$(RUST_RACE_RUNS)" in ''|*[!0-9]*) echo "check-rust-race: RUST_RACE_RUNS must be a positive integer" >&2; exit 2;; esac; \
+	case "$(RUST_RACE_LOAD_JOBS)" in ''|*[!0-9]*) echo "check-rust-race: RUST_RACE_LOAD_JOBS must be a positive integer" >&2; exit 2;; esac; \
+	if [ "$(RUST_RACE_RUNS)" -eq 0 ] || [ "$(RUST_RACE_LOAD_JOBS)" -eq 0 ]; then \
+		echo "check-rust-race: RUST_RACE_RUNS and RUST_RACE_LOAD_JOBS must be positive" >&2; exit 2; \
+	fi; \
+	workdir=$$(mktemp -d "$${TMPDIR:-/var/tmp}/solstone-race-XXXXXX"); \
+	load_pids=''; run_pids=''; \
+	cleanup() { \
+		status=$$?; trap - EXIT INT TERM; \
+		for pid in $$run_pids $$load_pids; do kill "$$pid" 2>/dev/null || :; done; \
+		for pid in $$run_pids $$load_pids; do wait "$$pid" 2>/dev/null || :; done; \
+		rm -rf "$$workdir"; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT; trap 'exit 130' INT TERM; \
+	classifier="$(CURDIR)/core/target/debug/solstone-core-race-classifier"; \
+	if [ ! -x "$$classifier" ]; then echo "check-rust-race: FAILED: classifier was not built"; exit 1; fi; \
+	job=1; while [ "$$job" -le "$(RUST_RACE_LOAD_JOBS)" ]; do (while :; do :; done) & load_pids="$$load_pids $$!"; job=$$((job + 1)); done; \
+	run=1; while [ "$$run" -le "$(RUST_RACE_RUNS)" ]; do \
+		( cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core $(RUST_RACE_TEST_TARGETS) --locked --no-fail-fast -- --test-threads=1 > "$$workdir/run-$$run.log" 2>&1; status=$$?; printf '%s\n' "$$status" > "$$workdir/run-$$run.status" ) & \
+		run_pids="$$run_pids $$!"; run=$$((run + 1)); \
+	done; \
+	for pid in $$run_pids; do wait "$$pid" || :; done; \
+	for pid in $$load_pids; do kill "$$pid" 2>/dev/null || :; done; \
+	for pid in $$load_pids; do wait "$$pid" 2>/dev/null || :; done; \
+	load_pids=''; run_pids=''; \
+	green=0; inconclusive=0; failed=0; failed_details=''; \
+	run=1; while [ "$$run" -le "$(RUST_RACE_RUNS)" ]; do \
+		if [ -f "$$workdir/run-$$run.status" ]; then status=$$(cat "$$workdir/run-$$run.status"); else status=125; fi; \
+		verdict=$$("$$classifier" "$$workdir/run-$$run.log" "$$status" 2>&1); classifier_status=$$?; \
+		if [ "$$classifier_status" -ne 0 ]; then verdict="FAILED: classifier infrastructure: $$verdict"; fi; \
+		printf '%s\n' "check-rust-race: run $$run $$verdict"; \
+		case "$$verdict" in \
+			GREEN) ;; \
+			*) echo "check-rust-race: --- run $$run evidence ---"; \
+			   sed -n '/^failures:/,$$p' "$$workdir/run-$$run.log" 2>/dev/null | head -30; \
+			   grep -E "panicked at|assertion|connection closed before" "$$workdir/run-$$run.log" 2>/dev/null | head -12; \
+			   echo "check-rust-race: --- end run $$run evidence ---";; \
+		esac; \
+		case "$$verdict" in \
+			GREEN) green=$$((green + 1));; \
+			INCONCLUSIVE:*) inconclusive=$$((inconclusive + 1));; \
+			FAILED:*) failed=$$((failed + 1)); failed_details="$$failed_details [run $$run: $${verdict#FAILED: }]";; \
+			*) failed=$$((failed + 1)); failed_details="$$failed_details [run $$run: unexpected classifier verdict $$verdict]";; \
+		esac; \
+		run=$$((run + 1)); \
+	done; \
+	if [ "$$failed" -ne 0 ]; then \
+		echo "check-rust-race: FAILED ($$failed hard-failed run(s); $$inconclusive inconclusive)$$failed_details"; exit 1; \
+	elif [ "$$inconclusive" -ne 0 ]; then \
+		echo "check-rust-race: INCONCLUSIVE ($$inconclusive of $(RUST_RACE_RUNS) run(s); 0 hard failures)"; exit 1; \
+	else \
+		echo "check-rust-race: GREEN ($$green of $(RUST_RACE_RUNS) run(s))"; \
+	fi
 
 # macOS is a core platform with parity to Linux as an acceptance criterion
 # (founder, 2026-08-10), and until this target existed NOTHING compiled the
@@ -1026,7 +1098,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-macos
 	@$(MAKE) check-rust-deny
 	@echo "All CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
-	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement."
+	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement; run 'make check-rust-race' for concurrency-sensitive supervisor changes."
 
 verify: ci
 	@echo "Verification complete! (alias for ci during the Rust-conversion freeze)"

@@ -387,6 +387,59 @@ fn every_host_excluded_crate_is_tested_by_a_ci_target() {
     );
 }
 
+/// The race gate may name only supervisor tests that use W4b's explicit
+/// inconclusive outcome. Removing one from the Makefile list must therefore
+/// red this source-derived guard rather than silently reducing coverage.
+#[test]
+fn every_w4b_supervisor_test_is_named_in_rust_race_gate() {
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let registered = makefile
+        .lines()
+        .find(|line| line.starts_with("RUST_RACE_TEST_TARGETS :="))
+        .expect("RUST_RACE_TEST_TARGETS must be defined")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter_map(|pair| (pair[0] == "--test").then_some(pair[1].to_owned()))
+        .collect::<BTreeSet<_>>();
+    assert!(
+        !registered.is_empty(),
+        "the race-target parser found nothing; it is measuring itself, not the Makefile"
+    );
+
+    let tests = root.join("core/crates/solstone-core/tests");
+    let expected = fs::read_dir(&tests)
+        .expect("read solstone-core integration tests")
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let file_name = path.file_name()?.to_str()?;
+            (file_name.starts_with("supervisor_") && file_name.ends_with(".rs")).then_some(path)
+        })
+        .filter(|path| {
+            fs::read_to_string(path)
+                .expect("read supervisor integration test")
+                .contains("#[path = \"support/await_outcome.rs\"]")
+        })
+        .map(|path| {
+            path.file_stem()
+                .expect("supervisor test file stem")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        registered, expected,
+        "RUST_RACE_TEST_TARGETS must exactly name W4b-converted supervisor tests"
+    );
+    assert!(
+        target_body(&makefile, "check-rust-race").contains("$(RUST_RACE_TEST_TARGETS)"),
+        "check-rust-race must reference RUST_RACE_TEST_TARGETS, not a hand copy"
+    );
+}
+
 #[test]
 fn make_ci_serializes_workspace_tests_that_compete_for_host_resources() {
     let makefile = makefile_text(&repo_root());
@@ -402,6 +455,36 @@ fn make_ci_serializes_workspace_tests_that_compete_for_host_resources() {
             .windows(2)
             .any(|pair| pair[0] == "--" && pair[1] == "--test-threads=1"),
         "the full workspace suite must not make process and lock timeouts measure host contention"
+    );
+}
+
+#[test]
+fn make_ci_names_the_manual_rust_race_gate() {
+    let makefile = makefile_text(&repo_root());
+    let ci = target_body(&makefile, "ci-under-poison");
+    assert!(
+        ci.contains("check-rust-race"),
+        "make ci closing output must name the manual check-rust-race gate"
+    );
+    assert!(
+        !ci.contains("$(MAKE) check-rust-race"),
+        "check-rust-race must remain manually invoked, outside make ci"
+    );
+}
+
+#[test]
+fn manual_race_gate_is_selectable_without_uv() {
+    let root = repo_root();
+    let dry_run = Command::new("make")
+        .args(["-n", "check-rust-race"])
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(&root)
+        .output()
+        .expect("uv-free make dry run starts");
+    assert!(
+        dry_run.status.success(),
+        "check-rust-race must be selectable without uv: {}",
+        String::from_utf8_lossy(&dry_run.stderr)
     );
 }
 

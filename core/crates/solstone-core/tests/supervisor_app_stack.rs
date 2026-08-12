@@ -15,13 +15,12 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::oneshot;
-use tokio::time::timeout;
 
 #[allow(dead_code)]
 #[path = "support/await_outcome.rs"]
 mod await_outcome;
 
-use await_outcome::{PollState, WaitOutcome, WaitPolarity, await_outcome};
+use await_outcome::{PollState, WaitMetrics, WaitOutcome, WaitPolarity, await_outcome};
 
 const SERVICES: [&str; 4] = ["convey", "sense", "cortex", "spl"];
 // Convey's initial Spawned arrives about 1ms after the Callosum socket becomes
@@ -75,7 +74,23 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
             panic!("{context}: {reason}; {}", metrics.describe());
         }
         WaitOutcome::Inconclusive(metrics) => {
-            panic!("{context}: {}", metrics.describe());
+            panic!("W4B_INCONCLUSIVE {context}: {}", metrics.describe());
+        }
+    }
+}
+
+// Mirrors support/await_outcome.rs's 11/10 dilation threshold without touching
+// that trusted layer: WaitTracker::is_dilated is private, while
+// WaitMetrics::dilation() exposes the real measured ratio.
+fn wait_outcome_from_dilation(reason: &str, requested: Duration, slept: Duration) -> WaitOutcome {
+    const DILATION_THRESHOLD: f64 = 11.0 / 10.0;
+    let metrics = WaitMetrics { requested, slept };
+    if metrics.dilation() >= DILATION_THRESHOLD {
+        WaitOutcome::Inconclusive(metrics)
+    } else {
+        WaitOutcome::Failed {
+            reason: format!("{reason} exhausted before completion"),
+            metrics,
         }
     }
 }
@@ -92,7 +107,7 @@ fn panic_or_log_termination(outcome: WaitOutcome) {
             )
         }
         WaitOutcome::Inconclusive(metrics) => format!(
-            "supervisor shutdown wait was inconclusive after SIGTERM: {}",
+            "W4B_INCONCLUSIVE supervisor shutdown wait was inconclusive after SIGTERM: {}",
             metrics.describe()
         ),
         WaitOutcome::Passed(_) => unreachable!(),
@@ -354,13 +369,24 @@ async fn never_ready_convey_starts_remaining_app_events_in_launch_order() {
         .await
         .expect("collector entered connect loop");
     let _child = start(&journal, &[], Some("sleep".to_owned()));
-    match timeout(Duration::from_secs(5), &mut collector).await {
-        Ok(result) => result.expect("app start collector"),
-        Err(_) => {
+    let interval = Duration::from_millis(10);
+    let iterations: usize = 500; // 10ms * 500 = 5s, unchanged from the previous single timeout
+    let requested = interval.saturating_mul(iterations as u32);
+    let started = Instant::now();
+    let mut finished = None;
+    for _ in 0..iterations {
+        tokio::select! {
+            outcome = &mut collector => { finished = Some(outcome); break; }
+            _ = tokio::time::sleep(interval) => {}
+        }
+    }
+    match finished {
+        Some(outcome) => outcome.expect("app start collector"),
+        None => {
             collector.abort();
-            panic!(
-                "timed out collecting remaining app starts: {:?}",
-                captured.lock().expect("captured app starts")
+            panic_for_wait(
+                "app start collector",
+                wait_outcome_from_dilation("app start collector", requested, started.elapsed()),
             );
         }
     }
