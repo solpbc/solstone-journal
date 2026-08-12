@@ -9,12 +9,18 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
+
+#[allow(dead_code)]
+#[path = "support/await_outcome.rs"]
+mod await_outcome;
+
+use await_outcome::{PollState, WaitOutcome, WaitPolarity, await_outcome, await_outcome_async};
 
 struct TempJournal(PathBuf);
 
@@ -83,6 +89,19 @@ impl Drop for TempJournal {
     }
 }
 struct ChildGuard(Child);
+
+fn panic_for_wait(context: &str, outcome: WaitOutcome) {
+    match outcome {
+        WaitOutcome::Passed(_) => {}
+        WaitOutcome::Failed { reason, metrics } => {
+            panic!("{context}: {reason}; {}", metrics.describe());
+        }
+        WaitOutcome::Inconclusive(metrics) => {
+            panic!("{context}: {}", metrics.describe());
+        }
+    }
+}
+
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if self.0.try_wait().ok().flatten().is_none() {
@@ -90,11 +109,20 @@ impl Drop for ChildGuard {
                 nix::unistd::Pid::from_raw(self.0.id() as i32),
                 nix::sys::signal::Signal::SIGTERM,
             );
-            for _ in 0..1_000 {
-                if self.0.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(5));
+            let outcome = await_outcome(
+                WaitPolarity::Positive,
+                Duration::from_millis(5),
+                1_000,
+                Instant::now,
+                || match self.0.try_wait() {
+                    Ok(Some(_)) => PollState::Held,
+                    Ok(None) => PollState::Pending,
+                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+                },
+                thread::sleep,
+            );
+            if matches!(outcome, WaitOutcome::Passed(_)) {
+                return;
             }
             let _ = self.0.kill();
         }
@@ -143,16 +171,27 @@ fn wait_for_socket(child: &mut ChildGuard, socket: &std::path::Path) {
         .parent()
         .expect("Callosum socket health directory")
         .join("supervisor.ready");
-    for _ in 0..1600 {
-        if socket.exists() && ready.exists() {
-            return;
-        }
-        if let Some(status) = child.0.try_wait().expect("supervisor status") {
-            panic!("supervisor exited during boot: {status}");
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    panic!("supervisor did not become ready");
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        1_600,
+        Instant::now,
+        || {
+            if socket.exists() && ready.exists() {
+                PollState::Held
+            } else {
+                match child.0.try_wait() {
+                    Ok(Some(status)) => {
+                        PollState::HardFail(format!("supervisor exited during boot: {status}"))
+                    }
+                    Ok(None) => PollState::Pending,
+                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+                }
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait("supervisor did not become ready", outcome);
 }
 
 async fn connect(
@@ -193,10 +232,14 @@ async fn receive_until(
     timeout(Duration::from_secs(8), async {
         loop {
             let mut line = String::new();
-            reader
+            let bytes = reader
                 .read_line(&mut line)
                 .await
                 .expect("read Callosum frame");
+            assert!(
+                bytes > 0,
+                "the connection closed before supervisor {event} event for {reference}"
+            );
             let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
             if value["tract"] == "supervisor"
                 && value["event"] == event
@@ -220,7 +263,11 @@ async fn receive_started_command(
     timeout(Duration::from_secs(20), async {
         loop {
             let mut line = String::new();
-            reader.read_line(&mut line).await.expect("started frame");
+            let bytes = reader.read_line(&mut line).await.expect("started frame");
+            assert!(
+                bytes > 0,
+                "the connection closed before supervisor started frame"
+            );
             let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
             if value["tract"] == "supervisor"
                 && value["event"] == "started"
@@ -235,18 +282,31 @@ async fn receive_started_command(
 }
 
 async fn wait_for_path(path: &Path) {
-    timeout(Duration::from_secs(8), async {
-        while !path.exists() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("expected path");
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        800,
+        Instant::now,
+        || {
+            if path.exists() {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("expected path", outcome);
 }
 
 async fn wait_for_logged_message(path: &Path, message: &Value) {
-    timeout(Duration::from_secs(8), async {
-        loop {
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        800,
+        Instant::now,
+        || {
             if let Ok(contents) = fs::read_to_string(path)
                 && let Some(line) = contents.lines().next()
                 && let Ok(mut logged) = serde_json::from_str::<Value>(line)
@@ -254,30 +314,217 @@ async fn wait_for_logged_message(path: &Path, message: &Value) {
             {
                 logged.as_object_mut().expect("event object").remove("ts");
                 if &logged == message {
-                    return;
+                    return PollState::Held;
                 }
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("expected logged event");
+            PollState::Pending
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("expected logged event", outcome);
 }
 
 async fn wait_for_runtime_phase(path: &Path, phase: &str) -> Value {
-    timeout(Duration::from_secs(8), async {
-        loop {
+    let mut found = None;
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        800,
+        Instant::now,
+        || {
             if let Ok(bytes) = fs::read(path)
                 && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
                 && value["phase"] == phase
             {
-                return value;
+                found = Some(value);
+                return PollState::Held;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            PollState::Pending
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("provider runtime phase", outcome);
+    found.expect("runtime phase recorded when wait passed")
+}
+
+async fn receive_status(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+) -> Value {
+    loop {
+        let mut line = String::new();
+        let bytes = reader.read_line(&mut line).await.expect("status frame");
+        assert!(
+            bytes > 0,
+            "the connection closed before supervisor status event"
+        );
+        let value: Value = serde_json::from_str(&line).expect("status JSON");
+        if value["tract"] == "supervisor" && value["event"] == "status" {
+            return value;
         }
-    })
-    .await
-    .expect("provider runtime phase")
+    }
+}
+
+async fn receive_timeout_history(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+) -> Value {
+    loop {
+        let mut line = String::new();
+        let bytes = reader.read_line(&mut line).await.expect("status frame");
+        assert!(
+            bytes > 0,
+            "the connection closed before timeout-history status event"
+        );
+        let value: Value = serde_json::from_str(&line).expect("status JSON");
+        if value["tract"] == "supervisor"
+            && value["event"] == "status"
+            && value["recent_tasks"].as_array().is_some_and(|tasks| {
+                tasks
+                    .iter()
+                    .any(|task| task["ref"] == "ac11-task" && task["exit_status"] == "timeout")
+            })
+        {
+            return value;
+        }
+    }
+}
+
+async fn receive_restarting(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+) -> Value {
+    loop {
+        let mut line = String::new();
+        let bytes = reader.read_line(&mut line).await.expect("restart frame");
+        assert!(
+            bytes > 0,
+            "the connection closed before supervisor restarting event"
+        );
+        let value: Value = serde_json::from_str(&line).expect("restart JSON");
+        if value["tract"] == "supervisor" && value["event"] == "restarting" {
+            return value;
+        }
+    }
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            payload
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_owned())
+        })
+        .expect("string panic")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn receive_until_reports_closed_callosum_connection() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (reader, write) = connect(&socket).await;
+    drop(write);
+    let task = tokio::spawn(async move {
+        let mut reader = reader;
+        let _ = receive_until(&mut reader, "eof-reference", "started").await;
+    });
+    let panic = task
+        .await
+        .expect_err("reader must panic on EOF")
+        .into_panic();
+    assert!(
+        panic_message(panic)
+            .contains("the connection closed before supervisor started event for eof-reference")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn receive_started_command_reports_closed_callosum_connection() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (reader, write) = connect(&socket).await;
+    drop(write);
+    let task = tokio::spawn(async move {
+        let mut reader = reader;
+        let _ = receive_started_command(&mut reader, &["journal", "think"]).await;
+    });
+    let panic = task
+        .await
+        .expect_err("reader must panic on EOF")
+        .into_panic();
+    assert!(panic_message(panic).contains("the connection closed before supervisor started frame"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn status_reader_reports_closed_callosum_connection() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (reader, write) = connect(&socket).await;
+    drop(write);
+    let task = tokio::spawn(async move {
+        let mut reader = reader;
+        let _ = timeout(Duration::from_secs(8), receive_status(&mut reader))
+            .await
+            .expect("status broadcast");
+    });
+    let panic = task
+        .await
+        .expect_err("reader must panic on EOF")
+        .into_panic();
+    assert!(panic_message(panic).contains("the connection closed before supervisor status event"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn timeout_history_reader_reports_closed_callosum_connection() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (reader, write) = connect(&socket).await;
+    drop(write);
+    let task = tokio::spawn(async move {
+        let mut reader = reader;
+        let _ = timeout(Duration::from_secs(8), receive_timeout_history(&mut reader))
+            .await
+            .expect("timeout history projection");
+    });
+    let panic = task
+        .await
+        .expect_err("reader must panic on EOF")
+        .into_panic();
+    assert!(
+        panic_message(panic).contains("the connection closed before timeout-history status event")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn restarting_reader_reports_closed_callosum_connection() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (reader, write) = connect(&socket).await;
+    drop(write);
+    let task = tokio::spawn(async move {
+        let mut reader = reader;
+        let _ = timeout(Duration::from_secs(8), receive_restarting(&mut reader))
+            .await
+            .expect("restart notification");
+    });
+    let panic = task
+        .await
+        .expect_err("reader must panic on EOF")
+        .into_panic();
+    assert!(
+        panic_message(panic).contains("the connection closed before supervisor restarting event")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -316,16 +563,24 @@ fn ac10_due_schedule_entry_runs_through_real_engine() {
     let mut child = start(&journal, None);
     wait_for_socket(&mut child, &journal.0.join("health/callosum.sock"));
     let scheduler = journal.0.join("health/scheduler.json");
-    for _ in 0..800 {
-        if let Ok(bytes) = fs::read(&scheduler)
-            && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
-            && value["ac10"]["last_status"] == "ok"
-        {
-            return;
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    panic!("scheduled work did not write completion state");
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        800,
+        Instant::now,
+        || {
+            if let Ok(bytes) = fs::read(&scheduler)
+                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+                && value["ac10"]["last_status"] == "ok"
+            {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait("scheduled work did not write completion state", outcome);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -344,18 +599,9 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, _write) = connect(&socket).await;
-    let status = timeout(Duration::from_secs(8), async {
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).await.expect("status frame");
-            let value: Value = serde_json::from_str(&line).expect("status JSON");
-            if value["tract"] == "supervisor" && value["event"] == "status" {
-                return value;
-            }
-        }
-    })
-    .await
-    .expect("status broadcast");
+    let status = timeout(Duration::from_secs(8), receive_status(&mut reader))
+        .await
+        .expect("status broadcast");
     let names = status["services"]
         .as_array()
         .expect("service projection")
@@ -398,38 +644,31 @@ async fn ac11_capped_task_is_terminated_with_timeout_exit() {
     // 3 s window failed intermittently on an idle machine — reproduced once in
     // ~10 runs, on the first run after a cold build — while passing 6/6 in
     // isolation. A tight budget here reports a slow fork as a supervisor defect.
-    for _ in 0..3_000 {
-        if ready.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(ready.exists(), "task process really started");
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        3_000,
+        Instant::now,
+        || {
+            if ready.exists() {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("task process really started", outcome);
     let stopped = receive_until(&mut reader, "ac11-task", "stopped").await;
     assert_eq!(
         stopped["exit_code"],
         json!(-15),
         "deadline termination is surfaced as timeout exit"
     );
-    let status = timeout(Duration::from_secs(8), async {
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).await.expect("status frame");
-            let value: Value = serde_json::from_str(&line).expect("status JSON");
-            if value["tract"] == "supervisor"
-                && value["event"] == "status"
-                && value["recent_tasks"].as_array().is_some_and(|tasks| {
-                    tasks
-                        .iter()
-                        .any(|task| task["ref"] == "ac11-task" && task["exit_status"] == "timeout")
-                })
-            {
-                return value;
-            }
-        }
-    })
-    .await
-    .expect("timeout history projection");
+    let status = timeout(Duration::from_secs(8), receive_timeout_history(&mut reader))
+        .await
+        .expect("timeout history projection");
     assert!(status["recent_tasks"].is_array());
 }
 
@@ -596,23 +835,19 @@ async fn restart_message_restarts_convey_fixture() {
         json!({"tract": "supervisor", "event": "restart", "service": "convey"}),
     )
     .await;
-    let restarting = timeout(Duration::from_secs(8), async {
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).await.expect("restart frame");
-            let value: Value = serde_json::from_str(&line).expect("restart JSON");
-            if value["tract"] == "supervisor" && value["event"] == "restarting" {
-                return value;
-            }
-        }
-    })
-    .await
-    .expect("restart notification");
+    let restarting = timeout(Duration::from_secs(8), receive_restarting(&mut reader))
+        .await
+        .expect("restart notification");
     assert_eq!(restarting["service"], "convey");
     assert_eq!(restarting["pid"], previous_pid);
 
-    timeout(Duration::from_secs(8), async {
-        loop {
+    let mut replacement = None;
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        800,
+        Instant::now,
+        || {
             let current = fs::read_to_string(&marker).expect("convey marker");
             let pid = current
                 .trim()
@@ -622,13 +857,17 @@ async fn restart_message_restarts_convey_fixture() {
                 .parse::<u32>()
                 .expect("numeric convey pid");
             if pid != previous_pid {
-                return pid;
+                replacement = Some(pid);
+                PollState::Held
+            } else {
+                PollState::Pending
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("replacement convey process");
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("replacement convey process", outcome);
+    replacement.expect("replacement PID recorded when wait passed");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

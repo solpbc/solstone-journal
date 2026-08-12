@@ -17,6 +17,12 @@ use tokio::net::UnixStream;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
+#[allow(dead_code)]
+#[path = "support/await_outcome.rs"]
+mod await_outcome;
+
+use await_outcome::{PollState, WaitOutcome, WaitPolarity, await_outcome};
+
 const SERVICES: [&str; 4] = ["convey", "sense", "cortex", "spl"];
 // Convey's initial Spawned arrives about 1ms after the Callosum socket becomes
 // connectable; four of five late-connect runs instead latched its ~6s restart.
@@ -62,6 +68,42 @@ impl Drop for TempJournal {
 
 struct ChildGuard(Child);
 
+fn panic_for_wait(context: &str, outcome: WaitOutcome) {
+    match outcome {
+        WaitOutcome::Passed(_) => {}
+        WaitOutcome::Failed { reason, metrics } => {
+            panic!("{context}: {reason}; {}", metrics.describe());
+        }
+        WaitOutcome::Inconclusive(metrics) => {
+            panic!("{context}: {}", metrics.describe());
+        }
+    }
+}
+
+fn panic_or_log_termination(outcome: WaitOutcome) {
+    if matches!(outcome, WaitOutcome::Passed(_)) {
+        return;
+    }
+    let message = match &outcome {
+        WaitOutcome::Failed { reason, metrics } => {
+            format!(
+                "supervisor did not exit after SIGTERM: {reason}; {}",
+                metrics.describe()
+            )
+        }
+        WaitOutcome::Inconclusive(metrics) => format!(
+            "supervisor shutdown wait was inconclusive after SIGTERM: {}",
+            metrics.describe()
+        ),
+        WaitOutcome::Passed(_) => unreachable!(),
+    };
+    if std::thread::panicking() {
+        eprintln!("suppressed termination failure while unwinding: {message}");
+    } else {
+        panic!("{message}");
+    }
+}
+
 impl ChildGuard {
     fn running(&mut self) -> bool {
         self.0.try_wait().expect("supervisor status").is_none()
@@ -74,13 +116,23 @@ impl ChildGuard {
                 nix::sys::signal::Signal::SIGTERM,
             )
             .expect("signal supervisor");
-            for _ in 0..2_000 {
-                if self.0.try_wait().expect("supervisor status").is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(5));
+            let outcome = await_outcome(
+                WaitPolarity::Positive,
+                Duration::from_millis(5),
+                2_000,
+                Instant::now,
+                || match self.0.try_wait() {
+                    Ok(Some(_)) => PollState::Held,
+                    Ok(None) => PollState::Pending,
+                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+                },
+                thread::sleep,
+            );
+            if !matches!(outcome, WaitOutcome::Passed(_)) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
             }
-            panic!("supervisor did not exit after SIGTERM");
+            panic_or_log_termination(outcome);
         }
     }
 }
@@ -114,18 +166,30 @@ fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> C
 
 fn wait_for_markers(journal: &TempJournal, services: &[&str]) -> BTreeMap<String, Instant> {
     let mut observed = BTreeMap::new();
-    for _ in 0..1_600 {
-        for service in services {
-            if !observed.contains_key(*service) && journal.marker(service).exists() {
-                observed.insert((*service).to_owned(), Instant::now());
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        1_600,
+        Instant::now,
+        || {
+            for service in services {
+                if !observed.contains_key(*service) && journal.marker(service).exists() {
+                    observed.insert((*service).to_owned(), Instant::now());
+                }
             }
-        }
-        if observed.len() == services.len() {
-            return observed;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    panic!("fixture markers did not appear: {observed:?}");
+            if observed.len() == services.len() {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait(
+        &format!("fixture markers did not appear: {observed:?}"),
+        outcome,
+    );
+    observed
 }
 
 fn launch_order_violation(refs: &[String]) -> Option<String> {
@@ -186,23 +250,39 @@ async fn collect_remaining_app_start_refs(
 }
 
 fn assert_marker_absent(journal: &TempJournal, service: &str) {
-    for _ in 0..100 {
-        assert!(
-            !journal.marker(service).exists(),
-            "unexpected {service} fixture marker"
-        );
-        thread::sleep(Duration::from_millis(5));
-    }
+    let outcome = await_outcome(
+        WaitPolarity::Negative,
+        Duration::from_millis(5),
+        100,
+        Instant::now,
+        || {
+            if journal.marker(service).exists() {
+                PollState::HardFail(format!("unexpected {service} fixture marker"))
+            } else {
+                PollState::Held
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait(&format!("unexpected {service} fixture marker"), outcome);
 }
 
 fn wait_for_path(path: &Path) {
-    for _ in 0..1_600 {
-        if path.exists() {
-            return;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    panic!("{} did not appear", path.display());
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        1_600,
+        Instant::now,
+        || {
+            if path.exists() {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait(&format!("{} did not appear", path.display()), outcome);
 }
 
 fn process_is_gone(pid: u32) -> bool {
@@ -367,17 +447,28 @@ fn shutdown_terminates_all_app_fixture_children() {
     // 4 runs in 5. Polling does not weaken the invariant — a supervisor that
     // never terminates its children still fails, just after a bounded wait
     // instead of immediately.
-    for _ in 0..2_000 {
-        if pids.iter().copied().all(process_is_gone) {
-            return;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        2_000,
+        Instant::now,
+        || {
+            if pids.iter().copied().all(process_is_gone) {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        thread::sleep,
+    );
     let survivors = pids
         .into_iter()
         .filter(|pid| !process_is_gone(*pid))
         .collect::<Vec<_>>();
-    panic!("app fixture children survived supervisor shutdown: {survivors:?}");
+    panic_for_wait(
+        &format!("app fixture children survived supervisor shutdown: {survivors:?}"),
+        outcome,
+    );
 }
 
 #[test]
@@ -387,11 +478,22 @@ fn exited_convey_restarts_under_restart_policy() {
     let convey_argv = format!("restart-once {}", state_path.display());
     let child = start(&journal, &[], Some(convey_argv));
     wait_for_path(&state_path);
-    for _ in 0..200 {
-        if fixture_process_running(child.0.id(), &state_path.display().to_string()) {
-            return;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    panic!("Convey fixture did not restart after its first exit");
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        200,
+        Instant::now,
+        || {
+            if fixture_process_running(child.0.id(), &state_path.display().to_string()) {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait(
+        "Convey fixture did not restart after its first exit",
+        outcome,
+    );
 }

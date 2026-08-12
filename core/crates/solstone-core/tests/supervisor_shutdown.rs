@@ -7,12 +7,18 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
+
+#[allow(dead_code)]
+#[path = "support/await_outcome.rs"]
+mod await_outcome;
+
+use await_outcome::{PollState, WaitOutcome, WaitPolarity, await_outcome, await_outcome_async};
 
 struct TempJournal(PathBuf);
 impl TempJournal {
@@ -37,6 +43,19 @@ impl Drop for TempJournal {
     }
 }
 struct ChildGuard(Child);
+
+fn panic_for_wait(context: &str, outcome: WaitOutcome) {
+    match outcome {
+        WaitOutcome::Passed(_) => {}
+        WaitOutcome::Failed { reason, metrics } => {
+            panic!("{context}: {reason}; {}", metrics.describe());
+        }
+        WaitOutcome::Inconclusive(metrics) => {
+            panic!("{context}: {}", metrics.describe());
+        }
+    }
+}
+
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if self.0.try_wait().ok().flatten().is_none() {
@@ -44,11 +63,20 @@ impl Drop for ChildGuard {
                 nix::unistd::Pid::from_raw(self.0.id() as i32),
                 nix::sys::signal::Signal::SIGTERM,
             );
-            for _ in 0..1_000 {
-                if self.0.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(5));
+            let outcome = await_outcome(
+                WaitPolarity::Positive,
+                Duration::from_millis(5),
+                1_000,
+                Instant::now,
+                || match self.0.try_wait() {
+                    Ok(Some(_)) => PollState::Held,
+                    Ok(None) => PollState::Pending,
+                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+                },
+                thread::sleep,
+            );
+            if matches!(outcome, WaitOutcome::Passed(_)) {
+                return;
             }
             let _ = self.0.kill();
         }
@@ -79,17 +107,48 @@ fn start(journal: &TempJournal) -> ChildGuard {
     )
 }
 fn wait_for(path: &std::path::Path, child: &mut ChildGuard) {
-    for _ in 0..500 {
-        if path.exists() {
-            return;
-        }
-        if let Some(status) = child.0.try_wait().expect("supervisor status") {
-            panic!("supervisor exited: {status}");
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    panic!("{} did not appear", path.display());
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        500,
+        Instant::now,
+        || {
+            if path.exists() {
+                PollState::Held
+            } else {
+                match child.0.try_wait() {
+                    Ok(Some(status)) => PollState::HardFail(format!("supervisor exited: {status}")),
+                    Ok(None) => PollState::Pending,
+                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+                }
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait(&format!("{} did not appear", path.display()), outcome);
 }
+
+async fn receive_started(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+    reference: &str,
+) -> i32 {
+    loop {
+        let mut line = String::new();
+        let bytes = reader.read_line(&mut line).await.expect("event line");
+        assert!(
+            bytes > 0,
+            "the connection closed before supervisor started event for {reference}"
+        );
+        let value: Value = serde_json::from_str(&line).expect("event JSON");
+        if value["tract"] == "supervisor"
+            && value["event"] == "started"
+            && value["ref"] == reference
+        {
+            return value["pid"].as_i64().expect("process event pid") as i32;
+        }
+    }
+}
+
 async fn request_and_started(socket: &std::path::Path, cmd: Vec<String>, reference: &str) -> i32 {
     let stream = UnixStream::connect(socket).await.expect("connect Callosum");
     let (read, mut write) = stream.into_split();
@@ -100,19 +159,10 @@ async fn request_and_started(socket: &std::path::Path, cmd: Vec<String>, referen
     .expect("request JSON");
     write.write_all(&line).await.expect("request");
     write.write_all(b"\n").await.expect("frame");
-    timeout(Duration::from_secs(8), async {
-        loop {
-            let mut line = String::new();
-            reader.read_line(&mut line).await.expect("event line");
-            let value: Value = serde_json::from_str(&line).expect("event JSON");
-            if value["tract"] == "supervisor"
-                && value["event"] == "started"
-                && value["ref"] == reference
-            {
-                return value["pid"].as_i64().expect("process event pid") as i32;
-            }
-        }
-    })
+    timeout(
+        Duration::from_secs(8),
+        receive_started(&mut reader, reference),
+    )
     .await
     .expect("started event")
 }
@@ -144,12 +194,22 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
         "ac14-task",
     )
     .await;
-    for _ in 0..300 {
-        if ready_path.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        300,
+        Instant::now,
+        || {
+            if ready_path.exists() {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("task child did not reach its ready point", outcome);
     assert!(ready_path.exists(), "task child reached its ready point");
     nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(child.0.id() as i32),
@@ -160,23 +220,38 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     let mut pid_removed = None;
     let mut socket_removed = None;
     let mut status = None;
-    for tick in 0..6000 {
-        if ready_removed.is_none() && !ready.exists() {
-            ready_removed = Some(tick);
-        }
-        if pid_removed.is_none() && !pid_file.exists() {
-            pid_removed = Some(tick);
-        }
-        if socket_removed.is_none() && !socket.exists() {
-            socket_removed = Some(tick);
-        }
-        if let Some(exited) = child.0.try_wait().expect("supervisor status") {
-            status = Some(exited);
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    let status = status.expect("supervisor did not exit after SIGTERM");
+    let mut tick = 0;
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        6_000,
+        Instant::now,
+        || {
+            let current_tick = tick;
+            tick += 1;
+            if ready_removed.is_none() && !ready.exists() {
+                ready_removed = Some(current_tick);
+            }
+            if pid_removed.is_none() && !pid_file.exists() {
+                pid_removed = Some(current_tick);
+            }
+            if socket_removed.is_none() && !socket.exists() {
+                socket_removed = Some(current_tick);
+            }
+            match child.0.try_wait() {
+                Ok(Some(exited)) => {
+                    status = Some(exited);
+                    PollState::Held
+                }
+                Ok(None) => PollState::Pending,
+                Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+            }
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("supervisor did not exit after SIGTERM", outcome);
+    let status = status.expect("supervisor exit status");
     assert!(status.success(), "standard shutdown exits cleanly");
     assert!(ready_removed.expect("ready marker removed") <= pid_removed.expect("pid removed"));
     assert!(pid_removed.expect("pid removed") <= socket_removed.expect("socket removed"));
@@ -186,6 +261,48 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     assert!(
         nix::sys::signal::kill(nix::unistd::Pid::from_raw(task_pid), None).is_err(),
         "task child was reaped"
+    );
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            payload
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_owned())
+        })
+        .expect("string panic")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_and_started_reports_closed_callosum_connection() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for(&journal.0.join("health/supervisor.ready"), &mut child);
+    let stream = UnixStream::connect(&socket)
+        .await
+        .expect("connect Callosum");
+    let (read, write) = stream.into_split();
+    drop(write);
+    let task = tokio::spawn(async move {
+        let mut reader = tokio::io::BufReader::new(read);
+        let _ = timeout(
+            Duration::from_secs(8),
+            receive_started(&mut reader, "eof-reference"),
+        )
+        .await
+        .expect("started event");
+    });
+    let panic = task
+        .await
+        .expect_err("reader must panic on EOF")
+        .into_panic();
+    assert!(
+        panic_message(panic)
+            .contains("the connection closed before supervisor started event for eof-reference")
     );
 }
 
