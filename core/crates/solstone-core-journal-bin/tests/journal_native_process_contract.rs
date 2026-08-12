@@ -18,6 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod production_processes;
 
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
+use solstone_core_cli::{CHECK_HELP, CHECK_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE};
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
 printf '%s:%s\n' "${POISON_ROUTE:-reached}" "${0##*/}" >> "$POISON_MARKER"
@@ -27,6 +28,10 @@ const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
     include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
+const CHECK_USAGE_ANCHOR: &[u8] = CHECK_USAGE.as_bytes();
+const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
+const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
+    &["platform", "checks", "overall", "feedback_url", "version"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -44,7 +49,11 @@ const PROBES: &[Probe] = &[
         token: "depict",
         argv: &[],
         expected_exit: 1,
-        stderr_anchor: None,
+        // Exit 1 also covers a pre-spawn coherence failure; this schema/reason
+        // prefix proves depict reached its malformed-request path.
+        stderr_anchor: Some(
+            b"{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"",
+        ),
     },
     Probe {
         token: "spl",
@@ -57,6 +66,20 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: None,
+    },
+    // Exit 2 and the parser-owned usage anchors distinguish each present verb
+    // from top-level exit 64, which would also result if the sibling lacked it.
+    Probe {
+        token: "check",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(CHECK_USAGE_ANCHOR),
+    },
+    Probe {
+        token: "install-models",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(INSTALL_MODELS_USAGE_ANCHOR),
     },
     // supervisor and start were deliberately unprobed until a verb-level usage
     // path existed for them. 1d1523b4b added both tokens to NATIVE_PROCESS_SPECS
@@ -421,6 +444,15 @@ fn run_dispatcher(
     token: &str,
     argv: &[&str],
 ) -> io::Result<Option<ExitStatus>> {
+    run_dispatcher_with_timeout(context, token, argv, PROBE_TIMEOUT)
+}
+
+fn run_dispatcher_with_timeout(
+    context: &VerdictContext<'_>,
+    token: &str,
+    argv: &[&str],
+    timeout: Duration,
+) -> io::Result<Option<ExitStatus>> {
     let _ = fs::remove_file(context.poison_marker);
     let _ = fs::remove_file(context.probe_stderr);
     // PATH is pinned to the poisoned sibling directory, and that is an ADDITION
@@ -453,7 +485,7 @@ fn run_dispatcher(
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr))
         .spawn()?;
-    wait_for_child(&mut child, Instant::now() + PROBE_TIMEOUT)
+    wait_for_child(&mut child, Instant::now() + timeout)
 }
 
 fn run_dispatcher_with_output(
@@ -523,6 +555,16 @@ fn verdict_for(
     context: &VerdictContext<'_>,
     checked: &mut BTreeSet<&'static str>,
 ) -> Verdict {
+    verdict_for_with_timeout(spec, probe, context, checked, PROBE_TIMEOUT)
+}
+
+fn verdict_for_with_timeout(
+    spec: &NativeProcessSpec,
+    probe: Option<&Probe>,
+    context: &VerdictContext<'_>,
+    checked: &mut BTreeSet<&'static str>,
+    timeout: Duration,
+) -> Verdict {
     let Some(probe) = probe else {
         return Verdict::ProbeUnregistered { token: spec.token };
     };
@@ -554,7 +596,7 @@ fn verdict_for(
     // reported a stale sibling on a binary that was current, which is a false
     // red on the instrument the rest of the lane's cuts are gated by.
     let _ = sibling_artifact;
-    let status = match run_dispatcher(context, spec.token, probe.argv) {
+    let status = match run_dispatcher_with_timeout(context, spec.token, probe.argv, timeout) {
         Ok(status) => status,
         Err(error) => {
             return Verdict::LaunchFailure {
@@ -810,6 +852,77 @@ fn native_storage_ops_help_matches_reference_grammar_through_dispatcher() {
 }
 
 #[test]
+fn native_check_and_install_models_help_match_exported_cli_constants_through_dispatcher() {
+    let harness = Harness::new();
+    let context = harness.context();
+    for (token, expected_help) in [
+        ("check", CHECK_HELP),
+        ("install-models", INSTALL_MODELS_HELP),
+    ] {
+        for argv in [["--help"], ["-h"]] {
+            let output = run_dispatcher_with_output(&context, token, &argv)
+                .expect("run native help through journal dispatcher");
+            assert_eq!(output.status.code(), Some(0), "{token} {argv:?}");
+            assert_eq!(output.stderr, b"", "{token} {argv:?}");
+            assert_eq!(output.stdout, expected_help.as_bytes(), "{token} {argv:?}");
+            assert!(!context.poison_marker.exists(), "{token} {argv:?}");
+        }
+    }
+}
+
+#[test]
+fn native_check_and_install_models_malformed_argv_use_exported_usage_through_dispatcher() {
+    let harness = Harness::new();
+    let context = harness.context();
+    for (token, expected_usage) in [
+        ("check", CHECK_USAGE),
+        ("install-models", INSTALL_MODELS_USAGE),
+    ] {
+        let output = run_dispatcher_with_output(&context, token, &["--nonsense"])
+            .expect("run malformed native argv through journal dispatcher");
+        assert_eq!(output.status.code(), Some(2), "{token}");
+        assert!(
+            output.stderr.starts_with(expected_usage.as_bytes()),
+            "{token}: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains("solstone-core"),
+            "{token}: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!context.poison_marker.exists(), "{token}");
+    }
+}
+
+#[test]
+fn native_check_json_routes_without_python_and_has_contractual_top_level_keys() {
+    let harness = Harness::new();
+    let context = harness.context();
+    let output = run_dispatcher_with_output(&context, "check", &["--json"])
+        .expect("run native check JSON through journal dispatcher");
+
+    assert!(output.stderr.is_empty());
+    assert!(!context.poison_marker.exists());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("native check JSON output");
+    let actual_keys = json
+        .as_object()
+        .expect("native check JSON object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    // solstone-core-check/src/lib.rs and fixtures/check_corpus.json, exercised by
+    // check_corpus.rs, define this schema. This guard proves routing, not
+    // host-dependent check content or exit severity.
+    let expected_keys = CHECK_JSON_TOP_LEVEL_KEYS
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    assert_eq!(actual_keys, expected_keys);
+}
+
+#[test]
 fn native_backfill_commit_dispatches_without_python_and_is_idempotent() {
     let harness = Harness::new();
     let context = harness.context();
@@ -963,6 +1076,38 @@ fn unregistered_native_probe_is_a_guard_verdict_without_a_spawn() {
     );
     assert!(checked.is_empty());
     assert!(!poison_marker.exists());
+}
+
+#[test]
+fn timed_out_native_probe_is_a_guard_verdict() {
+    // Use a real token in a fresh harness: synthetic tokens panic in production
+    // dispatch, and changing a shared harness sibling would poison later probes.
+    let harness = Harness::new();
+    let context = harness.context();
+    let sibling = context.sibling_dir.join("solstone-core");
+    fs::write(&sibling, "#!/bin/sh\n/bin/sleep 1\n").expect("write slow native sibling");
+    make_executable(&sibling);
+    let spec = NATIVE_PROCESS_SPECS
+        .iter()
+        .find(|spec| spec.token == "check")
+        .expect("check native process spec");
+    let probe = probe_for("check").expect("check native process probe");
+    let mut checked = BTreeSet::new();
+
+    let verdict = verdict_for_with_timeout(
+        spec,
+        Some(probe),
+        &context,
+        &mut checked,
+        Duration::from_millis(100),
+    );
+
+    assert!(
+        matches!(verdict, Verdict::TimedOut { token: "check" }),
+        "expected TimedOut, got {verdict:?}"
+    );
+    assert_eq!(checked, BTreeSet::from(["check"]));
+    assert!(!context.poison_marker.exists());
 }
 
 #[test]

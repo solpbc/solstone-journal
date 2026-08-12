@@ -26,6 +26,7 @@ nix = { workspace = true, features = ["signal"] }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+solstone-core-cli = { workspace = true }
 
 [lints]
 workspace = true
