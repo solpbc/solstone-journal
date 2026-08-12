@@ -30,7 +30,7 @@ TOOL_PATH = Path("scripts/capture_top_reference.py")
 SOURCE_PATH = Path("solstone/think/top.py")
 DEFAULT_OUTPUT = ROOT / "core/fixtures/top_reference.json"
 
-PRODUCT_HEAD = "7a62bf23f79362a451bffd799eb3c9638f002ad5"
+PRODUCT_HEAD = "f7e880da44d34ac3ed583d098603d2c513a9299e"
 SOURCE_BLOB = "a6690540717cb7da51ee732c75f57c72d9cabb1d"
 SOURCE_SHA256 = "f23a857ecce0bcdf01668490445e5dd656102633f5fbccb54a0681664aafb062"
 PYTHON_SHA256 = "255e900f44ce87c630e83b637a79435f9ae7778dd72f6e2a2f18a486e501d016"
