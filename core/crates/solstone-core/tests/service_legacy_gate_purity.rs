@@ -119,4 +119,25 @@ fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
             String::from_utf8_lossy(&dry_run.stderr)
         );
     }
+
+    let staged = "/tmp/service-legacy-staged-evidence-control";
+    let resolved = Command::new("make")
+        .args([
+            "-s",
+            "--no-print-directory",
+            "--eval",
+            r#"print-service-evidence-root: ; @printf "%s\n" "$(SERVICE_LEGACY_EVIDENCE_ROOT)""#,
+            "print-service-evidence-root",
+            "UV=/bin/true",
+        ])
+        .env("SERVICE_LEGACY_EVIDENCE_ROOT", staged)
+        .current_dir(&root)
+        .output()
+        .expect("make resolves the staged evidence root");
+    assert!(
+        resolved.status.success(),
+        "make failed to resolve staged evidence root: {}",
+        String::from_utf8_lossy(&resolved.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&resolved.stdout).trim(), staged);
 }
