@@ -800,6 +800,22 @@ Health of running things — current status, in-memory. ⛔ **System** health, n
 
 ⚠ **The writer is fail-silent by construction** — a failed open logs once and every later write is a no-op. **So a run whose sidecar never opened is indistinguishable, to this plate, from a run that did nothing.**
 
+## `P-system-models`
+
+Model and runtime **artifact management** — what an owner's machine downloads, where it comes from, and whether the host can run it. Strand `S:system:system-models`.
+
+✅ **APPROVED 2026-08-12** by founder ruling, proposed by VPE Lane Z (`req_ty55r3h7`). Authorised by [`260810-founder-model-management-hoists-to-a-system-plate`](../../records/decisions/260810-founder-model-management-hoists-to-a-system-plate.md).
+
+⚠ **The name under-reads the scope, deliberately, and a reader should know it.** The plate owns artifacts that are not models: the `llama-server` and `parakeet-server` binaries, the ced and rf-detr engines, and the Vulkan probe helper. "Models" is the founder's own word for the thing and the family placement beside `P-system` / `P-system-health` is the point; ⛔ do not read the name as a boundary.
+
+🔴 **The covenant property lives here, and it is structural rather than conventional.** Every Rust-side download resolves through `Artifact::origin_key` to sol pbc's own origin, enforced by a **single-element allowlist** (`DOWNLOAD_ALLOWED_HOSTS = ["updates.solstone.app"]`, `allow_http: false`) inside the one fetch primitive — so a caller cannot forget it and there is no upstream host to fall back to. ⚠ **A denylist does NOT work here**: `github.com` 302s to `release-assets.githubusercontent.com` and `huggingface.co` to `us.aws.cdn.hf.co`, so a fallback reaching either makes zero requests to the denied names.
+
+⚠ **12 of 20 registry rows are flipped.** The other 8 — ced (4), rerank (2), rf-detr (2) — had no Rust fetch site when the flip landed; they have native installers now, so a follow-on can move them. The MLX snapshot set (macOS, 25 objects) is mirrored and verified but is **not** in the registry and **not** covered by the flip.
+
+📌 **Change what is FETCHED, never what is RECORDED.** `pins::model_identity` still records `"revision":"main"` while the fetch moved to a pinned sha, because `prove_manifest` compares identity by exact canonicalized-JSON equality — a changed field re-downloads gigabytes silently, with bandwidth as the owner's only signal. `check_version` rejects `"main"`, so the disagreement is permanent and correct.
+
+⚠ **`warm` is deliberately NOT in this plate's cut.** Its contract is that the *Python payload* loads — six extension modules — which is logically incompatible with a guard whose pass condition is that Python was never reached. Rehoming that coverage needs a sibling-helper leaf, since `crt-static` forbids `dlopen`.
+
 ## `P-body-source`
 
 Owner **body** data arriving from outside: Oura and Apple Health. ⚠ **Ingress, not egress.** This body-import path uploads no body records or other journal content.
