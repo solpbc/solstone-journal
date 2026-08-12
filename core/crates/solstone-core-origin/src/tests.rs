@@ -687,7 +687,11 @@ fn mirror_read_back_is_shared_after_single_shot_publish() {
 fn gate_never_falls_back_to_the_upstream_listener() {
     let origin_body = b"origin-only".to_vec();
     let origin = server(1, move |_| (String::new(), origin_body.clone()));
-    let upstream_listener = TcpListener::bind("127.0.0.2:0").unwrap();
+    // 127.0.0.1 with its own ephemeral port, not 127.0.0.2: macOS configures
+    // only 127.0.0.1 on lo0, so the second loopback IP is unbindable there and
+    // this test panicked before asserting anything. What it proves is unchanged
+    // -- the gate contacts the origin and no other listening endpoint.
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
     upstream_listener.set_nonblocking(true).unwrap();
     let contacts = Arc::new(AtomicU64::new(0));
     let observed = Arc::clone(&contacts);

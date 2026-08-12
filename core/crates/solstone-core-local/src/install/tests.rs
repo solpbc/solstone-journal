@@ -1977,7 +1977,12 @@ fn origin_contact_assertion_rejects_a_test_double_upstream_fallback() {
         1,
         "HTTP/1.1 503 Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
     );
-    let upstream_listener = TcpListener::bind("127.0.0.2:0").unwrap();
+    // 127.0.0.1 with a distinct port, not 127.0.0.2: Linux routes all of
+    // 127.0.0.0/8 to loopback but macOS configures only 127.0.0.1, so binding a
+    // second loopback IP fails with EADDRNOTAVAIL and this test could not run on
+    // a mac at all. The address family was never the property under test -- both
+    // halves assert download_origin_unreachable against a non-origin endpoint.
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let upstream_address = upstream_listener.local_addr().unwrap();
     let upstream_server = record_http_hosts(
         upstream_listener,
@@ -1996,9 +2001,14 @@ fn origin_contact_assertion_rejects_a_test_double_upstream_fallback() {
     );
 
     // This is a deliberately bad fallback double, not production behavior.
-    let upstream_base = format!("http://{upstream_address}");
+    // It is addressed as `localhost` rather than by IP so the recorded host set
+    // holds two DISTINCT names -- which is the whole point of this test, since it
+    // exists to prove contacted_only_origin_host REJECTS a two-host contact set.
+    // Both names resolve to the same bindable loopback address, so this works on
+    // macOS, where 127.0.0.2 is not configured and cannot be bound.
+    let upstream_base = format!("http://localhost:{}", upstream_address.port());
     let upstream_policy = archive::DownloadHostPolicy {
-        allowed_hosts: &["127.0.0.2"],
+        allowed_hosts: &["localhost"],
         allow_http: true,
         origin_base_url: &upstream_base,
     };
@@ -2007,7 +2017,7 @@ fn origin_contact_assertion_rejects_a_test_double_upstream_fallback() {
         &root.join("upstream"),
         &upstream_policy,
         "download_origin_unreachable",
-        &loopback_host(upstream_address),
+        "localhost",
     );
 
     let contacted = origin_server
