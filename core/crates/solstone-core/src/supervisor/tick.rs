@@ -16,6 +16,10 @@ use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
     DEFAULT_INTERVAL_SECONDS, check_sync, machine_id, sync_conflict_event, write_sync_heartbeat,
 };
+use solstone_core_system::process::{
+    ProcessObservation as SystemProcessObservation, ProcessObservationTuple,
+    classify_process_observation,
+};
 use solstone_core_system::provider_runtime::{
     CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig, ProbeStatus,
     ProviderName, ProviderRetryState, ProviderRuntimeEvent, ProviderRuntimeEventSink,
@@ -24,6 +28,10 @@ use solstone_core_system::provider_runtime::{
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
 use solstone_core_system::schedule::ScheduleNow;
+use solstone_core_system::status_wire::{
+    CrashedServiceCandidate, ProcessObservation as WireProcessObservation, ServiceCandidate,
+    StaleHeartbeatWireInput, SupervisorStatusWireInput, project_supervisor_status,
+};
 use solstone_core_system::{
     catchup::{CatchupError, eligible_catchup_days},
     queue::TaskQueue,
@@ -31,19 +39,24 @@ use solstone_core_system::{
 
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
 use super::config::{no_thinking_engine_chosen, processing_is_deferred};
-use super::runtime::{DailyState, FlushState, SupervisorState};
-use super::status;
+use super::runtime::{AppService, DailyState, FlushState, SupervisorState};
 
 const STATUS_INTERVAL: Duration = Duration::from_secs(5);
 const TICK_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_INBOUND_PER_TICK: usize = 256;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
 
+struct AppProcessSample {
+    service: AppService,
+    process_count: usize,
+    tuple: Option<ProcessObservationTuple<i32>>,
+}
+
 pub(crate) async fn run(state: &mut SupervisorState) -> bool {
     let mut last_status = Instant::now() - STATUS_INTERVAL;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
-        reconcile_app_processes(state);
+        let app_samples = reconcile_app_processes(state);
         state.queue.enforce_deadlines(Instant::now());
         record_schedule_completions(state);
         reconcile_providers(state);
@@ -86,36 +99,108 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
             last_sync = Instant::now();
         }
         if last_status.elapsed() >= STATUS_INTERVAL {
-            let providers = [&state.local.state, &state.parakeet.state];
-            let services = json!(providers.iter().map(|provider| json!({"name": provider.provider.as_str(), "phase": provider.latest_phase.as_str(), "reason_code": provider.latest_reason_code.as_ref().map(|reason| reason.as_str())})).collect::<Vec<_>>());
-            let crashed = json!(providers.iter().filter(|provider| matches!(provider.latest_phase, solstone_core_system::provider_runtime::RuntimePhase::Failed | solstone_core_system::provider_runtime::RuntimePhase::CleanupFailed | solstone_core_system::provider_runtime::RuntimePhase::StateCorrupt | solstone_core_system::provider_runtime::RuntimePhase::StateUnavailable)).map(|provider| json!({"name": provider.provider.as_str(), "reason_code": provider.latest_reason_code.as_ref().map(|reason| reason.as_str())})).collect::<Vec<_>>());
-            let queue = state.queue.collect_status_snapshot(Instant::now());
-            let wall = chrono::Local::now();
-            let schedules = json!(
-                state
-                    .scheduler
-                    .collect_status(ScheduleNow {
-                        local: wall.naive_local(),
-                        unix_millis: wall.timestamp_millis()
-                    })
+            let status_now = Instant::now();
+            let app_observations = app_samples
+                .into_iter()
+                .map(|sample| (sample.service, observe_app_process(sample, status_now)))
+                .collect::<Vec<_>>();
+            let local_observation = state
+                .local
+                .shared
+                .observe_current_process(&state.local.processes, status_now);
+            let parakeet_observation = state
+                .parakeet
+                .shared
+                .observe_current_process(&state.parakeet.processes, status_now);
+            let mut indeterminate_services = app_observations
+                .iter()
+                .filter_map(|(service, observation)| {
+                    matches!(observation, SystemProcessObservation::Indeterminate)
+                        .then_some(service.as_str())
+                })
+                .collect::<Vec<_>>();
+            if matches!(&local_observation, SystemProcessObservation::Indeterminate) {
+                indeterminate_services.push(ProviderName::Local.as_str());
+            }
+            if matches!(
+                &parakeet_observation,
+                SystemProcessObservation::Indeterminate
+            ) {
+                indeterminate_services.push(ProviderName::Parakeet.as_str());
+            }
+            if !indeterminate_services.is_empty() {
+                for service in indeterminate_services {
+                    emit(
+                        &state.server,
+                        "supervisor",
+                        "status-error",
+                        Map::from_iter([
+                            ("service".into(), json!(service)),
+                            ("reason".into(), json!("process-observation-failed")),
+                        ]),
+                    );
+                }
+            } else {
+                let providers = [
+                    (&state.local.state, local_observation),
+                    (&state.parakeet.state, parakeet_observation),
+                ];
+                let mut services = vec![ServiceCandidate::SupervisorSelf {
+                    reference: "supervisor".into(),
+                    pid: std::process::id(),
+                    uptime_seconds: status_now
+                        .saturating_duration_since(state.started)
+                        .as_secs(),
+                }];
+                services.extend(app_observations.into_iter().map(|(service, observation)| {
+                    ServiceCandidate::App {
+                        name: service.as_str().to_owned(),
+                        observation: wire_observation(observation),
+                    }
+                }));
+                services.extend(providers.iter().map(|(provider, observation)| {
+                    ServiceCandidate::Provider {
+                        provider: provider.provider,
+                        observation: wire_observation(observation.clone()),
+                        phase: provider.latest_phase,
+                        reason_code: provider.latest_reason_code.clone(),
+                    }
+                }));
+                let crashed = providers
                     .iter()
-                    .map(|schedule| schedule.name.clone())
-                    .collect::<Vec<_>>()
-            );
-            emit(
-                &state.server,
-                "supervisor",
-                "status",
-                status::values(status::StatusFields {
-                    services,
-                    crashed,
-                    queue,
-                    stale: state.stale_heartbeats.clone(),
-                    schedules,
-                    clients: state.server.client_count(),
-                }),
-            );
-            last_status = Instant::now();
+                    .filter(|(provider, _)| is_crashed_phase(provider.latest_phase))
+                    .map(|(provider, _)| CrashedServiceCandidate {
+                        name: provider.provider.as_str().to_owned(),
+                        restart_attempts: provider.retry.attempt_count,
+                        phase: provider.latest_phase,
+                        reason_code: provider.latest_reason_code.clone(),
+                    })
+                    .collect();
+                let queue = state.queue.collect_status_snapshot(status_now);
+                let wall = chrono::Local::now();
+                let schedules = state.scheduler.collect_status(ScheduleNow {
+                    local: wall.naive_local(),
+                    unix_millis: wall.timestamp_millis(),
+                });
+                emit(
+                    &state.server,
+                    "supervisor",
+                    "status",
+                    project_supervisor_status(SupervisorStatusWireInput {
+                        services,
+                        crashed,
+                        queue,
+                        stale_heartbeats: state
+                            .stale_heartbeats
+                            .iter()
+                            .map(stale_heartbeat_wire_input)
+                            .collect(),
+                        schedules,
+                        callosum_clients: state.server.client_count(),
+                    }),
+                );
+            }
+            last_status = status_now;
         }
         tokio::select! {
             _ = tokio::time::sleep(TICK_INTERVAL) => {},
@@ -261,15 +346,20 @@ fn submit_task(
     }))
 }
 
-fn reconcile_app_processes(state: &mut SupervisorState) {
+fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample> {
     let journal = state.journal.clone();
     let server = state.server.clone();
+    let mut samples = Vec::new();
     for app in &mut state.app_processes {
         if !app.enabled {
             continue;
         }
         if let Some(process) = app.process.as_mut() {
-            match process.poll() {
+            let reference = format!("supervisor-app-{}", app.service.as_str());
+            let pid = process.pid();
+            let started_at = app.started_at;
+            let poll = process.poll();
+            match &poll {
                 Ok(Some(exit_code)) => {
                     process.cleanup();
                     eprintln!(
@@ -277,18 +367,28 @@ fn reconcile_app_processes(state: &mut SupervisorState) {
                         app.service.as_str(),
                         exit_code
                     );
-                    app.record_exit(exit_code);
-                    continue;
+                    app.record_exit(*exit_code);
                 }
-                Ok(None) => continue,
+                Ok(None) => {}
                 Err(error) => {
                     eprintln!(
                         "supervisor: failed to poll {}: {error}",
                         app.service.as_str()
                     );
-                    continue;
                 }
             }
+            let sample = AppProcessSample {
+                service: app.service,
+                process_count: 1,
+                tuple: started_at.map(|started_at| ProcessObservationTuple {
+                    reference,
+                    pid,
+                    started_at,
+                    poll,
+                }),
+            };
+            samples.push(sample);
+            continue;
         }
         if app
             .restart_at
@@ -301,6 +401,61 @@ fn reconcile_app_processes(state: &mut SupervisorState) {
             );
             app.record_exit(-1);
         }
+        samples.push(AppProcessSample {
+            service: app.service,
+            process_count: usize::from(app.process.is_some()),
+            tuple: None,
+        });
+    }
+    samples
+}
+
+fn observe_app_process(sample: AppProcessSample, now: Instant) -> SystemProcessObservation {
+    classify_process_observation(sample.process_count, false, sample.tuple, now)
+}
+
+fn wire_observation(observation: SystemProcessObservation) -> WireProcessObservation {
+    match observation {
+        SystemProcessObservation::Live {
+            reference,
+            pid,
+            uptime_seconds,
+        } => WireProcessObservation::Live {
+            reference,
+            pid,
+            uptime_seconds,
+        },
+        SystemProcessObservation::ConfirmedAbsent => WireProcessObservation::ConfirmedAbsent,
+        SystemProcessObservation::Indeterminate => {
+            unreachable!("indeterminate observations are rejected before projection")
+        }
+    }
+}
+
+fn is_crashed_phase(phase: RuntimePhase) -> bool {
+    matches!(
+        phase,
+        RuntimePhase::Failed
+            | RuntimePhase::CleanupFailed
+            | RuntimePhase::StateCorrupt
+            | RuntimePhase::StateUnavailable
+    )
+}
+
+fn stale_heartbeat_wire_input(
+    writer: &solstone_core_system::lifecycle::ForeignWriter,
+) -> StaleHeartbeatWireInput {
+    StaleHeartbeatWireInput {
+        source_filename: writer
+            .path
+            .file_name()
+            .map_or_else(Vec::new, |filename| filename.as_encoded_bytes().to_vec()),
+        hostname: writer.hostname.clone(),
+        machine_id: writer.machine_id.clone(),
+        journal_path: writer.journal_path.clone(),
+        pid: writer.pid,
+        wall_time: Some(writer.wall_time.clone()),
+        malformed: writer.malformed,
     }
 }
 
@@ -961,7 +1116,7 @@ fn sync_tick(state: &mut SupervisorState) -> bool {
         .foreign_writers
         .iter()
         .filter(|writer| !writer.is_live)
-        .map(Into::into)
+        .cloned()
         .collect();
     state.last_sync_snapshot = Some(result.snapshot.clone());
     if !conflict_now {
@@ -1058,6 +1213,60 @@ mod tests {
             ready: false,
             before_deadline_commit: None,
         })
+    }
+
+    #[test]
+    fn app_observation_requires_a_captured_start_and_preserves_poll_outcomes() {
+        let started_at = Instant::now();
+        let now = started_at + Duration::from_secs(4);
+        let live = observe_app_process(
+            AppProcessSample {
+                service: AppService::Convey,
+                process_count: 1,
+                tuple: Some(ProcessObservationTuple {
+                    reference: "supervisor-app-convey".into(),
+                    pid: 11,
+                    started_at,
+                    poll: Ok(None),
+                }),
+            },
+            now,
+        );
+        assert_eq!(
+            live,
+            SystemProcessObservation::Live {
+                reference: "supervisor-app-convey".into(),
+                pid: 11,
+                uptime_seconds: 4,
+            }
+        );
+        assert_eq!(
+            observe_app_process(
+                AppProcessSample {
+                    service: AppService::Convey,
+                    process_count: 1,
+                    tuple: None,
+                },
+                now,
+            ),
+            SystemProcessObservation::Indeterminate
+        );
+        assert_eq!(
+            observe_app_process(
+                AppProcessSample {
+                    service: AppService::Convey,
+                    process_count: 1,
+                    tuple: Some(ProcessObservationTuple {
+                        reference: "supervisor-app-convey".into(),
+                        pid: 11,
+                        started_at,
+                        poll: Ok(Some(0)),
+                    }),
+                },
+                now,
+            ),
+            SystemProcessObservation::ConfirmedAbsent
+        );
     }
 
     fn pending(queue: &TaskQueue) -> usize {

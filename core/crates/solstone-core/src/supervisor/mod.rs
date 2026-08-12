@@ -5,7 +5,6 @@ mod bus;
 mod config;
 mod runtime;
 mod shutdown;
-mod status;
 mod tick;
 
 use std::process::ExitCode;

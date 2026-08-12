@@ -13,7 +13,9 @@ use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_local::plan::Platform;
 use solstone_core_system::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
-use solstone_core_system::lifecycle::{ShutdownRegime, SupervisorLifecycle, SyncSnapshot};
+use solstone_core_system::lifecycle::{
+    ForeignWriter, ShutdownRegime, SupervisorLifecycle, SyncSnapshot,
+};
 use solstone_core_system::process::{ManagedProcess, RestartPolicy, SpawnError, SpawnOptions};
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
@@ -50,7 +52,7 @@ pub(crate) struct SupervisorState {
     pub queue: TaskQueue,
     pub last_sync_snapshot: Option<SyncSnapshot>,
     pub heartbeat_filename: String,
-    pub stale_heartbeats: Vec<super::status::StaleHeartbeatStatus>,
+    pub stale_heartbeats: Vec<ForeignWriter>,
     pub shutdown_started: AtomicBool,
     pub started: Instant,
     pub scheduler: ScheduleEngine,
