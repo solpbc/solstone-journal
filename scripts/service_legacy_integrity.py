@@ -43,6 +43,10 @@ EXPECTED_FOLLOW = 44
 EXPECTED_ROLE_ORACLE_SHA256 = (
     "5a77ea6608a9c51baa9ad1c58a98f48cc554c2c2c3ff1219ba77c02585e20be7"
 )
+GIT_HELPER_LINKS = (
+    Path("/usr/libexec/git-core/git-remote-https"),
+    Path("/usr/lib/git-core/git-remote-https"),
+)
 
 DUMMY_FIELDS = {
     "ANTHROPIC_API_KEY": "__SERVICE_LEGACY_DUMMY_ANTHROPIC__",
@@ -99,6 +103,13 @@ def contains_operator_path(text: str) -> bool:
     return (
         bool(OPERATOR_HOME_PATH.search(normalized)) or ".hopper/worktrees" in normalized
     )
+
+
+def installed_git_helper_targets() -> set[Path]:
+    targets = {path.resolve() for path in GIT_HELPER_LINKS if path.is_file()}
+    if not targets:
+        raise IntegrityError("git-tool", "pinned HTTPS helper is unavailable")
+    return targets
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -503,6 +514,7 @@ def audit_corpus(
         "/usr/lib/git-core/git-remote-https",
         "/usr/libexec/git-core/git-remote-https",
     }
+    stable_literals.update(str(path) for path in installed_git_helper_targets())
     for path in sorted(evidence_root.glob("*.json")):
         payload = read_json(path)
         for location, value in scalar_strings(payload):
@@ -814,14 +826,10 @@ def audit_manifest_provenance(evidence_root: Path) -> None:
         "executable_sha256"
     ):
         raise IntegrityError("git-tool", "capture Git executable fact differs")
-    helper_candidates = (
-        Path("/usr/libexec/git-core/git-remote-https"),
-        Path("/usr/lib/git-core/git-remote-https"),
-    )
     helper_path = Path(git_fact.get("https_helper_path", ""))
     if (
         git_fact.get("https_helper") != "git-remote-https"
-        or helper_path not in helper_candidates
+        or helper_path.resolve() not in installed_git_helper_targets()
         or not helper_path.is_file()
         or sha256_file(helper_path) != git_fact.get("https_helper_sha256")
     ):
