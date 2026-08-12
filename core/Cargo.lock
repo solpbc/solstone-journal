@@ -2919,6 +2919,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-body-ingest",
  "solstone-core-callosum",
  "solstone-core-facets",
  "solstone-core-format",

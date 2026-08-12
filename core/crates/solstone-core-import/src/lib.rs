@@ -30,9 +30,15 @@ pub mod sync_state;
 pub mod text;
 pub mod timestamp;
 
+pub use connect::{OuraConnectOutcome, OuraConnectRequest, connect_oura};
+pub use consent_gate::{
+    CONSENT_GATE_EXIT_CODE, ConsentGateOutcome, ConsentGateRequest, GateFailure,
+    check_oura_sync_save,
+};
 pub use contract::{
-    ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest, SaveRequest,
-    SourceHash, SourceImmutabilityReport, observe_source_immutability, should_write_manifest,
+    AudioAuto, ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest,
+    SaveRequest, SourceHash, SourceImmutabilityReport, SyncBackendRequest, SyncGuidance,
+    SyncPreviewRequest, SyncSaveRequest, observe_source_immutability, should_write_manifest,
 };
 pub use dedupe::{
     ManifestMatch, ManifestScan, ManifestSkip, ManifestSkipReason, ManifestWriteRequest,
@@ -58,6 +64,10 @@ pub use publish::{
 pub use staging::{
     SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
     stage_source,
+};
+pub use sync_state::{
+    BackendName, SYNC_BACKEND_INVENTORY, SyncState, SyncStateRead, SyncStateReadClass,
+    SyncStateWriteError, read_sync_state, state_path, write_sync_state,
 };
 pub use text::{
     SystemWireClient, TextImportError, TextWirePhase, WireClient, process_transcript,
@@ -170,12 +180,6 @@ pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
 /// The complete inventory of importer modules that remain unimplemented.
 pub const MODULE_STUBS: &[ModuleStub] = &[
     ("audio", audio::reserved_seam),
-    ("consent_gate", consent_gate::reserved_seam),
-    ("sync_state", sync_state::reserved_seam),
-    ("sync_plaud", sync_plaud::reserved_seam),
-    ("sync_obsidian", sync_obsidian::reserved_seam),
-    ("sync_audio", sync_audio::reserved_seam),
-    ("connect", connect::reserved_seam),
     ("cli_argv", cli_argv::reserved_seam),
     ("cli_render", cli_render::reserved_seam),
 ];

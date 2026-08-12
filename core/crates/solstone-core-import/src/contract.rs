@@ -5,7 +5,9 @@
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::sync_state::BackendName;
 
 /// A preview request is distinct from a save request at the type boundary.
 #[derive(Debug, Default)]
@@ -14,6 +16,94 @@ pub struct PreviewRequest;
 /// A save request is distinct from a preview request at the type boundary.
 #[derive(Debug, Default)]
 pub struct SaveRequest;
+
+/// Preview marker for sync operations.
+#[derive(Debug, Default)]
+pub struct SyncPreviewRequest;
+
+/// Save marker for sync operations.
+#[derive(Debug, Default)]
+pub struct SyncSaveRequest;
+
+/// The reference audio auto mode.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum AudioAuto {
+    Enabled,
+    Disabled,
+    Value(String),
+}
+
+/// A selected sync backend request. Each variant owns only its accepted parameters.
+///
+/// Python-side variants cannot receive the native window parameter:
+///
+/// ```compile_fail,E0559
+/// use solstone_core_import::SyncBackendRequest;
+/// use std::path::PathBuf;
+///
+/// let _ = SyncBackendRequest::Plaud {
+///     journal_root: PathBuf::from("journal"),
+///     save: false,
+///     window_days: 7,
+/// };
+/// ```
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum SyncBackendRequest {
+    Plaud {
+        journal_root: PathBuf,
+        save: bool,
+    },
+    Obsidian {
+        journal_root: PathBuf,
+        save: bool,
+        source_path: Option<PathBuf>,
+        force: bool,
+    },
+    Audio {
+        journal_root: PathBuf,
+        save: bool,
+        source_path: Option<PathBuf>,
+        force: bool,
+        auto: AudioAuto,
+    },
+    Oura {
+        journal_root: PathBuf,
+        save: bool,
+        window_days: u32,
+        confirmed: bool,
+        scheduled: bool,
+    },
+}
+
+impl SyncBackendRequest {
+    #[must_use]
+    pub const fn backend(&self) -> BackendName {
+        match self {
+            Self::Plaud { .. } => BackendName::Plaud,
+            Self::Obsidian { .. } => BackendName::Obsidian,
+            Self::Audio { .. } => BackendName::Audio,
+            Self::Oura { .. } => BackendName::Oura,
+        }
+    }
+}
+
+/// Optional human-readable scheduling guidance returned by a backend.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SyncGuidance {
+    text: String,
+}
+
+impl SyncGuidance {
+    #[must_use]
+    pub fn new(text: String) -> Self {
+        Self { text }
+    }
+
+    #[must_use]
+    pub fn format_text(&self) -> &str {
+        &self.text
+    }
+}
 
 /// Preview data returned without saving an import.
 #[derive(Debug, Eq, PartialEq)]
