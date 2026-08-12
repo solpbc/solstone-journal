@@ -3,8 +3,10 @@
 
 use serde_json::Value;
 use solstone_core_import::{
-    ImportPreview, ImportResult, PreviewRequest, SaveRequest, should_write_manifest,
+    AudioAuto, ImportPreview, ImportResult, PreviewRequest, SaveRequest, SyncBackendRequest,
+    SyncGuidance, should_write_manifest,
 };
+use std::path::PathBuf;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/import_reference_grammar.json");
 
@@ -62,3 +64,38 @@ fn result(entries_written: u64, hard_failures: Vec<&str>) -> ImportResult {
 fn accepts_preview(_: PreviewRequest) {}
 
 fn accepts_save(_: SaveRequest) {}
+
+#[test]
+fn sync_backend_request_confines_window_days_to_the_native_variant() {
+    let path = PathBuf::from("journal");
+    let request = SyncBackendRequest::Oura {
+        journal_root: path.clone(),
+        save: true,
+        window_days: 14,
+        confirmed: true,
+        scheduled: false,
+    };
+    match request {
+        SyncBackendRequest::Oura { window_days, .. } => assert_eq!(window_days, 14),
+        _ => panic!("Oura request must retain window days"),
+    }
+    let request = SyncBackendRequest::Audio {
+        journal_root: path,
+        save: false,
+        source_path: Some(PathBuf::from("audio")),
+        force: false,
+        auto: AudioAuto::Enabled,
+    };
+    match request {
+        SyncBackendRequest::Audio { source_path, .. } => {
+            assert_eq!(source_path, Some(PathBuf::from("audio")))
+        }
+        _ => panic!("audio request must retain its source override"),
+    }
+}
+
+#[test]
+fn scheduling_guidance_is_pure_text_without_a_schedule_writer_surface() {
+    let guidance = SyncGuidance::new("Run this on a cadence you choose.".to_owned());
+    assert_eq!(guidance.format_text(), "Run this on a cadence you choose.");
+}
