@@ -1,0 +1,18 @@
+[package]
+name = "solstone-core-service-legacy-evidence"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+sha2.workspace = true
+
+[dev-dependencies]
+plist.workspace = true
+serde_json.workspace = true
