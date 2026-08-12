@@ -83,9 +83,9 @@ members = [
     "crates/solstone-core-journal-stats-cli",
     "crates/solstone-core-reprocess-cli",
     "crates/solstone-core-backfill-cli",
-    "crates/solstone-core-service-legacy-evidence",
     "crates/solstone-core-steward-prune",
 ]
+exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
 
 [workspace.package]

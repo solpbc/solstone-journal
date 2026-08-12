@@ -21,9 +21,10 @@ from pathlib import Path
 from typing import Any
 
 from promote_service_legacy_evidence_tree import promote_tree
+from service_legacy_paths import evidence_root
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_ROOT = ROOT / "core/fixtures/service_legacy_evidence"
+EVIDENCE_ROOT = evidence_root()
 RAW_ROOT = EVIDENCE_ROOT / "raw"
 NORMALIZED_ROOT = EVIDENCE_ROOT / "normalized"
 FOLLOW_CENSUS = EVIDENCE_ROOT / "follow-census.json"
@@ -79,7 +80,9 @@ def plist_from_raw(raw: dict[str, Any], path: Path) -> dict[str, Any]:
 
 def journal_token(value: str, journal: str, field: str, path: Path) -> str:
     if not value.startswith(journal):
-        raise NormalizationError(f"{field} does not begin with its journal path: {path}")
+        raise NormalizationError(
+            f"{field} does not begin with its journal path: {path}"
+        )
     return "<JOURNAL>" + value[len(journal) :]
 
 
@@ -92,7 +95,9 @@ def normalize_plist(raw: dict[str, Any], path: Path) -> dict[str, Any]:
     if not isinstance(environment, dict):
         raise NormalizationError(f"plist lacks EnvironmentVariables dictionary: {path}")
     if environment != inputs.get("env"):
-        raise NormalizationError(f"plist environment differs from fixture inputs: {path}")
+        raise NormalizationError(
+            f"plist environment differs from fixture inputs: {path}"
+        )
     for key, token in ENVIRONMENT_TOKENS.items():
         if key in environment:
             environment[key] = token
@@ -118,22 +123,30 @@ def normalize_systemd(raw: dict[str, Any], path: Path, launcher: str) -> str:
         journal = inputs["journal_path"]
         port = inputs["port"]
     except KeyError as exc:
-        raise NormalizationError(f"systemd fixture lacks required field: {path}") from exc
+        raise NormalizationError(
+            f"systemd fixture lacks required field: {path}"
+        ) from exc
     if not isinstance(unit, str) or not isinstance(launcher, str):
         raise NormalizationError(f"systemd fixture has non-string content: {path}")
     expected_environment = inputs.get("env")
     if not isinstance(expected_environment, dict):
-        raise NormalizationError(f"systemd fixture lacks input environment dictionary: {path}")
+        raise NormalizationError(
+            f"systemd fixture lacks input environment dictionary: {path}"
+        )
     systemd_environment: dict[str, str] = {}
     for line in unit.splitlines():
         if not line.startswith("Environment="):
             continue
         key, separator, value = line.removeprefix("Environment=").partition("=")
         if not separator or key in systemd_environment:
-            raise NormalizationError(f"malformed or duplicate systemd Environment line: {path}")
+            raise NormalizationError(
+                f"malformed or duplicate systemd Environment line: {path}"
+            )
         systemd_environment[key] = value
     if systemd_environment != expected_environment:
-        raise NormalizationError(f"systemd environment differs from fixture inputs: {path}")
+        raise NormalizationError(
+            f"systemd environment differs from fixture inputs: {path}"
+        )
     normalized_lines: list[str] = []
     for line in unit.splitlines(keepends=True):
         body = line[:-1] if line.endswith("\n") else line
@@ -141,7 +154,9 @@ def normalize_systemd(raw: dict[str, Any], path: Path, launcher: str) -> str:
         if body.startswith("ExecStart="):
             command = body.removeprefix("ExecStart=")
             if not command.startswith(launcher):
-                raise NormalizationError(f"ExecStart does not start with plist launcher: {path}")
+                raise NormalizationError(
+                    f"ExecStart does not start with plist launcher: {path}"
+                )
             command = "<LAUNCHER_BIN>" + command[len(launcher) :]
             port_suffix = f" {port}"
             if command.endswith(port_suffix):
@@ -157,11 +172,17 @@ def normalize_systemd(raw: dict[str, Any], path: Path, launcher: str) -> str:
                 body = f"Environment={key}={token}"
         elif body.startswith("StandardOutput=append:"):
             body = "StandardOutput=append:" + journal_token(
-                body.removeprefix("StandardOutput=append:"), journal, "StandardOutput", path
+                body.removeprefix("StandardOutput=append:"),
+                journal,
+                "StandardOutput",
+                path,
             )
         elif body.startswith("StandardError=append:"):
             body = "StandardError=append:" + journal_token(
-                body.removeprefix("StandardError=append:"), journal, "StandardError", path
+                body.removeprefix("StandardError=append:"),
+                journal,
+                "StandardError",
+                path,
             )
         normalized_lines.append(body + newline)
     return "".join(normalized_lines)
@@ -171,7 +192,9 @@ def normalized_variant(raw: dict[str, Any], path: Path) -> dict[str, Any]:
     plist = normalize_plist(raw, path)
     return {
         "plist": plist,
-        "systemd_unit": normalize_systemd(raw, path, plist_from_raw(raw, path)["ProgramArguments"][0]),
+        "systemd_unit": normalize_systemd(
+            raw, path, plist_from_raw(raw, path)["ProgramArguments"][0]
+        ),
     }
 
 
@@ -180,11 +203,15 @@ def fixed_projection(raw: dict[str, Any], path: Path) -> dict[str, Any]:
     variant = normalized_variant(raw, path)
     plist = variant["plist"]
     plist.pop("EnvironmentVariables", None)
-    return {"plist": plist, "systemd_unit": "\n".join(
-        line
-        for line in variant["systemd_unit"].splitlines()
-        if not line.startswith("Environment=")
-    ) + ("\n" if variant["systemd_unit"].endswith("\n") else "")}
+    return {
+        "plist": plist,
+        "systemd_unit": "\n".join(
+            line
+            for line in variant["systemd_unit"].splitlines()
+            if not line.startswith("Environment=")
+        )
+        + ("\n" if variant["systemd_unit"].endswith("\n") else ""),
+    }
 
 
 def key_state(raw: dict[str, Any], path: Path) -> str:
@@ -206,24 +233,34 @@ def normalize_blob_platform(entry: dict[str, Any], platform: str) -> dict[str, A
     for profile in expected_profiles(index):
         path = RAW_ROOT / blob / platform / f"{profile}.json"
         raw = read_json(path)
-        if raw.get("blob") != blob or raw.get("platform") != platform or raw.get("profile") != profile:
+        if (
+            raw.get("blob") != blob
+            or raw.get("platform") != platform
+            or raw.get("profile") != profile
+        ):
             raise NormalizationError(f"raw fixture identity mismatch: {path}")
         raw_profiles[profile] = (raw, path)
     all_fixed = [fixed_projection(raw, path) for raw, path in raw_profiles.values()]
     if any(value != all_fixed[0] for value in all_fixed[1:]):
-        raise NormalizationError(f"fixed fields vary across profiles for {blob}/{platform}")
+        raise NormalizationError(
+            f"fixed fields vary across profiles for {blob}/{platform}"
+        )
     groups: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for profile, (raw, path) in raw_profiles.items():
         state = key_state(raw, path) if index <= 18 else "canonical"
         groups.setdefault(state, []).append((profile, normalized_variant(raw, path)))
     if index <= 18 and set(groups) != {"optional_keys_absent", "optional_keys_present"}:
-        raise NormalizationError(f"oldest-family key-state groups are incomplete for {blob}/{platform}")
+        raise NormalizationError(
+            f"oldest-family key-state groups are incomplete for {blob}/{platform}"
+        )
     variants: dict[str, dict[str, Any]] = {}
     for state, captures in groups.items():
         canonical = captures[0][1]
         if any(value != canonical for _profile, value in captures[1:]):
             profiles = ", ".join(profile for profile, _value in captures)
-            raise NormalizationError(f"profiles do not converge for {blob}/{platform}/{state}: {profiles}")
+            raise NormalizationError(
+                f"profiles do not converge for {blob}/{platform}/{state}: {profiles}"
+            )
         variants[state] = {
             "profiles": sorted(profile for profile, _value in captures),
             **canonical,
@@ -241,7 +278,10 @@ def normalize_blob_platform(entry: dict[str, Any], platform: str) -> dict[str, A
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def normalize_all(output_root: Path) -> int:
@@ -264,7 +304,9 @@ def normalize_all(output_root: Path) -> int:
 
 
 def main() -> int:
-    staging_parent = Path(tempfile.mkdtemp(prefix=".normalized-staging.", dir=EVIDENCE_ROOT))
+    staging_parent = Path(
+        tempfile.mkdtemp(prefix=".normalized-staging.", dir=EVIDENCE_ROOT)
+    )
     staging = staging_parent / "normalized"
     try:
         count = normalize_all(staging)

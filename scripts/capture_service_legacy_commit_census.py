@@ -16,9 +16,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from service_legacy_paths import capture_input, evidence_root
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "core/fixtures/service_legacy_evidence/follow-census.json"
+OUTPUT = evidence_root() / "follow-census.json"
 CURRENT_PATH = "solstone/think/service.py"
 LEGACY_PATH = "think/service.py"
 EXPECTED_COUNT = 44
@@ -54,14 +55,19 @@ def path_at_commit(commit: str) -> str:
 
 
 def main() -> int:
+    head = capture_input()
     commits = [
         line
-        for line in git("log", "--follow", "--format=%H", "--", CURRENT_PATH).splitlines()
+        for line in git(
+            "log", "--follow", "--format=%H", head, "--", CURRENT_PATH
+        ).splitlines()
         if line
     ]
     commits.reverse()
     if len(commits) != EXPECTED_COUNT:
-        raise RuntimeError(f"expected {EXPECTED_COUNT} service.py commits, found {len(commits)}")
+        raise RuntimeError(
+            f"expected {EXPECTED_COUNT} service.py commits, found {len(commits)}"
+        )
 
     entries: list[dict[str, object]] = []
     blobs: set[str] = set()

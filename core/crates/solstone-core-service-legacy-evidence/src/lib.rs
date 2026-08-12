@@ -14,6 +14,10 @@ pub fn embedded(path: &str) -> Option<&'static [u8]> {
         .find_map(|(candidate, bytes)| (*candidate == path).then_some(*bytes))
 }
 
+pub fn manifest_bytes() -> &'static [u8] {
+    MANIFEST_BYTES
+}
+
 pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }

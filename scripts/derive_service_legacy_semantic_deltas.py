@@ -21,9 +21,10 @@ from normalize_service_legacy_evidence import (
     PLATFORMS,
     read_json,
 )
+from service_legacy_paths import evidence_root
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "core/fixtures/service_legacy_evidence/semantic-deltas.json"
+OUTPUT = evidence_root() / "semantic-deltas.json"
 SCHEMA = "service-legacy-semantic-deltas"
 SCHEMA_VERSION = 1
 
@@ -83,11 +84,15 @@ def semantic_fields(blob: str, platform: str) -> dict[str, Any]:
         raise DeltaError(f"normalized fixture lacks variants: {blob}/{platform}")
     variant = variants.get("optional_keys_absent", variants.get("canonical"))
     if not isinstance(variant, dict):
-        raise DeltaError(f"normalized fixture lacks semantic default variant: {blob}/{platform}")
+        raise DeltaError(
+            f"normalized fixture lacks semantic default variant: {blob}/{platform}"
+        )
     plist = variant.get("plist")
     unit = variant.get("systemd_unit")
     if not isinstance(plist, dict) or not isinstance(unit, str):
-        raise DeltaError(f"normalized fixture has invalid semantic content: {blob}/{platform}")
+        raise DeltaError(
+            f"normalized fixture has invalid semantic content: {blob}/{platform}"
+        )
     return {**flatten_plist(plist), **parse_systemd(unit)}
 
 
@@ -97,11 +102,35 @@ def changes_for(from_blob: str, to_blob: str, platform: str) -> list[dict[str, A
     changes: list[dict[str, Any]] = []
     for field in sorted(set(old) | set(new)):
         if field not in old:
-            changes.append({"field": field, "new_value": new[field], "old_value": None, "operation": "add", "platform": platform})
+            changes.append(
+                {
+                    "field": field,
+                    "new_value": new[field],
+                    "old_value": None,
+                    "operation": "add",
+                    "platform": platform,
+                }
+            )
         elif field not in new:
-            changes.append({"field": field, "new_value": None, "old_value": old[field], "operation": "remove", "platform": platform})
+            changes.append(
+                {
+                    "field": field,
+                    "new_value": None,
+                    "old_value": old[field],
+                    "operation": "remove",
+                    "platform": platform,
+                }
+            )
         elif old[field] != new[field]:
-            changes.append({"field": field, "new_value": new[field], "old_value": old[field], "operation": "replace", "platform": platform})
+            changes.append(
+                {
+                    "field": field,
+                    "new_value": new[field],
+                    "old_value": old[field],
+                    "operation": "replace",
+                    "platform": platform,
+                }
+            )
     return changes
 
 
@@ -114,7 +143,13 @@ def main() -> int:
         changes: list[dict[str, Any]] = []
         for platform in PLATFORMS:
             changes.extend(changes_for(previous["blob"], current["blob"], platform))
-        records.append({"changes": changes, "from_blob": previous["blob"], "to_blob": current["blob"]})
+        records.append(
+            {
+                "changes": changes,
+                "from_blob": previous["blob"],
+                "to_blob": current["blob"],
+            }
+        )
     OUTPUT.write_text(
         json.dumps(
             {"deltas": records, "schema": SCHEMA, "schema_version": SCHEMA_VERSION},
@@ -125,7 +160,9 @@ def main() -> int:
         + "\n",
         encoding="utf-8",
     )
-    print(f"wrote {len(records)} semantic-delta records with {sum(len(record['changes']) for record in records)} changes")
+    print(
+        f"wrote {len(records)} semantic-delta records with {sum(len(record['changes']) for record in records)} changes"
+    )
     return 0
 
 

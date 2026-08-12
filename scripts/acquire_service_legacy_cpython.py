@@ -19,13 +19,16 @@ import shutil
 import stat
 import sys
 import tarfile
+import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from service_legacy_paths import evidence_root, python_cache_root
+
 ROOT = Path(__file__).resolve().parents[1]
-CACHE_ROOT = ROOT / ".cache/service-legacy-evidence/python"
-OUTPUT = ROOT / "core/fixtures/service_legacy_evidence/interpreters.json"
+CACHE_ROOT = python_cache_root()
+OUTPUT = evidence_root() / "interpreters.json"
 SCHEMA = "service-legacy-cpython-interpreters"
 SCHEMA_VERSION = 1
 PLATFORM = "linux-x86_64"
@@ -45,6 +48,7 @@ class InterpreterPin:
     archive_sha256: str
     executable: str
     executable_sha256: str
+    inventory_sha256: str
 
 
 PINS = (
@@ -69,6 +73,7 @@ PINS = (
         archive_sha256="b33feb5ce0d7f9c4aca8621a9d231dfd9d2f6e26eccb56b63f07041ff573d5a5",
         executable="python/bin/python3.8",
         executable_sha256="a48a236a663868ec7cc12c12abc349687ae3ba4de1fed1ad58cb745536dab3dd",
+        inventory_sha256="b201e461f249322c261004b8799044bec73d0166a0426ea06d4cb4c496b5514c",
     ),
     InterpreterPin(
         bucket="cpython39",
@@ -83,6 +88,7 @@ PINS = (
         archive_sha256="00f698873804863dedc0e2b2c2cc4303b49ab0703af2e5883e11340cb8079d0f",
         executable="python/bin/python3.9",
         executable_sha256="3ce6ce1d62807f1da502adddca916288247a67250f7480699a9d91308c1eaafb",
+        inventory_sha256="f018c25a948d20946dce010d13e7804697247ecd27eba7a9ec3a30d9a43cbd3c",
     ),
 )
 
@@ -129,7 +135,9 @@ def verify_file(path: Path, expected_sha256: str, description: str) -> None:
         )
 
 
-def archive_inventory(archive: Path) -> tuple[dict[str, tuple[str, str | None, int]], set[str]]:
+def archive_inventory(
+    archive: Path,
+) -> tuple[dict[str, tuple[str, str | None, int]], set[str]]:
     members: dict[str, tuple[str, str | None, int]] = {}
     directories: set[str] = {"python"}
     try:
@@ -142,9 +150,15 @@ def archive_inventory(archive: Path) -> tuple[dict[str, tuple[str, str | None, i
                     members[name] = ("regular", None, stat.S_IMODE(member.mode))
                 elif member.issym():
                     validate_link_target(name, member.linkname)
-                    members[name] = ("symlink", member.linkname, stat.S_IMODE(member.mode))
+                    members[name] = (
+                        "symlink",
+                        member.linkname,
+                        stat.S_IMODE(member.mode),
+                    )
                 else:
-                    raise AcquisitionError(f"archive has unsupported member type: {name}")
+                    raise AcquisitionError(
+                        f"archive has unsupported member type: {name}"
+                    )
                 path = PurePosixPath(name)
                 for index in range(1, len(path.parts)):
                     directories.add(PurePosixPath(*path.parts[:index]).as_posix())
@@ -178,7 +192,9 @@ def validate_link_target(member_name: str, link_target: str) -> None:
             continue
         if part == "..":
             if len(resolved) <= 1:
-                raise AcquisitionError(f"archive symlink escapes payload: {member_name}")
+                raise AcquisitionError(
+                    f"archive symlink escapes payload: {member_name}"
+                )
             resolved.pop()
         else:
             resolved.append(part)
@@ -199,7 +215,9 @@ def extract_archive(archive: Path, destination: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 source = tar.extractfile(member)
                 if source is None:
-                    raise AcquisitionError(f"archive regular member has no content: {member.name}")
+                    raise AcquisitionError(
+                        f"archive regular member has no content: {member.name}"
+                    )
                 with source, target.open("wb") as handle:
                     shutil.copyfileobj(source, handle)
                 target.chmod(stat.S_IMODE(member.mode))
@@ -230,11 +248,22 @@ def assert_extracted_inventory(
         elif stat.S_ISREG(mode):
             observed_members[relative] = ("regular", None, stat.S_IMODE(mode))
         elif stat.S_ISLNK(mode):
-            observed_members[relative] = ("symlink", os.readlink(path), stat.S_IMODE(mode))
+            observed_members[relative] = (
+                "symlink",
+                os.readlink(path),
+                stat.S_IMODE(mode),
+            )
         else:
-            raise AcquisitionError(f"extracted archive has unsupported member type: {relative}")
-    if observed_members != expected_members or observed_directories != expected_directories:
-        raise AcquisitionError("extracted archive inventory does not match its declared members")
+            raise AcquisitionError(
+                f"extracted archive has unsupported member type: {relative}"
+            )
+    if (
+        observed_members != expected_members
+        or observed_directories != expected_directories
+    ):
+        raise AcquisitionError(
+            "extracted archive inventory does not match its declared members"
+        )
 
 
 def tree_fingerprint(root: Path) -> str:
@@ -263,19 +292,21 @@ def tree_fingerprint(root: Path) -> str:
                 }
             )
         else:
-            raise AcquisitionError(f"interpreter tree has unsupported member type: {relative}")
+            raise AcquisitionError(
+                f"interpreter tree has unsupported member type: {relative}"
+            )
     return hashlib.sha256(
         json.dumps(records, separators=(",", ":"), sort_keys=True).encode("utf-8")
     ).hexdigest()
 
 
-def state_payload(pin: InterpreterPin, inventory_sha256: str) -> dict[str, object]:
+def state_payload(pin: InterpreterPin) -> dict[str, object]:
     return {
         "archive_sha256": pin.archive_sha256,
         "bucket": pin.bucket,
         "executable": pin.executable,
         "executable_sha256": pin.executable_sha256,
-        "inventory_sha256": inventory_sha256,
+        "inventory_sha256": pin.inventory_sha256,
         "release_tag": pin.release_tag,
         "schema_version": STATE_SCHEMA_VERSION,
         "url": pin.url,
@@ -292,17 +323,71 @@ def verify_installed(pin: InterpreterPin) -> bool:
         return False
     if not isinstance(state, dict):
         return False
-    inventory_sha256 = state.get("inventory_sha256")
-    if not (
-        isinstance(inventory_sha256, str)
-        and len(inventory_sha256) == 64
-        and all(character in "0123456789abcdef" for character in inventory_sha256)
-    ):
-        return False
-    if state != state_payload(pin, inventory_sha256):
+    if state != state_payload(pin):
         return False
     verify_file(executable, pin.executable_sha256, f"{pin.bucket} interpreter")
+    if tree_fingerprint(root) != pin.inventory_sha256:
+        return False
     return True
+
+
+def self_test() -> None:
+    global CACHE_ROOT
+
+    original_cache_root = CACHE_ROOT
+    with tempfile.TemporaryDirectory(prefix="service-legacy-cpython-") as temporary:
+        CACHE_ROOT = Path(temporary)
+        try:
+            root = CACHE_ROOT / "controlled"
+            executable = root / "python/bin/python"
+            stdlib = root / "python/lib/stdlib.py"
+            executable.parent.mkdir(parents=True)
+            stdlib.parent.mkdir(parents=True)
+            executable.write_bytes(b"controlled interpreter\n")
+            stdlib.write_bytes(b"controlled stdlib\n")
+            inventory_sha256 = tree_fingerprint(root)
+            pin = InterpreterPin(
+                bucket="controlled",
+                declared_floor="3.0",
+                pinned_version="3.0.0",
+                pin_rationale=None,
+                release_tag="controlled",
+                url="https://example.invalid/controlled.tar.gz",
+                archive_sha256="a" * 64,
+                executable="python/bin/python",
+                executable_sha256=sha256_file(executable),
+                inventory_sha256=inventory_sha256,
+            )
+            state_path(pin).write_text(json.dumps(state_payload(pin)), encoding="utf-8")
+            if not verify_installed(pin):
+                raise AcquisitionError("controlled interpreter was not accepted")
+
+            stdlib.write_bytes(b"mutated stdlib\n")
+            if verify_installed(pin):
+                raise AcquisitionError("mutated cached stdlib was accepted")
+
+            state_path(pin).write_text(
+                json.dumps(
+                    {
+                        **state_payload(pin),
+                        "inventory_sha256": tree_fingerprint(root),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            if verify_installed(pin):
+                raise AcquisitionError(
+                    "coupled cached tree and sidecar mutation was accepted"
+                )
+
+            stdlib.write_bytes(b"controlled stdlib\n")
+            state_path(pin).write_text(json.dumps(state_payload(pin)), encoding="utf-8")
+            (root / "python/lib/extra.py").write_bytes(b"unexpected extra file\n")
+            if verify_installed(pin):
+                raise AcquisitionError("extra cached interpreter file was accepted")
+        finally:
+            CACHE_ROOT = original_cache_root
+    print("service-legacy CPython cache self-test passed", file=sys.stderr)
 
 
 def download_archive(pin: InterpreterPin) -> Path:
@@ -313,9 +398,14 @@ def download_archive(pin: InterpreterPin) -> Path:
     archive.parent.mkdir(parents=True, exist_ok=True)
     temporary = archive.with_name(f"{archive.name}.tmp")
     temporary.unlink(missing_ok=True)
-    request = urllib.request.Request(pin.url, headers={"User-Agent": "solstone-service-legacy-evidence"})
+    request = urllib.request.Request(
+        pin.url, headers={"User-Agent": "solstone-service-legacy-evidence"}
+    )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response, temporary.open("wb") as handle:
+        with (
+            urllib.request.urlopen(request, timeout=120) as response,
+            temporary.open("wb") as handle,
+        ):
             shutil.copyfileobj(response, handle)
         verify_file(temporary, pin.archive_sha256, f"{pin.bucket} archive")
         temporary.replace(archive)
@@ -323,7 +413,9 @@ def download_archive(pin: InterpreterPin) -> Path:
         temporary.unlink(missing_ok=True)
         if isinstance(exc, AcquisitionError):
             raise
-        raise AcquisitionError(f"failed to download {pin.bucket} archive: {exc}") from exc
+        raise AcquisitionError(
+            f"failed to download {pin.bucket} archive: {exc}"
+        ) from exc
     return archive
 
 
@@ -338,6 +430,11 @@ def install(pin: InterpreterPin) -> str:
     executable = extraction / pin.executable
     verify_file(executable, pin.executable_sha256, f"{pin.bucket} interpreter")
     inventory_sha256 = tree_fingerprint(extraction)
+    if inventory_sha256 != pin.inventory_sha256:
+        raise AcquisitionError(
+            f"{pin.bucket} interpreter tree SHA-256 mismatch: "
+            f"expected {pin.inventory_sha256}, got {inventory_sha256}"
+        )
     shutil.rmtree(aside, ignore_errors=True)
     moved_old = False
     try:
@@ -347,7 +444,7 @@ def install(pin: InterpreterPin) -> str:
         extraction.replace(target)
         temporary_state = state_path(pin).with_suffix(".tmp")
         temporary_state.write_text(
-            json.dumps(state_payload(pin, inventory_sha256), indent=2, sort_keys=True) + "\n",
+            json.dumps(state_payload(pin), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         temporary_state.replace(state_path(pin))
@@ -368,6 +465,7 @@ def manifest_bucket(pin: InterpreterPin) -> dict[str, str | None]:
         "declared_floor": pin.declared_floor,
         "executable": pin.executable,
         "executable_sha256": pin.executable_sha256,
+        "inventory_sha256": pin.inventory_sha256,
         "pin_rationale": pin.pin_rationale,
         "platform": PLATFORM,
         "pinned_version": pin.pinned_version,
@@ -388,15 +486,25 @@ def verify_manifest() -> None:
     try:
         actual = json.loads(OUTPUT.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise AcquisitionError(f"interpreter manifest is unavailable: {OUTPUT}") from exc
+        raise AcquisitionError(
+            f"interpreter manifest is unavailable: {OUTPUT}"
+        ) from exc
     if actual != manifest_payload():
         raise AcquisitionError("interpreter manifest does not match the declared pins")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--verify", action="store_true", help="verify the cached runtimes and manifest without downloading")
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="verify the cached runtimes and manifest without downloading",
+    )
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    if args.self_test:
+        self_test()
+        return 0
     assert_platform()
     if args.verify:
         for pin in PINS:

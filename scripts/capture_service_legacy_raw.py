@@ -12,21 +12,35 @@ then captures both platform artifacts under the pinned interpreter.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
+import os
+import plistlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from extract_service_legacy_generator_closure import ClosureExtractor, stdlib_modules
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_ROOT = ROOT / "core/fixtures/service_legacy_evidence"
+EVIDENCE_ROOT = Path(
+    os.environ.get(
+        "SERVICE_LEGACY_EVIDENCE_ROOT",
+        ROOT / "core/fixtures/service_legacy_evidence",
+    )
+).resolve()
 CENSUS_PATH = EVIDENCE_ROOT / "follow-census.json"
 INTERPRETERS_PATH = EVIDENCE_ROOT / "interpreters.json"
-PYTHON_CACHE_ROOT = ROOT / ".cache/service-legacy-evidence/python"
+PYTHON_CACHE_ROOT = Path(
+    os.environ.get(
+        "SERVICE_LEGACY_PYTHON_CACHE_ROOT",
+        ROOT / ".cache/service-legacy-evidence/python",
+    )
+).resolve()
 SYNTHETIC_SANDBOX_ROOT = Path("/opt/solstone-service-legacy-evidence")
 SCHEMA = "service-legacy-raw-evidence"
 SCHEMA_VERSION = 1
@@ -122,7 +136,18 @@ def profile_values(blob: str, profile: Profile) -> tuple[Path, Path]:
     return base / "home", base / "journal"
 
 
-def service_environment(index: int, home: Path, path: str, journal: Path, profile: Profile) -> dict[str, str]:
+def synthetic_executable(bucket: str) -> str:
+    if bucket not in {"cpython37", "cpython39"}:
+        raise CaptureError(f"unknown interpreter bucket: {bucket}")
+    executable = SYNTHETIC_SANDBOX_ROOT / "interpreters" / bucket / "bin" / "python"
+    if executable.name != "python":
+        raise CaptureError(f"synthetic interpreter basename changed: {executable}")
+    return str(executable)
+
+
+def service_environment(
+    index: int, home: Path, path: str, journal: Path, profile: Profile
+) -> dict[str, str]:
     """Build the historical _collect_env-equivalent service dictionary."""
     environment = {"HOME": str(home), "PATH": path}
     # Indices 0-4 always put the override in _collect_env. Indices 5-8 do
@@ -136,7 +161,9 @@ def service_environment(index: int, home: Path, path: str, journal: Path, profil
     return environment
 
 
-def capture_environment(home: Path, path: str, journal: Path, index: int) -> dict[str, str]:
+def capture_environment(
+    home: Path, path: str, journal: Path, index: int
+) -> dict[str, str]:
     environment = {
         "HOME": str(home),
         "LANG": "C.UTF-8",
@@ -154,7 +181,7 @@ def capture_environment(home: Path, path: str, journal: Path, index: int) -> dic
     return environment
 
 
-CHILD_PROGRAM = r'''
+CHILD_PROGRAM = r"""
 import base64
 import hashlib
 import inspect
@@ -165,6 +192,9 @@ from pathlib import Path
 
 source_path, request_path, result_path = sys.argv[1:]
 request = json.loads(open(request_path, encoding="utf-8").read())
+if not request["synthetic_executable"].endswith("/bin/python"):
+    raise ValueError("synthetic executable must end in /bin/python")
+sys.executable = request["synthetic_executable"]
 namespace = {"__file__": source_path, "__name__": "service_legacy_synthetic"}
 source = open(source_path, encoding="utf-8").read()
 exec(compile(source, source_path, "exec"), namespace)
@@ -204,7 +234,7 @@ payload = {
 open(result_path, "w", encoding="utf-8").write(
     json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 )
-'''
+"""
 
 
 def capture_profile(
@@ -225,13 +255,17 @@ def capture_profile(
     result_file = runtime / "result.json"
     source_file.write_text(source, encoding="utf-8")
     index = int(entry["index"])
-    environment_values = service_environment(index, home, profile.path, journal, profile)
+    bucket = bucket_for(index)
+    environment_values = service_environment(
+        index, home, profile.path, journal, profile
+    )
     request_file.write_text(
         json.dumps(
             {
                 "env": environment_values,
                 "journal_path": str(journal),
                 "port": profile.port,
+                "synthetic_executable": synthetic_executable(bucket),
             },
             indent=2,
             sort_keys=True,
@@ -241,7 +275,14 @@ def capture_profile(
         encoding="utf-8",
     )
     subprocess.run(
-        [str(python), "-c", CHILD_PROGRAM, str(source_file), str(request_file), str(result_file)],
+        [
+            str(python),
+            "-c",
+            CHILD_PROGRAM,
+            str(source_file),
+            str(request_file),
+            str(result_file),
+        ],
         check=True,
         cwd=work_root,
         env=capture_environment(home, profile.path, journal, index),
@@ -251,7 +292,11 @@ def capture_profile(
 
 def verify_selected_interpreter(python: Path, source: str) -> None:
     result = subprocess.run(
-        [str(python), "-c", "import sys; compile(sys.stdin.read(), '<synthetic>', 'exec')"],
+        [
+            str(python),
+            "-c",
+            "import sys; compile(sys.stdin.read(), '<synthetic>', 'exec')",
+        ],
         check=False,
         input=source,
         text=True,
@@ -307,7 +352,9 @@ def capture_all(output_root: Path, scratch_root: Path) -> int:
     if len(entries) != 44:
         raise CaptureError(f"expected 44 follow-census entries, found {len(entries)}")
     interpreters = interpreter_paths()
-    stdlib_by_bucket = {bucket: stdlib_modules(python) for bucket, python in interpreters.items()}
+    stdlib_by_bucket = {
+        bucket: stdlib_modules(python) for bucket, python in interpreters.items()
+    }
     scratch_root.mkdir(parents=True, exist_ok=True)
     fixture_count = 0
     for entry in entries:
@@ -315,8 +362,14 @@ def capture_all(output_root: Path, scratch_root: Path) -> int:
         blob = str(entry["blob"])
         bucket = bucket_for(index)
         python = interpreters[bucket]
-        service_path = materialize_closure_sources(entry, scratch_root / "sources" / blob)
-        extractor = ClosureExtractor(service_path.parents[len(Path(str(entry["path"])).parts) - 1], service_path, stdlib_by_bucket[bucket])
+        service_path = materialize_closure_sources(
+            entry, scratch_root / "sources" / blob
+        )
+        extractor = ClosureExtractor(
+            service_path.parents[len(Path(str(entry["path"])).parts) - 1],
+            service_path,
+            stdlib_by_bucket[bucket],
+        )
         source, _provenance = extractor.extract()
         verify_selected_interpreter(python, source)
         for profile in profiles_for(index):
@@ -328,7 +381,9 @@ def capture_all(output_root: Path, scratch_root: Path) -> int:
                 work_root=scratch_root,
             )
             home, journal = profile_values(blob, profile)
-            capture["input_env"] = service_environment(index, home, profile.path, journal, profile)
+            capture["input_env"] = service_environment(
+                index, home, profile.path, journal, profile
+            )
             capture["journal_path"] = str(journal)
             capture["port"] = profile.port
             for platform in ("linux", "macos"):
@@ -341,11 +396,56 @@ def capture_all(output_root: Path, scratch_root: Path) -> int:
     return fixture_count
 
 
+def self_test() -> None:
+    source = """
+import plistlib
+import sys
+def _generate_plist(env):
+    return plistlib.dumps({'EnvironmentVariables': env, 'ProgramArguments': [sys.executable]})
+def _generate_systemd_unit(env):
+    return '[Service]\\nExecStart=' + sys.executable + '\\n' + ''.join('Environment=' + key + '=' + value + '\\n' for key, value in env.items())
+"""
+    real = sys.executable
+    if not real.startswith("/"):
+        raise AssertionError("positive-control interpreter path is not absolute")
+    with tempfile.TemporaryDirectory(
+        prefix="service-legacy-synthetic-test-"
+    ) as temporary:
+        captured = capture_profile(
+            entry={"blob": "0" * 40, "index": 0},
+            source=source,
+            python=Path(real),
+            profile=BASE_PROFILES[0],
+            work_root=Path(temporary),
+        )
+    plist = plistlib.loads(base64.b64decode(captured["plist_base64"]))
+    expected = synthetic_executable("cpython37")
+    if plist["ProgramArguments"] != [expected]:
+        raise AssertionError(
+            "historical closure did not observe synthetic sys.executable"
+        )
+    if f"ExecStart={expected}" not in captured["systemd_unit"]:
+        raise AssertionError("systemd closure did not observe synthetic sys.executable")
+    if real == expected:
+        raise AssertionError(
+            "synthetic identity control cannot distinguish the real runner"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-root", type=Path, required=True, help="new raw-fixture directory")
-    parser.add_argument("--scratch-root", type=Path, required=True, help="throwaway source/materialization directory")
+    parser.add_argument("--output-root", type=Path, help="new raw-fixture directory")
+    parser.add_argument(
+        "--scratch-root", type=Path, help="throwaway source/materialization directory"
+    )
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    if args.self_test:
+        self_test()
+        print("service-legacy synthetic interpreter self-test passed")
+        return 0
+    if args.output_root is None or args.scratch_root is None:
+        parser.error("--output-root and --scratch-root are required")
     count = capture_all(args.output_root.resolve(), args.scratch_root.resolve())
     print(f"wrote {count} raw fixtures", file=sys.stderr)
     return 0

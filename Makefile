@@ -451,57 +451,19 @@ check-rust-deny:
 # The Vulkan differential fails without a loader unless the operator explicitly
 # sets SOLSTONE_VULKAN_DIFFERENTIAL_NO_LOADER=1; its --nocapture mode makes the
 # resulting RUN or SKIP report visible in this gate's output.
-.PHONY: service-legacy-evidence-capture
+.PHONY: check-service-legacy-evidence service-legacy-evidence-capture
 # Hand-run immutable-evidence regeneration. This deliberately has no `install`
 # prerequisite: every leg is either stdlib Python, its own pinned interpreter
 # acquisition, uv/maturin, or Cargo, and adding install would create unrelated
 # journal/runtime side effects. It is intentionally not a CI prerequisite.
+check-service-legacy-evidence:
+	cargo fmt --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml --all -- --check
+	cargo clippy --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml --all-targets --locked -- -D warnings
+	cargo test --manifest-path core/crates/solstone-core-service-legacy-evidence/Cargo.toml --locked -- --test-threads=1
+
 service-legacy-evidence-capture:
-	@status=0; \
-	before=$$(mktemp); after=$$(mktemp); \
-	raw_stage_parent=$$(mktemp -d "$(SERVICE_LEGACY_EVIDENCE_ROOT)/.raw-staging.XXXXXX"); \
-	raw_stage="$$raw_stage_parent/raw"; \
-	capture_scratch=$$(mktemp -d "scratch/service-legacy-capture.XXXXXX"); \
-	trap 'python3 -c "import pathlib, shutil, sys; [shutil.rmtree(path, ignore_errors=True) for path in map(pathlib.Path, sys.argv[1:3])]; [pathlib.Path(path).unlink(missing_ok=True) for path in sys.argv[3:5]]" "$$raw_stage_parent" "$$capture_scratch" "$$before" "$$after"' EXIT INT TERM; \
-	snapshot() { \
-		python3 -c 'import hashlib, pathlib, sys; root = pathlib.Path(sys.argv[1]); [print(hashlib.sha256(path.read_bytes()).hexdigest(), path.relative_to(root).as_posix()) for path in sorted(path for path in root.rglob("*") if path.is_file())]' "$(SERVICE_LEGACY_EVIDENCE_ROOT)" > "$$1"; \
-	}; \
-	snapshot "$$before"; \
-	for stage in \
-		"scripts/capture_service_legacy_commit_census.py" \
-		"scripts/capture_service_legacy_tag_census.py" \
-		"scripts/acquire_service_legacy_cpython.py" \
-		"scripts/capture_service_legacy_raw.py" \
-		"scripts/normalize_service_legacy_evidence.py" \
-		"scripts/generate_service_legacy_negative_twins.py" \
-		"scripts/derive_service_legacy_semantic_deltas.py" \
-		"scripts/build_service_legacy_packaging_provenance.py" \
-		"scripts/write_service_legacy_manifest.py"; do \
-		echo "==> python3 $$stage"; \
-		if [ "$$stage" = "scripts/capture_service_legacy_raw.py" ]; then \
-			python3 "$$stage" --output-root "$$raw_stage" --scratch-root "$$capture_scratch" && \
-			python3 scripts/promote_service_legacy_evidence_tree.py --staged "$$raw_stage" --destination "$(SERVICE_LEGACY_EVIDENCE_ROOT)/raw" --expected-files 340 && \
-			rmdir "$$raw_stage_parent" || status=$$?; \
-		else \
-			python3 "$$stage" || status=$$?; \
-		fi; \
-	done; \
-	echo "==> cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-service-legacy-evidence --locked"; \
-	cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-service-legacy-evidence --locked || status=$$?; \
-	snapshot "$$after"; \
-	if cmp -s "$$before" "$$after"; then \
-		echo "service-legacy-evidence-capture: regeneration is byte-identical to the starting corpus"; \
-	else \
-		echo "service-legacy-evidence-capture: regeneration drifted from the starting corpus; review fixture changes"; \
-	fi; \
-	python3 -c 'import hashlib, json, pathlib; root = pathlib.Path("$(SERVICE_LEGACY_EVIDENCE_ROOT)"); manifest = root / "manifest.json"; data = json.loads(manifest.read_text()); provenance = json.loads((root / "packaging-provenance.json").read_text()); twins = sum(len(json.loads(path.read_text())["twins"]) for path in (root / "negative").rglob("*.json")); print("service-legacy-evidence-capture report:"); print("  manifest_sha256={}".format(hashlib.sha256(manifest.read_bytes()).hexdigest())); print("  raw_fixtures={} normalized_fixtures={}".format(sum(1 for _ in (root / "raw").rglob("*.json")), sum(1 for _ in (root / "normalized").rglob("*.json")))); print("  blobs={} negative_twins={}".format(len(data["blobs"]), twins)); print("  interpreter_buckets=" + ", ".join("{}: declared_floor={}, pinned_version={}".format(name, bucket["declared_floor"], bucket["pinned_version"]) for name, bucket in json.loads((root / "interpreters.json").read_text())["buckets"].items())); print("  tools=" + ", ".join("{}={}".format(name, version) for name, version in provenance["build"]["tools"].items()));' || status=$$?; \
-	echo "  expected-red command: cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-service-legacy-evidence --locked -- --ignored calling_session_classifier_contract_is_red"; \
-	if [ $$status -eq 0 ]; then \
-		echo "service-legacy-evidence-capture: every leg ran and passed"; \
-	else \
-		echo "service-legacy-evidence-capture: FAILED (status $$status) -- every leg above still ran; read each leg's own result line"; \
-	fi; \
-	exit $$status
+	@test -n "$(CAPTURE_INPUT)" || { echo "CAPTURE_INPUT=<pushed-commit> is required" >&2; exit 2; }
+	python3 scripts/service_legacy_capture.py --capture-input "$(CAPTURE_INPUT)"
 
 .PHONY: check-differentials
 check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build

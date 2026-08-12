@@ -3,17 +3,18 @@
 
 use plist::Value as PlistValue;
 use serde_json::{Map, Value, json};
-use solstone_core_service_legacy_evidence::{embedded, embedded_map, sha256_hex};
+use solstone_core_service_legacy_evidence::{embedded, embedded_map, manifest_bytes, sha256_hex};
 use std::collections::{BTreeMap, BTreeSet};
-
-const MANIFEST: &str = include_str!("../../../fixtures/service_legacy_evidence/manifest.json");
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn json(bytes: &[u8]) -> Value {
     serde_json::from_slice(bytes).expect("embedded JSON parses")
 }
 
 fn manifest() -> Value {
-    serde_json::from_str(MANIFEST).expect("embedded manifest parses")
+    json(manifest_bytes())
 }
 
 fn object(value: &Value) -> &Map<String, Value> {
@@ -38,8 +39,41 @@ fn fixture(path: &str) -> Value {
     json(embedded(path).expect("fixture is compile-time embedded"))
 }
 
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("standalone crate has repository parent")
+        .to_path_buf()
+}
+
+fn reference_bytes(path: &str) -> Vec<u8> {
+    embedded(path)
+        .map(<[u8]>::to_vec)
+        .unwrap_or_else(|| fs::read(repository_root().join(path)).expect("reference file reads"))
+}
+
+fn reference_hash(value: &Value) {
+    let path = text(value, "path");
+    assert_eq!(sha256_hex(&reference_bytes(path)), text(value, "sha256"));
+}
+
 fn exact_reference(value: &Value) {
     exact_keys(value, &["path", "sha256"]);
+    reference_hash(value);
+}
+
+fn git_blob(commit: &str, path: &str) -> Vec<u8> {
+    let output = Command::new("/usr/bin/git")
+        .args(["show", &format!("{commit}:{path}")])
+        .current_dir(repository_root())
+        .output()
+        .expect("Git blob reads");
+    assert!(
+        output.status.success(),
+        "Git blob is unavailable: {commit}:{path}"
+    );
+    output.stdout
 }
 
 fn canonical(value: &Value) -> String {
@@ -258,9 +292,17 @@ fn manifest_inventory_and_censuses_are_exact() {
     exact_keys(&manifest["source"], &["commit", "tooling"]);
     for tool in array(&manifest["source"]["tooling"]) {
         exact_reference(tool);
+        assert_eq!(
+            sha256_hex(&git_blob(
+                text(&manifest["source"], "commit"),
+                text(tool, "path")
+            )),
+            text(tool, "sha256")
+        );
     }
     for key in ["follow_census", "tag_census", "semantic_deltas"] {
         exact_keys(&manifest[key], &["count", "path", "sha256"]);
+        reference_hash(&manifest[key]);
     }
     exact_reference(&manifest["interpreters"]);
     exact_reference(&manifest["packaging_provenance"]);
@@ -343,8 +385,35 @@ fn manifest_inventory_and_censuses_are_exact() {
         "service-legacy-packaging-provenance"
     );
     exact_keys(&provenance["source"], &["commit"]);
-    exact_keys(&provenance["build"], &["source_date_epoch", "tools"]);
-    exact_keys(&provenance["build"]["tools"], &["cargo", "maturin", "uv"]);
+    exact_keys(
+        &provenance["build"],
+        &[
+            "bundle",
+            "environment",
+            "host",
+            "source_date_epoch",
+            "tools",
+            "wheel_commands",
+        ],
+    );
+    exact_keys(
+        &provenance["build"]["tools"],
+        &["cargo", "maturin", "python", "rustc", "rustup", "uv"],
+    );
+    for role in [
+        "CARGO_HOME",
+        "CARGO_TARGET_DIR",
+        "HOME",
+        "RUSTUP_HOME",
+        "TMPDIR",
+        "UV_CACHE_DIR",
+        "XDG_CONFIG_HOME",
+    ] {
+        assert!(
+            text(&provenance["build"]["environment"], role).starts_with('<'),
+            "per-run build root {role} must serialize as a role token"
+        );
+    }
     exact_keys(
         &provenance["wheels"],
         &["solstone_core_journal", "solstone_journal"],
@@ -420,6 +489,21 @@ fn manifest_inventory_and_censuses_are_exact() {
         text(&provenance["launcher_chain"], "sibling_binary"),
         "solstone-core-journal"
     );
+    let commit = text(&provenance["source"], "commit");
+    let launcher = &provenance["launcher_chain"]["journal_launcher"];
+    assert_eq!(
+        sha256_hex(&git_blob(commit, text(launcher, "source_path"))),
+        text(launcher, "source_sha256")
+    );
+    let dispatch = array(&provenance["launcher_chain"]["native_dispatch_sources"]);
+    assert_eq!(dispatch.len(), 3);
+    for source in dispatch {
+        exact_reference(source);
+        assert_eq!(
+            sha256_hex(&git_blob(commit, text(source, "path"))),
+            text(source, "sha256")
+        );
+    }
 }
 
 #[test]

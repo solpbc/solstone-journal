@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -25,9 +24,10 @@ from normalize_service_legacy_evidence import (
     normalized_variant,
     read_json,
 )
+from service_legacy_paths import capture_input, evidence_root
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_ROOT = ROOT / "core/fixtures/service_legacy_evidence"
+EVIDENCE_ROOT = evidence_root()
 FOLLOW_PATH = EVIDENCE_ROOT / "follow-census.json"
 TAG_PATH = EVIDENCE_ROOT / "tag-census.json"
 INTERPRETERS_PATH = EVIDENCE_ROOT / "interpreters.json"
@@ -38,6 +38,10 @@ OUTPUT = EVIDENCE_ROOT / "manifest.json"
 SCHEMA = "service-legacy-evidence"
 SCHEMA_VERSION = 1
 TOOLING_PATHS = (
+    "Makefile",
+    "rust-toolchain.toml",
+    "core/Cargo.toml",
+    "core/Cargo.lock",
     "scripts/capture_service_legacy_commit_census.py",
     "scripts/capture_service_legacy_tag_census.py",
     "scripts/acquire_service_legacy_cpython.py",
@@ -48,7 +52,19 @@ TOOLING_PATHS = (
     "scripts/generate_service_legacy_negative_twins.py",
     "scripts/derive_service_legacy_semantic_deltas.py",
     "scripts/build_service_legacy_packaging_provenance.py",
+    "scripts/service_legacy_capture.py",
+    "scripts/service_legacy_git.py",
+    "scripts/service_legacy_integrity.py",
+    "scripts/service_legacy_paths.py",
+    "scripts/fixtures/service_legacy_path_role_oracle.json",
     "scripts/write_service_legacy_manifest.py",
+    "core/crates/solstone-core-service-legacy-evidence/Cargo.toml",
+    "core/crates/solstone-core-service-legacy-evidence/Cargo.lock",
+    "core/crates/solstone-core-service-legacy-evidence/build.rs",
+    "core/crates/solstone-core-service-legacy-evidence/src/lib.rs",
+    "core/crates/solstone-core-service-legacy-evidence/tests/evidence.rs",
+    "core/crates/solstone-core-service-legacy-evidence/tests/tooling.rs",
+    "core/crates/solstone-core/tests/service_legacy_gate_purity.rs",
 )
 
 
@@ -65,6 +81,11 @@ def sha256(path: Path) -> str:
 
 
 def relative(path: Path) -> str:
+    if path.is_relative_to(EVIDENCE_ROOT):
+        return (
+            Path("core/fixtures/service_legacy_evidence")
+            / path.relative_to(EVIDENCE_ROOT)
+        ).as_posix()
     return path.relative_to(ROOT).as_posix()
 
 
@@ -74,23 +95,22 @@ def reference(path: Path) -> dict[str, str]:
     return {"path": relative(path), "sha256": sha256(path)}
 
 
-def git_head() -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
-    )
-    return result.stdout.strip()
-
-
 def canonical_sha256(value: dict[str, Any]) -> str:
     return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
     ).hexdigest()
 
 
 def raw_normalized_hash(blob: str, platform: str, profile: str) -> str:
     path = RAW_ROOT / blob / platform / f"{profile}.json"
     raw = read_json(path)
-    if raw.get("blob") != blob or raw.get("platform") != platform or raw.get("profile") != profile:
+    if (
+        raw.get("blob") != blob
+        or raw.get("platform") != platform
+        or raw.get("profile") != profile
+    ):
         raise ManifestError(f"raw fixture identity mismatch: {path}")
     return canonical_sha256(normalized_variant(raw, path))
 
@@ -99,7 +119,10 @@ def read_deltas() -> list[dict[str, Any]]:
     payload = read_json(DELTAS_PATH)
     if set(payload) != {"deltas", "schema", "schema_version"}:
         raise ManifestError("semantic deltas top-level keys are not inventory-exact")
-    if payload["schema"] != "service-legacy-semantic-deltas" or payload["schema_version"] != 1:
+    if (
+        payload["schema"] != "service-legacy-semantic-deltas"
+        or payload["schema_version"] != 1
+    ):
         raise ManifestError("semantic deltas schema declaration is invalid")
     deltas = payload["deltas"]
     if not isinstance(deltas, list) or len(deltas) != 43:
@@ -107,7 +130,9 @@ def read_deltas() -> list[dict[str, Any]]:
     return deltas
 
 
-def release_statuses(tag_census: dict[str, Any], tag_census_sha256: str) -> dict[str, list[str]]:
+def release_statuses(
+    tag_census: dict[str, Any], tag_census_sha256: str
+) -> dict[str, list[str]]:
     tags_by_blob: dict[str, list[str]] = {}
     tags = tag_census.get("tags")
     if not isinstance(tags, list) or len(tags) != 66:
@@ -154,7 +179,10 @@ def shared_with(
     previous = entries[position - 1]
     current = entries[position]
     delta = deltas[position - 1]
-    if delta.get("from_blob") != previous["blob"] or delta.get("to_blob") != current["blob"]:
+    if (
+        delta.get("from_blob") != previous["blob"]
+        or delta.get("to_blob") != current["blob"]
+    ):
         raise ManifestError(f"semantic-delta order mismatch at position {position}")
     current_profiles = expected_profiles(current["index"])
     previous_profiles = expected_profiles(previous["index"])
@@ -173,7 +201,9 @@ def shared_with(
 
 
 def inventory() -> list[dict[str, str]]:
-    files = sorted(path for path in EVIDENCE_ROOT.rglob("*") if path.is_file() and path != OUTPUT)
+    files = sorted(
+        path for path in EVIDENCE_ROOT.rglob("*") if path.is_file() and path != OUTPUT
+    )
     return [{"path": relative(path), "sha256": sha256(path)} for path in files]
 
 
@@ -182,7 +212,8 @@ def packaging_provenance() -> dict[str, str]:
         return {"status": "pending_phase_7"}
     payload = read_json(PACKAGING_PROVENANCE_PATH)
     if (
-        set(payload) != {"build", "launcher_chain", "schema", "schema_version", "source", "wheels"}
+        set(payload)
+        != {"build", "launcher_chain", "schema", "schema_version", "source", "wheels"}
         or payload["schema"] != "service-legacy-packaging-provenance"
         or payload["schema_version"] != 1
     ):
@@ -191,7 +222,7 @@ def packaging_provenance() -> dict[str, str]:
 
 
 def main() -> int:
-    head = git_head()
+    head = capture_input()
     follow = read_json(FOLLOW_PATH)
     tag = read_json(TAG_PATH)
     entries = follow.get("entries")
@@ -209,7 +240,9 @@ def main() -> int:
             release_status: dict[str, Any] = {"kind": "tagged", "tags": tags}
         else:
             if position == len(entries) - 1:
-                raise ManifestError("last follow entry cannot be unreleased without a successor")
+                raise ManifestError(
+                    "last follow entry cannot be unreleased without a successor"
+                )
             successor = entries[position + 1]
             release_status = {
                 "distance": 1,
@@ -237,13 +270,27 @@ def main() -> int:
                 "path": entry["path"],
                 "profiles": profile_records(entry),
                 "release_status": release_status,
-                "shared_with": shared_with(entries=entries, position=position, deltas=deltas),
+                "shared_with": shared_with(
+                    entries=entries, position=position, deltas=deltas
+                ),
             }
         )
-    if len(tagged) != 14 or sum(1 for blob in blobs if blob["release_status"]["kind"] == "tagged") != 14:
+    if (
+        len(tagged) != 14
+        or sum(1 for blob in blobs if blob["release_status"]["kind"] == "tagged") != 14
+    ):
         raise ManifestError("tagged-blob census does not contain exactly 14 blobs")
-    if sum(1 for blob in blobs if blob["release_status"]["kind"] == "unreleased_superseded") != 30:
-        raise ManifestError("unreleased disposition census does not contain exactly 30 blobs")
+    if (
+        sum(
+            1
+            for blob in blobs
+            if blob["release_status"]["kind"] == "unreleased_superseded"
+        )
+        != 30
+    ):
+        raise ManifestError(
+            "unreleased disposition census does not contain exactly 30 blobs"
+        )
     payload = {
         "blobs": blobs,
         "follow_census": follow_ref,
@@ -255,12 +302,19 @@ def main() -> int:
         "semantic_deltas": {**reference(DELTAS_PATH), "count": len(deltas)},
         "source": {
             "commit": head,
-            "tooling": [{"path": path, "sha256": sha256(ROOT / path)} for path in TOOLING_PATHS],
+            "tooling": [
+                {"path": path, "sha256": sha256(ROOT / path)} for path in TOOLING_PATHS
+            ],
         },
         "tag_census": tag_ref,
     }
-    OUTPUT.write_text(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"wrote manifest for {len(blobs)} blobs and {len(payload['inventory'])} fixture files")
+    OUTPUT.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(
+        f"wrote manifest for {len(blobs)} blobs and {len(payload['inventory'])} fixture files"
+    )
     return 0
 
 
