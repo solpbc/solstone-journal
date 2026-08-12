@@ -8,12 +8,14 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::mlx::SnapshotSource as _;
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
-    lease, local_backend_choice, manifest, parakeet_target_for_install, pins,
+    lease, local_backend_choice, manifest, mlx, parakeet_target_for_install, pins,
     publish_staged_tree_with, readiness, status, write_parakeet_model_manifest,
 };
 use flate2::Compression;
@@ -2762,5 +2764,100 @@ fn two_real_processes_cannot_hold_the_same_lease() {
         serde_json::from_slice::<Value>(&fs::read(status::status_path(&root, "local")).unwrap())
             .is_ok()
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn mlx_snapshot_objects_join_on_repo_and_revision_not_filename() {
+    // Both snapshots ship files with identical names (config.json,
+    // tokenizer_config.json, model.safetensors.index.json), so a join that keyed
+    // on filename would blend the two models into one corrupt snapshot.
+    let qwen = mlx::snapshot_objects(
+        "mlx-community/Qwen3.5-9B-MLX-8bit",
+        "84f7c2deea248d8df56240f88102def51c7ed5d6",
+    );
+    let gemma = mlx::snapshot_objects(
+        "mlx-community/gemma-4-26b-a4b-it-4bit",
+        "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+    );
+    assert_eq!(qwen.len(), 13);
+    assert_eq!(gemma.len(), 12);
+    for artifact in qwen.iter().chain(gemma.iter()) {
+        assert_eq!(artifact.unit, "mlx-snapshot");
+        assert!(artifact.origin_key.starts_with("assets/mlx-snapshot/"));
+    }
+    // The shared filenames really do exist on both sides -- without that, the
+    // test above would pass for a join keyed on anything at all.
+    for shared in ["config.json", "tokenizer_config.json"] {
+        assert!(qwen.iter().any(|a| a.filename == shared));
+        assert!(gemma.iter().any(|a| a.filename == shared));
+    }
+    // Negative twin: the right repo at the wrong revision resolves to nothing.
+    assert!(
+        mlx::snapshot_objects("mlx-community/Qwen3.5-9B-MLX-8bit", "not-a-revision").is_empty()
+    );
+    assert!(mlx::snapshot_objects("mlx-community/nonexistent", "84f7c2de").is_empty());
+}
+
+#[test]
+fn mlx_origin_source_fails_closed_rather_than_leaving_an_empty_snapshot() {
+    let root = temp("mlx-fail-closed");
+    let policy = loopback_download_policy("http://127.0.0.1:1");
+    let source = mlx::OriginSnapshotSource {
+        repo: "mlx-community/nonexistent",
+        revision: "deadbeef",
+        policy: &policy,
+    };
+    let destination = root.join("snapshot");
+    let error = source.populate(&destination).unwrap_err();
+    assert!(error.contains("no registry objects"), "{error}");
+    // ⛔ The directory must not exist. An empty snapshot dir is indistinguishable
+    // from a model that legitimately has no files, which is how a silent failure
+    // would reach the publish step.
+    assert!(!destination.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn mlx_origin_source_fetches_every_object_from_the_origin_and_verifies_digests() {
+    let root = temp("mlx-origin-fetch");
+    let objects = mlx::snapshot_objects(
+        "mlx-community/gemma-4-26b-a4b-it-4bit",
+        "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+    );
+    // Serve one real registry row's bytes; the rest are never reached because the
+    // first digest mismatch aborts. That is the property under test: the fetch
+    // verifies against the pin rather than trusting the origin.
+    let artifact = objects[0];
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let requested = Arc::new(Mutex::new(Vec::new()));
+    let observed = Arc::clone(&requested);
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0_u8; 2048];
+        let read = stream.read(&mut buffer).unwrap_or(0);
+        let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+        observed.lock().unwrap().push(request);
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nwrong")
+            .unwrap();
+    });
+    let base = format!("http://{address}");
+    let policy = loopback_download_policy(&base);
+    let source = mlx::OriginSnapshotSource {
+        repo: "mlx-community/gemma-4-26b-a4b-it-4bit",
+        revision: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
+        policy: &policy,
+    };
+    let destination = root.join("snapshot");
+    let error = source.populate(&destination).unwrap_err();
+    server.join().unwrap();
+    // Wrong bytes are refused even though the server answered 200.
+    assert!(error.contains("fetch"), "{error}");
+    // And it asked the ORIGIN for that row's exact key -- never a model hub.
+    let seen = requested.lock().unwrap().join("");
+    assert!(seen.contains(artifact.origin_key), "{seen}");
+    assert!(!seen.contains("huggingface"));
     let _ = fs::remove_dir_all(root);
 }

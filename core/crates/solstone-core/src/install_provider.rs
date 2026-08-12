@@ -842,7 +842,7 @@ mod tests {
 
     fn report(severity: fit_report::FitSeverity) -> fit_report::FitReport {
         fit_report::FitReport {
-            artifact: "test",
+            artifact: "test".to_string(),
             checks: vec![fit_report::FitCheck {
                 name: "test",
                 severity,
@@ -1164,7 +1164,7 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| missing_readiness(),
             Some(fit_report::FitReport {
-                artifact: "local provider artifacts",
+                artifact: "local provider artifacts".to_string(),
                 checks: vec![fit_report::FitCheck {
                     name: "disk",
                     severity: fit_report::FitSeverity::Blocked,

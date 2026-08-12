@@ -5,13 +5,70 @@
 //! fetching can supply a populated snapshot directory; tests never need Hugging Face.
 
 use serde_json::{Map, Value, json};
+use solstone_core_assets::Artifact;
 use std::fs;
 use std::path::Path;
 
-use super::archive::verify_sha256;
+use super::archive::{self, DownloadHostPolicy, verify_sha256};
 
 pub trait SnapshotSource {
     fn populate(&self, destination: &Path) -> Result<(), String>;
+}
+
+/// The registry rows that make up one MLX snapshot.
+///
+/// Snapshot filenames are unique only within a repository, so the join is on
+/// `artifact_key` (the source repo) AND `version` (the revision), never on
+/// filename alone.
+pub fn snapshot_objects(repo: &str, revision: &str) -> Vec<&'static Artifact> {
+    solstone_core_assets::catalog()
+        .iter()
+        .filter(|artifact| {
+            artifact.unit == "mlx-snapshot"
+                && artifact.artifact_key == Some(repo)
+                && artifact.version == revision
+        })
+        .collect()
+}
+
+/// The production `SnapshotSource`: every object comes from sol pbc's own
+/// origin, one registry row at a time.
+///
+/// This is the whole point of the type. The Python path calls
+/// `huggingface_hub.snapshot_download`, which tells a model hub that an owner's
+/// journal exists; the covenant in Article 8 forbids that. Routing through
+/// `download_verified` means the single-element host allowlist and the pinned
+/// digest both apply per object, and there is no upstream host to fall back to.
+pub struct OriginSnapshotSource<'a> {
+    pub repo: &'a str,
+    pub revision: &'a str,
+    pub policy: &'a DownloadHostPolicy<'a>,
+}
+
+impl SnapshotSource for OriginSnapshotSource<'_> {
+    fn populate(&self, destination: &Path) -> Result<(), String> {
+        let objects = snapshot_objects(self.repo, self.revision);
+        // ⛔ Fail closed. An unknown repo/revision must not yield an empty
+        // directory that later reads as a successfully-populated snapshot --
+        // that is indistinguishable from a model with no files.
+        if objects.is_empty() {
+            return Err(format!(
+                "no registry objects for mlx snapshot {}@{}",
+                self.repo, self.revision
+            ));
+        }
+        fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+        for artifact in objects {
+            archive::download_verified(
+                artifact,
+                &destination.join(artifact.filename),
+                self.policy,
+                |_, _| {},
+            )
+            .map_err(|error| format!("fetch {}@{}: {error}", self.repo, artifact.filename))?;
+        }
+        Ok(())
+    }
 }
 
 pub fn validate_snapshot_sha256(root: &Path, hashes: &Map<String, Value>) -> Result<(), String> {

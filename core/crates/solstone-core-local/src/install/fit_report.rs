@@ -14,6 +14,12 @@ use crate::{Backend, BackendChoice, MemorySource, NvidiaProbe, VulkanDevice};
 
 const LOCAL_MIN_RAM_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 
+/// MLX's available-memory floor, 12.5 GiB of model plus 0.5 GiB of headroom.
+///
+/// Unlike the local arm this floor BLOCKS: Python passes `block_below_floor=True`
+/// for MLX and `False` for local, and that divergence is owner-visible.
+const MLX_AVAILABLE_FLOOR_BYTES: u64 = 13 * 1024 * 1024 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FitSeverity {
     Ok,
@@ -42,7 +48,7 @@ pub struct FitCheck {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FitReport {
-    pub artifact: &'static str,
+    pub artifact: String,
     pub checks: Vec<FitCheck>,
 }
 
@@ -121,7 +127,7 @@ pub fn build_parakeet_fit_report_with_free_bytes(
         ],
     );
     FitReport {
-        artifact: "parakeet.cpp artifacts",
+        artifact: "parakeet.cpp artifacts".to_string(),
         checks: vec![platform, disk],
     }
 }
@@ -165,7 +171,7 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
         &[],
     );
     FitReport {
-        artifact: "rf-detr.cpp artifacts",
+        artifact: "rf-detr.cpp artifacts".to_string(),
         checks: vec![platform, disk],
     }
 }
@@ -226,8 +232,123 @@ pub fn build_local_fit_report(
         ));
     }
     FitReport {
-        artifact: "local provider artifacts",
+        artifact: "local provider artifacts".to_string(),
         checks,
+    }
+}
+
+/// Host fit for an MLX model install, mirroring `fit_report.build_mlx_fit_report`.
+///
+/// Host-dependent values are injected rather than probed, matching
+/// `build_local_fit_report` and keeping this crate at the bottom of the graph.
+///
+/// `mlx_vlm_importable` is `None` when nothing has asked Python whether the
+/// package imports. Native cannot answer it without an interpreter, so the check
+/// degrades to `Unknown` rather than guessing -- the same shape Python emits when
+/// the platform is unsupported and it declines to look. The report is rendered
+/// and never gated, so an unknown here informs without deciding.
+pub fn build_mlx_fit_report(
+    model_id: &str,
+    os_name: &str,
+    arch: &str,
+    hf_cache: &Path,
+    available_disk: Result<u64, String>,
+    available_ram: Option<u64>,
+    mlx_vlm_importable: Option<bool>,
+) -> FitReport {
+    let model = pins::MLX_MODELS
+        .iter()
+        .find(|entry| entry.0 == model_id)
+        .unwrap_or(&pins::MLX_MODELS[0]);
+    let name = model.0;
+    let size = model.3;
+    let platform_supported = os_name == "darwin" && arch == "arm64";
+
+    let platform = if platform_supported {
+        FitCheck {
+            name: "platform",
+            severity: FitSeverity::Ok,
+            detail: "Apple Silicon macOS is available".to_string(),
+        }
+    } else {
+        FitCheck {
+            name: "platform",
+            severity: FitSeverity::Blocked,
+            detail: "requires Apple Silicon macOS".to_string(),
+        }
+    };
+
+    let package = if !platform_supported {
+        FitCheck {
+            name: "package",
+            severity: FitSeverity::Unknown,
+            detail: "mlx-vlm package was not checked because the platform is unsupported"
+                .to_string(),
+        }
+    } else {
+        match mlx_vlm_importable {
+            Some(true) => FitCheck {
+                name: "package",
+                severity: FitSeverity::Ok,
+                detail: "mlx-vlm package is importable".to_string(),
+            },
+            Some(false) => FitCheck {
+                name: "package",
+                severity: FitSeverity::Blocked,
+                detail: "mlx-vlm package is unavailable".to_string(),
+            },
+            None => FitCheck {
+                name: "package",
+                severity: FitSeverity::Unknown,
+                detail: "mlx-vlm package importability was not reported to the native installer"
+                    .to_string(),
+            },
+        }
+    };
+
+    let ram = mlx_ram_check(name, available_ram);
+    let known = vec![(format!("{name} snapshot"), size)];
+    let known_refs = known
+        .iter()
+        .map(|(label, size)| (label.as_str(), *size))
+        .collect::<Vec<_>>();
+    let disk = disk_check(hf_cache, available_disk, &known_refs, &[]);
+
+    FitReport {
+        artifact: format!("MLX model {name}"),
+        checks: vec![platform, package, ram, disk],
+    }
+}
+
+/// MLX's RAM check BLOCKS below the floor. `local_ram_check` warns instead --
+/// Python passes `block_below_floor=True` here and `False` there.
+fn mlx_ram_check(model_id: &str, available: Option<u64>) -> FitCheck {
+    let (severity, detail) = match available {
+        None => (
+            FitSeverity::Warning,
+            format!("available memory could not be verified for {model_id}"),
+        ),
+        Some(available) if available >= MLX_AVAILABLE_FLOOR_BYTES => (
+            FitSeverity::Ok,
+            format!(
+                "{} GB available memory meets the {} GB requirement for {model_id}",
+                gb_label(available),
+                gb_label(MLX_AVAILABLE_FLOOR_BYTES),
+            ),
+        ),
+        Some(available) => (
+            FitSeverity::Blocked,
+            format!(
+                "insufficient RAM for {model_id} (need {} GB available, have {} GB available)",
+                gb_label(MLX_AVAILABLE_FLOOR_BYTES),
+                gb_label(available),
+            ),
+        ),
+    };
+    FitCheck {
+        name: "ram",
+        severity,
+        detail,
     }
 }
 
