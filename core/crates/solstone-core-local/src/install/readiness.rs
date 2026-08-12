@@ -93,7 +93,12 @@ pub fn inspect_mlx(input: Map<String, Value>) -> Value {
     let model_id = input
         .get("model_id")
         .and_then(Value::as_str)
-        .unwrap_or("Qwen3.5-9B");
+        // MLX_MODELS[0].0, not the repo-name fragment. The literal here used to be
+        // "Qwen3.5-9B", which matches no row, so an inspect without an explicit
+        // model_id returned unsupported_model rather than the default model's
+        // readiness. Python's authority is solstone.think.models.QWEN_35_9B,
+        // which is "qwen3.5:9b".
+        .unwrap_or(pins::MLX_MODELS[0].0);
     let Some(journal) = journal else {
         return unavailable("journal_required", model_id);
     };

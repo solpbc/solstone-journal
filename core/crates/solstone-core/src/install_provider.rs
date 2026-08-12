@@ -72,7 +72,14 @@ pub fn run(options: InstallProviderOptions) -> ExitCode {
                 .unwrap()
                 .clone();
             if is_local {
-                readiness::inspect_local(input)
+                // Darwin's local provider IS MLX. Inspecting the llama.cpp
+                // installation there would report on an artifact set that
+                // platform never installs.
+                if normalized_os(std::env::consts::OS) == "darwin" {
+                    readiness::inspect_mlx(input)
+                } else {
+                    readiness::inspect_local(input)
+                }
             } else {
                 readiness::inspect_parakeet(input)
             }
@@ -255,11 +262,24 @@ fn install_parakeet(
 }
 
 fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
-    let envelope = dispatch(
-        InstallVerb::RunLocal,
-        json!({"journal": journal.display().to_string()}),
-    )
-    .map_err(Box::new)?;
+    // On Darwin the local provider is an MLX snapshot, so this dispatches RunMlx
+    // with no source_snapshot -- which is what makes the install fetch from sol
+    // pbc's own origin rather than from a model hub.
+    let (verb, payload) = if normalized_os(std::env::consts::OS) == "darwin" {
+        (
+            InstallVerb::RunMlx,
+            json!({
+                "journal": journal.display().to_string(),
+                "model_id": pins::MLX_MODELS[0].0,
+            }),
+        )
+    } else {
+        (
+            InstallVerb::RunLocal,
+            json!({"journal": journal.display().to_string()}),
+        )
+    };
+    let envelope = dispatch(verb, payload).map_err(Box::new)?;
     Ok(envelope
         .result
         .expect("successful install dispatch has a result"))
@@ -314,9 +334,6 @@ where
             };
         }
     };
-    if os_name == "darwin" {
-        return InstallProviderOutcome::failure(EXIT_UNAVAILABLE, LOCAL_DARWIN_UNAVAILABLE);
-    }
     let readiness = readiness_provider(&journal);
     let mut stderr = vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()];
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
@@ -388,7 +405,7 @@ where
     }
     let report = match report_override {
         Some(report) => report,
-        None => match build_local_report(&journal, os_name, arch) {
+        None => match build_platform_report(&journal, os_name, arch) {
             Ok(report) => report,
             Err(error) => {
                 stderr.push(error);
@@ -430,6 +447,30 @@ where
         }
         Err(error) => install_failure(&journal, "local", *error, stderr),
     }
+}
+
+/// Darwin's local provider is MLX; every other platform's is llama.cpp. Routing
+/// here rather than at the call site keeps the one skeleton for both, which is
+/// what makes the Darwin path testable by the same criteria as the Linux one.
+fn build_platform_report(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> Result<fit_report::FitReport, String> {
+    if os_name == "darwin" {
+        return Ok(fit_report::build_mlx_fit_report(
+            pins::MLX_MODELS[0].0,
+            os_name,
+            arch,
+            &pins::cache_root(journal),
+            fit_report::free_bytes(&pins::cache_root(journal)),
+            available_memory_bytes(),
+            // Native cannot answer this without an interpreter, and asking one
+            // would defeat the point of the native path. It degrades to Unknown.
+            None,
+        ));
+    }
+    build_local_report(journal, os_name, arch)
 }
 
 fn build_local_report(
@@ -1332,20 +1373,60 @@ mod tests {
     }
 
     #[test]
-    fn local_darwin_refusal_is_a_deliberate_python_parity_divergence() {
-        // Python on Darwin routes to _install_mlx_local() and installs; native
-        // local deliberately refuses because the native pool has no mac host.
+    fn local_darwin_reaches_the_mlx_installer_instead_of_refusing() {
+        // This asserted the opposite until 2026-08-12: native local refused on
+        // Darwin, on the stated grounds that "the native pool has no mac host".
+        // That was a claim about the hopper POOL, not about the platform -- the
+        // refusal made Python the only way to install a local provider on a mac,
+        // and Python's route calls huggingface_hub.snapshot_download.
         let journal = tempfile::tempdir().unwrap();
+        let installed = std::cell::Cell::new(false);
         let local = run_local_inner_with_platform(
             || Ok(journal.path().to_path_buf()),
-            |_| panic!("Darwin must not inspect readiness"),
+            |_| missing_readiness(),
             None,
-            |_| panic!("Darwin must not install"),
+            |_| {
+                installed.set(true);
+                Ok(json!({"status": {"install_state": "installed"}}))
+            },
             "darwin",
             "arm64",
         );
-        assert_eq!(local.exit_code, EXIT_UNAVAILABLE);
-        assert_eq!(local.stderr, [LOCAL_DARWIN_UNAVAILABLE]);
+        assert!(installed.get(), "Darwin must reach the installer");
+        assert_eq!(local.exit_code, 0);
+        // ⛔ The refusal string must not survive anywhere in the output. Asserting
+        // only on exit code would pass if the refusal moved to a later branch.
+        assert!(
+            !local
+                .stderr
+                .iter()
+                .any(|line| line.contains("unavailable on Darwin")),
+            "{:?}",
+            local.stderr
+        );
+    }
+
+    #[test]
+    fn darwin_fit_report_names_the_mlx_model_and_linux_does_not() {
+        // The report builder is the seam that decides which artifact set an owner
+        // is told about. If Darwin fell back to the llama.cpp builder it would
+        // report on artifacts that platform never installs -- and the exit code
+        // would look identical.
+        let journal = tempfile::tempdir().unwrap();
+        let darwin =
+            build_platform_report(journal.path(), "darwin", "arm64").expect("darwin report builds");
+        assert!(
+            darwin.artifact.contains("MLX"),
+            "darwin artifact: {}",
+            darwin.artifact
+        );
+        let linux =
+            build_platform_report(journal.path(), "linux", "x86_64").expect("linux report builds");
+        assert!(
+            !linux.artifact.contains("MLX"),
+            "linux artifact: {}",
+            linux.artifact
+        );
     }
 
     #[test]
