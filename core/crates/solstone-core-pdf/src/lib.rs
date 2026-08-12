@@ -1046,7 +1046,16 @@ fn positive_env_int(name: &str, default: u64) -> Result<Option<u64>, String> {
     Ok((value > 0).then_some(value))
 }
 
-fn set_limit(kind: libc::__rlimit_resource_t, limit: u64) -> Result<(), String> {
+/// `getrlimit`/`setrlimit` take a different resource type per platform: Linux
+/// declares `__rlimit_resource_t` (u32), Darwin declares plain `c_int`. Naming
+/// the Linux type unconditionally is what kept this crate -- and therefore the
+/// whole workspace build -- from compiling on macOS at all.
+#[cfg(target_os = "linux")]
+type RlimitResource = libc::__rlimit_resource_t;
+#[cfg(not(target_os = "linux"))]
+type RlimitResource = libc::c_int;
+
+fn set_limit(kind: RlimitResource, limit: u64) -> Result<(), String> {
     let mut current = libc::rlimit {
         rlim_cur: 0,
         rlim_max: 0,
