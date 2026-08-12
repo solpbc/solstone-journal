@@ -410,7 +410,7 @@ CLI commands, a native `native/authority.toml` plus `native/command.rs`.
 | Installation | `doctor` |
 | Help | `help`, `chat` |
 
-`solstone-core install-provider parakeet` is native beside the existing Python-backed `journal install-provider` route; both remain live during cutover.
+`solstone-core install-provider local` and `solstone-core install-provider parakeet` are native beside the existing Python-backed `journal install-provider` route; all remain live during cutover.
 
 `reprocess` is the on-demand reprocess command: process-now by default; `--from-scratch` re-runs already-complete units and, with `--through`, can queue an inclusive past-day range.
 

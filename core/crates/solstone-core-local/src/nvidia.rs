@@ -29,6 +29,15 @@ pub enum Backend {
     Vulkan,
 }
 
+/// The source used for GPU-memory tiering. This stays structured so callers do
+/// not create incompatible display spellings for the same probe fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemorySource {
+    Unavailable,
+    NvidiaVram,
+    SystemAvailable,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendChoice {
     pub backend: Backend,
@@ -109,6 +118,16 @@ pub fn probe_nvidia_gpu() -> NvidiaProbe {
 }
 
 impl NvidiaProbe {
+    pub fn memory_source(&self) -> MemorySource {
+        if self.vram_mib.is_some() {
+            MemorySource::NvidiaVram
+        } else if self.unified_memory_mib.is_some() {
+            MemorySource::SystemAvailable
+        } else {
+            MemorySource::Unavailable
+        }
+    }
+
     fn undetected(probe_error: String) -> Self {
         Self {
             schema: NVIDIA_PROBE_SCHEMA.to_string(),
