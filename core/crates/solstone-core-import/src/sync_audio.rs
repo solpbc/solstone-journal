@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 
 use crate::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
-use crate::sync_plaud::{ImportPipeline, PipelineOutcome, SyncClock};
+use crate::sync_plaud::{
+    ImportPipeline, PipelineAuto, PipelineImportRequest, PipelineOutcome, SyncClock,
+};
 use crate::sync_state::{BackendName, SyncState, SyncStateRead, read_sync_state, write_sync_state};
 
 /// One audio candidate supplied by the caller-owned directory scanner.
@@ -246,10 +248,12 @@ fn sync<M>(
     let mut downloaded = 0;
     let mut items = Vec::new();
     for candidate in available {
-        let result =
-            seams
-                .pipeline
-                .import_one(&candidate.source, "audio", auto_enabled(&request.auto));
+        let result = seams.pipeline.import_one(PipelineImportRequest {
+            source: &candidate.source,
+            source_kind: "audio",
+            timestamp: None,
+            auto: pipeline_auto(&request.auto),
+        });
         let entry = state
             .files_mut()
             .get_mut(&candidate.relative_path)
@@ -301,6 +305,10 @@ fn sync<M>(
     })
 }
 
-fn auto_enabled(auto: &AudioAuto) -> bool {
-    !matches!(auto, AudioAuto::Disabled)
+fn pipeline_auto(auto: &AudioAuto) -> PipelineAuto<'_> {
+    match auto {
+        AudioAuto::Enabled => PipelineAuto::Enabled,
+        AudioAuto::Disabled => PipelineAuto::Disabled,
+        AudioAuto::Value(value) => PipelineAuto::Value(value),
+    }
 }

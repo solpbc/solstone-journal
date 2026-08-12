@@ -3,15 +3,19 @@
 
 //! Plaud catalogue and save orchestration behind caller-owned seams.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use chrono::{Local, TimeZone};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::create_directory_with_mode;
 
 use crate::contract::{SyncPreviewRequest, SyncSaveRequest};
 use crate::sync_state::{BackendName, SyncState, SyncStateRead, read_sync_state, write_sync_state};
+
+const MIN_DURATION_MS: i64 = 30_000;
 
 /// Caller-owned Plaud access credential. It is never persisted or rendered.
 pub trait PlaudCredential {
@@ -23,27 +27,72 @@ pub trait PlaudCredential {
 pub struct PlaudFile {
     pub id: String,
     pub filename: String,
+    pub fullname: String,
     pub filesize: u64,
-    pub start_time: String,
-    pub trashed: bool,
+    /// Epoch seconds or milliseconds, as supplied by Plaud.
+    pub start_time: i64,
+    /// Recording duration in milliseconds.
+    pub duration: i64,
+    pub is_trash: bool,
 }
 
-/// A caller-owned HTTP failure with safe, credential-free detail.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PlaudHttpError {
-    pub message: String,
+/// A safe, closed description of a Plaud operation failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlaudFailureKind {
+    Catalogue,
+    TemporaryUrl,
+    Download,
+    Pipeline,
 }
 
-/// Injected catalogue, temporary-URL, and streaming-download transport.
-pub trait PlaudHttp {
-    fn list_files(&mut self, token: &str) -> Result<Vec<PlaudFile>, PlaudHttpError>;
-    fn temporary_url(&mut self, token: &str, file_id: &str) -> Result<String, PlaudHttpError>;
-    fn download(&mut self, url: &str, destination: &Path) -> Result<(), PlaudHttpError>;
+impl PlaudFailureKind {
+    const fn message(self) -> &'static str {
+        match self {
+            Self::Catalogue => "catalogue failed",
+            Self::TemporaryUrl => "failed to get download URL",
+            Self::Download => "download failed",
+            Self::Pipeline => "import failed",
+        }
+    }
+}
+
+/// Injected remote catalogue operation. Preview authority stops at this trait.
+pub trait PlaudCatalogue {
+    fn list_files(&mut self, token: &str) -> Result<Vec<PlaudFile>, PlaudFailureKind>;
+}
+
+/// Injected temporary-URL and streaming-download operations, available only to save.
+pub trait PlaudDownload {
+    fn temporary_url(&mut self, token: &str, file_id: &str) -> Result<String, PlaudFailureKind>;
+    fn download(&mut self, url: &str, destination: &Path) -> Result<(), PlaudFailureKind>;
+}
+
+/// Caller-owned match against prior import metadata.
+pub trait PlaudManifestLookup {
+    /// Return the import timestamp for each matched remote file ID.
+    fn matching_imports(&self, files: &[PlaudFile]) -> Result<BTreeMap<String, String>, String>;
 }
 
 /// Sync time is caller owned.
 pub trait SyncClock {
     fn now(&self) -> String;
+}
+
+/// Auto value forwarded to the already-ported import pipeline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PipelineAuto<'a> {
+    Enabled,
+    Disabled,
+    Value(&'a str),
+}
+
+/// One already-approved pipeline import operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PipelineImportRequest<'a> {
+    pub source: &'a Path,
+    pub source_kind: &'static str,
+    pub timestamp: Option<&'a str>,
+    pub auto: PipelineAuto<'a>,
 }
 
 /// Result returned by the already-ported import pipeline seam.
@@ -57,19 +106,37 @@ pub enum PipelineOutcome {
 
 /// The import pipeline standing in for Python `import_one`.
 pub trait ImportPipeline {
-    fn import_one(
-        &mut self,
-        source: &Path,
-        source_kind: &str,
-        auto: bool,
-    ) -> Result<PipelineOutcome, String>;
+    fn import_one(&mut self, request: PipelineImportRequest<'_>)
+    -> Result<PipelineOutcome, String>;
 }
 
-/// Named caller-owned seams for Plaud sync.
-pub struct PlaudSyncSeams<'a> {
+/// Durable-state publication seam for Plaud catalogue and progress checkpoints.
+pub trait PlaudStateWriter {
+    fn checkpoint(&mut self, journal_root: &Path, state: &SyncState) -> Result<(), String>;
+}
+
+/// Production state publication through the private atomic state writer.
+pub struct FilesystemPlaudStateWriter;
+
+impl PlaudStateWriter for FilesystemPlaudStateWriter {
+    fn checkpoint(&mut self, journal_root: &Path, state: &SyncState) -> Result<(), String> {
+        write_sync_state(journal_root, state).map_err(|error| error.to_string())
+    }
+}
+
+/// Named seams that preview may use. They contain no download or import authority.
+pub struct PlaudPreviewSeams<'a> {
     pub credential: &'a dyn PlaudCredential,
-    pub http: &'a mut dyn PlaudHttp,
+    pub catalogue: &'a mut dyn PlaudCatalogue,
+    pub manifests: &'a dyn PlaudManifestLookup,
     pub clock: &'a dyn SyncClock,
+    pub state_writer: &'a mut dyn PlaudStateWriter,
+}
+
+/// Named save seams, extending preview authority with download and pipeline access.
+pub struct PlaudSaveSeams<'a> {
+    pub preview: PlaudPreviewSeams<'a>,
+    pub download: &'a mut dyn PlaudDownload,
     pub pipeline: &'a mut dyn ImportPipeline,
 }
 
@@ -97,25 +164,22 @@ pub struct PlaudSyncOutcome {
     pub errors: Vec<String>,
 }
 
-/// Named Plaud sync failure.
+/// Named Plaud sync failure with no transport detail.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PlaudSyncError {
     MissingCredential,
-    Http {
-        operation: &'static str,
-        message: String,
-    },
-    State {
-        message: String,
-    },
+    Operation(PlaudFailureKind),
+    Manifest { message: String },
+    State { message: String },
 }
 
 impl fmt::Display for PlaudSyncError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingCredential => formatter.write_str("Plaud credential is not configured"),
-            Self::Http { operation, message } => {
-                write!(formatter, "Plaud {operation} failed: {message}")
+            Self::Operation(kind) => write!(formatter, "Plaud {}", kind.message()),
+            Self::Manifest { message } => {
+                write!(formatter, "Plaud import matching failed: {message}")
             }
             Self::State { message } => write!(formatter, "Plaud sync state failed: {message}"),
         }
@@ -127,38 +191,129 @@ impl std::error::Error for PlaudSyncError {}
 /// Catalogue without downloading or importing.
 pub fn sync_plaud_preview(
     request: &PlaudSyncRequest<SyncPreviewRequest>,
-    seams: &mut PlaudSyncSeams<'_>,
+    seams: &mut PlaudPreviewSeams<'_>,
 ) -> Result<PlaudSyncOutcome, PlaudSyncError> {
-    catalog(request, seams, false)
+    let catalogued = catalogue(request, seams)?;
+    seams
+        .state_writer
+        .checkpoint(&request.journal_root, &catalogued.state)
+        .map_err(state_error)?;
+    Ok(PlaudSyncOutcome {
+        state: catalogued.state,
+        downloaded: 0,
+        errors: Vec::new(),
+    })
 }
 
 /// Catalogue then perform each available file's one-shot save operation.
 pub fn sync_plaud_save(
     request: &PlaudSyncRequest<SyncSaveRequest>,
-    seams: &mut PlaudSyncSeams<'_>,
+    seams: &mut PlaudSaveSeams<'_>,
 ) -> Result<PlaudSyncOutcome, PlaudSyncError> {
-    catalog(request, seams, true)
+    let mut catalogued = catalogue(request, &mut seams.preview)?;
+    let token = seams
+        .preview
+        .credential
+        .access_token()
+        .ok_or(PlaudSyncError::MissingCredential)?;
+    catalogued.available.sort_by(|left, right| {
+        right
+            .start_time
+            .cmp(&left.start_time)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+
+    let mut downloaded = 0;
+    let mut errors = Vec::new();
+    for file in catalogued.available {
+        let result = import_file(&file, token, &request.journal_root, seams);
+        let entry = catalogued
+            .state
+            .files_mut()
+            .get_mut(&file.id)
+            .and_then(Value::as_object_mut)
+            .expect("catalogued file exists");
+        match result {
+            Ok(timestamp) => {
+                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
+                entry.insert("import_timestamp".to_owned(), Value::String(timestamp));
+                entry.insert(
+                    "imported_at".to_owned(),
+                    Value::String(seams.preview.clock.now()),
+                );
+                entry.remove("last_error");
+                downloaded += 1;
+                seams
+                    .preview
+                    .state_writer
+                    .checkpoint(&request.journal_root, &catalogued.state)
+                    .map_err(state_error)?;
+            }
+            Err(kind) => {
+                entry.insert("status".to_owned(), Value::String("available".to_owned()));
+                entry.insert(
+                    "last_error".to_owned(),
+                    Value::String(kind.message().to_owned()),
+                );
+                errors.push(format!("{}: {}", file.filename, kind.message()));
+            }
+        }
+    }
+    seams
+        .preview
+        .state_writer
+        .checkpoint(&request.journal_root, &catalogued.state)
+        .map_err(state_error)?;
+    Ok(PlaudSyncOutcome {
+        state: catalogued.state,
+        downloaded,
+        errors,
+    })
 }
 
-fn catalog<M>(
+struct CataloguedPlaud {
+    state: SyncState,
+    available: Vec<PlaudFile>,
+}
+
+fn catalogue<M>(
     request: &PlaudSyncRequest<M>,
-    seams: &mut PlaudSyncSeams<'_>,
-    save: bool,
-) -> Result<PlaudSyncOutcome, PlaudSyncError> {
+    seams: &mut PlaudPreviewSeams<'_>,
+) -> Result<CataloguedPlaud, PlaudSyncError> {
     let token = seams
         .credential
         .access_token()
         .ok_or(PlaudSyncError::MissingCredential)?;
     let remote = seams
-        .http
+        .catalogue
         .list_files(token)
-        .map_err(|error| http_error("catalogue", error))?;
+        .map_err(PlaudSyncError::Operation)?;
     let mut state = match read_sync_state(&request.journal_root, BackendName::Plaud) {
         SyncStateRead::Loaded(state) => state,
         SyncStateRead::Absent | SyncStateRead::Unreadable { .. } => {
             SyncState::empty(BackendName::Plaud)
         }
     };
+    let needs_matching = remote
+        .iter()
+        .filter(|file| {
+            state
+                .root()
+                .get("files")
+                .and_then(Value::as_object)
+                .and_then(|files| files.get(&file.id))
+                .and_then(Value::as_object)
+                .is_none_or(|entry| {
+                    entry.get("status") == Some(&Value::String("available".to_owned()))
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let matches = seams
+        .manifests
+        .matching_imports(&needs_matching)
+        .map_err(|message| PlaudSyncError::Manifest { message })?;
+
     let mut available = Vec::new();
     for file in remote {
         let entry = state
@@ -166,19 +321,48 @@ fn catalog<M>(
             .entry(file.id.clone())
             .or_insert_with(|| Value::Object(Map::new()));
         let object = entry.as_object_mut().expect("sync-state files are objects");
+        let existed = !object.is_empty();
         object.insert("filename".to_owned(), Value::String(file.filename.clone()));
         object.insert("filesize".to_owned(), Value::from(file.filesize));
-        object.insert(
-            "start_time".to_owned(),
-            Value::String(file.start_time.clone()),
-        );
-        if file.trashed {
+        if existed {
+            if object.get("status") == Some(&Value::String("available".to_owned()))
+                && let Some(timestamp) = matches.get(&file.id)
+            {
+                object.insert("status".to_owned(), Value::String("imported".to_owned()));
+                object.insert(
+                    "import_timestamp".to_owned(),
+                    Value::String(timestamp.clone()),
+                );
+                object.insert("matched_at".to_owned(), Value::String(seams.clock.now()));
+                object.remove("last_error");
+            }
+            continue;
+        }
+
+        object.insert("fullname".to_owned(), Value::String(file.fullname.clone()));
+        object.insert("start_time".to_owned(), Value::from(file.start_time));
+        object.insert("duration".to_owned(), Value::from(file.duration));
+        object.insert("is_trash".to_owned(), Value::Bool(file.is_trash));
+        if let Some(timestamp) = matches.get(&file.id) {
+            object.insert("status".to_owned(), Value::String("imported".to_owned()));
+            object.insert(
+                "import_timestamp".to_owned(),
+                Value::String(timestamp.clone()),
+            );
+            object.insert("matched_at".to_owned(), Value::String(seams.clock.now()));
+        } else if file.is_trash {
             object.insert("status".to_owned(), Value::String("skipped".to_owned()));
             object.insert(
                 "skip_reason".to_owned(),
                 Value::String("trashed".to_owned()),
             );
-        } else if object.get("status") != Some(&Value::String("imported".to_owned())) {
+        } else if file.duration > 0 && file.duration < MIN_DURATION_MS {
+            object.insert("status".to_owned(), Value::String("skipped".to_owned()));
+            object.insert(
+                "skip_reason".to_owned(),
+                Value::String("too_short".to_owned()),
+            );
+        } else {
             object.insert("status".to_owned(), Value::String("available".to_owned()));
             available.push(file);
         }
@@ -186,87 +370,85 @@ fn catalog<M>(
     state
         .root_mut()
         .insert("last_sync".to_owned(), Value::String(seams.clock.now()));
-    if !save {
-        write_sync_state(&request.journal_root, &state).map_err(state_error)?;
-        return Ok(PlaudSyncOutcome {
-            state,
-            downloaded: 0,
-            errors: Vec::new(),
-        });
-    }
-
-    let destination_dir = request.journal_root.join("imports").join("plaud");
-    create_directory_with_mode(&destination_dir, 0o700).map_err(|error| PlaudSyncError::State {
-        message: error.to_string(),
-    })?;
-    let mut downloaded = 0;
-    let mut errors = Vec::new();
-    for file in available {
-        let result = import_file(&file, token, &destination_dir, seams);
-        let entry = state
-            .files_mut()
-            .get_mut(&file.id)
-            .and_then(Value::as_object_mut)
-            .expect("catalogued file exists");
-        match result {
-            Ok(()) => {
-                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
-                entry.insert("imported_at".to_owned(), Value::String(seams.clock.now()));
-                entry.remove("last_error");
-                downloaded += 1;
-                write_sync_state(&request.journal_root, &state).map_err(state_error)?;
-            }
-            Err(message) => {
-                entry.insert("status".to_owned(), Value::String("available".to_owned()));
-                entry.insert("last_error".to_owned(), Value::String(message.clone()));
-                errors.push(format!("{}: {message}", file.filename));
-            }
-        }
-    }
-    write_sync_state(&request.journal_root, &state).map_err(state_error)?;
-    Ok(PlaudSyncOutcome {
-        state,
-        downloaded,
-        errors,
-    })
+    Ok(CataloguedPlaud { state, available })
 }
 
 fn import_file(
     file: &PlaudFile,
     token: &str,
-    destination_dir: &Path,
-    seams: &mut PlaudSyncSeams<'_>,
-) -> Result<(), String> {
-    let url = seams
-        .http
-        .temporary_url(token, &file.id)
-        .map_err(|error| error.message)?;
-    let destination = destination_dir.join(&file.id);
-    seams
-        .http
-        .download(&url, &destination)
-        .map_err(|error| error.message)?;
-    match seams
-        .pipeline
-        .import_one(&destination, "plaud", true)
-        .map_err(|error| error.to_string())?
-    {
-        PipelineOutcome::Imported => Ok(()),
-        PipelineOutcome::Skipped { reason } => Err(format!("import skipped: {reason}")),
-        PipelineOutcome::NoResult => Err("import returned no result".to_owned()),
-        PipelineOutcome::Unrecognized => Err("import returned unrecognized result".to_owned()),
+    journal_root: &Path,
+    seams: &mut PlaudSaveSeams<'_>,
+) -> Result<String, PlaudFailureKind> {
+    let timestamp = import_timestamp(file.start_time).ok_or(PlaudFailureKind::Pipeline)?;
+    let destination_dir = journal_root.join("imports").join(&timestamp);
+    create_directory_with_mode(&destination_dir, 0o700).map_err(|_| PlaudFailureKind::Download)?;
+    let url = seams.download.temporary_url(token, &file.id)?;
+    let destination = destination_dir.join(destination_name(file));
+    seams.download.download(&url, &destination)?;
+    match seams.pipeline.import_one(PipelineImportRequest {
+        source: &destination,
+        source_kind: "plaud",
+        timestamp: Some(&timestamp),
+        auto: PipelineAuto::Enabled,
+    }) {
+        Ok(PipelineOutcome::Imported) => Ok(timestamp),
+        Ok(PipelineOutcome::Skipped { .. })
+        | Ok(PipelineOutcome::NoResult)
+        | Ok(PipelineOutcome::Unrecognized)
+        | Err(_) => Err(PlaudFailureKind::Pipeline),
     }
 }
 
-fn http_error(operation: &'static str, error: PlaudHttpError) -> PlaudSyncError {
-    PlaudSyncError::Http {
-        operation,
-        message: error.message,
+fn import_timestamp(start_time: i64) -> Option<String> {
+    if start_time <= 0 {
+        return None;
+    }
+    let seconds = if start_time > 1_000_000_000_000 {
+        start_time / 1000
+    } else {
+        start_time
+    };
+    Local
+        .timestamp_opt(seconds, 0)
+        .single()
+        .map(|timestamp| timestamp.format("%Y%m%d_%H%M%S").to_string())
+}
+
+fn destination_name(file: &PlaudFile) -> String {
+    let extension = Path::new(&file.fullname)
+        .extension()
+        .filter(|extension| !extension.is_empty())
+        .map(|extension| format!(".{}", extension.to_string_lossy()))
+        .unwrap_or_else(|| ".opus".to_owned());
+    format!("{}{}", sanitize_filename(&file.filename), extension)
+}
+
+fn sanitize_filename(filename: &str) -> String {
+    let mut rendered = String::new();
+    let mut separator = false;
+    for character in filename.chars() {
+        let replacement = matches!(
+            character,
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+        );
+        if replacement || character.is_whitespace() || character == '_' {
+            if !separator {
+                rendered.push('_');
+                separator = true;
+            }
+        } else {
+            rendered.push(character);
+            separator = false;
+        }
+    }
+    let trimmed = rendered.trim_matches('_');
+    if trimmed.is_empty() {
+        "unnamed".to_owned()
+    } else {
+        trimmed.to_owned()
     }
 }
 
-fn state_error(error: impl fmt::Display) -> PlaudSyncError {
-    PlaudSyncError::State {
-        message: error.to_string(),
-    }
+fn state_error(message: String) -> PlaudSyncError {
+    PlaudSyncError::State { message }
 }
