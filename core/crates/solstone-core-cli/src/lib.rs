@@ -22,7 +22,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core contract <build|check> ...\n",
     "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
-    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n",
+    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n",
     "  solstone-core streams [args...]\n",
     "  solstone-core segment [args...]\n",
     "  solstone-core journal-stats [args...]\n",
@@ -570,6 +570,7 @@ pub enum Command {
     InstallModels(InstallModelsOptions),
     InstallModelsUsage,
     InstallModelsHelp,
+    InstallProvider(InstallProviderOptions),
     Convey(ConveyOptions),
     ConveyHelp,
     ConveyUsage(ConveyUsageError),
@@ -640,6 +641,11 @@ pub struct InstallModelsOptions {
     pub check: bool,
     pub force: bool,
     pub variant: InstallModelsVariant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallProviderOptions {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1236,6 +1242,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             }
             Ok(parse_install_models(rest)
                 .map_or(Command::InstallModelsUsage, Command::InstallModels))
+        }
+        [command, rest @ ..] if command == OsStr::new("install-provider") => {
+            parse_install_provider(rest).map(Command::InstallProvider)
         }
         [command, rest @ ..] if command == OsStr::new("convey") => match parse_convey(rest) {
             Ok(ConveyParse::Run(options)) => Ok(Command::Convey(options)),
@@ -2725,6 +2734,15 @@ fn parse_install_models(args: &[OsString]) -> Result<InstallModelsOptions, Usage
         check,
         force,
         variant,
+    })
+}
+
+fn parse_install_provider(args: &[OsString]) -> Result<InstallProviderOptions, UsageError> {
+    let [name] = args else {
+        return Err(UsageError);
+    };
+    Ok(InstallProviderOptions {
+        name: name.to_str().ok_or(UsageError)?.to_owned(),
     })
 }
 
@@ -5175,6 +5193,7 @@ mod tests {
             "export",
             "facet-candidates",
             "install-models",
+            "install-provider",
             "streams",
             "segment",
             "journal-stats",
@@ -5330,6 +5349,25 @@ mod tests {
                 Ok(Command::CheckHelp),
                 "{values:?}"
             );
+        }
+    }
+
+    #[test]
+    fn parses_install_provider_name_without_validating_it() {
+        for name in ["parakeet", "local", "bogus"] {
+            assert_eq!(
+                evaluate_args(&args(&["install-provider", name])),
+                Ok(Command::InstallProvider(InstallProviderOptions {
+                    name: name.to_owned(),
+                })),
+                "{name}"
+            );
+        }
+        for values in [
+            &["install-provider"][..],
+            &["install-provider", "parakeet", "extra"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
         }
     }
 

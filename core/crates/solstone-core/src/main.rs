@@ -46,6 +46,7 @@ mod contract;
 mod facet_candidates;
 mod identity;
 mod install_models;
+mod install_provider;
 mod navigate;
 mod settings;
 mod supervisor;
@@ -171,6 +172,7 @@ fn main() -> ExitCode {
             print!("{INSTALL_MODELS_HELP}");
             ExitCode::SUCCESS
         }
+        Ok(Command::InstallProvider(options)) => install_provider::run(options),
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::ConveyHelp) => {
             print!("{CONVEY_HELP}");
