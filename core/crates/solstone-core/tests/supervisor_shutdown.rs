@@ -51,7 +51,7 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
             panic!("{context}: {reason}; {}", metrics.describe());
         }
         WaitOutcome::Inconclusive(metrics) => {
-            panic!("{context}: {}", metrics.describe());
+            panic!("W4B_INCONCLUSIVE {context}: {}", metrics.describe());
         }
     }
 }
@@ -241,7 +241,12 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
             match child.0.try_wait() {
                 Ok(Some(exited)) => {
                     status = Some(exited);
-                    PollState::Held
+                    if ready_removed.is_some() && pid_removed.is_some() && socket_removed.is_some()
+                    {
+                        PollState::Held
+                    } else {
+                        PollState::Pending
+                    }
                 }
                 Ok(None) => PollState::Pending,
                 Err(error) => PollState::HardFail(format!("supervisor status: {error}")),

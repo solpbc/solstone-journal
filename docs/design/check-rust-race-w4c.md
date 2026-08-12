@@ -398,6 +398,14 @@ execution.
    vector and existing serialization guard unchanged.
 6. docs/testing.md: the narrow future-test convention.
 
+## Operational constraint: Hopper fleet contention
+
+⚠ Do not run `make check-rust-race` on a host concurrently running the Hopper
+fleet. The synthetic busy-spin workers plus parallel Cargo test processes have
+disrupted sibling Hopper lodes on this host in three observed implementation
+attempts. The exact mechanism is not established; treat the stress target as a
+host-exclusive operation.
+
 ## 14. Unrelated state
 
 The prior solstone-core-convey-shell clippy authorization_gate red appeared

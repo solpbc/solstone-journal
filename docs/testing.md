@@ -41,6 +41,10 @@ test that writes, scans, or rebuilds journal/index state must use the
   iOS canary, and dependency policy
 - `make check-differentials` runs Rust tests that compare behavior with the
   Python implementation; use it when a change touches a shared seam
+- New concurrency-sensitive supervisor integration tests must use
+  `core/crates/solstone-core/tests/support/await_outcome.rs`, emit the
+  `W4B_INCONCLUSIVE` marker when that helper returns an inconclusive outcome,
+  and join `RUST_RACE_TEST_TARGETS` so `make check-rust-race` covers them.
 - Run Python tests directly with `pytest`, for example `pytest tests/test_doctor.py`
   or `pytest solstone/apps/my_app/tests/`
 - The former Python Make targets, including `make test-cov`, `make test-app`,

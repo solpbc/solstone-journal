@@ -4,6 +4,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::future::Future;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -14,13 +15,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::time::timeout;
 
 #[allow(dead_code)]
 #[path = "support/await_outcome.rs"]
 mod await_outcome;
 
-use await_outcome::{PollState, WaitOutcome, WaitPolarity, await_outcome, await_outcome_async};
+use await_outcome::{
+    PollState, WaitMetrics, WaitOutcome, WaitPolarity, await_outcome, await_outcome_async,
+};
 
 struct TempJournal(PathBuf);
 
@@ -97,7 +99,7 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
             panic!("{context}: {reason}; {}", metrics.describe());
         }
         WaitOutcome::Inconclusive(metrics) => {
-            panic!("{context}: {}", metrics.describe());
+            panic!("W4B_INCONCLUSIVE {context}: {}", metrics.describe());
         }
     }
 }
@@ -229,28 +231,32 @@ async fn receive_until(
     reference: &str,
     event: &str,
 ) -> Value {
-    timeout(Duration::from_secs(8), async {
-        loop {
-            let mut line = String::new();
-            let bytes = reader
-                .read_line(&mut line)
-                .await
-                .expect("read Callosum frame");
-            assert!(
-                bytes > 0,
-                "the connection closed before supervisor {event} event for {reference}"
-            );
-            let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
-            if value["tract"] == "supervisor"
-                && value["event"] == event
-                && value["ref"] == reference
-            {
-                return value;
+    await_bounded_read(
+        "expected Callosum event",
+        Duration::from_millis(10),
+        800,
+        async {
+            loop {
+                let mut line = String::new();
+                let bytes = reader
+                    .read_line(&mut line)
+                    .await
+                    .expect("read Callosum frame");
+                assert!(
+                    bytes > 0,
+                    "the connection closed before supervisor {event} event for {reference}"
+                );
+                let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
+                if value["tract"] == "supervisor"
+                    && value["event"] == event
+                    && value["ref"] == reference
+                {
+                    return value;
+                }
             }
-        }
-    })
+        },
+    )
     .await
-    .expect("expected Callosum event")
 }
 
 async fn receive_started_command(
@@ -260,25 +266,29 @@ async fn receive_started_command(
     // The budget is deliberately generous because the journal fixture reaches
     // the test child through PATH and a shell exec; a tight budget here would
     // report a slow fork as a supervisor defect. This applies to every caller.
-    timeout(Duration::from_secs(20), async {
-        loop {
-            let mut line = String::new();
-            let bytes = reader.read_line(&mut line).await.expect("started frame");
-            assert!(
-                bytes > 0,
-                "the connection closed before supervisor started frame"
-            );
-            let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
-            if value["tract"] == "supervisor"
-                && value["event"] == "started"
-                && value["cmd"] == json!(command)
-            {
-                return value;
+    await_bounded_read(
+        "handler task start",
+        Duration::from_millis(10),
+        2_000,
+        async {
+            loop {
+                let mut line = String::new();
+                let bytes = reader.read_line(&mut line).await.expect("started frame");
+                assert!(
+                    bytes > 0,
+                    "the connection closed before supervisor started frame"
+                );
+                let value: Value = serde_json::from_str(&line).expect("Callosum JSON");
+                if value["tract"] == "supervisor"
+                    && value["event"] == "started"
+                    && value["cmd"] == json!(command)
+                {
+                    return value;
+                }
             }
-        }
-    })
+        },
+    )
     .await
-    .expect("handler task start")
 }
 
 async fn wait_for_path(path: &Path) {
@@ -407,6 +417,51 @@ async fn receive_restarting(
     }
 }
 
+// A dilation-aware alternative to tokio::time::timeout for waits this file
+// cannot express as a synchronous poll closure (an async socket read). It
+// preserves each call site's exact interval*iterations budget and reuses
+// WaitMetrics::dilation() so an expiry caused by scheduler starvation under
+// check-rust-race's synthetic load reports W4B_INCONCLUSIVE instead of an
+// ordinary panic, while a genuine hang (dilation below the shared 1.10x
+// threshold cited in docs/design/check-rust-race-w4c.md) still reports FAILED.
+async fn await_bounded_read<T>(
+    context: &str,
+    interval: Duration,
+    iterations: usize,
+    operation: impl Future<Output = T>,
+) -> T {
+    tokio::pin!(operation);
+    let requested = interval.saturating_mul(iterations as u32);
+    let started = Instant::now();
+    for _ in 0..iterations {
+        tokio::select! {
+            value = &mut operation => return value,
+            _ = tokio::time::sleep(interval) => {}
+        }
+    }
+    panic_for_wait(
+        context,
+        wait_outcome_from_dilation(context, requested, started.elapsed()),
+    );
+    unreachable!("panic_for_wait always panics for a non-Passed outcome")
+}
+
+// Mirrors support/await_outcome.rs's own DILATION_NUMERATOR/DILATION_DENOMINATOR
+// (11/10, cited in docs/design/check-rust-race-w4c.md #1) without touching that
+// trusted, untouched file: WaitTracker::is_dilated is private and not reusable.
+fn wait_outcome_from_dilation(reason: &str, requested: Duration, slept: Duration) -> WaitOutcome {
+    const DILATION_THRESHOLD: f64 = 11.0 / 10.0;
+    let metrics = WaitMetrics { requested, slept };
+    if metrics.dilation() >= DILATION_THRESHOLD {
+        WaitOutcome::Inconclusive(metrics)
+    } else {
+        WaitOutcome::Failed {
+            reason: format!("{reason} exhausted before completion"),
+            metrics,
+        }
+    }
+}
+
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
@@ -470,9 +525,13 @@ async fn status_reader_reports_closed_callosum_connection() {
     drop(write);
     let task = tokio::spawn(async move {
         let mut reader = reader;
-        let _ = timeout(Duration::from_secs(8), receive_status(&mut reader))
-            .await
-            .expect("status broadcast");
+        let _ = await_bounded_read(
+            "supervisor status event",
+            Duration::from_millis(10),
+            800,
+            receive_status(&mut reader),
+        )
+        .await;
     });
     let panic = task
         .await
@@ -491,9 +550,13 @@ async fn timeout_history_reader_reports_closed_callosum_connection() {
     drop(write);
     let task = tokio::spawn(async move {
         let mut reader = reader;
-        let _ = timeout(Duration::from_secs(8), receive_timeout_history(&mut reader))
-            .await
-            .expect("timeout history projection");
+        let _ = await_bounded_read(
+            "timeout-history status event",
+            Duration::from_millis(10),
+            800,
+            receive_timeout_history(&mut reader),
+        )
+        .await;
     });
     let panic = task
         .await
@@ -514,9 +577,13 @@ async fn restarting_reader_reports_closed_callosum_connection() {
     drop(write);
     let task = tokio::spawn(async move {
         let mut reader = reader;
-        let _ = timeout(Duration::from_secs(8), receive_restarting(&mut reader))
-            .await
-            .expect("restart notification");
+        let _ = await_bounded_read(
+            "restarting notification",
+            Duration::from_millis(10),
+            800,
+            receive_restarting(&mut reader),
+        )
+        .await;
     });
     let panic = task
         .await
@@ -599,9 +666,13 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, _write) = connect(&socket).await;
-    let status = timeout(Duration::from_secs(8), receive_status(&mut reader))
-        .await
-        .expect("status broadcast");
+    let status = await_bounded_read(
+        "supervisor status event",
+        Duration::from_millis(10),
+        800,
+        receive_status(&mut reader),
+    )
+    .await;
     let names = status["services"]
         .as_array()
         .expect("service projection")
@@ -666,9 +737,13 @@ async fn ac11_capped_task_is_terminated_with_timeout_exit() {
         json!(-15),
         "deadline termination is surfaced as timeout exit"
     );
-    let status = timeout(Duration::from_secs(8), receive_timeout_history(&mut reader))
-        .await
-        .expect("timeout history projection");
+    let status = await_bounded_read(
+        "timeout-history status event",
+        Duration::from_millis(10),
+        800,
+        receive_timeout_history(&mut reader),
+    )
+    .await;
     assert!(status["recent_tasks"].is_array());
 }
 
@@ -835,9 +910,13 @@ async fn restart_message_restarts_convey_fixture() {
         json!({"tract": "supervisor", "event": "restart", "service": "convey"}),
     )
     .await;
-    let restarting = timeout(Duration::from_secs(8), receive_restarting(&mut reader))
-        .await
-        .expect("restart notification");
+    let restarting = await_bounded_read(
+        "restarting notification",
+        Duration::from_millis(10),
+        800,
+        receive_restarting(&mut reader),
+    )
+    .await;
     assert_eq!(restarting["service"], "convey");
     assert_eq!(restarting["pid"], previous_pid);
 

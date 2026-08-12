@@ -61,6 +61,11 @@ name = "solstone-core-system-test-child"
 path = "../solstone-core-system/src/bin/solstone_system_test_child.rs"
 test = false
 
+[[bin]]
+name = "solstone-core-race-classifier"
+path = "tests/bin/race_classifier.rs"
+test = false
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
