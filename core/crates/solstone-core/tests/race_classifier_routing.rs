@@ -11,8 +11,7 @@ mod race_classification;
 use race_classification::{RaceVerdict, classify};
 
 const SIGKILL_FIXTURE: &str = include_str!("fixtures/cargo-test-sigkill-supervisor-tick.txt");
-const REAL_MARKED_FIXTURE: &str =
-    include_str!("fixtures/cargo-test-real-marked-inconclusive.txt");
+const REAL_MARKED_FIXTURE: &str = include_str!("fixtures/cargo-test-real-marked-inconclusive.txt");
 
 #[test]
 fn successful_cargo_run_is_green() {

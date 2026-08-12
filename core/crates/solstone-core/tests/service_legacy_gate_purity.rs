@@ -17,8 +17,8 @@ fn repository_root() -> PathBuf {
 #[test]
 fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
     let root = repository_root();
-    let workspace = fs::read_to_string(root.join("core/Cargo.toml"))
-        .expect("root Cargo manifest reads");
+    let workspace =
+        fs::read_to_string(root.join("core/Cargo.toml")).expect("root Cargo manifest reads");
     let members = workspace
         .split_once("members = [")
         .and_then(|(_, tail)| tail.split_once("]\n"))
@@ -65,14 +65,11 @@ fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
         );
     }
     assert!(
-        workspace.contains(
-            "exclude = [\"crates/solstone-core-service-legacy-evidence\"]"
-        ),
+        workspace.contains("exclude = [\"crates/solstone-core-service-legacy-evidence\"]"),
         "root workspace must explicitly exclude the standalone evidence crate"
     );
 
-    let standalone =
-        root.join("core/crates/solstone-core-service-legacy-evidence/Cargo.toml");
+    let standalone = root.join("core/crates/solstone-core-service-legacy-evidence/Cargo.toml");
     let standalone_text = fs::read_to_string(&standalone).expect("standalone manifest reads");
     assert!(standalone_text.contains("[workspace]"));
     assert!(!standalone_text.contains("workspace = true"));
@@ -98,10 +95,7 @@ fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
     let metadata: Value = serde_json::from_slice(&output.stdout).expect("metadata JSON parses");
     let packages = metadata["packages"].as_array().expect("packages array");
     assert_eq!(packages.len(), 1);
-    assert_eq!(
-        packages[0]["name"],
-        "solstone-core-service-legacy-evidence"
-    );
+    assert_eq!(packages[0]["name"], "solstone-core-service-legacy-evidence");
 
     let makefile = fs::read_to_string(root.join("Makefile")).expect("Makefile reads");
     assert!(makefile.contains("check-service-legacy-evidence:"));
