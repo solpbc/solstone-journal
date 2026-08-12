@@ -38,7 +38,16 @@ fn check_never_reaches_a_sibling_or_path_interpreter() {
         .output()
         .expect("run check");
     let stdout = String::from_utf8(output.stdout).expect("UTF-8 verdict");
-    for name in ["platform", "gpu", "ram", "disk"] {
+    // The verdict's check set is platform-specific: Linux emits a Vulkan/nvidia
+    // `gpu` row and a `ram` row, macOS emits a single `memory` row instead
+    // (`check.py::_linux_gpu_check` vs `_macos_memory_check`). Asserting the
+    // Linux set everywhere fails on Darwin against a correct verdict.
+    let expected: &[&str] = if cfg!(target_os = "macos") {
+        &["platform", "memory", "disk"]
+    } else {
+        &["platform", "gpu", "ram", "disk"]
+    };
+    for name in expected {
         assert!(
             stdout.contains(&format!("\"name\": \"{name}\"")),
             "missing {name}: {stdout}"
