@@ -285,7 +285,7 @@ fn make_ci_never_executes_forbidden_interpreters() {
     if cfg!(target_os = "macos") {
         expected.push("check");
     }
-    expected.push("check");
+    expected.extend(["check"; 2]);
     expected.extend(["fetch", "deny"]);
     assert_eq!(
         cargo_subcommands, expected,

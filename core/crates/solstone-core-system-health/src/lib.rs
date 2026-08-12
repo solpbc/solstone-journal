@@ -9,9 +9,11 @@ mod completion;
 mod data_state;
 mod error;
 mod event;
+mod grep_compile;
 mod maint;
 mod progress;
 mod read;
+mod safe_text;
 mod scan;
 mod source;
 mod terminal;
@@ -29,8 +31,10 @@ pub use completion::{
 pub use data_state::derive_modality_state;
 pub use error::HealthError;
 pub use event::{EventPayload, HealthEvent, RunLogRecord};
+pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern};
 pub use maint::{MaintTaskState, MaintTaskStatus, read_maint_task_state, read_maint_task_states};
 pub use progress::read_segment_progress;
+pub use safe_text::sanitize_for_terminal;
 pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
 pub use source::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthLogSource, SegmentSource,
