@@ -39,11 +39,9 @@ impl std::error::Error for ImportSourcesError {}
 /// One source module name and its reserved skeleton seam.
 pub type ModuleStub = (&'static str, fn() -> Result<(), ImportSourcesError>);
 
-/// The complete skeleton importer source-module inventory.
+/// The remaining importer source modules with reserved skeleton seams.
 pub const MODULE_STUBS: &[ModuleStub] = &[
     ("registry", registry::reserved_seam),
-    ("ics", ics::reserved_seam),
-    ("obsidian", obsidian::reserved_seam),
     ("chatgpt", chatgpt::reserved_seam),
     ("claude", claude::reserved_seam),
     ("gemini", gemini::reserved_seam),

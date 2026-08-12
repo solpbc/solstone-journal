@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,6 +19,9 @@ use solstone_core_import_sources::MODULE_STUBS;
 use solstone_core_import_sources::image::{
     DescriptionOutcome, ProgressUpdate, WireClient, import_image,
 };
+use solstone_core_import_sources::{ics, obsidian};
+use zip::ZipWriter;
+use zip::write::SimpleFileOptions;
 
 static NEXT_TREE: AtomicUsize = AtomicUsize::new(0);
 
@@ -201,6 +206,99 @@ fn unavailable_description_doors_preserve_the_installed_original() {
         assert!(model.lines().all(|line| line.starts_with('>')));
         assert!(!header.contains(reason));
         assert!(model.contains(reason));
+    }
+}
+
+#[test]
+fn implemented_source_reads_leave_the_owner_source_unchanged() {
+    let tree = TempTree::new();
+    let archive = tree.path().join("source-immutable/calendar.zip");
+    let vault = tree.path().join("source-immutable/vault");
+    fs::create_dir_all(&vault).unwrap();
+    write_calendar_archive(&archive);
+    fs::create_dir(vault.join(".obsidian")).unwrap();
+    fs::write(vault.join(".obsidian/app.json"), "{}").unwrap();
+    fs::write(vault.join("2024-01-02.md"), "# Daily\n[[Source Topic]]\n").unwrap();
+    fs::write(vault.join("Reference.md"), "# Reference\n").unwrap();
+    let before_metadata = metadata_snapshot(tree.path());
+
+    let report = observe_source_immutability(tree.path(), |_| {
+        assert!(ics::detect(&archive));
+        let events = ics::parse_events(&archive).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(ics::preview(&archive).unwrap().item_count, 1);
+        assert!(!ics::attendee_entities(&events).is_empty());
+
+        assert!(obsidian::detect(&vault));
+        let notes = obsidian::collect_notes(&vault).unwrap();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(obsidian::preview(&vault).unwrap().item_count, 2);
+        assert!(!obsidian::wikilink_entities(&notes).is_empty());
+    })
+    .unwrap();
+
+    assert!(!report.violated());
+    assert_eq!(metadata_snapshot(tree.path()), before_metadata);
+}
+
+fn write_calendar_archive(path: &Path) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let file = fs::File::create(path).unwrap();
+    let mut archive = ZipWriter::new(file);
+    archive
+        .start_file("calendar.ics", SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20260102T120000Z\r\nATTENDEE;CN=Source Placeholder:mailto:source@example.test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+        .unwrap();
+    archive.finish().unwrap();
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct SourceMetadata {
+    length: u64,
+    modified: std::time::SystemTime,
+    #[cfg(unix)]
+    mode: u32,
+    #[cfg(unix)]
+    inode: u64,
+}
+
+fn metadata_snapshot(root: &Path) -> BTreeMap<PathBuf, SourceMetadata> {
+    let mut snapshot = BTreeMap::new();
+    collect_metadata(root, root, &mut snapshot);
+    snapshot
+}
+
+fn collect_metadata(
+    root: &Path,
+    directory: &Path,
+    snapshot: &mut BTreeMap<PathBuf, SourceMetadata>,
+) {
+    for entry in fs::read_dir(directory).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        snapshot.insert(
+            path.strip_prefix(root).unwrap().to_path_buf(),
+            SourceMetadata {
+                length: metadata.len(),
+                modified: metadata.modified().unwrap(),
+                #[cfg(unix)]
+                mode: {
+                    use std::os::unix::fs::MetadataExt;
+                    metadata.mode()
+                },
+                #[cfg(unix)]
+                inode: {
+                    use std::os::unix::fs::MetadataExt;
+                    metadata.ino()
+                },
+            },
+        );
+        if metadata.is_dir() {
+            collect_metadata(root, &path, snapshot);
+        }
     }
 }
 
