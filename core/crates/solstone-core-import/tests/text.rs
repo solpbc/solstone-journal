@@ -395,14 +395,17 @@ fn ac8_unsupported_extension_is_rejected() {
 }
 
 #[test]
-fn boundary_refusal_returns_empty_and_wire_failures_propagate_by_phase() {
+fn boundary_refusal_is_named_and_wire_failures_propagate_by_phase() {
     let (_temporary, source, day) = setup();
+    // A refusal means no boundary was decided, so nothing can be written. Returning an empty
+    // success here printed a completion banner over an import that wrote no file at all, which
+    // an owner cannot tell apart from a transcript that genuinely had no segments. Measured on
+    // a real journal: exit 0, "segments=0", and nothing on disk anywhere.
     let boundary_refusal = RecordingWire::new(vec![refused()]);
-    assert!(
-        run(&source, &day, &boundary_refusal, None)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(matches!(
+        run(&source, &day, &boundary_refusal, None),
+        Err(TextImportError::SegmentationUnavailable)
+    ));
 
     let boundary_failure = RecordingWire::new(vec![Err(ClientError::Io("down".to_owned()))]);
     assert!(matches!(

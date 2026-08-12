@@ -303,9 +303,9 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                 },
                 Case {
                     args: vec![path(&inputs.text), "20260311_120000".to_owned()],
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Generic text import complete:",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    contains: "generic text import requires a native segmentation adapter",
                 },
                 Case {
                     args: vec![

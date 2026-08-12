@@ -100,9 +100,9 @@ const MODE_CASES: &[ModeCase] = &[
             (
                 Invocation::GenericText,
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Generic text import complete:",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "generic text import requires a native segmentation adapter",
                 },
             ),
             (
