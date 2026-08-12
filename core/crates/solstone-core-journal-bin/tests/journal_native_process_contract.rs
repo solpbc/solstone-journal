@@ -30,6 +30,9 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
 const CHECK_USAGE_ANCHOR: &[u8] = CHECK_USAGE.as_bytes();
 const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
+const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: journal convey [-h] --port PORT [-v] [-d]\n";
+const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
+    b"usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n";
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
 
@@ -66,6 +69,18 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: None,
+    },
+    Probe {
+        token: "convey",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(CONVEY_USAGE_ANCHOR),
+    },
+    Probe {
+        token: "restart-convey",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(RESTART_CONVEY_USAGE_ANCHOR),
     },
     // Doctor's invalid-argument path exits 2 only after the sibling recognizes
     // the verb and emits its owner-facing usage. If the doctor arm were absent,
