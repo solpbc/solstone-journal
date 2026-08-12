@@ -569,98 +569,324 @@ mod tests {
 
     #[test]
     fn local_builder_matrix_has_nineteen_constructible_branches() {
-        let platform = [
-            local_artifact_key("linux", "x86_64"),
-            local_artifact_key("linux", "riscv64"),
-        ];
-        let ram = [None, Some(LOCAL_MIN_RAM_BYTES), Some(1)];
-        let disk = [
-            Err("disk unavailable".to_owned()),
-            Ok(1),
-            Ok(20_u64 * 1024 * 1024 * 1024),
-            Ok(20_u64 * 1024 * 1024 * 1024),
-        ];
+        let mut executed = 0;
+        let mut assert_branch =
+            |report: FitReport, name: &str, severity: FitSeverity, detail: String| {
+                let check = report
+                    .checks
+                    .iter()
+                    .find(|check| check.name == name)
+                    .expect("builder includes checked branch");
+                assert_eq!(check.severity, severity, "{name}");
+                assert_eq!(check.detail, detail, "{name}");
+                executed += 1;
+            };
+        let available = 20_u64 * 1024 * 1024 * 1024;
         let cuda = choice(Backend::Cuda);
         let vulkan = choice(Backend::Vulkan);
-        let gpu = [
-            local_gpu_check(
+        let required = local_model_downloads("local/qwen3.5-4b")
+            .iter()
+            .map(|(_, size)| size)
+            .sum::<u64>();
+        let unknown = "unknown download size for llama-server tarball";
+        let cpu_suffix = format!("; {}", crate::vulkan::CPU_PLACEMENT_COPY);
+
+        assert_branch(
+            local_report(
                 &probe(false, None, None),
-                &cuda,
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "platform",
+            FitSeverity::Ok,
+            "pinned llama-server artifact is available for x86_64-unknown-linux-gnu".to_owned(),
+        );
+        assert_branch(
+            build_local_fit_report(
+                Path::new("/journal"),
+                "local/qwen3.5-4b",
+                "linux",
+                "riscv64",
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                &probe(false, None, None),
+                &vulkan,
                 true,
                 &[device()],
                 None,
                 false,
             ),
-            local_gpu_check(
+            "platform",
+            FitSeverity::Blocked,
+            "No pinned llama-server artifact for platform riscv64-unknown-linux-gnu".to_owned(),
+        );
+
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                None,
+                true,
+                &[device()],
+                false,
+            ),
+            "ram",
+            FitSeverity::Warning,
+            "available memory could not be verified for local/qwen3.5-4b".to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "ram",
+            FitSeverity::Ok,
+            "8 GB available memory meets the 8 GB requirement for local/qwen3.5-4b".to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(1),
+                true,
+                &[device()],
+                false,
+            ),
+            "ram",
+            FitSeverity::Warning,
+            "insufficient RAM for local/qwen3.5-4b (need 8 GB available, have 0 GB available)"
+                .to_owned(),
+        );
+
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Err("disk unavailable".to_owned()),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "disk",
+            FitSeverity::Unknown,
+            format!(
+                "available disk space could not be verified at /journal/cache/providers/local: disk unavailable; {unknown}"
+            ),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(1),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "disk",
+            FitSeverity::Blocked,
+            format!(
+                "insufficient disk space for known downloads (need {} GB, have 0 GB free): GGUF model, mmproj; {unknown}",
+                gb_label(required),
+            ),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "disk",
+            FitSeverity::Warning,
+            format!(
+                "{} GB free; known downloads need {} GB; {unknown}",
+                gb_label(available),
+                gb_label(required),
+            ),
+        );
+        let cuda_required = required + pins::cuda_pin("x86_64-unknown-linux-gnu").unwrap().2;
+        assert_branch(
+            local_report(
+                &probe(true, Some(6144), None),
+                &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "disk",
+            FitSeverity::Ok,
+            format!(
+                "{} GB free for {} GB known downloads",
+                gb_label(available),
+                gb_label(cuda_required),
+            ),
+        );
+
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "gpu",
+            FitSeverity::Unknown,
+            "NVIDIA GPU probe unavailable; resolved backend is cuda: test choice".to_owned(),
+        );
+        assert_branch(
+            local_report(
                 &probe(true, None, None),
                 &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
                 true,
                 &[device()],
-                None,
                 false,
             ),
-            local_gpu_check(
-                &probe(true, Some(6144), None),
-                &cuda,
-                true,
-                &[device()],
-                None,
-                false,
-            ),
-            local_gpu_check(
-                &probe(true, Some(6144), None),
-                &cuda,
-                true,
-                &[device()],
-                None,
-                true,
-            ),
-            local_gpu_check(
-                &probe(true, None, Some(6144)),
-                &cuda,
-                true,
-                &[device()],
-                None,
-                false,
-            ),
-            local_gpu_check(
-                &probe(true, None, Some(6144)),
-                &cuda,
-                true,
-                &[device()],
-                None,
-                true,
-            ),
-            local_gpu_check(
-                &probe(false, None, None),
-                &vulkan,
-                false,
-                &[device()],
-                None,
-                false,
-            ),
-            local_gpu_check(&probe(false, None, None), &vulkan, true, &[], None, false),
-            local_gpu_check(
-                &probe(false, None, None),
-                &vulkan,
-                true,
-                &[device()],
-                None,
-                false,
-            ),
-            local_gpu_check(
-                &probe(false, None, None),
-                &vulkan,
-                true,
-                &[device()],
-                None,
-                true,
-            ),
-        ];
-        assert_eq!(
-            platform.len() + ram.len() + disk.len() + gpu.len(),
-            BUILDER_BRANCH_COUNT
+            "gpu",
+            FitSeverity::Unknown,
+            "resolved backend is cuda: test choice; GPU memory is unknown".to_owned(),
         );
+        assert_branch(
+            local_report(
+                &probe(true, Some(6144), None),
+                &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "gpu",
+            FitSeverity::Ok,
+            "CUDA backend selected: test choice".to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(true, Some(6144), None),
+                &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                true,
+            ),
+            "gpu",
+            FitSeverity::Ok,
+            format!("CUDA backend selected: test choice{cpu_suffix}"),
+        );
+        assert_branch(
+            local_report(
+                &probe(true, None, Some(6144)),
+                &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "gpu",
+            FitSeverity::Ok,
+            "CUDA backend selected: test choice; GPU tiering memory uses system MemAvailable"
+                .to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(true, None, Some(6144)),
+                &cuda,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                true,
+            ),
+            "gpu",
+            FitSeverity::Ok,
+            format!(
+                "CUDA backend selected: test choice; GPU tiering memory uses system MemAvailable{cpu_suffix}"
+            ),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                false,
+                &[device()],
+                false,
+            ),
+            "gpu",
+            FitSeverity::Unknown,
+            "Vulkan GPU probe did not complete; resolved backend is vulkan: test choice".to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[],
+                false,
+            ),
+            "gpu",
+            FitSeverity::Warning,
+            "no hardware Vulkan GPU selected; resolved backend is vulkan: test choice".to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                false,
+            ),
+            "gpu",
+            FitSeverity::Ok,
+            "Vulkan GPU selected: Test GPU; resolved backend is vulkan: test choice".to_owned(),
+        );
+        assert_branch(
+            local_report(
+                &probe(false, None, None),
+                &vulkan,
+                Ok(available),
+                Some(LOCAL_MIN_RAM_BYTES),
+                true,
+                &[device()],
+                true,
+            ),
+            "gpu",
+            FitSeverity::Ok,
+            format!(
+                "Vulkan GPU selected: Test GPU; resolved backend is vulkan: test choice{cpu_suffix}"
+            ),
+        );
+
+        assert_eq!(executed, BUILDER_BRANCH_COUNT);
         assert_eq!(END_TO_END_BRANCH_COUNT, BUILDER_BRANCH_COUNT - 1);
     }
 

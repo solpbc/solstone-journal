@@ -35,8 +35,6 @@ def run(case):
     backend = case.get('backend', 'vulkan')
     detected = case.get('detected', False)
     source = case.get('source', 'unavailable')
-    vram = case.get('vram')
-    unified = case.get('unified')
     devices = [] if case.get('devices') == 'none' else [local_vulkan.VulkanDevice(0, 'Test GPU', local_vulkan.VK_TYPE_DISCRETE, 6144)]
     local_install.llama_server_artifact_key = lambda: key
     if case.get('platform_blocked'):
@@ -48,7 +46,7 @@ def run(case):
     local_install.cuda_server_pin = lambda: object()
     local_install.cuda_artifact_pin_for_current_platform = lambda _pin: SimpleNamespace(size_bytes=550238443) if case.get('cuda_pin', False) else None
     local_install.gpu_device_override = lambda: None
-    local_cuda.probe_nvidia_gpu = lambda: SimpleNamespace(detected=detected, memory_source=source, vram_mib=vram, tiering_memory_mib=unified)
+    local_cuda.probe_nvidia_gpu = lambda: SimpleNamespace(detected=detected, memory_source=source, vram_mib=case.get('vram'), tiering_memory_mib=case.get('unified'))
     local_cuda.resolve_local_backend = lambda _pin: SimpleNamespace(backend=backend, reason='test choice')
     local_vulkan.detect_gpus = lambda: list(devices)
     local_vulkan.gpu_probe_ok = lambda: case.get('probe_ok', True)
@@ -199,6 +197,11 @@ fn local_fit_report_matches_python_for_each_reachable_branch() {
         String::from_utf8_lossy(&output.stderr)
     );
     let python: Vec<(String, String)> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        python.len(),
+        cases.len(),
+        "Python result count must cover every case"
+    );
     for (case, (python_severity, python_detail)) in cases.iter().zip(python) {
         let (native_severity, native_detail) = native(case);
         assert_eq!(native_severity, severity(&python_severity), "{case}");
