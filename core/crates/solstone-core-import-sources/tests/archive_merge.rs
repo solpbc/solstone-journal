@@ -6,10 +6,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     load_all_journal_entities, read_journal_principal, save_entity_identity,
 };
+use solstone_core_facets::{save_facet_entity_link, save_observations};
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, EntityDispositionKind, PrincipalAdoption, RetryDisposition,
     SegmentDispositionKind, merge_journal_archive,
@@ -278,6 +279,95 @@ fn facet_logs_and_activities_are_idempotent_on_retry() {
 }
 
 #[test]
+fn idless_activity_rows_are_idempotent_on_retry() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(source.join("facets/work/activities")).unwrap();
+    fs::write(
+        source.join("facets/work/activities/idless.jsonl"),
+        b"{\"summary\":\"no id\"}\n",
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+    let options = options(&tree);
+
+    merge_journal_archive(&archive, &target, &options, None).unwrap();
+    let activity_path = target.join("facets/work/activities/idless.jsonl");
+    let before = fs::read(&activity_path).unwrap();
+    let retry = merge_journal_archive(&archive, &target, &options, None).unwrap();
+
+    assert_eq!(fs::read(&activity_path).unwrap(), before);
+    assert_eq!(retry.retry_disposition, RetryDisposition::IdempotentNoop);
+}
+
+#[test]
+fn existing_facet_merges_entity_links_and_observations() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    let target_fields = Map::from_iter([("role".to_owned(), Value::String("owner".to_owned()))]);
+    save_facet_entity_link(&target, "work", "existing", "existing", &target_fields).unwrap();
+
+    let source_fields = Map::from_iter([("role".to_owned(), Value::String("member".to_owned()))]);
+    save_facet_entity_link(
+        &source,
+        "work",
+        "from-archive",
+        "from-archive",
+        &source_fields,
+    )
+    .unwrap();
+    save_observations(
+        &source,
+        "work",
+        "from-archive",
+        &[json!({"content":"from archive", "observed_at":"2026-08-11"})],
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    let link: Value = serde_json::from_slice(
+        &fs::read(target.join("facets/work/entities/from-archive/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["entity_id"], "from-archive");
+    assert_eq!(link["role"], "member");
+    let observations =
+        fs::read_to_string(target.join("facets/work/entities/from-archive/observations.jsonl"))
+            .unwrap();
+    assert!(observations.contains("from archive"));
+}
+
+#[test]
+fn staged_entity_id_cannot_escape_the_staging_root() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for id in ["first", "second"] {
+        save_entity_identity(
+            &target,
+            id,
+            &json!({"id":id,"name":"Ambiguous Name","type":"Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    fs::create_dir_all(source.join("entities/safe")).unwrap();
+    fs::write(
+        source.join("entities/safe/entity.json"),
+        br#"{"id":"../../../../escape","name":"Ambiguous Name","type":"Person"}"#,
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+
+    let error = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap_err();
+    assert!(matches!(error, ImportSourcesError::StagingWrite { .. }));
+    assert!(!tree.path.join("escape.json").exists());
+}
+
+#[test]
 fn new_principal_claim_conflict_is_reported_without_adopting_the_claim() {
     let tree = TempTree::new();
     let source = tree.path.join("source");
@@ -323,6 +413,33 @@ fn new_principal_claim_conflict_is_reported_without_adopting_the_claim() {
     let collision = result.principal_collision.unwrap();
     assert_eq!(collision.target_entity_id, "owner");
     assert_eq!(collision.source_entity_id, "new-person");
+}
+
+#[test]
+fn same_name_principal_claim_reports_collision() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    save_entity_identity(
+        &target,
+        "owner",
+        &json!({"id":"owner","name":"Shared Name","type":"Person","is_principal":true}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &source,
+        "source-principal",
+        &json!({"id":"source-principal","name":"Shared Name","type":"Person","is_principal":true}),
+        None,
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    let collision = result.principal_collision.unwrap();
+    assert_eq!(collision.target_entity_id, "owner");
+    assert_eq!(collision.source_entity_id, "source-principal");
 }
 
 fn options(tree: &TempTree) -> ArchiveMergeOptions {

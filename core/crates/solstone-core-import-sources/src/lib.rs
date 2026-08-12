@@ -54,6 +54,7 @@ pub enum ImportSourcesError {
         detail: String,
     },
     ArchiveEntryEncrypted {
+        phase: ArchiveSafetyPhase,
         entry: String,
     },
     ArchiveUnsafeEntry {
@@ -137,8 +138,8 @@ impl fmt::Display for ImportSourcesError {
             Self::ArchiveInvalid { path, detail } => {
                 write!(formatter, "invalid archive {}: {detail}", path.display())
             }
-            Self::ArchiveEntryEncrypted { entry } => {
-                write!(formatter, "archive entry is encrypted: {entry}")
+            Self::ArchiveEntryEncrypted { phase, entry } => {
+                write!(formatter, "encrypted archive entry during {phase}: {entry}")
             }
             Self::ArchiveUnsafeEntry {
                 phase,

@@ -24,8 +24,8 @@ use solstone_core_facets::{
     write_news_file,
 };
 use solstone_core_journal_io::{
-    DEFAULT_STREAM, LockError, LockOptions, PathOrDay, StagedDirOptions, append_jsonl, hold_lock,
-    iter_segments, publish_staged_dir,
+    DEFAULT_STREAM, LockError, LockOptions, PathOrDay, StagedDirOptions, append_jsonl,
+    contained_path, hold_lock, iter_segments, publish_staged_dir,
 };
 use zip::ZipArchive;
 
@@ -285,7 +285,10 @@ fn validate_archive(
             ArchiveSafetyPhase::Validation,
         )?;
         let normalized = Path::new(entry.name());
-        if let Some(Component::Normal(first)) = normalized.components().next() {
+        if let Some(Component::Normal(first)) = normalized.components().next()
+            && first != "__MACOSX"
+            && first != ".DS_Store"
+        {
             root_candidates.insert(first.to_os_string());
         }
         if !entry.is_dir() {
@@ -318,6 +321,7 @@ fn validate_entry(
 ) -> Result<(), ImportSourcesError> {
     if encrypted {
         return Err(ImportSourcesError::ArchiveEntryEncrypted {
+            phase,
             entry: name.to_owned(),
         });
     }
@@ -422,6 +426,8 @@ fn extract_archive(
                     extraction_dir: run_dir.to_path_buf(),
                     detail: error.to_string(),
                 })?;
+        // With stable archive bytes this duplicates validation; it detects entries that change
+        // between validation's read and this extraction read.
         if let Err(error) = validate_entry(
             entry.name(),
             entry.unix_mode(),
@@ -777,7 +783,10 @@ fn merge_entities(
                 } else {
                     PrincipalAdoption::RefusedOnNameMatch
                 };
-                if source_claims_principal && target_principal.is_some() && !target_is_principal {
+                if source_claims_principal
+                    && target_principal.is_some()
+                    && state.principal_collision.is_none()
+                {
                     state.principal_collision = Some(PrincipalCollision {
                         target_entity_id: target_principal
                             .as_ref()
@@ -804,6 +813,9 @@ fn merge_entities(
                 } else {
                     state.summary.entities_skipped += 1;
                 }
+                // A committed-log failure after this point can abort without returning the
+                // disposition despite the durable entity write above; keep this narrow risk
+                // explicit until decision logging gains a recoverable commit protocol.
                 state.decision(
                     "committed",
                     "entities",
@@ -935,7 +947,13 @@ fn stage_entity(
         path: state.staging_path.clone(),
         detail: error.to_string(),
     })?;
-    let path = state.staging_path.join(format!("{source_id}.json"));
+    let path =
+        contained_path(&state.staging_path, &format!("{source_id}.json")).map_err(|error| {
+            ImportSourcesError::StagingWrite {
+                path: state.staging_path.clone(),
+                detail: error.to_string(),
+            }
+        })?;
     state.decision(
         "prepared",
         "entities",
@@ -1020,12 +1038,12 @@ fn merge_facet_relationships(
     facet: &str,
     state: &mut MergeState,
 ) -> Result<(), ImportSourcesError> {
-    let relationships = source.join("facets").join(facet).join("relationships");
-    if !relationships.is_dir() {
+    let entities = source.join("facets").join(facet).join("entities");
+    if !entities.is_dir() {
         return Ok(());
     }
     for source_relationship in
-        sorted_dirs(&relationships).map_err(|error| ImportSourcesError::FacetMerge {
+        sorted_dirs(&entities).map_err(|error| ImportSourcesError::FacetMerge {
             facet: facet.to_owned(),
             detail: error.to_string(),
         })?
@@ -1257,8 +1275,9 @@ fn dedupe_jsonl(target: &str, source: &str) -> String {
     for line in target.lines().chain(source.lines()) {
         let key = serde_json::from_str::<Value>(line)
             .ok()
-            .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
-        if key.as_ref().is_none_or(|key| seen.insert(key.clone())) {
+            .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned))
+            .unwrap_or_else(|| line.to_owned());
+        if seen.insert(key) {
             rows.push(line);
         }
     }

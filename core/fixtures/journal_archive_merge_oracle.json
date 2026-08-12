@@ -7,12 +7,57 @@
     "why_v2": "v1 was captured at write_structured_import, which this verb NEVER CALLS and which has no production caller at all. It was captured WITH A PASSING CONTROL, and the control certified the wrong seam \u2014 a control validates the instrument, not the instrument's relevance."
   },
   "scenario": "target journal holds a same-named entity and NO principal; archive carries a different John Smith who IS a principal",
-  "owner_entity_before": { "id": "john-smith-owner", "name": "John Smith", "type": "Person", "emails": ["owner@example.invalid"] },
-  "archive_entity": { "id": "john-smith", "name": "John Smith", "type": "Person", "is_principal": true, "emails": ["stranger@example.invalid"], "aka": ["Johnny Other"] },
-  "owner_entity_after": { "id": "john-smith-owner", "name": "John Smith", "type": "Person", "emails": ["owner@example.invalid", "stranger@example.invalid"], "aka": ["Johnny Other"] },
+  "owner_entity_before": {
+    "id": "john-smith-owner",
+    "name": "John Smith",
+    "type": "Person",
+    "emails": [
+      "owner@example.invalid"
+    ]
+  },
+  "archive_entity": {
+    "id": "john-smith",
+    "name": "John Smith",
+    "type": "Person",
+    "is_principal": true,
+    "emails": [
+      "stranger@example.invalid"
+    ],
+    "aka": [
+      "Johnny Other"
+    ]
+  },
+  "owner_entity_after": {
+    "id": "john-smith-owner",
+    "name": "John Smith",
+    "type": "Person",
+    "emails": [
+      "owner@example.invalid",
+      "stranger@example.invalid"
+    ],
+    "aka": [
+      "Johnny Other"
+    ]
+  },
   "result": {
-    "entries_written": 1, "entities_seeded": 0, "principal_collision": null, "errors": [],
-    "merge_summary": { "segments_copied": 1, "segments_skipped": 0, "segments_errored": 0, "entities_created": 0, "entities_merged": 1, "entities_skipped": 0, "entities_staged": 0, "facets_created": 0, "facets_merged": 0, "imports_copied": 0, "imports_skipped": 0, "errors": [] }
+    "entries_written": 1,
+    "entities_seeded": 0,
+    "principal_collision": null,
+    "errors": [],
+    "merge_summary": {
+      "segments_copied": 1,
+      "segments_skipped": 0,
+      "segments_errored": 0,
+      "entities_created": 0,
+      "entities_merged": 1,
+      "entities_skipped": 0,
+      "entities_staged": 0,
+      "facets_created": 0,
+      "facets_merged": 0,
+      "imports_copied": 0,
+      "imports_skipped": 0,
+      "errors": []
+    }
   },
   "findings": {
     "name_keyed_auto_merge": "entities_merged is 1 \u2014 a DIFFERENT person with the same name was folded into the owner's record, which now carries the stranger's email and alias.",
