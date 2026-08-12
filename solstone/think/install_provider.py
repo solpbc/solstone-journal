@@ -29,16 +29,15 @@ from solstone.think.providers.install_state import (
 from solstone.think.utils import require_solstone
 
 PARAKEET_DOWNLOAD_DISCLOSURE = (
-    "parakeet-cpp fetches two external artifacts into this journal's provider "
-    "cache before it can run: the parakeet.cpp server binary from github.com "
-    "(MIT) and the speech model from huggingface.co (CC-BY-4.0)."
+    "parakeet-cpp fetches two artifacts into this journal's provider cache before it can run, "
+    "both from updates.solstone.app: the parakeet.cpp server binary (MIT) and the speech "
+    "model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md."
 )
 
 LOCAL_DOWNLOAD_DISCLOSURE = (
-    "local model assets: downloading the llama.cpp runtime from "
-    "updates.solstone.app (MIT; the CUDA build also carries NVIDIA-licensed "
-    "runtime components; see THIRD_PARTY_NOTICES.md) or github.com (MIT), "
-    "and the model from huggingface.co (Apache-2.0)."
+    "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries "
+    "NVIDIA-licensed runtime components) and the model (Apache-2.0) from "
+    "updates.solstone.app. see THIRD_PARTY_NOTICES.md."
 )
 LOG = logging.getLogger(__name__)
 

@@ -247,6 +247,7 @@ fn download_artifact(
             archive::ArchiveError::RedirectHopLimitExceeded { .. } => {
                 "download_redirect_hop_limit_exceeded"
             }
+            archive::ArchiveError::OriginUnavailable { .. } => "download_origin_unreachable",
             archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => {
                 fallback_reason_code
             }

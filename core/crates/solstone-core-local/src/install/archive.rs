@@ -11,23 +11,19 @@ use solstone_core_assets::Artifact;
 use thiserror::Error;
 
 const MAX_REDIRECT_HOPS: u8 = 5;
-const DOWNLOAD_ALLOWED_HOSTS: &[&str] = &[
-    "github.com",
-    "release-assets.githubusercontent.com",
-    "updates.solstone.app",
-    "huggingface.co",
-    "us.aws.cdn.hf.co",
-];
+const DOWNLOAD_ALLOWED_HOSTS: &[&str] = &["updates.solstone.app"];
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DownloadHostPolicy<'a> {
     pub(crate) allowed_hosts: &'a [&'a str],
     pub(crate) allow_http: bool,
+    pub(crate) origin_base_url: &'a str,
 }
 
 pub(crate) const PRODUCTION_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadHostPolicy {
     allowed_hosts: DOWNLOAD_ALLOWED_HOSTS,
     allow_http: false,
+    origin_base_url: "https://updates.solstone.app",
 };
 
 #[derive(Debug, Error)]
@@ -46,6 +42,8 @@ pub enum ArchiveError {
     RedirectHopLimitExceeded { limit: u8 },
     #[error("download URL authority must not include userinfo: {authority}")]
     UrlUserinfoRefused { authority: String },
+    #[error("download origin unavailable at {host}: {message}")]
+    OriginUnavailable { host: String, message: String },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("download failed: {0}")]
@@ -80,7 +78,8 @@ pub(crate) fn download_verified(
     policy: &DownloadHostPolicy<'_>,
     mut progress: impl FnMut(u64, Option<u64>),
 ) -> Result<(), ArchiveError> {
-    let mut current = validate_url(artifact.upstream_url, policy)?;
+    let origin = origin_url(policy.origin_base_url, artifact);
+    let mut current = validate_url(&origin, policy)?;
     let agent = ureq::agent();
     let mut followed = 0_u8;
     let response = loop {
@@ -91,7 +90,10 @@ pub(crate) fn download_verified(
             .http_status_as_error(false)
             .build()
             .call()
-            .map_err(|error| ArchiveError::Download(error.to_string()))?;
+            .map_err(|error| ArchiveError::OriginUnavailable {
+                host: current.host.clone(),
+                message: error.to_string(),
+            })?;
         if !response.status().is_redirection() {
             break response;
         }
@@ -112,10 +114,10 @@ pub(crate) fn download_verified(
         followed += 1;
     };
     if !response.status().is_success() {
-        return Err(ArchiveError::Download(format!(
-            "unexpected HTTP status {}",
-            response.status()
-        )));
+        return Err(ArchiveError::OriginUnavailable {
+            host: current.host.clone(),
+            message: format!("unexpected HTTP status {}", response.status()),
+        });
     }
     let parent = destination
         .parent()
@@ -175,6 +177,10 @@ impl AbsoluteUrl {
             self.scheme, self.authority, self.path_and_query
         )
     }
+}
+
+pub(crate) fn origin_url(base: &str, artifact: &Artifact) -> String {
+    format!("{base}/{}", artifact.origin_key)
 }
 
 fn validate_url(url: &str, policy: &DownloadHostPolicy<'_>) -> Result<AbsoluteUrl, ArchiveError> {
