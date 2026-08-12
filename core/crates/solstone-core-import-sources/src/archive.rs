@@ -393,7 +393,11 @@ fn extract_archive(
             detail: error.to_string(),
         }
     })?;
-    let available = stat.blocks_available().saturating_mul(stat.fragment_size());
+    // Cast explicitly: `statvfs`'s field widths differ by platform (u64 on Linux,
+    // u32 on Darwin), so multiplying them unconverted only compiles on Linux.
+    // Same defect class as `solstone-core::check` and the precedent in
+    // `solstone-core-local::install::fit_report::free_bytes`.
+    let available = (stat.blocks_available() as u64).saturating_mul(stat.fragment_size() as u64);
     if available < required {
         return cleanup_extraction(
             path,
