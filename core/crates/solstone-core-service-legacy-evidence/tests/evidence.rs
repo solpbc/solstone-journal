@@ -538,8 +538,12 @@ fn dispositions_and_shared_bytes_are_rederived() {
                         "platform",
                         "profile",
                         "raw",
+                        "schema",
+                        "schema_version",
                     ],
                 );
+                assert_eq!(text(&raw, "schema"), "service-legacy-raw-evidence");
+                assert_eq!(raw["schema_version"], 1);
                 exact_keys(&raw["inputs"], &["env", "journal_path", "port"]);
                 exact_keys(&raw["raw"], &["plist_base64", "sha256", "systemd_unit"]);
             }

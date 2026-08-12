@@ -16,8 +16,11 @@ import copy
 import json
 import plistlib
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
+
+from promote_service_legacy_evidence_tree import promote_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = ROOT / "core/fixtures/service_legacy_evidence"
@@ -241,21 +244,35 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def main() -> int:
+def normalize_all(output_root: Path) -> int:
+    if output_root.exists():
+        raise NormalizationError(f"output root already exists: {output_root}")
     entries = read_json(FOLLOW_CENSUS).get("entries")
     if not isinstance(entries, list) or len(entries) != 44:
         raise NormalizationError("follow census must contain exactly 44 entries")
-    shutil.rmtree(NORMALIZED_ROOT, ignore_errors=True)
     count = 0
     for entry in entries:
         if not isinstance(entry, dict):
             raise NormalizationError("follow census entry is not an object")
         for platform in PLATFORMS:
             write_json(
-                NORMALIZED_ROOT / entry["blob"] / f"{platform}.json",
+                output_root / entry["blob"] / f"{platform}.json",
                 normalize_blob_platform(entry, platform),
             )
             count += 1
+    return count
+
+
+def main() -> int:
+    staging_parent = Path(tempfile.mkdtemp(prefix=".normalized-staging.", dir=EVIDENCE_ROOT))
+    staging = staging_parent / "normalized"
+    try:
+        count = normalize_all(staging)
+        promote_tree(staging, NORMALIZED_ROOT, 88)
+        staging_parent.rmdir()
+    finally:
+        if staging_parent.exists():
+            shutil.rmtree(staging_parent)
     print(f"wrote {count} normalized fixtures")
     return 0
 

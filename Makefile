@@ -480,7 +480,8 @@ service-legacy-evidence-capture:
 		echo "==> python3 $$stage"; \
 		if [ "$$stage" = "scripts/capture_service_legacy_raw.py" ]; then \
 			python3 "$$stage" --output-root "$$raw_stage" --scratch-root "$$capture_scratch" && \
-			python3 -c 'import pathlib, shutil, sys; staged, destination, staging_parent = map(pathlib.Path, sys.argv[1:]); backup = destination.with_name(destination.name + ".previous"); shutil.rmtree(backup, ignore_errors=True); destination.replace(backup); staged.replace(destination); shutil.rmtree(backup); staging_parent.rmdir()' "$$raw_stage" "$(SERVICE_LEGACY_EVIDENCE_ROOT)/raw" "$$raw_stage_parent" || status=$$?; \
+			python3 scripts/promote_service_legacy_evidence_tree.py --staged "$$raw_stage" --destination "$(SERVICE_LEGACY_EVIDENCE_ROOT)/raw" --expected-files 340 && \
+			rmdir "$$raw_stage_parent" || status=$$?; \
 		else \
 			python3 "$$stage" || status=$$?; \
 		fi; \

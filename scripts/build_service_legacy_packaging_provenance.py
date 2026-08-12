@@ -29,7 +29,6 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = ROOT / "core/fixtures/service_legacy_evidence"
 OUTPUT = EVIDENCE_ROOT / "packaging-provenance.json"
 SCRATCH_ROOT = ROOT / "scratch"
-GROUNDED_COMMIT = "09efbacd508ca388a42efa14f9f2e04dd2350829"
 SOURCE_DATE_EPOCH = "0"
 SCHEMA = "service-legacy-packaging-provenance"
 SCHEMA_VERSION = 1
@@ -268,7 +267,7 @@ def verify_native_dispatch_sources() -> None:
         raise ProvenanceError("native runner does not invoke the selected module main()")
 
 
-def payload(wheels: dict[str, Any], tools: dict[str, str]) -> dict[str, Any]:
+def payload(wheels: dict[str, Any], tools: dict[str, str], source_commit: str) -> dict[str, Any]:
     journal = wheels["solstone_journal"]
     core = wheels["solstone_core_journal"]
     verify_native_dispatch_sources()
@@ -297,7 +296,7 @@ def payload(wheels: dict[str, Any], tools: dict[str, str]) -> dict[str, Any]:
         },
         "schema": SCHEMA,
         "schema_version": SCHEMA_VERSION,
-        "source": {"commit": GROUNDED_COMMIT},
+        "source": {"commit": source_commit},
         "wheels": wheels,
     }
 
@@ -309,14 +308,11 @@ def write_payload(value: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    if git_head() != GROUNDED_COMMIT:
-        raise ProvenanceError(
-            f"grounded commit is {GROUNDED_COMMIT}, but current HEAD is {git_head()}"
-        )
+    source_commit = git_head()
     tools = tool_versions()
     SCRATCH_ROOT.mkdir(exist_ok=True)
-    first = payload(build_once(), tools)
-    second = payload(build_once(), tools)
+    first = payload(build_once(), tools, source_commit)
+    second = payload(build_once(), tools, source_commit)
     if first != second:
         raise ProvenanceError("two fixed-epoch wheel builds produced different provenance facts")
     write_payload(first)

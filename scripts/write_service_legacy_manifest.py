@@ -43,6 +43,7 @@ TOOLING_PATHS = (
     "scripts/acquire_service_legacy_cpython.py",
     "scripts/extract_service_legacy_generator_closure.py",
     "scripts/capture_service_legacy_raw.py",
+    "scripts/promote_service_legacy_evidence_tree.py",
     "scripts/normalize_service_legacy_evidence.py",
     "scripts/generate_service_legacy_negative_twins.py",
     "scripts/derive_service_legacy_semantic_deltas.py",

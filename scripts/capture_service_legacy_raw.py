@@ -28,6 +28,8 @@ CENSUS_PATH = EVIDENCE_ROOT / "follow-census.json"
 INTERPRETERS_PATH = EVIDENCE_ROOT / "interpreters.json"
 PYTHON_CACHE_ROOT = ROOT / ".cache/service-legacy-evidence/python"
 SYNTHETIC_SANDBOX_ROOT = Path("/opt/solstone-service-legacy-evidence")
+SCHEMA = "service-legacy-raw-evidence"
+SCHEMA_VERSION = 1
 OPTIONAL_KEYS = {
     "ANTHROPIC_API_KEY": "__SERVICE_LEGACY_DUMMY_ANTHROPIC__",
     "OPENAI_API_KEY": "__SERVICE_LEGACY_DUMMY_OPENAI__",
@@ -285,6 +287,8 @@ def fixture_payload(
             "sha256": capture["raw_sha256"],
             "systemd_unit": capture["systemd_unit"],
         },
+        "schema": SCHEMA,
+        "schema_version": SCHEMA_VERSION,
     }
 
 
