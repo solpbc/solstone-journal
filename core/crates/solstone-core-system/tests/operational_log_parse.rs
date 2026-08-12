@@ -19,11 +19,21 @@ fn datetime(value: &str) -> NaiveDateTime {
 fn fixture_raw_sha256_is_pinned() {
     assert_eq!(fixture::raw_sha256(), fixture::FIXTURE_SHA256);
     let fixture = fixture::fixture();
+    assert_eq!(fixture.schema, 1);
     assert_eq!(fixture.source.path, "solstone/think/logs_cli.py");
     assert_eq!(
         fixture.source.sha256,
         "f2ce46d928dc7c1a2922b8060e95c26b610cfe4eae250370571dc532ceed7a7f"
     );
+    assert_eq!(
+        fixture.runtime.executable_sha256,
+        "255e900f44ce87c630e83b637a79435f9ae7778dd72f6e2a2f18a486e501d016"
+    );
+    assert!(fixture.runtime.python.starts_with("3.14.6 "));
+    assert_eq!(fixture.runtime.unicode, "16.0.0");
+    assert_eq!(fixture.rows.len(), 13);
+    assert_eq!(fixture.since.len(), 19);
+    assert_eq!(fixture.regex.len(), 36);
 }
 
 #[test]
@@ -47,27 +57,23 @@ fn parses_all_frozen_since_cases() {
     let now = datetime(&fixture.runtime.fixed_now);
     for (index, case) in fixture.since.iter().enumerate() {
         match case {
-            fixture::SinceCase::Outcome { input, outcome } => {
+            fixture::SinceCase::Outcome(case) => {
                 assert_eq!(
-                    parse_health_log_since(input, now),
-                    Ok(datetime(outcome)),
+                    parse_health_log_since(&case.input, now),
+                    Ok(datetime(&case.outcome)),
                     "since fixture case {index}"
                 );
             }
-            fixture::SinceCase::Error {
-                input,
-                error,
-                error_type,
-            } => {
-                let actual = parse_health_log_since(input, now).expect_err("error fixture");
-                match (error_type.as_str(), &actual) {
+            fixture::SinceCase::Error(case) => {
+                let actual = parse_health_log_since(&case.input, now).expect_err("error fixture");
+                match (case.error_type.as_str(), &actual) {
                     (
                         "ArgumentTypeError",
                         HealthLogSinceError::InvalidTime {
                             input: actual_input,
                         },
                     ) => {
-                        assert_eq!(actual_input, input, "since fixture case {index}");
+                        assert_eq!(actual_input, &case.input, "since fixture case {index}");
                     }
                     (
                         "OverflowError",
@@ -75,13 +81,58 @@ fn parses_all_frozen_since_cases() {
                             input: actual_input,
                         },
                     ) => {
-                        assert_eq!(actual_input, input, "since fixture case {index}");
+                        assert_eq!(actual_input, &case.input, "since fixture case {index}");
                     }
                     _ => panic!("since fixture case {index} returned wrong error: {actual:?}"),
                 }
-                assert_eq!(actual.to_string(), *error, "since fixture case {index}");
+                assert_eq!(actual.to_string(), case.error, "since fixture case {index}");
             }
         }
+    }
+}
+
+#[test]
+fn fixture_schema_rejects_unknown_fields_at_every_shape() {
+    let original = serde_json::from_str::<serde_json::Value>(include_str!(
+        "../../../fixtures/health_logs_reference.json"
+    ))
+    .expect("fixture JSON");
+    let mutations = [
+        vec![],
+        vec!["source"],
+        vec!["runtime"],
+        vec!["rows", "0"],
+        vec!["rows", "0", "outcome"],
+        vec!["since", "0"],
+        vec!["since", "18"],
+        vec!["regex", "0"],
+        vec!["regex", "35"],
+        vec!["unicode_contract"],
+    ];
+
+    for path in mutations {
+        let mut value = original.clone();
+        let mut cursor = &mut value;
+        for component in &path {
+            cursor = if let Ok(index) = component.parse::<usize>() {
+                &mut cursor.as_array_mut().expect("array path")[index]
+            } else {
+                cursor
+                    .as_object_mut()
+                    .expect("object path")
+                    .get_mut(*component)
+                    .expect("fixture path")
+            };
+        }
+        cursor
+            .as_object_mut()
+            .expect("mutation target object")
+            .insert("unknown_field".to_owned(), serde_json::json!(true));
+        let encoded = serde_json::to_string(&value).expect("mutated fixture JSON");
+        assert!(
+            fixture::parse_json(&encoded).is_err(),
+            "unknown field accepted at {path:?}"
+        );
     }
 }
 

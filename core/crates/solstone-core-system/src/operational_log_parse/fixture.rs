@@ -15,9 +15,12 @@ static FIXTURE: OnceLock<HealthLogsFixture> = OnceLock::new();
 pub(crate) fn fixture() -> &'static HealthLogsFixture {
     FIXTURE.get_or_init(|| {
         assert_eq!(raw_sha256(), FIXTURE_SHA256, "health logs fixture digest");
-        serde_json::from_str(FIXTURE_JSON)
-            .expect("core/fixtures/health_logs_reference.json must be valid")
+        parse_json(FIXTURE_JSON).expect("core/fixtures/health_logs_reference.json must be valid")
     })
+}
+
+pub(crate) fn parse_json(input: &str) -> serde_json::Result<HealthLogsFixture> {
+    serde_json::from_str(input)
 }
 
 pub(crate) fn raw_sha256() -> String {
@@ -25,16 +28,20 @@ pub(crate) fn raw_sha256() -> String {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 pub(crate) struct HealthLogsFixture {
+    pub schema: u32,
     pub source: SourceFixture,
     pub runtime: RuntimeFixture,
     pub rows: Vec<RowCase>,
     pub since: Vec<SinceCase>,
+    pub regex: Vec<RegexCase>,
     pub unicode_contract: UnicodeContract,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 pub(crate) struct SourceFixture {
     pub path: String,
@@ -42,12 +49,17 @@ pub(crate) struct SourceFixture {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 pub(crate) struct RuntimeFixture {
+    pub executable_sha256: String,
     pub fixed_now: String,
+    pub python: String,
+    pub unicode: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 pub(crate) struct RowCase {
     pub input: String,
@@ -55,6 +67,7 @@ pub(crate) struct RowCase {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 pub(crate) struct RowOutcome {
     pub timestamp: String,
@@ -68,18 +81,56 @@ pub(crate) struct RowOutcome {
 #[serde(untagged)]
 #[allow(dead_code)]
 pub(crate) enum SinceCase {
-    Outcome {
-        input: String,
-        outcome: String,
-    },
-    Error {
-        input: String,
-        error: String,
-        error_type: String,
-    },
+    Outcome(SinceOutcomeCase),
+    Error(SinceErrorCase),
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+pub(crate) struct SinceOutcomeCase {
+    pub input: String,
+    pub outcome: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+pub(crate) struct SinceErrorCase {
+    pub input: String,
+    pub error: String,
+    pub error_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+#[allow(dead_code)]
+pub(crate) enum RegexCase {
+    Outcome(RegexOutcomeCase),
+    Error(RegexErrorCase),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+pub(crate) struct RegexOutcomeCase {
+    pub pattern: String,
+    pub haystacks: Vec<String>,
+    pub matches: Vec<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+pub(crate) struct RegexErrorCase {
+    pub pattern: String,
+    pub haystacks: Vec<String>,
+    pub error: String,
+    pub error_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[allow(dead_code)]
 pub(crate) struct UnicodeContract {
     pub whitespace_codepoints: Vec<u32>,
