@@ -17,10 +17,13 @@ use solstone_core_journal_io::{
     AtomicWriteOptions, JsonWriteOptions, LockOptions, hold_lock, write_json, write_text,
 };
 
+use crate::process::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
+
 use super::launch::LocalLaunchConfig;
 use super::model::{
-    ProviderFence, ProviderLaunchOutcome, ProviderName, ProviderProbeOutcome, ProviderRuntimeState,
-    ProviderStopCleanupOutcome, ProviderTruthObservation, ReasonCode, RuntimePhase,
+    ManagedProcess, ProviderFence, ProviderLaunchOutcome, ProviderName, ProviderProbeOutcome,
+    ProviderRuntimeState, ProviderStopCleanupOutcome, ProviderTruthObservation, ReasonCode,
+    RuntimePhase,
 };
 use super::seams::{RetryToken, RuntimeStore, RuntimeStoreError};
 
@@ -88,9 +91,65 @@ pub struct ReadyProcess {
     pub port: u16,
 }
 
+/// Fence-keyed result of resolving the one process a status sample may inspect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CurrentProcessResolution {
+    Coherent {
+        ready: ReadyProcess,
+        started_at: Instant,
+    },
+    Absent,
+    Ambiguous,
+}
+
+/// Resolve a current provider process by its accepted launch fence, never by PID.
+pub(crate) fn resolve_current_process(
+    processes: &[ManagedProcess],
+    ready_processes: &BTreeMap<FenceKey, ReadyProcess>,
+    started_at: &BTreeMap<FenceKey, Instant>,
+    child_process_ids: &BTreeSet<String>,
+) -> CurrentProcessResolution {
+    let current = processes
+        .iter()
+        .filter(|process| process.running)
+        .collect::<Vec<_>>();
+    if current.is_empty() {
+        return if ready_processes.is_empty()
+            && started_at.is_empty()
+            && child_process_ids.is_empty()
+        {
+            CurrentProcessResolution::Absent
+        } else {
+            CurrentProcessResolution::Ambiguous
+        };
+    }
+    if current.len() != 1
+        || ready_processes.len() != 1
+        || started_at.len() != 1
+        || child_process_ids.len() != 1
+    {
+        return CurrentProcessResolution::Ambiguous;
+    }
+    let Some(fence) = current[0].fence.as_ref() else {
+        return CurrentProcessResolution::Ambiguous;
+    };
+    let key = FenceKey::from(fence);
+    let (Some(ready), Some(started_at)) = (ready_processes.get(&key), started_at.get(&key)) else {
+        return CurrentProcessResolution::Ambiguous;
+    };
+    if !child_process_ids.contains(&ready.process_id) {
+        return CurrentProcessResolution::Ambiguous;
+    }
+    CurrentProcessResolution::Coherent {
+        ready: ready.clone(),
+        started_at: *started_at,
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct LocalRuntimeShared {
     ready_processes: Mutex<BTreeMap<FenceKey, ReadyProcess>>,
+    started_at: Mutex<BTreeMap<FenceKey, Instant>>,
     launch_requests: Mutex<BTreeMap<Option<String>, LocalLaunchConfig>>,
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
@@ -269,6 +328,26 @@ impl LocalRuntimeShared {
             .insert(FenceKey::from(fence), process);
     }
 
+    /// Atomically publish the in-memory tuple a status read needs for a ready child.
+    pub(crate) fn register_ready_process(
+        &self,
+        fence: &ProviderFence,
+        child: Child,
+        process: ReadyProcess,
+    ) {
+        let key = FenceKey::from(fence);
+        let started_at = Instant::now();
+        let mut ready_processes = self
+            .ready_processes
+            .lock()
+            .expect("local runtime shared lock");
+        let mut children = self.children.lock().expect("local runtime shared lock");
+        let mut started = self.started_at.lock().expect("local runtime shared lock");
+        children.insert(process.process_id.clone(), child);
+        ready_processes.insert(key.clone(), process);
+        started.insert(key, started_at);
+    }
+
     pub(crate) fn retain_child(&self, process_id: String, child: Child) {
         self.children
             .lock()
@@ -281,6 +360,74 @@ impl LocalRuntimeShared {
             .lock()
             .expect("local runtime shared lock")
             .remove(process_id)
+    }
+
+    pub(crate) fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, Child)> {
+        let ready_processes = self
+            .ready_processes
+            .lock()
+            .expect("local runtime shared lock");
+        let process_id = ready_processes
+            .get(&FenceKey::from(fence))?
+            .process_id
+            .clone();
+        let child = self
+            .children
+            .lock()
+            .expect("local runtime shared lock")
+            .remove(&process_id)?;
+        Some((process_id, child))
+    }
+
+    pub(crate) fn remove_ready_process(&self, fence: &ProviderFence) {
+        let key = FenceKey::from(fence);
+        let mut ready_processes = self
+            .ready_processes
+            .lock()
+            .expect("local runtime shared lock");
+        let mut children = self.children.lock().expect("local runtime shared lock");
+        let mut started = self.started_at.lock().expect("local runtime shared lock");
+        if let Some(process) = ready_processes.remove(&key) {
+            children.remove(&process.process_id);
+        }
+        started.remove(&key);
+    }
+
+    pub fn observe_current_process(
+        &self,
+        processes: &[ManagedProcess],
+        now: Instant,
+    ) -> ProcessObservation {
+        let Ok(ready_processes) = self.ready_processes.lock() else {
+            return ProcessObservation::Indeterminate;
+        };
+        let Ok(mut children) = self.children.lock() else {
+            return ProcessObservation::Indeterminate;
+        };
+        let Ok(started) = self.started_at.lock() else {
+            return ProcessObservation::Indeterminate;
+        };
+        let child_process_ids = children.keys().cloned().collect();
+        match resolve_current_process(processes, &ready_processes, &started, &child_process_ids) {
+            CurrentProcessResolution::Coherent { ready, started_at } => {
+                let Some(child) = children.get_mut(&ready.process_id) else {
+                    return ProcessObservation::Indeterminate;
+                };
+                classify_process_observation(
+                    1,
+                    false,
+                    Some(ProcessObservationTuple {
+                        reference: ready.process_id,
+                        pid: ready.pid,
+                        started_at,
+                        poll: child.try_wait(),
+                    }),
+                    now,
+                )
+            }
+            CurrentProcessResolution::Absent => ProcessObservation::ConfirmedAbsent,
+            CurrentProcessResolution::Ambiguous => ProcessObservation::Indeterminate,
+        }
     }
 }
 
@@ -1014,6 +1161,201 @@ mod tests {
         }
     }
 
+    fn current_process(fence: Option<ProviderFence>) -> ManagedProcess {
+        ManagedProcess {
+            id: "local:42".to_owned(),
+            name: "local".to_owned(),
+            running: true,
+            fence,
+        }
+    }
+
+    fn coherent_maps(
+        fence: &ProviderFence,
+        ready: ReadyProcess,
+        started_at: Instant,
+    ) -> (
+        BTreeMap<FenceKey, ReadyProcess>,
+        BTreeMap<FenceKey, Instant>,
+        BTreeSet<String>,
+    ) {
+        let key = FenceKey::from(fence);
+        let child_process_ids = BTreeSet::from([ready.process_id.clone()]);
+        (
+            BTreeMap::from([(key.clone(), ready)]),
+            BTreeMap::from([(key, started_at)]),
+            child_process_ids,
+        )
+    }
+
+    #[test]
+    fn current_process_resolution_selects_one_coherent_fence_tuple() {
+        let fence = fence(1);
+        let ready = ready_process(4312);
+        let started_at = Instant::now();
+        let (ready_processes, started, child_process_ids) =
+            coherent_maps(&fence, ready.clone(), started_at);
+
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(Some(fence))],
+                &ready_processes,
+                &started,
+                &child_process_ids,
+            ),
+            CurrentProcessResolution::Coherent { ready, started_at }
+        );
+    }
+
+    #[test]
+    fn current_process_resolution_classifies_absent_and_residual_states() {
+        let empty_ready = BTreeMap::new();
+        let empty_started = BTreeMap::new();
+        let empty_children = BTreeSet::new();
+        assert_eq!(
+            resolve_current_process(&[], &empty_ready, &empty_started, &empty_children),
+            CurrentProcessResolution::Absent
+        );
+
+        let fence = fence(1);
+        let (ready_processes, started, child_process_ids) =
+            coherent_maps(&fence, ready_process(4312), Instant::now());
+        assert_eq!(
+            resolve_current_process(&[], &ready_processes, &empty_started, &empty_children),
+            CurrentProcessResolution::Ambiguous,
+        );
+        assert_eq!(
+            resolve_current_process(&[], &empty_ready, &started, &empty_children),
+            CurrentProcessResolution::Ambiguous,
+        );
+        assert_eq!(
+            resolve_current_process(&[], &empty_ready, &empty_started, &child_process_ids),
+            CurrentProcessResolution::Ambiguous,
+        );
+    }
+
+    #[test]
+    fn current_process_resolution_rejects_incomplete_and_multiple_tuples() {
+        let current_fence = fence(1);
+        let ready = ready_process(4312);
+        let started_at = Instant::now();
+        let (ready_processes, started, child_process_ids) =
+            coherent_maps(&current_fence, ready.clone(), started_at);
+        let current = current_process(Some(current_fence.clone()));
+
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(None)],
+                &ready_processes,
+                &started,
+                &child_process_ids
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+        assert_eq!(
+            resolve_current_process(
+                std::slice::from_ref(&current),
+                &BTreeMap::new(),
+                &started,
+                &child_process_ids
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+        assert_eq!(
+            resolve_current_process(
+                std::slice::from_ref(&current),
+                &ready_processes,
+                &started,
+                &BTreeSet::from(["local:other".to_owned()])
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+        assert_eq!(
+            resolve_current_process(
+                &[current.clone(), current],
+                &ready_processes,
+                &started,
+                &child_process_ids
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+
+        let stale_fence = fence(2);
+        let mut stale_ready = ready_processes.clone();
+        stale_ready.insert(FenceKey::from(&stale_fence), ready);
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(Some(current_fence))],
+                &stale_ready,
+                &started,
+                &child_process_ids,
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+    }
+
+    #[test]
+    fn current_process_resolution_uses_fence_when_pid_is_reused() {
+        let old_fence = fence(1);
+        let new_fence = fence(2);
+        let old_started_at = Instant::now();
+        let new_started_at = old_started_at + Duration::from_secs(1);
+        let old_ready = ready_process(4312);
+        let new_ready = old_ready.clone();
+
+        let (old_ready_processes, old_started, old_children) =
+            coherent_maps(&old_fence, old_ready.clone(), old_started_at);
+        let (new_ready_processes, new_started, new_children) =
+            coherent_maps(&new_fence, new_ready.clone(), new_started_at);
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(Some(old_fence.clone()))],
+                &old_ready_processes,
+                &old_started,
+                &old_children,
+            ),
+            CurrentProcessResolution::Coherent {
+                ready: old_ready,
+                started_at: old_started_at,
+            }
+        );
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(Some(new_fence.clone()))],
+                &new_ready_processes,
+                &new_started,
+                &new_children,
+            ),
+            CurrentProcessResolution::Coherent {
+                ready: new_ready.clone(),
+                started_at: new_started_at,
+            }
+        );
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(Some(old_fence))],
+                &new_ready_processes,
+                &new_started,
+                &new_children,
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+
+        let mut both_ready = old_ready_processes;
+        both_ready.extend(new_ready_processes);
+        let mut both_started = old_started;
+        both_started.extend(new_started);
+        assert_eq!(
+            resolve_current_process(
+                &[current_process(Some(new_fence))],
+                &both_ready,
+                &both_started,
+                &new_children,
+            ),
+            CurrentProcessResolution::Ambiguous,
+        );
+    }
+
     fn write_retry(path: &Path, revision: u64) {
         let record = json!({
             "schema_version": 1,
@@ -1262,6 +1604,7 @@ mod tests {
                 id: "local:42".to_owned(),
                 name: "local".to_owned(),
                 running: true,
+                fence: None,
             },
             reason_code: ReasonCode::known("intent-removed"),
             target_phase: RuntimePhase::Stopped,

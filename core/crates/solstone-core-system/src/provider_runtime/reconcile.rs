@@ -473,7 +473,8 @@ impl ProviderRuntimeCoordinator {
         let result_reason_code = result.reason_code.clone();
         match result.status {
             LaunchOutcomeStatus::Ready => {
-                if let Some(managed) = managed.take() {
+                if let Some(mut managed) = managed.take() {
+                    managed.fence = Some(in_flight.fence.clone());
                     processes.push(managed);
                     state.latest_phase = RuntimePhase::Ready;
                     state.latest_reason_code = Some(result_reason_code.clone());
@@ -965,6 +966,7 @@ mod tests {
             id: id.to_owned(),
             name: "provider".to_owned(),
             running: true,
+            fence: None,
         }
     }
 

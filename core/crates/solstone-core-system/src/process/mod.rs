@@ -4,6 +4,7 @@
 mod descendants;
 mod events;
 mod log;
+mod observation;
 mod restart;
 mod spawn;
 mod terminate;
@@ -13,6 +14,7 @@ use std::process::ExitStatus;
 pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
+pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 pub use restart::{
     EXIT_TEMPFAIL, RestartPolicy, TEMPFAIL_DELAY, describe_exit, exit_status_for_code,
 };

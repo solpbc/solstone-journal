@@ -283,6 +283,8 @@ pub struct ManagedProcess {
     pub id: String,
     pub name: String,
     pub running: bool,
+    /// The accepted launch fence, absent for intermediate launch outcomes.
+    pub fence: Option<ProviderFence>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

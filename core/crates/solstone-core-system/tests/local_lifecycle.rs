@@ -288,6 +288,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
         id: "local:already-gone".into(),
         name: "local".into(),
         running: false,
+        fence: None,
     };
     let missing_fence = fence(5);
     seam.dispatch_stop(&stop_state(missing), &missing_fence);
@@ -300,6 +301,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
         id: "local:cancelled".into(),
         name: "local".into(),
         running: true,
+        fence: None,
     });
     cancelled.stop_cancelled = true;
     let cancelled_fence = fence(6);

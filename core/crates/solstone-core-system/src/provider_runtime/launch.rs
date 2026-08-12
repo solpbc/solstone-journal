@@ -716,10 +716,11 @@ fn start_local(
                 id: process_id.clone(),
                 name: "local".into(),
                 running: true,
+                fence: None,
             };
-            shared.retain_child(process_id.clone(), child);
-            shared.record_ready_process(
+            shared.register_ready_process(
                 fence,
+                child,
                 ReadyProcess {
                     process_id,
                     process_name: "local".into(),
@@ -738,6 +739,7 @@ fn start_local(
                 id: process_id.clone(),
                 name: "local".into(),
                 running: true,
+                fence: None,
             };
             shared.retain_child(process_id, child);
             return ProviderLaunchOutcome {
@@ -802,7 +804,17 @@ fn stop_local(
         };
     }
     let request = request.expect("checked above");
-    let Some(mut child) = shared.take_child(&request.managed.id) else {
+    let fence = request.managed.fence.as_ref();
+    let child = match fence {
+        Some(fence) => shared.take_ready_child(fence),
+        None => shared
+            .take_child(&request.managed.id)
+            .map(|child| (request.managed.id.clone(), child)),
+    };
+    let Some((process_id, mut child)) = child else {
+        if let Some(fence) = fence {
+            shared.remove_ready_process(fence);
+        }
         return ProviderStopCleanupOutcome {
             status: StopCleanupStatus::Stopped,
             reason_code,
@@ -810,13 +822,18 @@ fn stop_local(
         };
     };
     match terminate(&mut child, termination_timeout) {
-        Ok(_) => ProviderStopCleanupOutcome {
-            status: StopCleanupStatus::Stopped,
-            reason_code,
-            managed: None,
-        },
+        Ok(_) => {
+            if let Some(fence) = fence {
+                shared.remove_ready_process(fence);
+            }
+            ProviderStopCleanupOutcome {
+                status: StopCleanupStatus::Stopped,
+                reason_code,
+                managed: None,
+            }
+        }
         Err(_) => {
-            shared.retain_child(request.managed.id.clone(), child);
+            shared.retain_child(process_id, child);
             ProviderStopCleanupOutcome {
                 status: StopCleanupStatus::CleanupFailed,
                 reason_code: ReasonCode::known("cleanup-attempt-failed"),
