@@ -186,7 +186,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 0,
                     stream: Stream::Stdout,
-                    identifies: "journal_archive import complete: entries_written=1",
+                    identifies: "journal_archive import complete: segments_copied=1",
                 },
             ),
             (
@@ -703,6 +703,30 @@ fn every_mode_has_its_promised_observable() {
             assert!(quiet.is_empty(), "{} wrote to both streams", case.name);
         }
     }
+}
+
+#[test]
+fn journal_archive_remerge_reports_already_present() {
+    let journal = TempDir::new().expect("journal");
+    let inputs = Inputs::create(&journal);
+    let args = Invocation::Structured {
+        source: "journal_archive",
+        input: Input::Archive,
+    }
+    .args(&inputs);
+
+    let first = run_in_column(SupervisorColumn::GatePassed, &args, &journal);
+    assert_eq!(first.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&first.stdout).contains("segments_copied=1"));
+    assert!(first.stderr.is_empty());
+
+    let second = run_in_column(SupervisorColumn::GatePassed, &args, &journal);
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(
+        second.stdout,
+        b"journal_archive import did not merge anything: archive content is already present\n"
+    );
+    assert!(second.stderr.is_empty());
 }
 
 #[test]

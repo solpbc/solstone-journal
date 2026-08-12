@@ -371,7 +371,7 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                     &inputs.archive,
                     0,
                     Stream::Stdout,
-                    "journal_archive import complete: entries_written=1",
+                    "journal_archive import complete: segments_copied=1",
                 ),
                 (
                     "chatgpt",
@@ -580,9 +580,17 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
 
 #[test]
 fn writing_sources_use_pristine_journals() {
-    for (source, expected_file) in [
-        ("image", "image_transcript.md"),
-        ("journal_archive", "value"),
+    for (source, expected_file, completion) in [
+        (
+            "image",
+            "image_transcript.md",
+            "image import complete: entries_written=1",
+        ),
+        (
+            "journal_archive",
+            "value",
+            "journal_archive import complete: segments_copied=1",
+        ),
     ] {
         let harness = Harness::new();
         let inputs = Inputs::create(&harness.journal);
@@ -601,7 +609,7 @@ fn writing_sources_use_pristine_journals() {
             ],
             exit: 0,
             stream: Stream::Stdout,
-            contains: "import complete: entries_written=1",
+            contains: completion,
         };
         assert_case(&harness, "pristine writing source", &case);
         assert!(contains_named_file(

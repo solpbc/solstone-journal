@@ -14,7 +14,8 @@ use solstone_core_import::{
     cli_render,
 };
 use solstone_core_import_sources::archive::{
-    ArchiveMergeOptions, FullReindexRequester, merge_journal_archive,
+    ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
+    merge_journal_archive,
 };
 use solstone_core_import_sources::{
     ImportSourcesError, chatgpt, claude, document, gemini, ics, image, kindle, obsidian,
@@ -153,29 +154,41 @@ fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         &options,
         None::<&dyn FullReindexRequester>,
     ) {
-        Ok(outcome) => render_result(
-            dispatch.source,
-            ImportResult {
-                entries_written: outcome.entries_written as u64,
-                entities_seeded: 0,
-                files_created: Vec::new(),
-                errors: outcome.errors,
-                summary: format!(
-                    "merged archive: segments_copied={} imports_copied={}",
-                    outcome.merge_summary.segments_copied, outcome.merge_summary.imports_copied
-                ),
-                hard_failures: Vec::new(),
-                segments: None,
-                date_range: None,
-                merge_summary: None,
-                principal_collision: None,
-                merge_log_path: None,
-                merge_staging_path: None,
-                raw_retention: None,
-            },
-        ),
+        Ok(outcome) => match outcome.retry_disposition {
+            RetryDisposition::Applied => success(cli_render::source_archive_merge_complete(
+                dispatch.source,
+                outcome.merge_summary.segments_copied,
+                outcome.merge_summary.imports_copied,
+                outcome.merge_summary.entities_created,
+                outcome.merge_summary.entities_merged,
+                outcome.merge_summary.facets_created,
+                outcome.merge_summary.facets_merged,
+            )),
+            RetryDisposition::IdempotentNoop => {
+                success(cli_render::source_archive_already_present(dispatch.source))
+            }
+            RetryDisposition::Incomplete => failure(cli_render::source_archive_incomplete(
+                dispatch.source,
+                &archive_incomplete_detail(&outcome),
+            )),
+        },
         Err(error) => archive_failure(dispatch.source, error),
     }
+}
+
+fn archive_incomplete_detail(outcome: &ArchiveMergeResult) -> String {
+    if !outcome.errors.is_empty() {
+        return outcome.errors.join("; ");
+    }
+    if let ReindexStatus::NotAccepted { detail } = &outcome.reindex_status {
+        return detail.clone();
+    }
+    format!(
+        "segments_skipped={} segments_errored={} entities_staged={}",
+        outcome.merge_summary.segments_skipped,
+        outcome.merge_summary.segments_errored,
+        outcome.merge_summary.entities_staged,
+    )
 }
 
 fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {

@@ -187,10 +187,11 @@ pub fn source_preview_only_refusal(source: RegistrySource) -> String {
 
 pub fn source_import_complete(source: RegistrySource, result: &ImportResult) -> String {
     format!(
-        "{} import complete: entries_written={} files_created={} summary={}\n",
+        "{} import complete: entries_written={} files_created={} errors={} summary={}\n",
         source.name(),
         result.entries_written,
         result.files_created.len(),
+        result.errors.len(),
         result.summary,
     )
 }
@@ -210,4 +211,30 @@ pub fn source_dry_run_unsupported(source: RegistrySource) -> String {
         "{} import does not support --dry-run; rerun without --dry-run to merge the archive\n",
         source.name()
     )
+}
+
+pub fn source_archive_merge_complete(
+    source: RegistrySource,
+    segments_copied: usize,
+    imports_copied: usize,
+    entities_created: usize,
+    entities_merged: usize,
+    facets_created: usize,
+    facets_merged: usize,
+) -> String {
+    format!(
+        "{} import complete: segments_copied={segments_copied} imports_copied={imports_copied} entities_created={entities_created} entities_merged={entities_merged} facets_created={facets_created} facets_merged={facets_merged}\n",
+        source.name(),
+    )
+}
+
+pub fn source_archive_already_present(source: RegistrySource) -> String {
+    format!(
+        "{} import did not merge anything: archive content is already present\n",
+        source.name()
+    )
+}
+
+pub fn source_archive_incomplete(source: RegistrySource, detail: &str) -> String {
+    format!("{} import incomplete: {detail}\n", source.name())
 }
