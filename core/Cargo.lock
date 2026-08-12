@@ -2926,6 +2926,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
+ "solstone-core-import-sources",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-processing-record",

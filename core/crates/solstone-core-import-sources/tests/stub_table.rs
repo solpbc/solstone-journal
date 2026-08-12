@@ -5,11 +5,13 @@ use std::collections::BTreeSet;
 
 use solstone_core_import_sources::{ImportSourcesError, MODULE_STUBS};
 
-const IMPLEMENTED_SOURCE_MODULES: &[&str] = &["document", "image", "ics", "obsidian"];
+const IMPLEMENTED_SOURCE_MODULES: &[&str] = &[
+    "chatgpt", "claude", "document", "gemini", "ics", "image", "kindle", "obsidian",
+];
 
 #[test]
 fn every_source_module_stub_is_unique_and_unimplemented() {
-    assert_eq!(MODULE_STUBS.len(), 7);
+    assert_eq!(MODULE_STUBS.len(), 3);
     let names = MODULE_STUBS
         .iter()
         .map(|(name, _)| *name)
