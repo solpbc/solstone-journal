@@ -129,12 +129,11 @@ def authoritative_record(facts: GitFacts) -> dict[str, Any]:
             "https_helper_sha256": facts.helper_sha256,
         },
         "remote": {
-            "main": facts.main_object,
             "repository": "https://github.com/solpbc/solstone-journal.git",
             "tags": list(facts.tags),
         },
         "schema": "service-legacy-capture-input",
-        "schema_version": 1,
+        "schema_version": 2,
     }
 
 
@@ -368,6 +367,21 @@ def regenerate(capture_input: str, *, promote_live: bool = True) -> dict[str, An
 
 
 def self_test() -> None:
+    record = authoritative_record(
+        GitFacts(
+            capture_input="a" * 40,
+            git_sha256="b" * 64,
+            helper_path="/usr/lib/git-core/git-remote-http",
+            helper_sha256="c" * 64,
+            tags=(),
+        )
+    )
+    if record["schema_version"] != 2 or set(record["remote"]) != {
+        "repository",
+        "tags",
+    }:
+        raise AssertionError("capture record serialized a moving remote ref")
+
     with tempfile.TemporaryDirectory(
         prefix="service-legacy-transaction-test-"
     ) as temporary:

@@ -260,7 +260,9 @@ def canonicalize_role_tokens(value: str) -> str:
     observed = set(angle_names)
     known = PACKAGING_ROLE_TOKENS | EVIDENCE_VALUE_TOKENS
     unknown = observed - known
-    role_names = "|".join(sorted((re.escape(name) for name in known), key=len, reverse=True))
+    role_names = "|".join(
+        sorted((re.escape(name) for name in known), key=len, reverse=True)
+    )
     partial_role = re.compile(rf"<(?:{role_names})(?!>)|(?<!<)(?:{role_names})>")
     malformed_opener = re.compile(r"<[^<>\s]*/")
     if unknown:
@@ -942,6 +944,19 @@ def audit_manifest_provenance(evidence_root: Path) -> None:
         raise IntegrityError("inventory", "manifest inventory is not exact")
 
     capture = read_json(evidence_root / "capture-input.json")
+    if (
+        set(capture)
+        != {
+            "capture_input",
+            "git",
+            "remote",
+            "schema",
+            "schema_version",
+        }
+        or capture.get("schema") != "service-legacy-capture-input"
+        or capture.get("schema_version") != 2
+    ):
+        raise IntegrityError("capture-input", "capture record schema differs")
     if capture.get("capture_input") != commit:
         raise IntegrityError("capture-input", "manifest and capture record disagree")
     packaging = read_json(evidence_root / "packaging-provenance.json")
@@ -962,7 +977,10 @@ def audit_manifest_provenance(evidence_root: Path) -> None:
     ):
         raise IntegrityError("git-tool", "capture HTTPS helper fact differs")
     remote = capture.get("remote", {})
-    if remote.get("repository") != CANONICAL_REPOSITORY:
+    if (
+        set(remote) != {"repository", "tags"}
+        or remote.get("repository") != CANONICAL_REPOSITORY
+    ):
         raise IntegrityError("remote-ref", "capture repository identity differs")
     remote_main = subprocess.run(
         ["/usr/bin/git", "rev-parse", "refs/service-legacy/authoritative-main"],
@@ -971,9 +989,26 @@ def audit_manifest_provenance(evidence_root: Path) -> None:
         capture_output=True,
         check=False,
     )
-    if remote_main.returncode or remote_main.stdout.strip() != remote.get("main"):
+    if remote_main.returncode:
         raise IntegrityError(
-            "remote-main", "capture main object differs from fetched ref"
+            "remote-main", "freshly fetched canonical main is unavailable"
+        )
+    ancestry = subprocess.run(
+        [
+            "/usr/bin/git",
+            "merge-base",
+            "--is-ancestor",
+            commit,
+            remote_main.stdout.strip(),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if ancestry.returncode:
+        raise IntegrityError(
+            "remote-main", "capture input is not reachable from fetched main"
         )
 
     launcher = packaging.get("launcher_chain", {}).get("journal_launcher", {})

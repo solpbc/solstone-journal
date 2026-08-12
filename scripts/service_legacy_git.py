@@ -47,7 +47,6 @@ class GitFacts:
     git_sha256: str
     helper_path: str
     helper_sha256: str
-    main_object: str
     tags: tuple[dict[str, str], ...]
 
 
@@ -260,7 +259,6 @@ class GitTransport:
             git_sha256=sha256(GIT),
             helper_path=str(self.helper),
             helper_sha256=sha256(self.helper),
-            main_object=remote_main,
             tags=tuple(facts),
         )
 
