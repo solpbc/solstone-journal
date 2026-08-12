@@ -20,14 +20,13 @@ use solstone_core_local::{
 };
 use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
 
-use crate::{EXIT_UNAVAILABLE, eprint_journal_path_error, resolve_process_journal_path};
+use crate::{eprint_journal_path_error, resolve_process_journal_path};
 
 const OBSERVE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const OBSERVE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
 const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two external artifacts into this journal's provider cache before it can run: the parakeet.cpp server binary from github.com (MIT) and the speech model from huggingface.co (CC-BY-4.0).";
 const LOCAL_DOWNLOAD_DISCLOSURE: &str = "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries NVIDIA-licensed runtime components) and the model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
-const LOCAL_DARWIN_UNAVAILABLE: &str = "local provider install is unavailable on Darwin in the native installer; use the Python-backed journal install-provider local route";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallProviderOutcome {
