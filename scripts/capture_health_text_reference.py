@@ -487,7 +487,10 @@ def evaluate_port(argv: list[str]) -> dict[str, Any]:
             return {
                 "code": int(error.code),
                 "kind": "exit",
-                "stderr": stderr.getvalue(),
+                # JSON strings cannot portably represent CPython's lone
+                # surrogate display.  Keep the logical text byte-independent
+                # and strict-JSON-readable as an explicit codepoint recipe.
+                "stderr_codepoints": [ord(scalar) for scalar in stderr.getvalue()],
             }
         return {"kind": "return", "value": value}
     finally:
@@ -612,7 +615,7 @@ def build_document() -> dict[str, Any]:
             "unicode": UNICODE_VERSION,
         },
         "scalar_cases": scalar_cases,
-        "schema": 1,
+        "schema": 2,
         "unsafe_unicode": unsafe_unicode(),
         "whitespace_cases": whitespace_cases,
     }
@@ -641,7 +644,7 @@ def verify_document(document: dict[str, Any]) -> None:
         },
         "fixture",
     )
-    if document["schema"] != 1:
+    if document["schema"] != 2:
         reject("schema", f"unexpected schema {document['schema']!r}")
     if document["provenance"] != provenance:
         reject("provenance", "source identity differs from committed inputs")
@@ -728,6 +731,7 @@ def verify_document(document: dict[str, Any]) -> None:
         exact_keys(actual, {"argv", "id", "result"}, "port row")
         if actual["id"] != expected["id"] or actual["argv"] != expected["argv"]:
             reject("port-recipe", f"port recipe differs at {expected['id']}")
+        validate_port_result(actual["result"], expected["id"])
         if actual["result"] != evaluate_port(decode_argv_recipe(actual["argv"])):
             reject("port-result", f"port result differs at {expected['id']}")
 
@@ -742,6 +746,32 @@ def verify_document(document: dict[str, Any]) -> None:
         reject("unicode-category", "unsafe Unicode category membership/order differs")
     if actual_unsafe.get("ranges") != expected_unsafe["ranges"]:
         reject("unicode-range", "unsafe Unicode ranges/neighbors differ")
+
+
+def validate_port_result(result: Any, identifier: str) -> None:
+    if not isinstance(result, dict):
+        reject("port-result", f"port result is not an object at {identifier}")
+    kind = result.get("kind")
+    if kind == "return":
+        exact_keys(result, {"kind", "value"}, "return port result")
+        value = result["value"]
+        if value is not None and type(value) is not int:
+            reject("port-result", f"return value is invalid at {identifier}")
+        return
+    if kind == "exit":
+        exact_keys(result, {"code", "kind", "stderr_codepoints"}, "exit port result")
+        codepoints = result["stderr_codepoints"]
+        if (
+            type(result["code"]) is not int
+            or not isinstance(codepoints, list)
+            or any(
+                type(value) is not int or value < 0 or value > 0x10FFFF
+                for value in codepoints
+            )
+        ):
+            reject("port-result", f"exit result is invalid at {identifier}")
+        return
+    reject("port-result", f"unknown port result kind at {identifier}")
 
 
 def verify_raw(data: bytes, expected_sha256: str) -> dict[str, Any]:
@@ -795,6 +825,12 @@ def self_test(data: bytes, expected_sha256: str) -> None:
             "port-result",
             lambda value: value["port_cases"][1].update(
                 {"result": {"kind": "return", "value": 9}}
+            ),
+        ),
+        (
+            "port-result",
+            lambda value: value["port_cases"][-1]["result"].update(
+                {"stderr_codepoints": [0]}
             ),
         ),
         (
