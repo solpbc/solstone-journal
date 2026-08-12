@@ -17,14 +17,17 @@ use solstone_core_callosum::{
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_ingest_resolve::{
-    AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
-    IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
-    resolve_ingest,
+    AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan,
+    HeldEvidence, IngestFile, IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution,
+    apply_plan, quarantine_failed, resolve_ingest,
 };
 use solstone_core_segment::{ContentName, Kind, StreamHints, advance_bound_stream, bind_stream};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::model::{IncomingFile, ReasonCode};
+use crate::paths::{
+    INGEST_MANIFEST_DAY_PATH, INGEST_MANIFEST_PATH, INGEST_SEGMENTS_DAY_PATH, INGEST_UPLOAD_PATH,
+};
 use crate::read_routes::{ingest_manifest, ingest_manifest_day, ingest_segments};
 use crate::validation::{
     validate_access, validate_day, validate_protocol, validate_segment, validate_source,
@@ -46,18 +49,17 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
     router_with_notifier(journal_root, Arc::new(LoggingIngestNotifier))
 }
 
-fn router_with_notifier(
+pub fn router_with_notifier(
     journal_root: impl AsRef<Path>,
     notifier: Arc<dyn IngestNotifier>,
 ) -> Router {
     Router::new()
-        .route("/app/observer/ingest", post(ingest_upload))
-        .route("/app/observer/ingest/manifest", get(ingest_manifest))
-        .route(
-            "/app/observer/ingest/manifest/{day}",
-            get(ingest_manifest_day),
-        )
-        .route("/app/observer/ingest/segments/{day}", get(ingest_segments))
+        .route(INGEST_UPLOAD_PATH, post(ingest_upload))
+        .route(INGEST_MANIFEST_PATH, get(ingest_manifest))
+        .route(INGEST_MANIFEST_DAY_PATH, get(ingest_manifest_day))
+        .route(INGEST_SEGMENTS_DAY_PATH, get(ingest_segments))
+        // The three 128 MiB request-body layers do not widen a file part:
+        // `MAX_PART_BYTES` remains the binding 64 MiB per-file limit.
         .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .layer(RequestBodyLimitLayer::new(128 * 1024 * 1024))
         .with_state(IngestState {
@@ -536,17 +538,27 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
     // Notification deliberately follows stream advancement, matching the
     // Python route order even though today's payload needs no advance data.
     if applied.should_advance {
+        let notice_files: Vec<AppliedFile> = applied
+            .files
+            .iter()
+            .filter(|file| {
+                matches!(file.disposition, AppliedDisposition::Written)
+                    || (matches!(file.disposition, AppliedDisposition::AlreadyHeld)
+                        && file.evidence == Some(HeldEvidence::OnDisk))
+            })
+            .cloned()
+            .collect();
         let notice = IngestNotice {
             did,
             source: &envelope.source,
             day: &envelope.day,
             stream: &bound.stream,
             segment: &applied.landed_segment,
-            files: &applied.files,
+            files: &notice_files,
             meta: &envelope.meta,
         };
         if let Err(error) = state.notifier.notify(&notice) {
-            log::warn!("observer ingest notification degraded: {error}");
+            eprintln!("observer ingest notification degraded: {error}");
         }
     }
     if advance_error.is_some() {
@@ -680,8 +692,8 @@ fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &s
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
@@ -704,6 +716,26 @@ mod tests {
     struct SpyNotifier {
         calls: AtomicUsize,
         fails: bool,
+    }
+
+    struct CapturingNotifier {
+        files: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl solstone_core_ingest_resolve::IngestNotifier for CapturingNotifier {
+        fn notify(
+            &self,
+            notice: &solstone_core_ingest_resolve::IngestNotice<'_>,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.files.lock().unwrap().push(
+                notice
+                    .files
+                    .iter()
+                    .map(|file| file.name.as_str().to_owned())
+                    .collect(),
+            );
+            Ok(())
+        }
     }
 
     impl solstone_core_ingest_resolve::IngestNotifier for SpyNotifier {
@@ -829,6 +861,30 @@ mod tests {
 
     fn envelope(day: &str, segment: &str, files: Value) -> Value {
         json!({"day": day, "segment": segment, "files": files})
+    }
+
+    async fn call_uploads(
+        app: &axum::Router,
+        envelope: Value,
+        files: &[(&str, &[u8])],
+    ) -> (StatusCode, Value) {
+        let envelope = envelope.to_string();
+        let mut parts = vec![("envelope", None, envelope.as_bytes(), 0)];
+        for (name, bytes) in files {
+            parts.push(("files", Some(*name), *bytes, 1));
+        }
+        let (content_type, body) = multipart_parts(&parts);
+        call(
+            app,
+            "POST",
+            "/app/observer/ingest",
+            Some(content_type),
+            body,
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await
     }
 
     #[test]
@@ -1026,6 +1082,90 @@ mod tests {
             );
             let _ = fs::remove_dir_all(root);
         }
+    }
+
+    #[tokio::test]
+    async fn notifier_receives_fresh_and_ondisk_held_files() {
+        let root = root();
+        let notifier = Arc::new(CapturingNotifier {
+            files: Mutex::new(Vec::new()),
+        });
+        let app = router_with_notifier(&root, notifier.clone());
+        let initial = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, initial, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"fresh.flac"}]),
+        );
+        assert_eq!(
+            call_uploads(
+                &app,
+                request,
+                &[("audio.flac", b"sound"), ("fresh.flac", b"fresh")],
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            notifier.files.lock().unwrap().last(),
+            Some(&vec!["audio.flac".to_owned(), "fresh.flac".to_owned()])
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn notifier_excludes_terminal_proof_held_files() {
+        let root = root();
+        let notifier = Arc::new(CapturingNotifier {
+            files: Mutex::new(Vec::new()),
+        });
+        let app = router_with_notifier(&root, notifier.clone());
+        let initial = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, initial, "audio.flac", b"sound").await.0,
+            StatusCode::OK
+        );
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        fs::remove_file(segment.join("audio.flac")).unwrap();
+        fs::write(
+            segment.join("audio.jsonl"),
+            json!({"_solstone_processing":{
+                "schema":"solstone.processing.v1",
+                "state":"analyzed",
+                "handler":"transcribe",
+                "input_size":5
+            }})
+            .to_string()
+                + "\n",
+        )
+        .unwrap();
+
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"fresh.flac"}]),
+        );
+        assert_eq!(
+            call_uploads(
+                &app,
+                request,
+                &[("audio.flac", b"sound"), ("fresh.flac", b"fresh")],
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            notifier.files.lock().unwrap().last(),
+            Some(&vec!["fresh.flac".to_owned()])
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]

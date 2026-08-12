@@ -24,11 +24,16 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod model;
+mod paths;
 mod read_routes;
 mod router;
 mod validation;
 
-pub use router::router;
+pub use paths::{
+    INGEST_MANIFEST_DAY_PATH, INGEST_MANIFEST_PATH, INGEST_PATH_PREFIX, INGEST_SEGMENTS_DAY_PATH,
+    INGEST_UPLOAD_PATH,
+};
+pub use router::{router, router_with_notifier};
 
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]

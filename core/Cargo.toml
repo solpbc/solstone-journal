@@ -106,6 +106,7 @@ solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-format = { path = "crates/solstone-core-format" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
+solstone-core-ingest = { path = "crates/solstone-core-ingest" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-archive = { path = "crates/solstone-core-journal-archive" }
