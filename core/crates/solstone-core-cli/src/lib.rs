@@ -368,6 +368,76 @@ pub const TRANSCRIBE_USAGE: &str = concat!(
     "                          [audio_path]\n",
 );
 
+pub const SUPERVISOR_USAGE: &str = concat!(
+    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                          [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
+    "                          [-v] [-d]\n",
+    "                          [port]\n",
+);
+
+pub const SUPERVISOR_HELP: &str = concat!(
+    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                          [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
+    "                          [-v] [-d]\n",
+    "                          [port]\n",
+    "\n",
+    "Monitor journaling health\n",
+    "\n",
+    "positional arguments:\n",
+    "  port               Convey port (0 = auto-select available port)\n",
+    "\n",
+    "options:\n",
+    "  -h, --help         show this help message and exit\n",
+    "  --no-daily         Disable daily processing run at midnight\n",
+    "  --no-cortex        Do not start the Cortex server (run it manually for\n",
+    "                     debugging)\n",
+    "  --no-spl           Do not start the spl tunnel service\n",
+    "  --no-convey        Do not start the Convey web application\n",
+    "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
+    "                     implemented)\n",
+    "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
+    "                     journal resolution.\n",
+    "  -v, --verbose      Enable verbose output\n",
+    "  -d, --debug        Enable debug logging\n",
+);
+
+pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
+
+pub const CHECK_HELP: &str = concat!(
+    "usage: journal check [-h] [--json]\n",
+    "\n",
+    "Readiness verdict for bundled local journal models.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --json      emit the readiness verdict as JSON for agents\n",
+);
+
+pub const INSTALL_MODELS_USAGE: &str = concat!(
+    "usage: journal install-models [-h] [--check | --force]\n",
+    "                              [--variant {auto,cpu,cuda,coreml}]\n",
+);
+
+pub const INSTALL_MODELS_HELP: &str = concat!(
+    "usage: journal install-models [-h] [--check | --force]\n",
+    "                              [--variant {auto,cpu,cuda,coreml}]\n",
+    "\n",
+    "Install and verify solstone's bundled ML models (local STT plus bundled\n",
+    "wespeaker/pyannote assets). Default action checks the local STT artifacts and\n",
+    "fetches if missing; --force re-fetches; --check verifies only and exits\n",
+    "nonzero on any problem.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --check               Verify bundled assets and local STT artifacts without\n",
+    "                        fetching.\n",
+    "  --force               Ignore readiness and refetch/verify local STT\n",
+    "                        artifacts.\n",
+    "  --variant {auto,cpu,cuda,coreml}\n",
+    "                        Journal variant to install or verify. auto honors\n",
+    "                        JOURNAL_VARIANT on linux/x86_64, then autodetects.\n",
+);
+
 /// `journal facet-candidates --help`, verbatim from the reference.
 pub const FACET_CANDIDATES_HELP: &str = concat!(
     "usage: journal facet-candidates [-h] [-v] [-d]\n",
@@ -476,6 +546,8 @@ pub enum Command {
     Check {
         json: bool,
     },
+    CheckUsage,
+    CheckHelp,
     JournalPath(JournalPathOptions),
     Indexer(Box<IndexerCommand>),
     JournalConfig(JournalConfigCommand),
@@ -496,6 +568,8 @@ pub enum Command {
     Backfill(Vec<OsString>),
     FacetCandidates,
     InstallModels(InstallModelsOptions),
+    InstallModelsUsage,
+    InstallModelsHelp,
     Convey(ConveyOptions),
     ConveyHelp,
     ConveyUsage(ConveyUsageError),
@@ -508,6 +582,9 @@ pub enum Command {
     Grab(GrabCommand),
     Spl(SplCommand),
     Supervisor(SupervisorOptions),
+    SupervisorUsage,
+    SupervisorHelp,
+    SupervisorLifecycleRedirect(&'static str),
     Observer(ObserverCommand),
     Navigate {
         path: Option<String>,
@@ -1036,6 +1113,13 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, flag] if command == OsStr::new("check") && flag == OsStr::new("--json") => {
             Ok(Command::Check { json: true })
         }
+        [command, flag]
+            if command == OsStr::new("check")
+                && (flag == OsStr::new("--help") || flag == OsStr::new("-h")) =>
+        {
+            Ok(Command::CheckHelp)
+        }
+        [command, _rest @ ..] if command == OsStr::new("check") => Ok(Command::CheckUsage),
         [command, rest @ ..] if command == OsStr::new("journal-path") => {
             parse_journal_path(rest).map(Command::JournalPath)
         }
@@ -1141,7 +1225,14 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 .map_or(Command::FacetCandidatesUsage, |_| Command::FacetCandidates))
         }
         [command, rest @ ..] if command == OsStr::new("install-models") => {
-            parse_install_models(rest).map(Command::InstallModels)
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::InstallModelsHelp);
+            }
+            Ok(parse_install_models(rest)
+                .map_or(Command::InstallModelsUsage, Command::InstallModels))
         }
         [command, rest @ ..] if command == OsStr::new("convey") => match parse_convey(rest) {
             Ok(ConveyParse::Run(options)) => Ok(Command::Convey(options)),
@@ -1165,7 +1256,19 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
-            parse_supervisor(rest).map(Command::Supervisor)
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::SupervisorHelp);
+            }
+            Ok(match parse_supervisor(rest) {
+                Ok(options) => Command::Supervisor(options),
+                Err(_) => supervisor_lifecycle_redirect(rest).map_or(
+                    Command::SupervisorUsage,
+                    Command::SupervisorLifecycleRedirect,
+                ),
+            })
         }
         [command, rest @ ..] if command == OsStr::new("observer") => {
             // Help is not one of the observer parser's tokens, so it must be
@@ -1726,6 +1829,19 @@ fn looks_like_grab_option(argument: &OsStr) -> bool {
 
 fn grab_parse_error(message: &str) -> GrabCommand {
     GrabCommand::ParseError(message.to_owned())
+}
+
+fn supervisor_lifecycle_redirect(args: &[OsString]) -> Option<&'static str> {
+    args.iter().find_map(|argument| match argument.as_os_str() {
+        value if value == OsStr::new("start") => Some("start"),
+        value if value == OsStr::new("stop") => Some("stop"),
+        value if value == OsStr::new("restart") => Some("restart"),
+        value if value == OsStr::new("status") => Some("status"),
+        value if value == OsStr::new("install") => Some("install"),
+        value if value == OsStr::new("uninstall") => Some("uninstall"),
+        value if value == OsStr::new("logs") => Some("logs"),
+        _ => None,
+    })
 }
 
 fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> {
@@ -5186,7 +5302,26 @@ mod tests {
             &["install-models", "--variant", "bad"][..],
             &["install-models", "--variant", "cpu", "--variant", "cuda"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::InstallModelsUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_rejects_unknown_and_help_flags_with_verb_results() {
+        assert_eq!(
+            evaluate_args(&args(&["check", "--nonsense"])),
+            Ok(Command::CheckUsage)
+        );
+        for values in [&["check", "--help"][..], &["check", "-h"][..]] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::CheckHelp),
+                "{values:?}"
+            );
         }
     }
 
@@ -5402,11 +5537,11 @@ mod tests {
         );
         assert_eq!(
             evaluate_args(&args(&["supervisor", "--journal"])),
-            Err(UsageError)
+            Ok(Command::SupervisorUsage)
         );
         assert_eq!(
             evaluate_args(&args(&["supervisor", "--wat"])),
-            Err(UsageError)
+            Ok(Command::SupervisorUsage)
         );
     }
 
@@ -5452,7 +5587,30 @@ mod tests {
             &["supervisor", "nope-a-port"][..],
             &["supervisor", "--unknown"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::SupervisorUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn supervisor_lifecycle_parse_failures_return_redirect() {
+        for verb in [
+            "start",
+            "stop",
+            "restart",
+            "status",
+            "install",
+            "uninstall",
+            "logs",
+        ] {
+            assert_eq!(
+                evaluate_args(&args(&["supervisor", verb])),
+                Ok(Command::SupervisorLifecycleRedirect(verb)),
+                "{verb}"
+            );
         }
     }
 
