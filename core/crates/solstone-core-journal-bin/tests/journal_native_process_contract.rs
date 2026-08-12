@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -20,7 +20,7 @@ mod production_processes;
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
-printf '%s\n' "$0" > "$POISON_MARKER"
+printf '%s:%s\n' "${POISON_ROUTE:-reached}" "${0##*/}" >> "$POISON_MARKER"
 exit 97
 "#;
 const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
@@ -45,6 +45,11 @@ const PROBES: &[Probe] = &[
         token: "spl",
         argv: &["--nope"],
         expected_exit: 64,
+    },
+    Probe {
+        token: "schedule",
+        argv: &["--nonsense"],
+        expected_exit: 2,
     },
     // NO PROBE FOR supervisor OR start, DELIBERATELY, AND THIS RED IS CORRECT.
     //
@@ -425,6 +430,40 @@ fn run_dispatcher_with_output(
         .output()
 }
 
+fn prove_poison_interpreters_live(context: &VerdictContext<'_>) {
+    let _ = fs::remove_file(context.poison_marker);
+    for name in ["python", "python3", "pytest", "uv", "ruff"] {
+        let sibling = Command::new(context.sibling_dir.join(name))
+            .env("POISON_MARKER", context.poison_marker)
+            .env("POISON_ROUTE", "sibling")
+            .status()
+            .expect("execute sibling poison shim");
+        assert_eq!(sibling.code(), Some(97), "{name}: sibling poison exit");
+
+        let path = Command::new(name)
+            .env("PATH", context.sibling_dir)
+            .env("POISON_MARKER", context.poison_marker)
+            .env("POISON_ROUTE", "path")
+            .status()
+            .expect("execute PATH poison shim");
+        assert_eq!(path.code(), Some(97), "{name}: PATH poison exit");
+    }
+    let observed = fs::read_to_string(context.poison_marker).expect("poison liveness record");
+    let expected = ["sibling", "path"]
+        .into_iter()
+        .flat_map(|route| {
+            ["python", "python3", "pytest", "uv", "ruff"]
+                .into_iter()
+                .map(move |name| format!("{route}:{name}"))
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        observed.lines().map(str::to_owned).collect::<BTreeSet<_>>(),
+        expected
+    );
+    fs::remove_file(context.poison_marker).expect("clear poison liveness record");
+}
+
 fn reference_block(name: &str) -> &str {
     let header = format!("=== {name}\n");
     let start = STORAGE_OPS_REFERENCE_GRAMMAR
@@ -506,6 +545,7 @@ fn verdict_for(
 fn native_process_dispatch_and_poison_liveness_contract() {
     let harness = Harness::new();
     let context = harness.context();
+    prove_poison_interpreters_live(&context);
     let mut checked = BTreeSet::new();
     let verdicts = NATIVE_PROCESS_SPECS
         .iter()
@@ -563,6 +603,126 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         context.poison_marker.exists(),
         "{token}: poison-liveness expected the poisoned interpreter marker"
     );
+}
+
+#[test]
+fn native_schedule_dispatch_reaches_the_real_read_only_body() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal.join("config")).expect("schedule config directory");
+    fs::create_dir_all(context.journal.join("health")).expect("schedule health directory");
+    fs::write(
+        context.journal.join("config/journal.json"),
+        br#"{"setup":{"completed_at":1}}"#,
+    )
+    .expect("journal config");
+    fs::write(
+        context.journal.join("config/schedules.json"),
+        br#"{"daily_time":"03:17","alpha:daily":{"cmd":["journal","heartbeat"],"every":"daily"},"beta:minute":{"cmd":"journal think --cadence","every":"1m"},"omega:disabled":{"cmd":["journal","noop"],"every":"hourly","enabled":false}}"#,
+    )
+    .expect("schedules config");
+    fs::write(
+        context.journal.join("health/scheduler.json"),
+        br#"{"alpha:daily":{"last_run":0},"beta:minute":{"last_run":0}}"#,
+    )
+    .expect("scheduler state");
+    let before = snapshot_tree(context.journal);
+
+    for argv in [Vec::<&str>::new(), vec!["-v", "-d"]] {
+        let output = run_dispatcher_with_output(&context, "schedule", &argv)
+            .expect("run native schedule through journal dispatcher");
+        assert_eq!(output.status.code(), Some(0));
+        assert!(output.stderr.is_empty());
+        let stdout = String::from_utf8(output.stdout).expect("schedule stdout");
+        assert!(stdout.contains("alpha:daily"));
+        assert!(stdout.contains("beta:minute"));
+        assert!(stdout.contains("5m"));
+        assert!(stdout.contains("omega:disabled"));
+        assert!(stdout.contains("disabled"));
+        assert!(
+            stdout.contains(
+                &context
+                    .journal
+                    .join("config/schedules.json")
+                    .display()
+                    .to_string()
+            )
+        );
+    }
+    let leading_verbose = Command::new(context.dispatcher)
+        .args(["-v", "schedule"])
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        .env("PATH", context.sibling_dir)
+        .output()
+        .expect("run leading verbose schedule");
+    assert_eq!(leading_verbose.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&leading_verbose.stdout).contains("alpha:daily"));
+
+    let invalid = run_dispatcher_with_output(&context, "schedule", &["--nonsense"])
+        .expect("run invalid native schedule through journal dispatcher");
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(invalid.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&invalid.stderr),
+        "usage: journal schedule [-h] [-v] [-d]\njournal schedule: error: unrecognized arguments: --nonsense\n"
+    );
+    assert_eq!(snapshot_tree(context.journal), before);
+    assert!(!context.poison_marker.exists());
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TreeEntry {
+    inode: u64,
+    mode: u32,
+    kind: &'static str,
+    content: Vec<u8>,
+}
+
+fn snapshot_tree(root: &Path) -> BTreeMap<PathBuf, TreeEntry> {
+    fn walk(root: &Path, path: &Path, entries: &mut BTreeMap<PathBuf, TreeEntry>) {
+        let metadata = fs::symlink_metadata(path).expect("snapshot metadata");
+        let relative = path.strip_prefix(root).expect("snapshot relative path");
+        let (kind, content) = if metadata.file_type().is_symlink() {
+            (
+                "symlink",
+                fs::read_link(path)
+                    .expect("snapshot symlink")
+                    .as_os_str()
+                    .as_encoded_bytes()
+                    .to_vec(),
+            )
+        } else if metadata.is_dir() {
+            ("directory", Vec::new())
+        } else {
+            ("file", fs::read(path).expect("snapshot file"))
+        };
+        entries.insert(
+            relative.to_path_buf(),
+            TreeEntry {
+                inode: metadata.ino(),
+                mode: metadata.permissions().mode(),
+                kind,
+                content,
+            },
+        );
+        if metadata.is_dir() {
+            let mut children = fs::read_dir(path)
+                .expect("snapshot directory")
+                .map(|entry| entry.expect("snapshot entry").path())
+                .collect::<Vec<_>>();
+            children.sort();
+            for child in children {
+                walk(root, &child, entries);
+            }
+        }
+    }
+
+    let mut entries = BTreeMap::new();
+    walk(root, root, &mut entries);
+    entries
 }
 
 #[test]

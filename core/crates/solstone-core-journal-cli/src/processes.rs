@@ -76,6 +76,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: SUPERVISOR_SERVICE,
     },
     NativeProcessSpec {
+        token: "schedule",
+        binary: "solstone-core",
+        preset_argv: &["schedule"],
+    },
+    NativeProcessSpec {
         token: "grab",
         binary: "solstone-core",
         preset_argv: &["grab"],
