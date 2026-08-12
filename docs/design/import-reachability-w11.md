@@ -9,11 +9,14 @@ spawned-binary reachability tests. It does not cut over the retained Python
 process row; that is W12.
 
 The scope's description of three unlanded bodies is stale. Generic audio,
-archive merge, and all four chat/reading export parsers have landed. The source
-crate still depends on `solstone-core-import`, however, so making `cli_argv`
-call it directly would introduce a Cargo dependency cycle. Until a dedicated
-adapter owns that direction, explicit registry-source routes validate through
-the resolver and then refuse by source name; they do not fabricate a preview.
+archive merge, and all four chat/reading export parsers have landed. The W7
+source-crate stub table now contains only `registry`, `apple_health`, and
+`oura`; `chatgpt`, `claude`, `gemini`, and `kindle` are landed bodies. The
+source crate still depends on `solstone-core-import`, however, so making
+`cli_argv` call it directly would introduce a Cargo dependency cycle. Until a
+dedicated adapter owns that direction, every explicit registry-source route
+validates through the resolver and then refuses by source name; it is a uniform
+crate-boundary refusal, not an unimplemented-body claim or fabricated preview.
 
 The boundary is explicit:
 
@@ -48,7 +51,7 @@ All argv below are passed to a freshly spawned
 
 | Mode | Gate-passed argv / subcases | Observable assertion |
 |---|---|---|
-| 1. Generic media path | `TEXT YYYYMMDD_HHMMSS`; `AUDIO YYYYMMDD_HHMMSS` | Text calls the native transcript processor and reports its resulting segment count; audio calls the native audio importer. Both use the test-created media and keep stderr empty. |
+| 1. Generic media path | `TEXT YYYYMMDD_HHMMSS`; `AUDIO YYYYMMDD_HHMMSS`; `AUDIO --dry-run` | Text calls the native transcript processor and audio calls the native audio importer, both using test-created media and keeping stderr empty. Audio dry-run returns a named preview-path refusal because the landed audio body has no preview surface; it never claims a preview occurred. Generic media with no timestamp returns a named timestamp-detection-adapter refusal rather than pretending auto-detection ran. |
 | 2. Structured sources | `--source ics|obsidian|document|image|journal_archive|chatgpt|claude|gemini|kindle SOURCE` | Each route first resolves the real input, then exits 1 with empty stdout and a named `native importer cannot invoke the <Source> source body` refusal. This is a dependency-boundary refusal, not an unimplemented-body claim or synthetic success. |
 | 3. Body/Apple native return | `--source apple_health APPLE_EXPORT --dry-run --json` | Exit 0 on stdout; parsed JSON identifies `schema: solstone.body.ingest.result.v1`, `source: apple_health`, and preview mode. Stderr is empty. |
 | 4. Body/Oura file-route refusal | `--source oura OURA_FILE` | Exit 1, empty stdout, and exactly `Oura body data imports through sync; use journal importer --sync oura` on stderr. |
@@ -64,6 +67,15 @@ on stderr. The live reachability pass then asserts the table's observables and
 the negative twin for every roster member: no exit 64 and no top-level usage
 banner on stderr. Listing, backend, sync, connect, and journal-source cases do
 not borrow resolver-corpus assertions; that corpus covers only resolution.
+
+For native argv resolution, filesystem manifest lookup is wired through
+`find_manifest_by_hash` for known generic media. A matching manifest produces a
+skip unless `--force` is present, so `--force` has a real deduplication effect.
+Registry claims cannot cross the source-crate dependency boundary, and native
+deterministic/model timestamp detection has no landed adapter. An unclassified
+media path therefore refuses by name, and generic media without an explicit
+timestamp refuses by name instead of silently treating `--auto` or detection
+controls as no-ops.
 
 ## Grammar and the 6a decision
 
@@ -164,8 +176,8 @@ fixture.
    adapter in `core/crates/solstone-core/src/main.rs`, matching
    `run_storage_ops_verb`.
 3. Replace `cli_argv` and `cli_render` reserved seams with the boundary above;
-   route each parsed mode only to an already-landed body and preserve named
-   unimplemented source refusals.
+   route each parsed mode to an already-landed body where reachable and preserve
+   named crate-boundary refusals for source bodies that cannot be reached.
 4. Add `core/crates/solstone-core/tests/importer_reachability.rs`. It uses the
    spawned freshly built binary for every criterion, has no
    `required-features = ["differential"]`, and therefore runs on a bare

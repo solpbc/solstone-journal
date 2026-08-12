@@ -163,7 +163,7 @@ fn run_import(options: Options, journal_path: &Path) -> CliRun {
     }
     let outcome = match resolve(options_ref(&options, media), journal_path) {
         Ok(outcome) => outcome,
-        Err(error) => return failure("", &format!("{}\n", error.message()), 1),
+        Err(error) => return failure("", &format!("{error}\n"), 1),
     };
     match outcome {
         ResolutionOutcome::RouteAppleHealth => run_apple(media, &options, journal_path),
@@ -195,7 +195,11 @@ fn run_import(options: Options, journal_path: &Path) -> CliRun {
 
 fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &str) -> CliRun {
     if options.dry_run {
-        return success("Audio import preview: no journal writes requested.\n".to_owned());
+        return failure(
+            "",
+            "generic audio preview requires the audio import body's preview path\n",
+            1,
+        );
     }
     let base_timestamp = match NaiveDateTime::parse_from_str(timestamp, "%Y%m%d_%H%M%S") {
         Ok(value) => value,
@@ -308,9 +312,43 @@ fn options_ref<'a>(options: &'a Options, media: &'a str) -> ResolutionOptions<'a
 
 fn resolve(
     options: ResolutionOptions<'_>,
-    _journal_path: &Path,
-) -> Result<ResolutionOutcome, crate::ResolutionError<solstone_core_body_ingest::BodyIngestError, ()>>
-{
+    journal_path: &Path,
+) -> Result<ResolutionOutcome, String> {
+    if let Some(source) = options.source
+        && crate::RegistrySource::from_name(source).is_none()
+    {
+        return Err(format!("unknown importer source: {source}"));
+    }
+    if options.source.is_none()
+        && options.media.exists()
+        && requires_registry_classification(options.media)
+        && !solstone_core_body_ingest::detect_apple_source(options.media).map_err(|_| {
+            "could not inspect Apple Health export; retry with a valid export".to_owned()
+        })?
+    {
+        return Err(
+            "automatic source classification requires solstone-core-import-sources registry claims; specify --source"
+                .to_owned(),
+        );
+    }
+    if options.source.is_none() && is_generic_media(options.media) && options.timestamp.is_none() {
+        return Err(
+            "automatic timestamp detection requires a native timestamp detection adapter; provide --timestamp"
+                .to_owned(),
+        );
+    }
+    if options.source.is_none()
+        && is_generic_media(options.media)
+        && !options.dry_run
+        && !options.force
+        && let Some(manifest) = generic_manifest_summary(journal_path, options.media)?
+        && manifest.entry_count > 0
+    {
+        return Ok(ResolutionOutcome::Skipped {
+            reason: crate::SkipReason::AlreadyImported,
+            detected_timestamp: None,
+        });
+    }
     let mut seams = ResolutionSeams {
         apple_detector: solstone_core_body_ingest::detect_apple_source,
         // The source crate depends on this crate, so a direct call here would
@@ -319,13 +357,45 @@ fn resolve(
         claims: no_registry_claim,
         deterministic_detector: no_deterministic_timestamp,
         model_detector: unavailable_model_timestamp,
+        // Generic manifest deduplication is performed above with the resolved
+        // journal root. The resolver retains this seam for its library callers.
         manifest_lookup: no_manifest_match,
         generated_timestamp: || {
             crate::validate_timestamp(&Local::now().format("%Y%m%d_%H%M%S").to_string())
                 .expect("current local timestamp is valid")
         },
     };
-    resolve_import(&options, &mut seams)
+    resolve_import(&options, &mut seams).map_err(|error| error.message().into_owned())
+}
+
+fn requires_registry_classification(path: &Path) -> bool {
+    !matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("m4a" | "txt" | "md" | "pdf")
+    )
+}
+
+fn is_generic_media(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("m4a" | "txt" | "md")
+    )
+}
+
+fn generic_manifest_summary(
+    journal_path: &Path,
+    media: &Path,
+) -> Result<Option<ManifestSummary>, String> {
+    let source_hash = crate::hash_source(media).map_err(|error| error.to_string())?;
+    let scan = crate::find_manifest_by_hash(journal_path, &source_hash)
+        .map_err(|error| error.to_string())?;
+    Ok(scan.found.and_then(|found| {
+        found
+            .manifest
+            .get("entry_count")
+            .and_then(serde_json::Value::as_u64)
+            .map(|entry_count| ManifestSummary { entry_count })
+    }))
 }
 
 fn no_registry_claim(_: crate::RegistrySource, _: &Path) -> Result<bool, ()> {
@@ -416,7 +486,14 @@ fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
     }
 }
 
-fn run_plaud_sync(journal_path: &Path, _options: &Options) -> CliRun {
+fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
+    if options.save {
+        return failure(
+            "",
+            "Plaud sync save requires native credential, download, and import pipeline adapters\n",
+            1,
+        );
+    }
     let credential = MissingPlaudCredential;
     let mut catalogue = UnusedPlaudCatalogue;
     let manifests = EmptyPlaudManifestLookup;

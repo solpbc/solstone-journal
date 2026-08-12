@@ -33,13 +33,17 @@ enum Input {
 #[derive(Clone, Copy)]
 enum Invocation {
     GenericAudio,
+    GenericAudioDryRun,
     GenericText,
+    GenericAutoTimestamp,
+    UnclassifiedMedia,
     Structured { source: &'static str, input: Input },
     ListImporters,
     ListImportersJson,
     Backends,
     SyncAudio,
     SyncObsidian,
+    SyncPlaudSave,
     ConnectUnknown,
     JournalSourceCreate,
     JournalSourceList,
@@ -82,6 +86,30 @@ const MODE_CASES: &[ModeCase] = &[
                     exit: 0,
                     stream: Stream::Stdout,
                     identifies: "Generic text import complete:",
+                },
+            ),
+            (
+                Invocation::GenericAudioDryRun,
+                Expected {
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "generic audio preview requires the audio import body's preview path",
+                },
+            ),
+            (
+                Invocation::GenericAutoTimestamp,
+                Expected {
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "automatic timestamp detection requires a native timestamp detection adapter",
+                },
+            ),
+            (
+                Invocation::UnclassifiedMedia,
+                Expected {
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "automatic source classification requires solstone-core-import-sources registry claims",
                 },
             ),
         ],
@@ -269,6 +297,14 @@ const MODE_CASES: &[ModeCase] = &[
                     identifies: "Obsidian sync preview complete: source=",
                 },
             ),
+            (
+                Invocation::SyncPlaudSave,
+                Expected {
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "Plaud sync save requires native credential, download, and import pipeline adapters",
+                },
+            ),
         ],
     },
     ModeCase {
@@ -421,7 +457,18 @@ impl Invocation {
                 path(inputs.path(Input::Audio)),
                 "20260311_120000".to_owned(),
             ],
+            Self::GenericAudioDryRun => vec![
+                "--dry-run".to_owned(),
+                path(inputs.path(Input::Audio)),
+                "20260311_120000".to_owned(),
+            ],
             Self::GenericText => vec![path(inputs.path(Input::Text)), "20260311_120000".to_owned()],
+            Self::GenericAutoTimestamp => vec![path(inputs.path(Input::Text))],
+            Self::UnclassifiedMedia => vec![
+                "--timestamp".to_owned(),
+                "20260311_120000".to_owned(),
+                path(inputs.path(Input::Image)),
+            ],
             Self::Structured { source, input } => {
                 let mut args = vec![
                     "--source".to_owned(),
@@ -448,6 +495,9 @@ impl Invocation {
                 "--path".to_owned(),
                 path(inputs.path(Input::Vault)),
             ],
+            Self::SyncPlaudSave => {
+                vec!["--sync".to_owned(), "plaud".to_owned(), "--save".to_owned()]
+            }
             Self::ConnectUnknown => vec!["--connect".to_owned(), "unknown".to_owned()],
             Self::JournalSourceCreate => vec![
                 "journal-source".to_owned(),
@@ -711,6 +761,35 @@ fn surplus_positionals_are_rejected_loudly() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized arguments: b.m4a"));
+}
+
+#[test]
+fn generic_force_bypasses_the_wired_manifest_deduplication() {
+    let journal = TempDir::new().expect("journal");
+    let inputs = Inputs::create(&journal);
+    let source_hash = solstone_core_import::hash_source(inputs.path(Input::Audio))
+        .expect("hash audio")
+        .into_inner();
+    let import = journal.path().join("imports/existing");
+    fs::create_dir_all(&import).expect("import directory");
+    fs::write(
+        import.join("manifest.json"),
+        format!(r#"{{"source_hash":"{source_hash}","entry_count":1}}"#),
+    )
+    .expect("manifest");
+
+    let args = Invocation::GenericAudio.args(&inputs);
+    let skipped = run_in_column(SupervisorColumn::GatePassed, &args, &journal);
+    assert_eq!(skipped.status.code(), Some(0));
+    assert_eq!(skipped.stdout, b"Import skipped: AlreadyImported\n");
+    assert!(skipped.stderr.is_empty());
+
+    let mut forced = vec!["--force".to_owned()];
+    forced.extend(args);
+    let imported = run_in_column(SupervisorColumn::GatePassed, &forced, &journal);
+    assert_eq!(imported.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&imported.stdout).contains("Generic audio import complete:"));
+    assert!(imported.stderr.is_empty());
 }
 
 #[test]
