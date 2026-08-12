@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from capture_health_text_reference import DEFAULT_OUTPUT, self_test
 
-EXPECTED_SHA256 = "fb9a2675cfa925fe1d49bfb306e83b10f1209d48912ae302c33aa8d61f0022d2"
+EXPECTED_SHA256 = "b0c3ac7312aea7e017c5807c2f531b7463b8a416f78ca3a1d7c63cd6536f664d"
 
 
 def main() -> int:
