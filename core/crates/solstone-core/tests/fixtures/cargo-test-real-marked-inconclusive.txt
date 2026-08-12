@@ -1,0 +1,20 @@
+running 3 tests
+test ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child ... FAILED
+test request_and_started_reports_closed_callosum_connection ... ok
+test standard_shutdown_is_clean ... ok
+
+failures:
+
+---- ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child stdout ----
+
+thread 'ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child' (1264684) panicked at crates/solstone-core/tests/supervisor_shutdown.rs:54:13:
+W4B_INCONCLUSIVE supervisor did not exit after SIGTERM: elapsed 36.61397968s, requested 30s, dilation 1.22x
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 51.91s
+
+error: test failed, to rerun pass `-p solstone-core --test supervisor_shutdown`

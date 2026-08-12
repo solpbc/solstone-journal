@@ -444,6 +444,13 @@ check-rust-race: build
 		if [ "$$classifier_status" -ne 0 ]; then verdict="FAILED: classifier infrastructure: $$verdict"; fi; \
 		printf '%s\n' "check-rust-race: run $$run $$verdict"; \
 		case "$$verdict" in \
+			GREEN) ;; \
+			*) echo "check-rust-race: --- run $$run evidence ---"; \
+			   sed -n '/^failures:/,$$p' "$$workdir/run-$$run.log" 2>/dev/null | head -30; \
+			   grep -E "panicked at|assertion|connection closed before" "$$workdir/run-$$run.log" 2>/dev/null | head -12; \
+			   echo "check-rust-race: --- end run $$run evidence ---";; \
+		esac; \
+		case "$$verdict" in \
 			GREEN) green=$$((green + 1));; \
 			INCONCLUSIVE:*) inconclusive=$$((inconclusive + 1));; \
 			FAILED:*) failed=$$((failed + 1)); failed_details="$$failed_details [run $$run: $${verdict#FAILED: }]";; \

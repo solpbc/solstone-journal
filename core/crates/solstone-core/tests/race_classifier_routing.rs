@@ -11,6 +11,8 @@ mod race_classification;
 use race_classification::{RaceVerdict, classify};
 
 const SIGKILL_FIXTURE: &str = include_str!("fixtures/cargo-test-sigkill-supervisor-tick.txt");
+const REAL_MARKED_FIXTURE: &str =
+    include_str!("fixtures/cargo-test-real-marked-inconclusive.txt");
 
 #[test]
 fn successful_cargo_run_is_green() {
@@ -117,5 +119,29 @@ fn nonzero_without_test_binary_evidence_is_failed() {
     assert_eq!(
         classify(101, "error: failed to compile dependency"),
         RaceVerdict::Failed("cargo build or runner failure before test-binary evidence".to_owned())
+    );
+}
+
+// Captured from a real `make check-rust-race` run on a measured-quiet 16-core
+// host: a W4b wait exceeded its budget with dilation 1.22x, panicked carrying
+// W4B_INCONCLUSIVE, and the classifier still reported a hard FAILED.
+//
+// The synthetic capture in marker_tagged_named_libtest_failure_is_inconclusive
+// passes with or without that bug, because it OMITS the leading bare
+// `failures:` block that libtest emits before the per-test stdout sections.
+// With the leading block present the marker search window pointed at the half
+// of the output that cannot contain the header. This fixture is the real shape.
+#[test]
+fn real_capture_with_leading_failures_block_routes_marked_wait_to_inconclusive() {
+    let verdict = classify(101, REAL_MARKED_FIXTURE);
+    assert_eq!(
+        verdict,
+        RaceVerdict::Inconclusive(
+            "W4B_INCONCLUSIVE named libtest failure(s): \
+ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child"
+                .to_owned()
+        ),
+        "a dilated wait carrying W4B_INCONCLUSIVE must never route to FAILED -- \
+that is the false red AC3 exists to prevent"
     );
 }

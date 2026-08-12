@@ -95,12 +95,27 @@ fn named_failures(output: &str) -> Vec<NamedFailure> {
 }
 
 fn failure_section_has_marker(output: &str, failures_start: usize, name: &str) -> bool {
+    // The per-test stdout block lives AFTER the `failures:` line that introduces
+    // it, so searching `output[..failures_start]` could never find the header --
+    // it looked for the evidence strictly before the point where the evidence
+    // begins, and a marked W4B_INCONCLUSIVE wait was therefore routed as a hard
+    // FAILED. That is the exact false red AC3 exists to prevent. Measured on a
+    // quiet host: `dilation 1.22x` reported as `named libtest failure(s)`.
     let header = format!("---- {name} stdout ----");
-    let Some(start) = output[..failures_start]
-        .rfind(&header)
-        .map(|index| index + header.len())
-    else {
+    let Some(header_at) = output.find(&header) else {
         return false;
     };
-    output[start..failures_start].contains("W4B_INCONCLUSIVE")
+    let section_start = header_at + header.len();
+    // Bound the section at whichever comes first: the next test's stdout block,
+    // or the name-list `failures:` block. Without a bound, one marked test would
+    // lend its marker to every later failure in the same capture.
+    let mut end = output.len();
+    if let Some(next) = output[section_start..].find("\n---- ") {
+        end = end.min(section_start + next);
+    }
+    if let Some(names) = output[section_start..].find("\nfailures:\n") {
+        end = end.min(section_start + names);
+    }
+    let _ = failures_start;
+    output[section_start..end].contains("W4B_INCONCLUSIVE")
 }
