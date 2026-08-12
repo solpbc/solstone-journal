@@ -55,6 +55,26 @@ HOST_TOOL_PATHS = {
     "sh": "/bin/sh",
     "strip": "/usr/bin/strip",
 }
+PACKAGING_ROLE_TOKENS = {
+    "BUILD_ROOT",
+    "BUNDLE_BIN",
+    "CARGO_HOME",
+    "COMPILER_HELPERS",
+    "COMPILER_RUNTIME",
+    "HOME",
+    "OUTPUT",
+    "PYTHON_BACKENDS",
+    "PYTHON_BACKENDS_BIN",
+    "RUN_ROOT",
+    "RUSTUP_HOME",
+    "RUST_TOOLCHAIN_BIN",
+    "SOURCE_CHECKOUT",
+    "SOURCE_ROOT",
+    "TARGET",
+    "TMPDIR",
+    "UV_CACHE",
+    "XDG_CONFIG",
+}
 
 DUMMY_FIELDS = {
     "ANTHROPIC_API_KEY": "__SERVICE_LEGACY_DUMMY_ANTHROPIC__",
@@ -78,6 +98,7 @@ JWT_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{2,4096})\.([A-Za-z0-9_-]{2,4096})\.([A-Za-z0-9_-]{2,4096})(?![A-Za-z0-9_-])"
 )
 ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:[^\s\x00\"'<>]|\\ )+")
+ROLE_TOKEN = re.compile(r"<([A-Z_]+)>")
 OPERATOR_HOME_PATH = re.compile(
     r"""(?:^|[\s=:"'(\[+@!-]|file://(?:localhost)?)/(?:home|Users)/"""
 )
@@ -222,8 +243,52 @@ def scalar_strings(value: Any, location: str = "$") -> Iterable[tuple[str, str]]
         yield location, value
 
 
+def canonicalize_role_tokens(value: str) -> str:
+    angle_names = re.findall(r"<([^<>]*)>", value)
+    observed = set(angle_names)
+    unknown = observed - PACKAGING_ROLE_TOKENS
+    residue = re.sub(r"<[^<>]*>", "", value)
+    if unknown or "<" in residue or ">" in residue:
+        raise IntegrityError("role-token", f"unknown path roles: {sorted(unknown)}")
+    if not observed:
+        return value
+
+    def validate_role_path(role_path: str) -> None:
+        match = ROLE_TOKEN.match(role_path)
+        if match is None or match.start() != 0:
+            raise IntegrityError("role-token", "role-valued path lacks one root role")
+        remainder = role_path[match.end() :]
+        if not remainder:
+            return
+        if not remainder.startswith("/"):
+            raise IntegrityError("role-token", "role-valued path has invalid suffix")
+        components = remainder[1:].split("/")
+        if any(
+            not component
+            or component in {".", ".."}
+            or not re.fullmatch(r"[A-Za-z0-9._-]+", component)
+            for component in components
+        ):
+            raise IntegrityError("role-token", "role-valued path has invalid component")
+
+    if value.startswith("--remap-path-prefix="):
+        for clause in value.split():
+            prefix = "--remap-path-prefix="
+            if not clause.startswith(prefix):
+                raise IntegrityError("role-token", "invalid role remap clause")
+            source, separator, target = clause.removeprefix(prefix).partition("=")
+            if not separator:
+                raise IntegrityError("role-token", "role remap lacks target")
+            validate_role_path(source)
+            validate_role_path(target)
+    else:
+        for role_path in value.split(":"):
+            validate_role_path(role_path)
+    return ROLE_TOKEN.sub("ROLE", value)
+
+
 def _path_tokens(value: str) -> list[str]:
-    value = value.replace("append:/", "/")
+    value = canonicalize_role_tokens(value).replace("append:/", "/")
     return [token.rstrip(",;)]}") for token in ABSOLUTE_PATH.findall(value)]
 
 
@@ -1090,6 +1155,22 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
         "/tmp/sh"
     )
     _expect_guard("host-tools", lambda: verified_host_tool_paths(poisoned_host_tools))
+    if _path_tokens("<BUNDLE_BIN>/ar"):
+        raise AssertionError("canonical role-valued path was treated as host absolute")
+    if _path_tokens("<BUNDLE_BIN>:<PYTHON_BACKENDS_BIN>:<RUST_TOOLCHAIN_BIN>"):
+        raise AssertionError("canonical role path list was treated as host absolute")
+    if _path_tokens(
+        "--remap-path-prefix=<SOURCE_CHECKOUT>=<SOURCE_ROOT> "
+        "--remap-path-prefix=<RUN_ROOT>=<BUILD_ROOT>"
+    ):
+        raise AssertionError("canonical remap roles were treated as host absolute")
+    _expect_guard("role-token", lambda: _path_tokens("<CALLER_ROOT>/bin/tool"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/../home/tool"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/<HOME>/tool"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>:%2fhome/tool"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/%2e%2e/home/tool"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>:/tmp/tool"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/<malformed>"))
     with tempfile.TemporaryDirectory(
         prefix="service-legacy-integrity-test-"
     ) as temporary:
