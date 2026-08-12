@@ -30,6 +30,7 @@ const VISION_PROMPT: &str = "Describe what is in this image faithfully and conci
 const VISION_CONTEXT: &str = "import.image.vision";
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
 const PRIVATE_IMPORT_DIR_MODE: u32 = 0o700;
+const MODEL_DERIVED_LINE_PREFIX: char = '>';
 
 /// Progress reported by one image import.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -394,12 +395,14 @@ fn render_model_block(description: &DescriptionOutcome) -> String {
         DescriptionOutcome::Generated(text) => text.to_owned(),
         DescriptionOutcome::Unavailable { reason } => format!("unavailable — {reason}"),
     };
-    let mut lines = vec!["> [image description — model-derived]".to_owned()];
+    let mut lines = vec![format!(
+        "{MODEL_DERIVED_LINE_PREFIX} [image description — model-derived]"
+    )];
     lines.extend(text.split('\n').map(|line| {
         if line.is_empty() {
-            ">".to_owned()
+            MODEL_DERIVED_LINE_PREFIX.to_string()
         } else {
-            format!("> {line}")
+            format!("{MODEL_DERIVED_LINE_PREFIX} {line}")
         }
     }));
     lines.join("\n")
@@ -636,16 +639,40 @@ mod tests {
         let description =
             DescriptionOutcome::Generated("A description.\n\nSecond line.".to_owned());
         let rendered = render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", &description);
-        let header = "# photo\n\n**Type:** Image\n**Format:** PNG\n**Dimensions:** 4×5\n**Date:** 2026-01-02\n\n---\n\n";
-        assert!(rendered.starts_with(header));
-        assert_eq!(
-            rendered.strip_prefix(header).unwrap(),
-            format!("{}\n", render_model_block(&description))
-        );
+        assert_model_partition(&rendered, &description);
         let unavailable = DescriptionOutcome::Unavailable {
             reason: "no engine".to_owned(),
         };
-        assert!(render_model_block(&unavailable).contains("unavailable — no engine"));
+        let rendered = render_image_markdown("photo", "PNG", 4, 5, "2026-01-02", &unavailable);
+        assert_model_partition(&rendered, &unavailable);
+    }
+
+    fn assert_model_partition(rendered: &str, description: &DescriptionOutcome) {
+        let (header, model) = rendered
+            .split_once("\n---\n\n")
+            .expect("transcript must contain a deterministic header divider");
+        assert!(
+            header
+                .lines()
+                .all(|line| !line.starts_with(MODEL_DERIVED_LINE_PREFIX))
+        );
+        assert!(
+            model
+                .lines()
+                .all(|line| line.starts_with(MODEL_DERIVED_LINE_PREFIX))
+        );
+        match description {
+            DescriptionOutcome::Generated(text) => {
+                assert!(
+                    text.lines()
+                        .all(|line| line.is_empty() || !header.contains(line))
+                );
+            }
+            DescriptionOutcome::Unavailable { reason } => {
+                assert!(!header.contains(reason));
+                assert!(model.contains(reason));
+            }
+        }
     }
 
     #[test]

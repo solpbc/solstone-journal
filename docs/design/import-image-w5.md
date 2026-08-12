@@ -34,7 +34,8 @@ audited importer call shape does not pass `dry_run` to image processing.
 - `preview(path: &Path) -> ImportPreview` takes only a path.  It reads image
   format and dimensions plus source mtime when possible; otherwise it returns
   the frozen degenerate preview (`date_range` empty, counts zero, `No readable
-  image found`) without writes.
+  image found`) without writes. A decoded format the module does not recognize
+  also returns that degenerate result rather than panicking.
 - `import_image(path: &Path, journal_root: &Path, import_id: &str,
   progress: Option<&mut dyn FnMut(&ProgressUpdate)>, wire:
   &dyn WireClient) -> Result<ImageImportResult, ImageImportError>` is the
@@ -53,17 +54,17 @@ callback is the only progress seam; successful import invokes it once with
 ## Import result, manifest, and publication
 
 `ImageImportResult` carries the transcript path in `files_created`, the
-`CreatedSegment`, a caller-supplied `days_affected` vector containing the one
-derived day, and a description status/error suitable for the caller to report.
-It does not derive affected days from output paths.
+`CreatedSegment`, the one-element `days_affected` vector derived from the
+source mtime, and a description status/error suitable for the caller to
+report. It does not derive affected days from output paths.
 
 The created segment is the concrete `solstone_core_import::CreatedSegment`
 with its day, segment key, `import.image` stream, and appropriate
 `StreamHints`.  This wave writes the generic import manifest through
 `solstone_core_import::write_manifest` and returns the segment for a later
 wave to feed into `PublicationInput`; it does not publish.  The manifest's
-`days_affected` comes from the result's explicit one-element vector, never
-from pathname parsing.
+`days_affected` is supplied from the derived one-element day vector, never
+parsed back out of output paths.
 
 ## Decode, request, and model outcome
 
@@ -83,15 +84,14 @@ WEBP) exactly match the generate wire's frozen image MIME vocabulary.
 - generated response yields trimmed description text;
 - `Refused(NoEngineConfigured)` is a distinct unavailable outcome, not a hard
   error;
-- every other refusal preserves its detail, blocking flag, and reason code as
-  a wire failure; and
-- every `ClientError` variant (`Protocol`, `Decode`, `Io`, and `Resolve`) is a
-  specific wire failure.
+- every other refusal preserves its reason and detail as an unavailable
+  description; and
+- every `ClientError` variant (`Protocol`, `Decode`, `Io`, and `Resolve`) is
+  an unavailable description with its useful detail retained.
 
-An unavailable outcome and a hard wire failure both happen after original
-installation.  Both write a transcript containing the unavailable/error
-reason and return a result that reports the missing description; neither
-silently claims success of the description.
+Every unavailable outcome happens after original installation. It writes a
+transcript containing the reason and returns a result that reports the missing
+description; it never silently claims success of the description.
 
 ## Transcript and durable writes
 
@@ -115,10 +115,11 @@ copy of the source mode.  Source bytes, mode, and mtime are never modified.
 The transcript is written through journal I/O with the same private file mode.
 
 The error enum has specific variants for missing/non-file or undecodable
-source, install failure, wire failure, and journal-I/O failure.  Source and
-wire inputs are boundary conditions and receive explicit validation and
-errors; constructed paths, the typed result, and internally built request are
-trusted internal values rather than defensively revalidated.
+source, install failure, manifest failure, and journal-I/O failure. Source
+inputs are boundary conditions and receive explicit validation and errors;
+wire outcomes are retained as typed unavailable descriptions. Constructed
+paths, the typed result, and internally built request are trusted internal
+values rather than defensively revalidated.
 
 ## Dependencies and policy
 
@@ -173,3 +174,7 @@ continue checking remaining stub rows separately.
   unavailable description result and transcript by deliberate W5 policy.
 - TIFF's advertised/detected-but-undecodable status is intentional for this
   wave and must not be mistaken for MIME support.
+- Decode reads the source bytes, install streams the source again, and manifest
+  creation hashes it a third time. A concurrent source replacement can make
+  those artifacts describe different revisions; this limitation is accepted
+  for W5.

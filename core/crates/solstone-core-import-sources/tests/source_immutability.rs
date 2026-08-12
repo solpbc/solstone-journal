@@ -182,10 +182,9 @@ fn unavailable_description_doors_preserve_the_installed_original() {
             .unwrap();
 
         let result = import_image(&source, &journal, label, None, wire).unwrap();
-        assert!(matches!(
-            result.description,
-            DescriptionOutcome::Unavailable { .. }
-        ));
+        let DescriptionOutcome::Unavailable { reason } = &result.description else {
+            panic!("unavailable wire door must report a missing description");
+        };
         let segment = journal.join(format!(
             "chronicle/{}/import.image/{}",
             result.created_segment.day, result.created_segment.segment
@@ -194,11 +193,14 @@ fn unavailable_description_doors_preserve_the_installed_original() {
             fs::read(segment.join("original.png")).unwrap(),
             fs::read(&source).unwrap()
         );
-        assert!(
-            fs::read_to_string(segment.join("image_transcript.md"))
-                .unwrap()
-                .contains("unavailable —")
-        );
+        let transcript = fs::read_to_string(segment.join("image_transcript.md")).unwrap();
+        let (header, model) = transcript
+            .split_once("\n---\n\n")
+            .expect("transcript must contain a deterministic header divider");
+        assert!(header.lines().all(|line| !line.starts_with('>')));
+        assert!(model.lines().all(|line| line.starts_with('>')));
+        assert!(!header.contains(reason));
+        assert!(model.contains(reason));
     }
 }
 
