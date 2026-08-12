@@ -1,0 +1,75 @@
+{
+  "schema": "w7-import-sources-oracle/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "ran each reference source's detect() and preview() over synthetic inputs; preview is read-only",
+    "note": "Captured rows are preserved under captured; status is fixture metadata used by native conformance tests."
+  },
+  "cases": {
+    "claude": {
+      "status": "expectation",
+      "captured": {
+        "input": "claude.zip",
+        "detect": true,
+        "preview": {
+          "date_range": ["20260311", "20260311"],
+          "item_count": 2,
+          "entity_count": 0,
+          "summary": "2 messages from Claude chat export"
+        }
+      }
+    },
+    "chatgpt": {
+      "status": "superseded",
+      "captured": {
+        "input": "chatgpt.zip",
+        "detect": true,
+        "preview": {
+          "date_range": ["20260311", "20260311"],
+          "item_count": 1,
+          "entity_count": 0,
+          "summary": "1 conversations from ChatGPT export"
+        }
+      },
+      "w7_expected": {
+        "date_range": ["20260311", "20260311"],
+        "item_count": 2,
+        "entity_count": 0,
+        "summary": "2 messages from ChatGPT export"
+      }
+    },
+    "kindle": {
+      "status": "expectation",
+      "captured": {
+        "input": "My Clippings.txt",
+        "detect": true,
+        "preview": {
+          "date_range": ["20260311", "20260311"],
+          "item_count": 1,
+          "entity_count": 2,
+          "summary": "1 highlights from 1 books"
+        }
+      }
+    },
+    "gemini": {
+      "status": "non_expectation",
+      "captured": {
+        "input": "gemini.zip",
+        "detect": true,
+        "preview": {
+          "date_range": ["", ""],
+          "item_count": 0,
+          "entity_count": 0,
+          "summary": "0 activities from Gemini export"
+        }
+      },
+      "w7_expected": {
+        "date_range": ["20260311", "20260311"],
+        "item_count": 4,
+        "entity_count": 0,
+        "summary": "4 messages from Gemini export"
+      }
+    }
+  }
+}

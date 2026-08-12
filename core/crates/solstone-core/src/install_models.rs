@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use solstone_core_cli::{InstallModelsOptions, InstallModelsVariant};
 use solstone_core_local::install::{
-    DispatchError, fingerprint, fit_report, install_parakeet_with_lease, lease, pins, status,
+    DispatchError, ced_install, fingerprint, fit_report, install_parakeet_with_lease, lease, pins,
+    rerank_install, rfdetr_install, status,
 };
 use solstone_core_transcribe::resolve_model_asset;
 
@@ -40,6 +41,53 @@ enum ResolvedVariant {
     Coreml,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstallerAction {
+    Check,
+    Install { force: bool },
+}
+
+type RerankInstaller<'a> =
+    dyn FnMut(&Path, InstallerAction) -> Result<(), rerank_install::RerankInstallError> + 'a;
+type CedInstaller<'a> = dyn FnMut(
+        &Path,
+        &str,
+        &str,
+        InstallerAction,
+    ) -> Result<Option<ced_install::CedRecord>, ced_install::CedInstallError>
+    + 'a;
+type RfdetrInstaller<'a> = dyn FnMut(
+        &Path,
+        &str,
+        &str,
+        InstallerAction,
+    ) -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError>
+    + 'a;
+
+struct ProviderInstallers<'a> {
+    rerank: Box<RerankInstaller<'a>>,
+    ced: Box<CedInstaller<'a>>,
+    rfdetr: Box<RfdetrInstaller<'a>>,
+}
+
+struct InstallModelsHooks<A> {
+    asset_gate: A,
+    report_override: Option<fit_report::FitReport>,
+}
+
+fn install_models_hooks<A>(
+    asset_gate: A,
+    report_override: Option<fit_report::FitReport>,
+) -> InstallModelsHooks<A>
+where
+    A: FnMut(&str) -> Result<(), String>,
+{
+    InstallModelsHooks {
+        asset_gate,
+        report_override,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallModelsOutcome {
     resolved_variant: Option<ResolvedVariant>,
@@ -67,6 +115,20 @@ impl InstallModelsOutcome {
             resolved_variant: variant,
             exit_code,
             stdout: Vec::new(),
+            stderr: vec![message.into()],
+        }
+    }
+
+    fn failure_with_stdout(
+        variant: Option<ResolvedVariant>,
+        exit_code: u8,
+        message: impl Into<String>,
+        stdout: Vec<String>,
+    ) -> Self {
+        Self {
+            resolved_variant: variant,
+            exit_code,
+            stdout,
             stderr: vec![message.into()],
         }
     }
@@ -118,23 +180,47 @@ where
         nvidia_probe,
         options,
         journal_resolver,
-        |name| {
-            resolve_model_asset(name)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
+        install_models_hooks(
+            |name: &str| {
+                resolve_model_asset(name)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            },
+            None,
+        ),
+        ProviderInstallers {
+            rerank: Box::new(|journal, action| match action {
+                InstallerAction::Check => rerank_install::check_rerank_model(journal),
+                InstallerAction::Install { force } => {
+                    rerank_install::install_rerank_model(journal, force)
+                }
+            }),
+            ced: Box::new(|journal, os_name, arch, action| match action {
+                InstallerAction::Check => ced_install::check_ced_assets(journal, os_name, arch),
+                InstallerAction::Install { force } => {
+                    ced_install::install_ced_assets(journal, os_name, arch, force)
+                }
+            }),
+            rfdetr: Box::new(|journal, os_name, arch, action| match action {
+                InstallerAction::Check => {
+                    rfdetr_install::check_rfdetr_model(journal, os_name, arch)
+                }
+                InstallerAction::Install { force } => {
+                    rfdetr_install::install_rfdetr(journal, os_name, arch, force)
+                }
+            }),
         },
-        None,
         install_executor,
     )
 }
 
-fn run_inner_with<P, J, A, I>(
+fn run_inner_with<'a, P, J, A, I>(
     host: HostPlatform,
     nvidia_probe: P,
     options: InstallModelsOptions,
     journal_resolver: J,
-    mut asset_gate: A,
-    report_override: Option<fit_report::FitReport>,
+    mut hooks: InstallModelsHooks<A>,
+    mut providers: ProviderInstallers<'a>,
     install_executor: I,
 ) -> InstallModelsOutcome
 where
@@ -155,7 +241,7 @@ where
         "wespeaker-resnet34-256.onnx",
         "pyannote-segmentation-3.0.onnx",
     ] {
-        if let Err(error) = asset_gate(asset) {
+        if let Err(error) = (hooks.asset_gate)(asset) {
             return InstallModelsOutcome::failure(
                 variant,
                 EXIT_DATAERR,
@@ -164,59 +250,172 @@ where
         }
     }
 
-    let Some(variant) = variant else {
-        return InstallModelsOutcome::success(
-            None,
-            vec![format!(
-                "parakeet install: unsupported platform {}/{}; supported: darwin/arm64, linux/x86_64",
-                host.os_name, host.arch
-            )],
-        );
-    };
-
-    if variant == ResolvedVariant::Coreml {
-        return InstallModelsOutcome::failure(
-            Some(variant),
-            EXIT_UNAVAILABLE,
-            "install-models: resolved variant coreml, but CoreML model install is not implemented in the native shell",
-        );
-    }
-
-    let key = match pins::parakeet_artifact_key(&host.os_name, &host.arch) {
-        Ok(key) => key,
-        Err(error) => {
-            return InstallModelsOutcome::failure(Some(variant), EXIT_DATAERR, error.to_string());
-        }
-    };
     let journal = match journal_resolver() {
         Ok(journal) => journal,
         Err(()) => {
             return InstallModelsOutcome {
-                resolved_variant: Some(variant),
+                resolved_variant: variant,
                 exit_code: EXIT_TEMPFAIL,
                 stdout: Vec::new(),
                 stderr: Vec::new(),
             };
         }
     };
+    let mut provider_stdout = Vec::new();
+    if let Err(error) = (providers.rerank)(
+        &journal,
+        if options.check {
+            InstallerAction::Check
+        } else {
+            InstallerAction::Install {
+                force: options.force,
+            }
+        },
+    ) {
+        return InstallModelsOutcome::failure(variant, error.exit_code, error.to_string());
+    }
+    let ced_key = ced_install::ced_artifact_key(&host.os_name, &host.arch);
+    if ced_key.is_none() {
+        provider_stdout.push(format!(
+            "ced install: unsupported platform {}/{}; skipping ced sound-tag assets",
+            host.os_name, host.arch
+        ));
+    } else if options.check {
+        match (providers.ced)(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
+            Ok(Some(_)) => provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal))),
+            Ok(None) => {}
+            Err(error) => {
+                return InstallModelsOutcome::failure_with_stdout(
+                    variant,
+                    error.exit_code,
+                    error.to_string(),
+                    provider_stdout,
+                );
+            }
+        }
+    } else {
+        let ready = if options.force {
+            false
+        } else {
+            match (providers.ced)(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
+                Ok(Some(_)) => true,
+                Ok(None) | Err(_) => false,
+            }
+        };
+        if ready {
+            provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
+        } else {
+            provider_stdout.push("ced assets: downloading ced.cpp v0.1.0 engine from github.com (MIT) and ced-tiny-q8_0 model from huggingface.co (Apache-2.0)".to_owned());
+            match (providers.ced)(
+                &journal,
+                &host.os_name,
+                &host.arch,
+                InstallerAction::Install {
+                    force: options.force,
+                },
+            ) {
+                Ok(Some(_)) => {
+                    provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)))
+                }
+                Ok(None) => provider_stdout.push(format!(
+                    "ced install: unsupported platform {}/{}; skipping ced sound-tag assets",
+                    host.os_name, host.arch
+                )),
+                Err(error) => {
+                    return InstallModelsOutcome::failure_with_stdout(
+                        variant,
+                        error.exit_code,
+                        error.to_string(),
+                        provider_stdout,
+                    );
+                }
+            }
+        }
+    }
+    if let Err(error) = (providers.rfdetr)(
+        &journal,
+        &host.os_name,
+        &host.arch,
+        if options.check {
+            InstallerAction::Check
+        } else {
+            InstallerAction::Install {
+                force: options.force,
+            }
+        },
+    ) {
+        return InstallModelsOutcome::failure_with_stdout(
+            variant,
+            error.exit_code,
+            error.to_string(),
+            provider_stdout,
+        );
+    }
+
+    let Some(variant) = variant else {
+        return InstallModelsOutcome::success(
+            None,
+            [provider_stdout, vec![format!(
+                "parakeet install: unsupported platform {}/{}; supported: darwin/arm64, linux/x86_64",
+                host.os_name, host.arch
+            )]].concat(),
+        );
+    };
+
+    if variant == ResolvedVariant::Coreml {
+        return InstallModelsOutcome::failure_with_stdout(
+            Some(variant),
+            EXIT_UNAVAILABLE,
+            "install-models: resolved variant coreml, but CoreML model install is not implemented in the native shell",
+            provider_stdout,
+        );
+    }
+
+    let key = match pins::parakeet_artifact_key(&host.os_name, &host.arch) {
+        Ok(key) => key,
+        Err(error) => {
+            return InstallModelsOutcome::failure_with_stdout(
+                Some(variant),
+                EXIT_DATAERR,
+                error.to_string(),
+                provider_stdout,
+            );
+        }
+    };
     if options.check {
         return match parakeet_ready(&journal, &key) {
-            Ok(path) => InstallModelsOutcome::success(Some(variant), vec![ready_line(&path)]),
-            Err(message) => InstallModelsOutcome::failure(Some(variant), EXIT_DATAERR, message),
+            Ok(path) => InstallModelsOutcome::success(
+                Some(variant),
+                [provider_stdout, vec![ready_line(&path)]].concat(),
+            ),
+            Err(message) => InstallModelsOutcome::failure_with_stdout(
+                Some(variant),
+                EXIT_DATAERR,
+                message,
+                provider_stdout,
+            ),
         };
     }
     if !options.force
         && let Ok(path) = parakeet_ready(&journal, &key)
     {
-        return InstallModelsOutcome::success(Some(variant), vec![ready_line(&path)]);
+        return InstallModelsOutcome::success(
+            Some(variant),
+            [provider_stdout, vec![ready_line(&path)]].concat(),
+        );
     }
 
-    let report = report_override.unwrap_or_else(|| {
+    let report = hooks.report_override.unwrap_or_else(|| {
         fit_report::build_parakeet_fit_report(&journal, &host.os_name, &host.arch)
     });
     let rendered = fit_report::render_fit_report(&report);
     if report.overall() == fit_report::FitSeverity::Blocked {
-        return InstallModelsOutcome::failure(Some(variant), EXIT_UNAVAILABLE, rendered);
+        return InstallModelsOutcome::failure_with_stdout(
+            Some(variant),
+            EXIT_UNAVAILABLE,
+            rendered,
+            provider_stdout,
+        );
     }
     let mut stderr = Vec::new();
     if report.overall() == fit_report::FitSeverity::Warning {
@@ -334,10 +533,11 @@ where
             }
         }
     };
+    provider_stdout.push(ready_line(&model));
     InstallModelsOutcome {
         resolved_variant: Some(variant),
         exit_code: 0,
-        stdout: vec![ready_line(&model)],
+        stdout: provider_stdout,
         stderr,
     }
 }
@@ -534,6 +734,35 @@ mod tests {
 
     const ASSET_GATE_JOURNAL_ENV: &str = "SOLSTONE_CORE_ASSET_GATE_JOURNAL";
 
+    macro_rules! run_inner_with_test {
+        (
+            $host:expr,
+            $probe:expr,
+            $options:expr,
+            $journal:expr,
+            $asset_gate:expr,
+            $report:expr,
+            $rerank:expr,
+            $ced:expr,
+            $rfdetr:expr,
+            $executor:expr $(,)?
+        ) => {
+            run_inner_with(
+                $host,
+                $probe,
+                $options,
+                $journal,
+                install_models_hooks($asset_gate, $report),
+                ProviderInstallers {
+                    rerank: Box::new($rerank),
+                    ced: Box::new($ced),
+                    rfdetr: Box::new($rfdetr),
+                },
+                $executor,
+            )
+        };
+    }
+
     fn options(variant: InstallModelsVariant) -> InstallModelsOptions {
         InstallModelsOptions {
             check: false,
@@ -613,13 +842,16 @@ mod tests {
 
     #[test]
     fn variant_refusal_precedes_journal_resolution() {
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "arm64", None),
             || false,
             options(InstallModelsVariant::Cuda),
             || Err(()),
             |_| panic!("asset gate must not run"),
             None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_USAGE);
@@ -637,34 +869,147 @@ mod tests {
         assert_eq!(normalize_arch("x86_64"), "x86_64");
 
         let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("macos", "aarch64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(
             outcome.stdout,
             [
+                "ced install: unsupported platform macos/aarch64; skipping ced sound-tag assets",
                 "parakeet install: unsupported platform macos/aarch64; supported: darwin/arm64, linux/x86_64"
             ]
         );
     }
 
     #[test]
-    fn darwin_resolves_coreml_after_the_asset_gate_without_probing_nvidia() {
+    fn ced_orchestration_uses_pre_normalized_host_values() {
         let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with(
+        let mut called = false;
+        let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
+            |_, _| Ok(()),
+            |_, os_name, arch, action| {
+                called = true;
+                assert_eq!(
+                    ced_install::ced_artifact_key(os_name, arch),
+                    Some("macos-metal-arm64")
+                );
+                match action {
+                    InstallerAction::Check => Err(ced_install::CedInstallError::new(
+                        "sidecar_missing",
+                        "not ready",
+                        EXIT_DATAERR,
+                    )),
+                    InstallerAction::Install { .. } => Ok(Some(ced_install::CedRecord {
+                        artifact_key: "macos-metal-arm64".to_owned(),
+                        engine_version: "v0.1.0".to_owned(),
+                        files: std::collections::BTreeMap::new(),
+                        model_repo: "mudler/ced-gguf".to_owned(),
+                        model_revision: "test".to_owned(),
+                    })),
+                }
+            },
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml install is unavailable"),
+        );
+        assert!(called);
+        assert!(
+            !outcome
+                .stdout
+                .iter()
+                .any(|line| line.starts_with("ced install: unsupported"))
+        );
+
+        let raw_journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("macos", "aarch64", None),
+            || panic!("probe must not run"),
+            options(InstallModelsVariant::Auto),
+            || Ok(raw_journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| Ok(()),
+            |_, _, _, _| panic!("raw platform must skip ced"),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("unsupported platform must not install parakeet"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(
+            outcome.stdout.contains(
+                &"ced install: unsupported platform macos/aarch64; skipping ced sound-tag assets"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn rerank_failure_stops_the_other_provider_installers_and_parakeet() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut ced_called = false;
+        let mut rfdetr_called = false;
+        let mut parakeet_called = false;
+        let outcome = run_inner_with_test!(
+            host("linux", "x86_64", None),
+            || false,
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| {
+                Err(rerank_install::RerankInstallError::new(
+                    "download_failed",
+                    "rerank failed",
+                    EXIT_IOERR,
+                ))
+            },
+            |_, _, _, _| {
+                ced_called = true;
+                Ok(None)
+            },
+            |_, _, _, _| {
+                rfdetr_called = true;
+                Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
+            },
+            |_, _, _| {
+                parakeet_called = true;
+                panic!("parakeet must not run")
+            },
+        );
+        assert_eq!(outcome.exit_code, EXIT_IOERR);
+        assert_eq!(outcome.stderr, ["rerank failed"]);
+        assert!(!ced_called);
+        assert!(!rfdetr_called);
+        assert!(!parakeet_called);
+    }
+
+    #[test]
+    fn darwin_resolves_coreml_after_the_asset_gate_without_probing_nvidia() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("darwin", "arm64", None),
+            || panic!("probe must not run"),
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.resolved_variant, Some(ResolvedVariant::Coreml));
@@ -681,7 +1026,7 @@ mod tests {
     fn bundled_asset_gate_names_only_speaker_assets_and_never_enters_the_installer() {
         let journal = tempfile::tempdir().unwrap();
         let mut seen = Vec::new();
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
@@ -695,6 +1040,9 @@ mod tests {
                 }
             },
             None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_DATAERR);
@@ -773,7 +1121,7 @@ mod tests {
             "x86_64",
             Ok(0),
         );
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "x86_64", None),
             || false,
             InstallModelsOptions {
@@ -784,6 +1132,9 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_UNAVAILABLE);
@@ -801,7 +1152,7 @@ mod tests {
         let rendered = fit_report::render_fit_report(&report);
         let model = journal.path().join("model.gguf");
         let mut installer_entered = false;
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "x86_64", None),
             || false,
             InstallModelsOptions {
@@ -812,6 +1163,9 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| {
                 installer_entered = true;
                 Ok(model)
@@ -819,7 +1173,12 @@ mod tests {
         );
         assert!(installer_entered);
         assert_eq!(outcome.exit_code, 0);
-        assert!(outcome.stdout[0].starts_with("model ready: "));
+        assert!(
+            outcome
+                .stdout
+                .iter()
+                .any(|line| line.starts_with("model ready: "))
+        );
         assert_eq!(outcome.stderr, [rendered]);
     }
 
@@ -833,7 +1192,7 @@ mod tests {
             Ok(u64::MAX),
         );
         let model = journal.path().join("model.gguf");
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "arm64", None),
             || panic!("probe must not run"),
             InstallModelsOptions {
@@ -844,6 +1203,9 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, delegated_host, _| {
                 assert_eq!(delegated_host.os_name, "linux");
                 assert_eq!(delegated_host.arch, "arm64");
@@ -888,7 +1250,7 @@ mod tests {
             "x86_64",
             Ok(u64::MAX),
         );
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host,
             || false,
             InstallModelsOptions {
@@ -899,12 +1261,20 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             Some(report),
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("installer must not run"),
         );
         writer.join().unwrap();
         drop(held);
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
-        assert!(outcome.stdout[0].starts_with("model ready: "));
+        assert!(
+            outcome
+                .stdout
+                .iter()
+                .any(|line| line.starts_with("model ready: "))
+        );
     }
 
     fn assert_journal_empty(journal: &Path) {

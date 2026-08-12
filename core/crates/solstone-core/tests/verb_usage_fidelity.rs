@@ -16,8 +16,8 @@
 use std::process::Command;
 
 use solstone_core_cli::{
-    CHECK_HELP, CHECK_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE,
+    CHECK_HELP, CHECK_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP,
+    INSTALL_PROVIDER_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE,
 };
 use tempfile::tempdir;
 
@@ -236,6 +236,50 @@ fn install_models_help_is_byte_identical_for_both_spellings() {
     ] {
         assert_help(args, INSTALL_MODELS_HELP);
     }
+}
+
+#[test]
+fn malformed_install_provider_invocations_exit_2_with_its_own_usage() {
+    for args in [
+        ["install-provider"].as_slice(),
+        ["install-provider", "--wat"].as_slice(),
+        ["install-provider", "parakeet", "extra"].as_slice(),
+    ] {
+        let output = run_core(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(output.stdout, b"", "{args:?}");
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
+        assert!(
+            stderr.starts_with(INSTALL_PROVIDER_USAGE),
+            "{args:?} did not print install-provider usage; got:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("solstone-core"),
+            "{args:?} printed top-level usage; got:\n{stderr}"
+        );
+    }
+}
+
+#[test]
+fn install_provider_help_is_byte_identical_for_both_spellings() {
+    for args in [
+        ["install-provider", "--help"].as_slice(),
+        ["install-provider", "-h"].as_slice(),
+    ] {
+        assert_help(args, INSTALL_PROVIDER_HELP);
+    }
+}
+
+#[test]
+fn install_provider_unsupported_name_reaches_the_body() {
+    let output = run_core(&["install-provider", "bogus"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert!(
+        String::from_utf8(output.stderr)
+            .expect("UTF-8 stderr")
+            .contains("unsupported provider \"bogus\"; supported: local, parakeet")
+    );
 }
 
 // --- transfer -------------------------------------------------------------

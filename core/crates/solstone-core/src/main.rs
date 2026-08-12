@@ -27,12 +27,12 @@ use solstone_core_cli::{
     GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP,
     IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
     IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
-    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
-    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand,
+    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE,
     SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, ServiceOptions,
@@ -177,6 +177,13 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::InstallProvider(options)) => install_provider::run(options),
+        Ok(Command::InstallProviderUsage) => {
+            render_usage_error(INSTALL_PROVIDER_USAGE, "journal install-provider")
+        }
+        Ok(Command::InstallProviderHelp) => {
+            print!("{INSTALL_PROVIDER_HELP}");
+            ExitCode::SUCCESS
+        }
         Ok(Command::Convey(options)) => run_convey(options),
         Ok(Command::ConveyHelp) => {
             print!("{CONVEY_HELP}");

@@ -30,6 +30,13 @@ pub mod sync_state;
 pub mod text;
 pub mod timestamp;
 
+pub use audio::{
+    AudioImportAbort, AudioImportComplete, AudioImportOutcome, AudioImportPartial,
+    AudioImportRecord, AudioImportRecordSegment, AudioImportRequest, AudioImportSeams,
+    AudioProbeError, AudioProcessingState, AudioSliceError, AudioWaitRecord, DroppedAudioChunk,
+    ProcessingWaitOutcome, import_audio, import_audio_with_seams, read_audio_import_record,
+    write_audio_import_record,
+};
 pub use connect::{OuraConnectOutcome, OuraConnectRequest, connect_oura};
 pub use consent_gate::{
     CONSENT_GATE_EXIT_CODE, ConsentGateOutcome, ConsentGateRequest, GateFailure,
@@ -80,25 +87,113 @@ pub use timestamp::{
 /// Error returned by an importer seam that has no implementation yet.
 #[derive(Debug)]
 pub enum ImportError {
-    Unimplemented { module: &'static str },
-    ExistingImportDirectory { path: PathBuf },
-    MetadataMismatchOnForce { path: PathBuf, key: &'static str },
-    ImportDirectoryIsSymlink { path: PathBuf },
-    ImportDirectoryEscapesImports { path: PathBuf, imports: PathBuf },
-    SourceMissing { path: PathBuf },
-    SourceNotFile { path: PathBuf },
-    NonUtf8DirectoryEntry { path: PathBuf },
-    DestinationExists { path: PathBuf },
-    PromotionFailed { path: PathBuf, message: String },
-    AuditSinkFailed { message: String },
-    RemovalFailed { path: PathBuf, message: String },
-    MetadataCorrupt { path: PathBuf, message: String },
-    MetadataWriteFailed { path: PathBuf, message: String },
-    ManifestWriteFailed { path: PathBuf, message: String },
-    PathResolution { path: PathBuf, message: String },
-    RelocationFailed { path: PathBuf, message: String },
-    InvalidImportId { import_id: String },
-    InvalidDestinationName { name: OsString },
+    Unimplemented {
+        module: &'static str,
+    },
+    ExistingImportDirectory {
+        path: PathBuf,
+    },
+    MetadataMismatchOnForce {
+        path: PathBuf,
+        key: &'static str,
+    },
+    ImportDirectoryIsSymlink {
+        path: PathBuf,
+    },
+    ImportDirectoryEscapesImports {
+        path: PathBuf,
+        imports: PathBuf,
+    },
+    SourceMissing {
+        path: PathBuf,
+    },
+    SourceNotFile {
+        path: PathBuf,
+    },
+    NonUtf8DirectoryEntry {
+        path: PathBuf,
+    },
+    DestinationExists {
+        path: PathBuf,
+    },
+    PromotionFailed {
+        path: PathBuf,
+        message: String,
+    },
+    AuditSinkFailed {
+        message: String,
+    },
+    RemovalFailed {
+        path: PathBuf,
+        message: String,
+    },
+    MetadataCorrupt {
+        path: PathBuf,
+        message: String,
+    },
+    MetadataWriteFailed {
+        path: PathBuf,
+        message: String,
+    },
+    ManifestWriteFailed {
+        path: PathBuf,
+        message: String,
+    },
+    PathResolution {
+        path: PathBuf,
+        message: String,
+    },
+    RelocationFailed {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidImportId {
+        import_id: String,
+    },
+    InvalidDestinationName {
+        name: OsString,
+    },
+    AudioDurationUnavailable {
+        path: PathBuf,
+        detail: String,
+    },
+    AudioInputUnreadable {
+        path: PathBuf,
+        detail: String,
+    },
+    AudioSliceRejected {
+        path: PathBuf,
+        chunk_index: u64,
+        start_offset_seconds: f64,
+        duration_seconds: f64,
+        detail: String,
+    },
+    AudioSegmentDirectory {
+        path: PathBuf,
+        message: String,
+    },
+    AudioSegmentCollision {
+        day: String,
+        stream: String,
+        start: String,
+        attempts: u32,
+    },
+    AudioSegmentDayOverflow {
+        day: String,
+        stream: String,
+        start: String,
+    },
+    NoAudioSegmentsCreated {
+        path: PathBuf,
+    },
+    AudioRecordRead {
+        path: PathBuf,
+        message: String,
+    },
+    AudioRecordWrite {
+        path: PathBuf,
+        message: String,
+    },
 }
 
 impl fmt::Display for ImportError {
@@ -144,7 +239,9 @@ impl fmt::Display for ImportError {
             | Self::MetadataWriteFailed { path, message }
             | Self::ManifestWriteFailed { path, message }
             | Self::PathResolution { path, message }
-            | Self::RelocationFailed { path, message } => {
+            | Self::RelocationFailed { path, message }
+            | Self::AudioRecordRead { path, message }
+            | Self::AudioRecordWrite { path, message } => {
                 write!(formatter, "{}: {message}", path.display())
             }
             Self::AuditSinkFailed { message } => {
@@ -168,6 +265,59 @@ impl fmt::Display for ImportError {
                     name.to_string_lossy()
                 )
             }
+            Self::AudioDurationUnavailable { path, detail } => {
+                write!(
+                    formatter,
+                    "could not determine audio duration {}: {detail}",
+                    path.display()
+                )
+            }
+            Self::AudioInputUnreadable { path, detail } => {
+                write!(
+                    formatter,
+                    "could not read audio input {}: {detail}",
+                    path.display()
+                )
+            }
+            Self::AudioSliceRejected {
+                path,
+                chunk_index,
+                start_offset_seconds,
+                duration_seconds,
+                detail,
+            } => write!(
+                formatter,
+                "audio slice rejected for chunk {chunk_index} [{start_offset_seconds}, {}) of {}: {detail}",
+                start_offset_seconds + duration_seconds,
+                path.display()
+            ),
+            Self::AudioSegmentDirectory { path, message } => {
+                write!(
+                    formatter,
+                    "could not create audio segment directory {}: {message}",
+                    path.display()
+                )
+            }
+            Self::AudioSegmentCollision {
+                day,
+                stream,
+                start,
+                attempts,
+            } => write!(
+                formatter,
+                "audio segment collision for {day}/{stream} at {start} after {attempts} attempts"
+            ),
+            Self::AudioSegmentDayOverflow { day, stream, start } => write!(
+                formatter,
+                "audio segment collision probe crosses day boundary for {day}/{stream} at {start}"
+            ),
+            Self::NoAudioSegmentsCreated { path } => {
+                write!(
+                    formatter,
+                    "no audio segments created from {}",
+                    path.display()
+                )
+            }
         }
     }
 }
@@ -179,7 +329,6 @@ pub type ModuleStub = (&'static str, fn() -> Result<(), ImportError>);
 
 /// The complete inventory of importer modules that remain unimplemented.
 pub const MODULE_STUBS: &[ModuleStub] = &[
-    ("audio", audio::reserved_seam),
     ("cli_argv", cli_argv::reserved_seam),
     ("cli_render", cli_render::reserved_seam),
 ];

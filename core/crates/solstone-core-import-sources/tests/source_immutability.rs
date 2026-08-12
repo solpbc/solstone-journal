@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, UNIX_EPOCH};
 
 use chrono::{DateTime, Local};
@@ -15,15 +16,13 @@ use solstone_core_generate::{
     ClientError, GenerateRequest, GenerateResponse, RefusalReason, RefusedResponse,
 };
 use solstone_core_import::observe_source_immutability;
-use solstone_core_import_sources::MODULE_STUBS;
 use solstone_core_import_sources::image::{
     DescriptionOutcome, ProgressUpdate, WireClient, import_image,
 };
-use solstone_core_import_sources::{ics, obsidian};
+use solstone_core_import_sources::{chatgpt, claude, gemini, ics, kindle, obsidian};
+use support::TempTree;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
-
-static NEXT_TREE: AtomicUsize = AtomicUsize::new(0);
 
 struct SuccessWire;
 
@@ -73,18 +72,31 @@ impl WireClient for FailingWire {
 }
 
 #[test]
-fn source_stubs_leave_the_owner_source_unchanged() {
+fn real_source_operations_leave_owner_exports_byte_identical() {
     let tree = TempTree::new();
-    fs::write(tree.path().join("source.txt"), b"source").unwrap();
+    let claude_path = support::claude_archive(&tree);
+    let chatgpt_path = support::chatgpt_archive(&tree);
+    let gemini_path = support::gemini_archive(&tree);
+    let kindle_path = support::kindle_clippings(&tree);
 
-    // This retains coverage for the remaining stubs; the implemented-source test below covers real
-    // read behavior, while the negative twin in the import crate proves detection works. Document
-    // imports have their own source-immutability coverage because they install artifacts from a
-    // real owner-controlled source file.
+    // Image, archive, and document are real transactional sources and are deliberately absent
+    // from MODULE_STUBS; the implemented-source tests below cover their real read/write behavior.
+    // Document imports have their own source-immutability coverage because they install artifacts
+    // from a real owner-controlled source file. Every remaining entry still represents a
+    // non-mutating reserved seam.
     let report = observe_source_immutability(tree.path(), |_| {
-        for (_, stub) in MODULE_STUBS {
-            assert!(stub().is_err());
-        }
+        assert!(claude::detect(&claude_path).unwrap());
+        claude::preview(&claude_path).unwrap();
+        claude::plan(&claude_path).unwrap();
+        assert!(chatgpt::detect(&chatgpt_path).unwrap());
+        chatgpt::preview(&chatgpt_path).unwrap();
+        chatgpt::plan(&chatgpt_path).unwrap();
+        assert!(gemini::detect(&gemini_path).unwrap());
+        gemini::preview(&gemini_path).unwrap();
+        gemini::plan(&gemini_path).unwrap();
+        assert!(kindle::detect(&kindle_path).unwrap());
+        kindle::preview(&kindle_path).unwrap();
+        kindle::plan(&kindle_path).unwrap();
     })
     .unwrap();
 
@@ -303,31 +315,5 @@ fn collect_metadata(
         if metadata.is_dir() {
             collect_metadata(root, &path, snapshot);
         }
-    }
-}
-
-struct TempTree {
-    path: PathBuf,
-}
-
-impl TempTree {
-    fn new() -> Self {
-        let index = NEXT_TREE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "import-sources-image-test-{}-{index}",
-            std::process::id()
-        ));
-        fs::create_dir(&path).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.path).unwrap();
     }
 }

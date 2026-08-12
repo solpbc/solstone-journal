@@ -2914,6 +2914,8 @@ version = "1.0.22"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
  "getrandom 0.3.4",
  "regex",
  "serde",
@@ -2924,10 +2926,13 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
+ "solstone-core-import-sources",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+ "solstone-core-processing-record",
  "solstone-core-segment",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -2936,12 +2941,17 @@ version = "1.0.22"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "getrandom 0.3.4",
  "icalendar",
  "image",
+ "nix",
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-depict",
+ "solstone-core-entity",
+ "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-import",
  "solstone-core-indexer-store",
@@ -3047,6 +3057,7 @@ dependencies = [
  "rusqlite",
  "serde_json",
  "sha2",
+ "solstone-core-cli",
  "solstone-core-journal-cli",
 ]
 
@@ -3125,6 +3136,7 @@ dependencies = [
  "chrono",
  "flate2",
  "hmac",
+ "log",
  "nix",
  "serde",
  "serde_json",
