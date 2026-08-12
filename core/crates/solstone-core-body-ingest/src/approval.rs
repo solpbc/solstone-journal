@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use solstone_core_body_source::{BodyRawRetention, BodySourceFamily};
 
 use crate::bounded_file::read_bounded_regular;
@@ -105,11 +105,55 @@ pub(crate) fn oura_approval(
     if !confirmed && !scheduled {
         return Err(BodyIngestError::gate("per_run_confirmation_missing"));
     }
+    let approval = read_valid_oura_approval(journal)?;
+    if scheduled {
+        scheduled_sync_guidance(&approval.object)?;
+    }
+    Ok(approval.retention)
+}
+
+/// Read valid standing Oura scheduled-sync guidance without changing approval behavior.
+pub fn oura_scheduled_sync_guidance(
+    journal: &Path,
+) -> Result<Option<OuraScheduledSyncGuidance>, BodyIngestError> {
+    require_absolute_target(journal)?;
+    let approval = read_valid_oura_approval(journal)?;
+    approval
+        .object
+        .get("scheduled_sync")
+        .map(|_| scheduled_sync_guidance(&approval.object))
+        .transpose()
+}
+
+/// Valid, owner-approved scheduled Oura cadence information.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OuraScheduledSyncGuidance {
+    cadence: String,
+    valid_until: String,
+}
+
+impl OuraScheduledSyncGuidance {
+    pub fn cadence(&self) -> &str {
+        &self.cadence
+    }
+
+    pub fn valid_until(&self) -> &str {
+        &self.valid_until
+    }
+}
+
+struct OuraApproval {
+    object: Map<String, Value>,
+    retention: BodyRawRetention,
+}
+
+fn read_valid_oura_approval(journal: &Path) -> Result<OuraApproval, BodyIngestError> {
     let bytes = read_approval(journal, OURA_PATH)?;
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| BodyIngestError::gate("malformed_approval_artifact"))?;
     let object = value
         .as_object()
+        .cloned()
         .ok_or_else(|| BodyIngestError::gate("malformed_approval_artifact"))?;
     if object.get("schema").and_then(Value::as_str) != Some(OURA_SCHEMA) {
         return Err(BodyIngestError::gate("unsupported_approval_schema"));
@@ -147,29 +191,36 @@ pub(crate) fn oura_approval(
     retention
         .check_compatible(&BodySourceFamily::OuraApi)
         .map_err(|_| BodyIngestError::gate("raw_retention_incompatible"))?;
-    if scheduled {
-        let consent = object
-            .get("scheduled_sync")
-            .and_then(Value::as_object)
-            .ok_or_else(|| BodyIngestError::gate("scheduled_sync_consent_missing"))?;
-        if consent.get("approved") != Some(&Value::Bool(true)) {
-            return Err(BodyIngestError::gate("scheduled_sync_not_approved"));
-        }
-        let cadence = consent.get("cadence").and_then(Value::as_str).unwrap_or("");
-        if cadence.trim().is_empty() {
-            return Err(BodyIngestError::gate("scheduled_sync_cadence_invalid"));
-        }
-        let valid_until = consent
-            .get("valid_until")
-            .and_then(Value::as_str)
-            .ok_or_else(|| BodyIngestError::gate("scheduled_sync_valid_until_missing"))?;
-        let expiry = chrono::DateTime::parse_from_rfc3339(valid_until)
-            .map_err(|_| BodyIngestError::gate("scheduled_sync_valid_until_invalid"))?;
-        if chrono::Utc::now() >= expiry.with_timezone(&chrono::Utc) {
-            return Err(BodyIngestError::gate("scheduled_sync_consent_expired"));
-        }
+    Ok(OuraApproval { object, retention })
+}
+
+fn scheduled_sync_guidance(
+    object: &Map<String, Value>,
+) -> Result<OuraScheduledSyncGuidance, BodyIngestError> {
+    let consent = object
+        .get("scheduled_sync")
+        .and_then(Value::as_object)
+        .ok_or_else(|| BodyIngestError::gate("scheduled_sync_consent_missing"))?;
+    if consent.get("approved") != Some(&Value::Bool(true)) {
+        return Err(BodyIngestError::gate("scheduled_sync_not_approved"));
     }
-    Ok(retention)
+    let cadence = consent.get("cadence").and_then(Value::as_str).unwrap_or("");
+    if cadence.trim().is_empty() {
+        return Err(BodyIngestError::gate("scheduled_sync_cadence_invalid"));
+    }
+    let valid_until = consent
+        .get("valid_until")
+        .and_then(Value::as_str)
+        .ok_or_else(|| BodyIngestError::gate("scheduled_sync_valid_until_missing"))?;
+    let expiry = chrono::DateTime::parse_from_rfc3339(valid_until)
+        .map_err(|_| BodyIngestError::gate("scheduled_sync_valid_until_invalid"))?;
+    if chrono::Utc::now() >= expiry.with_timezone(&chrono::Utc) {
+        return Err(BodyIngestError::gate("scheduled_sync_consent_expired"));
+    }
+    Ok(OuraScheduledSyncGuidance {
+        cadence: cadence.to_owned(),
+        valid_until: valid_until.to_owned(),
+    })
 }
 
 fn read_approval(journal: &Path, relative: &str) -> Result<Vec<u8>, BodyIngestError> {
@@ -294,6 +345,45 @@ mod tests {
             oura_approval(&journal, true, false).unwrap_err().stage(),
             "journal_root_binding_not_absolute"
         );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn scheduled_guidance_matches_the_existing_gate_without_writing() {
+        let journal = temporary_journal();
+        let approval = journal.join(OURA_PATH);
+        fs::write(
+            &approval,
+            serde_json::to_vec(&json!({
+                "schema": OURA_SCHEMA,
+                "checklist_version": OURA_CHECKLIST,
+                "journal_root": journal.canonicalize().unwrap(),
+                "requires_per_run_confirmation": true,
+                "replication_destinations": {
+                    "time_machine": {"decision": "excluded"},
+                    "icloud": {"decision": "excluded"},
+                    "solbase": {"decision": "excluded"},
+                    "hosted_backup": {"decision": "excluded"},
+                    "other": {"decision": "excluded"}
+                },
+                "raw_retention": {"decision": "discard"},
+                "scheduled_sync": {
+                    "approved": true,
+                    "cadence": "daily",
+                    "valid_until": "2099-01-01T00:00:00Z"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let before = fs::read(&approval).unwrap();
+
+        let guidance = oura_scheduled_sync_guidance(&journal).unwrap().unwrap();
+
+        assert_eq!(guidance.cadence(), "daily");
+        assert_eq!(guidance.valid_until(), "2099-01-01T00:00:00Z");
+        assert!(oura_approval(&journal, true, true).is_ok());
+        assert_eq!(fs::read(&approval).unwrap(), before);
         fs::remove_dir_all(journal).unwrap();
     }
 
