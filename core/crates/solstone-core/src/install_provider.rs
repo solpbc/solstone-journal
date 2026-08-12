@@ -508,11 +508,36 @@ fn local_override_and_brain_lane(
 }
 
 fn local_vulkan_device_index(value: &Value) -> Option<u32> {
-    let index = match value {
-        Value::String(value) => value.trim().parse::<i64>().ok()?,
-        _ => i64::try_from(value.as_u64()?).ok()?,
-    };
-    u32::try_from(index).ok()
+    match value {
+        Value::Bool(value) => Some(u32::from(*value)),
+        Value::String(value) => value
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .and_then(|index| u64::try_from(index).ok())
+            .map(saturating_vulkan_device_index),
+        Value::Number(value) => {
+            if let Some(index) = value.as_i64() {
+                return u64::try_from(index)
+                    .ok()
+                    .map(saturating_vulkan_device_index);
+            }
+            if let Some(index) = value.as_u64() {
+                return Some(saturating_vulkan_device_index(index));
+            }
+            let index = value.as_f64()?.trunc();
+            if !index.is_finite() || index < 0.0 {
+                return None;
+            }
+            Some(saturating_vulkan_device_index(index as u64))
+        }
+        _ => None,
+    }
+}
+
+fn saturating_vulkan_device_index(index: u64) -> u32 {
+    // No real device index is u32::MAX, so this preserves an explicit nonmatching override.
+    u32::try_from(index).unwrap_or(u32::MAX)
 }
 
 fn available_memory_bytes() -> Option<u64> {
@@ -587,6 +612,7 @@ fn observe_existing(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // Provider parameterization plus the injected poll/timeout test seam.
 fn observe_existing_with<P>(
     journal: &Path,
     provider: &str,
@@ -1216,24 +1242,24 @@ mod tests {
         let current = status::transition(current, "resolving", None, None).unwrap();
         status::write_status(journal.path(), current).unwrap();
         let status_path = journal.path().to_path_buf();
+        assert!(is_install_busy(&install_busy_error()));
+        let updater = std::thread::spawn(move || {
+            let current = status::read_status(&status_path, "local").unwrap();
+            let installed = status::transition(current, "installed", None, None).unwrap();
+            status::write_status(&status_path, installed).unwrap();
+        });
 
-        let outcome = run_local_inner_with_platform_and_target_sha(
-            || Ok(journal.path().to_path_buf()),
-            |_| missing_readiness(),
-            Some(report(fit_report::FitSeverity::Ok)),
-            move |_| {
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(20));
-                    let current = status::read_status(&status_path, "local").unwrap();
-                    let installed = status::transition(current, "installed", None, None).unwrap();
-                    status::write_status(&status_path, installed).unwrap();
-                });
-                Err(install_busy_error())
-            },
-            |_| Ok("local-target".to_owned()),
-            "linux",
-            "x86_64",
+        let outcome = observe_existing_with(
+            journal.path(),
+            "local",
+            &target_sha,
+            Vec::new(),
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            |_, _| {},
         );
+        updater.join().unwrap();
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(
             serde_json::from_str::<Value>(&outcome.stdout[0]).unwrap()["install_state"],
@@ -1252,20 +1278,20 @@ mod tests {
         let status_path = journal.path().to_path_buf();
         let held = lease::acquire(journal.path(), "local").unwrap().unwrap();
         let updater = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(20));
             let current = status::read_status(&status_path, "local").unwrap();
             let installed = status::transition(current, "installed", None, None).unwrap();
             status::write_status(&status_path, installed).unwrap();
         });
 
-        let outcome = run_local_inner_with_platform_and_target_sha(
-            || Ok(journal.path().to_path_buf()),
-            |_| missing_readiness(),
-            Some(report(fit_report::FitSeverity::Ok)),
-            |_| panic!("held lease must observe instead of dispatching"),
-            |_| Ok(target_sha.to_owned()),
-            "linux",
-            "x86_64",
+        let outcome = observe_existing_with(
+            journal.path(),
+            "local",
+            target_sha,
+            Vec::new(),
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            |_, _| {},
         );
         updater.join().unwrap();
         drop(held);
@@ -1282,6 +1308,17 @@ mod tests {
         let value = configured["providers"]["local"]["vulkan_device_index"].clone();
         assert_eq!(local_vulkan_device_index(&value), Some(2));
         assert_eq!(local_vulkan_device_index(&json!("-0")), Some(0));
+        assert_eq!(local_vulkan_device_index(&json!(true)), Some(1));
+        assert_eq!(local_vulkan_device_index(&json!(2.0)), Some(2));
+        assert_eq!(local_vulkan_device_index(&json!(-0.5)), Some(0));
+        assert_eq!(
+            local_vulkan_device_index(&json!(u64::from(u32::MAX) + 1)),
+            Some(u32::MAX)
+        );
+        assert_eq!(
+            local_vulkan_device_index(&json!("4294967296")),
+            Some(u32::MAX)
+        );
         assert_eq!(local_vulkan_device_index(&json!(-1)), None);
         assert_eq!(local_vulkan_device_index(&json!("not-an-index")), None);
 
