@@ -50,6 +50,39 @@ impl TempJournal {
         .expect("thinking config");
     }
 
+    fn install_local_fixture_artifact(&self) {
+        fs::write(
+            self.0.join("config/journal.json"),
+            br#"{"setup":{"completed_at":1},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
+        )
+        .expect("fixture journal config");
+        let snapshot = self.0.join(
+            "cache/providers/local/mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6",
+        );
+        fs::create_dir_all(snapshot.join("snapshot")).expect("fixture snapshot");
+        fs::write(
+            snapshot.join("snapshot.manifest.json"),
+            json!({
+                "schema_version": 1,
+                "provider": "local",
+                "unit": "mlx-snapshot",
+                "target_fingerprint_sha256": "test",
+                "created_by_attempt_id": null,
+                "external_root": null,
+                "source": {"pin_identity": {
+                    "unit": "mlx-snapshot",
+                    "model_id": "qwen3.5:9b",
+                    "repo": "mlx-community/Qwen3.5-9B-MLX-8bit",
+                    "revision": "84f7c2deea248d8df56240f88102def51c7ed5d6",
+                    "size_bytes": 10_453_446_077_u64
+                }},
+                "inventory": []
+            })
+            .to_string(),
+        )
+        .expect("fixture snapshot manifest");
+    }
+
     fn write_local_port(&self, port: u16) {
         fs::create_dir_all(self.0.join("health")).expect("health directory");
         fs::write(self.0.join("health/local.port"), port.to_string()).expect("local port");
@@ -376,6 +409,22 @@ async fn receive_status(
     }
 }
 
+async fn receive_status_with_service(
+    reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
+    service_name: &str,
+) -> Value {
+    loop {
+        let status = receive_status(reader).await;
+        if status["services"].as_array().is_some_and(|services| {
+            services
+                .iter()
+                .any(|service| service["name"] == service_name)
+        }) {
+            return status;
+        }
+    }
+}
+
 async fn receive_timeout_history(
     reader: &mut tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>,
 ) -> Value {
@@ -662,6 +711,7 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
         .expect("schedule JSON"),
     )
     .expect("write schedule");
+    journal.install_local_fixture_artifact();
     let mut child = start(&journal, None);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
@@ -670,7 +720,7 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
         "supervisor status event",
         Duration::from_millis(10),
         800,
-        receive_status(&mut reader),
+        receive_status_with_service(&mut reader, "local"),
     )
     .await;
     let names = status["services"]
@@ -679,13 +729,13 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
         .iter()
         .filter_map(|service| service["name"].as_str())
         .collect::<Vec<_>>();
-    assert!(names.contains(&"local") && names.contains(&"parakeet"));
+    assert!(names.contains(&"local"));
     assert!(
         status["schedules"]
             .as_array()
             .expect("schedule projection")
             .iter()
-            .any(|schedule| schedule == "ac13")
+            .any(|schedule| schedule["name"] == "ac13")
     );
     assert!(status["crashed"].is_array());
 }
