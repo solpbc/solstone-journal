@@ -47,6 +47,47 @@ enum InstallerAction {
     Install { force: bool },
 }
 
+type RerankInstaller<'a> =
+    dyn FnMut(&Path, InstallerAction) -> Result<(), rerank_install::RerankInstallError> + 'a;
+type CedInstaller<'a> = dyn FnMut(
+        &Path,
+        &str,
+        &str,
+        InstallerAction,
+    ) -> Result<Option<ced_install::CedRecord>, ced_install::CedInstallError>
+    + 'a;
+type RfdetrInstaller<'a> = dyn FnMut(
+        &Path,
+        &str,
+        &str,
+        InstallerAction,
+    ) -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError>
+    + 'a;
+
+struct ProviderInstallers<'a> {
+    rerank: Box<RerankInstaller<'a>>,
+    ced: Box<CedInstaller<'a>>,
+    rfdetr: Box<RfdetrInstaller<'a>>,
+}
+
+struct InstallModelsHooks<A> {
+    asset_gate: A,
+    report_override: Option<fit_report::FitReport>,
+}
+
+fn install_models_hooks<A>(
+    asset_gate: A,
+    report_override: Option<fit_report::FitReport>,
+) -> InstallModelsHooks<A>
+where
+    A: FnMut(&str) -> Result<(), String>,
+{
+    InstallModelsHooks {
+        asset_gate,
+        report_override,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct InstallModelsOutcome {
     resolved_variant: Option<ResolvedVariant>,
@@ -139,64 +180,53 @@ where
         nvidia_probe,
         options,
         journal_resolver,
-        |name| {
-            resolve_model_asset(name)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        },
-        None,
-        |journal, action| match action {
-            InstallerAction::Check => rerank_install::check_rerank_model(journal),
-            InstallerAction::Install { force } => {
-                rerank_install::install_rerank_model(journal, force)
-            }
-        },
-        |journal, os_name, arch, action| match action {
-            InstallerAction::Check => ced_install::check_ced_assets(journal, os_name, arch),
-            InstallerAction::Install { force } => {
-                ced_install::install_ced_assets(journal, os_name, arch, force)
-            }
-        },
-        |journal, os_name, arch, action| match action {
-            InstallerAction::Check => rfdetr_install::check_rfdetr_model(journal, os_name, arch),
-            InstallerAction::Install { force } => {
-                rfdetr_install::install_rfdetr(journal, os_name, arch, force)
-            }
+        install_models_hooks(
+            |name: &str| {
+                resolve_model_asset(name)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            },
+            None,
+        ),
+        ProviderInstallers {
+            rerank: Box::new(|journal, action| match action {
+                InstallerAction::Check => rerank_install::check_rerank_model(journal),
+                InstallerAction::Install { force } => {
+                    rerank_install::install_rerank_model(journal, force)
+                }
+            }),
+            ced: Box::new(|journal, os_name, arch, action| match action {
+                InstallerAction::Check => ced_install::check_ced_assets(journal, os_name, arch),
+                InstallerAction::Install { force } => {
+                    ced_install::install_ced_assets(journal, os_name, arch, force)
+                }
+            }),
+            rfdetr: Box::new(|journal, os_name, arch, action| match action {
+                InstallerAction::Check => {
+                    rfdetr_install::check_rfdetr_model(journal, os_name, arch)
+                }
+                InstallerAction::Install { force } => {
+                    rfdetr_install::install_rfdetr(journal, os_name, arch, force)
+                }
+            }),
         },
         install_executor,
     )
 }
 
-fn run_inner_with<P, J, A, R, C, D, I>(
+fn run_inner_with<'a, P, J, A, I>(
     host: HostPlatform,
     nvidia_probe: P,
     options: InstallModelsOptions,
     journal_resolver: J,
-    mut asset_gate: A,
-    report_override: Option<fit_report::FitReport>,
-    mut rerank_installer: R,
-    mut ced_installer: C,
-    mut rfdetr_installer: D,
+    mut hooks: InstallModelsHooks<A>,
+    mut providers: ProviderInstallers<'a>,
     install_executor: I,
 ) -> InstallModelsOutcome
 where
     P: FnOnce() -> bool,
     J: FnOnce() -> Result<PathBuf, ()>,
     A: FnMut(&str) -> Result<(), String>,
-    R: FnMut(&Path, InstallerAction) -> Result<(), rerank_install::RerankInstallError>,
-    C: FnMut(
-        &Path,
-        &str,
-        &str,
-        InstallerAction,
-    ) -> Result<Option<ced_install::CedRecord>, ced_install::CedInstallError>,
-    D: FnMut(
-        &Path,
-        &str,
-        &str,
-        InstallerAction,
-    )
-        -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError>,
     I: FnOnce(&Path, &HostPlatform, lease::InstallLease) -> Result<PathBuf, Box<DispatchError>>,
 {
     let variant = match resolve_variant(&options, &host, nvidia_probe) {
@@ -211,7 +241,7 @@ where
         "wespeaker-resnet34-256.onnx",
         "pyannote-segmentation-3.0.onnx",
     ] {
-        if let Err(error) = asset_gate(asset) {
+        if let Err(error) = (hooks.asset_gate)(asset) {
             return InstallModelsOutcome::failure(
                 variant,
                 EXIT_DATAERR,
@@ -232,7 +262,7 @@ where
         }
     };
     let mut provider_stdout = Vec::new();
-    if let Err(error) = rerank_installer(
+    if let Err(error) = (providers.rerank)(
         &journal,
         if options.check {
             InstallerAction::Check
@@ -251,7 +281,7 @@ where
             host.os_name, host.arch
         ));
     } else if options.check {
-        match ced_installer(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
+        match (providers.ced)(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
             Ok(Some(_)) => provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal))),
             Ok(None) => {}
             Err(error) => {
@@ -267,7 +297,7 @@ where
         let ready = if options.force {
             false
         } else {
-            match ced_installer(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
+            match (providers.ced)(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
                 Ok(Some(_)) => true,
                 Ok(None) | Err(_) => false,
             }
@@ -276,7 +306,7 @@ where
             provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
         } else {
             provider_stdout.push("ced assets: downloading ced.cpp v0.1.0 engine from github.com (MIT) and ced-tiny-q8_0 model from huggingface.co (Apache-2.0)".to_owned());
-            match ced_installer(
+            match (providers.ced)(
                 &journal,
                 &host.os_name,
                 &host.arch,
@@ -302,7 +332,7 @@ where
             }
         }
     }
-    if let Err(error) = rfdetr_installer(
+    if let Err(error) = (providers.rfdetr)(
         &journal,
         &host.os_name,
         &host.arch,
@@ -375,7 +405,7 @@ where
         );
     }
 
-    let report = report_override.unwrap_or_else(|| {
+    let report = hooks.report_override.unwrap_or_else(|| {
         fit_report::build_parakeet_fit_report(&journal, &host.os_name, &host.arch)
     });
     let rendered = fit_report::render_fit_report(&report);
@@ -704,6 +734,35 @@ mod tests {
 
     const ASSET_GATE_JOURNAL_ENV: &str = "SOLSTONE_CORE_ASSET_GATE_JOURNAL";
 
+    macro_rules! run_inner_with_test {
+        (
+            $host:expr,
+            $probe:expr,
+            $options:expr,
+            $journal:expr,
+            $asset_gate:expr,
+            $report:expr,
+            $rerank:expr,
+            $ced:expr,
+            $rfdetr:expr,
+            $executor:expr $(,)?
+        ) => {
+            run_inner_with(
+                $host,
+                $probe,
+                $options,
+                $journal,
+                install_models_hooks($asset_gate, $report),
+                ProviderInstallers {
+                    rerank: Box::new($rerank),
+                    ced: Box::new($ced),
+                    rfdetr: Box::new($rfdetr),
+                },
+                $executor,
+            )
+        };
+    }
+
     fn options(variant: InstallModelsVariant) -> InstallModelsOptions {
         InstallModelsOptions {
             check: false,
@@ -783,7 +842,7 @@ mod tests {
 
     #[test]
     fn variant_refusal_precedes_journal_resolution() {
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "arm64", None),
             || false,
             options(InstallModelsVariant::Cuda),
@@ -810,7 +869,7 @@ mod tests {
         assert_eq!(normalize_arch("x86_64"), "x86_64");
 
         let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("macos", "aarch64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
@@ -836,7 +895,7 @@ mod tests {
     fn ced_orchestration_uses_pre_normalized_host_values() {
         let journal = tempfile::tempdir().unwrap();
         let mut called = false;
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
@@ -877,7 +936,7 @@ mod tests {
         );
 
         let raw_journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("macos", "aarch64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
@@ -904,7 +963,7 @@ mod tests {
         let mut ced_called = false;
         let mut rfdetr_called = false;
         let mut parakeet_called = false;
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "x86_64", None),
             || false,
             options(InstallModelsVariant::Auto),
@@ -941,7 +1000,7 @@ mod tests {
     #[test]
     fn darwin_resolves_coreml_after_the_asset_gate_without_probing_nvidia() {
         let journal = tempfile::tempdir().unwrap();
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
@@ -967,7 +1026,7 @@ mod tests {
     fn bundled_asset_gate_names_only_speaker_assets_and_never_enters_the_installer() {
         let journal = tempfile::tempdir().unwrap();
         let mut seen = Vec::new();
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("darwin", "arm64", None),
             || panic!("probe must not run"),
             options(InstallModelsVariant::Auto),
@@ -1062,7 +1121,7 @@ mod tests {
             "x86_64",
             Ok(0),
         );
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "x86_64", None),
             || false,
             InstallModelsOptions {
@@ -1093,7 +1152,7 @@ mod tests {
         let rendered = fit_report::render_fit_report(&report);
         let model = journal.path().join("model.gguf");
         let mut installer_entered = false;
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "x86_64", None),
             || false,
             InstallModelsOptions {
@@ -1133,7 +1192,7 @@ mod tests {
             Ok(u64::MAX),
         );
         let model = journal.path().join("model.gguf");
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host("linux", "arm64", None),
             || panic!("probe must not run"),
             InstallModelsOptions {
@@ -1191,7 +1250,7 @@ mod tests {
             "x86_64",
             Ok(u64::MAX),
         );
-        let outcome = run_inner_with(
+        let outcome = run_inner_with_test!(
             host,
             || false,
             InstallModelsOptions {
