@@ -492,9 +492,7 @@ fn validate_record(record: &Record, filename: &str) -> Option<()> {
             return None;
         }
         let key = key?;
-        if key.len() < 8 {
-            return None;
-        }
+        key_prefix(key)?;
         let name = string_field(record, "name")?;
         if !is_valid_name(name) {
             return None;
@@ -538,8 +536,11 @@ fn fingerprint_prefix(fingerprint: &str) -> Option<&str> {
 }
 
 fn dl_prefix(record: &Record) -> Option<&str> {
-    let key = string_field(record, "key")?;
-    (key.len() >= 8).then_some(&key[..8])
+    key_prefix(string_field(record, "key")?)
+}
+
+fn key_prefix(key: &str) -> Option<&str> {
+    key.get(..8)
 }
 
 fn row_mode(record: &Record) -> Mode {

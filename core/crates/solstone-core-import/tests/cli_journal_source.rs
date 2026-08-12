@@ -375,6 +375,11 @@ fn malformed_or_misnamed_registry_records_are_silently_skipped() {
         "peer-dl.json",
         json!({"key": "abcdefgh", "name": "peer-dl", "peer_instance_id": "peer-1"}),
     );
+    write_record(
+        root.path(),
+        "non-boundary-key.json",
+        json!({"key": "abcdefgé", "name": "non-boundary-key"}),
+    );
     write_record(root.path(), "wrong.json", dl_record("different", 8_000));
     fs::write(sources_dir(root.path()).join("broken.json"), b"{").unwrap();
 
@@ -384,6 +389,10 @@ fn malformed_or_misnamed_registry_records_are_silently_skipped() {
     assert_eq!(rows.as_array().unwrap().len(), 1);
     assert_eq!(rows[0]["name"], "good");
     assert_eq!(run(root.path(), &["status", "different"]).exit_code, 1);
+    assert_eq!(
+        run(root.path(), &["status", "non-boundary-key"]).exit_code,
+        1
+    );
 }
 
 #[test]
