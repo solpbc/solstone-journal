@@ -473,7 +473,8 @@ check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
 		"-p solstone-core-system-health --test pipeline_health_oracle" \
 		"-p solstone-core-observe-audio --test audio_differential" \
 		"-p solstone-core-transcribe --test transcribe_differential" \
-		"-p solstone-core-transcribe --test transcribe_sound_tags_differential" ; do \
+		"-p solstone-core-transcribe --test transcribe_sound_tags_differential" \
+		"-p solstone-core-import-sources --test archive_merge_oracle" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
 			|| status=$$?; \

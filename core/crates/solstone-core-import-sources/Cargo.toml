@@ -15,12 +15,17 @@ workspace = true
 [dependencies]
 base64 = "0.22.1"
 chrono.workspace = true
+getrandom.workspace = true
 icalendar = { version = "0.17.13", features = ["chrono-tz"] }
 image.workspace = true
+nix = { workspace = true, features = ["fs"] }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 solstone-core-depict.workspace = true
+solstone-core-entity.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-journal-io.workspace = true
@@ -29,4 +34,14 @@ tempfile = "3.24.0"
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+serde_json.workspace = true
 solstone-core-indexer-store.workspace = true
+
+[features]
+default = []
+differential = []
+
+[[test]]
+name = "archive_merge_oracle"
+path = "tests/archive_merge_oracle.rs"
+required-features = ["differential"]
