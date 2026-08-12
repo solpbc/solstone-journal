@@ -1,0 +1,252 @@
+{
+  "schema": "w2-audio-oracles/1",
+  "provenance": {
+    "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
+    "python": "3.13.14",
+    "method": "ran the reference prepare_audio_segments with duration probing and ffmpeg slicing stubbed, so the arithmetic is pinned without needing real media",
+    "note": "duration probing and slicing shell out to ffmpeg/ffprobe; the native body needs an equivalent. What this pins is the SEGMENT ARITHMETIC and the failure dispositions.",
+    "recaptured_at_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542"
+  },
+  "rules": {
+    "segment_seconds": 300,
+    "naming": "{HHMMSS}_{300} from base_dt + index*5min",
+    "count": "ceiling division of duration by 300, floored at 1 for very short audio",
+    "last_chunk_duration": "duration - start_seconds (NOT 300)"
+  },
+  "cases": {
+    "exactly_one_chunk": {
+      "label": "2 minutes -> one segment, last chunk is the remainder",
+      "segment_keys": [
+        "120000_300"
+      ],
+      "files": [
+        [
+          "imported_audio.m4a"
+        ]
+      ],
+      "slice_calls": [
+        {
+          "start_seconds": 0,
+          "chunk_duration": 120
+        }
+      ],
+      "segments_returned": 1,
+      "slice_attempts": 1
+    },
+    "exact_multiple": {
+      "label": "exactly 10 minutes -> two segments",
+      "segment_keys": [
+        "120000_300",
+        "120500_300"
+      ],
+      "files": [
+        [
+          "imported_audio.m4a"
+        ],
+        [
+          "imported_audio.m4a"
+        ]
+      ],
+      "slice_calls": [
+        {
+          "start_seconds": 0,
+          "chunk_duration": 300
+        },
+        {
+          "start_seconds": 300,
+          "chunk_duration": 300
+        }
+      ],
+      "segments_returned": 2,
+      "slice_attempts": 2
+    },
+    "ceiling_division": {
+      "label": "10min+1s -> THREE segments, last chunk is 1s",
+      "segment_keys": [
+        "120000_300",
+        "120500_300",
+        "121000_300"
+      ],
+      "files": [
+        [
+          "imported_audio.m4a"
+        ],
+        [
+          "imported_audio.m4a"
+        ],
+        [
+          "imported_audio.m4a"
+        ]
+      ],
+      "slice_calls": [
+        {
+          "start_seconds": 0,
+          "chunk_duration": 300
+        },
+        {
+          "start_seconds": 300,
+          "chunk_duration": 300
+        },
+        {
+          "start_seconds": 600,
+          "chunk_duration": 1
+        }
+      ],
+      "segments_returned": 3,
+      "slice_attempts": 3
+    },
+    "zero_duration_floors_to_one": {
+      "label": "zero duration still yields one segment",
+      "segment_keys": [
+        "120000_300"
+      ],
+      "files": [
+        [
+          "imported_audio.m4a"
+        ]
+      ],
+      "slice_calls": [
+        {
+          "start_seconds": 0,
+          "chunk_duration": 0
+        }
+      ],
+      "segments_returned": 1,
+      "slice_attempts": 1
+    },
+    "duration_unknown_raises": {
+      "label": "duration probe returned nothing",
+      "raised": {
+        "type": "RuntimeError",
+        "message": "Could not determine duration of /tmp/w2-3j7gv4jc/a.m4a"
+      }
+    },
+    "slice_failure_drops_that_chunk": {
+      "label": "middle chunk fails to slice",
+      "segment_keys": [
+        "120000_300",
+        "121000_300"
+      ],
+      "files": [
+        [
+          "imported_audio.m4a"
+        ],
+        [
+          "imported_audio.m4a"
+        ]
+      ],
+      "slice_calls": [
+        {
+          "start_seconds": 0,
+          "chunk_duration": 300
+        },
+        {
+          "start_seconds": 300,
+          "chunk_duration": 300
+        },
+        {
+          "start_seconds": 600,
+          "chunk_duration": 300
+        }
+      ],
+      "segments_returned": 2,
+      "slice_attempts": 3
+    },
+    "collision_deconflicts": {
+      "label": "segment key already taken",
+      "segment_keys": [
+        "120000_299",
+        "120500_300"
+      ],
+      "files": [
+        [
+          "imported_audio.m4a"
+        ],
+        [
+          "imported_audio.m4a"
+        ]
+      ],
+      "slice_calls": [
+        {
+          "start_seconds": 0,
+          "chunk_duration": 300
+        },
+        {
+          "start_seconds": 300,
+          "chunk_duration": 300
+        }
+      ],
+      "segments_returned": 2,
+      "slice_attempts": 2
+    }
+  },
+  "collision_deconfliction": {
+    "note": "\u26d4 THIS IS A RANDOM WALK, NOT A DECREMENT. An earlier capture of this oracle recorded ONE draw (120000_299) and it was written up as a rule. It is one of four roughly-equal outcomes.",
+    "mechanism": "each attempt picks at random WHICH component to change (time or duration) and at random WHETHER to add or subtract one; on collision it walks again from the new value, up to a bounded number of attempts, so the key can drift far from the original",
+    "distribution_over_4000_draws": {
+      "120000_301": 1058,
+      "115959_300": 1025,
+      "120000_299": 963,
+      "120001_300": 954
+    },
+    "moves_the_TIME_component_fraction": 0.495,
+    "why_it_matters": "the time component moves MORE OFTEN than the duration, so the key most often misreports the segment's START TIME \u2014 and in a journal keyed on day+time that is worse than a wrong duration. An earlier write-up analysed only the duration axis.",
+    "and_the_duration_field_already_lies_without_any_collision": "the key's duration component is the CONSTANT 300 for every chunk, so the last chunk of essentially every import is misdescribed by its own key regardless of collisions",
+    "reproducible": false,
+    "how_to_test": "\u26d4 do not assert a specific deconflicted key. Assert the PROPERTY: after deconfliction the segment's true start time and true duration are both recoverable from data written beside it, not from the key."
+  },
+  "fractional_durations": {
+    "note": "\u26d4 the count is int((duration + 299) // 300), which is NOT ceiling division for FRACTIONAL durations \u2014 and real duration probes always return fractions. The last chunk absorbs duration minus its offset and CAN EXCEED 300s.",
+    "why_it_matters": "every other case in this oracle uses an integer duration, so a port that clamps the last chunk to 300 or truncates the duration to whole seconds passes all of them and silently drops the tail of the recording, reporting zero dropped chunks.",
+    "cases": [
+      {
+        "duration": 120,
+        "segments": 1,
+        "last_chunk_seconds": 120,
+        "last_exceeds_300": false
+      },
+      {
+        "duration": 300,
+        "segments": 1,
+        "last_chunk_seconds": 300,
+        "last_exceeds_300": false
+      },
+      {
+        "duration": 300.5,
+        "segments": 1,
+        "last_chunk_seconds": 300.5,
+        "last_exceeds_300": true
+      },
+      {
+        "duration": 600,
+        "segments": 2,
+        "last_chunk_seconds": 300,
+        "last_exceeds_300": false
+      },
+      {
+        "duration": 600.5,
+        "segments": 2,
+        "last_chunk_seconds": 300.5,
+        "last_exceeds_300": true
+      },
+      {
+        "duration": 601,
+        "segments": 3,
+        "last_chunk_seconds": 1,
+        "last_exceeds_300": false
+      },
+      {
+        "duration": 601.482,
+        "segments": 3,
+        "last_chunk_seconds": 1.482,
+        "last_exceeds_300": false
+      },
+      {
+        "duration": 0.02,
+        "segments": 1,
+        "last_chunk_seconds": 0.02,
+        "last_exceeds_300": false
+      }
+    ]
+  }
+}

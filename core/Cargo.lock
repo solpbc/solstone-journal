@@ -2914,6 +2914,8 @@ version = "1.0.22"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
  "getrandom 0.3.4",
  "regex",
  "serde",
@@ -2926,8 +2928,10 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+ "solstone-core-processing-record",
  "solstone-core-segment",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
