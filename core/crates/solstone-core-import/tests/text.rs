@@ -349,7 +349,9 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
     assert_eq!(requests[0].context, "observe.detect.segment");
     assert_eq!(
         requests[0].system_instruction.as_deref(),
-        Some(include_str!("../src/text_assets/detect_transcript_segment.md"))
+        Some(include_str!(
+            "../src/text_assets/detect_transcript_segment.md"
+        ))
     );
     assert_eq!(requests[0].temperature, 0.3);
     assert_eq!(requests[0].max_output_tokens, 4096);
