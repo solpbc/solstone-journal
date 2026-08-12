@@ -3130,6 +3130,7 @@ dependencies = [
  "chrono",
  "flate2",
  "hmac",
+ "log",
  "nix",
  "serde",
  "serde_json",

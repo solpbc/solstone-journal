@@ -12,6 +12,7 @@
 //! held lease so callers can distinguish busy from an internal failure.
 
 pub mod archive;
+pub mod ced_install;
 pub mod fingerprint;
 pub mod fit_report;
 pub mod lease;
@@ -19,7 +20,58 @@ pub mod manifest;
 pub mod mlx;
 pub mod pins;
 pub mod readiness;
+pub mod rerank_install;
+pub mod rfdetr_install;
 pub mod status;
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    pub fn leaked_temps(root: &Path) -> Vec<PathBuf> {
+        let mut leaked = Vec::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(directory).unwrap().filter_map(Result::ok) {
+                let path = entry.path();
+                let name = path.file_name().unwrap().to_string_lossy();
+                if (name.starts_with('.') && name.ends_with(".part"))
+                    || name.ends_with(".tmp")
+                    || (name.starts_with('.') && name.ends_with(".extract"))
+                    || (name.starts_with('.') && name.ends_with(".stage"))
+                    || name.starts_with("tmp")
+                {
+                    leaked.push(path.clone());
+                }
+                if path.is_dir() {
+                    pending.push(path);
+                }
+            }
+        }
+        leaked
+    }
+
+    pub fn prove_temp_sweep(root: &Path, filename: &str, key: &str) {
+        let paths = [
+            root.join(format!(".{filename}.part")),
+            root.join(format!("{filename}.tmp")),
+            root.join(format!(".{key}.extract")),
+            root.join(format!(".{key}.stage")),
+            root.join(".extract"),
+            root.join("tmp-sidecar"),
+        ];
+        for path in &paths {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"deliberate temporary").unwrap();
+        }
+        assert_eq!(leaked_temps(root).len(), paths.len());
+        for path in &paths {
+            fs::remove_file(path).unwrap();
+        }
+        assert!(leaked_temps(root).is_empty());
+    }
+}
 
 static PUBLISH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -200,7 +252,7 @@ fn artifact_platform(key: &str) -> Result<AssetPlatform, DispatchError> {
     }
 }
 
-fn select_artifact(
+pub(crate) fn select_artifact(
     unit: &str,
     platform: Option<AssetPlatform>,
     backend: Option<AssetBackend>,
@@ -230,7 +282,7 @@ fn select_artifact(
     Ok(artifact)
 }
 
-fn download_artifact(
+pub(crate) fn download_artifact(
     artifact: &Artifact,
     destination: &Path,
     policy: &archive::DownloadHostPolicy<'_>,
