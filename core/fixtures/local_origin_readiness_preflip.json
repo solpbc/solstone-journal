@@ -1,6 +1,10 @@
 {
   "capture_commit": "d343a2899712fd666266cd7c76a648ec0cb48120",
   "proof": {"status": "ready", "reason_code": "ready", "cache_hit": false},
+  "paths": {
+    "local_model_dir": "/journal/cache/providers/local/models/local__qwen3.5-4b",
+    "parakeet_model_path": "/journal/cache/providers/parakeet/models/mudler__parakeet-cpp-gguf/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf"
+  },
   "llama_server_vulkan": [
     {"arch_key": "aarch64-apple-darwin", "pin_identity": {"unit": "llama-server-vulkan", "artifact_key": "aarch64-apple-darwin", "release_tag": "b10068", "filename": "llama-b10068-bin-macos-arm64.tar.gz", "sha256": "13aa2d40c76ad1dcb8ebeec5f0d2814bf3b2f84a66935c7d4dc6f7cca8e38d68", "binary_name": "llama-server"}},
     {"arch_key": "x86_64-unknown-linux-gnu", "pin_identity": {"unit": "llama-server-vulkan", "artifact_key": "x86_64-unknown-linux-gnu", "release_tag": "b10068", "filename": "llama-b10068-bin-ubuntu-vulkan-x64.tar.gz", "sha256": "713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3", "binary_name": "llama-server"}},
