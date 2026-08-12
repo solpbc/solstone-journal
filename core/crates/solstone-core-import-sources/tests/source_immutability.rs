@@ -78,7 +78,9 @@ fn source_stubs_leave_the_owner_source_unchanged() {
     fs::write(tree.path().join("source.txt"), b"source").unwrap();
 
     // This retains coverage for the remaining stubs; the implemented-source test below covers real
-    // read behavior, while the negative twin in the import crate proves detection works.
+    // read behavior, while the negative twin in the import crate proves detection works. Document
+    // imports have their own source-immutability coverage because they install artifacts from a
+    // real owner-controlled source file.
     let report = observe_source_immutability(tree.path(), |_| {
         for (_, stub) in MODULE_STUBS {
             assert!(stub().is_err());
