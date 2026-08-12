@@ -160,6 +160,7 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
     Router::new()
         .route("/app/network/api/devices", get(devices))
         .route("/app/network/api/identity", get(identity))
+        .route("/app/link/api/identity", get(identity))
         .route("/init/api/state", get(init_state))
         .route("/init/api/local-capability", get(init_local_capability))
         .route("/init", get(init))

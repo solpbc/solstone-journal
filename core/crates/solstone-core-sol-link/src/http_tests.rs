@@ -129,6 +129,31 @@ async fn devices_emit_exactly_the_protocol_fields_and_role() {
 }
 
 #[tokio::test]
+async fn link_identity_alias_matches_network_identity() {
+    let temporary = TempDir::new();
+    let network = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::GET,
+        "/app/network/api/identity",
+        None,
+    )
+    .await;
+    let link = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::GET,
+        "/app/link/api/identity",
+        None,
+    )
+    .await;
+
+    assert_eq!(network.status(), StatusCode::OK);
+    assert_eq!(link.status(), StatusCode::OK);
+    assert_eq!(response_json(network).await, response_json(link).await);
+}
+
+#[tokio::test]
 async fn devices_distinguish_missing_unreadable_and_malformed_ledgers() {
     let missing = TempDir::new();
     let response = request(
