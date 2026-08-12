@@ -896,7 +896,7 @@ fn journal_identity_universal_command_bypasses_coherence_mismatch() {
     .expect("write mismatched metadata");
 
     let mut command = Command::new(&layout.binary);
-    command.arg("doctor").env("RECORD_FILE", &record);
+    command.arg("check").env("RECORD_FILE", &record);
     let mut child = command.spawn().expect("universal command should start");
     let pid = child.id();
     let recorded = wait_for_record(&record);
@@ -907,8 +907,8 @@ fn journal_identity_universal_command_bypasses_coherence_mismatch() {
             solstone_core_journal_cli::python_bootstrap_script()
                 .as_bytes()
                 .to_vec(),
-            b"solstone.think.doctor".to_vec(),
-            b"journal doctor".to_vec(),
+            b"solstone.think.check".to_vec(),
+            b"journal check".to_vec(),
             b"0".to_vec(),
         ]
     );

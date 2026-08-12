@@ -538,6 +538,7 @@ pub const TRANSFER_SEND_HELP: &str = concat!(
 pub enum Command {
     Doctor(solstone_core_doctor::args::DoctorArgs),
     DoctorUsage(solstone_core_doctor::args::DoctorUsageError),
+    DoctorHelp,
     Version,
     Assets,
     Warm {
@@ -1106,8 +1107,15 @@ pub struct UsageError;
 pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
     match args {
         [command, rest @ ..] if command == OsStr::new("doctor") => {
-            Ok(solstone_core_doctor::args::parse_doctor_args(rest)
-                .map_or_else(Command::DoctorUsage, Command::Doctor))
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                Ok(Command::DoctorHelp)
+            } else {
+                Ok(solstone_core_doctor::args::parse_doctor_args(rest)
+                    .map_or_else(Command::DoctorUsage, Command::Doctor))
+            }
         }
         [flag] if flag == OsStr::new("--version") => Ok(Command::Version),
         [command] if command == OsStr::new("assets") => Ok(Command::Assets),
@@ -5171,6 +5179,7 @@ mod tests {
             "assets",
             "warm",
             "check",
+            "doctor",
             "journal-path",
             "indexer",
             "journal-config",
@@ -5347,6 +5356,26 @@ mod tests {
             assert_eq!(
                 evaluate_args(&args(values)),
                 Ok(Command::CheckHelp),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn doctor_rejects_unknown_and_help_flags_with_verb_results() {
+        assert!(matches!(
+            evaluate_args(&args(&["doctor", "--nonsense"])),
+            Ok(Command::DoctorUsage(_))
+        ));
+        for values in [
+            &["doctor", "--help"][..],
+            &["doctor", "-h"][..],
+            &["doctor", "--json", "--help"][..],
+            &["doctor", "--nonsense", "--help"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::DoctorHelp),
                 "{values:?}"
             );
         }

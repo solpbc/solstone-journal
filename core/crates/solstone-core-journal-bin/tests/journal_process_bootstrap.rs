@@ -89,7 +89,7 @@ impl Harness {
         fs::write(python_path.join("solstone/__init__.py"), "").expect("write package init");
         fs::write(python_path.join("solstone/think/__init__.py"), "")
             .expect("write think package init");
-        for module in ["service.py", "doctor.py", "backup_cli.py"] {
+        for module in ["service.py", "backup_cli.py"] {
             fs::write(
                 python_path.join("solstone/think").join(module),
                 RECORDING_MODULE,
@@ -223,14 +223,14 @@ fn real_python_bootstrap_preserves_process_contract() {
     );
     assert_eq!(none.output.stderr, b"bootstrap stderr\n");
 
-    let integer = harness.run("integer", "doctor", "integer", true, false);
+    let integer = harness.run("integer", "backup", "integer", true, false);
     assert_process_contract(
         &integer,
         &harness,
         23,
         true,
-        "doctor",
-        "solstone.think.doctor",
+        "backup",
+        "solstone.think.backup_cli",
         &[],
     );
     assert_eq!(integer.output.stderr, b"bootstrap stderr\n");

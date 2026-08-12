@@ -131,9 +131,13 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::Doctor(args)) => run_doctor(args),
+        Ok(Command::DoctorHelp) => {
+            print!("{}", solstone_core_doctor::args::HELP);
+            ExitCode::SUCCESS
+        }
         Ok(Command::DoctorUsage(error)) => {
-            eprintln!("solstone-core doctor: error: {}", error.0);
             eprint!("{}", solstone_core_doctor::args::USAGE);
+            eprintln!("journal doctor: error: {}", error.0);
             ExitCode::from(2)
         }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {

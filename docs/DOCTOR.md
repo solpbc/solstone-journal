@@ -42,7 +42,7 @@ severity. The public result includes the exception type and a truncated message,
 not a traceback. Summary `errors` are a subset of `failed`; consumers that want
 completed health failures should compute `failed - errors`.
 
-`journal doctor` runs the journal-host battery:
+`journal doctor` dispatches to the native `solstone-core doctor` implementation and runs the journal-host battery without starting Python:
 
 | Check | Severity | Notes |
 |-------|----------|-------|

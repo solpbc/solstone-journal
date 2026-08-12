@@ -58,6 +58,16 @@ const PROBES: &[Probe] = &[
         expected_exit: 2,
         stderr_anchor: None,
     },
+    // Doctor's invalid-argument path exits 2 only after the sibling recognizes
+    // the verb and emits its owner-facing usage. If the doctor arm were absent,
+    // this invocation would fall through to top-level USAGE and exit 64 instead;
+    // the journal-doctor anchor makes that regression distinguishable.
+    Probe {
+        token: "doctor",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal doctor [-h]"),
+    },
     // supervisor and start were deliberately unprobed until a verb-level usage
     // path existed for them. 1d1523b4b added both tokens to NATIVE_PROCESS_SPECS
     // without probes; registering them at exit 64 would have made this contract
