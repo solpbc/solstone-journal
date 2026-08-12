@@ -260,11 +260,18 @@ def canonicalize_role_tokens(value: str) -> str:
     observed = set(angle_names)
     known = PACKAGING_ROLE_TOKENS | EVIDENCE_VALUE_TOKENS
     unknown = observed - known
-    residue = re.sub(r"<[^<>]*>", "", value)
-    if unknown or "<" in residue or ">" in residue:
+    role_names = "|".join(sorted((re.escape(name) for name in known), key=len, reverse=True))
+    partial_role = re.compile(rf"<(?:{role_names})(?!>)|(?<!<)(?:{role_names})>")
+    malformed_opener = re.compile(r"<[^<>\s]*/")
+    if unknown:
         raise IntegrityError("role-token", f"unknown path roles: {sorted(unknown)}")
     if not observed:
+        if partial_role.search(value) or malformed_opener.search(value):
+            raise IntegrityError("role-token", "partial path role")
         return value
+    residue = re.sub(r"<[^<>]*>", "", value)
+    if partial_role.search(residue) or malformed_opener.search(residue):
+        raise IntegrityError("role-token", "partial path role")
     if observed & EVIDENCE_VALUE_TOKENS:
         if observed - EVIDENCE_VALUE_TOKENS:
             raise IntegrityError("role-token", "mixed evidence and packaging roles")
@@ -1194,6 +1201,17 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
     if _path_tokens("<LAUNCHER_BIN> start <PORT>"):
         raise AssertionError("canonical command values were treated as host absolute")
     for value in (
+        "onnxruntime!=1.24.1,>=1.20.0",
+        "package<3",
+        "package>1",
+        "PyJWT>=2",
+        "CUDA>1",
+        "A<B",
+        "CUDA<ROCm",
+    ):
+        if _path_tokens(value):
+            raise AssertionError("version constraint was treated as a host absolute")
+    for value in (
         "<JOURNAL>:/home/operator/secret",
         "<JOURNAL>/../home/operator/secret",
         "<PORT>/home/operator/secret",
@@ -1209,6 +1227,15 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/%2e%2e/home/tool"))
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>:/tmp/tool"))
     _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN>/<malformed>"))
+    _expect_guard("role-token", lambda: _path_tokens("<BUNDLE_BIN"))
+    _expect_guard("role-token", lambda: _path_tokens("BUNDLE_BIN>"))
+    _expect_guard(
+        "role-token", lambda: _path_tokens("<CALLER_ROOT/home/operator/secret")
+    )
+    _expect_guard(
+        "role-token", lambda: _path_tokens("<caller_root/home/operator/secret")
+    )
+    _expect_guard("role-token", lambda: _path_tokens("<x/home/operator/secret"))
     with tempfile.TemporaryDirectory(
         prefix="service-legacy-integrity-test-"
     ) as temporary:
