@@ -23,6 +23,7 @@ const LOG: &str = include_str!("../src/process/log.rs");
 const SPAWN: &str = include_str!("../src/process/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/terminate.rs");
 const DESCENDANTS: &str = include_str!("../src/process/descendants.rs");
+const OBSERVATION: &str = include_str!("../src/process/observation.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_ADMISSION: &str = include_str!("../src/lifecycle/admission.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
@@ -166,6 +167,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("descendants", DESCENDANTS),
         ("events", EVENTS),
         ("log", LOG),
+        ("observation", OBSERVATION),
         ("restart", RESTART),
         ("spawn", SPAWN),
         ("terminate", TERMINATE),
