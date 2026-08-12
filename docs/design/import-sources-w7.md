@@ -48,9 +48,9 @@ a parallel hard-coded list of superseded or non-expectation rows.
 | 2 | `preview_oracle.rs` reads `core/fixtures/import_sources_w7_oracle.json`, honors the wrapper status, and compares expectation-row preview counts/ranges plus exact unit-naming summaries. |
 | 3 | Design doc and implementation outcome record atomic units for all four sources and identify the superseded ChatGPT and non-expectation Gemini rows; AC 2 supplies the corresponding summary-string assertion. |
 | 4 | `core/crates/solstone-core-import/tests/resolution.rs` uses a genuine clippings input and drives the assertion through `resolve_import`: no source is `GenericText`, explicit Kindle selects Kindle. Because it uses the resolver's real skip-extension gate, deleting `txt` from `DETECTION_SKIP_EXTENSIONS` runs the claims sweep and changes the no-source result, so the test reds. |
-| 5 | `plan_contract.rs` uses the richer `Takeout/My Activity/Gemini Apps/MyActivity.json` fixture to assert prompt/response, timestamp, HTML, and internal era-classification branches. `preview_oracle.rs` reads the row status and never treats the zero-item Gemini capture as an expectation. |
+| 5 | `plan_contract.rs` uses the richer `Takeout/My Activity/Gemini Apps/MyActivity.json` fixture to assert prompt/response, timestamp, and HTML branches. `preview_oracle.rs` reads the row status and never treats the zero-item Gemini capture as an expectation. |
 | 6 | `plan_utc.rs` uses midday UTC conversation fixtures and asserts timestamped Human/Assistant entries, their UTC day grouping, and `HHMMSS_300` keys against the recorded days. |
-| 7 | `plan_contract.rs` asserts sorted, deduplicated explicit `affected_days` on `ImportPlan`; the staging/publication test consumes that field rather than deriving days from output paths. |
+| 7 | `plan_contract.rs` asserts sorted, deduplicated explicit `affected_days` on `ImportPlan`. Publication is deferred to the staging wave; `ImportPlan.affected_days` is the named hand-off, and W7 discharges only the data-carrying half because it writes no output paths. |
 | 8 | `source_immutability.rs` runs actual detect, preview, and plan for all four constructed inputs *inside* `observe_source_immutability`, then asserts the report is not violated. |
 | 9 | `plan_contract.rs` embeds malformed candidates in otherwise-valid inputs and asserts a non-empty skipped report containing the source locator and closed reason; it inspects report contents rather than merely asserting no panic. Clean fixtures separately assert `skipped.is_empty()`. |
 | 10 | Implementation-stage outcome reports the actual `make ci` execution honestly: with fail-fast, unrun later targets are recorded as unrun, not passing; it also records the applicable `--locked` and host-scoped `BINDGEN_EXTRA_CLANG_ARGS` conditions. |
@@ -94,19 +94,19 @@ Not acceptance criteria:
 
    The exact preview summaries for the current synthetic fixture are:
 
-   | Source | W7 summary | Oracle relationship |
-   |---|---|---|
-   | Claude | `2 messages from Claude chat export` | Unchanged; already atomic. |
-   | ChatGPT | `2 messages from ChatGPT export` | Supersedes the recorded `1 conversations from ChatGPT export`: one conversation contains two written messages. |
-   | Gemini | `0 messages from Gemini export` | The recorded activity-count row is not an expectation; it never exercised parsing. |
-   | Kindle | `1 highlights from 1 books` | Unchanged; already atomic. |
+   | Source | W7 summary |
+   |---|---|
+   | Claude | `2 messages from Claude chat export` |
+   | ChatGPT | `2 messages from ChatGPT export` |
+   | Gemini | `4 messages from Gemini export` |
+   | Kindle | `1 highlights from 1 books` |
 
    In general the first three sources use `N messages ...`; Gemini's atomic
    unit is a prompt or response message an activity yields (one or two), never
    the activity container. Kindle retains its type-count wording (for example,
    `N highlights ...` or `N notes ...`), which names its atomic clipping kind.
-   The fixture status metadata, rather than a hard-coded test exception, marks
-   superseded and non-expectation rows.
+   `core/fixtures/import_sources_w7_oracle.json` owns capture status and W7
+   expectations; this document does not duplicate those per-row classifications.
 
 2. **The public source surface is fallible and read-only.**
    `detect(path) -> Result<bool, SourceError>` names source I/O and corrupt
@@ -283,16 +283,10 @@ Python. The richer Gemini Takeout archive uses the exact member path
 `Takeout/My Activity/Gemini Apps/MyActivity.json`. Its records cover: prompt
 only; response only; prompt and response; subtitle `value`; subtitle `name`
 fallback; HTML that strips to empty; no content; missing time; invalid time;
-and Bard-era versus Gemini-era classification through both `products` and
-`header`. This pins `_parse_activity`'s prompt/response, timestamp, and HTML
-branches (`solstone/think/importers/gemini.py:85-141`). The Bard/Gemini era
-records pin internal classification only: `bard_count` is computed from
-`products`/`header` (`gemini.py:199-202`) and the Python preview appends
-` ({bard_count} Bard-era)` to its summary (`gemini.py:214-219`). W7's atomic
-summary is `N messages from Gemini export`; era is deliberately not surfaced
-there. The richer fixture retains era records only to pin that internal
-classification rule; they do not discharge an owner-facing preview or plan
-criterion. The vendored zero-item Gemini row is never a preview expectation.
+and Bard/Gemini-era `products` and `header` fields. This pins `_parse_activity`'s
+prompt/response, timestamp, and HTML branches (`solstone/think/importers/gemini.py:85-141`).
+The era fields remain for Takeout fixture fidelity only; W7 does not classify
+or surface era. The vendored zero-item Gemini row is never a preview expectation.
 
 The Claude/ChatGPT discrimination fixtures contain only the required ZIP member
 `conversations.json`: `[ {"chat_messages": []} ]` must claim Claude and reject
