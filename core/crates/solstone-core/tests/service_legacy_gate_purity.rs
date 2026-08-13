@@ -121,15 +121,16 @@ fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
     }
 
     let staged = "/tmp/service-legacy-staged-evidence-control";
+    let make_fragment = tempfile::NamedTempFile::new().expect("temporary Make fragment opens");
+    fs::write(
+        make_fragment.path(),
+        "print-service-evidence-root:\n\t@printf '%s\\n' '$(SERVICE_LEGACY_EVIDENCE_ROOT)'\n",
+    )
+    .expect("temporary Make fragment writes");
     let resolved = Command::new("make")
-        .args([
-            "-s",
-            "--no-print-directory",
-            "--eval",
-            r#"print-service-evidence-root: ; @printf "%s\n" "$(SERVICE_LEGACY_EVIDENCE_ROOT)""#,
-            "print-service-evidence-root",
-            "UV=/bin/true",
-        ])
+        .args(["-s", "-f", "Makefile", "-f"])
+        .arg(make_fragment.path())
+        .args(["print-service-evidence-root", "UV=/bin/true"])
         .env("SERVICE_LEGACY_EVIDENCE_ROOT", staged)
         .current_dir(&root)
         .output()
