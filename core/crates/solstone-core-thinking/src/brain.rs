@@ -235,6 +235,7 @@ fn projection_only(reason: Option<&str>) -> bool {
             "brain_record_missing"
                 | "brain_record_invalid"
                 | "brain_record_unavailable"
+                | "brain_config_changed"
                 | "configuration_invalid"
                 | "fingerprint_key_unavailable"
                 | "brain_check_interrupted"
