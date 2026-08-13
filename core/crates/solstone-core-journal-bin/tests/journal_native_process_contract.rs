@@ -20,7 +20,7 @@ mod production_processes;
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE,
+    INSTALL_MODELS_USAGE, TOP_USAGE,
 };
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
@@ -30,7 +30,6 @@ exit 97
 const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
     include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
 const CHECK_USAGE_ANCHOR: &[u8] = CHECK_USAGE.as_bytes();
 const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
 const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: journal convey [-h] --port PORT [-v] [-d]\n";
@@ -103,6 +102,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(HEALTH_USAGE.as_bytes()),
+    },
+    Probe {
+        token: "top",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(TOP_USAGE.as_bytes()),
     },
     // Doctor's invalid-argument path exits 2 only after the sibling recognizes
     // the verb and emits its owner-facing usage. If the doctor arm were absent,
@@ -510,17 +515,44 @@ fn wait_for_child(child: &mut Child, deadline: Instant) -> io::Result<Option<Exi
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
-            let reap_deadline = Instant::now() + KILL_REAP_GRACE;
-            while Instant::now() < reap_deadline {
-                if child.try_wait()?.is_some() {
-                    break;
-                }
-                thread::sleep(Duration::from_millis(10));
-            }
+            child.wait()?;
             return Ok(None);
         }
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn run_dispatcher_with_bounded_output(
+    context: &VerdictContext<'_>,
+    token: &str,
+    argv: &[&str],
+    timeout: Duration,
+) -> io::Result<Option<std::process::Output>> {
+    let _ = fs::remove_file(context.poison_marker);
+    let _ = fs::remove_file(context.probe_stderr);
+    let stdout_path = context.probe_stderr.with_extension("stdout");
+    let _ = fs::remove_file(&stdout_path);
+    let stdout = fs::File::create(&stdout_path)?;
+    let stderr = fs::File::create(context.probe_stderr)?;
+    let mut child = Command::new(context.dispatcher)
+        .arg(token)
+        .args(argv)
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        .env("PATH", context.sibling_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .spawn()?;
+    let status = wait_for_child(&mut child, Instant::now() + timeout)?;
+    let stdout = fs::read(stdout_path)?;
+    let stderr = fs::read(context.probe_stderr)?;
+    Ok(status.map(|status| std::process::Output {
+        status,
+        stdout,
+        stderr,
+    }))
 }
 
 fn run_dispatcher(
@@ -771,6 +803,11 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         .map(|probe| probe.token)
         .collect::<BTreeSet<_>>();
 
+    assert_eq!(
+        probe_tokens.len(),
+        PROBES.len(),
+        "native process probe tokens must be globally unique"
+    );
     assert_eq!(
         checked, native_tokens,
         "native process checked-set mismatch; verdicts={verdicts:?}"
@@ -1286,6 +1323,7 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
     for (token, binary) in [
         ("check", "solstone-core"),
         ("health", "solstone-core"),
+        ("top", "solstone-core"),
         ("depict", "solstone-core-depict"),
     ] {
         let harness = Harness::new();
@@ -1309,6 +1347,7 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
     for (token, binary) in [
         ("check", "solstone-core"),
         ("health", "solstone-core"),
+        ("top", "solstone-core"),
         ("depict", "solstone-core-depict"),
     ] {
         let harness = Harness::new();
@@ -1329,6 +1368,47 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
             "{token}: no Python fallback"
         );
     }
+}
+
+#[test]
+fn native_top_registered_probe_has_exact_clean_parser_output() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    let probe = probe_for("top").expect("top must have a registered native probe");
+    assert_eq!(probe.argv, &["--nonsense"]);
+    assert_eq!(probe.expected_exit, 2);
+    assert_eq!(probe.stderr_anchor, Some(TOP_USAGE.as_bytes()));
+
+    let output =
+        run_dispatcher_with_bounded_output(&context, probe.token, probe.argv, PROBE_TIMEOUT)
+            .expect("dispatch native top parser probe")
+            .expect("native top parser probe must complete before the deadline");
+    assert_eq!(output.status.code(), Some(probe.expected_exit));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        output.stderr,
+        b"usage: solstone-core top [-h] [-v] [-d]\nsolstone-core top: error: invalid arguments\n"
+    );
+    assert!(!context.poison_marker.exists());
+}
+
+#[test]
+fn native_top_dispatch_reaches_the_real_non_tty_body_without_python() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+
+    let output = run_dispatcher_with_bounded_output(&context, "top", &[], PROBE_TIMEOUT)
+        .expect("dispatch native top body")
+        .expect("native top body must complete before the deadline");
+    assert_eq!(output.status.code(), Some(69));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        output.stderr,
+        b"solstone-core top: terminal failure: stdin is not a terminal\n"
+    );
+    assert!(!context.poison_marker.exists());
 }
 
 #[test]
