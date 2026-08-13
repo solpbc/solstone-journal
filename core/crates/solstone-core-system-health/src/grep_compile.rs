@@ -43,6 +43,26 @@ const DECIMAL_ZEROS: &[u32; 76] = &[
     0x1d7d8, 0x1d7e2, 0x1d7ec, 0x1d7f6, 0x1e140, 0x1e2f0, 0x1e4f0, 0x1e5f1, 0x1e950, 0x1fbf0,
 ];
 
+/// Return the Unicode 16.0.0 decimal value for `scalar`, if it is an `Nd`
+/// character.  The grep compiler and callers that must match Python's
+/// decimal-digit semantics share the same pinned block table.
+#[must_use]
+pub fn decimal_digit_value(scalar: char) -> Option<u8> {
+    let scalar = scalar as u32;
+    DECIMAL_ZEROS
+        .binary_search_by(|zero| {
+            if scalar < *zero {
+                std::cmp::Ordering::Greater
+            } else if scalar > *zero + 9 {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .ok()
+        .map(|index| (scalar - DECIMAL_ZEROS[index]) as u8)
+}
+
 fn decimal_members() -> String {
     let mut output = String::new();
     for zero in DECIMAL_ZEROS {

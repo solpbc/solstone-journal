@@ -20,6 +20,7 @@ members = [
     "crates/solstone-core-journal-io",
     "crates/solstone-core-transfer",
     "crates/solstone-core-system-health",
+    "crates/solstone-core-operational-logs",
     "crates/solstone-core-brain",
     "crates/solstone-core-doctor",
     "crates/solstone-core-brain-cli",
@@ -127,6 +128,7 @@ solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
 solstone-core-system-health = { path = "crates/solstone-core-system-health" }
+solstone-core-operational-logs = { path = "crates/solstone-core-operational-logs" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
 solstone-core-cogitate-tools = { path = "crates/solstone-core-cogitate-tools" }
 solstone-core-cogitate-runtime = { path = "crates/solstone-core-cogitate-runtime" }

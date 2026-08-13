@@ -51,21 +51,56 @@ fn unsafe_scalar(scalar: u32) -> bool {
         .is_ok()
 }
 
+fn push_sanitized_scalar(output: &mut String, scalar: char) {
+    match scalar {
+        '\\' => output.push_str("\\\\"),
+        '\n' => output.push_str("\\n"),
+        '\r' => output.push_str("\\r"),
+        '\t' => output.push_str("\\t"),
+        '\x1b' => output.push_str("\\x1b"),
+        _ if unsafe_scalar(scalar as u32) => {
+            use std::fmt::Write as _;
+            let _ = write!(output, "\\u{{{:x}}}", scalar as u32);
+        }
+        _ => output.push(scalar),
+    }
+}
+
 /// Render dynamic text without allowing it to control terminal layout.
 pub fn sanitize_for_terminal(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     for scalar in input.chars() {
-        match scalar {
-            '\\' => output.push_str("\\\\"),
-            '\n' => output.push_str("\\n"),
-            '\r' => output.push_str("\\r"),
-            '\t' => output.push_str("\\t"),
-            '\x1b' => output.push_str("\\x1b"),
-            _ if unsafe_scalar(scalar as u32) => {
-                use std::fmt::Write as _;
-                let _ = write!(output, "\\u{{{:x}}}", scalar as u32);
+        push_sanitized_scalar(&mut output, scalar);
+    }
+    output
+}
+
+/// Render raw Unix filesystem bytes without allowing terminal control or
+/// losing undecodable bytes. Invalid UTF-8 bytes use reversible `\\xNN`
+/// escapes; valid scalars share [`sanitize_for_terminal`]'s escaping rules.
+#[must_use]
+pub fn sanitize_os_bytes_for_terminal(input: &[u8]) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut remaining = input;
+    while !remaining.is_empty() {
+        match std::str::from_utf8(remaining) {
+            Ok(valid) => {
+                for scalar in valid.chars() {
+                    push_sanitized_scalar(&mut output, scalar);
+                }
+                break;
             }
-            _ => output.push(scalar),
+            Err(error) => {
+                let valid = std::str::from_utf8(&remaining[..error.valid_up_to()])
+                    .expect("valid UTF-8 prefix");
+                for scalar in valid.chars() {
+                    push_sanitized_scalar(&mut output, scalar);
+                }
+                let invalid = remaining[error.valid_up_to()];
+                use std::fmt::Write as _;
+                let _ = write!(output, "\\x{invalid:02x}");
+                remaining = &remaining[error.valid_up_to() + 1..];
+            }
         }
     }
     output
@@ -73,7 +108,45 @@ pub fn sanitize_for_terminal(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_for_terminal;
+    use super::{sanitize_for_terminal, sanitize_os_bytes_for_terminal};
+
+    fn decode_terminal_bytes(input: &str) -> Vec<u8> {
+        let mut output = Vec::new();
+        let mut cursor = 0;
+        while cursor < input.len() {
+            let rest = &input[cursor..];
+            if !rest.starts_with('\\') {
+                let scalar = rest.chars().next().unwrap();
+                let mut encoded = [0; 4];
+                output.extend_from_slice(scalar.encode_utf8(&mut encoded).as_bytes());
+                cursor += scalar.len_utf8();
+                continue;
+            }
+            let escaped = rest.as_bytes().get(1).copied().unwrap();
+            match escaped {
+                b'\\' => output.push(b'\\'),
+                b'n' => output.push(b'\n'),
+                b'r' => output.push(b'\r'),
+                b't' => output.push(b'\t'),
+                b'x' => {
+                    let digits = &rest[2..4];
+                    output.push(u8::from_str_radix(digits, 16).unwrap());
+                    cursor += 2;
+                }
+                b'u' => {
+                    let end = rest.find('}').unwrap();
+                    let scalar = u32::from_str_radix(&rest[3..end], 16).unwrap();
+                    let scalar = char::from_u32(scalar).unwrap();
+                    let mut encoded = [0; 4];
+                    output.extend_from_slice(scalar.encode_utf8(&mut encoded).as_bytes());
+                    cursor += end - 1;
+                }
+                _ => unreachable!("unknown terminal escape"),
+            }
+            cursor += 2;
+        }
+        output
+    }
 
     #[test]
     fn special_escapes_take_precedence() {
@@ -81,5 +154,29 @@ mod tests {
             sanitize_for_terminal("\\\n\r\t\x1b\0\u{2028}"),
             "\\\\\\n\\r\\t\\x1b\\u{0}\\u{2028}"
         );
+    }
+
+    #[test]
+    fn raw_bytes_preserve_invalid_utf8_and_terminal_escaping() {
+        assert_eq!(
+            sanitize_os_bytes_for_terminal(b"\\\n\x1b\xc2\x80\x80"),
+            "\\\\\\n\\x1b\\u{80}\\x80"
+        );
+    }
+
+    #[test]
+    fn raw_byte_escaping_round_trips_adversarial_inputs() {
+        for input in [
+            b"plain".as_slice(),
+            b"\\\n\r\t\x1b".as_slice(),
+            b"\xc2\x80\x80".as_slice(),
+            b"\xf0\x9f\x98".as_slice(),
+            "safe\u{202e}text".as_bytes(),
+        ] {
+            assert_eq!(
+                decode_terminal_bytes(&sanitize_os_bytes_for_terminal(input)),
+                input
+            );
+        }
     }
 }

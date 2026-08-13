@@ -5,7 +5,7 @@
 mod fixtures;
 
 use regex::Regex;
-use solstone_core_system_health::{GrepCompileError, compile_grep_pattern};
+use solstone_core_system_health::{GrepCompileError, compile_grep_pattern, decimal_digit_value};
 
 enum Disposition {
     Admit,
@@ -102,6 +102,11 @@ fn decimal_translation_matches_all_unicode_16_decimal_scalars() {
         assert!(digits.is_match(&scalar), "decimal {scalar:?} value {value}");
         assert!(
             !non_digits.is_match(&scalar),
+            "decimal {scalar:?} value {value}"
+        );
+        assert_eq!(
+            decimal_digit_value(scalar.chars().next().unwrap()),
+            Some(value),
             "decimal {scalar:?} value {value}"
         );
     }
