@@ -132,7 +132,7 @@ mod tests {
     use chrono::TimeZone;
     use serde_json::json;
 
-    use super::present_brain_inspection;
+    use super::{brain_age, present_brain_inspection};
     use crate::{BrainInspection, BrainProjection, InspectionStatus};
 
     #[test]
@@ -161,5 +161,31 @@ mod tests {
         assert_eq!(view.reason_text, "configuration invalid");
         assert_eq!(view.failing_component.as_deref(), Some("generate"));
         assert_eq!(view.evidence.age_text.as_deref(), Some("1h"));
+    }
+
+    #[test]
+    fn brain_age_uses_the_shared_second_minute_hour_and_day_boundaries() {
+        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 4, 0, 0, 0).unwrap();
+        for (seconds, expected) in [
+            (30, "30s"),
+            (59, "59s"),
+            (60, "1m"),
+            (300, "5m"),
+            (3_599, "59m"),
+            (3_600, "1h"),
+            (47 * 3_600, "47h"),
+            (48 * 3_600, "2d"),
+            (71 * 3_600, "2d"),
+            (72 * 3_600, "3d"),
+        ] {
+            let observed = now - chrono::Duration::seconds(seconds);
+            let (_, text) = brain_age(now, Some(&observed.to_rfc3339()));
+            assert_eq!(text.as_deref(), Some(expected));
+        }
+        let future = now + chrono::Duration::seconds(30);
+        assert_eq!(
+            brain_age(now, Some(&future.to_rfc3339())),
+            (Some(0), Some("0s".to_owned()))
+        );
     }
 }

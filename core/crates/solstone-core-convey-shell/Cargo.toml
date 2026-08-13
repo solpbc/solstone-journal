@@ -16,6 +16,8 @@ host = [
     "dep:percent-encoding",
     "dep:solstone-core-callosum",
     "dep:solstone-core-sol-link",
+    "dep:solstone-core-thinking",
+    "dep:solstone-core-thinking-copy",
     "solstone-core-sol-link/host",
     "dep:rustls",
     "dep:socket2",
@@ -52,6 +54,8 @@ solstone-core-settings-web.workspace = true
 spl-home = { workspace = true, optional = true }
 spl-core = { workspace = true, optional = true }
 solstone-core-sol-link = { workspace = true, optional = true }
+solstone-core-thinking = { workspace = true, optional = true }
+solstone-core-thinking-copy = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
 tower.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
@@ -63,6 +67,8 @@ serde_json.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 sha2.workspace = true
+solstone-core-brain.workspace = true
+solstone-core-local.workspace = true
 spl-transport.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }

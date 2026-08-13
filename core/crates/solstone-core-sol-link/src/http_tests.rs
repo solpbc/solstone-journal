@@ -427,6 +427,31 @@ async fn init_state_reads_materialized_defaults_without_writing() {
 }
 
 #[tokio::test]
+async fn init_state_lanes_and_confidential_match_pre_move_fixture() {
+    let temporary = TempDir::new();
+    let response = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::GET,
+        "/init/api/state",
+        None,
+    )
+    .await;
+    let actual = response_json(response).await;
+    let expected: Value = serde_json::from_str(include_str!(
+        "../tests/fixtures/init_state_lanes_pre_move.json"
+    ))
+    .expect("pre-move init-state fixture parses");
+    assert_eq!(
+        json!({
+            "lanes": actual["lanes"].clone(),
+            "confidential": actual["confidential"].clone(),
+        }),
+        expected
+    );
+}
+
+#[tokio::test]
 async fn init_reads_defaults_without_writing() {
     let temporary = TempDir::new();
     let response = request(

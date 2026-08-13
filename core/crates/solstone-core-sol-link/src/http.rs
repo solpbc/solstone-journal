@@ -21,6 +21,7 @@ use solstone_core_journal_config::load_mutation_base;
 use solstone_core_journal_config_write::{
     ConfigMutationError, JournalConfigMutation, mutate_journal_config,
 };
+use solstone_core_thinking_copy::{CONFIDENTIAL_LANE_DETAIL, ConfidentialLaneDetail, LANES, Lane};
 
 use crate::establish::{self, EstablishError};
 use crate::ledger::{AuthorizedClientsRead, read_authorized_clients};
@@ -54,57 +55,6 @@ struct IdentityResponse {
     instance_id: Option<String>,
     mark: Option<crate::mark::MarkRenderSpec>,
 }
-
-#[derive(Clone, Copy, Serialize)]
-struct Lane {
-    id: &'static str,
-    label: &'static str,
-    sub: &'static str,
-    description: &'static str,
-}
-
-#[derive(Clone, Copy, Serialize)]
-struct ConfidentialLaneDetail {
-    heading: &'static str,
-    sub: &'static str,
-    mechanism: &'static str,
-    egress: &'static str,
-    claims: &'static str,
-    attestation: &'static str,
-    early_access: &'static str,
-}
-
-// Keep in sync with solstone/apps/thinking/copy.py's LANES and CONFIDENTIAL_LANE_DETAIL.
-const LANES: [Lane; 3] = [
-    Lane {
-        id: "local",
-        label: "Local",
-        sub: "on your device",
-        description: "a model runs right on this computer — nothing leaves for sol to think.",
-    },
-    Lane {
-        id: "confidential",
-        label: "Confidential processing",
-        sub: "operated by sol pbc",
-        description: "sol pbc runs the model on confidential GPUs.",
-    },
-    Lane {
-        id: "byo",
-        label: "your own AI engine",
-        sub: "your key, or your own endpoint",
-        description: "bring a provider key — Claude, Gemini, or GPT — or point sol at your own endpoint. it stays in your journal; sol pbc is never in the path.",
-    },
-];
-
-const CONFIDENTIAL_LANE_DETAIL: ConfidentialLaneDetail = ConfidentialLaneDetail {
-    heading: "confidential processing",
-    sub: "operated by sol pbc",
-    mechanism: "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed — no third-party AI provider is in the path.",
-    egress: "when it's on, the thinking leaves your device — text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
-    claims: "no content is retained · no human reviews it · nothing is used to train",
-    attestation: "your journal must verify the service before anything is sent — if it can't verify, it doesn't send.",
-    early_access: "confidential processing is coming — scouts get it first.",
-};
 
 #[derive(Serialize)]
 struct InitStateResponse {

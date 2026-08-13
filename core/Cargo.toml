@@ -48,6 +48,8 @@ members = [
     "crates/solstone-core-sol-link",
     "crates/solstone-core-convey-http",
     "crates/solstone-core-convey-shell",
+    "crates/solstone-core-thinking-copy",
+    "crates/solstone-core-thinking",
     "crates/solstone-core-serving",
     "crates/solstone-core-ingest",
     "crates/solstone-core-entities",
@@ -155,6 +157,8 @@ solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-featu
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
 solstone-core-describe-categories = { path = "crates/solstone-core-describe-categories" }
+solstone-core-thinking-copy = { path = "crates/solstone-core-thinking-copy" }
+solstone-core-thinking = { path = "crates/solstone-core-thinking" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-sense = { path = "crates/solstone-core-sense" }

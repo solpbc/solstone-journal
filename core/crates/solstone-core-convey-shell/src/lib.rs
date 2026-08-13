@@ -137,6 +137,8 @@ mod speakers_quality;
 mod speakers_review;
 mod sse;
 mod system;
+#[cfg(feature = "host")]
+mod thinking;
 
 use assets::lookup;
 use refusal::AppNotConverted;
@@ -149,6 +151,7 @@ pub use restart::{
 };
 
 /// Journal filesystem root shared with converted app route handlers.
+#[derive(Clone)]
 pub(crate) struct JournalRoot(pub PathBuf);
 
 /// Reason the paired-device door was not made available at startup.
@@ -695,6 +698,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
+        .merge(thinking::router(route_journal_root.clone()))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root));
     session_gate::apply_layer(routes, journal_root).fallback(not_found)

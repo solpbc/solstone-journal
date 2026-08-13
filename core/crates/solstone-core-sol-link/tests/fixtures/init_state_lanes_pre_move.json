@@ -1,0 +1,33 @@
+{
+  "lanes": [
+    {
+      "id": "local",
+      "label": "Local",
+      "sub": "on your device",
+      "description": "a model runs right on this computer — nothing leaves for sol to think."
+    },
+    {
+      "id": "confidential",
+      "label": "Confidential processing",
+      "sub": "operated by sol pbc",
+      "description": "sol pbc runs the model on confidential GPUs."
+    },
+    {
+      "id": "byo",
+      "label": "your own AI engine",
+      "sub": "your key, or your own endpoint",
+      "description": "bring a provider key — Claude, Gemini, or GPT — or point sol at your own endpoint. it stays in your journal; sol pbc is never in the path."
+    }
+  ],
+  "confidential": {
+    "lane_detail": {
+      "heading": "confidential processing",
+      "sub": "operated by sol pbc",
+      "mechanism": "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed — no third-party AI provider is in the path.",
+      "egress": "when it's on, the thinking leaves your device — text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
+      "claims": "no content is retained · no human reviews it · nothing is used to train",
+      "attestation": "your journal must verify the service before anything is sent — if it can't verify, it doesn't send.",
+      "early_access": "confidential processing is coming — scouts get it first."
+    }
+  }
+}

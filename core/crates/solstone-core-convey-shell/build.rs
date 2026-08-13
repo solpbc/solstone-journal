@@ -160,6 +160,9 @@ fn main() {
     let workspace = speakers_root.join("workspace.html");
     let speakers_static = speakers_root.join("who_is_this.js");
     let devices_workspace = manifest.join("assets/devices/workspace.html");
+    let thinking_root = manifest.join("assets/thinking");
+    let thinking_workspace = thinking_root.join("workspace.html");
+    let thinking_static = thinking_root.join("thinking.js");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
@@ -171,6 +174,8 @@ fn main() {
         &body_workspace,
         &devices_workspace,
         &entities_workspace,
+        &thinking_workspace,
+        &thinking_static,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -192,6 +197,11 @@ fn main() {
     assets.push((
         "/app/speakers/static/who_is_this.js".to_owned(),
         speakers_static,
+    ));
+    assets.push(("/app/thinking/workspace".to_owned(), thinking_workspace));
+    assets.push((
+        "/app/thinking/static/thinking.js".to_owned(),
+        thinking_static,
     ));
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 

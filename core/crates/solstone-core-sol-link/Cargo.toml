@@ -28,6 +28,7 @@ host = [
     "dep:solstone-core-journal-config",
     "dep:solstone-core-journal-config-write",
     "dep:solstone-core-journal-io",
+    "dep:solstone-core-thinking-copy",
     "dep:time",
     "dep:x509-parser",
 ]
@@ -51,6 +52,7 @@ solstone-core-journal-config-write = { workspace = true, optional = true }
 sha2 = { version = "0.10.9", optional = true }
 solstone-core-journal-io = { workspace = true, optional = true }
 solstone-core-sol-client = { workspace = true }
+solstone-core-thinking-copy = { workspace = true, optional = true }
 spl-core = { workspace = true }
 spl-transport = { workspace = true }
 time = { version = "0.3.54", features = ["parsing"], optional = true }
