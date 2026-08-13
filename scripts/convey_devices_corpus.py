@@ -205,6 +205,15 @@ def build() -> dict:
         # subscribed" -- NOT "there is no bridge". A native surface with no bridge
         # at all is in a third state the reference cannot express, and `false`
         # renders in the page identically to a device that is genuinely not live.
+        # A class alone is not enough to test against: it says a field may
+        # differ, not what it should BE. `environment_native` records the value a
+        # native surface must emit, so a port asserts a value instead of
+        # inferring one from a set difference.
+        #
+        # `live`: null, because a native surface has no bridge -- an "unknown"
+        # the reference cannot express, and distinct from its `false`.
+        # `last_chat_request_at`: null, which coincidentally equals the capture;
+        # recorded explicitly so nobody has to notice the coincidence.
         "field_classes": {
             "contract": [
                 "clock_skew", "created_at", "elapsed_ms", "enabled", "failing",
@@ -213,6 +222,7 @@ def build() -> dict:
             ],
             "environment": ["live", "last_chat_request_at"],
         },
+        "environment_native": {"live": None, "last_chat_request_at": None},
         "comparator": {
             "note": "Implement THIS, not the observed list_order.",
             "key": "(group_order[group], last_seen is None, -(last_seen or 0), prefix)",

@@ -24,6 +24,10 @@
     },
     "STALE_THRESHOLD_MS": 120000
   },
+  "environment_native": {
+    "last_chat_request_at": null,
+    "live": null
+  },
   "field_classes": {
     "contract": [
       "clock_skew",
