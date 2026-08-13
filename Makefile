@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -529,6 +529,54 @@ check-rust-clippy:
 check-rust-test:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked -- --test-threads=1
+
+check-rust-describe-cli-stubs:
+	@$(REQUIRE_CARGO)
+	@set -eu; \
+		output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --test cli --locked -- --test-threads=1 2>&1)"; \
+		printf '%s\n' "$$output"; \
+		printf '%s\n' "$$output" | grep -F '0 filtered out' >/dev/null; \
+		for test_name in \
+			blocked_reentry_does_not_touch_the_existing_artifact \
+			blocking_and_session_abort_notifications_have_distinct_flat_shapes \
+			blocking_or_unknown_refusals_abort_without_an_artifact \
+			describe_runs_one_session_and_promotes_an_analyzed_artifact \
+			describe_uses_convey_mask_for_live_handler_decode \
+			detection_failure_and_timeout_latch_after_one_attempt \
+			detection_runs_for_unselected_media_and_preserves_unfiltered_objects \
+			detection_secondary_gate_uses_secondary_label \
+			extraction_exhaustion_fails_and_blocking_refusal_aborts \
+			extraction_markdown_stop_unknown_and_empty_are_clean_without_retry \
+			extraction_secondary_and_retry_paths_are_independent \
+			extraction_unparseable_json_retries_to_its_own_ceiling \
+			extraction_uses_per_category_contracts_and_redaction \
+			failed_reentries_converge_attempts_and_keep_clean_rows_raw \
+			fresh_all_failed_promotes_then_returns_an_error \
+			fresh_emits_completion_order_while_incremental_emits_frame_id_order \
+			incremental_all_failures_complete_while_zero_qualified_reentry_discards_rows \
+			incremental_all_failures_complete_with_zero_reusable_rows \
+			journal_request_records_match_phase_one_and_category_shapes \
+			multi_frame_rows_have_exact_reference_keys_and_never_leak_pending \
+			no_engine_and_session_child_failures_abort_without_artifacts \
+			observer_and_completion_event_follow_reentry_rules \
+			processing_record_is_complete_and_decode_failure_has_no_thinking \
+			redact_config_is_appended_in_order \
+			reentry_merges_gaps_and_preserves_reusable_raw_bytes \
+			reentry_skips_clean_artifacts_and_redo_starts_a_new_attempt \
+			retry_uses_a_fresh_id_and_attempt_index \
+			retryable_refusals_stop_after_five_attempts \
+			segment_meta_is_merged_before_describe_owned_values \
+			selected_unknown_category_emits_an_unenhanced_clean_row \
+			selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract \
+			selection_blocking_and_unknown_refusals_abort_after_one_selection_request \
+			selection_excludes_failed_categorization_frames \
+			selection_nonblocking_or_unparseable_response_uses_fallback \
+			session_submits_a_later_request_before_the_first_response \
+			tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward \
+			unknown_finish_reason_is_clean_and_request_uses_phase_one_contract \
+			unwritable_output_parent_is_an_internal_non_boundary_error; do \
+			printf '%s\n' "$$output" | grep -F "test $$test_name ... ok" >/dev/null; \
+		done
 
 # Deliberately manual: this runs the W4b-converted supervisor integration
 # targets repeatedly under bounded CPU contention. Its printed verdicts, rather
@@ -1233,6 +1281,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-test
+	@$(MAKE) check-rust-describe-cli-stubs
 	@$(MAKE) check-rust-onnx-test
 	@$(MAKE) check-rust-pdf-test
 	@$(MAKE) check-rust-shipped-binaries

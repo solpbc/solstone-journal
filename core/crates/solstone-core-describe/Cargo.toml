@@ -25,15 +25,25 @@ solstone-core-local.workspace = true
 base64 = "0.22.1"
 chrono.workspace = true
 
+[features]
+test-stubs = []
+
 [[bin]]
 name = "solstone-describe-session-stub"
 path = "tests/bin/session_stub.rs"
 test = false
+required-features = ["test-stubs"]
 
 [[bin]]
 name = "solstone-describe-detect-stub"
 path = "tests/bin/detector_stub.rs"
 test = false
+required-features = ["test-stubs"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["test-stubs"]
 
 [lints]
 workspace = true

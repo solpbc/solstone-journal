@@ -99,6 +99,7 @@ PDF_SCRIPT_NAME = PDF_PACKAGE_NAME
 DESCRIBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
     ("linux", "x86_64"): "manylinux_2_27_x86_64",
     ("linux", "aarch64"): "manylinux_2_27_aarch64",
+    ("darwin", "arm64"): "macosx_14_0_arm64",
 }
 VAD_ANALYZE_PACKAGE_NAME = "solstone-core-vad-analyze"
 VAD_ANALYZE_SCRIPT_NAME = VAD_ANALYZE_PACKAGE_NAME
@@ -2543,8 +2544,19 @@ def check_vad_analyze_wheel(path: Path) -> list[str]:
 def check_describe_wheel(path: Path) -> list[str]:
     """Validate the statically linked describe helper wheel."""
     errors: list[str] = []
-    repair = "make wheel-describe-linux-x86_64"
     tag = _core_wheel_tag(path)
+    platform_tuple = next(
+        (platform for platform, platform_tag in DESCRIBE_PLATFORM_TAGS.items() if platform_tag == tag),
+        None,
+    )
+    if platform_tuple is None:
+        repair = "make wheel-describe-linux-x86_64"
+    elif platform_tuple[0] == "darwin":
+        repair = "make wheel-describe-macos-arm64"
+    elif platform_tuple[1] == "aarch64":
+        repair = "make wheel-describe-linux-aarch64"
+    else:
+        repair = "make wheel-describe-linux-x86_64"
     size = path.stat().st_size
     if size > MAX_DESCRIBE_WHEEL_BYTES:
         errors.append(
@@ -2558,6 +2570,28 @@ def check_describe_wheel(path: Path) -> list[str]:
         )
 
     with zipfile.ZipFile(path) as wheel:
+        distribution = normalized_distribution("solstone-core-describe")
+        version = _wheel_version_from_name(path, distribution)
+        data_prefix = f"{distribution}-{version}.data"
+        dist_info_prefix = f"{distribution}-{version}.dist-info"
+        expected_members = {
+            f"{data_prefix}/scripts/{DESCRIBE_SCRIPT_NAME}",
+            f"{dist_info_prefix}/METADATA",
+            f"{dist_info_prefix}/WHEEL",
+            f"{dist_info_prefix}/RECORD",
+            f"{dist_info_prefix}/sboms/solstone-core-describe.cyclonedx.json",
+        }
+        actual_members = set(wheel.namelist())
+        if actual_members != expected_members:
+            errors.append(
+                _failure(
+                    path.name,
+                    "solstone-core-describe wheel member set is wrong",
+                    expected=", ".join(sorted(expected_members)),
+                    actual=", ".join(sorted(actual_members)) or "<empty>",
+                    repair=repair,
+                )
+            )
         binary_infos = [
             info
             for info in wheel.infolist()
@@ -2589,7 +2623,26 @@ def check_describe_wheel(path: Path) -> list[str]:
                     )
                 )
             binary_content = wheel.read(binary_info)
-            if not binary_content.startswith(ELF_MAGIC):
+            if platform_tuple is None:
+                errors.append(
+                    _failure(
+                        path.name,
+                        "describe wheel tag is unsupported",
+                        expected=", ".join(sorted(DESCRIBE_PLATFORM_TAGS.values())),
+                        actual=tag,
+                        repair=repair,
+                    )
+                )
+            elif platform_tuple[0] == "darwin":
+                errors.extend(
+                    _check_macho_binary(
+                        f"{path.name}:{binary_info.filename}",
+                        binary_content,
+                        platform_tuple,
+                        binary_label=DESCRIBE_SCRIPT_NAME,
+                    )
+                )
+            elif not binary_content.startswith(ELF_MAGIC):
                 errors.append(
                     _failure(
                         path.name,
@@ -2724,7 +2777,6 @@ def _native_platform_tags(
     return tuple(
         DESCRIBE_PLATFORM_TAGS[platform]
         for platform in sorted(DESCRIBE_PLATFORM_TAGS)
-        if platform[0] == "linux"
     )
 
 
