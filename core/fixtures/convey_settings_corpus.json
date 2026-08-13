@@ -1923,6 +1923,365 @@
       },
       "status": 200
     },
+    "POST processing.valid": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {
+          "gate": {
+            "display_powersave": {
+              "enabled": false
+            },
+            "time_window": {
+              "enabled": true,
+              "end": "06:00",
+              "start": "02:00"
+            }
+          },
+          "mode": "deferred"
+        },
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "beb6965531e3a45c",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": 42,
+            "redact": [
+              "password",
+              "secret"
+            ]
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": [
+              "ada",
+              "AAL"
+            ],
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": 17,
+              "enabled": false
+            }
+          },
+          "processing": {
+            "gate": {
+              "display_powersave": {
+                "enabled": false
+              },
+              "time_window": {
+                "enabled": true,
+                "end": "06:00",
+                "start": "02:00"
+              }
+            },
+            "mode": "deferred"
+          },
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "days",
+            "raw_media_days": 90
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "mode": "deferred"
+        },
+        "section": "processing"
+      },
+      "status": 200
+    },
     "POST prune-logs.dry-run": {
       "config_after": {
         "agent": {
@@ -3391,6 +3750,530 @@
         "thinking_surfaces": "on_tap"
       },
       "status": 200
+    },
+    "PUT sol_voice.partial": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "sol_voice": {
+          "category_caps": {
+            "arrival": 3,
+            "briefing": 3,
+            "commitment": 2,
+            "error": 2,
+            "notice": 2,
+            "pattern": 2
+          },
+          "category_self_mute_clear_markers": {},
+          "category_self_mute_hours": 24,
+          "daily_cap": 5,
+          "debug_show_throttled": false,
+          "default_dedupe_window": "24h",
+          "mute_window": {
+            "enabled": false,
+            "end_hour_local": 7,
+            "start_hour_local": 22
+          },
+          "rate_floor_minutes": 20,
+          "system_notifications": {
+            "linux": false,
+            "macos": false
+          }
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [
+        "sol_voice"
+      ],
+      "config_keys_removed": [],
+      "digest": "45f4791ffebd2f23",
+      "method": "PUT",
+      "normalized": {
+        "category_caps": {
+          "arrival": 3,
+          "briefing": 3,
+          "commitment": 2,
+          "error": 2,
+          "notice": 2,
+          "pattern": 2
+        },
+        "category_mute_state": {
+          "arrival": "<VOLATILE:mute_state>",
+          "briefing": "<VOLATILE:mute_state>",
+          "commitment": "<VOLATILE:mute_state>",
+          "error": "<VOLATILE:mute_state>",
+          "notice": "<VOLATILE:mute_state>",
+          "pattern": "<VOLATILE:mute_state>"
+        },
+        "category_self_mute_clear_markers": {},
+        "category_self_mute_hours": 24,
+        "daily_cap": 5,
+        "debug_show_throttled": false,
+        "default_dedupe_window": "24h",
+        "mute_window": {
+          "enabled": false,
+          "end_hour_local": 7,
+          "start_hour_local": 22
+        },
+        "rate_floor_minutes": 20,
+        "system_notifications": {
+          "linux": false,
+          "macos": false
+        }
+      },
+      "normalized_paths": [
+        "category_mute_state.arrival",
+        "category_mute_state.briefing",
+        "category_mute_state.commitment",
+        "category_mute_state.error",
+        "category_mute_state.notice",
+        "category_mute_state.pattern"
+      ],
+      "path": "/app/settings/api/sol_voice",
+      "sent": {
+        "daily_cap": 5
+      },
+      "status": 200
+    },
+    "PUT sol_voice.unknown-key": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "b19e21f6319541b7",
+      "method": "PUT",
+      "normalized": {
+        "detail": "sol_voice.enabled is not a recognized setting",
+        "error": "I couldn't save that setting because one value was invalid.",
+        "reason_code": "invalid_config_value"
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/sol_voice",
+      "sent": {
+        "enabled": false
+      },
+      "status": 400
     },
     "PUT storage.journal-logs": {
       "config_after": {
@@ -4958,6 +5841,5664 @@
           }
         },
         "max_extractions": 42,
+        "redact": [
+          "alpha",
+          "beta"
+        ]
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/vision",
+      "sent": {
+        "redact": [
+          "alpha",
+          "   ",
+          "beta"
+        ]
+      },
+      "status": 200
+    }
+  },
+  "mutations_malformed": {
+    "POST agent.rename": {
+      "config_after": {
+        "agent": {
+          "name": "aria",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "e61323430ec30352",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "aria",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "name": "aria",
+          "name_status": "named"
+        },
+        "section": "agent"
+      },
+      "status": 200
+    },
+    "POST identity.bare-backcompat": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "BareForm",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "0df60eda1b36c233",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "BareForm",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "identity": {
+          "preferred": "BareForm"
+        }
+      },
+      "status": 200
+    },
+    "POST identity.legacy-key-value": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Legacy",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "70be9f16ae3596e8",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Legacy",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "key": "preferred",
+        "section": "identity",
+        "value": "Legacy"
+      },
+      "status": 200
+    },
+    "POST identity.partial": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "revised",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Countess",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "2d802e4992cf9c9f",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "revised",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Countess",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "bio": "revised",
+          "preferred": "Countess"
+        },
+        "section": "identity"
+      },
+      "status": 200
+    },
+    "POST journal.rename": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Difference Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "7bf617d3fbc34f69",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Difference Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "name": "Difference Engine"
+        },
+        "section": "journal"
+      },
+      "status": 200
+    },
+    "POST observe.tmux": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 9,
+            "enabled": true
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "909c7d313816cf74",
+      "method": "POST",
+      "normalized": {
+        "defaults": {
+          "tmux": {
+            "capture_interval": 5,
+            "capture_interval_max": 60,
+            "capture_interval_min": 1,
+            "enabled": true
+          }
+        },
+        "tmux": {
+          "capture_interval": 9,
+          "enabled": true
+        }
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/observe",
+      "sent": {
+        "tmux": {
+          "capture_interval": 9,
+          "enabled": true
+        }
+      },
+      "status": 200
+    },
+    "POST processing.valid": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {
+          "gate": {
+            "display_powersave": {
+              "enabled": false
+            },
+            "time_window": {
+              "enabled": true,
+              "end": "06:00",
+              "start": "02:00"
+            }
+          },
+          "mode": "deferred"
+        },
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "54ad68221f867afa",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {
+            "gate": {
+              "display_powersave": {
+                "enabled": false
+              },
+              "time_window": {
+                "enabled": true,
+                "end": "06:00",
+                "start": "02:00"
+              }
+            },
+            "mode": "deferred"
+          },
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "mode": "deferred"
+        },
+        "section": "processing"
+      },
+      "status": 200
+    },
+    "POST prune-logs.dry-run": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "2bb002e7fa1ad610",
+      "method": "POST",
+      "normalized": {
+        "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
+        "error": "I couldn't save those settings.",
+        "reason_code": "settings_operation_failed"
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage/prune-logs",
+      "sent": {
+        "dry_run": true
+      },
+      "status": 500
+    },
+    "POST support.toggle": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": false,
+          "portal_url": "https://support.example.org",
+          "proactive": true
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "2366657f217f2572",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": false,
+            "portal_url": "https://support.example.org",
+            "proactive": true
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "enabled": false,
+          "proactive": true
+        },
+        "section": "support"
+      },
+      "status": 200
+    },
+    "POST transcribe.backend": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": false,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "7b26e8721fa9b810",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "auto",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": false
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "backend": "parakeet",
+          "preserve_all": false
+        },
+        "section": "transcribe"
+      },
+      "status": 200
+    },
+    "POST transcribe.nested": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "cpu",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "d0132e9e34e4879d",
+      "method": "POST",
+      "normalized": {
+        "config": {
+          "agent": {
+            "name": "sol",
+            "name_status": "named",
+            "named_date": "2026-01-02"
+          },
+          "convey": {
+            "bind": "127.0.0.1"
+          },
+          "describe": {
+            "categories": {},
+            "max_extractions": null,
+            "redact": "not-a-list"
+          },
+          "env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "identity": {
+            "aliases": {
+              "not": "a list"
+            },
+            "bio": "first programmer",
+            "email_addresses": [
+              "ada@example.org"
+            ],
+            "name": "Ada Lovelace",
+            "preferred": "Ada",
+            "pronouns": {
+              "object": "her",
+              "possessive": "her",
+              "reflexive": "herself",
+              "subject": "she"
+            },
+            "timezone": "Europe/London"
+          },
+          "journal": {
+            "name": "Analytical Engine"
+          },
+          "key_validation": {
+            "plaud": {
+              "timestamp": "2026-01-01T00:00:00Z",
+              "valid": false
+            }
+          },
+          "observe": {
+            "tmux": {
+              "capture_interval": "five",
+              "enabled": false
+            }
+          },
+          "processing": {},
+          "retention": {
+            "journal_logs": {
+              "days": 14,
+              "enabled": true
+            },
+            "per_stream": {
+              "tmux": {
+                "raw_media": "processed"
+              }
+            },
+            "raw_media": "sometimes",
+            "raw_media_days": "ninety"
+          },
+          "runtime_env": {
+            "PLAUD_ACCESS_TOKEN": false
+          },
+          "setup": {
+            "completed_at": 1700000000000
+          },
+          "some_future_section": {
+            "kept": true,
+            "n": 7
+          },
+          "support": {
+            "anonymous_feedback": true,
+            "enabled": true,
+            "portal_url": "https://support.example.org",
+            "proactive": false
+          },
+          "transcribe": {
+            "backend": "parakeet",
+            "confidential_audio": false,
+            "parakeet": {
+              "device": "cpu",
+              "model_version": "v3",
+              "timeout_sec": 120.0
+            },
+            "preserve_all": true
+          }
+        },
+        "key_validation": {
+          "plaud": {
+            "timestamp": "<VOLATILE:timestamp>",
+            "valid": false
+          }
+        },
+        "success": true
+      },
+      "normalized_paths": [
+        "key_validation.plaud.timestamp"
+      ],
+      "path": "/app/settings/api/config",
+      "sent": {
+        "data": {
+          "parakeet": {
+            "device": "cpu"
+          }
+        },
+        "section": "transcribe"
+      },
+      "status": 200
+    },
+    "PUT chat.thinking-surfaces": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "a0898571830ebb48",
+      "method": "PUT",
+      "normalized": {
+        "thinking_surfaces": "on_tap"
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/chat",
+      "sent": {
+        "thinking_surfaces": "on_tap"
+      },
+      "status": 200
+    },
+    "PUT sol_voice.partial": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "sol_voice": {
+          "category_caps": {
+            "arrival": 3,
+            "briefing": 3,
+            "commitment": 2,
+            "error": 2,
+            "notice": 2,
+            "pattern": 2
+          },
+          "category_self_mute_clear_markers": {},
+          "category_self_mute_hours": 24,
+          "daily_cap": 5,
+          "debug_show_throttled": false,
+          "default_dedupe_window": "24h",
+          "mute_window": {
+            "enabled": false,
+            "end_hour_local": 7,
+            "start_hour_local": 22
+          },
+          "rate_floor_minutes": 20,
+          "system_notifications": {
+            "linux": false,
+            "macos": false
+          }
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [
+        "sol_voice"
+      ],
+      "config_keys_removed": [],
+      "digest": "45f4791ffebd2f23",
+      "method": "PUT",
+      "normalized": {
+        "category_caps": {
+          "arrival": 3,
+          "briefing": 3,
+          "commitment": 2,
+          "error": 2,
+          "notice": 2,
+          "pattern": 2
+        },
+        "category_mute_state": {
+          "arrival": "<VOLATILE:mute_state>",
+          "briefing": "<VOLATILE:mute_state>",
+          "commitment": "<VOLATILE:mute_state>",
+          "error": "<VOLATILE:mute_state>",
+          "notice": "<VOLATILE:mute_state>",
+          "pattern": "<VOLATILE:mute_state>"
+        },
+        "category_self_mute_clear_markers": {},
+        "category_self_mute_hours": 24,
+        "daily_cap": 5,
+        "debug_show_throttled": false,
+        "default_dedupe_window": "24h",
+        "mute_window": {
+          "enabled": false,
+          "end_hour_local": 7,
+          "start_hour_local": 22
+        },
+        "rate_floor_minutes": 20,
+        "system_notifications": {
+          "linux": false,
+          "macos": false
+        }
+      },
+      "normalized_paths": [
+        "category_mute_state.arrival",
+        "category_mute_state.briefing",
+        "category_mute_state.commitment",
+        "category_mute_state.error",
+        "category_mute_state.notice",
+        "category_mute_state.pattern"
+      ],
+      "path": "/app/settings/api/sol_voice",
+      "sent": {
+        "daily_cap": 5
+      },
+      "status": 200
+    },
+    "PUT sol_voice.unknown-key": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "b19e21f6319541b7",
+      "method": "PUT",
+      "normalized": {
+        "detail": "sol_voice.enabled is not a recognized setting",
+        "error": "I couldn't save that setting because one value was invalid.",
+        "reason_code": "invalid_config_value"
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/sol_voice",
+      "sent": {
+        "enabled": false
+      },
+      "status": 400
+    },
+    "PUT storage.journal-logs": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 7,
+            "enabled": false
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "204755d7d9092d9e",
+      "method": "PUT",
+      "normalized": {
+        "retention": {
+          "journal_logs": {
+            "days": 7,
+            "enabled": false
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "success": true
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage",
+      "sent": {
+        "journal_logs": {
+          "days": 7,
+          "enabled": false
+        }
+      },
+      "status": 200
+    },
+    "PUT storage.per-stream": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "screen": {
+              "raw_media": "keep"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "ba3d9b4466cd3f5b",
+      "method": "PUT",
+      "normalized": {
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "screen": {
+              "raw_media": "keep"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "success": true
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage",
+      "sent": {
+        "per_stream": {
+          "screen": {
+            "raw_media": "keep"
+          }
+        }
+      },
+      "status": 200
+    },
+    "PUT storage.retention": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "processed",
+          "raw_media_days": 45
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "e58f2f150d694283",
+      "method": "PUT",
+      "normalized": {
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "processed",
+          "raw_media_days": 45
+        },
+        "success": true
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage",
+      "sent": {
+        "raw_media": "processed",
+        "raw_media_days": 45
+      },
+      "status": 200
+    },
+    "PUT sync.plaud-enable": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "81015692a6a45b67",
+      "method": "PUT",
+      "normalized": {
+        "obsidian": {
+          "available": true,
+          "configured": false,
+          "enabled": false
+        },
+        "plaud": {
+          "available": false,
+          "configured": true,
+          "enabled": true
+        }
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/sync",
+      "sent": {
+        "plaud": {
+          "enabled": true
+        }
+      },
+      "status": 200
+    },
+    "PUT vision.max-extractions": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 33,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "5d33d91e4d8b1fcb",
+      "method": "PUT",
+      "normalized": {
+        "categories": {},
+        "category_defaults": {
+          "browsing": {
+            "extraction": "Extract when visiting distinctly different websites or search results",
+            "group": "Screen Analysis",
+            "importance": "normal",
+            "label": "Browsing"
+          },
+          "calendar": {
+            "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Calendar"
+          },
+          "code": {
+            "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
+            "group": "Screen Analysis",
+            "importance": "low",
+            "label": "Code"
+          },
+          "gaming": {
+            "extraction": "",
+            "group": "Screen Analysis",
+            "importance": "ignore",
+            "label": "Gaming"
+          },
+          "media": {
+            "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
+            "group": "Screen Analysis",
+            "importance": "low",
+            "label": "Media"
+          },
+          "meeting": {
+            "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Meeting"
+          },
+          "messaging": {
+            "extraction": "Extract when conversation partner, channel, or messaging app changes",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Messaging"
+          },
+          "productivity": {
+            "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Productivity"
+          },
+          "reading": {
+            "extraction": "Extract when viewing a different document, article, or PDF",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Reading"
+          },
+          "social": {
+            "extraction": "Extract when platform, feed context, or visible thread changes",
+            "group": "Screen Analysis",
+            "importance": "normal",
+            "label": "Social"
+          },
+          "terminal": {
+            "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
+            "group": "Screen Analysis",
+            "importance": "low",
+            "label": "Terminal"
+          }
+        },
+        "max_extractions": 33,
+        "redact": "not-a-list"
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/vision",
+      "sent": {
+        "max_extractions": 33
+      },
+      "status": 200
+    },
+    "PUT vision.redact-trims-blanks": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": [
+            "alpha",
+            "beta"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "a8fe23da822106b5",
+      "method": "PUT",
+      "normalized": {
+        "categories": {},
+        "category_defaults": {
+          "browsing": {
+            "extraction": "Extract when visiting distinctly different websites or search results",
+            "group": "Screen Analysis",
+            "importance": "normal",
+            "label": "Browsing"
+          },
+          "calendar": {
+            "extraction": "Extract when the visible date range, event detail, availability grid, booking page, or scheduling workflow changes",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Calendar"
+          },
+          "code": {
+            "extraction": "Extract when viewing different repositories, files, or switching between editor and browser",
+            "group": "Screen Analysis",
+            "importance": "low",
+            "label": "Code"
+          },
+          "gaming": {
+            "extraction": "",
+            "group": "Screen Analysis",
+            "importance": "ignore",
+            "label": "Gaming"
+          },
+          "media": {
+            "extraction": "Extract 1 frame only - video playback content does not benefit from text extraction",
+            "group": "Screen Analysis",
+            "importance": "low",
+            "label": "Media"
+          },
+          "meeting": {
+            "extraction": "Extract when shared content type changes (screen share vs participant grid) or meeting platform differs",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Meeting"
+          },
+          "messaging": {
+            "extraction": "Extract when conversation partner, channel, or messaging app changes",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Messaging"
+          },
+          "productivity": {
+            "extraction": "Extract when different application or service is shown (e.g. ChatGPT vs Docs vs issue tracker)",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Productivity"
+          },
+          "reading": {
+            "extraction": "Extract when viewing a different document, article, or PDF",
+            "group": "Screen Analysis",
+            "importance": "high",
+            "label": "Reading"
+          },
+          "social": {
+            "extraction": "Extract when platform, feed context, or visible thread changes",
+            "group": "Screen Analysis",
+            "importance": "normal",
+            "label": "Social"
+          },
+          "terminal": {
+            "extraction": "Extract when showing distinctly different content (code diffs vs logs vs documentation)",
+            "group": "Screen Analysis",
+            "importance": "low",
+            "label": "Terminal"
+          }
+        },
+        "max_extractions": null,
         "redact": [
           "alpha",
           "beta"
@@ -14481,5 +21022,5 @@
       "status": 200
     }
   },
-  "rev": "c841733b178edbab1c3ac40c04db8bac7a0cc73a"
+  "rev": "6d3e437f9b7beb8e05f287e09a8143bd4eb06b8a"
 }

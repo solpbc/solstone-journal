@@ -476,6 +476,18 @@ MUTATION_CASES = [
     # installed.
     ("prune-logs.dry-run", "POST", "/app/settings/api/storage/prune-logs",
      {"dry_run": True}),
+    # `processing` was read as an inert section because its field allow-list is
+    # empty. It is not: a separate branch runs the processing validator and
+    # writes the section. An implementer told "writes nothing" ships a silent
+    # no-op AND loses a refusal path.
+    ("processing.valid", "POST", "/app/settings/api/config",
+     {"section": "processing", "data": {"mode": "deferred"}}),
+    # sol_voice's merge depth was asserted from prose with nothing recorded --
+    # the exact thing this corpus exists to stop.
+    ("sol_voice.partial", "PUT", "/app/settings/api/sol_voice",
+     {"daily_cap": 5}),
+    ("sol_voice.unknown-key", "PUT", "/app/settings/api/sol_voice",
+     {"enabled": False}),
 ]
 
 
@@ -900,6 +912,13 @@ def main() -> int:
             },
         ],
     }
+    malformed = json.loads(json.dumps(RICH))
+    malformed["retention"]["raw_media"] = "sometimes"
+    malformed["retention"]["raw_media_days"] = "ninety"
+    malformed["observe"]["tmux"]["capture_interval"] = "five"
+    malformed["describe"]["max_extractions"] = None
+    malformed["describe"]["redact"] = "not-a-list"
+    malformed["identity"]["aliases"] = {"not": "a list"}
     out["phases"]["established"] = run_phase("established", ESTABLISHED)
     out["phases"]["rich"] = run_phase("rich", RICH)
     out["phases"]["populated"] = run_phase("populated", RICH, seed=True)
@@ -916,15 +935,13 @@ def main() -> int:
     # reject. `retention.raw_media` is the live case: the write route validates
     # membership but the eligibility reader takes an unknown mode as *keep* by
     # falling off the end, so it fails closed by accident rather than by design.
-    malformed = json.loads(json.dumps(RICH))
-    malformed["retention"]["raw_media"] = "sometimes"
-    malformed["retention"]["raw_media_days"] = "ninety"
-    malformed["observe"]["tmux"]["capture_interval"] = "five"
-    malformed["describe"]["max_extractions"] = None
-    malformed["describe"]["redact"] = "not-a-list"
-    malformed["identity"]["aliases"] = {"not": "a list"}
     out["phases"]["malformed"] = run_phase("malformed", malformed)
     out["mutations"] = run_mutations(RICH)
+    # 🔴 A WRITE against a malformed-but-parseable config. Every phase records
+    # reads; nothing recorded whether an owner whose config carries a malformed
+    # known section can still CHANGE a setting. That is the difference between a
+    # degraded surface and a locked one.
+    out["mutations_malformed"] = run_mutations(malformed)
     # 🔴 `api/storage/purge` had no captured case at all, on the one route that
     # marks an owner's raw media for removal. The policy short-circuit runs
     # BEFORE the executor is reached, so the must-not-mark branch is capturable
