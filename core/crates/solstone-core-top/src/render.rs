@@ -627,7 +627,7 @@ fn observe_section(
         out.push('\n');
     } else {
         out.push_str("  ");
-        match state.displayed_mode.as_str() {
+        match displayed_observe_mode(state, frame.monotonic_seconds) {
             "screencast" => {
                 let elapsed = state
                     .observe_status
@@ -712,6 +712,19 @@ fn observe_section(
         out.push_str(&recent);
         out.push_str(style.normal());
         out.push('\n');
+    }
+}
+
+fn displayed_observe_mode(state: &TopState, monotonic_seconds: f64) -> &str {
+    let raw_mode = state
+        .observe_status
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("idle");
+    if raw_mode == "idle" && monotonic_seconds - state.last_active_ts >= 10.0 {
+        "idle"
+    } else {
+        state.displayed_mode.as_str()
     }
 }
 

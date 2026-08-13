@@ -15,7 +15,10 @@ pub use r#loop::{
     TopBrainSource, TopClock, TopInput, TopLoopError, TopReceiveTransport, TopTerminal,
     run_top_with,
 };
-pub use process::{ProcessObserver, ProcessSample, ProcessUnavailableReason, platform_observer};
+pub use process::{
+    ProcessBirth, ProcessIdentity, ProcessObserver, ProcessSample, ProcessUnavailableReason,
+    platform_observer,
+};
 pub use reduce::{
     ReductionDisposition, ReductionEffects, ReductionSample, STATUS_TIMEOUT_SECONDS, TopMalformed,
     TopMalformedKind, TopRoute, apply_receive_event, cleanup_processes, reduce_envelope,

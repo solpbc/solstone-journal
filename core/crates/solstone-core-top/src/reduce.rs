@@ -147,7 +147,7 @@ pub fn reduce_envelope(
         ("logs", "exit") => validated(
             state,
             validate_logs_exit(&envelope.extra),
-            |state, value| commit_logs_exit(state, value, sample),
+            |state, value| commit_logs_exit(state, value, sample, observer),
         ),
         ("observe", "status") => match validate_observe_status(&envelope.extra) {
             Ok(value) if value.fields.is_empty() => ReductionDisposition::Ignored,
@@ -292,6 +292,7 @@ pub fn apply_receive_event(
                 state.cpu_cache.clear();
                 state.memory_cache.clear();
                 state.cpu_pids.clear();
+                state.process_identities.clear();
                 state.running_tasks.clear();
                 state.finished_tasks.clear();
                 state.task_started_at.clear();
@@ -347,17 +348,16 @@ pub fn cleanup_processes(
     observer: &mut dyn ProcessObserver,
 ) {
     let expired: Vec<String> = state
-        .finished_tasks
+        .finished_task_finished_at
         .iter()
-        .filter_map(|(reference, task)| {
-            task.get("finished_at")
-                .and_then(Value::as_f64)
-                .filter(|at| sample.wall_seconds - at > STATUS_TIMEOUT_SECONDS)
-                .map(|_| reference.clone())
+        .filter_map(|(reference, finished_at)| {
+            (sample.monotonic_seconds - finished_at > STATUS_TIMEOUT_SECONDS)
+                .then_some(reference.clone())
         })
         .collect();
     for reference in expired {
         state.finished_tasks.remove(&reference);
+        state.finished_task_finished_at.remove(&reference);
     }
     let tasks: Vec<(String, String, u32)> = state
         .running_tasks
@@ -387,12 +387,14 @@ pub fn cleanup_processes(
             .and_then(|line| line.as_array().and_then(|items| items.get(2).cloned()))
             .unwrap_or_else(|| json!(""));
         state.running_tasks.remove(&reference);
-        state.cpu_pids.remove(&pid);
-        state.cpu_cache.remove(&pid);
-        state.memory_cache.remove(&pid);
+        clear_process_display(state, pid);
+        observer.forget(pid);
         state.task_started_at.remove(&reference);
         state.last_log_at.remove(&reference);
-        state.finished_tasks.insert(reference, json!({"name":name,"exit_code":Value::Null,"last_log":last_log,"finished_at":sample.wall_seconds}));
+        state.finished_tasks.insert(reference.clone(), json!({"name":name,"exit_code":Value::Null,"last_log":last_log,"finished_at":sample.wall_seconds}));
+        state
+            .finished_task_finished_at
+            .insert(reference, sample.monotonic_seconds);
     }
 }
 
@@ -737,6 +739,23 @@ fn commit_supervisor_status(
     sample: &ReductionSample,
     observer: &mut dyn ProcessObserver,
 ) -> ReductionEffects {
+    let retained_pids = status
+        .services
+        .iter()
+        .map(|service| service.pid)
+        .chain(
+            state
+                .running_tasks
+                .values()
+                .filter_map(|task| task.get("pid").and_then(Value::as_u64))
+                .filter_map(|pid| u32::try_from(pid).ok()),
+        )
+        .collect::<BTreeSet<_>>();
+    for pid in state.process_identities.keys().copied().collect::<Vec<_>>() {
+        if !retained_pids.contains(&pid) {
+            observer.forget(pid);
+        }
+    }
     state.services = status.services.iter().map(|service| json!({"name":service.name,"ref":service.reference,"pid":service.pid,"uptime_seconds":service.uptime_seconds})).collect();
     state.crashed = status
         .crashed
@@ -752,6 +771,7 @@ fn commit_supervisor_status(
     state.cpu_pids.clear();
     state.cpu_cache.clear();
     state.memory_cache.clear();
+    state.process_identities.clear();
     for service in status.services {
         record_process_sample(
             state,
@@ -831,6 +851,7 @@ fn commit_logs_exit(
     state: &mut TopState,
     exit: ValidatedExit,
     sample: &ReductionSample,
+    observer: &mut dyn ProcessObserver,
 ) -> ReductionEffects {
     let task = state.running_tasks.remove(&exit.reference);
     let name = task
@@ -853,31 +874,47 @@ fn commit_logs_exit(
         .cloned()
         .unwrap_or_else(|| json!(""));
     state.finished_tasks.insert(exit.reference.clone(), json!({"name":name,"exit_code":exit.exit_code,"last_log":last_log,"finished_at":sample.wall_seconds}));
+    state
+        .finished_task_finished_at
+        .insert(exit.reference.clone(), sample.monotonic_seconds);
     state.last_log_lines.remove(&exit.reference);
     state.last_log_at.remove(&exit.reference);
     state.task_started_at.remove(&exit.reference);
     if let Some(pid) = pid {
-        state.cpu_pids.remove(&pid);
-        state.cpu_cache.remove(&pid);
-        state.memory_cache.remove(&pid);
+        clear_process_display(state, pid);
+        observer.forget(pid);
     }
     ReductionEffects::default()
+}
+
+fn clear_process_display(state: &mut TopState, pid: u32) {
+    state.cpu_pids.remove(&pid);
+    state.cpu_cache.remove(&pid);
+    state.memory_cache.remove(&pid);
+    state.process_identities.remove(&pid);
 }
 
 fn record_process_sample(state: &mut TopState, pid: u32, sample: ProcessSample) {
     match sample {
         ProcessSample::Live {
+            identity,
             rss_bytes,
             cpu_percent,
         } => {
+            if state
+                .process_identities
+                .get(&pid)
+                .is_some_and(|known| known != &identity)
+            {
+                clear_process_display(state, pid);
+            }
+            state.process_identities.insert(pid, identity);
             state.cpu_pids.insert(pid);
             state.cpu_cache.insert(pid, cpu_percent);
             state.memory_cache.insert(pid, rss_bytes);
         }
         _ => {
-            state.cpu_pids.remove(&pid);
-            state.cpu_cache.remove(&pid);
-            state.memory_cache.remove(&pid);
+            clear_process_display(state, pid);
         }
     }
 }
@@ -1058,7 +1095,7 @@ fn commit_observe_status(
     state.observe_last_ts = sample.wall_seconds;
     if status.mode.as_deref().is_some_and(|mode| mode != "idle") {
         state.displayed_mode = status.mode.expect("validated mode present");
-        state.last_active_ts = sample.wall_seconds;
+        state.last_active_ts = sample.monotonic_seconds;
     }
     ReductionEffects::default()
 }

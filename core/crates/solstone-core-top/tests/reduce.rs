@@ -8,9 +8,9 @@ use solstone_core_callosum::{
 use std::collections::VecDeque;
 
 use solstone_core_top::{
-    FrameSample, PlainTopStyle, ProcessObserver, ProcessSample, ReductionDisposition,
-    ReductionSample, TopState, apply_receive_event, cleanup_processes, reduce_envelope,
-    render_frame,
+    FrameSample, PlainTopStyle, ProcessBirth, ProcessIdentity, ProcessObserver, ProcessSample,
+    ReductionDisposition, ReductionSample, TopState, apply_receive_event, cleanup_processes,
+    reduce_envelope, render_frame,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/top_reference.json");
@@ -22,6 +22,10 @@ impl ProcessObserver for Observer {
             ProcessSample::Missing
         } else {
             ProcessSample::Live {
+                identity: ProcessIdentity {
+                    pid,
+                    birth: ProcessBirth::LinuxStartTicks(1),
+                },
                 rss_bytes: 10 * 1024 * 1024,
                 cpu_percent: 12.4,
             }
@@ -211,10 +215,18 @@ fn cleanup_refreshes_live_task_metrics_on_every_cycle() {
     };
     let mut observer = SequenceObserver(VecDeque::from([
         ProcessSample::Live {
+            identity: ProcessIdentity {
+                pid: 55,
+                birth: ProcessBirth::LinuxStartTicks(1),
+            },
             rss_bytes: 11 * 1_048_576,
             cpu_percent: 12.0,
         },
         ProcessSample::Live {
+            identity: ProcessIdentity {
+                pid: 55,
+                birth: ProcessBirth::LinuxStartTicks(1),
+            },
             rss_bytes: 47 * 1_048_576,
             cpu_percent: 73.0,
         },

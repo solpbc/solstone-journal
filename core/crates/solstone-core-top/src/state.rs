@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumConnectionPhase;
 
-use crate::{RestartAttempt, TopMalformed};
+use crate::{ProcessIdentity, RestartAttempt, TopMalformed};
 
 /// Continuity metadata is native-only and deliberately excluded from the
 /// retained Python fixture projection.
@@ -86,8 +86,12 @@ pub struct TopState {
     /// Native-only RSS cache; intentionally omitted from the Python fixture projection.
     pub memory_cache: BTreeMap<u32, u64>,
     pub cpu_pids: BTreeSet<u32>,
+    /// Native birth identities back the retained PID-keyed process projection.
+    pub process_identities: BTreeMap<u32, ProcessIdentity>,
     /// Native monotonic timestamps for task runtime rendering.
     pub task_started_at: BTreeMap<String, f64>,
+    /// Native monotonic expiry timestamps for finished-task ghosts.
+    pub finished_task_finished_at: BTreeMap<String, f64>,
     /// Native wall timestamps for log age rendering.
     pub last_log_at: BTreeMap<String, f64>,
     pub running_tasks: BTreeMap<String, Value>,
@@ -122,7 +126,9 @@ impl Default for TopState {
             cpu_cache: BTreeMap::new(),
             memory_cache: BTreeMap::new(),
             cpu_pids: BTreeSet::new(),
+            process_identities: BTreeMap::new(),
             task_started_at: BTreeMap::new(),
+            finished_task_finished_at: BTreeMap::new(),
             last_log_at: BTreeMap::new(),
             running_tasks: BTreeMap::new(),
             finished_tasks: BTreeMap::new(),
@@ -226,6 +232,14 @@ impl TopState {
                 .unwrap_or("idle")
                 .to_owned(),
             last_active_ts: number(object, "last_active_ts"),
+            finished_task_finished_at: object_map(object, "finished_tasks")?
+                .iter()
+                .filter_map(|(reference, task)| {
+                    task.get("finished_at")
+                        .and_then(Value::as_f64)
+                        .map(|finished_at| (reference.clone(), finished_at))
+                })
+                .collect(),
             think_status: object_map(object, "think_status")?,
             think_last_completed: object_map(object, "think_last_completed")?,
             think_running: object

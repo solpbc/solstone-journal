@@ -4,6 +4,24 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ProcessBirth {
+    LinuxStartTicks(u64),
+    DarwinStart(String),
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProcessIdentity {
+    pub pid: u32,
+    pub birth: ProcessBirth,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CpuBaseline {
+    ticks: u64,
+    sampled_at: f64,
+}
+
 /// Reason an observation could not be obtained without treating the process as
 /// absent.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,17 +34,24 @@ pub enum ProcessUnavailableReason {
 /// A bounded, privacy-preserving process observation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProcessSample {
-    Live { rss_bytes: u64, cpu_percent: f64 },
+    Live {
+        identity: ProcessIdentity,
+        rss_bytes: u64,
+        cpu_percent: f64,
+    },
     Missing,
     AccessDenied,
     Zombie,
-    Unavailable { reason: ProcessUnavailableReason },
+    Unavailable {
+        reason: ProcessUnavailableReason,
+    },
 }
 
 /// Observe only the supplied PID. Implementations never enumerate command
 /// arguments, environment, process trees, or perform destructive actions.
 pub trait ProcessObserver {
     fn sample(&mut self, pid: u32, monotonic_seconds: f64) -> ProcessSample;
+    fn forget(&mut self, _pid: u32) {}
 }
 
 /// Construct the host backend; unsupported hosts return `Unavailable`.
@@ -38,19 +63,30 @@ pub fn platform_observer() -> PlatformProcessObserver {
 /// Small platform facade that keeps cfg-specific implementation private.
 #[derive(Default)]
 pub struct PlatformProcessObserver {
-    #[cfg(target_os = "linux")]
-    baselines: BTreeMap<u32, (u64, f64)>,
+    baselines: BTreeMap<ProcessIdentity, CpuBaseline>,
 }
 
 impl ProcessObserver for PlatformProcessObserver {
     #[cfg(target_os = "linux")]
     fn sample(&mut self, pid: u32, monotonic_seconds: f64) -> ProcessSample {
-        linux_sample(pid, monotonic_seconds, &mut self.baselines)
+        let sample = linux_sample(pid, monotonic_seconds, &mut self.baselines);
+        if !matches!(sample, ProcessSample::Live { .. }) {
+            self.forget(pid);
+        }
+        sample
+    }
+
+    fn forget(&mut self, pid: u32) {
+        self.baselines.retain(|identity, _| identity.pid != pid);
     }
 
     #[cfg(target_os = "macos")]
-    fn sample(&mut self, pid: u32, _monotonic_seconds: f64) -> ProcessSample {
-        macos_sample(pid)
+    fn sample(&mut self, pid: u32, monotonic_seconds: f64) -> ProcessSample {
+        let sample = macos_sample(pid, monotonic_seconds, &mut self.baselines);
+        if !matches!(sample, ProcessSample::Live { .. }) {
+            self.forget(pid);
+        }
+        sample
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -65,7 +101,7 @@ impl ProcessObserver for PlatformProcessObserver {
 fn linux_sample(
     pid: u32,
     monotonic_seconds: f64,
-    baselines: &mut BTreeMap<u32, (u64, f64)>,
+    baselines: &mut BTreeMap<ProcessIdentity, CpuBaseline>,
 ) -> ProcessSample {
     linux_sample_at(Path::new("/proc"), pid, monotonic_seconds, baselines)
 }
@@ -75,7 +111,7 @@ fn linux_sample_at(
     proc_root: &Path,
     pid: u32,
     monotonic_seconds: f64,
-    baselines: &mut BTreeMap<u32, (u64, f64)>,
+    baselines: &mut BTreeMap<ProcessIdentity, CpuBaseline>,
 ) -> ProcessSample {
     let root = proc_root.join(pid.to_string());
     let status = match std::fs::read_to_string(root.join("status")) {
@@ -110,20 +146,32 @@ fn linux_sample_at(
             };
         }
     };
-    let Some(ticks) = linux_cpu_ticks(&stat) else {
+    let Some((ticks, start_ticks)) = linux_cpu_ticks(&stat) else {
         return ProcessSample::Unavailable {
             reason: ProcessUnavailableReason::Parse,
         };
     };
+    let identity = ProcessIdentity {
+        pid,
+        birth: ProcessBirth::LinuxStartTicks(start_ticks),
+    };
+    baselines.retain(|known, _| known.pid != pid || known == &identity);
     let percent = baselines
-        .insert(pid, (ticks, monotonic_seconds))
-        .and_then(|(old_ticks, old_at)| {
-            let elapsed = monotonic_seconds - old_at;
+        .insert(
+            identity.clone(),
+            CpuBaseline {
+                ticks,
+                sampled_at: monotonic_seconds,
+            },
+        )
+        .and_then(|old| {
+            let elapsed = monotonic_seconds - old.sampled_at;
             (elapsed > 0.0)
-                .then(|| ((ticks.saturating_sub(old_ticks)) as f64 / 100.0) / elapsed * 100.0)
+                .then(|| ((ticks.saturating_sub(old.ticks)) as f64 / 100.0) / elapsed * 100.0)
         })
         .unwrap_or(0.0);
     ProcessSample::Live {
+        identity,
         rss_bytes: rss_kib.unwrap_or(0).saturating_mul(1024),
         cpu_percent: percent,
     }
@@ -144,16 +192,24 @@ fn linux_rss_kib(status: &str) -> Option<u64> {
     })
 }
 #[cfg(target_os = "linux")]
-fn linux_cpu_ticks(stat: &str) -> Option<u64> {
+fn linux_cpu_ticks(stat: &str) -> Option<(u64, u64)> {
     let close = stat.rfind(')')?;
     let fields: Vec<_> = stat[close + 2..].split_whitespace().collect();
-    Some(fields.get(11)?.parse::<u64>().ok()? + fields.get(12)?.parse::<u64>().ok()?)
+    Some((
+        fields.get(11)?.parse::<u64>().ok()? + fields.get(12)?.parse::<u64>().ok()?,
+        fields.get(19)?.parse::<u64>().ok()?,
+    ))
 }
 
 #[cfg(target_os = "macos")]
-fn macos_sample(pid: u32) -> ProcessSample {
+fn macos_sample(
+    pid: u32,
+    monotonic_seconds: f64,
+    baselines: &mut BTreeMap<ProcessIdentity, CpuBaseline>,
+) -> ProcessSample {
     let output = match std::process::Command::new("/bin/ps")
-        .args(["-o", "state=,rss=,%cpu=", "-p", &pid.to_string()])
+        .env("LC_ALL", "C")
+        .args(["-o", "state=,rss=,%cpu=,lstart=", "-p", &pid.to_string()])
         .output()
     {
         Ok(output) => output,
@@ -169,11 +225,21 @@ fn macos_sample(pid: u32) -> ProcessSample {
     if !output.status.success() {
         return ProcessSample::Missing;
     }
-    macos_parse_ps(std::str::from_utf8(&output.stdout).unwrap_or(""))
+    macos_parse_ps(
+        pid,
+        std::str::from_utf8(&output.stdout).unwrap_or(""),
+        monotonic_seconds,
+        baselines,
+    )
 }
 
-#[cfg(target_os = "macos")]
-fn macos_parse_ps(output: &str) -> ProcessSample {
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn macos_parse_ps(
+    pid: u32,
+    output: &str,
+    monotonic_seconds: f64,
+    baselines: &mut BTreeMap<ProcessIdentity, CpuBaseline>,
+) -> ProcessSample {
     let Some(line) = output.lines().next() else {
         return ProcessSample::Missing;
     };
@@ -188,10 +254,31 @@ fn macos_parse_ps(output: &str) -> ProcessSample {
         fields.next().and_then(|value| value.parse::<u64>().ok()),
         fields.next().and_then(|value| value.parse::<f64>().ok()),
     ) {
-        (Some(rss), Some(cpu_percent)) => ProcessSample::Live {
-            rss_bytes: rss.saturating_mul(1024),
-            cpu_percent,
-        },
+        (Some(rss), Some(cpu_percent)) => {
+            let birth = fields.collect::<Vec<_>>().join(" ");
+            if birth.is_empty() {
+                return ProcessSample::Unavailable {
+                    reason: ProcessUnavailableReason::Parse,
+                };
+            }
+            let identity = ProcessIdentity {
+                pid,
+                birth: ProcessBirth::DarwinStart(birth),
+            };
+            baselines.retain(|known, _| known.pid != pid || known == &identity);
+            baselines.insert(
+                identity.clone(),
+                CpuBaseline {
+                    ticks: 0,
+                    sampled_at: monotonic_seconds,
+                },
+            );
+            ProcessSample::Live {
+                identity,
+                rss_bytes: rss.saturating_mul(1024),
+                cpu_percent,
+            }
+        }
         _ => ProcessSample::Unavailable {
             reason: ProcessUnavailableReason::Parse,
         },
@@ -215,7 +302,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             pid_root.join("stat"),
-            "201 (x) S 0 0 0 0 0 0 0 0 0 0 100 20",
+            "201 (x with spaces) S 0 0 0 0 0 0 0 0 0 0 100 20 0 0 0 0 0 0 777",
         )
         .unwrap();
         let mut baselines = BTreeMap::new();
@@ -237,6 +324,16 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(root);
     }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_stat_extracts_starttime() {
+        assert_eq!(
+            linux_cpu_ticks(
+                "201 (command with spaces) S 0 0 0 0 0 0 0 0 0 0 100 20 0 0 0 0 0 0 777"
+            ),
+            Some((120, 777))
+        );
+    }
     #[test]
     fn platform_observer_never_panics_for_a_missing_pid() {
         let result = std::panic::catch_unwind(|| {
@@ -255,6 +352,10 @@ mod tests {
                     203 => ProcessSample::Zombie,
                     204 => ProcessSample::AccessDenied,
                     _ => ProcessSample::Live {
+                        identity: ProcessIdentity {
+                            pid,
+                            birth: ProcessBirth::LinuxStartTicks(1),
+                        },
                         rss_bytes: 0,
                         cpu_percent: 8.6,
                     },
@@ -301,17 +402,38 @@ mod tests {
         );
         assert!(!state.finished_tasks.contains_key("missing"));
     }
-    #[cfg(target_os = "macos")]
     #[test]
-    fn macos_parser_is_deterministic() {
-        assert_eq!(macos_parse_ps("Z 1 0.0\n"), ProcessSample::Zombie);
+    fn darwin_ps_requires_start_identity() {
+        let mut baselines = BTreeMap::new();
         assert_eq!(
-            macos_parse_ps("S 6144 8.5\n"),
+            macos_parse_ps(9, "Z 1 0.0 Mon Jan 01 00:00:00 2024\n", 1.0, &mut baselines),
+            ProcessSample::Zombie
+        );
+        assert_eq!(
+            macos_parse_ps(
+                9,
+                "S 6144 8.5 Mon Jan 01 00:00:00 2024\n",
+                1.0,
+                &mut baselines
+            ),
             ProcessSample::Live {
+                identity: ProcessIdentity {
+                    pid: 9,
+                    birth: ProcessBirth::DarwinStart("Mon Jan 01 00:00:00 2024".to_owned()),
+                },
                 rss_bytes: 6_291_456,
                 cpu_percent: 8.5
             }
         );
-        assert_eq!(macos_parse_ps(""), ProcessSample::Missing);
+        assert_eq!(
+            macos_parse_ps(9, "S 6144 8.5\n", 1.0, &mut baselines),
+            ProcessSample::Unavailable {
+                reason: ProcessUnavailableReason::Parse
+            }
+        );
+        assert_eq!(
+            macos_parse_ps(9, "", 1.0, &mut baselines),
+            ProcessSample::Missing
+        );
     }
 }
