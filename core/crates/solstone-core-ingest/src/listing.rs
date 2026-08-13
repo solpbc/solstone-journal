@@ -127,7 +127,6 @@ pub(crate) fn merge_day_listing(
         if accumulator.original_key.is_none() {
             accumulator.original_key = original_key;
         }
-        accumulator.observed = history.observed_segments.contains(segment);
         for file in files {
             let object = file.as_object().ok_or(ListingError::Malformed)?;
             if object.get("disposition").and_then(Value::as_str) == Some("received_not_written") {
@@ -142,8 +141,6 @@ pub(crate) fn merge_day_listing(
             continue;
         }
         let accumulator = by_segment.entry(event.segment.clone()).or_default();
-        // Native-era segments list observed:false because the reference computes
-        // it from history observed rows and the native writer emits none.
         for file in event.files {
             let entry = project_event_file(journal_root, day, &event.stream, &event.segment, file)?;
             accumulator.insert(entry);
@@ -152,7 +149,10 @@ pub(crate) fn merge_day_listing(
     }
     let mut segments = Vec::new();
     for (key, accumulator) in by_segment {
-        let observed = accumulator.observed;
+        // Native-era segments list observed:false because the reference computes
+        // it from history observed rows and the native writer emits none. Apply
+        // a historical marker after the two evidence stores have been unioned.
+        let observed = history.observed_segments.contains(&key);
         let original_key = accumulator.original_key.clone();
         let files = accumulator.reduce_effective_names()?;
         if !files.is_empty() {
@@ -242,7 +242,6 @@ fn resolve_file_status(
 
 #[derive(Default)]
 struct SegmentAccumulator {
-    observed: bool,
     original_key: Option<String>,
     // Held-wins is a safer generalization of the Python reference's
     // last-write-wins behavior, not an equivalent behavior across streams.

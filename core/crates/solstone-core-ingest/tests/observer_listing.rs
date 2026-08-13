@@ -52,6 +52,73 @@ fn fixture(label: &str) -> PathBuf {
     root
 }
 
+fn files_in_tree(directory: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(directory).expect("read fixture tree") {
+        let entry = entry.expect("fixture tree entry");
+        let kind = entry.file_type().expect("fixture entry type");
+        if kind.is_dir() {
+            files.extend(files_in_tree(&entry.path()));
+        } else if kind.is_file() {
+            files.push(entry.path());
+        }
+    }
+    files
+}
+
+fn assert_python_era_provenance(root: &Path) -> Result<(), String> {
+    let streams = root.join("streams");
+    match fs::read_dir(&streams) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry.map_err(|error| error.to_string())?;
+                if entry
+                    .file_type()
+                    .map_err(|error| error.to_string())?
+                    .is_file()
+                    && entry.file_name().to_string_lossy().ends_with(".json")
+                {
+                    let record =
+                        fs::read_to_string(entry.path()).map_err(|error| error.to_string())?;
+                    if record.contains("\"did\"") {
+                        return Err(format!(
+                            "stream record {} contains did",
+                            entry.path().display()
+                        ));
+                    }
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("cannot read streams directory: {error}")),
+    }
+    for path in files_in_tree(&root.join("chronicle")) {
+        if path.file_name().is_some_and(|name| name == "events.jsonl") {
+            let contents = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+            for (line, row) in contents.lines().enumerate() {
+                if row.trim().is_empty() {
+                    continue;
+                }
+                let row: Value = serde_json::from_str(row).map_err(|error| {
+                    format!(
+                        "invalid fixture event {}:{}: {error}",
+                        path.display(),
+                        line + 1
+                    )
+                })?;
+                if row.get("record_type").and_then(Value::as_str) == Some("device_ingest") {
+                    return Err(format!(
+                        "fixture event {}:{} is device_ingest",
+                        path.display(),
+                        line + 1
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn basis(did: &str) -> AccessBasis {
     AccessBasis::LinkedDevice {
         carrier: Carrier::Direct,
@@ -211,32 +278,70 @@ fn item<'a>(body: &'a Value, key: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("missing segment {key}"))
 }
 
+fn file<'a>(body: &'a Value, key: &str, name: &str) -> &'a Value {
+    item(body, key)["files"]
+        .as_array()
+        .expect("files array")
+        .iter()
+        .find(|file| file["name"] == name)
+        .unwrap_or_else(|| panic!("missing file {name} for segment {key}"))
+}
+
+fn append_device_ingest_event(
+    root: &Path,
+    stream: &str,
+    segment: &str,
+    submitted: &str,
+    written: &str,
+    bytes: &[u8],
+) {
+    create_media(root, stream, segment, written, bytes);
+    let events = root
+        .join("chronicle")
+        .join(DAY)
+        .join(stream)
+        .join(segment)
+        .join("events.jsonl");
+    let mut contents = fs::read_to_string(&events).expect("native event log");
+    contents.push_str(
+        &json!({
+            "record_type": "device_ingest",
+            "record_version": 1,
+            "outcome": "accepted",
+            "protocol_version": 3,
+            "did": DID_A,
+            "source": "",
+            "stream": stream,
+            "day": DAY,
+            "segment": segment,
+            "files": [{
+                "submitted": submitted,
+                "written": written,
+                "size": bytes.len(),
+                "sha256": "projected-event-sha256"
+            }],
+            "meta": {}
+        })
+        .to_string(),
+    );
+    contents.push('\n');
+    fs::write(events, contents).expect("projected native event");
+}
+
+#[test]
+fn provenance_gate_walks_every_event_log() {
+    let root = fixture("provenance-recursion");
+    let event_log = root.join("chronicle/20260804/legacy/235959_60/events.jsonl");
+    fs::create_dir_all(event_log.parent().expect("event directory")).expect("event directory");
+    fs::write(&event_log, "{\"record_type\":\"device_ingest\"}\n").expect("event row");
+    assert!(assert_python_era_provenance(&root).is_err());
+    let _ = fs::remove_dir_all(root);
+}
+
 #[tokio::test]
 async fn ac1_ac2_ac11_ac12_certificate_selects_fixture_material_on_all_routes() {
     let root = fixture("identity");
-    let streams = root.join("streams");
-    if streams.exists() {
-        for entry in fs::read_dir(streams).expect("fixture streams") {
-            let record =
-                fs::read_to_string(entry.expect("stream entry").path()).expect("stream record");
-            assert!(!record.contains("\"did\""));
-        }
-    }
-    for directory in [
-        root.join("chronicle/20260804/laptop/120000_60"),
-        root.join("chronicle/20260804/laptop/120100_60"),
-        root.join("chronicle/20260804/laptop/120300_60"),
-        root.join("chronicle/20260804/phone/130000_60"),
-    ] {
-        let events = directory.join("events.jsonl");
-        if events.exists() {
-            assert!(
-                !fs::read_to_string(events)
-                    .expect("fixture events")
-                    .contains("\"record_type\":\"device_ingest\"")
-            );
-        }
-    }
+    assert_python_era_provenance(&root).expect("seeded fixture provenance");
     let app = router(&root);
     let headers = [
         ("Authorization", "Bearer bbbbbbbb-observer-handle"),
@@ -283,9 +388,12 @@ async fn ac1_ac2_ac11_ac12_certificate_selects_fixture_material_on_all_routes() 
             .iter()
             .all(|item| item["key"] != "130000_60")
     );
-    assert_eq!(item(&a, "120000_60")["files"][0]["status"], "present");
-    assert_eq!(item(&a, "120100_60")["files"][0]["status"], "processed");
-    assert_eq!(item(&a, "120200_60")["files"][0]["status"], "missing");
+    assert_eq!(file(&a, "120000_60", "present.flac")["status"], "present");
+    assert_eq!(
+        file(&a, "120100_60", "processed.flac")["status"],
+        "processed"
+    );
+    assert_eq!(file(&a, "120200_60", "gone.flac")["status"], "missing");
 
     let (status, manifest) =
         request_json(&app, "GET", "/app/observer/ingest/manifest", DID_A).await;
@@ -382,7 +490,7 @@ async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
         StatusCode::OK,
         "zero observers serves native evidence"
     );
-    assert_eq!(item(&zero, "150000_60")["files"][0]["status"], "present");
+    assert_eq!(file(&zero, "150000_60", "native.flac")["status"], "present");
 
     add_observer(
         &root,
@@ -506,14 +614,31 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         .expect("landed segment")
         .to_owned();
     upload(&app, DID_A, "160000_60", "added.json", b"added").await;
+    append_history(
+        &root,
+        "aaaaaaaa",
+        json!({"type":"observed","segment":landed}),
+    );
+    append_device_ingest_event(
+        &root,
+        "device",
+        &landed,
+        "client-name.flac",
+        "stored-name.flac",
+        b"projected event",
+    );
     let (_, body) =
         request_json(&app, "GET", "/app/observer/ingest/segments/20260804", DID_A).await;
     assert_eq!(
-        item(&body, "120000_60")["files"][0]["status"],
+        file(&body, "120000_60", "present.flac")["status"],
         "present",
         "history half survives native writes"
     );
     let native = item(&body, &landed);
+    assert_eq!(
+        native["observed"], true,
+        "history observed markers apply to event-only segment files"
+    );
     let names = native["files"]
         .as_array()
         .expect("native files")
@@ -522,16 +647,21 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         .collect::<HashSet<_>>();
     assert_eq!(
         names,
-        HashSet::from(["native.flac", "added.json"]),
+        HashSet::from(["native.flac", "added.json", "stored-name.flac"]),
         "all event rows contribute"
     );
     assert!(
-        !item(&body, "120000_60")["files"][0]
+        !file(&body, "120000_60", "present.flac")
             .as_object()
             .expect("history file")
             .contains_key("submitted_name"),
         "submitted_name is absent when submitted equals written"
     );
+    let projected = file(&body, &landed, "stored-name.flac")
+        .as_object()
+        .expect("projected event file");
+    assert_eq!(projected["submitted_name"], "client-name.flac");
+    assert!(!projected.contains_key("written") && !projected.contains_key("submitted"));
     for file in body["items"]
         .as_array()
         .expect("items")
@@ -553,7 +683,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     let (_, converged) =
         request_json(&app, "GET", "/app/observer/ingest/segments/20260804", DID_A).await;
     assert_ne!(
-        item(&converged, "120200_60")["files"][0]["status"],
+        file(&converged, "120200_60", "gone.flac")["status"],
         "missing"
     );
 
@@ -567,7 +697,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     let (_, drifted) =
         request_json(&app, "GET", "/app/observer/ingest/segments/20260804", DID_A).await;
     assert_eq!(
-        item(&drifted, &landed)["files"][0]["status"],
+        file(&drifted, &landed, "native.flac")["status"],
         "present",
         "event status is stat-only"
     );
@@ -686,17 +816,30 @@ async fn ac6d_and_ac7_history_selection_rules_are_route_visible() {
 #[tokio::test]
 async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     let root = fixture("fallback-status");
+    fs::write(
+        observer_path(&root, "aaaaaaaa"),
+        json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":"locked-stream","created_at":1,"revoked":false,"device_binding":{"device":DID_A,"kind":"cert"}}).to_string(),
+    )
+    .expect("lock observer to distinct stream");
     append_history(
         &root,
         "aaaaaaaa",
         json!({"segment":"120800_60","files":[{"submitted":"locked.flac","written":"locked.flac","size":4,"sha256":"locked","disposition":"written"}]}),
     );
-    create_media(&root, "laptop", "120800_60", "locked.flac", b"held");
+    create_media(&root, "locked-stream", "120800_60", "locked.flac", b"held");
+    assert!(
+        !root
+            .join("chronicle")
+            .join(DAY)
+            .join("laptop/120800_60/locked.flac")
+            .exists(),
+        "only the locked fallback path holds this file"
+    );
     let app = router(&root);
     let (_, locked) =
         request_json(&app, "GET", "/app/observer/ingest/segments/20260804", DID_A).await;
     assert_eq!(
-        item(&locked, "120800_60")["files"][0]["status"],
+        file(&locked, "120800_60", "locked.flac")["status"],
         "present",
         "locked observer stream is the fallback"
     );
@@ -722,20 +865,25 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     .expect("terminal sidecar beside present media");
     let (_, body) =
         request_json(&app, "GET", "/app/observer/ingest/segments/20260804", DID_A).await;
-    assert_eq!(item(&body, "120800_60")["files"][0]["status"], "present");
     assert_eq!(
-        item(&body, "120900_60")["files"][0]["status"],
+        file(&body, "120900_60", "derived.flac")["status"],
         "present",
         "Python stream_name(Laptop.local) derives laptop"
     );
-    assert_eq!(item(&body, "120950_60")["files"][0]["name"], "stored.flac");
     assert_eq!(
-        item(&body, "120950_60")["files"][0]["submitted_name"],
+        file(&body, "120950_60", "stored.flac")["name"],
+        "stored.flac"
+    );
+    assert_eq!(
+        file(&body, "120950_60", "stored.flac")["submitted_name"],
         "client.flac"
     );
-    assert_eq!(item(&body, "120100_60")["files"][0]["status"], "processed");
     assert_eq!(
-        item(&body, "120000_60")["files"][0]["status"],
+        file(&body, "120100_60", "processed.flac")["status"],
+        "processed"
+    );
+    assert_eq!(
+        file(&body, "120000_60", "present.flac")["status"],
         "present",
         "present is checked before terminal proof"
     );
@@ -748,7 +896,10 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     .expect("history drift");
     let (_, drifted) =
         request_json(&app, "GET", "/app/observer/ingest/segments/20260804", DID_A).await;
-    assert_eq!(item(&drifted, "120000_60")["files"][0]["status"], "present");
+    assert_eq!(
+        file(&drifted, "120000_60", "present.flac")["status"],
+        "present"
+    );
     let _ = fs::remove_dir_all(root);
 
     for (label, row) in [
