@@ -41,31 +41,52 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
-fn assignment_end(source: &str, start: usize) -> usize {
+fn scan_top_level(source: &str, target: u8, mut on_offset: impl FnMut(usize) -> bool) {
     let bytes = source.as_bytes();
     let mut depth = 0usize;
     let mut quote = None;
     let mut escaped = false;
-    for (offset, byte) in bytes[start..].iter().copied().enumerate() {
-        if let Some(delimiter) = quote {
+    for (offset, byte) in bytes.iter().copied().enumerate() {
+        if let Some(quote_byte) = quote {
             if escaped {
                 escaped = false;
             } else if byte == b'\\' {
                 escaped = true;
-            } else if byte == delimiter {
+            } else if byte == quote_byte {
                 quote = None;
             }
             continue;
         }
         match byte {
             b'\'' | b'"' => quote = Some(byte),
-            b'(' | b'[' => depth += 1,
-            b')' | b']' => depth = depth.saturating_sub(1),
-            b'\n' if depth == 0 => return start + offset,
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            _ if byte == target && depth == 0 && on_offset(offset) => return,
             _ => {}
         }
     }
-    source.len()
+}
+
+fn first_top_level_offset(source: &str, target: u8) -> Option<usize> {
+    let mut first = None;
+    scan_top_level(source, target, |offset| {
+        first = Some(offset);
+        true
+    });
+    first
+}
+
+fn top_level_offsets(source: &str, target: u8) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    scan_top_level(source, target, |offset| {
+        offsets.push(offset);
+        false
+    });
+    offsets
+}
+
+fn assignment_end(source: &str, start: usize) -> usize {
+    first_top_level_offset(&source[start..], b'\n').map_or(source.len(), |offset| start + offset)
 }
 
 fn python_strings(expression: &str, constant_name: &str) -> Vec<String> {
@@ -84,13 +105,13 @@ fn python_strings(expression: &str, constant_name: &str) -> Vec<String> {
             if bytes[index] == b'\\' {
                 assert!(
                     index + 1 < bytes.len(),
-                    "speaker copy constant {constant_name} ends with a backslash; \
+                    "copy constant {constant_name} ends with a backslash; \
                      this parser does not support general Python escape decoding"
                 );
                 let escaped = bytes[index + 1];
                 assert!(
                     matches!(escaped, b'\\' | b'\'' | b'"'),
-                    "speaker copy constant {constant_name} uses unsupported Python escape \\{}; \
+                    "copy constant {constant_name} uses unsupported Python escape \\{}; \
                      this parser does not support general Python escape decoding; \
                      use different quoting or extend the parser",
                     escaped as char
@@ -100,38 +121,128 @@ fn python_strings(expression: &str, constant_name: &str) -> Vec<String> {
             value.push(bytes[index]);
             index += 1;
         }
-        assert!(index < bytes.len(), "speaker copy string is terminated");
+        assert!(
+            index < bytes.len(),
+            "copy constant {constant_name} string is terminated"
+        );
         index += 1;
-        strings.push(String::from_utf8(value).expect("speaker copy is UTF-8"));
+        let value = match String::from_utf8(value) {
+            Ok(value) => value,
+            Err(error) => panic!("copy constant {constant_name} is UTF-8: {error}"),
+        };
+        strings.push(value);
     }
     strings
 }
 
-fn python_constants(source: &str) -> serde_json::Map<String, Value> {
+fn python_dict(expression: &str, constant_name: &str) -> serde_json::Map<String, Value> {
+    let expression = expression.trim();
+    assert!(
+        expression.starts_with('{'),
+        "copy constant {constant_name} dictionary is open"
+    );
+    assert!(
+        expression.ends_with('}'),
+        "copy constant {constant_name} dictionary is closed"
+    );
+    let body = &expression[1..expression.len() - 1];
+    let mut members = serde_json::Map::new();
+    let mut member_start = 0;
+    let mut member_ends = top_level_offsets(body, b',');
+    member_ends.push(body.len());
+    if !body.trim().is_empty() {
+        for member_end in member_ends {
+            let member = &body[member_start..member_end];
+            if member.trim().is_empty() {
+                assert!(
+                    member_end == body.len() && member_start > 0,
+                    "copy constant {constant_name} dictionary has an empty member"
+                );
+            } else {
+                let colon = first_top_level_offset(member, b':').unwrap_or_else(|| {
+                    panic!("copy constant {constant_name} dictionary member is missing `:`")
+                });
+                let key_source = &member[..colon];
+                let value_source = &member[colon + 1..];
+                assert!(
+                    !key_source.trim().is_empty(),
+                    "copy constant {constant_name} dictionary member has an empty key"
+                );
+                assert!(
+                    !value_source.trim().is_empty(),
+                    "copy constant {constant_name} dictionary member has an empty value"
+                );
+                let key_strings = python_strings(key_source, constant_name);
+                let value_strings = python_strings(value_source, constant_name);
+                assert!(
+                    !key_strings.is_empty(),
+                    "copy constant {constant_name} dictionary member key has no string value"
+                );
+                assert!(
+                    !value_strings.is_empty(),
+                    "copy constant {constant_name} dictionary member value has no string value"
+                );
+                let key = key_strings.concat();
+                assert!(
+                    !key.is_empty(),
+                    "copy constant {constant_name} dictionary member has an empty key"
+                );
+                members.insert(key, Value::String(value_strings.concat()));
+            }
+            member_start = member_end + usize::from(member_end < body.len());
+        }
+    }
+    assert!(
+        !members.is_empty(),
+        "copy constant {constant_name} dictionary has no members"
+    );
+    members
+}
+
+fn python_constants(source: &str, required_prefix: Option<&str>) -> serde_json::Map<String, Value> {
     let mut constants = serde_json::Map::new();
-    for line in source.lines() {
+    let mut line_offset = 0;
+    for source_line in source.split_inclusive('\n') {
+        let offset = line_offset;
+        line_offset += source_line.len();
+        let line = source_line.strip_suffix('\n').unwrap_or(source_line);
         let Some((name, _)) = line.split_once(" =") else {
             continue;
         };
-        if !name.starts_with("SPK_")
-            || !name
-                .chars()
-                .all(|character| character == '_' || character.is_ascii_uppercase())
-        {
+        let name_bytes = name.as_bytes();
+        let name_is_constant = matches!(name_bytes.first(), Some(b'A'..=b'Z'))
+            && name_bytes[1..]
+                .iter()
+                .all(|byte| matches!(byte, b'A'..=b'Z' | b'0'..=b'9' | b'_'));
+        if !name_is_constant || !required_prefix.is_none_or(|prefix| name.starts_with(prefix)) {
             continue;
         }
-        let start = source.find(line).expect("source line occurs") + name.len() + 3;
+        assert!(
+            line.as_bytes()[name.len()..].starts_with(b" = "),
+            "copy constant {name} assignment uses expected `NAME = expression` shape"
+        );
+        let start = offset + name.len() + 3;
         let end = assignment_end(source, start);
         let expression = &source[start..end];
-        let strings = python_strings(expression, name);
-        assert!(
-            !strings.is_empty(),
-            "speaker copy constant is a string or list"
-        );
-        let value = if expression.trim_start().starts_with('[') {
-            Value::Array(strings.into_iter().map(Value::String).collect())
-        } else {
-            Value::String(strings.concat())
+        let trimmed = expression.trim_start();
+        let value = match trimmed.as_bytes().first() {
+            Some(b'[') => {
+                let strings = python_strings(expression, name);
+                assert!(
+                    !strings.is_empty(),
+                    "copy constant {name} list has no string values"
+                );
+                Value::Array(strings.into_iter().map(Value::String).collect())
+            }
+            Some(b'{') => Value::Object(python_dict(trimmed, name)),
+            _ => {
+                let strings = python_strings(expression, name);
+                assert!(
+                    !strings.is_empty(),
+                    "copy constant {name} string has no string value"
+                );
+                Value::String(strings.concat())
+            }
         };
         constants.insert(name.to_owned(), value);
     }
@@ -154,6 +265,7 @@ fn main() {
     let static_root = root.join("solstone/convey/static");
     let speakers_root = manifest.join("assets/speakers");
     let speakers_copy = speakers_root.join("copy.py");
+    let network_copy = root.join("solstone/apps/network/copy.py");
     let entities_workspace = manifest.join("assets/entities/workspace.html");
     let body_workspace = root.join("solstone/apps/body/workspace.html");
     let favicon = root.join("favicon.ico");
@@ -171,6 +283,7 @@ fn main() {
         &workspace,
         &speakers_static,
         &speakers_copy,
+        &network_copy,
         &body_workspace,
         &devices_workspace,
         &entities_workspace,
@@ -205,12 +318,23 @@ fn main() {
     ));
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
-    let copy_source = fs::read_to_string(&speakers_copy).expect("speaker copy source is readable");
-    let speaker_copy = serde_json::to_string(&Value::Object(python_constants(&copy_source)))
-        .expect("speaker copy serializes");
+    let copy_source = fs::read_to_string(&speakers_copy).expect("copy source is readable");
+    let speaker_copy =
+        serde_json::to_string(&Value::Object(python_constants(&copy_source, Some("SPK_"))))
+            .expect("copy payload serializes");
+    let network_copy_source = match fs::read_to_string(&network_copy) {
+        Ok(source) => source,
+        Err(error) => panic!(
+            "network copy source {} is readable: {error}",
+            network_copy.display()
+        ),
+    };
+    let network_copy_json =
+        serde_json::to_string(&Value::Object(python_constants(&network_copy_source, None)))
+            .expect("network copy serializes");
     let not_in_new_voices =
         serde_json::to_string(&python_constant(&copy_source, "TR_NOT_IN_NEW_VOICES"))
-            .expect("speaker copy string serializes");
+            .expect("copy string serializes");
 
     let mut generated = String::from("pub(super) static GENERATED_ASSETS: &[EmbeddedAsset] = &[\n");
     for (route, path) in assets {
@@ -223,6 +347,9 @@ fn main() {
     generated.push_str("];\n");
     generated.push_str(&format!(
         "pub(super) const SPEAKER_COPY_JSON: &str = {speaker_copy:?};\n"
+    ));
+    generated.push_str(&format!(
+        "#[cfg_attr(not(test), allow(dead_code))]\npub(super) const NETWORK_COPY_JSON: &str = {network_copy_json:?};\n"
     ));
     generated.push_str(&format!(
         "pub(super) const NOT_IN_NEW_VOICES_COPY: &str = {not_in_new_voices};\n"
