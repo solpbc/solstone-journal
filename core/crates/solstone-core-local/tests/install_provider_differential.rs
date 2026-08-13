@@ -6,8 +6,12 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use serde_json::{Value, json};
-use solstone_core_local::install::{lease, manifest, pins, status};
+use serde_json::Value;
+#[cfg(target_os = "linux")]
+use serde_json::json;
+use solstone_core_local::install::{lease, status};
+#[cfg(target_os = "linux")]
+use solstone_core_local::install::{manifest, pins};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -85,6 +89,7 @@ fn reference(journal: &Path, name: &str) -> Output {
         .expect("run Python install-provider")
 }
 
+#[cfg(target_os = "linux")]
 fn stage_parakeet(journal: &Path, cpu_executable: bool) {
     let key = pins::parakeet_artifact_key(std::env::consts::OS, std::env::consts::ARCH)
         .expect("differential host supports Parakeet");
@@ -154,6 +159,7 @@ fn unsupported_provider_matches_python() {
     assert_eq!(native.stderr, python.stderr);
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn ready_provider_matches_python_without_a_fetch() {
     let journal = tempfile::tempdir().unwrap();
@@ -183,6 +189,7 @@ fn held_mismatched_attempt_matches_python() {
     assert_eq!(native.stderr, python.stderr);
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn host_ineligible_preflight_compares_exit_only() {
     let journal = tempfile::tempdir().unwrap();

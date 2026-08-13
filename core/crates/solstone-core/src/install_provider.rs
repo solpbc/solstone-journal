@@ -108,6 +108,8 @@ where
     P: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
     L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
 {
+    let os_name = normalized_os(std::env::consts::OS);
+    let arch = normalized_arch(std::env::consts::ARCH);
     run_inner_with(
         options,
         journal_resolver,
@@ -115,9 +117,12 @@ where
         None,
         parakeet_executor,
         local_executor,
+        os_name,
+        arch,
     )
 }
 
+#[allow(clippy::too_many_arguments)] // Explicit platform injection is a testable host-boundary seam.
 fn run_inner_with<J, R, P, L>(
     options: InstallProviderOptions,
     journal_resolver: J,
@@ -125,6 +130,8 @@ fn run_inner_with<J, R, P, L>(
     report_override: Option<fit_report::FitReport>,
     parakeet_executor: P,
     local_executor: L,
+    os_name: &str,
+    arch: &str,
 ) -> InstallProviderOutcome
 where
     J: FnOnce() -> Result<PathBuf, ()>,
@@ -140,8 +147,8 @@ where
                 readiness_provider,
                 report_override,
                 local_executor,
-                normalized_os(std::env::consts::OS),
-                normalized_arch(std::env::consts::ARCH),
+                os_name,
+                arch,
             );
         }
         name => {
@@ -187,7 +194,7 @@ where
         };
     }
 
-    let target_sha = match parakeet_target_sha(&journal) {
+    let target_sha = match parakeet_target_sha(&journal, os_name, arch) {
         Ok(target_sha) => target_sha,
         Err(error) => {
             stderr.push(error);
@@ -215,13 +222,8 @@ where
 
     // Unlike install-models, this owner-facing Python-parity command reports
     // all refusal and installation failures as exit 1 rather than sysexits.
-    let report = report_override.unwrap_or_else(|| {
-        fit_report::build_parakeet_fit_report(
-            &journal,
-            normalized_os(std::env::consts::OS),
-            normalized_arch(std::env::consts::ARCH),
-        )
-    });
+    let report = report_override
+        .unwrap_or_else(|| fit_report::build_parakeet_fit_report(&journal, os_name, arch));
     stderr.push(fit_report::render_fit_report(&report));
     if report.overall() == fit_report::FitSeverity::Blocked {
         return InstallProviderOutcome {
@@ -604,13 +606,9 @@ fn available_memory_bytes() -> Option<u64> {
     }
 }
 
-fn parakeet_target_sha(journal: &Path) -> Result<String, String> {
-    let target = solstone_core_local::install::parakeet_target_for_platform(
-        journal,
-        normalized_os(std::env::consts::OS),
-        normalized_arch(std::env::consts::ARCH),
-    )
-    .map_err(dispatch_message)?;
+fn parakeet_target_sha(journal: &Path, os_name: &str, arch: &str) -> Result<String, String> {
+    let target = solstone_core_local::install::parakeet_target_for_platform(journal, os_name, arch)
+        .map_err(dispatch_message)?;
     let text = fingerprint::canonical(target).map_err(|error| error.to_string())?;
     Ok(fingerprint::sha256(&text))
 }
@@ -821,11 +819,7 @@ mod tests {
     fn stage_ready_parakeet(journal: &Path) -> (PathBuf, PathBuf) {
         use solstone_core_local::install::{manifest, pins};
 
-        let key = pins::parakeet_artifact_key(
-            normalized_os(std::env::consts::OS),
-            normalized_arch(std::env::consts::ARCH),
-        )
-        .unwrap();
+        let key = pins::parakeet_artifact_key("linux", "x86_64").unwrap();
         let paths = pins::parakeet_paths(journal, &key);
         let cpu_path = PathBuf::from(paths["binary_path_cpu"].as_str().unwrap());
         let vulkan_path = PathBuf::from(paths["binary_path_vulkan"].as_str().unwrap());
@@ -892,6 +886,73 @@ mod tests {
     }
 
     #[test]
+    fn injected_parakeet_platform_controls_refusal_and_executor_reachability() {
+        let journal = tempfile::tempdir().unwrap();
+        let refused = run_inner_with(
+            options("parakeet"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| panic!("darwin platform must refuse before the executor"),
+            |_| panic!("local must not install"),
+            "darwin",
+            "arm64",
+        );
+        assert_eq!(refused.exit_code, 1);
+        assert!(
+            refused
+                .stderr
+                .iter()
+                .any(|line| line == "parakeet-cpp is unsupported on darwin/arm64")
+        );
+
+        let reached = run_inner_with(
+            options("parakeet"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_, _| Ok(json!({"status": status_value("installed")})),
+            |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
+        );
+        assert_eq!(reached.exit_code, 0);
+    }
+
+    #[test]
+    fn install_provider_parakeet_target_sha_uses_its_explicit_platform() {
+        // This names install_provider::parakeet_target_sha, not the distinct
+        // install_models::parakeet_target_sha which already accepts HostPlatform.
+        let journal = tempfile::tempdir().unwrap();
+        assert!(parakeet_target_sha(journal.path(), "linux", "x86_64").is_ok());
+        assert_eq!(
+            parakeet_target_sha(journal.path(), "darwin", "arm64"),
+            Err("parakeet-cpp is unsupported on darwin/arm64".to_owned())
+        );
+    }
+
+    #[test]
+    fn parakeet_fit_report_without_override_uses_the_injected_platform() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with(
+            options("parakeet"),
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            None,
+            |_, _| Ok(json!({"status": status_value("installed")})),
+            |_| panic!("local must not install"),
+            "linux",
+            "aarch64",
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stderr.iter().any(|line| {
+            line.contains(
+                "pinned parakeet.cpp artifacts are available for aarch64-unknown-linux-gnu",
+            )
+        }));
+    }
+
+    #[test]
     fn ac1_fit_exit_surface_and_warning_continues() {
         let journal = tempfile::tempdir().unwrap();
         let blocked = run_inner_with(
@@ -901,6 +962,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked must not install"),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(blocked.exit_code, 1);
         assert!(
@@ -917,6 +980,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Warning)),
             |_, _| Ok(json!({"status": status_value("installed")})),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(warning.exit_code, 0);
         assert!(
@@ -937,10 +1002,13 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("downloading")})),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(direct.exit_code, 0);
 
-        let target_sha = parakeet_target_sha(journal.path()).unwrap();
+        // This is install_provider::parakeet_target_sha, not the HostPlatform helper.
+        let target_sha = parakeet_target_sha(journal.path(), "linux", "x86_64").unwrap();
         let mut current = status::idle_status("parakeet");
         current.target_fingerprint_sha256 = Some(target_sha.clone());
         let current = status::transition(current, "resolving", None, None).unwrap();
@@ -978,6 +1046,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Ok(json!({"status": status_value("failed")})),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(outcome.exit_code, 1);
     }
@@ -985,7 +1055,8 @@ mod tests {
     #[test]
     fn ac2_observed_terminal_installed_exits_zero_with_status() {
         let journal = tempfile::tempdir().unwrap();
-        let target_sha = parakeet_target_sha(journal.path()).unwrap();
+        // This is install_provider::parakeet_target_sha, not the HostPlatform helper.
+        let target_sha = parakeet_target_sha(journal.path(), "linux", "x86_64").unwrap();
         let mut current = status::idle_status("parakeet");
         current.target_fingerprint_sha256 = Some(target_sha.clone());
         let current = status::transition(current, "resolving", None, None).unwrap();
@@ -1014,7 +1085,8 @@ mod tests {
     #[test]
     fn ac2_observed_timeout_exits_one() {
         let journal = tempfile::tempdir().unwrap();
-        let target_sha = parakeet_target_sha(journal.path()).unwrap();
+        // This is install_provider::parakeet_target_sha, not the HostPlatform helper.
+        let target_sha = parakeet_target_sha(journal.path(), "linux", "x86_64").unwrap();
         let mut current = status::idle_status("parakeet");
         current.target_fingerprint_sha256 = Some(target_sha.clone());
         let current = status::transition(current, "resolving", None, None).unwrap();
@@ -1065,6 +1137,8 @@ mod tests {
                 Ok(json!({"status": status_value("installed")}))
             },
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(direct.exit_code, 0);
         assert!(executor_entered.load(Ordering::SeqCst));
@@ -1075,7 +1149,8 @@ mod tests {
             None
         );
 
-        let target_sha = parakeet_target_sha(journal.path()).unwrap();
+        // This is install_provider::parakeet_target_sha, not the HostPlatform helper.
+        let target_sha = parakeet_target_sha(journal.path(), "linux", "x86_64").unwrap();
         let mut current = status::idle_status("parakeet");
         current.target_fingerprint_sha256 = Some(target_sha);
         let current = status::transition(current, "failed", Some("done".to_owned()), None).unwrap();
@@ -1088,6 +1163,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("held lease must not delegate"),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         drop(held);
         assert_eq!(observed.exit_code, 1);
@@ -1120,6 +1197,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("ready must not install"),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         let binary_after = fs::metadata(&cpu_path).unwrap();
         let manifest_after = fs::metadata(&cpu_manifest).unwrap();
@@ -1158,6 +1237,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked report proves non-ready reached install path"),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(unsound.exit_code, 1);
         assert!(unsound.stderr.iter().any(|line| line.contains("fit check")));
@@ -1184,6 +1265,8 @@ mod tests {
                     panic!("unavailable must not install")
                 },
                 |_| panic!("local must not install"),
+                "linux",
+                "x86_64",
             );
             assert_eq!(outcome.exit_code, 1, "{reason}");
             assert!(outcome.stderr.iter().any(|line| line == reason));
@@ -1216,6 +1299,8 @@ mod tests {
                 called.store(true, Ordering::SeqCst);
                 Ok(json!({"status": status_value("installed")}))
             },
+            "linux",
+            "x86_64",
         );
         assert_eq!(local.exit_code, 0);
         assert_eq!(
@@ -1235,6 +1320,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("parakeet executor must not run"),
             |_| Err(dispatch_error("download failed")),
+            "linux",
+            "x86_64",
         );
         assert_eq!(persisted.exit_code, 1);
         assert_eq!(
@@ -1262,6 +1349,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("parakeet executor must not run"),
             |_| Err(dispatch_error("download failed")),
+            "linux",
+            "x86_64",
         );
         assert_eq!(unreadable.exit_code, 1);
         assert!(unreadable.stdout.is_empty());
@@ -1501,6 +1590,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Err(dispatch_error("download failed")),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(persisted.exit_code, 1);
         assert_eq!(
@@ -1522,6 +1613,8 @@ mod tests {
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| Err(dispatch_error("download failed")),
             |_| panic!("local must not install"),
+            "linux",
+            "x86_64",
         );
         assert_eq!(unreadable.exit_code, 1);
         assert!(unreadable.stdout.is_empty());
