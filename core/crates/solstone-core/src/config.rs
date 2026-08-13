@@ -1821,6 +1821,9 @@ mod tests {
         let home = root.join("home");
         fs::create_dir_all(cwd.join("existing")).unwrap();
         fs::create_dir_all(&home).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let cwd = root.join("cwd");
+        let home = root.join("home");
 
         assert_eq!(
             resolve_non_strict_from(Path::new("existing/../relative"), &home, &cwd),

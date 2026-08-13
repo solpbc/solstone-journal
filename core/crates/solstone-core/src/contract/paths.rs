@@ -132,6 +132,9 @@ mod tests {
         fs::write(package.join("solstone/__init__.py"), "").unwrap();
         let found = installed_site_packages_from_executable_dir(&bin).unwrap();
         let paths = ContractPaths::from_root(found).unwrap();
-        assert_eq!(paths.solstone, package.join("solstone"));
+        assert_eq!(
+            paths.solstone,
+            fs::canonicalize(package.join("solstone")).unwrap()
+        );
     }
 }
