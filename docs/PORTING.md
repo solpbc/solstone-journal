@@ -118,6 +118,7 @@ for the helper release lanes.
 | Rust formatting | `make check-rust-fmt` | GNU-host check | Host source-format evidence only. |
 | Rust MSRV | `make check-rust-msrv` | GNU-host check | Verifies the pinned MSRV rail without changing `rust-version`; excludes `solstone-core-speakers-analyze` and `solstone-core-speakers-onnx` from host coverage and invokes no Python. |
 | Rust lint | `make check-rust-clippy` | GNU-host check | Runs clippy with `-D warnings`; excludes `solstone-core-speakers-analyze` and `solstone-core-speakers-onnx` from host coverage and invokes no Python. |
+| Rust unit tests | `make check-rust-unit` | GNU-host check | Runs workspace library and binary unit harnesses only (`--lib --bins`), serialized. This is the test leg in efficient `make ci`; Cargo integration-test targets remain checked by clippy and run in the full gate. |
 | Rust tests | `make check-rust-test` | GNU-host check | Runs workspace Rust tests on the GNU host, excluding `solstone-core-speakers-analyze` and `solstone-core-speakers-onnx`; invokes no Python. |
 | Cross-language differentials | `make check-differentials` | GNU-host check | Runs the Rust tests whose oracle is the running Python implementation. They need a populated `.venv`, so the target installs first and they are excluded from `make ci` by `required-features = ["differential"]`. `ci_gate_purity::every_differential_test_is_named_in_its_own_gate` fails if a differential is gated off the native gate without being named in `make check-differentials`. |
 | Rust dependency policy | `make check-rust-deny` | GNU-host check | Locked, offline bans/licenses/sources policy over the supported cargo-deny graph. |
@@ -167,10 +168,20 @@ immediately with a freeze diagnostic. The alternate Python test rails
 `test-only`, `watch`, and `coverage` do the same. There is no bypass; this freeze
 lifts only when the Makefile and release script are changed again.
 
+The [Makefile](../Makefile) defines the two Rust paths. `make ci` is the
+efficient routine gate with formatting, all-target Clippy checks, and serialized
+library/binary unit tests. `make ci-full` is the full operator final-tree gate
+and preserves the former task sequence, including MSRV, the complete Rust test
+target set, native runtime/helper checks, shipped-binary build/smokes, Apple
+gates, and dependency policy. Both gates poison Python interpreters. The
+efficient gate runs on a bare checkout; the full gate expects its native runtime
+prerequisites to have been staged. `make verify` remains an alias for efficient
+`make ci`.
+
 `make audit` is unaffected and still runs its Python advisory validator.
-`make install-checks` and its Python-and-Rust sub-targets also remain
-runnable directly, but `ci` and `verify` no longer reach them. The Python product
-and pytest suite are unchanged; they are simply no longer gated by `ci`.
+Per the [Makefile](../Makefile), `make install-checks` and its Python-and-Rust
+sub-targets also remain runnable directly, but neither Rust gate reaches them.
+Neither Rust gate invokes the Python product or pytest suite.
 
 **Do not add new Python tests.** Anything that needs a unit test is written in
 Rust. The Python tree is reference material for the duration of the conversion

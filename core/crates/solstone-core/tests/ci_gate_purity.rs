@@ -368,13 +368,12 @@ fn target_body<'a>(makefile: &'a str, target: &str) -> &'a str {
     &rest[..end]
 }
 
-#[test]
-fn make_ci_never_executes_forbidden_interpreters() {
+fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&str]) {
     if env::var_os("SOLSTONE_CI_PURITY_REENTRY").is_some() {
         return;
     }
 
-    let temp = TempDir::new("ci-gate-purity");
+    let temp = TempDir::new(&format!("{gate}-gate-purity"));
     let root = &temp.path;
     let system = if cfg!(target_os = "macos") {
         "Darwin"
@@ -427,17 +426,17 @@ fn make_ci_never_executes_forbidden_interpreters() {
         write_forbidden_shim(&shim_dir.join(name));
         write_forbidden_shim(&venv_bin.join(name));
     }
-    // The outer `make ci` invocation already performs every Cargo assertion.
+    // The outer gate invocation already performs every Cargo assertion.
     // Record the nested traversal instead of repeating the full workspace build.
     write_recording_cargo_shim(&shim_dir.join("cargo"));
 
     let path = format!(
         "{}:{}",
         shim_dir.display(),
-        env::var("PATH").expect("PATH must be set for nested make ci")
+        env::var("PATH").expect("PATH must be set for nested Rust gate")
     );
     let output = Command::new("make")
-        .arg("ci")
+        .arg(gate)
         .arg(format!("VENV={}", venv_dir.display()))
         .arg(format!("VENV_BIN={}", venv_bin.display()))
         .arg(format!("PYTHON={}", venv_bin.join("python").display()))
@@ -451,11 +450,11 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
         .env("SOLSTONE_CI_PURITY_REENTRY", "1")
         .output()
-        .expect("nested make ci should execute");
+        .expect("nested Rust gate should execute");
 
     assert!(
         output.status.success(),
-        "nested make ci failed:\nstdout:\n{}\nstderr:\n{}",
+        "nested make {gate} failed:\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
@@ -464,43 +463,46 @@ fn make_ci_never_executes_forbidden_interpreters() {
             || fs::read_to_string(&sentinel)
                 .expect("read sentinel")
                 .is_empty(),
-        "make ci invoked a forbidden interpreter: {}",
+        "make {gate} invoked a forbidden interpreter: {}",
         fs::read_to_string(&sentinel).unwrap_or_default(),
     );
 
     let cargo_invocations = fs::read_to_string(&cargo_log)
-        .expect("nested make ci must traverse its Cargo-backed targets");
+        .expect("nested Rust gate must traverse its Cargo-backed targets");
     let cargo_subcommands = cargo_invocations
         .lines()
         .filter_map(|invocation| invocation.split_whitespace().next())
         .collect::<Vec<_>>();
-    // The trailing "test" is check-rust-describe-cli-stubs, which runs the gated
-    // stub-driven describe CLI suite immediately after the workspace test leg. It
-    // carries no host guard, so it shells to cargo on every platform.
-    let mut expected = vec!["fmt", "check", "clippy", "test", "test"];
-    // check-rust-onnx-test runs the crates RUST_HOST_EXCLUDES removes from the
-    // workspace selection. It shells to cargo only on Linux; elsewhere the
-    // target prints why it did not run and exits 0.
-    if cfg!(target_os = "linux") {
-        expected.push("test");
-        expected.push("test");
-    }
-    expected.push("build");
-    expected.extend(["run"; if cfg!(target_os = "linux") { 10 } else { 7 }]);
-    if cfg!(target_os = "macos") {
-        // Native iOS check, then native full-workspace macOS test compilation.
-        expected.push("check");
-        expected.push("test");
-    }
-    expected.extend(["fetch", "deny"]);
     assert_eq!(
         cargo_subcommands, expected,
-        "nested make ci did not traverse the complete Cargo command graph:\n{cargo_invocations}",
+        "nested make {gate} traversed the wrong Cargo command graph:\n{cargo_invocations}",
     );
 }
 
 #[test]
-fn make_ci_builds_and_exercises_every_host_packaged_binary() {
+fn make_ci_never_executes_forbidden_interpreters() {
+    assert_gate_never_executes_forbidden_interpreters("ci", &["fmt", "clippy", "test"]);
+}
+
+#[test]
+fn make_ci_full_never_executes_forbidden_interpreters() {
+    // The trailing "test" is check-rust-describe-cli-stubs, immediately after
+    // the full workspace test leg. ONNX and PDF each add one Linux-only test.
+    let mut expected = vec!["fmt", "check", "clippy", "test", "test"];
+    if cfg!(target_os = "linux") {
+        expected.extend(["test", "test"]);
+    }
+    expected.push("build");
+    expected.extend(["run"; if cfg!(target_os = "linux") { 10 } else { 7 }]);
+    if cfg!(target_os = "macos") {
+        expected.extend(["check", "test"]);
+    }
+    expected.extend(["fetch", "deny"]);
+    assert_gate_never_executes_forbidden_interpreters("ci-full", &expected);
+}
+
+#[test]
+fn make_ci_full_builds_and_exercises_every_host_packaged_binary() {
     let root = repo_root();
     let makefile = makefile_text(&root);
     let expected = host_packaged_binaries(&root);
@@ -527,13 +529,18 @@ fn make_ci_builds_and_exercises_every_host_packaged_binary() {
         "the shipped-binary smoke gate must exactly match host-native maturin packaging leaves"
     );
     assert!(
-        target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-shipped-binaries"),
-        "make ci must retain the shipped-binary build and smoke gate"
+        target_body(&makefile, "ci-full-under-poison")
+            .contains("$(MAKE) check-rust-shipped-binaries"),
+        "make ci-full must retain the shipped-binary build and smoke gate"
+    );
+    assert!(
+        !target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-shipped-binaries"),
+        "make ci must not link or run the shipped-binary smoke gate"
     );
 }
 
 /// Every crate `RUST_HOST_EXCLUDES` removes from the workspace test selection
-/// must be named in a package list some `make ci` target actually runs.
+/// must be named in a package list the full gate actually runs.
 ///
 /// This is the guard the tree did not have. The two lists were written months
 /// apart and nothing tied them together, so three crates were excluded from
@@ -588,8 +595,8 @@ fn every_host_excluded_crate_is_tested_by_a_ci_target() {
         "check-rust-onnx-test must run the excluded-crate package list, not a hand copy"
     );
     assert!(
-        target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-onnx-test"),
-        "make ci must run the tests of the crates it excludes from the workspace selection"
+        target_body(&makefile, "ci-full-under-poison").contains("$(MAKE) check-rust-onnx-test"),
+        "make ci-full must run the tests of the crates it excludes from the workspace selection"
     );
 }
 
@@ -647,7 +654,7 @@ fn every_w4b_supervisor_test_is_named_in_rust_race_gate() {
 }
 
 #[test]
-fn make_ci_serializes_workspace_tests_that_compete_for_host_resources() {
+fn make_ci_full_serializes_workspace_tests_that_compete_for_host_resources() {
     let makefile = makefile_text(&repo_root());
     let rust_test = target_body(&makefile, "check-rust-test");
     let cargo_test = rust_test
@@ -665,16 +672,117 @@ fn make_ci_serializes_workspace_tests_that_compete_for_host_resources() {
 }
 
 #[test]
-fn make_ci_names_the_manual_rust_race_gate() {
+fn make_ci_runs_only_library_and_binary_unit_harnesses() {
     let makefile = makefile_text(&repo_root());
     let ci = target_body(&makefile, "ci-under-poison");
+    assert!(ci.contains("$(MAKE) check-rust-fmt"));
+    assert!(ci.contains("$(MAKE) check-rust-clippy"));
+    assert!(ci.contains("$(MAKE) check-rust-unit"));
+    for forbidden in [
+        "check-rust-msrv",
+        "check-rust-test",
+        "check-rust-describe-cli-stubs",
+        "check-rust-onnx-test",
+        "check-rust-pdf-test",
+        "check-rust-shipped-binaries",
+        "check-rust-ios",
+        "check-rust-macos",
+        "check-rust-deny",
+    ] {
+        assert!(
+            !ci.contains(&format!("$(MAKE) {forbidden}")),
+            "make ci must not traverse the full-gate leg {forbidden}"
+        );
+    }
+
+    let unit = target_body(&makefile, "check-rust-unit");
+    let cargo_test = unit
+        .lines()
+        .find(|line| line.trim_start().starts_with("cargo test "))
+        .expect("check-rust-unit must execute cargo test");
+    for required in [
+        "--manifest-path $(RUST_MANIFEST)",
+        "--workspace",
+        "$(RUST_HOST_EXCLUDES)",
+        "--lib",
+        "--bins",
+        "--locked",
+        "-- --test-threads=1",
+    ] {
+        assert!(
+            cargo_test.contains(required),
+            "check-rust-unit lost required selection: {required}"
+        );
+    }
+    for forbidden in [
+        "--tests",
+        " --test ",
+        "--examples",
+        "--benches",
+        "--doc",
+        "--all-targets",
+    ] {
+        assert!(
+            !cargo_test.contains(forbidden),
+            "check-rust-unit widened beyond unit harnesses with {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn efficient_ci_keeps_all_target_static_compilation() {
+    let makefile = makefile_text(&repo_root());
+    let clippy = target_body(&makefile, "check-rust-clippy");
+    let invocation = clippy
+        .lines()
+        .find(|line| line.trim_start().starts_with("cargo clippy "))
+        .expect("check-rust-clippy must execute cargo clippy");
+    for required in [
+        "--manifest-path $(RUST_MANIFEST)",
+        "--workspace",
+        "$(RUST_HOST_EXCLUDES)",
+        "--all-targets",
+        "--locked",
+        "-- -D warnings",
+    ] {
+        assert!(
+            invocation.contains(required),
+            "efficient CI lost static-compilation coverage: {required}"
+        );
+    }
+}
+
+#[test]
+fn public_rust_gates_share_poison_and_refuse_internal_entrypoints() {
+    let makefile = makefile_text(&repo_root());
+    for (public, internal) in [
+        ("ci", "ci-under-poison"),
+        ("ci-full", "ci-full-under-poison"),
+    ] {
+        let outer = target_body(&makefile, public);
+        assert!(
+            outer.contains("$(call run-rust-gate-under-poison"),
+            "make {public} bypasses the shared interpreter-poison wrapper"
+        );
+        assert!(outer.contains(internal));
+
+        let inner = target_body(&makefile, internal);
+        assert!(inner.contains("SOLSTONE_CI_POISONED"));
+        assert!(inner.contains(&format!("run 'make {public}'")));
+    }
+}
+
+#[test]
+fn make_ci_full_names_the_manual_rust_race_gate() {
+    let makefile = makefile_text(&repo_root());
+    let ci = target_body(&makefile, "ci-full-under-poison");
     assert!(
         ci.contains("check-rust-race"),
-        "make ci closing output must name the manual check-rust-race gate"
+        "make ci-full closing output must name the manual check-rust-race gate"
     );
     assert!(
         !ci.contains("$(MAKE) check-rust-race"),
-        "check-rust-race must remain manually invoked, outside make ci"
+        "check-rust-race must remain manually invoked, outside make ci-full"
     );
 }
 
@@ -695,15 +803,15 @@ fn manual_race_gate_is_selectable_without_uv() {
 }
 
 #[test]
-fn make_ci_keeps_apple_gates_native_to_apple_sdk_hosts() {
+fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
     let makefile = makefile_text(&repo_root());
-    let ci = target_body(&makefile, "ci-under-poison");
+    let ci = target_body(&makefile, "ci-full-under-poison");
     let ios = target_body(&makefile, "check-rust-ios");
     let macos = target_body(&makefile, "check-rust-macos");
 
     assert!(
         ci.contains("$(MAKE) check-rust-ios"),
-        "make ci must retain the iOS gate"
+        "make ci-full must retain the iOS gate"
     );
     for protected in [
         "uname -s",
@@ -717,7 +825,7 @@ fn make_ci_keeps_apple_gates_native_to_apple_sdk_hosts() {
     }
     assert!(
         ci.contains("$(MAKE) check-rust-macos"),
-        "make ci must retain the macOS cfg gate"
+        "make ci-full must retain the macOS cfg gate"
     );
     for protected in [
         "cargo test",
@@ -1418,6 +1526,10 @@ fn differential_gate_requires_validated_onnx_staging() {
     assert!(
         !target_body(&makefile, "ci-under-poison").contains("check-rust-onnx-stage"),
         "make ci must not invoke Python-backed staging"
+    );
+    assert!(
+        !target_body(&makefile, "ci-full-under-poison").contains("check-rust-onnx-stage"),
+        "make ci-full must not invoke Python-backed staging"
     );
 }
 

@@ -37,8 +37,12 @@ test that writes, scans, or rebuilds journal/index state must use the
 ## Running Tests
 
 - `make test` runs the Rust workspace tests only
-- `make ci` runs the Rust-only merge gate: formatting, MSRV, clippy, tests, the
-  iOS canary, and dependency policy
+- Per the [Makefile](../Makefile), `make ci` runs efficient routine validation:
+  formatting, all-target Clippy checks, and serialized library/binary unit
+  tests. Cargo integration-test targets are checked by Clippy but are not run.
+- `make ci-full` runs the full operator final-tree gate: the former task
+  sequence, including MSRV, all Rust tests, native helper/runtime checks,
+  shipped-binary build/smokes, Apple gates, and dependency policy
 - `make check-differentials` runs Rust tests that compare behavior with the
   Python implementation; use it when a change touches a shared seam
 - New concurrency-sensitive supervisor integration tests must use

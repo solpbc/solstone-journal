@@ -122,15 +122,21 @@ Use the Makefile targets. The high-signal commands are:
 ```bash
 make test
 make ci
+make ci-full              # full operator final-tree gate
 make check-differentials  # when changing a Python/Rust seam
 ```
 
-During the Rust-conversion freeze, `make test` runs the Rust workspace tests and
-`make ci` is the Rust-only CI gate. It runs formatting, MSRV, clippy, Rust
-tests, shipped-binary checks, applicable cross-target checks, and dependency
-policy. Run `make check-differentials` when a change touches behavior shared by
-the Python and Rust implementations; it installs the repo-local Python
-environment before running those comparison tests.
+During the Rust-conversion freeze, `make test` runs the full Rust workspace
+tests. The [Makefile](Makefile) is authoritative: `make ci` is the efficient
+routine gate with formatting, all-target Clippy checks, and serialized
+library/binary unit tests. It does not run Cargo integration-test targets or the
+heavyweight native, cross-target, and policy legs. An operator runs
+`make ci-full` on the exact final-tree SHA; it preserves the former full
+sequence. Run
+`make check-differentials` when a change touches behavior shared by the Python
+and Rust implementations. Its Makefile target stages its native runtime, builds
+the workspace, installs the repo-local Python environment, and then runs the
+comparison tests.
 
 The former focused Python Make targets, including `make test-only` and
 `make test-app`, are frozen and fail immediately. Run focused Python tests

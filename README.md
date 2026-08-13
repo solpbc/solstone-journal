@@ -129,7 +129,9 @@ Run `sol help` for the full command reference.
 See [AGENTS.md](AGENTS.md) for development guidelines, coding standards, and testing instructions.
 
 Use `make dev` to run the full stack against test fixtures, focused test targets
-during development, and `make ci` on the final tree before merge or release.
+during development, and efficient `make ci` for routine validation. The
+[Makefile](Makefile) defines both Rust gates; operators use `make ci-full` on the
+exact final tree before merge or release.
 
 ## feedback
 

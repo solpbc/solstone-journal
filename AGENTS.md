@@ -122,15 +122,20 @@ Verified against `Makefile`. Grouped by use.
 | `make test-only TEST=<path-or-pattern>` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make coverage` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make watch` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make ci` | Rust-only gate: `check-rust-fmt`, MSRV, clippy, Rust tests, iOS canary, and Rust dependency policy. Gates the cross-language differentials off by feature, so it needs no Python environment and runs on a bare checkout. |
+| `make ci` | Efficient Rust-only routine gate: formatting, workspace Clippy checks across all ordinary targets, and serialized library/binary unit tests. It does not run Cargo integration-test targets or the heavyweight native/cross/policy legs. |
+| `make ci-full` | Full operator gate: the former `make ci` task sequence, unchanged: formatting, MSRV, clippy, full Rust tests, describe stubs, ONNX/PDF runtime tests, shipped-binary build/smokes, iOS, macOS, and dependency policy. Run it on the exact final-tree SHA. |
 | `make check-differentials` | The Rust tests whose oracle is the running Python implementation. Installs first, because they need a populated `.venv`. Run it when a change touches a seam both languages implement. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
 | `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
 | `make check-layer-hygiene` | Run `scripts/check_layer_hygiene.py` alone. Useful when iterating on an L1–L2 violation flagged by `make install-checks`. |
 
 During the Rust-conversion freeze, use the narrowest applicable
-`make check-rust-*` target, then `make ci` as the settled Rust gate. The focused
-Python Make targets are frozen; run the Python suite directly when it is needed.
+`make check-rust-*` target, then efficient `make ci` for routine validation.
+An operator runs `make ci-full` on the exact final-tree SHA for full host
+evidence. These paths are enforced by the
+[`ci_gate_purity` contract tests](core/crates/solstone-core/tests/ci_gate_purity.rs).
+The focused Python Make targets are frozen; run the Python suite directly when
+it is needed.
 Do not rerun an unchanged failure merely to seek green.
 
 ### Verification against a running sandbox
@@ -319,7 +324,7 @@ sets only the local verification path and may use any local filename.
 
 ## 6. Testing quickstart
 
-- **Rust gate:** `make` / `make all`, `make ci`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. `make ci` runs formatting, MSRV, clippy, Rust tests, the iOS canary, and Rust dependency policy. The Rust tests that execute the Python implementation as their oracle carry `required-features = ["differential"]` in their crate manifests, which gates them off that run and lets it work on a bare checkout; they run from `make check-differentials` instead. `ci_gate_purity::every_differential_test_is_named_in_its_own_gate` fails if one is gated off the native gate without being named in `make check-differentials`.
+- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, all-target Clippy checks, and library/binary unit tests; `make ci-full` is the full operator final-tree gate and preserves the former task sequence. Cross-language tests run separately through `make check-differentials`. The [`ci_gate_purity` contract tests](core/crates/solstone-core/tests/ci_gate_purity.rs) check that each manifest-gated differential target is named in that Makefile recipe.
 - **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the former Python Make rails, including `make test-app`, `make test-only`, and the other `make test-*` targets, now fail with the freeze diagnostic.
 - **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed; their former Make rails are frozen. Live product verification still uses `make sandbox`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `journal restart-convey` to reload code in a running stack.
@@ -489,7 +494,7 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 ## 10. Commit hygiene
 
 - Small, focused commits with descriptive messages.
-- Validate each commit with focused checks appropriate to its diff. The full `make ci` gate belongs on the final tree before merge or release, not before every intermediate commit.
+- Validate each commit with focused checks appropriate to its diff. Use efficient `make ci` for routine validation. The full `make ci-full` gate belongs on the exact final tree before merge or release, not before every intermediate commit.
 - Run `git` commands directly — not `git -C` — you're already in the repo.
 - Don't commit runtime artifacts written under `tests/fixtures/journal/` by `make dev` / `make sandbox` (`.gitignore` covers them; verify with `git status` anyway).
 

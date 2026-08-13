@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-describe-macos-arm64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
+.PHONY: install hopper-install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-describe-macos-arm64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -424,7 +424,7 @@ wheel-vulkan-probe-linux-aarch64:
 	MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vulkan-probe --wheel
 
 # Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
-# it stays OUTSIDE ci/ci-under-poison, which cannot shell to an interpreter at
+# it stays OUTSIDE both poisoned Rust gates, which cannot shell to an interpreter at
 # all. Validate every required link and its pinned digest on every invocation;
 # only invalid data invokes the existing staging operation. A healthy checkout
 # is therefore a no-op, while a surviving directory can no longer hide a
@@ -460,7 +460,7 @@ check-rust-onnx-stage:
 	fi
 
 # Staging PDFium also shells to Python and verifies a GitHub attestation, so it
-# stays OUTSIDE ci/ci-under-poison. The runtime-loaded crate itself remains in
+# stays OUTSIDE both poisoned Rust gates. The runtime-loaded crate itself remains in
 # ordinary host Cargo selection; only its real binary tests require this stage.
 $(PDF_RUNTIME_HOST_LINK_DIR):
 	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
@@ -529,6 +529,13 @@ check-rust-msrv:
 check-rust-clippy:
 	@$(REQUIRE_CARGO)
 	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings
+
+# Routine validation runs only in-process unit harnesses from workspace library
+# and binary targets. Cargo integration-test targets remain part of clippy's
+# static compilation above and run only in the explicit full gate below.
+check-rust-unit:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- --test-threads=1
 
 check-rust-test:
 	@$(REQUIRE_CARGO)
@@ -1272,19 +1279,34 @@ check-release-package-inventory:
 # interpreter-requiring checks belong. Run it directly with
 # `make check-release-package-inventory`.
 CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
-.PHONY: ci ci-under-poison
-ci:
+define run-rust-gate-under-poison
 	@set -eu; \
 	shim_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$shim_dir"' 0 1 2 15; \
 	for interpreter in $(CI_FORBIDDEN_INTERPRETERS); do \
-		printf '%s\n' '#!/bin/sh' 'echo "make ci invoked a forbidden interpreter: $$0 $$*" >&2' 'exit 97' > "$$shim_dir/$$interpreter"; \
+		printf '%s\n' '#!/bin/sh' 'echo "Rust gate invoked a forbidden interpreter: $$0 $$*" >&2' 'exit 97' > "$$shim_dir/$$interpreter"; \
 		chmod 755 "$$shim_dir/$$interpreter"; \
 	done; \
-	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 $(MAKE) ci-under-poison
+	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 $(MAKE) $(1)
+endef
+
+.PHONY: ci ci-under-poison ci-full ci-full-under-poison
+ci:
+	$(call run-rust-gate-under-poison,ci-under-poison)
 
 ci-under-poison:
 	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-under-poison is internal; run 'make ci'" >&2; exit 2; }
+	@$(MAKE) check-rust-fmt
+	@$(MAKE) check-rust-clippy
+	@$(MAKE) check-rust-unit
+	@echo "Efficient CI checks passed (format, all-target static compilation, and library/binary unit tests)."
+	@echo "Run 'make ci-full' from an operator final-tree session for the canonical host gate."
+
+ci-full:
+	$(call run-rust-gate-under-poison,ci-full-under-poison)
+
+ci-full-under-poison:
+	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-full-under-poison is internal; run 'make ci-full'" >&2; exit 2; }
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
@@ -1296,7 +1318,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-ios
 	@$(MAKE) check-rust-macos
 	@$(MAKE) check-rust-deny
-	@echo "All CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
+	@echo "All full CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
 	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement; run 'make check-rust-race' for concurrency-sensitive supervisor changes."
 
 verify: ci
