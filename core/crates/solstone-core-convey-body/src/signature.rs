@@ -70,6 +70,8 @@ pub(crate) fn read_database_signature(
 }
 
 /// Reads the Python-compatible trends cache signature, including its no-import sentinel.
+///
+/// The forthcoming day-page wave uses this shared signature for its baseline lookup.
 pub fn trends_signature(
     journal_root: impl AsRef<Path>,
 ) -> Result<TrendsSignature, DatabaseSignatureError> {

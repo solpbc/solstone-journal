@@ -3,9 +3,19 @@
 
 //! Native trends folding deliberately matches the Python shard-only fold.
 //!
-//! Cache invalidation is database/WAL-signature based. Consequently, changing
-//! normalized shards without changing `health-dedupe.sqlite` intentionally
-//! leaves a stale payload; this is the reference behaviour too.
+//! The reference behaviour invalidates the trends cache from only the
+//! `health-dedupe.sqlite` database and WAL signature. Native follows that
+//! behaviour, so changing normalized shards without changing that database
+//! intentionally leaves a stale payload. The shared signature is also the
+//! day-page baseline lookup's compatibility seam, so widening it here would
+//! diverge from the reference. A later wave must record this divergence in the
+//! corpus generator's `native_deviations`; this wave leaves the frozen fixture
+//! unchanged.
+//!
+//! One Convey process serves one journal root, so its warm flight is deliberately
+//! process-global rather than per-journal. The signature is captured before the
+//! fold: an import landing during the fold then makes the completed payload stale
+//! and causes the next request to retry.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -1201,6 +1211,34 @@ mod tests {
         }
         root.create_database();
     }
+    fn seed_direct_resting_store(root: &TempDir, value: &str) {
+        let mut shards = BTreeMap::new();
+        let mut row = row(
+            "HKQuantityTypeIdentifierRestingHeartRate",
+            "20260801",
+            "2026-08-01T00:00:00+00:00",
+            Some(value.into()),
+            "apple_health",
+            Some("Synthetic"),
+        );
+        row.insert("dedupe_key".into(), json!("synthetic-key"));
+        shards.insert("2026-08".into(), vec![row]);
+        crate::seed_body_journal(
+            &root.0,
+            &crate::BodyJournalSeed {
+                dates: BTreeSet::new(),
+                day_summaries: BTreeMap::new(),
+                bundles: vec![crate::BodySeedBundle {
+                    import_id: "seed".into(),
+                    source_family: "apple_health".into(),
+                    manifest: crate::BodySeedManifest::Absent,
+                    shards,
+                }],
+                aggregate: crate::BodyAggregateSeed::Direct,
+            },
+        )
+        .unwrap();
+    }
     fn signal(key: &str, values: Vec<(String, TrendValue)>) -> TrendSignal {
         TrendSignal {
             key: key.into(),
@@ -1406,10 +1444,12 @@ mod tests {
     }
 
     #[test]
-    fn warm_serves_cached_payload_single_flights_and_retries_after_failure_or_panic() {
+    fn global_single_flight_serves_cache_and_recovers_after_panic() {
         clear_cache();
         let root = TempDir::new();
         root.create_database();
+        let other_root = TempDir::new();
+        other_root.create_database();
         let count = Arc::new(AtomicUsize::new(0));
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
@@ -1428,6 +1468,18 @@ mod tests {
             sink().0,
         );
         started_rx.recv().unwrap();
+        let other_count = Arc::clone(&count);
+        let (other_done, _other_rx) = completion();
+        warm_with(
+            other_root.0.clone(),
+            Arc::new(move || {
+                other_count.fetch_add(1, Ordering::SeqCst);
+                Ok(payload("other journal"))
+            }),
+            other_done,
+            sink().0,
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 1);
         assert_eq!(route_value(&root), json!({"warming":true}));
         assert_eq!(count.load(Ordering::SeqCst), 1);
         release_tx.send(()).unwrap();
@@ -1446,8 +1498,20 @@ mod tests {
             sink().0,
         );
         assert_eq!(panic_rx.recv().unwrap(), TrendsWarmOutcome::Panicked);
-        assert_eq!(route_value(&root), json!({"warming":true}));
-        assert!(count.load(Ordering::SeqCst) >= 2);
+        assert!(!TRENDS_WARM_FLIGHT.load(Ordering::Acquire));
+        let (retry_done, retry_rx) = completion();
+        let retry_count = Arc::clone(&count);
+        warm_with(
+            root.0.clone(),
+            Arc::new(move || {
+                retry_count.fetch_add(1, Ordering::SeqCst);
+                Ok(payload("retried after panic"))
+            }),
+            retry_done,
+            sink().0,
+        );
+        assert_eq!(retry_rx.recv().unwrap(), TrendsWarmOutcome::Succeeded);
+        assert_eq!(count.load(Ordering::SeqCst), 3);
     }
 
     #[test]
@@ -1491,7 +1555,7 @@ mod tests {
     }
 
     #[test]
-    fn signature_before_fold_and_shard_only_change_have_documented_cache_behavior() {
+    fn signature_before_fold_caches_under_the_old_signature_then_refolds() {
         clear_cache();
         let root = TempDir::new();
         root.create_database();
@@ -1525,14 +1589,58 @@ mod tests {
                 .is_some()
         );
         assert!(read_trends_cache(root.database(), after).unwrap().is_none());
+        let (retry_done, retry_rx) = completion();
+        let retry_count = Arc::clone(&count);
+        warm_with(
+            root.0.clone(),
+            Arc::new(move || {
+                retry_count.fetch_add(1, Ordering::SeqCst);
+                Ok(payload("second"))
+            }),
+            retry_done,
+            sink().0,
+        );
+        assert_eq!(retry_rx.recv().unwrap(), TrendsWarmOutcome::Succeeded);
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            read_trends_cache(root.database(), after)
+                .unwrap()
+                .unwrap()
+                .annotations[0]
+                .label,
+            "second"
+        );
+    }
+
+    #[test]
+    fn shard_only_change_returns_stale_payload_without_refolding() {
+        clear_cache();
+        let root = TempDir::new();
+        root.create_database();
+        let count = Arc::new(AtomicUsize::new(0));
+        let (done, rx) = completion();
+        let fold_count = Arc::clone(&count);
+        warm_with(
+            root.0.clone(),
+            Arc::new(move || {
+                fold_count.fetch_add(1, Ordering::SeqCst);
+                Ok(payload("stale"))
+            }),
+            done,
+            sink().0,
+        );
+        assert_eq!(rx.recv().unwrap(), TrendsWarmOutcome::Succeeded);
+        let warmed = route_value(&root);
+        assert_eq!(warmed["warming"], json!(false));
+        assert_eq!(warmed["annotations"][0]["label"], json!("stale"));
         let shards = root.0.join("imports/shard-only/normalized");
         fs::create_dir_all(&shards).unwrap();
-        fs::write(shards.join("2030-01.jsonl"), "{\"day\":\"20300101\"}\n").unwrap();
-        assert!(
-            read_trends_cache(root.database(), before)
-                .unwrap()
-                .is_some()
-        );
+        fs::write(
+            shards.join("2030-01.jsonl"),
+            "{\"day\":\"20300101\",\"record_type\":\"synthetic\"}\n",
+        )
+        .unwrap();
+        assert_eq!(route_value(&root), warmed);
         assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
@@ -1625,35 +1733,75 @@ mod tests {
     }
 
     #[test]
-    fn changed_store_refolds_once_and_invalidates_both_native_caches() {
+    fn imported_store_change_refolds_to_new_route_numbers_once() {
         clear_cache();
         let root = TempDir::new();
-        let mut shards = BTreeMap::new();
-        let mut aggregate_row = row(
-            "synthetic",
+        seed_direct_resting_store(&root, "50");
+        let count = Arc::new(AtomicUsize::new(0));
+        let (first_done, first_rx) = completion();
+        let first_root = root.0.clone();
+        let first_count = Arc::clone(&count);
+        warm_with(
+            root.0.clone(),
+            Arc::new(move || {
+                first_count.fetch_add(1, Ordering::SeqCst);
+                build_trends_payload(&first_root)
+            }),
+            first_done,
+            sink().0,
+        );
+        assert_eq!(first_rx.recv().unwrap(), TrendsWarmOutcome::Succeeded);
+        let first = route_value(&root);
+        assert_eq!(first["signals"][0]["daily"][0][1], json!(50.0));
+        assert_eq!(route_value(&root), first);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        let mut imported = row(
+            "HKQuantityTypeIdentifierRestingHeartRate",
             "20260801",
-            "2026-08-01T00:00:00+00:00",
-            None,
+            "2026-08-01T01:00:00+00:00",
+            Some("60".into()),
             "apple_health",
             Some("Synthetic"),
         );
-        aggregate_row.insert("dedupe_key".into(), json!("synthetic-key"));
-        shards.insert("2026-08".into(), vec![aggregate_row]);
-        crate::seed_body_journal(
-            &root.0,
-            &crate::BodyJournalSeed {
-                dates: BTreeSet::new(),
-                day_summaries: BTreeMap::new(),
-                bundles: vec![crate::BodySeedBundle {
-                    import_id: "seed".into(),
-                    source_family: "apple_health".into(),
-                    manifest: crate::BodySeedManifest::Absent,
-                    shards,
-                }],
-                aggregate: crate::BodyAggregateSeed::Direct,
-            },
+        imported.insert("dedupe_key".into(), json!("synthetic-key"));
+        let imported_path = root.0.join("imports/zzimported/normalized");
+        fs::create_dir_all(&imported_path).unwrap();
+        fs::write(
+            imported_path.join("2026-08.jsonl"),
+            format!(
+                "{}\n",
+                serde_json::to_string(&Value::Object(imported)).unwrap()
+            ),
         )
         .unwrap();
+        rusqlite::Connection::open(root.database())
+            .unwrap()
+            .execute_batch("CREATE TABLE signature_touch (value INTEGER);")
+            .unwrap();
+        let (changed_done, changed_rx) = completion();
+        let changed_root = root.0.clone();
+        let changed_count = Arc::clone(&count);
+        warm_with(
+            root.0.clone(),
+            Arc::new(move || {
+                changed_count.fetch_add(1, Ordering::SeqCst);
+                build_trends_payload(&changed_root)
+            }),
+            changed_done,
+            sink().0,
+        );
+        assert_eq!(changed_rx.recv().unwrap(), TrendsWarmOutcome::Succeeded);
+        let changed = route_value(&root);
+        assert_eq!(changed["signals"][0]["daily"][0][1], json!(60.0));
+        assert_eq!(route_value(&root), changed);
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn store_signature_invalidates_both_native_caches() {
+        clear_cache();
+        let root = TempDir::new();
+        seed_direct_resting_store(&root, "50");
         let before = trends_signature(&root.0).unwrap();
         let stats_before = crate::read_health_dedupe_stats(&root.0).unwrap().unwrap();
         replace_trends_cache(root.database(), before, payload("before")).unwrap();
