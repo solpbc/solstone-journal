@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     EnvelopeErrorCode, EnvelopeErrorField, canonicalize, decode_body_envelope, parse,
 };
 
-mod support;
+use crate::support;
 
 use support::{envelope_multimonth_fixture, native_bundle_fixture};
 

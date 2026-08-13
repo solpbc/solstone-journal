@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     BodyObject, BodyValue, DirectoryObservation, authorize_native_bundle, parse,
 };
 
-mod support;
+use crate::support;
 
 use support::{assert_body_value_bitwise_eq, native_bundle_directory_cases};
 

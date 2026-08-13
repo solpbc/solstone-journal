@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     BodyManifestBinding, BodyObject, BodyValue, decode_body_manifest, parse, scan_body_manifest,
 };
 
-mod support;
+use crate::support;
 
 use support::{
     assert_body_value_bitwise_eq, native_bundle_fixture, native_bundle_manifest_binding_cases,

@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     ManifestKnownKey, decode_body_manifest,
 };
 
-mod support;
+use crate::support;
 
 use support::MIN_BUNDLE;
 

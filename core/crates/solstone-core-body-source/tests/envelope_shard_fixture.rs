@@ -4,7 +4,7 @@
 use serde_json::Value;
 use solstone_core_body_source::{BodyDigest, BodyMonth, BundleId, EnvelopeShard};
 
-mod support;
+use crate::support;
 
 use support::{envelope_multimonth_fixture, native_bundle_fixture};
 

@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     BodyDay, BodyEnvelope, decode_body_envelope, encode_body_envelope,
 };
 
-mod support;
+use crate::support;
 
 use support::{envelope_multimonth_fixture, native_bundle_fixture};
 

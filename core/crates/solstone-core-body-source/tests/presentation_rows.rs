@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     FieldState, LedgerSchema, PresentationRow, ValueState, canonicalize, parse, project,
 };
 
-mod support;
+use crate::support;
 
 use support::{assert_body_value_bitwise_eq, codec_rows};
 

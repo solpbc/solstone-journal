@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     encode_body_ledger_event,
 };
 
-mod support;
+use crate::support;
 
 use support::native_bundle_fixture;
 

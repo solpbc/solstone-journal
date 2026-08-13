@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use solstone_core_body_source::parse;
 
-mod support;
+use crate::support;
 
 use support::{codec_rows, vectors};
 

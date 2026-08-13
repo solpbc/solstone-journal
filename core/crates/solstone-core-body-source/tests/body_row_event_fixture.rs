@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     encode_body_ledger_event, health_value_hash, parse, project, validate_body_row_event,
 };
 
-mod support;
+use crate::support;
 
 use support::{ledger_events_fixture, native_bundle_fixture, sha256_body_digest};
 

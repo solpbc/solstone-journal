@@ -10,7 +10,7 @@ use solstone_core_body_source::{
     health_value_hash, parse, project,
 };
 
-mod support;
+use crate::support;
 
 const PYTHON_WHITESPACE: [u32; 29] = [
     0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x001c, 0x001d, 0x001e, 0x001f, 0x0020, 0x0085, 0x00a0,

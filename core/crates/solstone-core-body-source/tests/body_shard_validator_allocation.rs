@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     EnvelopeShard, decode_body_envelope,
 };
 
-mod support;
+use crate::support;
 
 use support::{native_bundle_fixture, sha256_body_digest};
 

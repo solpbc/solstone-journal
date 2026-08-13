@@ -5,7 +5,7 @@ use solstone_core_body_source::{
     BodyString, BodyValue, ManifestKnownKey, parse, scan_body_manifest,
 };
 
-mod support;
+use crate::support;
 
 use support::{assert_body_value_bitwise_eq, native_bundle_fixture};
 

@@ -18,7 +18,7 @@ use solstone_core_body_source::{
     encode_body_envelope, inspect_body_manifest_signal, parse, scan_body_manifest,
 };
 
-mod support;
+use crate::support;
 
 use support::{
     codec_rows, envelope_multimonth_fixture, native_bundle_directory_cases, native_bundle_fixture,

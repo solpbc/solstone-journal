@@ -9,7 +9,7 @@ use solstone_core_body_source::{
     validate_body_row_event,
 };
 
-mod support;
+use crate::support;
 
 use support::{build_ledger_event, native_bundle_fixture, sha256_body_digest};
 

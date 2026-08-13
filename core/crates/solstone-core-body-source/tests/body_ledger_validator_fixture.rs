@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     BodyEnvelope, BodyLedgerValidator, ValidatedBodyLedger, decode_body_envelope,
 };
 
-mod support;
+use crate::support;
 
 use support::{ledger_events_fixture, native_bundle_fixture};
 

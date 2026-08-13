@@ -12,7 +12,7 @@ use solstone_core_body_source::{
     decode_body_envelope, decode_body_envelope_with_manifest, encode_body_envelope, parse,
 };
 
-mod support;
+use crate::support;
 
 use support::{
     NativeBundleManifestBindingCase, envelope_multimonth_fixture,

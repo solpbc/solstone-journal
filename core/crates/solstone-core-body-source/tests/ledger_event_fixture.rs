@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     health_value_hash, parse, project,
 };
 
-mod support;
+use crate::support;
 
 use support::{ledger_events_fixture, native_bundle_fixture};
 

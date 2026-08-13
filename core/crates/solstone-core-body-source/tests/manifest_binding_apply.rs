@@ -9,7 +9,7 @@ use solstone_core_body_source::{
     ManifestBindingErrorCode, ManifestBindingErrorField, parse,
 };
 
-mod support;
+use crate::support;
 
 use support::{MAX_BUNDLE, assert_body_value_bitwise_eq, native_bundle_manifest_binding_cases};
 
