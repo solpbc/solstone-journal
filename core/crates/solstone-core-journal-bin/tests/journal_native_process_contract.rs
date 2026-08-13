@@ -38,8 +38,9 @@ const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
 const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
-const REQUIRED_NATIVE_TOKENS: &[&str] =
+const LANE_AU_REQUIRED_NATIVE_TOKENS: &[&str] =
     &["engage", "maintenance", "heartbeat", "maint", "backup"];
+const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -55,7 +56,7 @@ fn lane_au_owner_verbs_are_registered_for_native_dispatch() {
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    let missing = REQUIRED_NATIVE_TOKENS
+    let missing = LANE_AU_REQUIRED_NATIVE_TOKENS
         .iter()
         .copied()
         .filter(|token| !native_tokens.contains(token))
@@ -64,6 +65,24 @@ fn lane_au_owner_verbs_are_registered_for_native_dispatch() {
     assert!(
         missing.is_empty(),
         "required Lane AU native process tokens are missing: {missing:?}"
+    );
+}
+
+#[test]
+fn lane_av_brain_is_registered_for_native_dispatch() {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    let missing = REQUIRED_NATIVE_TOKENS
+        .iter()
+        .copied()
+        .filter(|token| !native_tokens.contains(token))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "required Lane AV native process tokens are missing: {missing:?}"
     );
 }
 
