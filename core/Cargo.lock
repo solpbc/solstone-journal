@@ -2439,6 +2439,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "sha2",
  "solstone-core-assets",
  "solstone-core-backfill-cli",
@@ -2481,6 +2482,7 @@ dependencies = [
  "solstone-core-spl",
  "solstone-core-streams-cli",
  "solstone-core-system",
+ "solstone-core-system-health",
  "solstone-core-transcribe",
  "solstone-core-transfer",
  "spl-core",
@@ -3514,8 +3516,10 @@ name = "solstone-core-system-health"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "regex",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-cogitate",
  "solstone-core-format",
  "solstone-core-journal-io",

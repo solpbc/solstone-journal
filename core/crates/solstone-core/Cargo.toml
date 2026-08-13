@@ -69,6 +69,7 @@ test = false
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
+serde_path_to_error = "0.1.20"
 solstone-core-cli.workspace = true
 solstone-core-check.workspace = true
 solstone-core-convey-shell.workspace = true
@@ -102,6 +103,7 @@ solstone-core-spl.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
+solstone-core-system-health.workspace = true
 solstone-core-transfer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-streams-cli.workspace = true

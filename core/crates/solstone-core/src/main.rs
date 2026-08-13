@@ -24,26 +24,27 @@ use solstone_core_cli::{
     CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE,
     CogitateCommand, Command, ContractCommand, ConveyOptions, EXPORT_HELP, EXPORT_USAGE,
     ExportOptions, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE,
-    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, IDENTITY_BRIEFING_HELP,
-    IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
-    IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand,
-    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
-    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
-    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
-    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE,
-    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, ServiceOptions,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
-    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
+    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE,
+    IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE,
+    IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE,
+    INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
+    IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
+    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
+    IndexerSearchOptions, InstallCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
+    NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE,
+    OBSERVER_USAGE, RESTART_CONVEY_HELP, RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP,
+    SCHEDULE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP,
+    SETTINGS_STATUS_HELP, SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
+    ServiceOptions, SettingsParseError, SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP,
+    TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
     TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
 mod contract;
 mod facet_candidates;
+mod health;
 mod identity;
 mod import_sources;
 mod install_models;
@@ -230,6 +231,12 @@ fn main() -> ExitCode {
                  For lifecycle, use: journal service <verb>. Did you mean: journal service {verb} ?"
             );
             ExitCode::from(2)
+        }
+        Ok(Command::Health { verbose, debug }) => health::run(verbose, debug),
+        Ok(Command::HealthUsage) => render_usage_error(HEALTH_USAGE, "journal health"),
+        Ok(Command::HealthHelp) => {
+            print!("{HEALTH_HELP}");
+            ExitCode::SUCCESS
         }
         Ok(Command::Observer(command)) => run_observer(command),
         Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
