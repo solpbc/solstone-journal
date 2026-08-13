@@ -46,6 +46,7 @@ pub(crate) struct NativeProcessSpec {
 }
 
 const EMPTY: &[&str] = &[];
+const SERVICE: &[&str] = &["service"];
 const UP: &[&str] = &["up"];
 const DOWN: &[&str] = &["down"];
 const SPL_SERVICE: &[&str] = &["spl", "service"];
@@ -110,6 +111,21 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         token: "top",
         binary: "solstone-core",
         preset_argv: &["top"],
+    },
+    NativeProcessSpec {
+        token: "service",
+        binary: "solstone-core",
+        preset_argv: SERVICE,
+    },
+    NativeProcessSpec {
+        token: "up",
+        binary: "solstone-core",
+        preset_argv: UP,
+    },
+    NativeProcessSpec {
+        token: "down",
+        binary: "solstone-core",
+        preset_argv: DOWN,
     },
     NativeProcessSpec {
         token: "check",

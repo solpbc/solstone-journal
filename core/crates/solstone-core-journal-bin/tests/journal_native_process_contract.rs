@@ -49,6 +49,7 @@ struct Probe {
 
 const SUPERVISOR_USAGE_ANCHOR: &[u8] =
     b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
+const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
 
 const PROBES: &[Probe] = &[
     Probe {
@@ -108,6 +109,24 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(TOP_USAGE.as_bytes()),
+    },
+    Probe {
+        token: "service",
+        argv: &["--nonsense"],
+        expected_exit: 1,
+        stderr_anchor: Some(SERVICE_UNKNOWN_ANCHOR),
+    },
+    Probe {
+        token: "up",
+        argv: &["--nonsense"],
+        expected_exit: 1,
+        stderr_anchor: Some(SERVICE_UNKNOWN_ANCHOR),
+    },
+    Probe {
+        token: "down",
+        argv: &["--nonsense"],
+        expected_exit: 1,
+        stderr_anchor: Some(SERVICE_UNKNOWN_ANCHOR),
     },
     // Doctor's invalid-argument path exits 2 only after the sibling recognizes
     // the verb and emits its owner-facing usage. If the doctor arm were absent,
@@ -1324,6 +1343,9 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
         ("check", "solstone-core"),
         ("health", "solstone-core"),
         ("top", "solstone-core"),
+        ("service", "solstone-core"),
+        ("up", "solstone-core"),
+        ("down", "solstone-core"),
         ("depict", "solstone-core-depict"),
     ] {
         let harness = Harness::new();
@@ -1348,6 +1370,9 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
         ("check", "solstone-core"),
         ("health", "solstone-core"),
         ("top", "solstone-core"),
+        ("service", "solstone-core"),
+        ("up", "solstone-core"),
+        ("down", "solstone-core"),
         ("depict", "solstone-core-depict"),
     ] {
         let harness = Harness::new();
@@ -1391,6 +1416,66 @@ fn native_top_registered_probe_has_exact_clean_parser_output() {
         b"usage: solstone-core top [-h] [-v] [-d]\nsolstone-core top: error: invalid arguments\n"
     );
     assert!(!context.poison_marker.exists());
+}
+
+#[test]
+fn native_service_registered_probes_have_exact_clean_parser_output() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+
+    for token in ["service", "up", "down"] {
+        let probe = probe_for(token).expect("service route must have a registered native probe");
+        assert_eq!(probe.argv, &["--nonsense"]);
+        assert_eq!(probe.expected_exit, 1);
+        assert_eq!(probe.stderr_anchor, Some(SERVICE_UNKNOWN_ANCHOR));
+
+        let output = run_dispatcher_with_bounded_output(&context, token, probe.argv, PROBE_TIMEOUT)
+            .expect("dispatch native service parser probe")
+            .expect("native service parser probe must complete before the deadline");
+        assert_eq!(output.status.code(), Some(probe.expected_exit), "{token}");
+        assert!(output.stdout.is_empty(), "{token}");
+        assert_eq!(output.stderr, SERVICE_UNKNOWN_ANCHOR, "{token}");
+        assert!(!context.poison_marker.exists(), "{token}");
+    }
+}
+
+#[test]
+fn native_service_dispatch_reaches_the_real_bodies_without_python() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.home).expect("create isolated service home");
+
+    for (token, argv, expected_stdout, expected_stderr) in [
+        (
+            "service",
+            &["status"][..],
+            b"service: not installed\nrun 'journal setup' or 'journal service install' to install it.\n"
+                .as_slice(),
+            b"".as_slice(),
+        ),
+        (
+            "up",
+            &[][..],
+            b"".as_slice(),
+            b"error: service not installed. run 'journal service install' first.\n".as_slice(),
+        ),
+        (
+            "down",
+            &[][..],
+            b"".as_slice(),
+            b"error: service not installed. run 'journal service install' first.\n".as_slice(),
+        ),
+    ] {
+        let output = run_dispatcher_with_bounded_output(&context, token, argv, PROBE_TIMEOUT)
+            .expect("dispatch native service body")
+            .expect("native service body must complete before the deadline");
+        assert_eq!(output.status.code(), Some(1), "{token}");
+        assert_eq!(output.stdout, expected_stdout, "{token}");
+        assert_eq!(output.stderr, expected_stderr, "{token}");
+        assert!(!context.poison_marker.exists(), "{token}");
+    }
 }
 
 #[test]
