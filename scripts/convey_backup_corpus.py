@@ -358,6 +358,43 @@ def _record(client: Any, probe: Probe, root: Path) -> dict[str, Any]:
     return case
 
 
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _mutation_census(phases: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Count how many recorded probes actually MUTATED and returned 2xx.
+
+    🔴 The number that matters is not how many write-method cases a corpus
+    carries. It is how many of them **succeeded**, because a refusal grades the
+    refusal envelope and the session gate, never mutation semantics. "N write
+    cases across M routes" is a true aggregate that reads as thorough and is not
+    a claim about the thing anyone cares about.
+
+    ⚠ For the fill-only-when-absent defect class this is decisive: that class is
+    entirely about what a successful SECOND call does, so a corpus with zero
+    successful mutations is exactly as blind to it as a corpus with no write
+    probes at all.
+
+    Computed rather than written down, so it cannot drift from the fixture.
+    """
+    cases = [case for phase in phases.values() for case in phase]
+    mutating = [case for case in cases if case["method"] in _MUTATING_METHODS]
+    succeeded = [case for case in mutating if 200 <= case["status"] < 300]
+    routes: dict[str, list[str]] = {}
+    for phase, phase_cases in phases.items():
+        for case in phase_cases:
+            if case["method"] in _MUTATING_METHODS and 200 <= case["status"] < 300:
+                routes.setdefault(f"{case['method']} {case['path']}", []).append(phase)
+    return {
+        "mutating_method_cases": len(mutating),
+        "distinct_routes_probed_with_a_mutating_method": len(
+            {f"{case['method']} {case['path']}" for case in mutating}
+        ),
+        "cases_that_actually_mutated": len(succeeded),
+        "routes_with_a_successful_mutation": routes,
+    }
+
+
 PHASES = (
     "unestablished",
     "corrupt",
@@ -429,7 +466,7 @@ def build_corpus() -> dict[str, Any]:
                 "POST /app/backup/offload/config",
                 "POST /app/backup/restore",
             ],
-            "no_successful_mutation_is_recorded_anywhere": True,
+            "mutation_census": _mutation_census(cases),
             "named_hazards_a_replay_cannot_see": [
                 "generate_and_store_keys fills daily_key and recovery_key ONLY when "
                 "they are None. A second call returns the existing keys. A port "

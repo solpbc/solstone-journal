@@ -1,5 +1,11 @@
 {
   "coverage_limits": {
+    "mutation_census": {
+      "cases_that_actually_mutated": 0,
+      "distinct_routes_probed_with_a_mutating_method": 5,
+      "mutating_method_cases": 32,
+      "routes_with_a_successful_mutation": {}
+    },
     "named_hazards_a_replay_cannot_see": [
       "GET /app/import/api/{ts}/content BACKFILLS content_manifest.jsonl into the owner's import directory when it is absent. This corpus seeds that manifest directly, so BOTH recorded content cases pass on a port that never implements the backfill -- and every legacy import then answers 'no content available' for an import that is full.",
       "build_import_info overrides imported_at with upload_timestamp/1000 when present, and /api/list sorts on imported_at. No seeded import carries upload_timestamp, so that branch has zero coverage and a port that omits it matches every case while ordering a real owner's history wrong.",
@@ -17,7 +23,6 @@
       "POST /app/import/journal/{prefix}/ingest/imports",
       "POST /app/import/journal/{prefix}/ingest/config"
     ],
-    "no_successful_mutation_is_recorded_anywhere": true,
     "note": "A green replay proves the recorded GET bodies and the recorded refusal bodies. It proves nothing about any route below, and those routes must be checked by reading the reference.",
     "rejection_paths_only": [
       "POST /app/import/api/save-path",

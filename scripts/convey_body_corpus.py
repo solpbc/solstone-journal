@@ -127,6 +127,49 @@ DAY_PAYLOAD_DARK_FIELD_CLASSIFICATIONS: dict[str, dict[str, str]] = {
     "sleep.score_contributors": {"classification": "unexercised"},
 }
 
+COVERAGE_LIMITATIONS: list[dict[str, str]] = [
+    {
+        "subject": "cache warm path",
+        "producers": "warm_dedupe_stats_cache, warm_trends_cache",
+        "reached_by": "app startup (events.py), not by any HTTP route",
+        "limitation": (
+            "This corpus probes routes. The cache warm functions are invoked at "
+            "app startup rather than through any probed route, so a green replay "
+            "is NOT evidence about them. Their fill-only-when-fresh guard and "
+            "single-flight behaviour must be verified by reading the producer."
+        ),
+    },
+    {
+        "subject": "mutation semantics",
+        "producers": "none",
+        "reached_by": "n/a",
+        "measured": "44 recorded cases; 44 GET; 0 mutating probes returned 2xx",
+        "limitation": (
+            "The number that bounds a corpus's authority over mutation is not how "
+            "many write cases it records but how many actually mutated and "
+            "returned 2xx. Here that count is zero because this app declares no "
+            "write route at all -- ten routes, all GET -- so the zero is a "
+            "property of the surface, not of the probe set. A green replay IS "
+            "evidence about this app's route surface. Do not carry this "
+            "conclusion to a plate that has write routes: there a large "
+            "write-case count can be almost entirely refusals, which grade "
+            "refusal envelopes and gate behaviour rather than mutation, and a "
+            "true aggregate is not a claim about the thing you care about."
+        ),
+    },
+    {
+        "subject": "day payload fields recorded empty",
+        "producers": "see day_payload_dark_fields",
+        "reached_by": "probed, but with no seeded row that would populate them",
+        "limitation": (
+            "Fields listed in day_payload_dark_fields are empty because the "
+            "seeded journal has no row that fills them, NOT because the contract "
+            "says they are empty. A replay cannot distinguish correct from "
+            "unexercised from not-implemented; all three produce a clean diff."
+        ),
+    },
+]
+
 NATIVE_DEVIATIONS: list[dict[str, Any]] = [
     {
         "routes": [
@@ -911,6 +954,7 @@ def build_corpus() -> dict[str, Any]:
         "seeder": "body_corpus_seed.seed_populated_body_journal",
         "tz": "UTC",
         "placeholders": {"day": PLACEHOLDER_DAY, "journal_root": PLACEHOLDER_ROOT},
+        "coverage_limitations": COVERAGE_LIMITATIONS,
         "native_deviations": native_deviations,
         "day_payload_dark_fields": day_payload_dark_fields,
         "journal": seed_manifest,
