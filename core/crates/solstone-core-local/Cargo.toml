@@ -29,6 +29,7 @@ flate2.workspace = true
 thiserror.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-assets.workspace = true
+solstone-core-journal-config.workspace = true
 uuid = { version = "1", features = ["v4"] }
 log.workspace = true
 

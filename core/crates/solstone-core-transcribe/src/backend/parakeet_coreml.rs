@@ -12,14 +12,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value};
-use solstone_core_journal_config::JournalConfigRead;
+use solstone_core_journal_config::{JournalConfigRead, parakeet_coreml::parakeet_coreml_cache_dir};
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
 
 use crate::TranscribeError;
 use crate::backend::parakeet_cpp::{ModelInfo, TranscriptionResponse, TranscriptionWord};
-use crate::config::{
-    parakeet_coreml_cache_dir, parakeet_coreml_model_version, parakeet_coreml_timeout,
-};
+use crate::config::{parakeet_coreml_model_version, parakeet_coreml_timeout};
 
 const HELPER_ENV_KEY: &str = "SOLSTONE_PARAKEET_HELPER";
 const HELPER_RELATIVE: &str = "solstone/observe/transcribe/parakeet_helper";
@@ -33,10 +31,11 @@ pub(crate) fn transcribe(
     config: &JournalConfigRead,
 ) -> Result<TranscriptionResponse, TranscribeError> {
     let helper = resolve_helper_path();
+    let home = std::env::home_dir().unwrap_or_default();
     transcribe_with_helper(
         audio,
         &helper,
-        &parakeet_coreml_cache_dir(config),
+        &parakeet_coreml_cache_dir(config, &home),
         &parakeet_coreml_model_version(config),
         parakeet_coreml_timeout(config),
     )
@@ -67,6 +66,8 @@ fn transcribe_with_helper(
         .map_err(|error| failure("coreml_tempfile_failed", error.to_string()))?;
 
     let arguments = [
+        // The helper's hardcoded fallback is unreachable here because this call
+        // always passes --cache-dir; a future invocation change could make it live.
         "--cache-dir".to_owned(),
         cache_dir.display().to_string(),
         "--model".to_owned(),

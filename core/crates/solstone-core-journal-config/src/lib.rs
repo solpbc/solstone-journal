@@ -4,6 +4,7 @@
 //! Strict journal configuration reads and default materialization.
 
 mod defaults;
+pub mod parakeet_coreml;
 mod path;
 mod read;
 

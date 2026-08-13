@@ -9,6 +9,10 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use serde_json::Value;
+use solstone_core_assets::catalog;
+use solstone_core_journal_config::parakeet_coreml::{
+    default_parakeet_coreml_cache_dir, parakeet_coreml_model_root,
+};
 use solstone_core_local::install::pins;
 
 pub const PARAKEET_CPP_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -152,7 +156,7 @@ pub fn check_parakeet_coreml_cache(
     os_name: &str,
     arch: &str,
 ) -> Result<PathBuf, String> {
-    let cache = home_dir.join("Library/Application Support/solstone/parakeet/models");
+    let cache = default_parakeet_coreml_cache_dir(home_dir);
     let sentinel = cache.join(".install-complete");
     let payload = fs::read(&sentinel)
         .ok()
@@ -186,18 +190,11 @@ pub fn check_parakeet_coreml_cache(
             sentinel.display()
         ));
     };
-    let model_root = configured
-        .parent()
-        .unwrap_or(&configured)
-        .join("parakeet-tdt-0.6b-v3");
-    let complete = [
-        "Encoder.mlmodelc/weights/weight.bin",
-        "Decoder.mlmodelc/weights/weight.bin",
-        "JointDecision.mlmodelc/weights/weight.bin",
-        "Preprocessor.mlmodelc/weights/weight.bin",
-    ]
-    .iter()
-    .all(|relative| model_root.join(relative).is_file());
+    let model_root = parakeet_coreml_model_root(&configured);
+    let complete = catalog()
+        .iter()
+        .filter(|artifact| artifact.unit == "parakeet-coreml")
+        .all(|artifact| model_root.join(artifact.filename).is_file());
     complete.then_some(configured.clone()).ok_or_else(|| {
         format!(
             "parakeet check failed: cache verification failed at {}",
@@ -209,6 +206,9 @@ pub fn check_parakeet_coreml_cache(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_journal_config::parakeet_coreml::{
+        default_parakeet_coreml_cache_dir, parakeet_coreml_model_root,
+    };
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -220,6 +220,111 @@ mod tests {
         let artifacts = parakeet_cpp_artifacts(journal.path(), "linux", "x86_64").unwrap();
         assert_eq!(artifacts.artifact_key, "x86_64-unknown-linux-gnu");
         assert!(check_parakeet_cpp_files(&artifacts).is_err());
+    }
+
+    #[test]
+    fn coreml_readiness_rejects_weight_only_bundles() {
+        let home = tempdir().unwrap();
+        let cache = home.path().join("configured/cache");
+        let model_root = parakeet_coreml_model_root(&cache);
+        for artifact in catalog().iter().filter(|artifact| {
+            artifact.unit == "parakeet-coreml" && artifact.filename.ends_with("weights/weight.bin")
+        }) {
+            let path = model_root.join(artifact.filename);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"weight").unwrap();
+        }
+        fs::create_dir_all(&cache).unwrap();
+        let sentinel = default_parakeet_coreml_cache_dir(home.path()).join(".install-complete");
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(
+            sentinel,
+            serde_json::json!({
+                "schema_version": 1,
+                "backend": "parakeet",
+                "variant": "coreml",
+                "model_version": "v3",
+                "quantization": "fp32",
+                "fluidaudio_version": "0.14.0",
+                "platform": {"os": "darwin", "arch": "arm64"},
+                "cache_dir": cache,
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert!(check_parakeet_coreml_cache(home.path(), "darwin", "arm64").is_err());
+    }
+
+    #[test]
+    fn coreml_override_uses_default_sentinel_and_configured_complete_tree() {
+        let home = tempdir().unwrap();
+        let cache = home.path().join("configured/cache");
+        let model_root = parakeet_coreml_model_root(&cache);
+        for artifact in catalog()
+            .iter()
+            .filter(|artifact| artifact.unit == "parakeet-coreml")
+        {
+            let path = model_root.join(artifact.filename);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"fixture").unwrap();
+        }
+        fs::create_dir_all(&cache).unwrap();
+        let sentinel = default_parakeet_coreml_cache_dir(home.path()).join(".install-complete");
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(
+            &sentinel,
+            serde_json::json!({
+                "schema_version": 1,
+                "backend": "parakeet",
+                "variant": "coreml",
+                "model_version": "v3",
+                "quantization": "fp32",
+                "fluidaudio_version": "0.14.0",
+                "platform": {"os": "darwin", "arch": "arm64"},
+                "cache_dir": cache,
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert!(sentinel.is_file());
+        assert_ne!(sentinel.parent().unwrap(), cache.parent().unwrap());
+        let payload: Value = serde_json::from_slice(&fs::read(&sentinel).unwrap()).unwrap();
+        assert_eq!(payload["cache_dir"], cache.display().to_string());
+        assert_eq!(
+            model_root,
+            cache.parent().unwrap().join("parakeet-tdt-0.6b-v3")
+        );
+
+        assert_eq!(
+            check_parakeet_coreml_cache(home.path(), "darwin", "arm64").unwrap(),
+            cache
+        );
+    }
+
+    #[test]
+    fn coreml_readiness_rejects_a_sentinel_for_a_missing_cache_directory() {
+        let home = tempdir().unwrap();
+        let missing = home.path().join("removed/cache");
+        let sentinel = default_parakeet_coreml_cache_dir(home.path()).join(".install-complete");
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(
+            sentinel,
+            serde_json::json!({
+                "schema_version": 1,
+                "backend": "parakeet",
+                "variant": "coreml",
+                "model_version": "v3",
+                "quantization": "fp32",
+                "fluidaudio_version": "0.14.0",
+                "platform": {"os": "darwin", "arch": "arm64"},
+                "cache_dir": missing,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(check_parakeet_coreml_cache(home.path(), "darwin", "arm64").is_err());
     }
 
     #[test]

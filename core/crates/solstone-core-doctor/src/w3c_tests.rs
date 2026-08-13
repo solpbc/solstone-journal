@@ -1107,13 +1107,11 @@ fn w3c_default_stt_fixture_matrix_delegates_and_checks_coreml() {
         .join("Library/Application Support/solstone/parakeet/models/cache");
     fs::create_dir_all(&cache).unwrap();
     let model = cache.parent().unwrap().join("parakeet-tdt-0.6b-v3");
-    for path in [
-        "Encoder.mlmodelc/weights/weight.bin",
-        "Decoder.mlmodelc/weights/weight.bin",
-        "JointDecision.mlmodelc/weights/weight.bin",
-        "Preprocessor.mlmodelc/weights/weight.bin",
-    ] {
-        let path = model.join(path);
+    for artifact in solstone_core_assets::catalog()
+        .iter()
+        .filter(|artifact| artifact.unit == "parakeet-coreml")
+    {
+        let path = model.join(artifact.filename);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "model").unwrap();
     }

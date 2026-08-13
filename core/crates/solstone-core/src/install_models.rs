@@ -8,9 +8,14 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use solstone_core_cli::{InstallModelsOptions, InstallModelsVariant};
+use solstone_core_journal_config::{
+    JournalConfigRead,
+    parakeet_coreml::{parakeet_coreml_cache_dir, parakeet_coreml_model_root},
+    read_journal_config,
+};
 use solstone_core_local::install::{
-    DispatchError, ced_install, fingerprint, fit_report, install_parakeet_with_lease, lease, pins,
-    rerank_install, rfdetr_install, status,
+    DispatchError, ced_install, coreml_install, fingerprint, fit_report,
+    install_parakeet_with_lease, lease, pins, rerank_install, rfdetr_install, status,
 };
 use solstone_core_transcribe::resolve_model_asset;
 
@@ -63,11 +68,18 @@ type RfdetrInstaller<'a> = dyn FnMut(
         InstallerAction,
     ) -> Result<rfdetr_install::RfdetrInstallRecord, rfdetr_install::RfdetrInstallError>
     + 'a;
+type CoremlInstaller<'a> = dyn FnMut(
+        &Path,
+        &JournalConfigRead,
+        InstallerAction,
+    ) -> Result<PathBuf, coreml_install::CoremlInstallError>
+    + 'a;
 
 struct ProviderInstallers<'a> {
     rerank: Box<RerankInstaller<'a>>,
     ced: Box<CedInstaller<'a>>,
     rfdetr: Box<RfdetrInstaller<'a>>,
+    coreml: Box<CoremlInstaller<'a>>,
 }
 
 struct InstallModelsHooks<A> {
@@ -141,6 +153,7 @@ pub fn run(options: InstallModelsOptions) -> ExitCode {
         arch: normalize_arch(std::env::consts::ARCH).to_owned(),
         journal_variant: std::env::var("JOURNAL_VARIANT").ok(),
     };
+    let home_dir = std::env::home_dir().unwrap_or_default();
     let outcome = run_inner(
         host,
         || solstone_core_local::probe_nvidia_gpu().detected,
@@ -153,6 +166,7 @@ pub fn run(options: InstallModelsOptions) -> ExitCode {
             }
         },
         install_model,
+        &home_dir,
     );
     for line in outcome.stdout {
         println!("{line}");
@@ -169,6 +183,7 @@ fn run_inner<P, J, I>(
     options: InstallModelsOptions,
     journal_resolver: J,
     install_executor: I,
+    home_dir: &Path,
 ) -> InstallModelsOutcome
 where
     P: FnOnce() -> bool,
@@ -209,11 +224,23 @@ where
                     rfdetr_install::install_rfdetr(journal, os_name, arch, force)
                 }
             }),
+            coreml: Box::new(|home_dir, config, action| match action {
+                InstallerAction::Check => {
+                    coreml_install::check_parakeet_coreml_install(home_dir, config).map(|()| {
+                        parakeet_coreml_model_root(&parakeet_coreml_cache_dir(config, home_dir))
+                    })
+                }
+                InstallerAction::Install { force } => {
+                    coreml_install::install_parakeet_coreml_model(home_dir, config, force)
+                }
+            }),
         },
         install_executor,
+        home_dir,
     )
 }
 
+#[allow(clippy::too_many_arguments)] // The injected home is a deliberate test-safety seam.
 fn run_inner_with<'a, P, J, A, I>(
     host: HostPlatform,
     nvidia_probe: P,
@@ -222,6 +249,7 @@ fn run_inner_with<'a, P, J, A, I>(
     mut hooks: InstallModelsHooks<A>,
     mut providers: ProviderInstallers<'a>,
     install_executor: I,
+    home_dir: &Path,
 ) -> InstallModelsOutcome
 where
     P: FnOnce() -> bool,
@@ -363,12 +391,41 @@ where
     };
 
     if variant == ResolvedVariant::Coreml {
-        return InstallModelsOutcome::failure_with_stdout(
-            Some(variant),
-            EXIT_UNAVAILABLE,
-            "install-models: resolved variant coreml, but CoreML model install is not implemented in the native shell",
-            provider_stdout,
-        );
+        let config = match read_journal_config(&journal) {
+            Ok(config) => config,
+            Err(error) => {
+                return InstallModelsOutcome::failure_with_stdout(
+                    Some(variant),
+                    EXIT_DATAERR,
+                    error.to_string(),
+                    provider_stdout,
+                );
+            }
+        };
+        let action = if options.check {
+            InstallerAction::Check
+        } else {
+            InstallerAction::Install {
+                force: options.force,
+            }
+        };
+        return match (providers.coreml)(home_dir, &config, action) {
+            Ok(path) => InstallModelsOutcome {
+                resolved_variant: Some(variant),
+                exit_code: 0,
+                stdout: [provider_stdout, vec![ready_line(&path)]].concat(),
+                stderr: (!options.check)
+                    .then(|| coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE.to_owned())
+                    .into_iter()
+                    .collect(),
+            },
+            Err(error) => InstallModelsOutcome::failure_with_stdout(
+                Some(variant),
+                error.exit_code,
+                error.to_string(),
+                provider_stdout,
+            ),
+        };
     }
 
     let key = match pins::parakeet_artifact_key(&host.os_name, &host.arch) {
@@ -745,8 +802,10 @@ mod tests {
             $rerank:expr,
             $ced:expr,
             $rfdetr:expr,
+            $coreml:expr,
             $executor:expr $(,)?
-        ) => {
+        ) => {{
+            let home = tempfile::tempdir().unwrap();
             run_inner_with(
                 $host,
                 $probe,
@@ -757,10 +816,12 @@ mod tests {
                     rerank: Box::new($rerank),
                     ced: Box::new($ced),
                     rfdetr: Box::new($rfdetr),
+                    coreml: Box::new($coreml),
                 },
                 $executor,
+                home.path(),
             )
-        };
+        }};
     }
 
     fn options(variant: InstallModelsVariant) -> InstallModelsOptions {
@@ -852,6 +913,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_USAGE);
@@ -879,6 +941,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, 0);
@@ -925,7 +988,8 @@ mod tests {
                 }
             },
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
-            |_, _, _| panic!("coreml install is unavailable"),
+            |_, _, _| Ok(journal.path().join("coreml")),
+            |_, _, _| panic!("parakeet installer must not run"),
         );
         assert!(called);
         assert!(
@@ -946,6 +1010,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| panic!("raw platform must skip ced"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("unsupported platform must not install parakeet"),
         );
         assert_eq!(outcome.exit_code, 0);
@@ -985,6 +1050,7 @@ mod tests {
                 rfdetr_called = true;
                 Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
             },
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| {
                 parakeet_called = true;
                 panic!("parakeet must not run")
@@ -1010,16 +1076,18 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
-            |_, _, _| panic!("installer must not run"),
+            |_, _, action| {
+                assert_eq!(action, InstallerAction::Install { force: false });
+                Ok(journal.path().join("parakeet-tdt-0.6b-v3"))
+            },
+            |_, _, _| panic!("parakeet installer must not run"),
         );
         assert_eq!(outcome.resolved_variant, Some(ResolvedVariant::Coreml));
-        assert_eq!(outcome.exit_code, EXIT_UNAVAILABLE);
         assert_eq!(
             outcome.stderr,
-            [
-                "install-models: resolved variant coreml, but CoreML model install is not implemented in the native shell"
-            ]
+            [coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE]
         );
+        assert_eq!(outcome.exit_code, 0);
     }
 
     #[test]
@@ -1043,6 +1111,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_DATAERR);
@@ -1066,6 +1135,7 @@ mod tests {
                 options(InstallModelsVariant::Auto),
                 || Ok(journal.clone()),
                 |_, _, _| panic!("installer must not run"),
+                journal.as_path(),
             );
             assert_eq!(outcome.exit_code, EXIT_DATAERR);
             assert!(outcome.stderr[0].contains("wespeaker-resnet34-256.onnx"));
@@ -1135,6 +1205,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
         assert_eq!(outcome.exit_code, EXIT_UNAVAILABLE);
@@ -1166,6 +1237,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| {
                 installer_entered = true;
                 Ok(model)
@@ -1180,6 +1252,13 @@ mod tests {
                 .any(|line| line.starts_with("model ready: "))
         );
         assert_eq!(outcome.stderr, [rendered]);
+        assert!(
+            !outcome
+                .stdout
+                .iter()
+                .chain(outcome.stderr.iter())
+                .any(|line| line.contains("updates.solstone.app"))
+        );
     }
 
     #[test]
@@ -1206,6 +1285,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, delegated_host, _| {
                 assert_eq!(delegated_host.os_name, "linux");
                 assert_eq!(delegated_host.arch, "arm64");
@@ -1264,6 +1344,7 @@ mod tests {
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
         writer.join().unwrap();

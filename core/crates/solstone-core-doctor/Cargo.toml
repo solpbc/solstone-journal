@@ -25,3 +25,6 @@ solstone-core-skill-state.workspace = true
 nix.workspace = true
 plist.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
+
+[dev-dependencies]
+solstone-core-assets.workspace = true

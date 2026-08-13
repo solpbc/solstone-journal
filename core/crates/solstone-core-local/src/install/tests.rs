@@ -14,15 +14,17 @@ use std::time::{Duration, Instant};
 
 use super::mlx::SnapshotSource as _;
 use super::{
-    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
-    lease, local_backend_choice, manifest, mlx, parakeet_target_for_install, pins,
-    publish_staged_tree_with, readiness, status, write_parakeet_model_manifest,
+    InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, coreml_install, dispatch,
+    download_artifact, fingerprint, lease, local_backend_choice, manifest, mlx,
+    parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
+    write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
+use solstone_core_journal_config::JournalConfigRead;
 
 use crate::nvidia::NVIDIA_PROBE_SCHEMA;
 
@@ -46,6 +48,91 @@ fn loopback_download_policy(origin_base_url: &str) -> archive::DownloadHostPolic
         allow_http: true,
         origin_base_url,
     }
+}
+
+#[test]
+fn coreml_install_stages_all_catalog_paths_from_the_origin() {
+    let catalog_rows = catalog()
+        .iter()
+        .filter(|artifact| artifact.unit == "parakeet-coreml")
+        .collect::<Vec<_>>();
+    assert_eq!(catalog_rows.len(), 23);
+
+    let bytes = catalog_rows
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("coreml fixture {index}").into_bytes())
+        .collect::<Vec<_>>();
+    let rows = catalog_rows
+        .iter()
+        .zip(&bytes)
+        .map(|(catalog_row, bytes)| Artifact {
+            unit: "parakeet-coreml",
+            version: catalog_row.version,
+            filename: catalog_row.filename,
+            sha256: Box::leak(format!("{:x}", Sha256::digest(bytes)).into_boxed_str()),
+            size_bytes: bytes.len() as u64,
+            upstream_url: "https://upstream.invalid/provenance-only",
+            origin_key: Box::leak(format!("test/{}", catalog_row.filename).into_boxed_str()),
+            artifact_key: None,
+            platform: Some(Platform::MacosArm64),
+            backend: None,
+            extracted_binary_sha256: None,
+        })
+        .collect::<Vec<_>>();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server_bytes = bytes.clone();
+    let server = thread::spawn(move || {
+        for bytes in server_bytes {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .unwrap();
+            stream.write_all(&bytes).unwrap();
+        }
+    });
+    let root = temp("coreml-all-paths");
+    let home = root.join("home");
+    let configured = root.join("configured/cache");
+    let config = JournalConfigRead {
+        present: true,
+        sha256: None,
+        config: Some(
+            json!({"transcribe": {"parakeet": {"cache_dir": configured}}})
+                .as_object()
+                .unwrap()
+                .clone(),
+        ),
+    };
+    let origin_base_url = format!("http://{address}");
+    let policy = loopback_download_policy(&origin_base_url);
+    let references = rows.iter().collect::<Vec<_>>();
+    let target =
+        coreml_install::install_with_rows_for_test(&home, &config, false, &policy, &references)
+            .unwrap();
+    server.join().unwrap();
+
+    for (row, bytes) in rows.iter().zip(&bytes) {
+        assert_eq!(
+            fs::read(target.join(row.filename)).unwrap(),
+            bytes.as_slice()
+        );
+    }
+    let sentinel: Value = serde_json::from_slice(
+        &fs::read(
+            home.join("Library/Application Support/solstone/parakeet/models/.install-complete"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(sentinel["cache_dir"], configured.display().to_string());
+    let _ = fs::remove_dir_all(root);
 }
 
 fn loopback_host(address: SocketAddr) -> String {

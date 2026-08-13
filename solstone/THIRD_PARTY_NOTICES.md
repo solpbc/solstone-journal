@@ -78,6 +78,28 @@ License text: https://creativecommons.org/licenses/by/4.0/legalcode.txt
 sol pbc redistributes this model under CC-BY-4.0. The attribution above and
 the CC-BY-4.0 license URI accompany the redistributed copy.
 
+## runtime-downloaded provider artifacts (Parakeet Core ML)
+
+sol pbc redistributes these artifacts from `updates.solstone.app` on demand
+into the journal provider cache when an owner installs the Core ML Parakeet
+transcription backend. They are not bundled in this repository.
+
+### Parakeet TDT 0.6B v3 Core ML conversion
+
+Attribution: `nvidia/parakeet-tdt-0.6b-v3`.
+
+Source:
+
+- Model repository: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+- Pinned revision: `aed02740059203c4a87495924f685de3722ae9ce`
+
+License notice: Creative Commons Attribution 4.0 International (CC-BY-4.0).
+License text: https://creativecommons.org/licenses/by/4.0/legalcode.txt
+
+The shipped Core ML artifacts are a modified conversion of the source model.
+sol pbc redistributes this conversion under CC-BY-4.0 with the attribution,
+license URI, and modification indication above.
+
 ## runtime-downloaded provider artifacts (local model)
 
 sol pbc redistributes these artifacts from `updates.solstone.app` on demand

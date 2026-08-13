@@ -13,6 +13,7 @@
 
 pub mod archive;
 pub mod ced_install;
+pub mod coreml_install;
 pub mod fingerprint;
 pub mod fit_report;
 pub mod lease;
