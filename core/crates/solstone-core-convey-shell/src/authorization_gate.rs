@@ -3,11 +3,11 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Request, StatusCode};
+use axum::http::{Method, Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
@@ -17,6 +17,7 @@ use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
 };
+use solstone_core_sol_link::pairing::nonces::{NonceStore, pairing_window_open};
 use tokio::sync::watch;
 
 static AUTHORIZATION_GATE_READ_TICKS: AtomicU64 = AtomicU64::new(0);
@@ -31,6 +32,11 @@ pub fn authorization_gate_read_ticks() -> u64 {
 pub struct AuthorizationGateState {
     pub authorization: watch::Receiver<DeviceDoorAuthorization>,
     pub authorized_clients_path: PathBuf,
+}
+
+#[derive(Clone)]
+struct PairingConfinementState {
+    journal_root: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +66,20 @@ pub fn authorized_router(
     journal_root: PathBuf,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
 ) -> Router {
+    authorized_router_with_router(
+        crate::router(journal_root.clone()),
+        journal_root,
+        authorization,
+    )
+}
+
+/// Apply the door-only production layers to a prebuilt router. Loopback is
+/// structurally excluded because only `authorized_router*` invokes this helper.
+pub fn authorized_router_with_router(
+    router: Router,
+    journal_root: PathBuf,
+    authorization: watch::Receiver<DeviceDoorAuthorization>,
+) -> Router {
     let authorized_clients_path = AuthorizationLedger::new(&journal_root)
         .authorized_clients_path()
         .to_path_buf();
@@ -69,13 +89,54 @@ pub fn authorized_router(
     // `route_layer`, not `layer`, preserves strict-slash and unknown-path 404s.
     // Applying it after router() has composed every route wraps the full
     // surface, including routes from merged sub-routers.
-    crate::router(journal_root).route_layer(middleware::from_fn_with_state(
-        AuthorizationGateState {
-            authorization,
-            authorized_clients_path,
-        },
-        require_authorization,
-    ))
+    router
+        .route_layer(middleware::from_fn_with_state(
+            AuthorizationGateState {
+                authorization,
+                authorized_clients_path,
+            },
+            require_authorization,
+        ))
+        .layer(middleware::from_fn_with_state(
+            PairingConfinementState { journal_root },
+            require_pairing_confinement,
+        ))
+}
+
+async fn require_pairing_confinement(
+    State(state): State<PairingConfinementState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let pairing_peer = matches!(
+        request.extensions().get::<AccessBasis>(),
+        Some(AccessBasis::PairingPeer { .. })
+    );
+    if !pairing_peer {
+        return next.run(request).await;
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is after epoch")
+        .as_secs()
+        .try_into()
+        .expect("Unix seconds fit i64");
+    if !pairing_window_open(&NonceStore::new(&state.journal_root), now) {
+        return pairing_confinement_response("pairing window closed");
+    }
+    let raw_path = request.uri().path();
+    let decoded = percent_encoding::percent_decode_str(raw_path).decode_utf8();
+    if decoded.as_deref().ok() != Some(raw_path) {
+        return pairing_confinement_response("pairing tunnel may only use /app/network/pair");
+    }
+    if raw_path != spl_core::PAIR_PATH || request.method() != Method::POST {
+        return pairing_confinement_response("pairing tunnel may only use /app/network/pair");
+    }
+    next.run(request).await
+}
+
+fn pairing_confinement_response(body: &'static str) -> Response {
+    (StatusCode::FORBIDDEN, body).into_response()
 }
 
 fn is_exempt(path: &str) -> bool {
@@ -150,9 +211,15 @@ async fn require_authorization(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use axum::body::Body;
-    use axum::http::{Request, StatusCode};
-    use axum::routing::get;
+    use axum::body::to_bytes;
+    use axum::http::{Method, Request, StatusCode};
+    use axum::routing::{get, post};
     use axum::{Router, middleware};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier};
     use solstone_core_sol_link::DeviceDoorAuthorization;
@@ -162,8 +229,32 @@ mod tests {
 
     use super::{
         AUTHORIZATION_GATE_EXEMPTIONS, AuthorizationExemption, AuthorizationGateState,
-        require_authorization,
+        authorized_router_with_router, require_authorization,
     };
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let path =
+                std::env::temp_dir().join(format!("solstone-confinement-{nanos}-{sequence}"));
+            fs::create_dir(&path).expect("temporary root");
+            Self(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn exemption_inventory_is_named_and_closed() {
@@ -193,5 +284,69 @@ mod tests {
         });
 
         assert_eq!(app.oneshot(request).await.unwrap().status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn pairing_confinement_checks_window_then_path_and_covers_unmatched_routes() {
+        let temporary = TempDir::new();
+        let (_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let app = authorized_router_with_router(
+            Router::new().route(spl_core::PAIR_PATH, post(|| async { StatusCode::OK })),
+            temporary.0.clone(),
+            authorization,
+        );
+        async fn response(app: Router, method: Method, path: &str) -> (StatusCode, Vec<u8>) {
+            let mut request = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .expect("request");
+            request.extensions_mut().insert(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            });
+            let response = app.oneshot(request).await.expect("response");
+            let status = response.status();
+            (
+                status,
+                to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body")
+                    .to_vec(),
+            )
+        }
+        let closed = response(app.clone(), Method::POST, spl_core::PAIR_PATH).await;
+        assert_eq!(
+            closed,
+            (StatusCode::FORBIDDEN, b"pairing window closed".to_vec())
+        );
+        let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&temporary.0);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_secs() as i64;
+        store
+            .add("nonce".into(), "phone".into(), "".into(), false, now)
+            .expect("open window");
+        assert_eq!(
+            response(app.clone(), Method::POST, spl_core::PAIR_PATH)
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let path_body = b"pairing tunnel may only use /app/network/pair".to_vec();
+        assert_eq!(
+            response(app.clone(), Method::GET, spl_core::PAIR_PATH).await,
+            (StatusCode::FORBIDDEN, path_body.clone())
+        );
+        assert_eq!(
+            response(app.clone(), Method::POST, "/app/network/%70air").await,
+            (StatusCode::FORBIDDEN, path_body.clone())
+        );
+        assert_eq!(
+            response(app, Method::POST, "/__door_test/pairing-probe").await,
+            (StatusCode::FORBIDDEN, path_body)
+        );
     }
 }

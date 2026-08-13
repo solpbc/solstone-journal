@@ -2778,6 +2778,7 @@ dependencies = [
  "log",
  "ndarray",
  "nix",
+ "percent-encoding",
  "rcgen",
  "rustls",
  "serde",

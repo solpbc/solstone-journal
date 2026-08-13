@@ -28,6 +28,7 @@ use solstone_core_sol_link::committed::load_committed_identity;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
 };
+use solstone_core_sol_link::pairing::nonces::{NonceStore, pairing_window_open};
 use solstone_core_sol_link::{
     DeviceDoorAuthorization, DeviceDoorVerifier, spawn_authorization_refresh,
 };
@@ -73,6 +74,7 @@ type IdentityCell = Arc<Mutex<Option<AcceptedIdentity>>>;
 struct DoorIdentityVerifier {
     inner: Arc<DeviceDoorVerifier>,
     identity: IdentityCell,
+    pairing_window_open: bool,
 }
 
 impl std::fmt::Debug for DoorIdentityVerifier {
@@ -84,17 +86,25 @@ impl std::fmt::Debug for DoorIdentityVerifier {
 }
 
 impl DoorIdentityVerifier {
-    fn new(inner: Arc<DeviceDoorVerifier>, identity: IdentityCell) -> Self {
-        Self { inner, identity }
+    fn new(
+        inner: Arc<DeviceDoorVerifier>,
+        identity: IdentityCell,
+        pairing_window_open: bool,
+    ) -> Self {
+        Self {
+            inner,
+            identity,
+            pairing_window_open,
+        }
     }
 }
 
 impl ClientCertVerifier for DoorIdentityVerifier {
     fn offer_client_auth(&self) -> bool {
-        self.inner.offer_client_auth()
+        self.pairing_window_open || self.inner.offer_client_auth()
     }
     fn client_auth_mandatory(&self) -> bool {
-        self.inner.client_auth_mandatory()
+        !self.pairing_window_open && self.inner.client_auth_mandatory()
     }
     fn root_hint_subjects(&self) -> &[DistinguishedName] {
         self.inner.root_hint_subjects()
@@ -362,6 +372,8 @@ async fn serve_carrier(
             DeviceDoorAuthorization::from(AuthorizedClientsRead::Unreadable)
         }
     };
+    let pairing_window_open =
+        pairing_window_open(&NonceStore::new(&config.journal_root), unix_seconds());
     let device_verifier = Arc::new(DeviceDoorVerifier::new(
         config.verifier.clone(),
         authorization,
@@ -372,6 +384,7 @@ async fn serve_carrier(
         client_cert_verifier: Arc::new(DoorIdentityVerifier::new(
             device_verifier,
             identity.clone(),
+            pairing_window_open,
         )),
         // Peer stream 9 is refused with `refuse(StreamLimit)` rather than tearing
         // down the carrier, so 8 safely bounds normal parallel requests. Per
@@ -400,7 +413,7 @@ async fn serve_carrier(
             return;
         }
     };
-    let Some(basis) = capture_to_basis(&identity, peer) else {
+    let Some(basis) = capture_to_basis(&identity, peer, pairing_window_open) else {
         log::debug!("paired-device carrier completed without an accepted identity");
         return;
     };
@@ -566,12 +579,30 @@ fn record_completed_handshake(journal_root: &std::path::Path, did: &LinkedDevice
     }
 }
 
-fn capture_to_basis(identity: &IdentityCell, peer: Option<SocketAddr>) -> Option<AccessBasis> {
-    let accepted = identity.lock().ok()?.clone()?;
-    Some(AccessBasis::LinkedDevice {
-        carrier: carrier_from_peer(peer),
-        did: accepted.did,
-    })
+fn capture_to_basis(
+    identity: &IdentityCell,
+    peer: Option<SocketAddr>,
+    pairing_window_open: bool,
+) -> Option<AccessBasis> {
+    match identity.lock().ok()?.clone() {
+        Some(accepted) => Some(AccessBasis::LinkedDevice {
+            carrier: carrier_from_peer(peer),
+            did: accepted.did,
+        }),
+        None if pairing_window_open => Some(AccessBasis::PairingPeer {
+            carrier: carrier_from_peer(peer),
+        }),
+        None => None,
+    }
+}
+
+fn unix_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock is after epoch")
+        .as_secs()
+        .try_into()
+        .expect("Unix seconds fit i64")
 }
 
 fn linked_device_did(basis: &AccessBasis) -> Option<LinkedDeviceDid> {
@@ -651,11 +682,13 @@ mod tests {
     }
 
     #[test]
-    fn w3_certless_window_without_captured_leaf_never_synthesizes_access_basis() {
-        // This is unreachable while the door requires client auth, but W3's
-        // relaxed cert-less pairing window will make it reachable.
+    fn certless_window_stamps_a_pairing_basis_but_closed_window_does_not() {
         let identity = Arc::new(Mutex::new(None));
-        assert!(capture_to_basis(&identity, Some("127.0.0.1:1".parse().unwrap())).is_none());
+        assert!(matches!(
+            capture_to_basis(&identity, Some("127.0.0.1:1".parse().unwrap()), true),
+            Some(AccessBasis::PairingPeer { .. })
+        ));
+        assert!(capture_to_basis(&identity, Some("127.0.0.1:1".parse().unwrap()), false).is_none());
     }
 
     #[test]

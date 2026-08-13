@@ -13,6 +13,7 @@ workspace = true
 [features]
 default = ["host"]
 host = [
+    "dep:percent-encoding",
     "dep:solstone-core-callosum",
     "dep:solstone-core-sol-link",
     "solstone-core-sol-link/host",
@@ -29,6 +30,7 @@ futures-core = "0.3.33"
 log.workspace = true
 ndarray = "=0.17.2"
 nix = { workspace = true, features = ["signal"] }
+percent-encoding = { version = "2.3.2", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

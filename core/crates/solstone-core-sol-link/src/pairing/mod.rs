@@ -153,6 +153,9 @@ pub fn mint_pairing(
     request: &MintRequest,
     now: i64,
 ) -> Result<MintResponse, PairingError> {
+    if request.configured_home.is_some() {
+        return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
+    }
     mint_pairing_from_sources(
         journal_root,
         request,

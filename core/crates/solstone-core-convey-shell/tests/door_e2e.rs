@@ -13,11 +13,12 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::Extension;
 use axum::Router;
-use axum::routing::get;
+use axum::http::StatusCode;
+use axum::routing::{get, post};
 use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
 use sha2::{Digest, Sha256};
@@ -175,9 +176,12 @@ async fn exchange_over_carrier(
     carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
     decoder: &mut FrameDecoder,
     stream_id: u32,
-) -> std::io::Result<()> {
-    let request =
-        b"GET /api/system/status HTTP/1.1\r\nhost: spl.local\r\ncontent-length: 0\r\n\r\n";
+    method: &str,
+    path: &str,
+    headers: &[(String, String)],
+    body: &[u8],
+) -> std::io::Result<spl_core::http::HttpResponse> {
+    let request = spl_core::http::build_request(method, path, headers, body);
     carrier
         .write_all(
             &Frame::new(stream_id, FLAG_OPEN | FLAG_DATA, request.to_vec())
@@ -194,6 +198,7 @@ async fn exchange_over_carrier(
         .await?;
     carrier.flush().await?;
     let mut buffer = [0_u8; 4096];
+    let mut assembler = ResponseAssembler::new(stream_id);
     loop {
         let read = carrier.read(&mut buffer).await?;
         if read == 0 {
@@ -207,8 +212,17 @@ async fn exchange_over_carrier(
             .drain()
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?
         {
-            if frame.stream_id == stream_id && frame.flags & FLAG_CLOSE != 0 {
-                return Ok(());
+            if frame.stream_id == stream_id {
+                let output = assembler
+                    .feed(&frame.encode().map_err(std::io::Error::other)?)
+                    .map_err(std::io::Error::other)?;
+                for control in output.pongs.into_iter().chain(output.emit_frames) {
+                    carrier.write_all(&control).await?;
+                }
+                carrier.flush().await?;
+                if assembler.is_closed() {
+                    return assembler.into_response().map_err(std::io::Error::other);
+                }
             }
         }
     }
@@ -306,6 +320,85 @@ async fn live_carrier(
         )
         .await
         .expect("mTLS carrier")
+}
+
+async fn live_certless_carrier(
+    port: u16,
+) -> std::io::Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+    let tcp = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+        .await
+        .expect("certless TCP carrier");
+    TlsConnector::from(Arc::new(test_client_config(
+        &[&rustls::version::TLS13],
+        None,
+    )))
+    .connect(
+        rustls::pki_types::ServerName::try_from("spl.local").expect("name"),
+        tcp,
+    )
+    .await
+}
+
+fn pairing_now() -> i64 {
+    let now = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs() as i64;
+    now
+}
+
+fn open_pairing_window(fixture: &Fixture, nonce: &str) {
+    let now = pairing_now();
+    solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root)
+        .add(nonce.into(), "phone".into(), "".into(), false, now)
+        .expect("open pairing window");
+}
+
+fn foreign_client_config() -> rustls::ClientConfig {
+    let foreign_key =
+        rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).expect("foreign key");
+    let foreign_ca_key =
+        rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).expect("foreign CA key");
+    let mut ca_params = rcgen::CertificateParams::default();
+    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Constrained(0));
+    ca_params.key_usages = vec![
+        rcgen::KeyUsagePurpose::KeyCertSign,
+        rcgen::KeyUsagePurpose::DigitalSignature,
+    ];
+    let foreign_ca = ca_params.self_signed(&foreign_ca_key).expect("foreign CA");
+    let mut client_params = rcgen::CertificateParams::default();
+    client_params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+    let foreign_client = client_params
+        .signed_by(&foreign_key, &foreign_ca, &foreign_ca_key)
+        .expect("foreign client");
+    test_client_config(
+        &[&rustls::version::TLS13],
+        Some((
+            rustls::pki_types::CertificateDer::from(foreign_client.der().to_vec()),
+            rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+                foreign_key.serialize_der(),
+            )),
+        )),
+    )
+}
+
+async fn assert_certless_tls_refused(fixture: &Fixture) {
+    let handle = serve(options(fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve closed window");
+    let error = tls_handshake(
+        test_client_config(&[&rustls::version::TLS13], None),
+        door_port(handle.door_outcome()),
+    )
+    .await
+    .expect_err("closed pairing window requires a client certificate");
+    assert!(matches!(
+        error.kind(),
+        std::io::ErrorKind::InvalidData
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::ConnectionReset
+    ));
+    handle.shutdown();
 }
 
 /// Send part of a declared upload, return all server window grants, then drop
@@ -616,9 +709,17 @@ async fn ac1_carrier_loop_counter_advances() {
     let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
     let mut decoder = FrameDecoder::new();
     let mut ids = FrameDialer::default();
-    exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-        .await
-        .expect("carrier exchange");
+    exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "GET",
+        "/api/system/status",
+        &[],
+        &[],
+    )
+    .await
+    .expect("carrier exchange");
     assert!(carrier_loop_iterations.load(Ordering::Relaxed) > 0);
     handle.shutdown();
 }
@@ -717,9 +818,17 @@ async fn ac4_shutdown_aborts_every_listener_task() {
     let mut carrier = live_carrier(&fixture, port).await;
     let mut decoder = FrameDecoder::new();
     let mut ids = FrameDialer::default();
-    exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-        .await
-        .expect("carrier exchange");
+    exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "GET",
+        "/api/system/status",
+        &[],
+        &[],
+    )
+    .await
+    .expect("carrier exchange");
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert!(authorization_publication_ticks() > before);
 
@@ -1114,6 +1223,309 @@ async fn ac6_client_not_signed_by_journal_ca_is_refused() {
         tls_handshake(config, door_port(handle.door_outcome()))
             .await
             .is_err()
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
+    let fixture = Fixture::established(0);
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let handle = bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router(
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    // The door was already serving with no nonce file. This proves optional
+    // client auth is decided per carrier, not frozen at bind time.
+    open_pairing_window(&fixture, "certless");
+    let port = door_port(handle.door_outcome());
+    let mut carrier = live_certless_carrier(port)
+        .await
+        .expect("certless TLS admission");
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+    for (method, path, body) in [
+        ("POST", "/app/network/pair-start", br#"{}"#.as_slice()),
+        (
+            "GET",
+            "/app/network/api/pair/nonce-status?nonce=certless",
+            b"".as_slice(),
+        ),
+    ] {
+        let response = exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            method,
+            path,
+            &[],
+            body,
+        )
+        .await
+        .expect("carrier response");
+        assert_eq!(response.status, 403, "pairing peer cannot use owner route");
+    }
+    let response = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "POST",
+        "/app/network/pair?token=certless",
+        &[("content-type".into(), "application/json".into())],
+        br#"{"csr":"not a CSR","device_label":"phone"}"#,
+    )
+    .await
+    .expect("pair route reaches handler");
+    assert_eq!(
+        response.status,
+        400,
+        "pair route reached the ceremony rather than confinement: {}",
+        String::from_utf8_lossy(&response.body)
+    );
+    assert!(
+        tls_handshake(foreign_client_config(), port).await.is_err(),
+        "an open pairing window still refuses a foreign-CA client certificate"
+    );
+    handle.shutdown();
+
+    let no_file = Fixture::established(0);
+    let no_file_store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&no_file.root);
+    assert!(!no_file_store.path().exists(), "no nonce file fixture");
+    assert!(
+        no_file_store.snapshot().is_empty(),
+        "no nonce file reads empty"
+    );
+    assert!(
+        !solstone_core_sol_link::pairing::nonces::pairing_window_open(
+            &no_file_store,
+            pairing_now()
+        )
+    );
+    assert_certless_tls_refused(&no_file).await;
+
+    let used = Fixture::established(0);
+    let used_store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&used.root);
+    let used_now = pairing_now();
+    used_store
+        .add("used".into(), "phone".into(), "".into(), false, used_now)
+        .expect("used nonce writes");
+    assert!(
+        used_store
+            .consume("used", used_now)
+            .expect("used nonce consumes")
+            .expect("entry")
+            .used
+    );
+    assert!(
+        used_store.snapshot().iter().all(|entry| entry.used),
+        "all entries are used"
+    );
+    assert!(!solstone_core_sol_link::pairing::nonces::pairing_window_open(&used_store, used_now));
+    assert_certless_tls_refused(&used).await;
+
+    let expired = Fixture::established(0);
+    let expired_store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&expired.root);
+    let expired_now = pairing_now();
+    expired_store
+        .add(
+            "expired".into(),
+            "phone".into(),
+            "".into(),
+            false,
+            expired_now - 301,
+        )
+        .expect("expired nonce writes");
+    assert!(
+        expired_store
+            .snapshot()
+            .iter()
+            .all(|entry| entry.expires_at <= expired_now),
+        "all entries are expired"
+    );
+    assert!(
+        !solstone_core_sol_link::pairing::nonces::pairing_window_open(&expired_store, expired_now)
+    );
+    assert_certless_tls_refused(&expired).await;
+
+    let consumed_last = Fixture::established(0);
+    let consumed_store =
+        solstone_core_sol_link::pairing::nonces::NonceStore::new(&consumed_last.root);
+    let consumed_now = pairing_now();
+    consumed_store
+        .add(
+            "last".into(),
+            "phone".into(),
+            "".into(),
+            false,
+            consumed_now,
+        )
+        .expect("last nonce writes");
+    consumed_store
+        .consume("last", consumed_now)
+        .expect("last nonce consumes")
+        .expect("last entry");
+    assert!(
+        consumed_store
+            .peek("last")
+            .expect("last nonce remains observable")
+            .used,
+        "last nonce was just consumed"
+    );
+    assert!(
+        !solstone_core_sol_link::pairing::nonces::pairing_window_open(
+            &consumed_store,
+            consumed_now
+        )
+    );
+    assert_certless_tls_refused(&consumed_last).await;
+}
+
+#[tokio::test]
+async fn corrupt_nonce_store_closes_certless_admission_but_a_real_open_window_admits() {
+    let fixture = Fixture::established(0);
+    std::fs::create_dir_all(fixture.root.join("link")).expect("link directory");
+    std::fs::write(fixture.root.join("link/nonces.json"), b"not JSON")
+        .expect("corrupt nonce store");
+    let closed = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve closed window");
+    assert!(
+        tls_handshake(
+            test_client_config(&[&rustls::version::TLS13], None),
+            door_port(closed.door_outcome()),
+        )
+        .await
+        .is_err(),
+        "corrupt store is closed"
+    );
+    closed.shutdown();
+
+    open_pairing_window(&fixture, "opened-after-corruption");
+    let open = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve open window");
+    let mut carrier = live_certless_carrier(door_port(open.door_outcome()))
+        .await
+        .expect("open window admits certless TLS");
+    let mut decoder = FrameDecoder::new();
+    let response = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        1,
+        "POST",
+        "/app/network/pair?token=opened-after-corruption",
+        &[("content-type".into(), "application/json".into())],
+        br#"{"csr":"not a CSR","device_label":"phone"}"#,
+    )
+    .await
+    .expect("admitted carrier reaches pair route");
+    assert_eq!(response.status, 400);
+    open.shutdown();
+}
+
+#[tokio::test]
+async fn pairing_confinement_applies_to_real_certless_carriers_and_unmatched_paths() {
+    let fixture = Fixture::established(0);
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    // This probe is intentionally integration-test-only. It is a named route
+    // outside the pairing allow-list; the second probe below matches no route.
+    let door_base = router(fixture.root.clone()).merge(Router::new().route(
+        "/__door_test/pairing-probe",
+        post(|| async { StatusCode::OK }),
+    ));
+    let door_router = solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+        door_base,
+        fixture.root.clone(),
+        authorization,
+    );
+    let handle = bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        door_router,
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root);
+    let now = pairing_now();
+    store
+        .add("first".into(), "phone".into(), "".into(), false, now)
+        .expect("open window");
+    assert!(
+        solstone_core_sol_link::pairing::nonces::pairing_window_open(&store, now),
+        "open fixture"
+    );
+    let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
+        .await
+        .expect("open window admits certless carrier");
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+
+    store
+        .consume("first", now)
+        .expect("consume")
+        .expect("first nonce");
+    assert!(
+        store.peek("first").expect("used nonce remains").used,
+        "closed fixture is consumed"
+    );
+    assert!(
+        !solstone_core_sol_link::pairing::nonces::pairing_window_open(&store, now),
+        "window closes before route"
+    );
+    let closed = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "POST",
+        "/app/network/pair?token=first",
+        &[],
+        &[],
+    )
+    .await
+    .expect("closed response");
+    assert_eq!(closed.status, 403);
+    assert_eq!(closed.body, b"pairing window closed");
+
+    store
+        .add("second".into(), "phone".into(), "".into(), false, now)
+        .expect("reopen window");
+    assert!(
+        solstone_core_sol_link::pairing::nonces::pairing_window_open(&store, now),
+        "reopened fixture"
+    );
+    let tunnel_body = b"pairing tunnel may only use /app/network/pair".to_vec();
+    for path in [
+        "/app/network/%70air?token=second",
+        "/__door_test/pairing-probe",
+        "/__door_test/no-such-route",
+    ] {
+        let response = exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "POST",
+            path,
+            &[],
+            &[],
+        )
+        .await
+        .expect("confinement response");
+        assert_eq!(response.status, 403, "{path}");
+        assert_eq!(response.body, tunnel_body, "{path}");
+    }
+    assert_ne!(
+        closed.body, tunnel_body,
+        "window body remains distinct from tunnel body"
     );
     handle.shutdown();
 }
@@ -1639,9 +2051,17 @@ async fn ac10_revocation_closes_the_already_open_carrier_without_redial() {
     let mut decoder = FrameDecoder::new();
     let mut ids = FrameDialer::default();
     assert!(
-        exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-            .await
-            .is_ok()
+        exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "GET",
+            "/api/system/status",
+            &[],
+            &[]
+        )
+        .await
+        .is_ok()
     );
     fixture.remove_authorization(0);
     assert_eq!(
@@ -1650,9 +2070,17 @@ async fn ac10_revocation_closes_the_already_open_carrier_without_redial() {
     );
     let transitioned = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            if exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-                .await
-                .is_err()
+            if exchange_over_carrier(
+                &mut carrier,
+                &mut decoder,
+                ids.allocate(),
+                "GET",
+                "/api/system/status",
+                &[],
+                &[],
+            )
+            .await
+            .is_err()
             {
                 break;
             }
@@ -1677,18 +2105,34 @@ async fn ac10_transient_unreadable_posture_does_not_close_admitted_carrier() {
     let mut decoder = FrameDecoder::new();
     let mut ids = FrameDialer::default();
     assert!(
-        exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-            .await
-            .is_ok()
+        exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "GET",
+            "/api/system/status",
+            &[],
+            &[]
+        )
+        .await
+        .is_ok()
     );
     let authorization = fixture.root.join("link/authorized_clients.json");
     fixture.induce_unreadable_authorization();
     assert_eq!(ledger_posture(&fixture), AuthorizedClientsRead::Unreadable);
     tokio::time::sleep(Duration::from_millis(1_600)).await;
     assert!(
-        exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-            .await
-            .is_ok(),
+        exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "GET",
+            "/api/system/status",
+            &[],
+            &[]
+        )
+        .await
+        .is_ok(),
         "unreadable posture closed an admitted carrier"
     );
     std::fs::remove_dir(&authorization).expect("unreadable directory removes");
@@ -1699,9 +2143,17 @@ async fn ac10_transient_unreadable_posture_does_not_close_admitted_carrier() {
     );
     let transitioned = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            if exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
-                .await
-                .is_err()
+            if exchange_over_carrier(
+                &mut carrier,
+                &mut decoder,
+                ids.allocate(),
+                "GET",
+                "/api/system/status",
+                &[],
+                &[],
+            )
+            .await
+            .is_err()
             {
                 break;
             }

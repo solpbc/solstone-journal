@@ -92,6 +92,8 @@ mod assets;
 pub mod authorization_gate;
 #[cfg(feature = "host")]
 mod door;
+#[cfg(feature = "host")]
+mod network;
 pub mod refusal;
 pub mod registry;
 #[cfg(feature = "host")]
@@ -414,6 +416,12 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/api/shell", get(shell_api))
         .route("/api/system/status", get(system::status))
         .route("/sse/events", get(sse::events))
+        .route("/app/network/pair-start", post(network::pair_start))
+        .route(
+            "/app/network/api/pair/nonce-status",
+            get(network::nonce_status),
+        )
+        .route(spl_core::PAIR_PATH, post(network::pair))
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))
         .route("/app/speakers/workspace", get(speakers::workspace))
