@@ -38,6 +38,8 @@ const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
 const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
+const REQUIRED_NATIVE_TOKENS: &[&str] =
+    &["engage", "maintenance", "heartbeat", "maint", "backup"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -45,6 +47,24 @@ struct Probe {
     argv: &'static [&'static str],
     expected_exit: i32,
     stderr_anchor: Option<&'static [u8]>,
+}
+
+#[test]
+fn lane_au_owner_verbs_are_registered_for_native_dispatch() {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    let missing = REQUIRED_NATIVE_TOKENS
+        .iter()
+        .copied()
+        .filter(|token| !native_tokens.contains(token))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "required Lane AU native process tokens are missing: {missing:?}"
+    );
 }
 
 const SUPERVISOR_USAGE_ANCHOR: &[u8] =
