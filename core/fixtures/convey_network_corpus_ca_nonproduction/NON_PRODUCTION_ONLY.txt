@@ -1,0 +1,3 @@
+This freshly generated CA is test-fixture material for the convey-network
+corpus only. It is not a production identity, not a trust anchor, and must
+never be installed outside an ephemeral corpus journal.

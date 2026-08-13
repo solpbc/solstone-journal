@@ -1,0 +1,480 @@
+{
+  "capture_host": {
+    "machine": "x86_64",
+    "platform": "linux"
+  },
+  "established_deferred_native_responses": [
+    {
+      "path": "/app/network/",
+      "phase": "established"
+    },
+    {
+      "path": "/app/network/api/state",
+      "phase": "established"
+    },
+    {
+      "path": "/app/network/api/status",
+      "phase": "established"
+    },
+    {
+      "path": "/app/network/api/identity",
+      "phase": "established"
+    },
+    {
+      "path": "/app/network/api/private-link",
+      "phase": "established"
+    },
+    {
+      "path": "/app/network/local-endpoints",
+      "phase": "established"
+    }
+  ],
+  "generator": "scripts/convey_network_corpus.py",
+  "native_deviations": [],
+  "phases": {
+    "corrupt": [
+      {
+        "body": {
+          "byte_length": 183,
+          "digest": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+        },
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "normalized_fields": {
+          "body": "journal-root"
+        },
+        "path": "/app/network/",
+        "request_headers": {},
+        "status": 500
+      },
+      {
+        "body": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {
+          "detail": "journal-root"
+        },
+        "path": "/app/network/api/state",
+        "request_headers": {},
+        "status": 500
+      },
+      {
+        "body": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {
+          "detail": "journal-root"
+        },
+        "path": "/app/network/api/status",
+        "request_headers": {},
+        "status": 500
+      },
+      {
+        "body": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {
+          "detail": "journal-root"
+        },
+        "path": "/app/network/api/identity",
+        "request_headers": {},
+        "status": 500
+      },
+      {
+        "body": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {
+          "detail": "journal-root"
+        },
+        "path": "/app/network/api/private-link",
+        "request_headers": {},
+        "status": 500
+      },
+      {
+        "body": {
+          "byte_length": 183,
+          "digest": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+        },
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "normalized_fields": {
+          "body": "journal-root"
+        },
+        "path": "/app/network/local-endpoints",
+        "request_headers": {},
+        "status": 500
+      }
+    ],
+    "established": [
+      {
+        "body": {
+          "byte_length": 12199,
+          "digest": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/",
+        "request_headers": {},
+        "status": 200
+      },
+      {
+        "body": {
+          "link_copy": {
+            "APP_ONOFF_LABEL": "network",
+            "APP_ONOFF_SUB_BYO": "on \u2014 reachable over your own network",
+            "APP_ONOFF_SUB_HOSTED": "on \u2014 reachable from anywhere",
+            "BRANDLOCK_LINE": "your journal is always private, only yours.",
+            "CA_FP_LABEL": "fingerprint",
+            "CA_FP_NOTE": "the device checks this when it scans, so no one on your wifi can impersonate home.",
+            "CHECK_AGAIN_LABEL": "check again",
+            "DETAILS_DISCLOSURE": "verify this is really your home",
+            "DEVICE_ACTION_LABELS": {
+              "copy_fingerprint": "copy fingerprint",
+              "rename": "rename",
+              "unpair": "unpair"
+            },
+            "DEVICE_CLIENT_LABEL_META_FORMAT": "paired as {client_label}",
+            "DEVICE_EMPTY_BODY": "pair a device to read your journal on the go.",
+            "DEVICE_EMPTY_TITLE": "no devices connected yet",
+            "DEVICE_GROUP_LABELS": {
+              "observers": "observers",
+              "peers": "peers"
+            },
+            "DEVICE_LABEL_DEFAULT_FORMAT": "device \u2014 added {month} {day}",
+            "DEVICE_LABEL_FIELD_LABEL": "name this device",
+            "DEVICE_LABEL_PLACEHOLDER": "e.g. my iPhone",
+            "DEVICE_LABEL_PLACEHOLDER_COMPUTER": "e.g. my laptop",
+            "DEVICE_PAIR_CTA": "pair a device",
+            "DEVICE_SECTION_TITLE": "your devices",
+            "DEVICE_STATUS_LABELS": {
+              "offline": "offline",
+              "online": "online",
+              "recent": "recently seen"
+            },
+            "EXPIRED_BUTTON": "this code expired \u2014 show a new one",
+            "FINGERPRINT_COPY_FAIL_TOAST": "couldn't copy fingerprint",
+            "FINGERPRINT_COPY_SUCCESS_TOAST": "fingerprint copied",
+            "HERO_BODY": "your journal lives here, on this device. to read it from your phone or laptop, that device needs a way to reach it. right now it can be reached on your home network.",
+            "HERO_HOW_REACH_LABEL": "how reach works \u25b8",
+            "HERO_TITLE": "let's connect a device",
+            "HOME_CANDIDATES_ERROR": "couldn't check home addresses",
+            "IDENTITY_HEADER_LABEL": "this is your journal",
+            "IDENTITY_ID_COPY_FAIL_TOAST": "couldn't copy journal id",
+            "IDENTITY_ID_COPY_LABEL": "copy",
+            "IDENTITY_ID_COPY_SUCCESS_TOAST": "journal id copied",
+            "IDENTITY_ID_LABEL": "journal id",
+            "MODAL_TITLE": "pair a device",
+            "MODE_BYO_BODY_NOTE": "your journal stays on this device. your other devices connect straight to it \u2014 nothing routes through sol pbc.",
+            "MODE_BYO_DESC": "your devices reach your journal over your own network \u2014 same wifi, or your own VPN. the default.",
+            "MODE_BYO_DISCLOSURE": "sol pbc is never in the path",
+            "MODE_BYO_NAME": "your own",
+            "MODE_HOSTED_DESC": "reach your journal from anywhere, through a relay sol pbc runs for you.",
+            "MODE_HOSTED_DISCLOSURE": "operated by sol pbc",
+            "MODE_HOSTED_NAME": "private network",
+            "MODE_HOSTED_SETUP_CTA": "set up the relay \u2192",
+            "MODE_HOSTED_SETUP_NOTE": "your journal stays on this device; the relay only passes along encrypted traffic it can't read.",
+            "PAIR_ERROR_BODY": "can't start pairing \u2014 your journal isn't reachable on a network address yet.",
+            "PAIR_LINK_COPY_FAIL_TOAST": "couldn't copy pairing link",
+            "PAIR_LINK_COPY_LABEL": "copy link",
+            "PAIR_LINK_COPY_SUCCESS_TOAST": "pairing link copied",
+            "PAIR_LINK_FIELD_LABEL": "pairing link",
+            "PAIR_LINK_HOST": "go.solstone.app",
+            "PAIR_LINK_PATH": "/p",
+            "PAIR_NETWORK_LINE": "this device needs to be on your network (or your VPN) to pair. expires in 5:00.",
+            "PRESENTATION_COMPUTER_LABEL": "computer",
+            "PRESENTATION_GLASSES_LABEL": "glasses",
+            "PRESENTATION_PHONE_LABEL": "phone",
+            "PRESENTATION_SELECTOR_LABEL": "pairing display",
+            "PRIVATE_LINK_DISABLE_CTA": "turn off your private network",
+            "PRIVATE_LINK_DISABLE_FAILED": "couldn't turn off your private network \u2014 it's still on. try again.",
+            "PRIVATE_LINK_DISABLE_SUCCESS": "your private network is off. devices connect directly again.",
+            "PRIVATE_LINK_NEEDS_REPAIR": "your private network needs setting up again.",
+            "PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA": "set up a subscription",
+            "PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL": "your consent is saved. your private network needs an active subscription before it can turn on; set one up, then enable it again.",
+            "PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE": "your private network needs a subscription",
+            "PRIVATE_LINK_PORTAL_CTA": "continue to approve \u2192",
+            "PRIVATE_LINK_RETRY_CTA": "try again",
+            "PRIVATE_LINK_SETTING_UP": "setting up your private network\u2026",
+            "PRIVATE_LINK_SETUP_FAILED": "couldn't finish setting up your private network.",
+            "PRIVATE_LINK_SETUP_SUCCESS": "your private network is on. your devices can reach home from anywhere.",
+            "REACH_HOME_ADDRESS_LABEL": "home address",
+            "REACH_HOME_CANDIDATES_LABEL": "choose a home address",
+            "REACH_HOME_CANDIDATES_REFRESH_FAIL": "saved, but couldn't refresh. showing the last confirmed address.",
+            "REACH_HOME_CANDIDATES_UNAVAILABLE": "couldn't check home addresses. you can still type one below.",
+            "REACH_HOST_ADDRESS_APPLY_LABEL": "apply",
+            "REACH_HOST_ADDRESS_CLEAR_LABEL": "clear",
+            "REACH_HOST_ADDRESS_DISCLOSURE": "\u25b8 use a different address",
+            "REACH_HOST_ADDRESS_PLACEHOLDER": "192.168.1.44:7657",
+            "REACH_SELECTOR_HINT": "your choice \u2014 switch anytime. either way, what syncs is end-to-end encrypted and only your devices can read it.",
+            "REACH_SELECTOR_TITLE": "how your devices reach your journal",
+            "REACH_SPL_ACTIVE_BODY": "your devices reach home over the internet, wherever you are.",
+            "REACH_SPL_CONNECTING_NOTE": "your home is connecting. this is usually quick.",
+            "REACH_SPL_MANAGE_LABEL": "manage your private network at services.solstone.app \u2192",
+            "REACH_SPL_TRUST_LINE": "the connection is end-to-end encrypted \u2014 sol pbc and cloudflare can see that your device and home met, and nothing inside.",
+            "REACH_VPN_CANDIDATE_LABEL": "VPN address",
+            "REACH_VPN_USE_THIS": "use this",
+            "RECENT_NETWORK_LABEL": "on your network",
+            "RECENT_NETWORK_LABEL_ANYWHERE": "from anywhere",
+            "RECENT_NETWORK_LABEL_HOME": "at home",
+            "RECENT_SECTION_TITLE": "recently paired",
+            "RECENT_SEE_ALL_LABEL": "see all \u25b8",
+            "RECENT_SHOW_LESS_LABEL": "show less \u25be",
+            "REFRESH_FAIL_NOTICE": "showing the last state we saw",
+            "RENAME_FAIL_TOAST": "couldn't rename device",
+            "STATUS_SENTENCES": {
+              "checking": "checking your journal\u2026",
+              "direct_online": "your journal is reachable on your network.",
+              "direct_online_vpn": "your journal is reachable on your network and over your VPN.",
+              "lan_unreachable": "your journal is running, but devices can't reach it to pair yet.",
+              "offline": "can't reach your journal right now.",
+              "reconnecting": "reconnecting to your journal\u2026",
+              "spl_finishing_setup": "finishing setup with your private network\u2026",
+              "spl_offline": "your journal isn't reaching the network right now \u2014 devices can't connect from away. on your home wifi they still work.",
+              "spl_online": "your journal is reachable from anywhere."
+            },
+            "STEP_1": "open the camera on the device you're adding",
+            "STEP_2": "point it at this code",
+            "STEP_3": "tap the link to open solstone",
+            "SUCCESS_DONE": "done",
+            "SUCCESS_HEADING": "\"{label}\" is now paired with your journal",
+            "SUCCESS_REMOVE_LABEL": "that wasn't me \u2014 remove",
+            "SUCCESS_SUBHEAD": "{short_fp} \u00b7 paired just now",
+            "SUCCESS_VERIFY_NOTE": "check the device you just paired \u2014 this fingerprint should match what it shows. didn't do this?",
+            "SUCCESS_VERIFY_NOTE_ANYWHERE": "this device can now reach home from anywhere. check it now \u2014 this fingerprint should match what it shows. didn't do this?",
+            "UNPAIR_AMBIGUOUS_LABEL_CANDIDATE_FORMAT": "- paired {paired_at}, fingerprint {short_fp}",
+            "UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT": "  sol call link unpair {fingerprint}",
+            "UNPAIR_AMBIGUOUS_LABEL_HEADER_FORMAT": "more than one device is named '{label}'. pick the one you mean and run its command:",
+            "UNPAIR_BODY": "this device loses access to your journal immediately and can't reconnect until you pair it again. anything stored on the device stays on the device.",
+            "UNPAIR_FAIL_TOAST": "couldn't unpair this device",
+            "UNPAIR_SUCCESS_TOAST": "unpaired",
+            "UNPAIR_TITLE_FORMAT": "unpair '{label}'?",
+            "WINDOW_CLOSED_BUTTON": "pairing window closed \u2014 open a new one"
+          },
+          "posture": "direct"
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/state",
+        "request_headers": {},
+        "status": 200
+      },
+      {
+        "body": {
+          "ca_fingerprint": "25bb8ab1168504d0eb25881340ead082e256432bcde98e478dfd365263eecc5c",
+          "enrolled": false,
+          "home_address": null,
+          "home_candidates": "<HOST_DEPENDENT>",
+          "home_candidates_error": null,
+          "home_candidates_state": "ready",
+          "home_label": "Network Corpus",
+          "instance_id": "c35770d6-3162-8e63-95b0-a0d5918f0a05",
+          "lan_accessible": "<HOST_DEPENDENT>",
+          "last_link_event_at": null,
+          "last_relay_listener_ack_at": null,
+          "last_relay_listener_ack_generation": null,
+          "last_relay_tunnel_error": null,
+          "last_relay_tunnel_error_at": null,
+          "last_successful_relay_tunnel_at": null,
+          "posture": "direct",
+          "reachability": "<HOST_DEPENDENT>",
+          "relay_listen_generation": null,
+          "relay_state": "not-enrolled",
+          "relay_url": "https://link.solstone.app",
+          "vpn": {
+            "active": null,
+            "candidates": []
+          }
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {
+          "home_candidates": "host",
+          "lan_accessible": "host",
+          "reachability": "host"
+        },
+        "path": "/app/network/api/status",
+        "request_headers": {},
+        "status": 200
+      },
+      {
+        "body": {
+          "committed": true,
+          "instance_id": "c35770d6-3162-8e63-95b0-a0d5918f0a05",
+          "mark": {
+            "icon1": {
+              "color": {
+                "hex": "#94a3b8",
+                "name": "slate"
+              },
+              "name": "ship",
+              "rot": 0,
+              "svg": "<path d=\"M12 10.189V14\" /> <path d=\"M12 2v3\" /> <path d=\"M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6\" /> <path d=\"M19.38 20A11.6 11.6 0 0 0 21 14l-8.188-3.639a2 2 0 0 0-1.624 0L3 14a11.6 11.6 0 0 0 2.81 7.76\" /> <path d=\"M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1\" />"
+            },
+            "icon2": {
+              "color": {
+                "hex": "#f59e0b",
+                "name": "amber"
+              },
+              "name": "rocket",
+              "rot": 0,
+              "svg": "<path d=\"M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5\" /> <path d=\"M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09\" /> <path d=\"M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z\" /> <path d=\"M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05\" />"
+            },
+            "words": [
+              "dubbed",
+              "remix"
+            ]
+          }
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/identity",
+        "request_headers": {},
+        "status": 200
+      },
+      {
+        "body": {
+          "actions": {
+            "disable": false,
+            "enable": true
+          },
+          "enrolled": false,
+          "operation": null,
+          "posture": "direct",
+          "relay_url": "https://link.solstone.app",
+          "service": "spl",
+          "state": "not_enabled",
+          "success": true
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/private-link",
+        "request_headers": {},
+        "status": 200
+      },
+      {
+        "body": {
+          "endpoints": [],
+          "generated_at": "<CAPTURE_CLOCK>",
+          "ttl_s": 3600,
+          "v": 1
+        },
+        "content_type": "application/json",
+        "method": "GET",
+        "normalized_fields": {
+          "generated_at": "capture-clock"
+        },
+        "path": "/app/network/local-endpoints",
+        "request_headers": {},
+        "status": 200
+      }
+    ],
+    "unestablished": [
+      {
+        "body": {
+          "byte_length": 197,
+          "digest": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/",
+        "request_headers": {},
+        "status": 302
+      },
+      {
+        "body": {
+          "byte_length": 197,
+          "digest": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/state",
+        "request_headers": {},
+        "status": 302
+      },
+      {
+        "body": {
+          "byte_length": 197,
+          "digest": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/status",
+        "request_headers": {},
+        "status": 302
+      },
+      {
+        "body": {
+          "byte_length": 197,
+          "digest": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/identity",
+        "request_headers": {},
+        "status": 302
+      },
+      {
+        "body": {
+          "byte_length": 197,
+          "digest": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/api/private-link",
+        "request_headers": {},
+        "status": 302
+      },
+      {
+        "body": {
+          "byte_length": 197,
+          "digest": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "normalized_fields": {},
+        "path": "/app/network/local-endpoints",
+        "request_headers": {},
+        "status": 302
+      }
+    ]
+  },
+  "placeholders": {
+    "capture_clock": "<CAPTURE_CLOCK>",
+    "host": "<HOST_DEPENDENT>",
+    "journal_root": "<JOURNAL_ROOT>"
+  },
+  "rev": "c534954d8c363ca957766c3d358fa49dbb49603d",
+  "schema": "solstone-convey-network-corpus-v1"
+}
