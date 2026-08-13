@@ -30,6 +30,17 @@ use tokio::sync::watch;
 
 use crate::ledger::{AuthorizationLedger, AuthorizedClientsRead};
 
+static AUTHORIZATION_PUBLICATION_TICKS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Cumulative count of refresh-loop ticks that have fired, process-wide.
+/// Debug builds only advance it; assert deltas, never an absolute value —
+/// it accumulates across every test in a `--test-threads=1` binary and is
+/// shared by every live `spawn_authorization_refresh` publisher.
+pub fn authorization_publication_ticks() -> u64 {
+    AUTHORIZATION_PUBLICATION_TICKS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The complete, read-only authorization posture published to the device door.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeviceDoorAuthorization(AuthorizedClientsRead);
@@ -71,6 +82,8 @@ pub fn spawn_authorization_refresh(
         ticker.tick().await;
         loop {
             ticker.tick().await;
+            #[cfg(debug_assertions)]
+            AUTHORIZATION_PUBLICATION_TICKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             refresh_once(&mut ledger, &sender);
         }
     })
