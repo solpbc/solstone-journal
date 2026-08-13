@@ -175,7 +175,7 @@ mod tests {
             "record_type":"synthetic_health_type",
             "dedupe_key":"synthetic-health-key",
             "start_date":"2024-01-05T01:00:00Z",
-            "day":"2024-01-05",
+            "day":"20240105",
             "value":42
         })
         .as_object()
@@ -185,7 +185,8 @@ mod tests {
 
     fn journal(entry_count: Option<u64>, aggregate: BodyAggregateSeed) -> BodyJournalSeed {
         BodyJournalSeed {
-            dates: BTreeSet::from(["2024-01-05".to_owned()]),
+            dates: BTreeSet::from(["20240105".to_owned()]),
+            day_summaries: BTreeMap::new(),
             bundles: vec![BodySeedBundle {
                 import_id: "synthetic-health-bundle".to_owned(),
                 source_family: "apple_health".to_owned(),

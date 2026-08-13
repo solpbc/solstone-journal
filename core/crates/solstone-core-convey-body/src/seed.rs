@@ -11,6 +11,8 @@ use rusqlite::Connection;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::{SOURCE_APPLE_HEALTH, health_card_stream};
+
 const SCHEMA: &str = "
 CREATE TABLE health_dedupe (
     dedupe_key TEXT PRIMARY KEY,
@@ -38,6 +40,8 @@ ON health_dedupe (record_type, start_time, end_time);
 pub struct BodyJournalSeed {
     /// Explicit journal date directories, which need not form a range.
     pub dates: BTreeSet<String>,
+    /// Day-summary transcript content keyed by its `YYYYMMDD` chronicle day.
+    pub day_summaries: BTreeMap<String, String>,
     /// Explicit import bundle specifications.
     pub bundles: Vec<BodySeedBundle>,
     /// Whether the health aggregate is directly written.
@@ -102,8 +106,8 @@ pub enum BodySeedError {
     Json(serde_json::Error),
     /// SQLite aggregate write failure.
     Sqlite(rusqlite::Error),
-    /// A seed date was not a plain `YYYY-MM-DD` value.
-    InvalidDate { value: String },
+    /// A seed day was not a plain `YYYYMMDD` value.
+    InvalidDay { value: String },
     /// A bundle import ID was not a plain path component.
     InvalidImportId { value: String },
     /// A normalized shard name was not a plain path component.
@@ -134,8 +138,8 @@ impl fmt::Display for BodySeedError {
             Self::Sqlite(source) => {
                 write!(formatter, "could not seed synthetic aggregate: {source}")
             }
-            Self::InvalidDate { value } => {
-                write!(formatter, "synthetic seed date must be YYYY-MM-DD: {value}")
+            Self::InvalidDay { value } => {
+                write!(formatter, "synthetic seed day must be YYYYMMDD: {value}")
             }
             Self::InvalidImportId { value } => {
                 write!(
@@ -176,7 +180,7 @@ impl std::error::Error for BodySeedError {
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
             Self::Sqlite(source) => Some(source),
-            Self::InvalidDate { .. }
+            Self::InvalidDay { .. }
             | Self::InvalidImportId { .. }
             | Self::InvalidShardName { .. }
             | Self::AggregateAlreadyExists { .. }
@@ -194,6 +198,17 @@ pub fn seed_body_journal(
     let rows_by_start_date_day = prevalidate_seed(root, seed)?;
     for date in &seed.dates {
         create_dir(root.join("chronicle").join(date))?;
+    }
+    let stream = health_card_stream(SOURCE_APPLE_HEALTH)
+        .expect("Apple Health has a day-summary card stream");
+    for (day, transcript) in &seed.day_summaries {
+        let summary = root
+            .join("chronicle")
+            .join(day)
+            .join(stream)
+            .join(SYNTHETIC_DAY_SUMMARY_SEGMENT);
+        create_dir(summary.clone())?;
+        write_text(summary.join(DAY_SUMMARY_FILE), transcript)?;
     }
     let imports = root.join("imports");
     create_dir(imports.clone())?;
@@ -219,10 +234,15 @@ fn prevalidate_seed(
     seed: &BodyJournalSeed,
 ) -> Result<BTreeMap<String, u64>, BodySeedError> {
     for date in &seed.dates {
-        if !is_date(date) {
-            return Err(BodySeedError::InvalidDate {
+        if !is_day_key(date) {
+            return Err(BodySeedError::InvalidDay {
                 value: date.clone(),
             });
+        }
+    }
+    for day in seed.day_summaries.keys() {
+        if !is_day_key(day) {
+            return Err(BodySeedError::InvalidDay { value: day.clone() });
         }
     }
     let mut rows_by_start_date_day = BTreeMap::new();
@@ -385,15 +405,8 @@ fn row_time(row: &Map<String, Value>) -> Option<&str> {
         .find_map(|key| string(row, key))
 }
 
-fn is_date(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 10
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+fn is_day_key(value: &str) -> bool {
+    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn is_plain_component(value: &str) -> bool {
@@ -417,6 +430,9 @@ fn write_json(path: PathBuf, value: &Value) -> Result<(), BodySeedError> {
     let contents = serde_json::to_string(value).map_err(BodySeedError::Json)?;
     write_text(path, &contents)
 }
+
+const SYNTHETIC_DAY_SUMMARY_SEGMENT: &str = "000000_300";
+const DAY_SUMMARY_FILE: &str = "day_summary_transcript.md";
 
 #[cfg(test)]
 mod tests {
@@ -478,6 +494,7 @@ mod tests {
                 .iter()
                 .map(|date| (*date).to_owned())
                 .collect::<BTreeSet<_>>(),
+            day_summaries: BTreeMap::new(),
             bundles: vec![BodySeedBundle {
                 import_id: "synthetic-apple-a".to_owned(),
                 source_family: "apple_health".to_owned(),
@@ -503,7 +520,7 @@ mod tests {
         let temporary = TempDir::new();
         let report = seed_body_journal(
             temporary.path(),
-            &seed(&["2024-01-03", "2024-01-05"], BodyAggregateSeed::Direct),
+            &seed(&["20240103", "20240105"], BodyAggregateSeed::Direct),
         )
         .unwrap();
         let stats = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
@@ -516,11 +533,11 @@ mod tests {
         let direct = TempDir::new();
         seed_body_journal(
             direct.path(),
-            &seed(&["2024-01-03"], BodyAggregateSeed::Direct),
+            &seed(&["20240103"], BodyAggregateSeed::Direct),
         )
         .unwrap();
         let rebuilt = TempDir::new();
-        let mut rebuild_seed = seed(&["2024-01-03"], BodyAggregateSeed::Absent);
+        let mut rebuild_seed = seed(&["20240103"], BodyAggregateSeed::Absent);
         rebuild_seed.bundles[0].manifest = BodySeedManifest::Absent;
         seed_body_journal(rebuilt.path(), &rebuild_seed).unwrap();
         solstone_core_body_rebuild::rebuild_body_store(rebuilt.path()).unwrap();
@@ -559,11 +576,11 @@ mod tests {
         let second = TempDir::new();
         let first_report = seed_body_journal(
             first.path(),
-            &seed(&["2024-01-03"], BodyAggregateSeed::Direct),
+            &seed(&["20240103"], BodyAggregateSeed::Direct),
         )
         .unwrap();
         let mut second_seed = seed(
-            &["2023-12-30", "2024-01-03", "2024-02-15"],
+            &["20231230", "20240103", "20240215"],
             BodyAggregateSeed::Direct,
         );
         second_seed.bundles[0].import_id = "synthetic-apple-b".to_owned();
@@ -582,7 +599,7 @@ mod tests {
         let temporary = TempDir::new();
         let report = seed_body_journal(
             temporary.path(),
-            &seed(&["2024-01-03"], BodyAggregateSeed::Absent),
+            &seed(&["20240103"], BodyAggregateSeed::Absent),
         )
         .unwrap();
         assert_eq!(
@@ -600,15 +617,15 @@ mod tests {
     #[test]
     fn rejects_unsafe_paths_before_writing_the_journal() {
         let temporary = TempDir::new();
-        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        let mut invalid = seed(&["20240103"], BodyAggregateSeed::Direct);
         invalid.dates = BTreeSet::from(["../outside".to_owned()]);
         assert!(matches!(
             seed_body_journal(temporary.path(), &invalid),
-            Err(BodySeedError::InvalidDate { value }) if value == "../outside"
+            Err(BodySeedError::InvalidDay { value }) if value == "../outside"
         ));
         assert!(!temporary.path().join("imports").exists());
 
-        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        let mut invalid = seed(&["20240103"], BodyAggregateSeed::Direct);
         invalid.bundles[0].import_id = "../outside".to_owned();
         assert!(matches!(
             seed_body_journal(temporary.path(), &invalid),
@@ -616,7 +633,7 @@ mod tests {
         ));
         assert!(!temporary.path().join("imports").exists());
 
-        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        let mut invalid = seed(&["20240103"], BodyAggregateSeed::Direct);
         let rows = invalid.bundles[0].shards.remove("2024-01").unwrap();
         invalid.bundles[0]
             .shards
@@ -631,7 +648,7 @@ mod tests {
     #[test]
     fn invalid_direct_rows_and_existing_aggregate_fail_before_writes() {
         let temporary = TempDir::new();
-        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        let mut invalid = seed(&["20240103"], BodyAggregateSeed::Direct);
         invalid.bundles[0].shards.get_mut("2024-01").unwrap()[0].remove("dedupe_key");
         assert!(matches!(
             seed_body_journal(temporary.path(), &invalid),
@@ -650,7 +667,7 @@ mod tests {
             "real-journal-sentinel",
         )
         .unwrap();
-        let valid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        let valid = seed(&["20240103"], BodyAggregateSeed::Direct);
         assert!(matches!(
             seed_body_journal(temporary.path(), &valid),
             Err(BodySeedError::AggregateAlreadyExists { .. })
@@ -658,6 +675,20 @@ mod tests {
         assert_eq!(
             fs::read_to_string(imports.join("health-dedupe.sqlite")).unwrap(),
             "real-journal-sentinel"
+        );
+    }
+
+    #[test]
+    fn seeded_day_summary_is_readable_through_chronicle_reader() {
+        let temporary = TempDir::new();
+        let mut fixture = seed(&["20240103"], BodyAggregateSeed::Absent);
+        fixture
+            .day_summaries
+            .insert("20240103".to_owned(), "seeded summary".to_owned());
+        seed_body_journal(temporary.path(), &fixture).unwrap();
+        assert_eq!(
+            crate::find_day_summary(temporary.path(), "20240103").unwrap(),
+            Some("seeded summary".to_owned())
         );
     }
 }

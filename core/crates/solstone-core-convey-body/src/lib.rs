@@ -4,16 +4,21 @@
 //! Read-only body-store inventory, shard, aggregate, and health primitives.
 
 mod aggregate;
+mod chronicle;
 mod health;
 mod inventory;
 mod month;
+mod presentation;
 mod router;
 mod seed;
 mod shard;
+mod sleep;
+mod trends;
 
 pub use aggregate::{
     HealthDedupeStats, HealthDedupeStatsError, HealthDedupeTimeRange, read_health_dedupe_stats,
 };
+pub use chronicle::{ChronicleReadError, find_day_summary, has_chronicle_day};
 pub use health::{
     BodyStoreHealthError, BodyStoreHealthReason, BodyStoreHealthVerdict, read_body_store_health,
 };
@@ -22,13 +27,27 @@ pub use inventory::{
     ManifestEntryCount, ManifestReadError, read_body_import_inventory,
 };
 pub use month::{MonthReader, read_normalized_rows};
+pub use presentation::{
+    FRIENDLY_CONTRIBUTOR_NAMES, FRIENDLY_TYPE_NAMES, HEALTH_CARD_STREAM_BY_FAMILY,
+    HealthCardStreamError, SOURCE_APPLE_HEALTH, SOURCE_DEXCOM_CLARITY, SOURCE_OURA,
+    SOURCE_OURA_API, display_number, display_value, friendly_contributor_name, friendly_type_name,
+    friendly_unit_label, health_card_stream,
+};
 pub use router::api_router;
 pub use seed::{
     BodyAggregateSeed, BodyJournalSeed, BodySeedBundle, BodySeedError, BodySeedManifest,
     BodySeedReport, seed_body_journal,
 };
 pub use shard::{NormalizedRow, NormalizedValue, ShardReadError, read_normalized_shard};
+pub use sleep::{
+    DaySleep, SLEEP_SESSION_GAP_MINUTES, SleepInterval, SleepStagedInterval, merge_sleep_sessions,
+    pick_day_sleep, pick_main_session, sleep_stage_kind,
+};
 pub use solstone_core_body_source::{BodyValue, FieldState, ValueState};
+pub use trends::{
+    TrendAnnotation, TrendCoverage, TrendSignal, TrendsCacheError, TrendsPayload, TrendsSignature,
+    read_trends_cache, replace_trends_cache, typical_by_signal,
+};
 
 #[cfg(test)]
 mod tests {

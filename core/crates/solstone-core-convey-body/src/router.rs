@@ -191,6 +191,7 @@ mod tests {
             root,
             &BodyJournalSeed {
                 dates: BTreeSet::new(),
+                day_summaries: BTreeMap::new(),
                 bundles: vec![BodySeedBundle {
                     import_id: "synthetic-body".to_owned(),
                     source_family: "apple_health".to_owned(),
