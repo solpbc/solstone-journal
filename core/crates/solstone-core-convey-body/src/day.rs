@@ -19,8 +19,8 @@ use crate::router::{StoreError, ready_stats, unavailable_response};
 use crate::{
     MonthReader, NormalizedRow, SLEEP_SESSION_GAP_MINUTES, SleepStagedInterval, display_number,
     display_value, find_day_summary, friendly_contributor_name, friendly_type_name,
-    friendly_unit_label, has_chronicle_day, pick_day_sleep, read_trends_cache, trends_db_path,
-    trends_signature, typical_by_signal,
+    friendly_unit_label, has_chronicle_day, merge_sleep_sessions, pick_day_sleep,
+    pick_main_session, read_trends_cache, trends_db_path, trends_signature, typical_by_signal,
 };
 
 const APPLE: &str = "apple_health";
@@ -37,6 +37,19 @@ const OURA_CARDIOVASCULAR_AGE: &str = "oura.daily_cardiovascular_age";
 const OURA_SESSION: &str = "oura.session";
 const OURA_TAG: &str = "oura.enhanced_tag";
 const HEART_CURVE_MIN_READINGS: usize = 12;
+const BP_SYSTOLIC: &str = "BloodPressureSystolic";
+const BP_DIASTOLIC: &str = "BloodPressureDiastolic";
+const BP_READING_LIMIT: usize = 6;
+const RHYTHM_IRREGULAR: &str = "IrregularHeartRhythmEvent";
+const RHYTHM_HIGH: &str = "HighHeartRateEvent";
+const RHYTHM_LOW: &str = "LowHeartRateEvent";
+const AFIB_BURDEN: &str = "AtrialFibrillationBurden";
+const RUNNING_POWER: &str = "RunningPower";
+const RUNNING_SPEED: &str = "RunningSpeed";
+const RUNNING_STRIDE_LENGTH: &str = "RunningStrideLength";
+const RUNNING_GROUND_CONTACT_TIME: &str = "RunningGroundContactTime";
+const RUNNING_VERTICAL_OSCILLATION: &str = "RunningVerticalOscillation";
+const CURVE_SEGMENT_GAP_MINUTES: f64 = 45.0;
 const SVG_HEIGHT: f64 = 260.0;
 const SVG_WIDTH: f64 = 1440.0;
 const SLEEP_AXIS_START_HOUR: i64 = 18;
@@ -438,6 +451,9 @@ pub(crate) fn source_label(row: &NormalizedRow) -> String {
         })
         .to_owned()
 }
+fn is_ring_source_label(label: &str) -> bool {
+    label.to_lowercase().contains("oura")
+}
 fn source_via(row: &NormalizedRow) -> String {
     match string_field(&row.source_family) {
         Some(OURA_API) => "Oura API".to_owned(),
@@ -459,6 +475,57 @@ fn source_via(row: &NormalizedRow) -> String {
 fn unit(row: &NormalizedRow) -> Option<&str> {
     string_field(&row.unit).filter(|value| !value.is_empty())
 }
+fn group_by_type<'a>(rows: &[&'a NormalizedRow]) -> BTreeMap<&'a str, Vec<&'a NormalizedRow>> {
+    let mut grouped = BTreeMap::new();
+    for row in rows {
+        if let Some(record_type) = string_field(&row.record_type) {
+            grouped
+                .entry(record_type)
+                .or_insert_with(Vec::new)
+                .push(*row);
+        }
+    }
+    grouped
+}
+fn single_unit(rows: &[&NormalizedRow]) -> (Option<String>, bool) {
+    let units = rows
+        .iter()
+        .filter_map(|row| unit(row))
+        .collect::<BTreeSet<_>>();
+    if units.len() > 1 {
+        return (None, false);
+    }
+    (units.iter().next().map(|unit| (*unit).to_owned()), true)
+}
+fn display_range_line(record_type: &str, low: f64, high: f64, unit: Option<&str>) -> String {
+    let low_label = display_number(record_type, low, unit);
+    let high_label = display_number(record_type, high, unit);
+    let span = if low_label == high_label {
+        low_label
+    } else {
+        format!("{low_label}–{high_label}")
+    };
+    match friendly_unit_label(record_type, unit).as_deref() {
+        None | Some("") => span,
+        Some("%") => format!("{span}%"),
+        Some(label) => format!("{span} {label}"),
+    }
+}
+fn pace_seconds_per_km(unit: &str) -> Option<f64> {
+    match unit {
+        "m/s" => Some(1000.0),
+        "km/h" | "km/hr" => Some(3600.0),
+        _ => None,
+    }
+}
+fn pace_label(speed: f64, unit: &str) -> Option<String> {
+    let scale = pace_seconds_per_km(unit)?;
+    if speed <= 0.0 {
+        return None;
+    }
+    let total = (scale / speed).round() as i64;
+    Some(format!("{}:{:02}", total / 60, total % 60))
+}
 pub(crate) fn family(record_type: &str) -> &'static str {
     if record_type.contains("BloodGlucose") || record_type.ends_with("Glucose") {
         "Glucose"
@@ -478,6 +545,7 @@ pub(crate) fn family(record_type: &str) -> &'static str {
         || record_type.contains("Energy")
         || record_type.contains("Distance")
         || record_type.contains("Exercise")
+        || record_type.contains("Running")
         || record_type.contains("Workout")
         || record_type == OURA_ACTIVITY
         || record_type == OURA_WORKOUT
@@ -660,7 +728,7 @@ fn sleep_analysis(
         "duration":sleep.main.map(|main| view(main)["duration"].clone()),
         "asleep_duration": if sleep.has_stage_detail { sleep.asleep_minutes.map(duration) } else { None },
         "in_bed_duration":sleep.in_bed_minutes.map(duration), "has_stage_detail":sleep.has_stage_detail,
-        "naps":naps.iter().map(|nap|view(*nap)).collect::<Vec<_>>(), "comparison_line": Value::Null,
+        "naps":naps.iter().map(|nap|view(*nap)).collect::<Vec<_>>(), "comparison_line":sleep_comparison_line(&by_source, target),
         "bar":{"segments":segments,"ticks":[{"x":360,"label":"12 AM"},{"x":720,"label":"6 AM"},{"x":1080,"label":"12 PM"}]},
         "score_line":score.map(|value|format!("Sleep score {} · Oura's score",number(value))),
         "score_contributors":contributors(rows.iter().find(|row| string_field(&row.record_type)==Some(OURA_SLEEP_SCORE))),
@@ -678,6 +746,43 @@ fn sleep_analysis(
         payload["asleep_typical_label"] = json!(format!("your 90-day median {}", duration(*value)));
     }
     Some(payload)
+}
+
+fn sleep_comparison_line(
+    by_source: &BTreeMap<String, Vec<SleepStagedInterval>>,
+    target: NaiveDate,
+) -> Option<String> {
+    let mut spans = BTreeMap::new();
+    for (source, intervals) in by_source {
+        let sessions = merge_sleep_sessions(
+            intervals.iter().map(|(start, end, _)| (*start, *end)),
+            SLEEP_SESSION_GAP_MINUTES,
+        );
+        if let Some((start, end)) = pick_main_session(sessions, target).0 {
+            spans.insert(source.as_str(), (end - start).num_seconds() as f64 / 60.0);
+        }
+    }
+    let ring = spans
+        .keys()
+        .filter(|source| is_ring_source_label(source))
+        .copied()
+        .collect::<Vec<_>>();
+    let others = spans
+        .keys()
+        .filter(|source| !is_ring_source_label(source))
+        .copied()
+        .collect::<Vec<_>>();
+    if ring.is_empty() || others.is_empty() {
+        return None;
+    }
+    Some(
+        others
+            .into_iter()
+            .chain(ring)
+            .map(|source| format!("{source} saw {}", duration(spans[source])))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
 }
 
 fn glucose_rows(rows: &[NormalizedRow]) -> impl Iterator<Item = &NormalizedRow> {
@@ -772,10 +877,69 @@ fn activity_analysis(rows: &[NormalizedRow]) -> Option<Value> {
             .collect::<Vec<_>>()
             .join(" · ")
     });
-    let counters=activity.iter().filter(|row|string_field(&row.record_type)!=Some("HKQuantityTypeIdentifierStepCount")).filter(|row|string_field(&row.record_type)!=Some(OURA_WORKOUT)).filter_map(|row|{let kind=string_field(&row.record_type).unwrap_or_default();(kind==OURA_ACTIVITY).then(||value_number(row).map(|value|json!({"label":"Daily activity","count":1,"count_label":"1","value":format!("{} · Oura's score",number(value))}))).flatten()}).collect::<Vec<_>>();
+    let running_rows = activity
+        .iter()
+        .filter(|row| is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default()))
+        .copied()
+        .collect::<Vec<_>>();
+    let counters=activity.iter().filter(|row|string_field(&row.record_type)!=Some("HKQuantityTypeIdentifierStepCount")).filter(|row|string_field(&row.record_type)!=Some(OURA_WORKOUT)).filter(|row|!is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default())).filter_map(|row|{let kind=string_field(&row.record_type).unwrap_or_default();(kind==OURA_ACTIVITY).then(||value_number(row).map(|value|json!({"label":"Daily activity","count":1,"count_label":"1","value":format!("{} · Oura's score",number(value))}))).flatten()}).collect::<Vec<_>>();
     Some(
-        json!({"workouts":workout_items,"workout_summary":workout_summary,"steps":steps,"running":Value::Null,"counters":counters}),
+        json!({"workouts":workout_items,"workout_summary":workout_summary,"steps":steps,"running":if running_rows.is_empty(){None}else{Some(running_dynamics(&running_rows))},"counters":counters}),
     )
+}
+
+fn is_running_dynamics_type(record_type: &str) -> bool {
+    [
+        RUNNING_POWER,
+        RUNNING_SPEED,
+        RUNNING_STRIDE_LENGTH,
+        RUNNING_GROUND_CONTACT_TIME,
+        RUNNING_VERTICAL_OSCILLATION,
+    ]
+    .iter()
+    .any(|fragment| record_type.contains(fragment))
+}
+
+fn running_dynamics(rows: &[&NormalizedRow]) -> Vec<Value> {
+    let grouped = group_by_type(rows);
+    let mut types = grouped.into_iter().collect::<Vec<_>>();
+    types.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    types
+        .into_iter()
+        .map(|(record_type, rows)| {
+            let values = rows.iter().filter_map(|row| value_number(row)).collect::<Vec<_>>();
+            let (unit, consistent) = single_unit(&rows);
+            let summary = if values.is_empty() || !consistent {
+                None
+            } else {
+                let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+                let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let average = mean(&values);
+                let pace = record_type.contains(RUNNING_SPEED)
+                    .then(|| unit.as_deref().and_then(|unit| {
+                        Some((
+                            pace_label(high, unit)?,
+                            pace_label(low, unit)?,
+                            pace_label(average, unit)?,
+                        ))
+                    }))
+                    .flatten();
+                if let Some((fast, slow, middle)) = pace {
+                    let span = if fast == slow { fast } else { format!("{fast}–{slow}") };
+                    Some(format!("{span} /km · avg {middle} /km"))
+                } else {
+                    let span = display_range_line(record_type, low, high, unit.as_deref());
+                    (low == high).then_some(span.clone()).or_else(|| {
+                        Some(format!(
+                            "{span} · avg {}",
+                            display_number(record_type, average, unit.as_deref())
+                        ))
+                    })
+                }
+            };
+            json!({"label":friendly_type_name(record_type),"count":rows.len(),"count_label":rows.len().to_string(),"summary":summary})
+        })
+        .collect()
 }
 
 fn primary_total(rows: &[NormalizedRow]) -> Option<(f64, String, usize, Vec<String>)> {
@@ -922,15 +1086,6 @@ fn heart_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) -> Op
                 .filter(|value| *value > 0.0)
         })
         .min_by(f64::total_cmp);
-    if samples.is_empty()
-        && resting_row.is_none()
-        && ring_resting.is_none()
-        && !rows
-            .iter()
-            .any(|row| string_field(&row.record_type) == Some(OURA_CARDIOVASCULAR_AGE))
-    {
-        return None;
-    };
     let mut facts = Vec::new();
     if let Some(row) = rows
         .iter()
@@ -2516,6 +2671,38 @@ pub(crate) mod tests {
                 1
             );
         }
+
+        #[test]
+        fn sleep_comparison_requires_ring_and_cross_device_main_sessions() {
+            let target = parse_day("20260102").unwrap();
+            let session = |source: &str| {
+                let mut row = simple_row(
+                    "HKCategoryTypeIdentifierSleepAnalysis",
+                    "20260101",
+                    "2026-01-01T22:00:00+00:00",
+                    Some(json!(1)),
+                );
+                row.source_name = FieldState::Present(json!(source));
+                row.end_date = FieldState::Present(json!("2026-01-02T06:00:00+00:00"));
+                row
+            };
+            let dual = sleep_analysis(
+                &[],
+                &[session("Watch"), session("Oura Ring")],
+                &[],
+                target,
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                dual["comparison_line"],
+                "Watch saw 8h 00m · Oura Ring saw 8h 00m"
+            );
+            let ring_only =
+                sleep_analysis(&[], &[session("Oura Ring")], &[], target, &BTreeMap::new())
+                    .unwrap();
+            assert!(ring_only["comparison_line"].is_null());
+        }
     }
 
     mod activity_and_sources {
@@ -2615,6 +2802,68 @@ pub(crate) mod tests {
                     .len(),
                 1
             );
+        }
+
+        #[test]
+        fn running_dynamics_formats_pace_and_keeps_nonrunning_days_empty() {
+            let mut speed = simple_row(
+                RUNNING_SPEED,
+                "20260101",
+                "2026-01-01T06:00:00+00:00",
+                Some(json!(2.5)),
+            );
+            speed.unit = FieldState::Present(json!("m/s"));
+            let mut speed_later = speed.clone();
+            speed_later.start_date = FieldState::Present(json!("2026-01-01T06:01:00+00:00"));
+            speed_later.value =
+                ValueState::Present(solstone_core_body_source::parse(b"3.125").unwrap());
+            let mut power = simple_row(
+                RUNNING_POWER,
+                "20260101",
+                "2026-01-01T06:00:00+00:00",
+                Some(json!(240)),
+            );
+            power.unit = FieldState::Present(json!("W"));
+            let mut power_later = power.clone();
+            power_later.value =
+                ValueState::Present(solstone_core_body_source::parse(b"260").unwrap());
+            let activity = activity_analysis(&[speed, speed_later, power, power_later]).unwrap();
+            assert_eq!(activity["running"][0]["count"], 2);
+            assert_eq!(activity["running"][0]["summary"], "240–260 W · avg 250");
+            assert_eq!(
+                activity["running"][1]["summary"],
+                "5:20–6:40 /km · avg 5:56 /km"
+            );
+            let empty = activity_analysis(&[simple_row(
+                "HKQuantityTypeIdentifierStepCount",
+                "20260101",
+                "2026-01-01T00:00:00+00:00",
+                Some(json!(1)),
+            )])
+            .unwrap();
+            assert!(empty["running"].is_null());
+        }
+
+        #[test]
+        fn running_speed_unsupported_and_inconsistent_units_are_distinct() {
+            // This is the consistent-unit, unsupported pace-table case.
+            let mut mph = simple_row(
+                RUNNING_SPEED,
+                "20260101",
+                "2026-01-01T06:00:00+00:00",
+                Some(json!(5)),
+            );
+            mph.unit = FieldState::Present(json!("mph"));
+            let mut mph_later = mph.clone();
+            mph_later.value = ValueState::Present(solstone_core_body_source::parse(b"6").unwrap());
+            assert_eq!(
+                running_dynamics(&[&mph, &mph_later])[0]["summary"],
+                "5–6 mph · avg 5.5"
+            );
+            // This is the inconsistent-unit case, distinct from unsupported pace units.
+            let mut metric = mph.clone();
+            metric.unit = FieldState::Present(json!("m/s"));
+            assert!(running_dynamics(&[&mph, &metric])[0]["summary"].is_null());
         }
     }
 
