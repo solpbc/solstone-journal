@@ -362,33 +362,37 @@ fn mirror_refuses_redirect_to_a_disallowed_host() {
 }
 
 #[test]
-fn mirror_uses_loopback_huggingface_size_only_metadata() {
-    let body = b"mirror-hf".to_vec();
-    let size = body.len();
+fn mirror_uses_loopback_huggingface_git_blob_metadata() {
+    const CONFIG_JSON_BLOB_OID: &str = "9e26dfeeb6e641a33dae4961196235bdb965b21b";
+    const CONFIG_JSON_SHA256: &str =
+        "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+
+    let body = b"{}".to_vec();
     let base = server(3, move |request| {
         if request.starts_with("GET /metadata ") {
             (
-                format!(
-                    "x-linked-etag: 688882a700000000000000000000000000000000\r\nContent-Length: {size}\r\n"
-                ),
+                format!("x-linked-etag: {CONFIG_JSON_BLOB_OID}\r\n"),
                 Vec::new(),
             )
         } else {
             (String::new(), body.clone())
         }
     });
-    let mut target = mirror_target(&base, b"mirror-hf", UpstreamMetadataKind::HuggingFace);
+    let mut target = mirror_target(&base, b"{}", UpstreamMetadataKind::HuggingFace);
     target.origin_key =
-        "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json".to_owned();
+        "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/config.json".to_owned();
+    assert_eq!(target.sha256, CONFIG_JSON_SHA256);
+    assert_eq!(target.size_bytes, 2);
     let backend = FixtureBackend {
         modes: Mutex::new(Vec::new()),
     };
     let root = temp("mirror-hf");
+    let log = root.join("log.jsonl");
     let outcome = mirror_one(
         &target,
         &backend,
         &root,
-        &root.join("log.jsonl"),
+        &log,
         &policy(&base),
         &upstream_policy(),
     )
@@ -396,23 +400,28 @@ fn mirror_uses_loopback_huggingface_size_only_metadata() {
     assert!(matches!(
         outcome,
         crate::mirror::MirrorOutcome::Mirrored {
-            verification: UpstreamVerification::SizeOnly,
+            verification: UpstreamVerification::UpstreamGitBlobSha1,
             ..
         }
     ));
+    let provenance: Value = serde_json::from_str(fs::read_to_string(log).unwrap().trim()).unwrap();
+    assert_eq!(provenance["verified"], "upstream-git-blob-sha1");
 }
 
 #[test]
-fn mirror_refuses_unlisted_huggingface_sha1_etag() {
+fn mirror_refuses_huggingface_git_blob_etag_that_does_not_match_the_body() {
+    // This did not fail before wave 1: the old allowlist rejected the metadata
+    // before it fetched the body. It now proves the body identity is checked.
     let body = b"unlisted-hf".to_vec();
-    let size = body.len();
-    let base = server(1, move |_| {
-        (
-            format!(
-                "x-linked-etag: 688882a700000000000000000000000000000000\r\nContent-Length: {size}\r\n"
-            ),
-            Vec::new(),
-        )
+    let base = server(3, move |request| {
+        if request.starts_with("GET /metadata ") {
+            (
+                "x-linked-etag: 688882a700000000000000000000000000000000\r\n".to_owned(),
+                Vec::new(),
+            )
+        } else {
+            (String::new(), body.clone())
+        }
     });
     let target = mirror_target(&base, b"unlisted-hf", UpstreamMetadataKind::HuggingFace);
     let backend = FixtureBackend {
@@ -428,8 +437,56 @@ fn mirror_refuses_unlisted_huggingface_sha1_etag() {
             &policy(&base),
             &upstream_policy(),
         ),
-        Err(MirrorError::UnverifiedUpstream { .. })
+        Err(MirrorError::UpstreamGitBlobDigestMismatch { .. })
     ));
+    assert!(backend.modes.lock().unwrap().is_empty());
+}
+
+#[test]
+fn mirror_uses_loopback_huggingface_sha256_metadata() {
+    let body = b"lfs-hf".to_vec();
+    let digest = sha256(&body);
+    let base = server(3, move |request| {
+        if request.starts_with("GET /metadata ") {
+            (format!("x-linked-etag: sha256:{digest}\r\n"), Vec::new())
+        } else {
+            (String::new(), body.clone())
+        }
+    });
+    let target = mirror_target(&base, b"lfs-hf", UpstreamMetadataKind::HuggingFace);
+    let backend = FixtureBackend {
+        modes: Mutex::new(Vec::new()),
+    };
+    let root = temp("mirror-hf-sha256");
+    let outcome = mirror_one(
+        &target,
+        &backend,
+        &root,
+        &root.join("log.jsonl"),
+        &policy(&base),
+        &upstream_policy(),
+    )
+    .unwrap();
+    assert!(matches!(
+        outcome,
+        crate::mirror::MirrorOutcome::Mirrored {
+            verification: UpstreamVerification::UpstreamSha256,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn huggingface_git_blob_metadata_routes_without_upstream_bytes() {
+    const BLOB_OID: &str = "688882a700000000000000000000000000000000";
+    let base = server(1, |_| {
+        (format!("x-linked-etag: {BLOB_OID}\r\n"), Vec::new())
+    });
+    let target = mirror_target(&base, b"synthetic", UpstreamMetadataKind::HuggingFace);
+    let (verification, expected_blob_oid) =
+        crate::mirror::verify_huggingface_metadata_for_test(&target, &upstream_policy()).unwrap();
+    assert_eq!(verification, UpstreamVerification::UpstreamGitBlobSha1);
+    assert_eq!(expected_blob_oid.as_deref(), Some(BLOB_OID));
 }
 
 #[test]

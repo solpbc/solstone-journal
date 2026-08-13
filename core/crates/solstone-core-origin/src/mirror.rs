@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::Value;
+use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use solstone_core_local::install::archive::DownloadHostPolicy;
 use thiserror::Error;
@@ -27,12 +28,6 @@ const UPSTREAM_ALLOWED_HOSTS: &[&str] = &[
     "cdn-lfs.huggingface.co",
     "cas-bridge.xethub.hf.co",
 ];
-// These are redirect targets of the two upstream hosts and may change upstream;
-// a refusal means this list needs updating. Never widen this into the installer's
-// origin policy.
-const SIZE_ONLY_ORIGIN_KEYS: &[&str] =
-    &["assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json"];
-
 #[derive(Debug, Clone, Copy)]
 pub struct UpstreamHostPolicy<'a> {
     pub allowed_hosts: &'a [&'a str],
@@ -58,15 +53,20 @@ pub fn select_publish_mode(size_bytes: u64) -> PublishMode {
     }
 }
 
-/// The sole `SizeOnly` current row is
-/// `assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json`.
-/// It is non-LFS on HuggingFace, so `x-linked-etag` is a 40-hex git blob SHA-1,
-/// not a sha256; this is a single row with a specific cause, not a class.
+/// HuggingFace serves a 64-hex SHA-256 in `x-linked-etag` for LFS-tracked
+/// objects and a 40-hex git blob SHA-1 for non-LFS objects. Both forms are
+/// corroborated by their respective digest; 11 parakeet-coreml rows are non-LFS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum UpstreamVerification {
     UpstreamSha256,
-    SizeOnly,
+    UpstreamGitBlobSha1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UpstreamMetadataVerification {
+    verification: UpstreamVerification,
+    expected_blob_oid: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +139,8 @@ pub enum MirrorError {
     },
     #[error("upstream object digest mismatch for {origin_key}")]
     UpstreamDigestMismatch { origin_key: String },
+    #[error("upstream git blob digest mismatch for {origin_key}")]
+    UpstreamGitBlobDigestMismatch { origin_key: String },
     #[error("unsupported upstream URL {url}")]
     UnsupportedUpstream { url: String },
     #[error("upstream host refused: {host}")]
@@ -227,7 +229,12 @@ pub fn mirror_one(
         source,
     })?;
     let source = staging_dir.join("mirror-source");
-    download_upstream(target, &source, upstream_policy)?;
+    download_upstream(
+        target,
+        &source,
+        upstream_policy,
+        verification.expected_blob_oid.as_deref(),
+    )?;
     backend.publish(
         select_publish_mode(target.size_bytes),
         PublishRequest {
@@ -236,10 +243,10 @@ pub fn mirror_one(
         },
     )?;
     read_back_before_logging(target, staging_dir, origin_policy)?;
-    append_provenance(provenance_log, target, verification)?;
+    append_provenance(provenance_log, target, verification.verification)?;
     Ok(MirrorOutcome::Mirrored {
         origin_key: target.origin_key.clone(),
-        verification,
+        verification: verification.verification,
     })
 }
 
@@ -263,7 +270,7 @@ fn read_back_before_logging(
 fn verify_upstream_metadata(
     target: &MirrorTarget,
     policy: &UpstreamHostPolicy<'_>,
-) -> Result<UpstreamVerification, MirrorError> {
+) -> Result<UpstreamMetadataVerification, MirrorError> {
     match target.metadata_kind {
         UpstreamMetadataKind::GithubRelease => verify_github_metadata(target, policy),
         UpstreamMetadataKind::HuggingFace => verify_huggingface_metadata(target, policy),
@@ -273,7 +280,7 @@ fn verify_upstream_metadata(
 fn verify_github_metadata(
     target: &MirrorTarget,
     policy: &UpstreamHostPolicy<'_>,
-) -> Result<UpstreamVerification, MirrorError> {
+) -> Result<UpstreamMetadataVerification, MirrorError> {
     let url = &target.metadata_url;
     let response = request(url, policy)?;
     let body =
@@ -299,7 +306,10 @@ fn verify_github_metadata(
                 && asset.get("digest").and_then(Value::as_str) == Some(expected.as_str())
         });
     matches
-        .then_some(UpstreamVerification::UpstreamSha256)
+        .then_some(UpstreamMetadataVerification {
+            verification: UpstreamVerification::UpstreamSha256,
+            expected_blob_oid: None,
+        })
         .ok_or_else(|| MirrorError::UnverifiedUpstream {
             origin_key: target.origin_key.clone(),
         })
@@ -308,7 +318,7 @@ fn verify_github_metadata(
 fn verify_huggingface_metadata(
     target: &MirrorTarget,
     policy: &UpstreamHostPolicy<'_>,
-) -> Result<UpstreamVerification, MirrorError> {
+) -> Result<UpstreamMetadataVerification, MirrorError> {
     let response = request(&target.metadata_url, policy)?;
     let etag = response
         .headers()
@@ -318,19 +328,17 @@ fn verify_huggingface_metadata(
         .trim_matches('"')
         .trim_start_matches("sha256:");
     if etag == target.sha256 {
-        return Ok(UpstreamVerification::UpstreamSha256);
+        return Ok(UpstreamMetadataVerification {
+            verification: UpstreamVerification::UpstreamSha256,
+            expected_blob_oid: None,
+        });
     }
     let is_git_blob_sha1 = etag.len() == 40 && etag.bytes().all(|byte| byte.is_ascii_hexdigit());
-    let content_length = response
-        .headers()
-        .get("content-length")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok());
-    if SIZE_ONLY_ORIGIN_KEYS.contains(&target.origin_key.as_str())
-        && is_git_blob_sha1
-        && content_length == Some(target.size_bytes)
-    {
-        Ok(UpstreamVerification::SizeOnly)
+    if is_git_blob_sha1 {
+        Ok(UpstreamMetadataVerification {
+            verification: UpstreamVerification::UpstreamGitBlobSha1,
+            expected_blob_oid: Some(etag.to_owned()),
+        })
     } else {
         Err(MirrorError::UnverifiedUpstream {
             origin_key: target.origin_key.clone(),
@@ -338,10 +346,20 @@ fn verify_huggingface_metadata(
     }
 }
 
+#[cfg(test)]
+pub(crate) fn verify_huggingface_metadata_for_test(
+    target: &MirrorTarget,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<(UpstreamVerification, Option<String>), MirrorError> {
+    let verification = verify_huggingface_metadata(target, policy)?;
+    Ok((verification.verification, verification.expected_blob_oid))
+}
+
 fn download_upstream(
     target: &MirrorTarget,
     destination: &Path,
     policy: &UpstreamHostPolicy<'_>,
+    expected_blob_oid: Option<&str>,
 ) -> Result<(), MirrorError> {
     let response = request(&target.upstream_url, policy)?;
     let mut body = response.into_body().into_reader();
@@ -355,6 +373,13 @@ fn download_upstream(
             source,
         })?;
     let mut digest = Sha256::new();
+    let mut blob_digest = expected_blob_oid.map(|_| {
+        let mut digest = Sha1::new();
+        digest.update(b"blob ");
+        digest.update(target.size_bytes.to_string().as_bytes());
+        digest.update(b"\0");
+        digest
+    });
     let mut actual = 0_u64;
     let mut chunk = [0_u8; 64 * 1024];
     loop {
@@ -373,6 +398,9 @@ fn download_upstream(
                 source,
             })?;
         digest.update(&chunk[..read]);
+        if let Some(blob_digest) = blob_digest.as_mut() {
+            blob_digest.update(&chunk[..read]);
+        }
         actual += read as u64;
     }
     if actual != target.size_bytes {
@@ -387,6 +415,17 @@ fn download_upstream(
         return Err(MirrorError::UpstreamDigestMismatch {
             origin_key: target.origin_key.clone(),
         });
+    }
+    if let Some(expected_blob_oid) = expected_blob_oid {
+        let actual_blob_oid = format!(
+            "{:x}",
+            blob_digest.expect("blob digest was initialized").finalize()
+        );
+        if actual_blob_oid != expected_blob_oid {
+            return Err(MirrorError::UpstreamGitBlobDigestMismatch {
+                origin_key: target.origin_key.clone(),
+            });
+        }
     }
     Ok(())
 }
