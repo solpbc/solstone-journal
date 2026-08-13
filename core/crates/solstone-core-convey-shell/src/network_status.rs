@@ -635,6 +635,7 @@ mod tests {
     use serde_json::json;
     use solstone_core_convey_http::identity::Carrier;
     use solstone_core_sol_link::pairing::addresses::LocalEndpoint;
+    use solstone_core_spl::REASON_SERVICE_TOKEN_REJECTED;
     use tower::ServiceExt;
 
     use super::*;
@@ -781,7 +782,7 @@ mod tests {
                 expected
             );
         }
-        assert!(OFFLINE_TUNNEL_REASONS.contains(&"service_token_rejected"));
+        assert!(OFFLINE_TUNNEL_REASONS.contains(&REASON_SERVICE_TOKEN_REJECTED));
     }
 
     #[test]
