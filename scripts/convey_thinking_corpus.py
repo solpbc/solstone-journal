@@ -8,7 +8,7 @@ The thinking surface is where an owner chooses how sol thinks: a model on this
 computer, confidential processing operated by sol pbc, or their own engine. Its
 payload is therefore almost entirely a *projection of journal config plus the
 durable brain record* -- which means an empty journal proves close to nothing,
-and a single phase proves less than that. The reference is driven over five
+and a single phase proves less than that. The reference is driven over EIGHT
 journal states, because the same route returns materially different owner-facing
 words in each:
 
@@ -21,8 +21,10 @@ words in each:
   * ``bundled_local``   -- the bundled on-device model selected
   * ``byo_cloud``       -- a cloud key saved, a model remembered, validation cached
   * ``byo_endpoint``    -- the owner's own OpenAI-compatible endpoint configured
-  * ``confidential``    -- confidential processing provisioned; the ONLY phase that
-                           reaches the attestation view's verified branch
+  * ``confidential_inactive`` -- provisioned but NOT the active lane; the only route to
+                           the attestation view's ``inactive`` branch
+  * ``confidential``    -- confidential processing provisioned AND active; the only phase
+                           that reaches the attestation view's ``verified`` branch
 
 🔴 The durable brain record in each configured phase is written by **the
 reference's own writer**, not hand-assembled here. A hand-written record is
@@ -101,9 +103,10 @@ CORPUS_PATH = REPO_ROOT / "core" / "fixtures" / "convey_thinking_corpus.json"
 # A fixed instant so `setup.completed_at` is reproducible across regenerations.
 # 2026-01-01T00:00:00Z -- before any journal this corpus will ever describe.
 PINNED_COMPLETED_AT = 1767225600
-# The seeded brain record's observed instant. Deliberately NOT normalized: the
-# recorded `age_text` is then a real assertion about the reference's own
-# duration arithmetic rather than a placeholder that matches anything.
+# ⛔ VESTIGIAL -- kept only because `_seed_brain_record` derives its TTL shape from
+# the same constants. The seed runs on the REAL clock (see that function), and every
+# instant it produces is normalized to <CAPTURE_CLOCK>. An earlier comment here
+# claimed the opposite; it was the last copy of a claim corrected everywhere else.
 PINNED_BRAIN_OBSERVED_AT = "2026-01-01T00:00:00+00:00"
 PINNED_KEY_VALIDATED_AT = "2026-01-01T00:00:00+00:00"
 # The seeded evidence TTL. Fixed so `expires_at` is pinned rather than
@@ -294,9 +297,11 @@ def _seed_brain_record(root: Path, *, ok: bool = True) -> None:
     ``brain_record_invalid`` and every route then reports the *unknown* branch
     while the corpus looks fully populated.
 
-    The instants are pinned to `PINNED_BRAIN_OBSERVED_AT`, so `age_seconds` and
-    `age_text` in the recorded payloads are the reference's own duration
-    arithmetic over a fixed interval -- asserted, not normalized away.
+    ⛔ The instants are NOT pinned. This runs on the real clock (see below), and all
+    seven temporal fields it produces are normalized to <CAPTURE_CLOCK>. Duration
+    arithmetic is therefore ungraded by this corpus and needs its own unit test.
+    ⚠ The seed instant must be ~now: `inspect_brain_state` flips the record to stale
+    against the reader's clock, and `aggregate_state` is NOT normalized.
     """
     from datetime import datetime, timedelta, timezone
 
