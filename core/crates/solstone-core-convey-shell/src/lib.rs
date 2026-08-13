@@ -174,6 +174,8 @@ pub struct ConveyServeHandle {
     loopback_task: tokio::task::JoinHandle<()>,
     refresh_task: Option<tokio::task::JoinHandle<()>>,
     accept_task: Option<tokio::task::JoinHandle<()>>,
+    pairing_reaper_task: Option<tokio::task::JoinHandle<()>>,
+    pairing_cap_refusals: Option<Arc<AtomicU64>>,
 }
 
 #[cfg(feature = "host")]
@@ -195,6 +197,9 @@ impl ConveyServeHandle {
         if let Some(task) = &self.accept_task {
             task.abort();
         }
+        if let Some(task) = &self.pairing_reaper_task {
+            task.abort();
+        }
     }
     pub async fn stop_authorization_refresh(&mut self) {
         let Some(task) = self.refresh_task.take() else {
@@ -204,6 +209,23 @@ impl ConveyServeHandle {
         match task.await {
             Ok(()) | Err(_) => {}
         }
+    }
+    /// Testable lifecycle control for proving request-level confinement does
+    /// not depend on the background pairing reaper.
+    pub async fn stop_pairing_reaper(&mut self) {
+        let Some(task) = self.pairing_reaper_task.take() else {
+            return;
+        };
+        task.abort();
+        match task.await {
+            Ok(()) | Err(_) => {}
+        }
+    }
+    /// Test-visible equivalent of the cap-refusal log line.
+    pub fn pairing_cap_refusals(&self) -> u64 {
+        self.pairing_cap_refusals
+            .as_ref()
+            .map_or(0, |counter| counter.load(Ordering::Acquire))
     }
     pub async fn await_forever(self) -> ! {
         std::future::pending().await
@@ -292,6 +314,8 @@ pub async fn bind_with_authorization(
         loopback_task,
         refresh_task: door_start.refresh_task,
         accept_task: door_start.accept_task,
+        pairing_reaper_task: door_start.pairing_reaper_task,
+        pairing_cap_refusals: door_start.pairing_cap_refusals,
     })
 }
 

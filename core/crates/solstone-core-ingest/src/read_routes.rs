@@ -204,45 +204,6 @@ fn admitted(
     validate_access(basis)
 }
 
-#[cfg(test)]
-mod access_tests {
-    use axum::http::{HeaderMap, HeaderValue, StatusCode};
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
-
-    use super::admitted;
-    use crate::model::ReasonCode;
-    use crate::validation::PROTOCOL_HEADER;
-
-    const VALID_DID: &str =
-        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-    fn protocol_headers() -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(PROTOCOL_HEADER, HeaderValue::from_static("3"));
-        headers
-    }
-
-    #[test]
-    fn read_admission_accepts_linked_devices_and_refuses_pairing_peers() {
-        let headers = protocol_headers();
-        let linked = AccessBasis::LinkedDevice {
-            carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
-        };
-        assert_eq!(admitted(&linked, &headers), Ok(VALID_DID.to_owned()));
-
-        let refusal = admitted(
-            &AccessBasis::PairingPeer {
-                carrier: Carrier::Direct,
-            },
-            &headers,
-        )
-        .unwrap_err();
-        assert_eq!(refusal.0, ReasonCode::LinkedDeviceRequired);
-        assert_eq!(refusal.1, StatusCode::FORBIDDEN);
-    }
-}
-
 /// Resolve the (did, source)-bound stream for a read request, if any content
 /// has ever been written for it. `Ok(None)` means the caller can return an
 /// empty result directly rather than guessing a directory name to scan.
@@ -295,4 +256,43 @@ fn stream_events(
 fn sha256(bytes: &[u8]) -> String {
     use sha2::Digest;
     format!("{:x}", sha2::Sha256::digest(bytes))
+}
+
+#[cfg(test)]
+mod access_tests {
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+
+    use super::admitted;
+    use crate::model::ReasonCode;
+    use crate::validation::PROTOCOL_HEADER;
+
+    const VALID_DID: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn protocol_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(PROTOCOL_HEADER, HeaderValue::from_static("3"));
+        headers
+    }
+
+    #[test]
+    fn read_admission_accepts_linked_devices_and_refuses_pairing_peers() {
+        let headers = protocol_headers();
+        let linked = AccessBasis::LinkedDevice {
+            carrier: Carrier::Direct,
+            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+        };
+        assert_eq!(admitted(&linked, &headers), Ok(VALID_DID.to_owned()));
+
+        let refusal = admitted(
+            &AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            },
+            &headers,
+        )
+        .unwrap_err();
+        assert_eq!(refusal.0, ReasonCode::LinkedDeviceRequired);
+        assert_eq!(refusal.1, StatusCode::FORBIDDEN);
+    }
 }

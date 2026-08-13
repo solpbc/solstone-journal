@@ -65,11 +65,6 @@ impl NonceStore {
         }
     }
 
-    #[cfg(test)]
-    fn from_path(path: PathBuf) -> Self {
-        Self { path }
-    }
-
     pub fn path(&self) -> &Path {
         &self.path
     }

@@ -3,15 +3,21 @@
 
 //! Host-side paired-device door transport.
 
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use axum::Router;
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::{Method, Request, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use rustls::pki_types::{CertificateDer, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{
@@ -35,7 +41,7 @@ use solstone_core_sol_link::{
 use spl_home::{DEFAULT_DECODER_BUFFER_BYTES, HomeConfig, HomeConnection, MuxLimits};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::watch;
+use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::time::{Sleep, sleep};
 
 use crate::session::{SessionState, classify_session};
@@ -43,6 +49,15 @@ use crate::{DoorOutcome, DoorWithheldReason};
 
 const MAX_CONCURRENT_STREAMS: usize = 8;
 const AUTHORIZATION_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
+const PAIRING_REAPER_INTERVAL: Duration = Duration::from_millis(250);
+const MAX_PAIRING_CARRIERS: usize = 4;
+const MAX_PAIRING_FAILURES: usize = 3;
+
+/// A pair request observed an open window before waiting for the per-carrier
+/// lock. The outer confinement layer preserves that admission while retaining
+/// its authoritative closed-window check for later requests.
+#[derive(Clone, Copy)]
+pub(crate) struct PairingWindowAdmission;
 
 pub(super) struct DoorStartOptions {
     pub journal_root: std::path::PathBuf,
@@ -59,6 +74,122 @@ pub(super) struct DoorStart {
     pub outcome: DoorOutcome,
     pub refresh_task: Option<tokio::task::JoinHandle<()>>,
     pub accept_task: Option<tokio::task::JoinHandle<()>>,
+    pub pairing_reaper_task: Option<tokio::task::JoinHandle<()>>,
+    pub pairing_cap_refusals: Option<Arc<AtomicU64>>,
+}
+
+trait PairingDelay: Send + Sync {
+    fn delay(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+}
+
+struct TokioPairingDelay;
+
+impl PairingDelay for TokioPairingDelay {
+    fn delay(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(sleep(duration))
+    }
+}
+
+struct PairingCarrierState {
+    pair_lock: AsyncMutex<()>,
+    in_flight: AtomicUsize,
+    failures: AtomicUsize,
+    close_after_response: AtomicBool,
+    close_sender: watch::Sender<bool>,
+    delay: Arc<dyn PairingDelay>,
+    journal_root: PathBuf,
+}
+
+impl PairingCarrierState {
+    fn new(
+        delay: Arc<dyn PairingDelay>,
+        journal_root: PathBuf,
+    ) -> (Arc<Self>, watch::Receiver<bool>) {
+        let (close_sender, close_receiver) = watch::channel(false);
+        (
+            Arc::new(Self {
+                pair_lock: AsyncMutex::new(()),
+                in_flight: AtomicUsize::new(0),
+                failures: AtomicUsize::new(0),
+                close_after_response: AtomicBool::new(false),
+                close_sender,
+                delay,
+                journal_root,
+            }),
+            close_receiver,
+        )
+    }
+
+    fn close(&self) {
+        let _ = self.close_sender.send(true);
+    }
+}
+
+struct PairingCarrierRegistry {
+    active: AtomicUsize,
+    refusals: Arc<AtomicU64>,
+    next_id: AtomicU64,
+    carriers: Mutex<std::collections::HashMap<u64, std::sync::Weak<PairingCarrierState>>>,
+    delay: Arc<dyn PairingDelay>,
+    journal_root: PathBuf,
+}
+
+impl PairingCarrierRegistry {
+    fn new(delay: Arc<dyn PairingDelay>, journal_root: PathBuf) -> Self {
+        Self {
+            active: AtomicUsize::new(0),
+            refusals: Arc::new(AtomicU64::new(0)),
+            next_id: AtomicU64::new(0),
+            carriers: Mutex::new(std::collections::HashMap::new()),
+            delay,
+            journal_root,
+        }
+    }
+
+    fn admit(&self) -> Option<(u64, Arc<PairingCarrierState>, watch::Receiver<bool>)> {
+        if self
+            .active
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                (active < MAX_PAIRING_CARRIERS).then_some(active + 1)
+            })
+            .is_err()
+        {
+            return None;
+        }
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (state, receiver) =
+            PairingCarrierState::new(self.delay.clone(), self.journal_root.clone());
+        self.carriers
+            .lock()
+            .expect("pairing carrier registry lock")
+            .insert(id, Arc::downgrade(&state));
+        Some((id, state, receiver))
+    }
+
+    fn release(&self, id: u64) {
+        self.carriers
+            .lock()
+            .expect("pairing carrier registry lock")
+            .remove(&id);
+        self.active.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    fn cap_refusals(&self) -> Arc<AtomicU64> {
+        self.refusals.clone()
+    }
+
+    fn reap_closed_windows(&self) {
+        let mut carriers = self.carriers.lock().expect("pairing carrier registry lock");
+        carriers.retain(|_, weak| {
+            let Some(carrier) = weak.upgrade() else {
+                return false;
+            };
+            if carrier.in_flight.load(Ordering::Acquire) == 0 {
+                carrier.close();
+            }
+            true
+        });
+    }
 }
 
 /// Identity observed from the accepted leaf. Keeping this as a struct leaves one
@@ -174,6 +305,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             outcome: DoorOutcome::Withheld(reason),
             refresh_task: None,
             accept_task: None,
+            pairing_reaper_task: None,
+            pairing_cap_refusals: None,
         };
     }
     let identity = match load_committed_identity(&options.journal_root) {
@@ -184,6 +317,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
             };
         }
     };
@@ -205,6 +340,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                     },
                     refresh_task: None,
                     accept_task: None,
+                    pairing_reaper_task: None,
+                    pairing_cap_refusals: None,
                 };
             }
         };
@@ -222,6 +359,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 },
                 refresh_task: None,
                 accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
             };
         }
     };
@@ -233,6 +372,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
             };
         }
     };
@@ -248,6 +389,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
             refresh_task: None,
             accept_task: None,
+            pairing_reaper_task: None,
+            pairing_cap_refusals: None,
         };
     }
     let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -264,6 +407,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
                 refresh_task: None,
                 accept_task: None,
+                pairing_reaper_task: None,
+                pairing_cap_refusals: None,
             };
         }
     };
@@ -279,6 +424,14 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         options.authorization_sender,
         AUTHORIZATION_REFRESH_INTERVAL,
     );
+    let pairing_registry = Arc::new(PairingCarrierRegistry::new(
+        Arc::new(TokioPairingDelay),
+        options.journal_root.clone(),
+    ));
+    let pairing_reaper_task = tokio::spawn(pairing_reaper(
+        options.journal_root.clone(),
+        pairing_registry.clone(),
+    ));
     let config = Arc::new(DoorConnectionConfig {
         certificate_chain: vec![
             issued.certificate_der(),
@@ -292,6 +445,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         authorized_clients_path,
         carrier_loop_iterations: options.carrier_loop_iterations,
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
+        pairing_registry: pairing_registry.clone(),
     });
     let accept_task = tokio::spawn(accept_loop(
         listener,
@@ -303,6 +457,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         outcome: DoorOutcome::Bound(bound),
         refresh_task: Some(refresh_task),
         accept_task: Some(accept_task),
+        pairing_reaper_task: Some(pairing_reaper_task),
+        pairing_cap_refusals: Some(pairing_registry.cap_refusals()),
     }
 }
 
@@ -316,6 +472,59 @@ struct DoorConnectionConfig {
     authorized_clients_path: PathBuf,
     carrier_loop_iterations: Arc<AtomicU64>,
     handshake_authorization_read_ticks: Arc<AtomicU64>,
+    pairing_registry: Arc<PairingCarrierRegistry>,
+}
+
+async fn pairing_reaper(journal_root: PathBuf, registry: Arc<PairingCarrierRegistry>) {
+    loop {
+        sleep(PAIRING_REAPER_INTERVAL).await;
+        if !pairing_window_open(&NonceStore::new(&journal_root), unix_seconds()) {
+            registry.reap_closed_windows();
+        }
+    }
+}
+
+struct InFlightPair<'a>(&'a AtomicUsize);
+
+impl Drop for InFlightPair<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+async fn constrain_pair_dispatch(
+    State(state): State<Arc<PairingCarrierState>>,
+    mut request: Request<Body>,
+    next: Next,
+) -> Response {
+    if request.uri().path() != spl_core::PAIR_PATH || request.method() != Method::POST {
+        return next.run(request).await;
+    }
+    if pairing_window_open(&NonceStore::new(&state.journal_root), unix_seconds()) {
+        request.extensions_mut().insert(PairingWindowAdmission);
+    }
+    let _lock = state.pair_lock.lock().await;
+    state.in_flight.fetch_add(1, Ordering::AcqRel);
+    let _in_flight = InFlightPair(&state.in_flight);
+    let response = next.run(request).await;
+    record_pair_dispatch(&state, response.status()).await;
+    response
+}
+
+async fn record_pair_dispatch(state: &PairingCarrierState, status: StatusCode) {
+    if status.is_success() {
+        state.failures.store(0, Ordering::Release);
+        return;
+    }
+    let failures = state.failures.fetch_add(1, Ordering::AcqRel) + 1;
+    if failures >= MAX_PAIRING_FAILURES {
+        // The stream task signals closure after this response has been written.
+        state.close_after_response.store(true, Ordering::Release);
+        return;
+    }
+    if status == StatusCode::GONE {
+        state.delay.delay(Duration::from_secs(1)).await;
+    }
 }
 
 async fn accept_loop(
@@ -390,8 +599,8 @@ async fn serve_carrier(
         // down the carrier, so 8 safely bounds normal parallel requests. Per
         // carrier: 8 x 1 MiB inbound + 8 x MAX_STAGED_WRITE_BYTES_PER_STREAM
         // + the 16,777,223-byte decoder ceiling on a growing Vec = 33,554,439
-        // bytes, about 32 MiB. There is no carrier cap, so this does not bound
-        // memory across carriers.
+        // bytes, about 32 MiB. The cert-less pairing population is separately
+        // capped at four carriers; linked-device carriers remain independent.
         mux_limits: MuxLimits {
             max_concurrent_streams: MAX_CONCURRENT_STREAMS,
             decoder_buffer_bytes: DEFAULT_DECODER_BUFFER_BYTES,
@@ -417,6 +626,26 @@ async fn serve_carrier(
         log::debug!("paired-device carrier completed without an accepted identity");
         return;
     };
+    let pairing_carrier = matches!(basis, AccessBasis::PairingPeer { .. });
+    let pairing_control = if pairing_carrier {
+        match config.pairing_registry.admit() {
+            Some(control) => Some(control),
+            None => {
+                // TLS has completed at this point. Refuse without writing a
+                // mux response so the fifth pairing tunnel cannot hang or
+                // masquerade as a TLS admission failure.
+                log::warn!("pairing carrier cap reached; closing cert-less carrier");
+                config
+                    .pairing_registry
+                    .refusals
+                    .fetch_add(1, Ordering::AcqRel);
+                let _ = connection.close();
+                return;
+            }
+        }
+    } else {
+        None
+    };
     let did = linked_device_did(&basis);
     if let Some(did) = &did {
         record_completed_handshake(&config.journal_root, did);
@@ -427,6 +656,9 @@ async fn serve_carrier(
     // successful change that predates this carrier's fresh ledger handshake.
     authorization.mark_unchanged();
     let mut authorization_watch_open = true;
+    let mut pairing_close = pairing_control
+        .as_ref()
+        .map(|(_, _, receiver)| receiver.clone());
     loop {
         #[cfg(debug_assertions)]
         config
@@ -437,14 +669,27 @@ async fn serve_carrier(
                 let Ok(stream) = stream else { break; };
                 let router = router.clone();
                 let basis = basis.clone();
+                let pairing_state = pairing_control.as_ref().map(|(_, state, _)| state.clone());
                 tokio::spawn(async move {
                     let builder = mux_builder();
                     // A 60 s production bound is injected through `serve` for tests.
                     // Every non-zero successful write (including one enabled by a returned
                     // window credit during a slow 2 MiB transfer) resets this deadline.
                     let stream = StallBoundStream::new(stream, stream_stall_timeout);
+                    let router = pairing_state.as_ref().map_or(router.clone(), |state| {
+                        router.layer(middleware::from_fn_with_state(
+                            state.clone(),
+                            constrain_pair_dispatch,
+                        ))
+                    });
                     if let Err(error) = serve_connection(stream, router, basis, &builder).await {
                         log::debug!("paired-device door stream failed: {error}");
+                    }
+                    if pairing_state
+                        .as_ref()
+                        .is_some_and(|state| state.close_after_response.load(Ordering::Acquire))
+                    {
+                        pairing_state.expect("pairing state checked").close();
                     }
                 });
             }
@@ -466,7 +711,21 @@ async fn serve_carrier(
                     }
                 }
             }
+            changed = async {
+                match &mut pairing_close {
+                    Some(receiver) => receiver.changed().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if changed.is_ok() {
+                    let _ = connection.close();
+                }
+                break;
+            }
         }
+    }
+    if let Some((id, _, _)) = pairing_control {
+        config.pairing_registry.release(id);
     }
 }
 
@@ -614,31 +873,6 @@ fn linked_device_did(basis: &AccessBasis) -> Option<LinkedDeviceDid> {
     }
 }
 
-#[cfg(test)]
-mod access_tests {
-    use super::linked_device_did;
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
-
-    const VALID_DID: &str =
-        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-    #[test]
-    fn carrier_basis_handling_keeps_linked_identity_and_accepts_pairing_peers() {
-        let linked = AccessBasis::LinkedDevice {
-            carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
-        };
-        assert_eq!(linked_device_did(&linked).unwrap().as_str(), VALID_DID);
-
-        assert!(
-            linked_device_did(&AccessBasis::PairingPeer {
-                carrier: Carrier::Direct,
-            })
-            .is_none()
-        );
-    }
-}
-
 fn close_for_revocation(posture: &AuthorizedClientsRead, did: &LinkedDeviceDid) -> bool {
     // The handshake fails closed on every non-`Present` posture it reads from the ledger itself.
     // Once a device is authenticated, only a definite `Present` removal observed on this arm
@@ -710,5 +944,102 @@ mod tests {
             &AuthorizedClientsRead::Present(Vec::new()),
             &did
         ));
+    }
+}
+
+#[cfg(test)]
+mod access_tests {
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use axum::http::StatusCode;
+
+    use super::{
+        PairingCarrierRegistry, PairingCarrierState, PairingDelay, linked_device_did,
+        record_pair_dispatch,
+    };
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+
+    const VALID_DID: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn carrier_basis_handling_keeps_linked_identity_and_accepts_pairing_peers() {
+        let linked = AccessBasis::LinkedDevice {
+            carrier: Carrier::Direct,
+            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+        };
+        assert_eq!(linked_device_did(&linked).unwrap().as_str(), VALID_DID);
+
+        assert!(
+            linked_device_did(&AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            })
+            .is_none()
+        );
+    }
+
+    #[derive(Default)]
+    struct RecordingDelay(Mutex<Vec<Duration>>);
+
+    impl PairingDelay for RecordingDelay {
+        fn delay(&self, duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+            self.0.lock().expect("delay recorder lock").push(duration);
+            Box::pin(std::future::ready(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn pair_dispatch_cap_counts_pair_failures_and_records_only_410_backoff() {
+        let delay = Arc::new(RecordingDelay::default());
+        let (state, _) = PairingCarrierState::new(delay.clone(), std::env::temp_dir());
+        // Non-pair failures never reach record_pair_dispatch; this direct
+        // helper assertion models the guarded middleware's early return.
+        assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
+        record_pair_dispatch(&state, StatusCode::SERVICE_UNAVAILABLE).await;
+        assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 1);
+        record_pair_dispatch(&state, StatusCode::GONE).await;
+        assert_eq!(
+            delay.0.lock().expect("delay recorder lock").as_slice(),
+            &[Duration::from_secs(1)]
+        );
+        record_pair_dispatch(&state, StatusCode::OK).await;
+        assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
+        record_pair_dispatch(&state, StatusCode::GONE).await;
+        record_pair_dispatch(&state, StatusCode::GONE).await;
+        record_pair_dispatch(&state, StatusCode::GONE).await;
+        assert!(
+            state
+                .close_after_response
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
+        assert_eq!(
+            delay.0.lock().expect("delay recorder lock").as_slice(),
+            &[
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+                Duration::from_secs(1)
+            ],
+            "the closing third failure does not request a delay"
+        );
+    }
+
+    #[test]
+    fn reaper_skips_an_in_flight_pair_then_closes_when_it_finishes() {
+        let registry =
+            PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()), std::env::temp_dir());
+        let (_, state, close) = registry.admit().expect("carrier admission");
+        state
+            .in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        registry.reap_closed_windows();
+        assert!(!*close.borrow(), "in-flight pairing survives the reaper");
+        state
+            .in_flight
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        registry.reap_closed_windows();
+        assert!(*close.borrow(), "idle pairing carrier is reaped");
     }
 }

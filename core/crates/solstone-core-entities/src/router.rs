@@ -680,22 +680,6 @@ fn admitted(b: &AccessBasis) -> Option<Response> {
     (!require_access(b)).then(|| refusal(ReasonCode::AgentUnavailable, "access denied"))
 }
 
-#[cfg(test)]
-mod access_tests {
-    use super::admitted;
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier};
-
-    #[test]
-    fn entity_admission_accepts_localhost_and_refuses_pairing_peers() {
-        assert!(admitted(&AccessBasis::Localhost).is_none());
-        assert!(
-            admitted(&AccessBasis::PairingPeer {
-                carrier: Carrier::Direct,
-            })
-            .is_some()
-        );
-    }
-}
 async fn state_route(Extension(b): Extension<AccessBasis>) -> Response {
     if let Some(r) = admitted(&b) {
         return r;
@@ -3441,4 +3425,21 @@ async fn index_plate_search(
     Query(query): Query<IndexPlateQuery>,
 ) -> Response {
     index_plate_response(basis, query, IndexPlateRoute::Search)
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::admitted;
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier};
+
+    #[test]
+    fn entity_admission_accepts_localhost_and_refuses_pairing_peers() {
+        assert!(admitted(&AccessBasis::Localhost).is_none());
+        assert!(
+            admitted(&AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            })
+            .is_some()
+        );
+    }
 }

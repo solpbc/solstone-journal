@@ -20,6 +20,8 @@ use solstone_core_sol_link::ledger::{
 use solstone_core_sol_link::pairing::nonces::{NonceStore, pairing_window_open};
 use tokio::sync::watch;
 
+use crate::door::PairingWindowAdmission;
+
 static AUTHORIZATION_GATE_READ_TICKS: AtomicU64 = AtomicU64::new(0);
 
 /// Cumulative count of authorization-ledger reads made by the request gate.
@@ -121,7 +123,12 @@ async fn require_pairing_confinement(
         .as_secs()
         .try_into()
         .expect("Unix seconds fit i64");
-    if !pairing_window_open(&NonceStore::new(&state.journal_root), now) {
+    if request
+        .extensions()
+        .get::<PairingWindowAdmission>()
+        .is_none()
+        && !pairing_window_open(&NonceStore::new(&state.journal_root), now)
+    {
         return pairing_confinement_response("pairing window closed");
     }
     let raw_path = request.uri().path();

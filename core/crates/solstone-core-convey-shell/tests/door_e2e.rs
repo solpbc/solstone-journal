@@ -733,6 +733,79 @@ async fn post_pair_over_certless_carrier(
     .expect("pair response")
 }
 
+async fn two_pair_requests_on_one_carrier(
+    carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    nonce: &str,
+) -> Vec<spl_core::http::HttpResponse> {
+    let mut decoder = FrameDecoder::new();
+    for stream_id in [1, 3] {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "csr": csr_pem("concurrent"),
+            "device_label": "concurrent",
+        }))
+        .expect("pair body");
+        let request = spl_core::http::build_request(
+            "POST",
+            &format!("{}?token={nonce}", spl_core::PAIR_PATH),
+            &[("content-type".to_owned(), "application/json".to_owned())],
+            &body,
+        );
+        carrier
+            .write_all(
+                &Frame::new(stream_id, FLAG_OPEN | FLAG_DATA, request.to_vec())
+                    .encode()
+                    .expect("open frame"),
+            )
+            .await
+            .expect("request writes");
+        carrier
+            .write_all(
+                &Frame::new(stream_id, FLAG_CLOSE, Vec::new())
+                    .encode()
+                    .expect("close frame"),
+            )
+            .await
+            .expect("request close writes");
+    }
+    carrier.flush().await.expect("concurrent request flush");
+    let mut assemblers = std::collections::BTreeMap::from([
+        (1_u32, ResponseAssembler::new(1)),
+        (3_u32, ResponseAssembler::new(3)),
+    ]);
+    let mut responses = Vec::new();
+    let mut bytes = [0_u8; 4096];
+    while responses.len() < 2 {
+        let read = carrier.read(&mut bytes).await.expect("response reads");
+        assert!(
+            read > 0,
+            "carrier stays open until concurrent responses finish"
+        );
+        decoder.feed(&bytes[..read]);
+        for frame in decoder.drain().expect("response frames") {
+            let Some(assembler) = assemblers.get_mut(&frame.stream_id) else {
+                continue;
+            };
+            let output = assembler
+                .feed(&frame.encode().expect("response frame"))
+                .expect("response assembly");
+            for control in output.pongs.into_iter().chain(output.emit_frames) {
+                carrier
+                    .write_all(&control)
+                    .await
+                    .expect("response controls");
+            }
+            carrier.flush().await.expect("response control flush");
+            if assembler.is_closed() {
+                let assembler = assemblers
+                    .remove(&frame.stream_id)
+                    .expect("completed assembler");
+                responses.push(assembler.into_response().expect("response"));
+            }
+        }
+    }
+    responses
+}
+
 async fn request_result(
     fixture: &Fixture,
     client: usize,
@@ -1680,6 +1753,149 @@ async fn pairing_confinement_applies_to_real_certless_carriers_and_unmatched_pat
     assert_ne!(
         closed.body, tunnel_body,
         "window body remains distinct from tunnel body"
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn stopped_reaper_cannot_replace_request_level_closed_window_refusal() {
+    let fixture = Fixture::established(0);
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_base = pairing_router(&fixture, pairing_snapshot());
+    let mut handle = bind_with_authorization(
+        options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            door_base,
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    open_pairing_window(&fixture, "reaper-stopped");
+    let port = door_port(handle.door_outcome());
+    let mut carrier = live_certless_carrier(port)
+        .await
+        .expect("open window admits carrier");
+    handle.stop_pairing_reaper().await;
+    let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root);
+    store
+        .consume("reaper-stopped", pairing_now())
+        .expect("consume")
+        .expect("entry");
+    assert!(store.peek("reaper-stopped").expect("used entry").used);
+    let mut decoder = FrameDecoder::new();
+    let response = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        1,
+        "POST",
+        "/app/network/pair?token=reaper-stopped",
+        &[("content-type".into(), "application/json".into())],
+        br#"{"csr":"not a CSR","device_label":"phone"}"#,
+    )
+    .await
+    .expect("confinement response with reaper stopped");
+    assert_eq!(response.status, 403);
+    assert_eq!(response.body, b"pairing window closed");
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn fifth_certless_pairing_carrier_closes_after_tls_without_a_response() {
+    let fixture = Fixture::established(0);
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_base = pairing_router(&fixture, pairing_snapshot());
+    let handle = bind_with_authorization(
+        options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            door_base,
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    open_pairing_window(&fixture, "cap");
+    let port = door_port(handle.door_outcome());
+    let mut admitted = Vec::new();
+    for _ in 0..4 {
+        admitted.push(
+            live_certless_carrier(port)
+                .await
+                .expect("first four TLS handshakes complete"),
+        );
+    }
+    let mut fifth = live_certless_carrier(port)
+        .await
+        .expect("fifth TLS handshake completes before cap refusal");
+    let mut byte = [0_u8; 1];
+    let closed_without_response = match fifth.read(&mut byte).await {
+        Ok(0) => true,
+        Err(error) => error.kind() == std::io::ErrorKind::UnexpectedEof,
+        Ok(_) => false,
+    };
+    assert!(
+        closed_without_response,
+        "cap writes no HTTP/mux response before closing the carrier"
+    );
+    assert_eq!(
+        handle.pairing_cap_refusals(),
+        1,
+        "cap refusal is logged/observable"
+    );
+    drop(admitted);
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn concurrent_pair_requests_on_one_carrier_leave_one_ledger_entry_and_one_burned_nonce() {
+    let fixture = Fixture::established(0);
+    configure_loopback_home(&fixture);
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_base = pairing_router(&fixture, pairing_snapshot());
+    let handle = bind_with_authorization(
+        options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            door_base,
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    let mint = mint_from_loopback(&handle, "concurrent").await;
+    let nonce = mint["nonce"].as_str().expect("mint nonce");
+    // Keep the request-level pairing window open after the shared nonce burns,
+    // so the second concurrently dispatched stream reaches the pair lock and
+    // observes the ceremony's 410 rather than later confinement's 403.
+    open_pairing_window(&fixture, "concurrent-reserve");
+    let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
+        .await
+        .expect("certless carrier");
+    let responses = two_pair_requests_on_one_carrier(&mut carrier, nonce).await;
+    let statuses = responses
+        .iter()
+        .map(|response| response.status)
+        .collect::<Vec<_>>();
+    assert!(statuses.contains(&200), "statuses: {statuses:?}");
+    assert!(statuses.contains(&410), "statuses: {statuses:?}");
+    let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root);
+    assert!(store.peek(nonce).expect("nonce remains observable").used);
+    let mut ledger = AuthorizationLedger::new(&fixture.root);
+    assert_eq!(
+        ledger.snapshot().len(),
+        1,
+        "one ceremony reached the ledger"
     );
     handle.shutdown();
 }
