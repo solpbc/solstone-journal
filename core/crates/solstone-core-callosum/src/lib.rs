@@ -22,7 +22,8 @@ pub use reader::{
 pub use registry::callosum_registry;
 #[cfg(feature = "wire")]
 pub use wire::{
-    CallosumDiscontinuity, CallosumReceiveEvent, CallosumSocketConnection, CallosumSocketServer,
-    CallosumSocketServerError,
+    CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
+    CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
+    CallosumStoppedReason, TokioRetrySource,
 };
 pub use writer::{CallosumWriteError, append_durable_event};

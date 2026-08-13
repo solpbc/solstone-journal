@@ -309,7 +309,7 @@ async fn ac19_python_client_rust_server_python_client_round_trip() {
         "event": "to_rust",
         "extension": {"preserved": true},
     });
-    let mut client = PythonClient::start(&socket.path, &[message.clone()], 1);
+    let mut client = PythonClient::start(&socket.path, std::slice::from_ref(&message), 1);
     client.wait_ready();
     wait_for_clients(&server, 3).await;
 

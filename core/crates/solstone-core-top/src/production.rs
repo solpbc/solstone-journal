@@ -157,7 +157,7 @@ impl ProductionCallosum {
         let event = inner.connection.try_next_event();
         if let Some(
             CallosumReceiveEvent::Envelope { generation, .. }
-            | CallosumReceiveEvent::Discontinuity { generation, .. },
+            | CallosumReceiveEvent::Continuity { generation, .. },
         ) = &event
         {
             inner.generation = *generation;
@@ -338,7 +338,14 @@ mod tests {
         let mut receive = ProductionReceive::new(Arc::clone(&shared));
         let mut restart = ProductionRestart::new(shared);
         receive.start().unwrap();
-        assert!(receive.next().unwrap().is_none());
+        assert!(matches!(
+            receive.next().unwrap(),
+            Some(CallosumReceiveEvent::Continuity {
+                generation: 0,
+                epoch: 0,
+                phase: solstone_core_callosum::CallosumConnectionPhase::Connecting { attempt: 1 },
+            })
+        ));
         assert_eq!(restart.current_generation(), 0);
         assert!(restart.emit_restart("convey", "id").is_ok());
         receive.stop().unwrap();

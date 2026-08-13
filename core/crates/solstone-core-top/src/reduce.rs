@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value, json};
-use solstone_core_callosum::{CallosumDiscontinuity, CallosumEnvelope, CallosumReceiveEvent};
+use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 
 use crate::{
     ProcessObserver, ProcessSample, TopState, acknowledge_restart, fail_discontinuous_restarts,
@@ -117,9 +117,26 @@ pub fn apply_receive_event(
     match event {
         CallosumReceiveEvent::Envelope {
             generation,
+            epoch,
             envelope,
         } => {
-            state.continuity.generation = *generation;
+            if *generation != state.continuity.generation
+                || *epoch != state.continuity.epoch
+                || !matches!(
+                    state.continuity.connection,
+                    CallosumConnectionPhase::Connected
+                )
+            {
+                state.continuity.rejected_receive_events =
+                    state.continuity.rejected_receive_events.saturating_add(1);
+                return Ok(ReductionEffects::default());
+            }
+            if envelope.tract == "observe"
+                && envelope.event == "status"
+                && !observe_status_has_display_fields(&envelope.extra)
+            {
+                return Ok(ReductionEffects::default());
+            }
             let effects = reduce_envelope(state, envelope, sample, observer)?;
             if envelope.tract == "supervisor"
                 && matches!(
@@ -138,41 +155,61 @@ pub fn apply_receive_event(
                 );
             }
             match (envelope.tract.as_str(), envelope.event.as_str()) {
-                ("supervisor", "status") => state.continuity.supervisor_gap = false,
-                ("logs", "exec" | "line") => state.continuity.task_gap = false,
-                ("observe", "status") => state.continuity.observe_gap = false,
-                ("think", "started" | "status") => state.continuity.think_gap = false,
+                ("supervisor", "status") => {
+                    state.continuity.supervisor = crate::DomainRecovery::Complete;
+                }
+                ("supervisor", "restarting" | "started" | "stopped" | "queue") => {
+                    state.continuity.supervisor.record_evidence();
+                }
+                ("logs", "exec" | "line" | "exit") => {
+                    state.continuity.tasks.record_evidence();
+                }
+                ("observe", "status" | "observed") => {
+                    state.continuity.observe.record_evidence();
+                }
+                ("think", "started" | "status" | "completed") => {
+                    state.continuity.think.record_evidence();
+                }
                 _ => {}
             }
             Ok(effects)
         }
-        CallosumReceiveEvent::Discontinuity { generation, reason } => {
-            let previous_generation = state.continuity.generation;
+        CallosumReceiveEvent::Continuity {
+            generation,
+            epoch,
+            phase,
+        } => {
+            let generation_changed = *generation != state.continuity.generation;
             state.continuity.generation = *generation;
-            if *generation != previous_generation {
+            state.continuity.epoch = *epoch;
+            state.continuity.connection = phase.clone();
+            if generation_changed {
                 let _ = fail_discontinuous_restarts(state, *generation, sample.monotonic_seconds);
             }
-            if *generation != previous_generation
-                || !matches!(reason, CallosumDiscontinuity::Connected)
-            {
-                state.continuity.supervisor_gap = true;
-                state.continuity.task_gap = true;
-                state.continuity.observe_gap = true;
-                state.continuity.think_gap = true;
+            if matches!(phase, CallosumConnectionPhase::Gapped { .. }) {
+                state.continuity.supervisor.incomplete();
+                state.continuity.tasks.incomplete();
+                state.continuity.observe.incomplete();
+                state.continuity.think.incomplete();
                 state.services.clear();
                 state.crashed.clear();
                 state.command_queues.clear();
+                state.service_status.clear();
                 state.cpu_cache.clear();
                 state.memory_cache.clear();
                 state.cpu_pids.clear();
                 state.running_tasks.clear();
+                state.finished_tasks.clear();
                 state.task_started_at.clear();
                 state.last_log_lines.clear();
                 state.last_log_at.clear();
                 state.observe_status.clear();
                 state.observe_last_ts = 0.0;
+                state.displayed_mode = "idle".to_owned();
+                state.last_active_ts = 0.0;
                 state.think_running = false;
                 state.think_status.clear();
+                state.think_last_completed.clear();
                 for attempt in state.restart_attempts.values_mut() {
                     if matches!(
                         attempt.phase,
@@ -188,6 +225,21 @@ pub fn apply_receive_event(
             Ok(ReductionEffects::default())
         }
     }
+}
+
+fn observe_status_has_display_fields(extra: &Map<String, Value>) -> bool {
+    [
+        "mode",
+        "stream",
+        "screencast",
+        "tmux",
+        "audio",
+        "activity",
+        "describe",
+        "transcribe",
+    ]
+    .iter()
+    .any(|key| extra.contains_key(*key))
 }
 
 /// Refresh live task observations and retain finished-task ghosts for exactly

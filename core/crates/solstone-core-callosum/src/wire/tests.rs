@@ -14,9 +14,13 @@ use solstone_core_system::status_wire::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::{sleep, timeout};
 
-use super::connection::{CallosumDiscontinuity, CallosumReceiveEvent, CallosumSocketConnection};
+use super::connection::{
+    CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
+    CallosumSocketConnection,
+};
 use super::framing::{ReadFrame, read_frame, reader};
 use super::server::{CallosumSocketServer, ServerTestHooks};
 
@@ -24,15 +28,23 @@ static NEXT_SOCKET: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn continuity_markers_are_explicit_and_cloneable() {
-    let event = CallosumReceiveEvent::Discontinuity {
+    let event = CallosumReceiveEvent::Continuity {
         generation: 7,
-        reason: CallosumDiscontinuity::InboundSaturated,
+        epoch: 9,
+        phase: CallosumConnectionPhase::Gapped {
+            reason: CallosumGapReason::InboundSaturated,
+            dropped_count: 3,
+        },
     };
     assert!(matches!(
         event.clone(),
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 7,
-            reason: CallosumDiscontinuity::InboundSaturated,
+            epoch: 9,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::InboundSaturated,
+                dropped_count: 3,
+            },
         }
     ));
 }
@@ -108,6 +120,129 @@ async fn next_event(connection: &mut CallosumSocketConnection) -> CallosumReceiv
         .expect("connection receiver should remain open")
 }
 
+struct SuppliedRetries(UnboundedReceiver<bool>);
+
+impl CallosumRetrySource for SuppliedRetries {
+    fn next_attempt(
+        &mut self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        Box::pin(async move { self.0.recv().await.unwrap_or(false) })
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn priority_latch_starts_connecting_and_coalesces_unavailable() {
+    let socket = TempSocket::new("priority-unavailable");
+    let (supplied, retries) = tokio::sync::mpsc::unbounded_channel();
+    let mut client = CallosumSocketConnection::with_retry_source(
+        &socket.path,
+        Map::new(),
+        1,
+        Box::new(SuppliedRetries(retries)),
+    );
+    client.start();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            generation: 0,
+            epoch: 0,
+            phase: CallosumConnectionPhase::Connecting { attempt: 1 },
+        }
+    ));
+    supplied.send(true).unwrap();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            generation: 0,
+            epoch: 0,
+            phase: CallosumConnectionPhase::Unavailable {
+                latest_attempt: 1,
+                failures_since_success: 1
+            },
+        }
+    ));
+    supplied.send(true).unwrap();
+    let second_attempt = next_event(&mut client).await;
+    let unavailable = if matches!(
+        second_attempt,
+        CallosumReceiveEvent::Continuity {
+            generation: 0,
+            epoch: 0,
+            phase: CallosumConnectionPhase::Connecting { attempt: 2 },
+        }
+    ) {
+        next_event(&mut client).await
+    } else {
+        second_attempt
+    };
+    assert!(
+        matches!(
+            unavailable,
+            CallosumReceiveEvent::Continuity {
+                generation: 0,
+                epoch: 0,
+                phase: CallosumConnectionPhase::Unavailable {
+                    latest_attempt: 2,
+                    failures_since_success: 2
+                },
+            }
+        ),
+        "{unavailable:?}"
+    );
+    client.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn real_adapter_retry_source_never_and_late_connect() {
+    let socket = TempSocket::new("supplied-retry");
+    let (supplied, retries) = tokio::sync::mpsc::unbounded_channel();
+    let mut client = CallosumSocketConnection::with_retry_source(
+        &socket.path,
+        Map::new(),
+        1,
+        Box::new(SuppliedRetries(retries)),
+    );
+    client.start();
+    let _ = next_event(&mut client).await;
+    supplied.send(true).unwrap();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            generation: 0,
+            epoch: 0,
+            phase: CallosumConnectionPhase::Unavailable {
+                latest_attempt: 1,
+                failures_since_success: 1
+            },
+        }
+    ));
+    let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
+    supplied.send(true).unwrap();
+    let _peer = listener.accept().await.unwrap();
+    let connected = next_event(&mut client).await;
+    let connected = if matches!(
+        connected,
+        CallosumReceiveEvent::Continuity {
+            generation: 0,
+            epoch: 0,
+            phase: CallosumConnectionPhase::Connecting { attempt: 2 },
+        }
+    ) {
+        next_event(&mut client).await
+    } else {
+        connected
+    };
+    assert!(matches!(
+        connected,
+        CallosumReceiveEvent::Continuity {
+            generation: 1,
+            epoch: 1,
+            phase: CallosumConnectionPhase::Connected,
+        }
+    ));
+    client.stop().await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn continuity_generation_connected_precedes_envelopes_and_next_message_skips_markers() {
     let socket = TempSocket::new("continuity-generation");
@@ -116,14 +251,15 @@ async fn continuity_generation_connected_precedes_envelopes_and_next_message_ski
     wait_for_clients(&server, 1).await;
     assert!(matches!(
         next_event(&mut first).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::Connected
+            epoch: 1,
+            phase: CallosumConnectionPhase::Connected,
         }
     ));
     assert!(first.emit("top", "one", Map::new()));
     assert!(
-        matches!(next_event(&mut first).await, CallosumReceiveEvent::Envelope { generation: 1, envelope } if envelope.tract == "top" && envelope.event == "one")
+        matches!(next_event(&mut first).await, CallosumReceiveEvent::Envelope { generation: 1, epoch: 1, envelope } if envelope.tract == "top" && envelope.event == "one")
     );
     assert!(first.emit("top", "two", Map::new()));
     let message = next(&mut first).await;
@@ -136,24 +272,29 @@ async fn continuity_generation_connected_precedes_envelopes_and_next_message_ski
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn continuity_reconnect_increments_generation_and_connects_before_the_new_envelope() {
+async fn generation_epoch_transition_and_overflow_are_nonwrapping() {
     let socket = TempSocket::new("continuity-reconnect");
     let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
     let mut client = connection(&socket.path, Map::new());
     wait_for_clients(&server, 1).await;
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::Connected
+            epoch: 1,
+            phase: CallosumConnectionPhase::Connected,
         }
     ));
     server.stop().await;
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::Disconnected
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::Disconnected,
+                dropped_count: 1
+            },
         }
     ));
 
@@ -161,15 +302,16 @@ async fn continuity_reconnect_increments_generation_and_connects_before_the_new_
     wait_for_clients(&replacement, 1).await;
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 2,
-            reason: CallosumDiscontinuity::Connected
+            epoch: 3,
+            phase: CallosumConnectionPhase::Connected,
         }
     ));
     assert!(client.emit("continuity", "after-reconnect", Map::new()));
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Envelope { generation: 2, envelope }
+        CallosumReceiveEvent::Envelope { generation: 2, epoch: 3, envelope }
             if envelope.tract == "continuity" && envelope.event == "after-reconnect"
     ));
     client.stop().await;
@@ -186,9 +328,13 @@ async fn continuity_lost_connection_emits_one_disconnected_marker() {
     server.stop().await;
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::Disconnected
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::Disconnected,
+                dropped_count: 1
+            },
         }
     ));
     assert!(
@@ -221,11 +367,25 @@ async fn accept_connected_raw_peer(
         .expect("connection should arrive")
         .expect("listener should accept")
         .0;
+    let initial = next_event(client).await;
+    let connected = if matches!(
+        initial,
+        CallosumReceiveEvent::Continuity {
+            generation: 0,
+            epoch: 0,
+            phase: CallosumConnectionPhase::Connecting { attempt: 1 },
+        }
+    ) {
+        next_event(client).await
+    } else {
+        initial
+    };
     assert!(matches!(
-        next_event(client).await,
-        CallosumReceiveEvent::Discontinuity {
+        connected,
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::Connected
+            epoch: 1,
+            phase: CallosumConnectionPhase::Connected,
         }
     ));
     peer
@@ -238,9 +398,13 @@ async fn continuity_malformed_frame_marks_current_generation_and_connection_surv
     peer.write_all(b"{malformed}\n").await.unwrap();
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::MalformedFrameDropped
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::MalformedFrameDropped,
+                dropped_count: 1
+            },
         }
     ));
     peer.write_all(b"{\"tract\":\"valid\",\"event\":\"after\"}\n")
@@ -248,18 +412,24 @@ async fn continuity_malformed_frame_marks_current_generation_and_connection_surv
         .unwrap();
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Envelope { generation: 1, envelope }
-            if envelope.tract == "valid" && envelope.event == "after"
+        CallosumReceiveEvent::Continuity {
+            generation: 1,
+            epoch: 2,
+            phase: CallosumConnectionPhase::Connected,
+        }
     ));
+    assert!(
+        matches!(next_event(&mut client).await, CallosumReceiveEvent::Envelope { generation: 1, epoch: 2, envelope }
+        if envelope.tract == "valid" && envelope.event == "after")
+    );
     client.stop().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn continuity_inbound_saturation_marks_current_generation() {
+async fn capacity_one_priority_latch_preserves_saturation_and_recovery_order() {
     let socket = TempSocket::new("continuity-saturation");
     let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
-    let mut client =
-        CallosumSocketConnection::with_test_inbound_capacity(&socket.path, Map::new(), 1);
+    let mut client = CallosumSocketConnection::with_inbound_capacity(&socket.path, Map::new(), 1);
     client.start();
     let mut peer = accept_connected_raw_peer(&listener, &mut client).await;
     peer.write_all(b"{\"tract\":\"burst\",\"event\":\"0\"}\n")
@@ -270,49 +440,64 @@ async fn continuity_inbound_saturation_marks_current_generation() {
         .await
         .unwrap();
     sleep(Duration::from_millis(50)).await;
-    assert!(matches!(
-        next_event(&mut client).await,
-        CallosumReceiveEvent::Envelope { generation: 1, .. }
-    ));
-    peer.write_all(b"\n").await.unwrap();
     let saturation = next_event(&mut client).await;
     assert!(
         matches!(
             saturation,
-            CallosumReceiveEvent::Discontinuity {
+            CallosumReceiveEvent::Continuity {
                 generation: 1,
-                reason: CallosumDiscontinuity::InboundSaturated
+                epoch: 2,
+                phase: CallosumConnectionPhase::Gapped {
+                    reason: CallosumGapReason::InboundSaturated,
+                    dropped_count: 1
+                }
             }
         ),
         "{saturation:?}"
+    );
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            generation: 1,
+            epoch: 2,
+            phase: CallosumConnectionPhase::Connected,
+        }
+    ));
+    peer.write_all(b"{\"tract\":\"burst\",\"event\":\"after\"}\n")
+        .await
+        .unwrap();
+    assert!(
+        matches!(next_event(&mut client).await, CallosumReceiveEvent::Envelope {
+        generation: 1, epoch: 2, envelope
+    } if envelope.event == "after")
     );
     client.stop().await;
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn dropped_discontinuity_is_reported_as_inbound_saturation() {
+async fn repeated_saturation_coalesces_one_gap_epoch() {
     let socket = TempSocket::new("continuity-dropped-marker");
     let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
-    let mut client =
-        CallosumSocketConnection::with_test_inbound_capacity(&socket.path, Map::new(), 1);
+    let mut client = CallosumSocketConnection::with_inbound_capacity(&socket.path, Map::new(), 1);
     client.start();
     let mut peer = accept_connected_raw_peer(&listener, &mut client).await;
     peer.write_all(b"{\"tract\":\"burst\",\"event\":\"one\"}\n")
         .await
         .unwrap();
     sleep(Duration::from_millis(25)).await;
-    peer.write_all(b"{malformed}\n").await.unwrap();
+    peer.write_all(b"{\"tract\":\"burst\",\"event\":\"two\"}\n")
+        .await
+        .unwrap();
     sleep(Duration::from_millis(25)).await;
     assert!(matches!(
         next_event(&mut client).await,
-        CallosumReceiveEvent::Envelope { generation: 1, .. }
-    ));
-    peer.write_all(b"\n").await.unwrap();
-    assert!(matches!(
-        next_event(&mut client).await,
-        CallosumReceiveEvent::Discontinuity {
+        CallosumReceiveEvent::Continuity {
             generation: 1,
-            reason: CallosumDiscontinuity::InboundSaturated
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::InboundSaturated,
+                dropped_count: 1..
+            }
         }
     ));
     client.stop().await;
@@ -520,6 +705,7 @@ async fn ac12_exposes_malformed_and_single_eviction_counters() {
     let mut stalled = raw(&socket.path).await;
     let mut healthy = connection(&socket.path, Map::new());
     wait_for_clients(&server, 2).await;
+    let _ = next_event(&mut healthy).await;
     stalled.write_all(b"{bad}\n").await.unwrap();
     wait_for_counter(|| server.malformed_frame_drops()).await;
     hooks.block_client(1);
@@ -545,6 +731,7 @@ async fn ac13_stalled_client_does_not_block_healthy_delivery_and_is_evicted() {
     let _stalled = raw(&socket.path).await;
     let mut healthy = connection(&socket.path, Map::new());
     wait_for_clients(&server, 2).await;
+    let _ = next_event(&mut healthy).await;
     hooks.block_client(1);
     assert!(healthy.emit("stall", "first", Map::new()));
     timeout(Duration::from_secs(1), hooks.wait_for_write())

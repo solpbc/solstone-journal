@@ -4,18 +4,73 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value, json};
+use solstone_core_callosum::CallosumConnectionPhase;
 
 use crate::RestartAttempt;
 
 /// Continuity metadata is native-only and deliberately excluded from the
 /// retained Python fixture projection.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum DomainRecovery {
+    #[default]
+    Complete,
+    Incomplete {
+        post_gap_evidence: bool,
+    },
+}
+
+impl DomainRecovery {
+    #[must_use]
+    pub fn is_incomplete(&self) -> bool {
+        matches!(self, Self::Incomplete { .. })
+    }
+
+    pub fn incomplete(&mut self) {
+        *self = Self::Incomplete {
+            post_gap_evidence: false,
+        };
+    }
+
+    pub fn record_evidence(&mut self) {
+        if let Self::Incomplete { post_gap_evidence } = self {
+            *post_gap_evidence = true;
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DomainContinuity {
     pub generation: u64,
-    pub supervisor_gap: bool,
-    pub task_gap: bool,
-    pub observe_gap: bool,
-    pub think_gap: bool,
+    pub epoch: u64,
+    pub connection: CallosumConnectionPhase,
+    pub supervisor: DomainRecovery,
+    pub tasks: DomainRecovery,
+    pub observe: DomainRecovery,
+    pub think: DomainRecovery,
+    pub rejected_receive_events: u64,
+}
+
+impl Default for DomainContinuity {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            epoch: 0,
+            connection: CallosumConnectionPhase::Connecting { attempt: 1 },
+            supervisor: DomainRecovery::Incomplete {
+                post_gap_evidence: false,
+            },
+            tasks: DomainRecovery::Incomplete {
+                post_gap_evidence: false,
+            },
+            observe: DomainRecovery::Incomplete {
+                post_gap_evidence: false,
+            },
+            think: DomainRecovery::Incomplete {
+                post_gap_evidence: false,
+            },
+            rejected_receive_events: 0,
+        }
+    }
 }
 
 /// Typed manager state with JSON-valued compatibility leaves where Python

@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use serde_json::{Map, Value};
 use tokio::io::AsyncWriteExt;
 use tokio::net::UnixStream;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::JoinHandle;
-use tokio::time::{Instant, sleep, timeout};
+use tokio::time::{sleep, timeout};
 
 use crate::CallosumEnvelope;
 
@@ -21,32 +23,194 @@ use super::{
     CLIENT_SEND_TIMEOUT, CLIENT_STOP_JOIN_TIMEOUT,
 };
 
-/// A continuity boundary observed by the reconnecting socket reader.
+/// The current continuity state of a reconnecting socket reader.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallosumDiscontinuity {
-    /// A fresh socket connection was established for this generation.
+pub enum CallosumConnectionPhase {
+    Connecting {
+        attempt: u64,
+    },
+    Unavailable {
+        latest_attempt: u64,
+        failures_since_success: u64,
+    },
     Connected,
-    /// The socket reached EOF or an I/O error and its stream was discarded.
+    Gapped {
+        reason: CallosumGapReason,
+        dropped_count: u64,
+    },
+    Stopped {
+        reason: CallosumStoppedReason,
+    },
+}
+
+/// The reason a complete event stream is no longer available.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallosumGapReason {
     Disconnected,
-    /// A malformed or non-UTF-8 frame was dropped.
     MalformedFrameDropped,
-    /// An inbound envelope was dropped because the consumer was saturated.
     InboundSaturated,
 }
 
-/// An ordered inbound item with the socket generation that produced it.
+/// A terminal socket-reader condition which cannot safely reuse counters.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallosumStoppedReason {
+    CounterOverflow,
+    RetrySourceClosed,
+}
+
+/// One ordered inbound item. Continuity always has priority over data.
 #[derive(Clone, Debug)]
 pub enum CallosumReceiveEvent {
-    /// A decoded Callosum envelope.
+    Continuity {
+        generation: u64,
+        epoch: u64,
+        phase: CallosumConnectionPhase,
+    },
     Envelope {
         generation: u64,
+        epoch: u64,
         envelope: CallosumEnvelope,
     },
-    /// A continuity boundary for the current generation.
-    Discontinuity {
+}
+
+/// Supplies bounded reconnect opportunities. Production sleeps between attempts;
+/// deterministic tests explicitly release each attempt.
+pub trait CallosumRetrySource: Send {
+    fn next_attempt(&mut self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
+}
+
+/// The production reconnect cadence.
+pub struct TokioRetrySource {
+    first: bool,
+}
+
+impl Default for TokioRetrySource {
+    fn default() -> Self {
+        Self { first: true }
+    }
+}
+
+impl CallosumRetrySource for TokioRetrySource {
+    fn next_attempt(&mut self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+        let first = std::mem::replace(&mut self.first, false);
+        Box::pin(async move {
+            if !first {
+                sleep(CLIENT_RECONNECT_INTERVAL).await;
+            }
+            true
+        })
+    }
+}
+
+/// A single replacing continuity slot which is independent of the bounded
+/// envelope channel. It is intentionally private: consumers observe it through
+/// `CallosumSocketConnection` so priority cannot be bypassed.
+struct PriorityLatch {
+    slot: std::sync::Mutex<Option<CallosumReceiveEvent>>,
+    changed: Notify,
+}
+
+impl PriorityLatch {
+    fn replace(&self, event: CallosumReceiveEvent) {
+        let mut slot = lock(&self.slot);
+        *slot = Some(event);
+        self.changed.notify_waiters();
+    }
+
+    fn take(&self) -> Option<CallosumReceiveEvent> {
+        let event = lock(&self.slot).take();
+        if event.is_some() {
+            self.changed.notify_waiters();
+        }
+        event
+    }
+
+    fn pending(&self) -> bool {
+        lock(&self.slot).is_some()
+    }
+
+    fn replace_gap(
+        &self,
         generation: u64,
-        reason: CallosumDiscontinuity,
-    },
+        epoch: u64,
+        reason: CallosumGapReason,
+        dropped: u64,
+    ) -> bool {
+        let mut slot = lock(&self.slot);
+        let (reason, dropped_count) = match slot.as_ref() {
+            Some(CallosumReceiveEvent::Continuity {
+                generation: previous_generation,
+                epoch: previous_epoch,
+                phase:
+                    CallosumConnectionPhase::Gapped {
+                        reason: previous_reason,
+                        dropped_count,
+                    },
+            }) if *previous_generation == generation && *previous_epoch == epoch => {
+                let Some(dropped_count) = dropped_count.checked_add(dropped) else {
+                    *slot = Some(CallosumReceiveEvent::Continuity {
+                        generation,
+                        epoch,
+                        phase: CallosumConnectionPhase::Stopped {
+                            reason: CallosumStoppedReason::CounterOverflow,
+                        },
+                    });
+                    self.changed.notify_waiters();
+                    return false;
+                };
+                (previous_reason.clone(), dropped_count)
+            }
+            _ => (reason, dropped),
+        };
+        *slot = Some(CallosumReceiveEvent::Continuity {
+            generation,
+            epoch,
+            phase: CallosumConnectionPhase::Gapped {
+                reason,
+                dropped_count,
+            },
+        });
+        self.changed.notify_waiters();
+        true
+    }
+
+    async fn wait_until_consumed(&self) {
+        loop {
+            let notified = self.changed.notified();
+            if !self.pending() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+struct InboundQueues {
+    priority: Arc<PriorityLatch>,
+    data: mpsc::Sender<CallosumReceiveEvent>,
+}
+
+impl InboundQueues {
+    fn continuity(&self, generation: u64, epoch: u64, phase: CallosumConnectionPhase) {
+        self.priority.replace(CallosumReceiveEvent::Continuity {
+            generation,
+            epoch,
+            phase,
+        });
+    }
+
+    fn try_send_envelope(&self, generation: u64, epoch: u64, envelope: CallosumEnvelope) -> bool {
+        if self.priority.pending() {
+            return false;
+        }
+        self.data
+            .try_send(CallosumReceiveEvent::Envelope {
+                generation,
+                epoch,
+                envelope,
+            })
+            .is_ok()
+    }
 }
 
 /// Long-lived, reconnecting Callosum Unix-socket client.
@@ -56,37 +220,71 @@ pub struct CallosumSocketConnection {
     outbound: mpsc::Sender<CallosumEnvelope>,
     outbound_rx: Option<mpsc::Receiver<CallosumEnvelope>>,
     inbound: mpsc::Receiver<CallosumReceiveEvent>,
-    inbound_tx: mpsc::Sender<CallosumReceiveEvent>,
+    queues: Arc<InboundQueues>,
+    retry_source: Option<Box<dyn CallosumRetrySource>>,
     shutdown: watch::Sender<bool>,
     task: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
     malformed_frame_drops: Arc<AtomicU64>,
     outbound_saturation_drops: Arc<AtomicU64>,
+    delivered_generation: u64,
+    delivered_epoch: u64,
 }
 
 impl CallosumSocketConnection {
     /// Construct an idle connection. Call [`Self::start`] before emitting.
     pub fn new(socket_path: impl AsRef<Path>, mut defaults: Map<String, Value>) -> Self {
-        Self::with_inbound_capacity(socket_path, &mut defaults, CLIENT_INBOUND_CAPACITY)
+        Self::with_parts(
+            socket_path,
+            &mut defaults,
+            CLIENT_INBOUND_CAPACITY,
+            Box::<TokioRetrySource>::default(),
+        )
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_test_inbound_capacity(
+    /// Construct a connection with an explicit inbound data capacity.
+    ///
+    /// This is primarily useful to deterministic adapters that need to prove
+    /// priority behavior at capacity one.
+    pub fn with_inbound_capacity(
         socket_path: impl AsRef<Path>,
         mut defaults: Map<String, Value>,
         inbound_capacity: usize,
     ) -> Self {
-        Self::with_inbound_capacity(socket_path, &mut defaults, inbound_capacity)
+        Self::with_parts(
+            socket_path,
+            &mut defaults,
+            inbound_capacity,
+            Box::<TokioRetrySource>::default(),
+        )
     }
 
-    fn with_inbound_capacity(
+    /// Construct a connection with an injected retry cadence.
+    pub fn with_retry_source(
+        socket_path: impl AsRef<Path>,
+        mut defaults: Map<String, Value>,
+        inbound_capacity: usize,
+        retry_source: Box<dyn CallosumRetrySource>,
+    ) -> Self {
+        Self::with_parts(socket_path, &mut defaults, inbound_capacity, retry_source)
+    }
+
+    fn with_parts(
         socket_path: impl AsRef<Path>,
         defaults: &mut Map<String, Value>,
         inbound_capacity: usize,
+        retry_source: Box<dyn CallosumRetrySource>,
     ) -> Self {
         defaults.retain(|_, value| !value.is_null());
         let (outbound, outbound_rx) = mpsc::channel(CLIENT_OUTBOUND_CAPACITY);
-        let (inbound_tx, inbound) = mpsc::channel(inbound_capacity);
+        let (data, inbound) = mpsc::channel(inbound_capacity);
+        let queues = Arc::new(InboundQueues {
+            priority: Arc::new(PriorityLatch {
+                slot: std::sync::Mutex::new(None),
+                changed: Notify::new(),
+            }),
+            data,
+        });
         let (shutdown, _) = watch::channel(false);
         Self {
             socket_path: socket_path.as_ref().to_path_buf(),
@@ -94,12 +292,15 @@ impl CallosumSocketConnection {
             outbound,
             outbound_rx: Some(outbound_rx),
             inbound,
-            inbound_tx,
+            queues,
+            retry_source: Some(retry_source),
             shutdown,
             task: None,
             running: Arc::new(AtomicBool::new(false)),
             malformed_frame_drops: Arc::new(AtomicU64::new(0)),
             outbound_saturation_drops: Arc::new(AtomicU64::new(0)),
+            delivered_generation: 0,
+            delivered_epoch: 0,
         }
     }
 
@@ -108,18 +309,24 @@ impl CallosumSocketConnection {
         if self.running.load(Ordering::Acquire) {
             return;
         }
-        let Some(outbound) = self.outbound_rx.take() else {
+        let (Some(outbound), Some(retry_source)) =
+            (self.outbound_rx.take(), self.retry_source.take())
+        else {
             return;
         };
+        // This is deliberately synchronous: a first Top render must see the
+        // connection attempt even when the runtime has not scheduled the task.
+        self.queues
+            .continuity(0, 0, CallosumConnectionPhase::Connecting { attempt: 1 });
         self.running.store(true, Ordering::Release);
         self.task = Some(tokio::spawn(run_connection(
             self.socket_path.clone(),
             outbound,
-            self.inbound_tx.clone(),
+            Arc::clone(&self.queues),
+            retry_source,
             self.shutdown.subscribe(),
             Arc::clone(&self.running),
             Arc::clone(&self.malformed_frame_drops),
-            Arc::clone(&self.outbound_saturation_drops),
         )));
     }
 
@@ -148,12 +355,8 @@ impl CallosumSocketConnection {
     }
 
     /// Receive the next reflected Callosum message, skipping continuity markers.
-    ///
-    /// This compatibility method intentionally retains its original envelope-only
-    /// contract. New consumers that must detect reconnects or frame loss should
-    /// use [`Self::next_event`].
     pub async fn next_message(&mut self) -> Option<CallosumEnvelope> {
-        while let Some(event) = self.inbound.recv().await {
+        while let Some(event) = self.next_event().await {
             if let CallosumReceiveEvent::Envelope { envelope, .. } = event {
                 return Some(envelope);
             }
@@ -161,34 +364,69 @@ impl CallosumSocketConnection {
         None
     }
 
-    /// Receive the next ordered envelope or continuity marker.
+    /// Receive the next ordered envelope or non-droppable continuity marker.
     pub async fn next_event(&mut self) -> Option<CallosumReceiveEvent> {
-        self.inbound.recv().await
+        loop {
+            if let Some(event) = self.take_priority() {
+                return Some(event);
+            }
+            tokio::select! {
+                biased;
+                _ = self.queues.priority.changed.notified() => {}
+                event = self.inbound.recv() => match event {
+                    Some(event) if self.current(event.clone()) => return Some(event),
+                    Some(_) => {}
+                    None => return self.take_priority(),
+                },
+            }
+        }
     }
 
     /// Return a ready receive item without waiting for socket activity.
-    ///
-    /// Interactive consumers use this to drain the ordered stream between
-    /// terminal input polls. `None` means no item is immediately available or
-    /// that the connection has stopped; callers that need to distinguish those
-    /// cases should use [`Self::next_event`].
     pub fn try_next_event(&mut self) -> Option<CallosumReceiveEvent> {
-        self.inbound.try_recv().ok()
+        if let Some(event) = self.take_priority() {
+            return Some(event);
+        }
+        while let Ok(event) = self.inbound.try_recv() {
+            if self.current(event.clone()) {
+                return Some(event);
+            }
+        }
+        None
     }
 
-    /// Count invalid JSON, schema, or UTF-8 frames dropped by this peer.
+    fn take_priority(&mut self) -> Option<CallosumReceiveEvent> {
+        let event = self.queues.priority.take()?;
+        if let CallosumReceiveEvent::Continuity {
+            generation,
+            epoch,
+            ref phase,
+        } = event
+        {
+            self.delivered_generation = generation;
+            self.delivered_epoch = epoch;
+            if matches!(phase, CallosumConnectionPhase::Gapped { .. }) {
+                while self.inbound.try_recv().is_ok() {}
+            }
+        }
+        Some(event)
+    }
+
+    fn current(&self, event: CallosumReceiveEvent) -> bool {
+        matches!(event, CallosumReceiveEvent::Envelope { generation, epoch, .. }
+            if generation == self.delivered_generation && epoch == self.delivered_epoch)
+    }
+
     #[must_use]
     pub fn malformed_frame_drops(&self) -> u64 {
         self.malformed_frame_drops.load(Ordering::Acquire)
     }
 
-    /// Count emits rejected because this connection's outbound queue was full.
     #[must_use]
     pub fn outbound_saturation_drops(&self) -> u64 {
         self.outbound_saturation_drops.load(Ordering::Acquire)
     }
 
-    /// Request best-effort outbound draining without starting a new connection.
     pub async fn stop(&mut self) {
         if !self.running.swap(false, Ordering::AcqRel) {
             return;
@@ -197,7 +435,6 @@ impl CallosumSocketConnection {
         let Some(mut task) = self.task.take() else {
             return;
         };
-        // Unlike server stop, connection stop keeps draining; this is only a nonblocking join wait.
         if timeout(CLIENT_STOP_JOIN_TIMEOUT, &mut task).await.is_err() {
             eprintln!("callosum wire: connection drain continues after stop returns");
         }
@@ -216,20 +453,43 @@ struct ConnectedStream {
     writer: tokio::net::unix::OwnedWriteHalf,
 }
 
+struct ConnectionCounters {
+    generation: u64,
+    epoch: u64,
+    attempt: u64,
+    failures_since_success: u64,
+}
+
+impl ConnectionCounters {
+    fn checked_increment(value: &mut u64) -> bool {
+        let Some(next) = value.checked_add(1) else {
+            return false;
+        };
+        *value = next;
+        true
+    }
+}
+
 async fn run_connection(
     socket_path: PathBuf,
     mut outbound: mpsc::Receiver<CallosumEnvelope>,
-    inbound: mpsc::Sender<CallosumReceiveEvent>,
+    queues: Arc<InboundQueues>,
+    mut retry_source: Box<dyn CallosumRetrySource>,
     mut shutdown: watch::Receiver<bool>,
     running: Arc<AtomicBool>,
     malformed_frame_drops: Arc<AtomicU64>,
-    outbound_saturation_drops: Arc<AtomicU64>,
 ) {
     let mut stream: Option<ConnectedStream> = None;
-    let mut last_attempt: Option<Instant> = None;
     let mut buffer = Vec::new();
-    let mut generation = 0_u64;
-    let mut pending_saturation = false;
+    let mut counters = ConnectionCounters {
+        generation: 0,
+        epoch: 0,
+        attempt: 1,
+        failures_since_success: 0,
+    };
+    let mut gapped = false;
+    let mut resume_current = false;
+    let mut first_attempt = true;
 
     loop {
         if *shutdown.borrow() {
@@ -237,62 +497,103 @@ async fn run_connection(
             break;
         }
         if stream.is_none() {
-            if pending_saturation
-                && try_send_event(
-                    &inbound,
-                    CallosumReceiveEvent::Discontinuity {
-                        generation,
-                        reason: CallosumDiscontinuity::InboundSaturated,
-                    },
-                )
-            {
-                pending_saturation = false;
-            }
-            while outbound.try_recv().is_ok() {}
-            let delay = last_attempt
-                .map(|attempt| CLIENT_RECONNECT_INTERVAL.saturating_sub(attempt.elapsed()))
-                .unwrap_or_default();
-            if !delay.is_zero() {
-                tokio::select! {
-                    changed = shutdown.changed() => {
-                        let _ = changed;
-                        continue;
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    let _ = changed;
+                    continue;
+                }
+                permitted = retry_source.next_attempt() => {
+                    if !permitted {
+                        queues.continuity(counters.generation, counters.epoch, CallosumConnectionPhase::Stopped { reason: CallosumStoppedReason::RetrySourceClosed });
+                        break;
                     }
-                    _ = sleep(delay) => {}
                 }
-                continue;
             }
-            last_attempt = Some(Instant::now());
-            if let Ok(socket) = UnixStream::connect(&socket_path).await {
-                let (read_half, writer) = socket.into_split();
-                generation = generation.wrapping_add(1);
-                if !try_send_event(
-                    &inbound,
-                    CallosumReceiveEvent::Discontinuity {
-                        generation,
-                        reason: CallosumDiscontinuity::Connected,
-                    },
-                ) {
-                    pending_saturation = true;
+            if !first_attempt {
+                if !ConnectionCounters::checked_increment(&mut counters.attempt) {
+                    queues.continuity(
+                        counters.generation,
+                        counters.epoch,
+                        CallosumConnectionPhase::Stopped {
+                            reason: CallosumStoppedReason::CounterOverflow,
+                        },
+                    );
+                    break;
                 }
-                stream = Some(ConnectedStream {
-                    reader: reader(read_half),
-                    writer,
-                });
+                queues.continuity(
+                    counters.generation,
+                    counters.epoch,
+                    CallosumConnectionPhase::Connecting {
+                        attempt: counters.attempt,
+                    },
+                );
+            }
+            first_attempt = false;
+            while outbound.try_recv().is_ok() {}
+            match UnixStream::connect(&socket_path).await {
+                Ok(socket) => {
+                    if !ConnectionCounters::checked_increment(&mut counters.generation)
+                        || !ConnectionCounters::checked_increment(&mut counters.epoch)
+                    {
+                        queues.continuity(
+                            counters.generation,
+                            counters.epoch,
+                            CallosumConnectionPhase::Stopped {
+                                reason: CallosumStoppedReason::CounterOverflow,
+                            },
+                        );
+                        break;
+                    }
+                    counters.failures_since_success = 0;
+                    gapped = false;
+                    resume_current = false;
+                    queues.continuity(
+                        counters.generation,
+                        counters.epoch,
+                        CallosumConnectionPhase::Connected,
+                    );
+                    let (read_half, writer) = socket.into_split();
+                    stream = Some(ConnectedStream {
+                        reader: reader(read_half),
+                        writer,
+                    });
+                }
+                Err(_) => {
+                    if !ConnectionCounters::checked_increment(&mut counters.failures_since_success)
+                    {
+                        queues.continuity(
+                            counters.generation,
+                            counters.epoch,
+                            CallosumConnectionPhase::Stopped {
+                                reason: CallosumStoppedReason::CounterOverflow,
+                            },
+                        );
+                        break;
+                    }
+                    queues.continuity(
+                        counters.generation,
+                        counters.epoch,
+                        CallosumConnectionPhase::Unavailable {
+                            latest_attempt: counters.attempt,
+                            failures_since_success: counters.failures_since_success,
+                        },
+                    );
+                }
             }
             continue;
         }
 
-        if pending_saturation
-            && try_send_event(
-                &inbound,
-                CallosumReceiveEvent::Discontinuity {
-                    generation,
-                    reason: CallosumDiscontinuity::InboundSaturated,
-                },
-            )
-        {
-            pending_saturation = false;
+        if queues.priority.pending() {
+            queues.priority.wait_until_consumed().await;
+            if resume_current && stream.is_some() {
+                queues.continuity(
+                    counters.generation,
+                    counters.epoch,
+                    CallosumConnectionPhase::Connected,
+                );
+                resume_current = false;
+            }
+            continue;
         }
 
         let connected = stream.as_mut().expect("connection checked above");
@@ -303,30 +604,12 @@ async fn run_connection(
             message = outbound.recv() => match message {
                 Some(message) => {
                     let sent = match encode_envelope(&message) {
-                        Ok(line) => timeout(CLIENT_SEND_TIMEOUT, connected.writer.write_all(&line)).await,
-                        Err(_) => {
-                            if !try_send_event(
-                                &inbound,
-                                CallosumReceiveEvent::Discontinuity {
-                                    generation,
-                                    reason: CallosumDiscontinuity::Disconnected,
-                                },
-                            ) {
-                                pending_saturation = true;
-                            }
-                            stream = None;
-                            continue;
-                        }
+                        Ok(line) => matches!(timeout(CLIENT_SEND_TIMEOUT, connected.writer.write_all(&line)).await, Ok(Ok(()))),
+                        Err(_) => false,
                     };
-                    if !matches!(sent, Ok(Ok(()))) {
-                        if !try_send_event(
-                            &inbound,
-                            CallosumReceiveEvent::Discontinuity {
-                                generation,
-                                reason: CallosumDiscontinuity::Disconnected,
-                            },
-                        ) {
-                            pending_saturation = true;
+                    if !sent {
+                        if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::Disconnected, 1) {
+                            break;
                         }
                         stream = None;
                     }
@@ -335,36 +618,24 @@ async fn run_connection(
             },
             frame = read_frame(&mut connected.reader, &mut buffer) => match frame {
                 Ok(ReadFrame::Envelope(message)) => {
-                    if !try_send_event(
-                        &inbound,
-                        CallosumReceiveEvent::Envelope { generation, envelope: message },
-                    )
-                    {
-                        pending_saturation = true;
+                    if !queues.try_send_envelope(counters.generation, counters.epoch, message) {
+                        if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::InboundSaturated, 1) {
+                            break;
+                        }
+                        resume_current = stream.is_some();
                     }
                 }
                 Ok(ReadFrame::Whitespace) => {}
                 Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) => {
                     let _ = malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
-                    if !try_send_event(
-                        &inbound,
-                        CallosumReceiveEvent::Discontinuity {
-                            generation,
-                            reason: CallosumDiscontinuity::MalformedFrameDropped,
-                        },
-                    ) {
-                        pending_saturation = true;
+                    if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::MalformedFrameDropped, 1) {
+                        break;
                     }
+                    resume_current = stream.is_some();
                 }
                 Ok(ReadFrame::Eof) | Err(_) => {
-                    if !try_send_event(
-                        &inbound,
-                        CallosumReceiveEvent::Discontinuity {
-                            generation,
-                            reason: CallosumDiscontinuity::Disconnected,
-                        },
-                    ) {
-                        pending_saturation = true;
+                    if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::Disconnected, 1) {
+                        break;
                     }
                     stream = None;
                 }
@@ -372,14 +643,35 @@ async fn run_connection(
         }
     }
     running.store(false, Ordering::Release);
-    let _ = outbound_saturation_drops;
 }
 
-fn try_send_event(
-    inbound: &mpsc::Sender<CallosumReceiveEvent>,
-    event: CallosumReceiveEvent,
+fn enter_gap(
+    queues: &InboundQueues,
+    counters: &mut ConnectionCounters,
+    gapped: &mut bool,
+    reason: CallosumGapReason,
+    dropped: u64,
 ) -> bool {
-    inbound.try_send(event).is_ok()
+    if !*gapped {
+        if !ConnectionCounters::checked_increment(&mut counters.epoch) {
+            queues.continuity(
+                counters.generation,
+                counters.epoch,
+                CallosumConnectionPhase::Stopped {
+                    reason: CallosumStoppedReason::CounterOverflow,
+                },
+            );
+            return true;
+        }
+        *gapped = true;
+    }
+    if !queues
+        .priority
+        .replace_gap(counters.generation, counters.epoch, reason, dropped)
+    {
+        return true;
+    }
+    false
 }
 
 async fn drain_outbound(
@@ -399,5 +691,34 @@ async fn drain_outbound(
         ) {
             *stream = None;
         }
+    }
+}
+
+fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod counter_tests {
+    use super::{CallosumConnectionPhase, CallosumStoppedReason, ConnectionCounters};
+
+    #[test]
+    fn generation_and_attempt_overflow_stop_without_reuse() {
+        let mut generation = u64::MAX;
+        let mut attempt = u64::MAX;
+        assert!(!ConnectionCounters::checked_increment(&mut generation));
+        assert!(!ConnectionCounters::checked_increment(&mut attempt));
+        assert_eq!(generation, u64::MAX);
+        assert_eq!(attempt, u64::MAX);
+        assert_eq!(
+            CallosumConnectionPhase::Stopped {
+                reason: CallosumStoppedReason::CounterOverflow,
+            },
+            CallosumConnectionPhase::Stopped {
+                reason: CallosumStoppedReason::CounterOverflow,
+            }
+        );
     }
 }

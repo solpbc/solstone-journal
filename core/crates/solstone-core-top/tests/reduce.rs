@@ -2,7 +2,9 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
-use solstone_core_callosum::{CallosumDiscontinuity, CallosumEnvelope, CallosumReceiveEvent};
+use solstone_core_callosum::{
+    CallosumConnectionPhase, CallosumEnvelope, CallosumGapReason, CallosumReceiveEvent,
+};
 use std::collections::VecDeque;
 
 use solstone_core_top::{
@@ -160,16 +162,20 @@ fn new_connection_generation_invalidates_stale_supervisor_state_until_status() {
     };
     apply_receive_event(
         &mut state,
-        &CallosumReceiveEvent::Discontinuity {
+        &CallosumReceiveEvent::Continuity {
             generation: 2,
-            reason: CallosumDiscontinuity::Connected,
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::Disconnected,
+                dropped_count: 1,
+            },
         },
         &ReductionSample::fixture(0.0, "x"),
         &mut Observer,
     )
     .unwrap();
     assert!(state.services.is_empty());
-    assert!(state.continuity.supervisor_gap);
+    assert!(state.continuity.supervisor.is_incomplete());
 }
 
 #[test]
@@ -237,20 +243,37 @@ fn domain_gaps_render_then_clear_on_fresh_domain_events() {
     let mut observer = Observer;
     apply_receive_event(
         &mut state,
-        &CallosumReceiveEvent::Discontinuity {
+        &CallosumReceiveEvent::Continuity {
             generation: 2,
-            reason: CallosumDiscontinuity::Connected,
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::Disconnected,
+                dropped_count: 1,
+            },
         },
         &ReductionSample::fixture(0.0, "x"),
         &mut observer,
     )
     .unwrap();
     assert!(
-        state.continuity.task_gap && state.continuity.observe_gap && state.continuity.think_gap
+        state.continuity.tasks.is_incomplete()
+            && state.continuity.observe.is_incomplete()
+            && state.continuity.think.is_incomplete()
     );
     let rendered = render_frame(&state, FrameSample::default(), 120, &PlainTopStyle);
     assert_eq!(rendered.matches("(reconnecting)").count(), 4);
 
+    apply_receive_event(
+        &mut state,
+        &CallosumReceiveEvent::Continuity {
+            generation: 2,
+            epoch: 2,
+            phase: CallosumConnectionPhase::Connected,
+        },
+        &ReductionSample::fixture(1.0, "x"),
+        &mut observer,
+    )
+    .unwrap();
     for value in [
         serde_json::json!({"tract":"supervisor","event":"status","services":[]}),
         serde_json::json!({"tract":"logs","event":"exec","ref":"task","name":"backup","pid":3}),
@@ -261,6 +284,7 @@ fn domain_gaps_render_then_clear_on_fresh_domain_events() {
             &mut state,
             &CallosumReceiveEvent::Envelope {
                 generation: 2,
+                epoch: 2,
                 envelope: envelope(&value),
             },
             &ReductionSample::fixture(1.0, "x"),
@@ -268,12 +292,12 @@ fn domain_gaps_render_then_clear_on_fresh_domain_events() {
         )
         .unwrap();
     }
+    assert!(!state.continuity.supervisor.is_incomplete());
     assert!(
-        !state.continuity.supervisor_gap
-            && !state.continuity.task_gap
-            && !state.continuity.observe_gap
-            && !state.continuity.think_gap
+        state.continuity.tasks.is_incomplete()
+            && state.continuity.observe.is_incomplete()
+            && state.continuity.think.is_incomplete()
     );
     let rendered = render_frame(&state, FrameSample::default(), 120, &PlainTopStyle);
-    assert!(!rendered.contains("(reconnecting)"));
+    assert_eq!(rendered.matches("(reconnecting)").count(), 3);
 }

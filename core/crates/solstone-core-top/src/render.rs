@@ -77,7 +77,11 @@ pub fn render_frame(
     output.push_str(style.bold());
     output.push_str("  Service         PID      Uptime            MB      %  Last Log");
     output.push_str(style.normal());
-    reconnecting(&mut output, state.continuity.supervisor_gap, style);
+    reconnecting(
+        &mut output,
+        state.continuity.supervisor.is_incomplete(),
+        style,
+    );
     output.push('\n');
     rule(&mut output, width);
     if state.services.is_empty() {
@@ -104,7 +108,7 @@ pub fn render_frame(
     output.push_str(style.bold());
     output.push_str("  Task            PID      Runtime           MB      %  Last Log");
     output.push_str(style.normal());
-    reconnecting(&mut output, state.continuity.task_gap, style);
+    reconnecting(&mut output, state.continuity.tasks.is_incomplete(), style);
     output.push('\n');
     if state.running_tasks.is_empty() && state.finished_tasks.is_empty() {
         output.push_str(style.dim());
@@ -319,7 +323,7 @@ fn observe_section(out: &mut String, state: &TopState, frame: FrameSample, style
     out.push_str(style.bold());
     out.push_str("Observe");
     out.push_str(style.normal());
-    reconnecting(out, state.continuity.observe_gap, style);
+    reconnecting(out, state.continuity.observe.is_incomplete(), style);
     out.push(' ');
     if state.observe_last_ts > 0.0 {
         let age = (frame.wall_seconds - state.observe_last_ts).max(0.0);
@@ -467,7 +471,7 @@ fn think_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
     out.push_str(style.bold());
     out.push_str("Think");
     out.push_str(style.normal());
-    reconnecting(out, state.continuity.think_gap, style);
+    reconnecting(out, state.continuity.think.is_incomplete(), style);
     out.push('\n');
     if state.think_status.is_empty()
         && !state.think_running

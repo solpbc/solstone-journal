@@ -29,7 +29,7 @@ pub use restart::{
     TopRestartError, TopRestartTransport, acknowledge_restart, advance_restart_attempts,
     fail_discontinuous_restarts, request_restart,
 };
-pub use state::{DomainContinuity, TopState};
+pub use state::{DomainContinuity, DomainRecovery, TopState};
 
 /// Run the native interactive command with real terminal, journal, and
 /// Callosum adapters.

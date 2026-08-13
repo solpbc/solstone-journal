@@ -75,16 +75,6 @@ pub fn run_top_with(
         state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
         state.brain_health_ts = clock.wall_seconds();
         loop {
-            let frame = render_frame(
-                state,
-                FrameSample {
-                    wall_seconds: clock.wall_seconds(),
-                    monotonic_seconds: clock.monotonic_seconds(),
-                },
-                terminal.width().map_err(TopLoopError::Terminal)?,
-                &PlainTopStyle,
-            );
-            terminal.render(&frame).map_err(TopLoopError::Terminal)?;
             while let Some(event) = receive.next().map_err(TopLoopError::Transport)? {
                 let sample = ReductionSample {
                     wall_seconds: clock.wall_seconds(),
@@ -98,6 +88,17 @@ pub fn run_top_with(
                     state.brain_health_ts = sample.wall_seconds;
                 }
             }
+            let _ = advance_restart_attempts(state, clock.monotonic_seconds());
+            let frame = render_frame(
+                state,
+                FrameSample {
+                    wall_seconds: clock.wall_seconds(),
+                    monotonic_seconds: clock.monotonic_seconds(),
+                },
+                terminal.width().map_err(TopLoopError::Terminal)?,
+                &PlainTopStyle,
+            );
+            terminal.render(&frame).map_err(TopLoopError::Terminal)?;
             match terminal.input(0.2).map_err(TopLoopError::Terminal)? {
                 TopInput::Quit | TopInput::Interrupt | TopInput::EndOfFile => break,
                 TopInput::Up => state.selected = state.selected.saturating_sub(1),
@@ -120,7 +121,6 @@ pub fn run_top_with(
                 }
                 TopInput::None => {}
             }
-            let _ = advance_restart_attempts(state, clock.monotonic_seconds());
             let now = clock.monotonic_seconds();
             if now - last_cleanup >= 5.0 {
                 cleanup_processes(
@@ -464,18 +464,26 @@ mod tests {
                 fail_next: name == "event-error",
                 fail_stop: name == "stop-error",
                 events: if name == "event-success" {
-                    VecDeque::from([CallosumReceiveEvent::Envelope {
-                        generation: 1,
-                        envelope: solstone_core_callosum::CallosumEnvelope {
-                            tract: "supervisor".into(),
-                            event: "queue".into(),
-                            ts: None,
-                            extra: serde_json::Map::from_iter([
-                                ("command".into(), serde_json::json!("health")),
-                                ("queued".into(), serde_json::json!(2)),
-                            ]),
+                    VecDeque::from([
+                        CallosumReceiveEvent::Continuity {
+                            generation: 1,
+                            epoch: 1,
+                            phase: solstone_core_callosum::CallosumConnectionPhase::Connected,
                         },
-                    }])
+                        CallosumReceiveEvent::Envelope {
+                            generation: 1,
+                            epoch: 1,
+                            envelope: solstone_core_callosum::CallosumEnvelope {
+                                tract: "supervisor".into(),
+                                event: "queue".into(),
+                                ts: None,
+                                extra: serde_json::Map::from_iter([
+                                    ("command".into(), serde_json::json!("health")),
+                                    ("queued".into(), serde_json::json!(2)),
+                                ]),
+                            },
+                        },
+                    ])
                 } else {
                     VecDeque::new()
                 },
