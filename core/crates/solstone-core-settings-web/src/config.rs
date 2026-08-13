@@ -6,17 +6,20 @@ use std::path::PathBuf;
 use axum::response::Response;
 use serde_json::{Map, Value, json};
 
-use crate::http::json_response;
+use crate::http::{json_response, settings_operation_failed};
 
 pub async fn get(journal_root: PathBuf) -> Response {
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
-    json_response(Value::Object(project_public_config(config)))
+    match project_public_config(config) {
+        Ok(config) => json_response(Value::Object(config)),
+        Err(()) => settings_operation_failed(),
+    }
 }
 
-pub fn project_public_config(mut config: Map<String, Value>) -> Map<String, Value> {
+pub fn project_public_config(mut config: Map<String, Value>) -> Result<Map<String, Value>, ()> {
     let validation = config
         .get("service_key_validation")
         .and_then(Value::as_object)
@@ -35,11 +38,12 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Map<String, Valu
     let convey = config
         .entry("convey".to_owned())
         .or_insert_with(|| Value::Object(Map::new()));
-    if let Value::Object(convey) = convey {
-        convey.remove("secret");
-        convey.remove("password_hash");
-        convey.remove("password");
-    }
+    let Value::Object(convey) = convey else {
+        return Err(());
+    };
+    convey.remove("secret");
+    convey.remove("password_hash");
+    convey.remove("password");
     if let Some(transcribe) = config.get("transcribe").cloned() {
         config.insert(
             "transcribe".to_owned(),
@@ -50,7 +54,7 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Map<String, Valu
         "runtime_env".to_owned(),
         json!({"PLAUD_ACCESS_TOKEN": std::env::var_os("PLAUD_ACCESS_TOKEN").is_some_and(|value| !value.is_empty())}),
     );
-    config
+    Ok(config)
 }
 
 pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Value {
@@ -124,32 +128,76 @@ mod tests {
     use serde_json::json;
     use tower::ServiceExt;
 
-    use super::project_public_config;
-
-    #[test]
-    fn ac4_rich_config_preserves_future_section_and_exact_keys() {
-        let config = project_public_config(
-            serde_json::from_value(json!({
-                "setup": {"completed_at": 1}, "some_future_section": {"kept": true, "n": 7},
-                "providers": {"private": true}, "env": {"PLAUD_ACCESS_TOKEN": ""},
-                "service_key_validation": {"plaud": {"valid": false}, "bogus": {"valid": true}},
-                "convey": {"secret": "no", "bind": "127.0.0.1"},
-            }))
-            .expect("map"),
-        );
+    #[tokio::test]
+    async fn ac4_rich_config_preserves_future_section_and_exact_keys() {
+        let root = crate::test_support::phase_root("rich");
+        let response = crate::test_support::shell_router(root.path())
+            .oneshot(
+                Request::get("/app/settings/api/config")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let config: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
         assert_eq!(config["some_future_section"], json!({"kept": true, "n": 7}));
-        let mut keys = config.keys().cloned().collect::<Vec<_>>();
+        let mut keys = config
+            .as_object()
+            .expect("config object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         keys.sort();
+        let mut expected =
+            crate::test_support::corpus()["phases"]["rich"]["GET api/config"]["normalized"]
+                .as_object()
+                .expect("recorded config")
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+        expected.sort();
+        assert_eq!(keys, expected);
+    }
+
+    #[tokio::test]
+    async fn non_object_convey_returns_the_settings_operation_failure() {
+        let root = crate::test_support::established_root();
+        std::fs::write(
+            root.path().join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "setup": {"completed_at": 1},
+                "convey": "not an object",
+            }))
+            .expect("config JSON"),
+        )
+        .expect("config writes");
+        let response = crate::test_support::shell_router(root.path())
+            .oneshot(
+                Request::get("/app/settings/api/config")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
         assert_eq!(
-            keys,
-            vec![
-                "convey",
-                "env",
-                "key_validation",
-                "runtime_env",
-                "setup",
-                "some_future_section"
-            ]
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let body: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        assert_eq!(body["reason_code"], "settings_operation_failed");
+        assert_eq!(
+            body["detail"],
+            "something went wrong — try again, and if it persists, check the health dashboard"
         );
     }
 

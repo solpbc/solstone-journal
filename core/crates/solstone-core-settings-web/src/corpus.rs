@@ -120,7 +120,7 @@ async fn ac3_all_captured_get_cases_match_status_and_digest() {
             );
         }
     }
-    assert_eq!(total, 125);
+    assert_eq!(total, 160);
 }
 
 fn normalize(value: Value, path: &str, root: &str) -> (Value, Vec<String>) {

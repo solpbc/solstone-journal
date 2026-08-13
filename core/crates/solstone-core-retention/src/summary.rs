@@ -122,7 +122,11 @@ pub fn human_bytes(bytes: u64) -> String {
         value /= 1024.0;
         unit = candidate;
     }
-    format!("{value:.1} {unit}")
+    if value >= 1024.0 && unit == "TB" {
+        format!("{:.1} PB", value / 1024.0)
+    } else {
+        format!("{value:.1} {unit}")
+    }
 }
 
 #[cfg(test)]
@@ -158,6 +162,7 @@ mod tests {
         assert_eq!(summary.raw_media_human(), "6.0 KB");
         assert_eq!(summary.derived_human(), "41 B");
         assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(1024_u64.pow(5)), "1.0 PB");
         Ok(())
     }
 }

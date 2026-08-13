@@ -314,6 +314,24 @@ fn main() {
             &exported_constants(&source, use_all),
         );
     }
+    let backup_copy = root.join("solstone/apps/backup/copy.py");
+    println!("cargo:rerun-if-changed={}", backup_copy.display());
+    let backup_assignments =
+        assignments(&fs::read_to_string(&backup_copy).expect("backup copy module is readable"));
+    let backup_constants = ["OFFLOAD_STALLED_LEAD", "OFFLOAD_STALL_REASON_LABELS"]
+        .into_iter()
+        .map(|name| {
+            (
+                name.to_owned(),
+                Literal::parse(
+                    backup_assignments
+                        .get(name)
+                        .expect("backup copy constant exists"),
+                ),
+            )
+        })
+        .collect();
+    write_constants(&output.join("backup_copy.rs"), &backup_constants);
     let activities = root.join("solstone/think/activities.py");
     println!("cargo:rerun-if-changed={}", activities.display());
     let activities_source = fs::read_to_string(&activities).expect("activities module is readable");

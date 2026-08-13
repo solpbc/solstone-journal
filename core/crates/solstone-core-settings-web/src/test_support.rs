@@ -32,6 +32,7 @@ pub fn phase_root(phase: &str) -> TempDir {
         }
         "populated" => populated_root(),
         "corrupt" => corrupt_root(),
+        "malformed" => root_with_config(malformed_config()),
         _ => panic!("known corpus phase: {phase}"),
     }
 }
@@ -64,6 +65,21 @@ fn rich_config() -> Value {
         "service_key_validation":{"plaud":{"valid":false,"timestamp":"2026-01-01T00:00:00Z"},"bogus":{"valid":true}},
         "some_future_section":{"kept":true,"n":7}
     })
+}
+
+// Valid JSON carrying malformed KNOWN sections. The whole-file gate does not
+// fire -- it parses -- so these reach the handlers untouched, which is exactly
+// the shape a typed deserializer is tempted to reject outright. Mirrors the
+// generator's `malformed` derivation from RICH.
+fn malformed_config() -> Value {
+    let mut config = rich_config();
+    config["retention"]["raw_media"] = Value::String("sometimes".to_owned());
+    config["retention"]["raw_media_days"] = Value::String("ninety".to_owned());
+    config["observe"]["tmux"]["capture_interval"] = Value::String("five".to_owned());
+    config["describe"]["max_extractions"] = Value::Null;
+    config["describe"]["redact"] = Value::String("not-a-list".to_owned());
+    config["identity"]["aliases"] = serde_json::json!({"not": "a list"});
+    config
 }
 
 pub fn populated_root() -> TempDir {
@@ -111,6 +127,8 @@ pub fn request_path(case: &str) -> String {
         "api/facet/absent/logs" => "api/facet/no-such-facet/logs",
         "api/facet/absent/activities" => "api/facet/no-such-facet/activities",
         "api/icons?q=sett" => "api/icons?q=sett&limit=5",
+        "api/icons?q=hea" => "api/icons?q=hea&limit=8",
+        "api/icons?q=zzzznomatch" => "api/icons?q=zzzznomatch&limit=5",
         other => other,
     };
     format!("/app/settings/{translated}")
