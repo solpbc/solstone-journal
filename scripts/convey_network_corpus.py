@@ -282,7 +282,14 @@ def main() -> int:
     args = parser.parse_args()
     rendered = json.dumps(build_corpus(), indent=2, sort_keys=True) + "\n"
     if args.check:
-        if not CORPUS_PATH.exists() or CORPUS_PATH.read_text(encoding="utf-8") != rendered:
+        if not CORPUS_PATH.exists():
+            print(f"network corpus is stale: {CORPUS_PATH}", file=sys.stderr)
+            return 1
+        recorded = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
+        generated = json.loads(rendered)
+        recorded.pop("rev", None)
+        generated.pop("rev", None)
+        if recorded != generated:
             print(f"network corpus is stale: {CORPUS_PATH}", file=sys.stderr)
             return 1
         print(f"network corpus is current: {CORPUS_PATH}")

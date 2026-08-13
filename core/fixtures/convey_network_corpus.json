@@ -475,6 +475,6 @@
     "host": "<HOST_DEPENDENT>",
     "journal_root": "<JOURNAL_ROOT>"
   },
-  "rev": "c534954d8c363ca957766c3d358fa49dbb49603d",
+  "rev": "750be6e4b6a5568c509844f19148a30c1e60b0da",
   "schema": "solstone-convey-network-corpus-v1"
 }
