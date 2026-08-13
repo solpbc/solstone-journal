@@ -1,0 +1,1656 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Native owner-facing `journal config`.
+
+use std::env;
+use std::fs;
+use std::io;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode};
+
+use solstone_core_cli::{ConfigAction, ConfigCommand, ConfigJournalOptions};
+use solstone_core_journal::{
+    Source, detect_checkout_root, read_config_journal, resolve_journal_path,
+};
+
+const MERGE_INSTRUCTIONS: &str = "journal config: --merge is temporarily unavailable.\nKeep both journal copies until archive merge support is migrated.";
+const WRAPPER_MARKER: &str = "# managed-version: 7";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RequestedAction {
+    Move,
+    Switch,
+    Merge,
+    Force,
+}
+impl From<ConfigAction> for RequestedAction {
+    fn from(v: ConfigAction) -> Self {
+        match v {
+            ConfigAction::Move => Self::Move,
+            ConfigAction::Switch => Self::Switch,
+            ConfigAction::Merge => Self::Merge,
+            ConfigAction::Force => Self::Force,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Action {
+    Proceed,
+    Move,
+    Switch,
+    Merge,
+    Noop,
+    Refuse,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct JournalChange {
+    pub current_path: PathBuf,
+    pub target_path: PathBuf,
+    pub paths_equal: bool,
+    pub current_active: bool,
+    pub target_active: bool,
+    pub current_exists: bool,
+    pub target_exists: bool,
+    pub target_parent_exists: bool,
+    pub current_device: Option<u64>,
+    pub target_parent_device: Option<u64>,
+    pub same_filesystem: Option<bool>,
+    pub service_installed: bool,
+    pub service_running: bool,
+    pub action: Option<RequestedAction>,
+    pub yes: bool,
+    pub dry_run: bool,
+    pub sol_bin: PathBuf,
+    pub service_bin: PathBuf,
+    pub alias: PathBuf,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Decision {
+    pub action: Action,
+    pub exit_code: u8,
+    pub message: Option<String>,
+    pub plan_only: bool,
+}
+fn decision(action: Action, exit_code: u8) -> Decision {
+    Decision {
+        action,
+        exit_code,
+        message: None,
+        plan_only: false,
+    }
+}
+fn state(active: bool) -> &'static str {
+    if active { "active" } else { "not active" }
+}
+fn valid_flags(c: &JournalChange) -> &'static str {
+    if c.current_active && !c.target_active {
+        "--move, --switch"
+    } else {
+        "--switch, --merge, --force"
+    }
+}
+fn refusal(c: &JournalChange) -> String {
+    format!(
+        "journal config: refused: current is {} and target is {}; valid flags: {}",
+        state(c.current_active),
+        state(c.target_active),
+        valid_flags(c)
+    )
+}
+fn missing_parent(c: &JournalChange) -> String {
+    format!(
+        "journal config: refused: move target parent does not exist: {}",
+        c.target_path.parent().unwrap().display()
+    )
+}
+fn missing_current(c: &JournalChange) -> String {
+    format!(
+        "journal config: refused: move source does not exist: {}",
+        c.current_path.display()
+    )
+}
+fn existing_target(c: &JournalChange) -> String {
+    format!(
+        "journal config: refused: move target already exists: {}",
+        c.target_path.display()
+    )
+}
+fn cross_filesystem(c: &JournalChange) -> String {
+    format!(
+        "journal config: refused: cannot move across filesystems (current device={:?}, target parent device={:?}); archive merge is temporarily unavailable, so keep both journal copies",
+        c.current_device
+            .map_or_else(|| "None".to_owned(), |v| v.to_string()),
+        c.target_parent_device
+            .map_or_else(|| "None".to_owned(), |v| v.to_string())
+    )
+}
+pub(crate) fn decide(c: &JournalChange) -> Decision {
+    if c.action == Some(RequestedAction::Merge) {
+        return Decision {
+            action: Action::Merge,
+            exit_code: 1,
+            message: Some(MERGE_INSTRUCTIONS.into()),
+            plan_only: false,
+        };
+    }
+    if c.paths_equal {
+        return decision(Action::Noop, 0);
+    }
+    if c.action.is_none() {
+        return if !c.current_active && !c.target_active {
+            decision(Action::Proceed, 0)
+        } else {
+            Decision {
+                action: Action::Refuse,
+                exit_code: 1,
+                message: Some(refusal(c)),
+                plan_only: false,
+            }
+        };
+    }
+    if c.action == Some(RequestedAction::Force) {
+        return decision(Action::Switch, 0);
+    }
+    if c.action == Some(RequestedAction::Move) {
+        let message = if !c.target_parent_exists {
+            Some(missing_parent(c))
+        } else if !c.current_exists {
+            Some(missing_current(c))
+        } else if c.target_exists {
+            Some(existing_target(c))
+        } else if c.target_active {
+            Some(format!(
+                "journal config: refused: --move requires a not active target; current is {} and target is {}; valid flags: --switch, --merge, --force",
+                state(c.current_active),
+                state(c.target_active)
+            ))
+        } else if c.same_filesystem == Some(false) {
+            Some(cross_filesystem(c))
+        } else {
+            None
+        };
+        if let Some(message) = message {
+            return Decision {
+                action: Action::Refuse,
+                exit_code: 1,
+                message: Some(message),
+                plan_only: false,
+            };
+        }
+        if c.dry_run {
+            return Decision {
+                action: Action::Move,
+                exit_code: 0,
+                message: None,
+                plan_only: true,
+            };
+        }
+        if !c.yes {
+            return Decision {
+                action: Action::Move,
+                exit_code: 1,
+                message: None,
+                plan_only: true,
+            };
+        }
+        return decision(Action::Move, 0);
+    }
+    if c.action == Some(RequestedAction::Switch) {
+        if c.dry_run {
+            return Decision {
+                action: Action::Switch,
+                exit_code: 0,
+                message: None,
+                plan_only: true,
+            };
+        }
+        if !c.yes {
+            return Decision {
+                action: Action::Switch,
+                exit_code: 1,
+                message: None,
+                plan_only: true,
+            };
+        }
+        return decision(Action::Switch, 0);
+    }
+    Decision {
+        action: Action::Refuse,
+        exit_code: 1,
+        message: Some(refusal(c)),
+        plan_only: false,
+    }
+}
+fn plan(c: &JournalChange, d: &Decision) -> String {
+    let mut lines = vec![
+        "journal config journal - plan summary".into(),
+        "".into(),
+        format!(
+            "current: {} ({})",
+            c.current_path.display(),
+            state(c.current_active)
+        ),
+        format!(
+            "target:  {} ({})",
+            c.target_path.display(),
+            state(c.target_active)
+        ),
+        format!(
+            "action:  {}",
+            match d.action {
+                Action::Move => "move",
+                Action::Switch => "switch",
+                _ => "proceed",
+            }
+        ),
+        service_summary(c, d).to_owned(),
+    ];
+    if d.action == Action::Move {
+        // Intentionally preserve Python's truthy collapse of an unknown device.
+        lines.push(if c.same_filesystem.unwrap_or(false) {
+            "filesystem: same device".into()
+        } else {
+            "filesystem: different devices".into()
+        });
+    }
+    if d.action == Action::Switch {
+        lines.push(
+            "current journal is left intact. to re-adopt it later: journal config journal "
+                .to_string()
+                + &c.current_path.display().to_string()
+                + " --switch --yes",
+        );
+    }
+    lines.push(if c.dry_run {
+        "dry-run: yes; nothing will be changed".into()
+    } else {
+        "re-run with --yes to proceed".into()
+    });
+    lines.join("\n")
+}
+fn service_summary(c: &JournalChange, d: &Decision) -> &'static str {
+    if d.action == Action::Move {
+        if !c.service_installed {
+            "service: not installed; will move and rewrite wrapper"
+        } else if !c.service_running {
+            "service: installed but not running; will move and rewrite wrapper"
+        } else {
+            "service: installed and running; will stop, move, rewrite wrapper, restart"
+        }
+    } else if !c.service_installed {
+        "service: not installed; will rewrite wrapper"
+    } else if !c.service_running {
+        "service: installed but not running; will rewrite wrapper"
+    } else {
+        "service: installed and running; will rewrite wrapper, restart"
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ServiceCommand {
+    Stop,
+    Start,
+    RestartIfInstalled,
+}
+pub(crate) enum ServiceCommandResult {
+    Exited { code: i32 },
+    ExecutableMissing { error: io::Error },
+    LaunchError { error: io::Error },
+}
+pub(crate) trait ServiceCommandRunner {
+    fn run(&self, executable: &Path, command: ServiceCommand) -> ServiceCommandResult;
+}
+struct RealServiceRunner;
+impl ServiceCommandRunner for RealServiceRunner {
+    fn run(&self, executable: &Path, command: ServiceCommand) -> ServiceCommandResult {
+        let mut c = Command::new(executable);
+        c.arg("service");
+        match command {
+            ServiceCommand::Stop => {
+                c.arg("stop");
+            }
+            ServiceCommand::Start => {
+                c.arg("start");
+            }
+            ServiceCommand::RestartIfInstalled => {
+                c.args(["restart", "--if-installed"]);
+            }
+        };
+        match c.status() {
+            Ok(s) => ServiceCommandResult::Exited {
+                code: s.code().unwrap_or(1),
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                ServiceCommandResult::ExecutableMissing { error: e }
+            }
+            Err(e) => ServiceCommandResult::LaunchError { error: e },
+        }
+    }
+}
+pub(crate) struct WrapperBins {
+    pub sol: PathBuf,
+    pub journal: PathBuf,
+}
+pub(crate) enum WrapperInstallError {
+    Io(io::Error),
+}
+pub(crate) trait WrapperInstaller {
+    fn install(&self, journal: &Path, bins: &WrapperBins) -> Result<(), WrapperInstallError>;
+}
+pub(crate) trait WrapperCommitter {
+    fn replace(&self, staged: &Path, destination: &Path) -> io::Result<()>;
+}
+struct RealCommitter;
+impl WrapperCommitter for RealCommitter {
+    fn replace(&self, a: &Path, b: &Path) -> io::Result<()> {
+        fs::rename(a, b)
+    }
+}
+struct RealInstaller;
+impl WrapperInstaller for RealInstaller {
+    fn install(&self, journal: &Path, bins: &WrapperBins) -> Result<(), WrapperInstallError> {
+        install_wrappers(journal, bins, &RealCommitter).map_err(WrapperInstallError::Io)
+    }
+}
+fn wrapper_paths() -> (PathBuf, PathBuf) {
+    let base = env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"));
+    (base.join(".local/bin/sol"), base.join(".local/bin/journal"))
+}
+fn parse_wrapper(text: &str) -> Option<(String, PathBuf)> {
+    let marker = text.lines().any(|l| {
+        l.strip_prefix("# managed-version: ")
+            .is_some_and(|v| matches!(v.as_bytes(), [b'1'..=b'7']))
+    });
+    if !marker {
+        return None;
+    }
+    let journal = text
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix(": \"${SOLSTONE_JOURNAL:=")
+                .and_then(|v| v.strip_suffix("}\""))
+        })?
+        .to_owned();
+    let sol = text.lines().find_map(|l| {
+        l.strip_prefix("SOL_BIN='")
+            .and_then(|v| v.strip_suffix('\''))
+    })?;
+    Some((journal, PathBuf::from(sol.replace("'\\''", "'"))))
+}
+fn render_wrapper(binary: &str, journal: &Path, sol: &Path) -> String {
+    format!(
+        "#!/bin/bash\n# {binary} — managed by 'journal config'. Edits will be overwritten.\n{WRAPPER_MARKER}\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${{SOL_BIN%/.venv/bin/{binary}}}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"{binary}: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf '{binary}: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n",
+        journal.display(),
+        sol.display().to_string().replace('\'', "'\\''")
+    )
+}
+fn install_wrappers(
+    journal: &Path,
+    bins: &WrapperBins,
+    committer: &dyn WrapperCommitter,
+) -> io::Result<()> {
+    let (sol, jrnl) = wrapper_paths();
+    install_wrappers_at(journal, bins, &sol, &jrnl, committer)
+}
+fn install_wrappers_at(
+    journal: &Path,
+    bins: &WrapperBins,
+    sol: &Path,
+    jrnl: &Path,
+    committer: &dyn WrapperCommitter,
+) -> io::Result<()> {
+    let lock_path = sol.parent().unwrap().join(".sol.lock");
+    fs::create_dir_all(lock_path.parent().unwrap())?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path)?;
+    let _lock = nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
+        .map_err(|(_, error)| io::Error::other(error))?;
+    let items = [
+        (sol.to_path_buf(), render_wrapper("sol", journal, &bins.sol)),
+        (
+            jrnl.to_path_buf(),
+            render_wrapper("journal", journal, &bins.journal),
+        ),
+    ];
+    let snapshots: Vec<_> = items
+        .iter()
+        .map(|(p, _)| (p.clone(), fs::read(p).ok()))
+        .collect();
+    let mut staged = Vec::new();
+    for (i, (path, content)) in items.iter().enumerate() {
+        fs::create_dir_all(path.parent().unwrap())?;
+        let tmp = path.with_file_name(format!(
+            ".{}.tmp-{}",
+            path.file_name().unwrap().to_string_lossy(),
+            i
+        ));
+        fs::write(&tmp, content)?;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+        staged.push((path, tmp));
+    }
+    for (path, tmp) in &staged {
+        if let Err(e) = committer.replace(tmp, path) {
+            for (p, old) in &snapshots {
+                match old {
+                    Some(bytes) => {
+                        let _ = fs::write(p, bytes);
+                    }
+                    None => {
+                        let _ = fs::remove_file(p);
+                    }
+                }
+            }
+            for (_, staged_path) in &staged {
+                let _ = fs::remove_file(staged_path);
+            }
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+fn wrapper_refusal(path: &Path) -> String {
+    format!(
+        "journal config: refused: {} is not a managed wrapper (run 'journal setup' from the solstone source checkout to install the wrapper first)",
+        path.display()
+    )
+}
+fn active(path: &Path) -> Result<bool, String> {
+    if !path.is_dir() {
+        return Ok(false);
+    }
+    let file = path.join("config/journal.json");
+    let text = match fs::read_to_string(&file) {
+        Ok(v) => v,
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(false);
+        }
+        Err(_) => return Err(corrupt(&file)),
+    };
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|_| corrupt(&file))?;
+    let Some(object) = value.as_object() else {
+        return Err(corrupt(&file));
+    };
+    Ok(object
+        .get("setup")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|s| s.get("completed_at"))
+        .and_then(serde_json::Value::as_f64)
+        .is_some_and(|v| v > 0.0))
+}
+fn corrupt(path: &Path) -> String {
+    format!(
+        "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        path.display()
+    )
+}
+fn installed() -> bool {
+    if cfg!(target_os = "macos") {
+        home()
+            .join("Library/LaunchAgents/org.solpbc.solstone.plist")
+            .exists()
+    } else {
+        home()
+            .join(".config/systemd/user/solstone.service")
+            .exists()
+    }
+}
+fn running() -> bool {
+    if !installed() {
+        return false;
+    }
+    if cfg!(target_os = "macos") {
+        Command::new("launchctl")
+            .args([
+                "print",
+                &format!("gui/{}/org.solpbc.solstone", nix::unistd::Uid::effective()),
+            ])
+            .output()
+            .is_ok_and(|o| {
+                o.status.success()
+                    && String::from_utf8_lossy(&o.stdout).contains("\n\tstate = running\n")
+            })
+    } else {
+        Command::new("systemctl")
+            .args(["--user", "is-active", "solstone"])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
+    }
+}
+fn home() -> PathBuf {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+fn resolve_non_strict(path: &Path) -> PathBuf {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    resolve_non_strict_from(path, &home(), &cwd)
+}
+fn resolve_non_strict_from(path: &Path, home: &Path, cwd: &Path) -> PathBuf {
+    let mut components = path.components();
+    let expanded = match components.next() {
+        Some(std::path::Component::Normal(component)) if component == "~" => {
+            home.join(components.as_path())
+        }
+        _ => path.to_path_buf(),
+    };
+    let absolute = if expanded.is_absolute() {
+        expanded
+    } else {
+        cwd.join(expanded)
+    };
+
+    let mut resolved = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => resolved.push(prefix.as_os_str()),
+            std::path::Component::RootDir => resolved.push(Path::new("/")),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::Normal(component) => {
+                let candidate = resolved.join(component);
+                resolved = candidate.canonicalize().unwrap_or(candidate);
+            }
+        }
+    }
+    resolved
+}
+fn project_root() -> Option<PathBuf> {
+    env::current_exe().ok().and_then(|executable| {
+        executable
+            .ancestors()
+            .find(|path| path.join("pyproject.toml").is_file())
+            .map(Path::to_path_buf)
+    })
+}
+fn is_source_checkout() -> bool {
+    project_root().is_some_and(|root| root.join(".git").exists())
+}
+fn rewrite(
+    change: &JournalChange,
+    installer: &dyn WrapperInstaller,
+) -> Result<Option<PathBuf>, String> {
+    let sol_alias = change.alias.clone();
+    let journal_alias = sol_alias.with_file_name("journal");
+    let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
+        format!(
+            "journal config: refused: cannot read {}: {e}",
+            sol_alias.display()
+        )
+    })?;
+    let Some((_, sol_bin)) = parse_wrapper(&sol_content) else {
+        return Ok(None);
+    };
+    let journal_bin = if !journal_alias.exists() && !journal_alias.is_symlink() {
+        change.sol_bin.with_file_name("journal")
+    } else if journal_alias.is_symlink() {
+        return Ok(None);
+    } else {
+        let content = fs::read_to_string(&journal_alias).map_err(|e| {
+            format!(
+                "journal config: refused: cannot read {}: {e}",
+                journal_alias.display()
+            )
+        })?;
+        match parse_wrapper(&content) {
+            Some((_, p)) => p,
+            None => return Ok(None),
+        }
+    };
+    let _ = sol_bin;
+    installer
+        .install(
+            &change.target_path,
+            &WrapperBins {
+                sol: change.sol_bin.clone(),
+                journal: journal_bin.clone(),
+            },
+        )
+        .map_err(|e| match e {
+            WrapperInstallError::Io(e) => e.to_string(),
+        })?;
+    Ok(Some(journal_bin))
+}
+fn execute(
+    c: &JournalChange,
+    d: &Decision,
+    service: &dyn ServiceCommandRunner,
+    wrappers: &dyn WrapperInstaller,
+) -> u8 {
+    if c.action == Some(RequestedAction::Force) {
+        eprintln!(
+            "journal config: warning: --force bypasses confirmation and target activity checks"
+        );
+    }
+    match d.action {
+        Action::Merge => {
+            println!("{}", d.message.as_ref().unwrap());
+            1
+        }
+        Action::Refuse => {
+            eprintln!("{}", d.message.as_ref().unwrap());
+            1
+        }
+        Action::Noop => {
+            println!(
+                "journal config: journal already set to {}",
+                c.target_path.display()
+            );
+            0
+        }
+        _ if d.plan_only => {
+            println!("{}", plan(c, d));
+            d.exit_code
+        }
+        Action::Proceed | Action::Switch => run_switch(c, service, wrappers),
+        Action::Move => run_move(c, service, wrappers),
+    }
+}
+fn run_switch(
+    c: &JournalChange,
+    service: &dyn ServiceCommandRunner,
+    wrappers: &dyn WrapperInstaller,
+) -> u8 {
+    if let Err(e) = fs::create_dir_all(&c.target_path) {
+        eprintln!(
+            "journal config: refused: cannot create {}: {e}",
+            c.target_path.display()
+        );
+        return 1;
+    }
+    let restart = match rewrite(c, wrappers) {
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            eprintln!("{}", wrapper_refusal(&c.alias));
+            return 1;
+        }
+        Err(e) => {
+            eprintln!(
+                "journal config: refused: cannot rewrite {}: {e}",
+                c.alias.display()
+            );
+            return 1;
+        }
+    };
+    if !c.service_installed {
+        println!("service not installed; wrapper updated.");
+        return 0;
+    }
+    if !c.service_running {
+        println!("service installed but not running; wrapper updated.");
+        return 0;
+    }
+    match service.run(&restart, ServiceCommand::RestartIfInstalled) {
+        ServiceCommandResult::Exited { code: 0 } => {
+            println!("wrapper updated; service restarted.");
+            0
+        }
+        ServiceCommandResult::ExecutableMissing { error } => {
+            eprintln!(
+                "journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
+                c.target_path.display()
+            );
+            2
+        }
+        ServiceCommandResult::Exited { code } => {
+            eprintln!(
+                "journal config: wrapper rewritten to {} but 'journal service restart --if-installed' exited {code}; investigate and restart manually",
+                c.target_path.display()
+            );
+            2
+        }
+        ServiceCommandResult::LaunchError { error } => {
+            eprintln!(
+                "journal config: wrapper rewritten to {} but journal service restart could not run ({error}); restart manually",
+                c.target_path.display()
+            );
+            2
+        }
+    }
+}
+fn run_move(
+    c: &JournalChange,
+    service: &dyn ServiceCommandRunner,
+    wrappers: &dyn WrapperInstaller,
+) -> u8 {
+    if !c.target_parent_exists {
+        eprintln!("{}", missing_parent(c));
+        return 1;
+    }
+    if !c.current_path.exists() {
+        eprintln!("{}", missing_current(c));
+        return 1;
+    }
+    if c.target_path.exists() || c.target_path.is_symlink() {
+        eprintln!("{}", existing_target(c));
+        return 1;
+    }
+    if c.same_filesystem == Some(false) {
+        eprintln!("{}", cross_filesystem(c));
+        return 1;
+    }
+    if c.service_running {
+        match service.run(&c.service_bin, ServiceCommand::Stop) {
+            ServiceCommandResult::Exited { code: 0 } => {}
+            ServiceCommandResult::ExecutableMissing { error }
+            | ServiceCommandResult::LaunchError { error } => {
+                eprintln!("journal config: could not stop service before move ({error})");
+                return 2;
+            }
+            ServiceCommandResult::Exited { .. } => {
+                eprintln!("journal config: could not stop service before move");
+                return 2;
+            }
+        }
+    }
+    if let Err(e) = fs::rename(&c.current_path, &c.target_path) {
+        eprintln!("journal config: move failed: {e}");
+        return 1;
+    }
+    let restart = match rewrite(c, wrappers) {
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            let _ = fs::rename(&c.target_path, &c.current_path);
+            eprintln!("{}", wrapper_refusal(&c.alias));
+            return 1;
+        }
+        Err(e) => {
+            let restored = fs::rename(&c.target_path, &c.current_path).is_ok();
+            let suffix = if restored {
+                "; restored original journal"
+            } else {
+                ""
+            };
+            eprintln!("journal config: move failed during wrapper update: {e}{suffix}");
+            return 2;
+        }
+    };
+    if !c.service_installed {
+        println!("service not installed; journal moved; wrapper updated.");
+        return 0;
+    }
+    if !c.service_running {
+        println!("service installed but not running; journal moved; wrapper updated.");
+        return 0;
+    }
+    match service.run(&restart, ServiceCommand::Start) {
+        ServiceCommandResult::Exited { code: 0 } => {
+            println!("journal moved; wrapper updated; service restarted.");
+            0
+        }
+        _ => {
+            eprintln!(
+                "wrapper updated to {} but service start failed; restart manually",
+                c.target_path.display()
+            );
+            2
+        }
+    }
+}
+pub(crate) fn run(command: ConfigCommand) -> ExitCode {
+    match command {
+        ConfigCommand::Show => show(),
+        ConfigCommand::Journal(options) => journal(options),
+    }
+}
+fn wrapper_status(alias: &Path) -> (&'static str, Option<String>) {
+    if !alias.exists() && !alias.is_symlink() {
+        ("absent", None)
+    } else if alias.is_symlink() {
+        ("legacy-symlink", None)
+    } else {
+        fs::read_to_string(alias)
+            .ok()
+            .and_then(|text| parse_wrapper(&text))
+            .map_or(("foreign", None), |(journal, _)| ("managed", Some(journal)))
+    }
+}
+fn show_source(source: Source, embedded: Option<&str>, env_journal: Option<&str>) -> &'static str {
+    match source {
+        Source::Env if embedded == env_journal => "wrapper-embedded",
+        Source::Env => "caller-override",
+        Source::Config => "user config (~/.config/solstone/config.toml)",
+        Source::Default => "built-in default (~/journal)",
+        Source::Source => "source-tree fallback",
+    }
+}
+fn show() -> ExitCode {
+    let (alias, _) = wrapper_paths();
+    let wrapper = wrapper_status(&alias);
+    let h = home();
+    let cfg = read_config_journal(&h).ok().flatten();
+    let root = env::current_dir()
+        .ok()
+        .and_then(|p| detect_checkout_root(&p));
+    let resolved = resolve_journal_path(
+        env::var_os("SOLSTONE_JOURNAL").as_deref(),
+        cfg.as_deref(),
+        root.as_deref(),
+        &h,
+    );
+    let source = show_source(
+        resolved.source,
+        wrapper.1.as_deref(),
+        env::var("SOLSTONE_JOURNAL").ok().as_deref(),
+    );
+    println!(
+        "path: {}\nsource: {}\nwrapper-status: {}",
+        resolved.path.display(),
+        source,
+        wrapper.0
+    );
+    ExitCode::SUCCESS
+}
+fn journal(o: ConfigJournalOptions) -> ExitCode {
+    let target = resolve_non_strict(Path::new(&o.path));
+    if o.path
+        .chars()
+        .any(|c| matches!(c, '$' | '`' | '"' | '\\' | '\n'))
+    {
+        eprintln!(
+            "journal config: refused: journal path contains shell-active character: {:?}",
+            o.path
+        );
+        return ExitCode::from(1);
+    }
+    if let Some(root) = project_root()
+        && target == root.join("journal")
+        && !is_source_checkout()
+    {
+        eprintln!(
+            "journal config: refused: {} is the source-tree fallback path but this is not a source checkout",
+            target.display()
+        );
+        return ExitCode::from(1);
+    }
+    if o.action == Some(ConfigAction::Move) && !target.parent().is_some_and(Path::exists) {
+        eprintln!(
+            "journal config: refused: move target parent does not exist: {}",
+            target.parent().unwrap().display()
+        );
+        return ExitCode::from(1);
+    }
+    let (alias, _) = wrapper_paths();
+    if !alias.exists() || alias.is_symlink() {
+        eprintln!("{}", wrapper_refusal(&alias));
+        return ExitCode::from(1);
+    }
+    let content = match fs::read_to_string(&alias) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "journal config: refused: cannot read {}: {e}",
+                alias.display()
+            );
+            return ExitCode::from(1);
+        }
+    };
+    let Some((current, sol_bin)) = parse_wrapper(&content) else {
+        eprintln!("{}", wrapper_refusal(&alias));
+        return ExitCode::from(1);
+    };
+    let current = resolve_non_strict(Path::new(&current));
+    let current_active = match active(&current) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(1);
+        }
+    };
+    let target_active = match active(&target) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(1);
+        }
+    };
+    let current_device = fs::metadata(&current).ok().map(|m| {
+        use std::os::unix::fs::MetadataExt;
+        m.dev()
+    });
+    let target_parent_device = target.parent().and_then(|p| fs::metadata(p).ok()).map(|m| {
+        use std::os::unix::fs::MetadataExt;
+        m.dev()
+    });
+    let c = JournalChange {
+        paths_equal: current == target,
+        current_exists: current.exists(),
+        target_exists: target.exists() || target.is_symlink(),
+        target_parent_exists: target.parent().is_some_and(Path::exists),
+        same_filesystem: current_device
+            .zip(target_parent_device)
+            .map(|(a, b)| a == b),
+        current_device,
+        target_parent_device,
+        service_installed: installed(),
+        service_running: running(),
+        action: o.action.map(Into::into),
+        yes: o.yes,
+        dry_run: o.dry_run,
+        service_bin: sol_bin.with_file_name("journal"),
+        sol_bin,
+        alias,
+        current_path: current,
+        target_path: target,
+        current_active,
+        target_active,
+    };
+    let d = decide(&c);
+    ExitCode::from(execute(&c, &d, &RealServiceRunner, &RealInstaller))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+    struct FakeServiceRunner {
+        results: Mutex<VecDeque<ServiceCommandResult>>,
+        calls: Mutex<Vec<(PathBuf, ServiceCommand)>>,
+    }
+    impl FakeServiceRunner {
+        fn new(results: impl IntoIterator<Item = ServiceCommandResult>) -> Self {
+            Self {
+                results: Mutex::new(results.into_iter().collect()),
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+    }
+    impl ServiceCommandRunner for FakeServiceRunner {
+        fn run(&self, executable: &Path, command: ServiceCommand) -> ServiceCommandResult {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((executable.to_path_buf(), command));
+            self.results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(ServiceCommandResult::Exited { code: 0 })
+        }
+    }
+
+    struct FakeInstaller {
+        fail: bool,
+    }
+    impl WrapperInstaller for FakeInstaller {
+        fn install(&self, _journal: &Path, _bins: &WrapperBins) -> Result<(), WrapperInstallError> {
+            if self.fail {
+                Err(WrapperInstallError::Io(io::Error::other("disk full")))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    struct RecordingInstaller {
+        fail: bool,
+        calls: AtomicUsize,
+    }
+    impl WrapperInstaller for RecordingInstaller {
+        fn install(&self, _journal: &Path, _bins: &WrapperBins) -> Result<(), WrapperInstallError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            if self.fail {
+                Err(WrapperInstallError::Io(io::Error::other("disk full")))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    struct FailSecondCommit {
+        calls: AtomicUsize,
+    }
+    impl WrapperCommitter for FailSecondCommit {
+        fn replace(&self, staged: &Path, destination: &Path) -> io::Result<()> {
+            if self.calls.fetch_add(1, Ordering::Relaxed) == 1 {
+                return Err(io::Error::other("second replacement failed"));
+            }
+            fs::rename(staged, destination)
+        }
+    }
+
+    fn test_root(label: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "config-{label}-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn move_change(root: &Path) -> JournalChange {
+        let source = root.join("source");
+        let target = root.join("target");
+        fs::create_dir_all(&source).unwrap();
+        let alias = root.join("bin/sol");
+        fs::create_dir_all(alias.parent().unwrap()).unwrap();
+        fs::write(
+            &alias,
+            render_wrapper("sol", &source, Path::new("/service/sol")),
+        )
+        .unwrap();
+        fs::write(
+            alias.with_file_name("journal"),
+            render_wrapper("journal", &source, Path::new("/restart/journal")),
+        )
+        .unwrap();
+        let mut c = change(Some(RequestedAction::Move));
+        c.current_path = source;
+        c.target_path = target;
+        c.alias = alias;
+        c.sol_bin = PathBuf::from("/service/sol");
+        c.service_bin = PathBuf::from("/service/journal");
+        c.yes = true;
+        c
+    }
+
+    fn change(action: Option<RequestedAction>) -> JournalChange {
+        JournalChange {
+            current_path: PathBuf::from("/current"),
+            target_path: PathBuf::from("/target"),
+            paths_equal: false,
+            current_active: false,
+            target_active: false,
+            current_exists: true,
+            target_exists: false,
+            target_parent_exists: true,
+            current_device: Some(1),
+            target_parent_device: Some(1),
+            same_filesystem: Some(true),
+            service_installed: false,
+            service_running: false,
+            action,
+            yes: false,
+            dry_run: false,
+            sol_bin: PathBuf::from("/bin/sol"),
+            service_bin: PathBuf::from("/bin/journal"),
+            alias: PathBuf::from("/home/.local/bin/sol"),
+        }
+    }
+
+    #[test]
+    fn decide_preserves_reference_order_and_dry_run_landmines() {
+        let mut c = change(Some(RequestedAction::Merge));
+        assert_eq!(decide(&c).action, Action::Merge);
+        c.paths_equal = true;
+        assert_eq!(decide(&c).action, Action::Merge);
+        c.action = None;
+        assert_eq!(decide(&c).action, Action::Noop);
+        c.paths_equal = false;
+        c.dry_run = true;
+        assert_eq!(decide(&c).action, Action::Proceed);
+        c.action = Some(RequestedAction::Force);
+        assert_eq!(decide(&c).action, Action::Switch);
+        c.action = Some(RequestedAction::Switch);
+        assert!(decide(&c).plan_only);
+    }
+
+    #[test]
+    fn decide_covers_every_move_and_switch_branch() {
+        let mut c = change(Some(RequestedAction::Move));
+        c.target_parent_exists = false;
+        assert_eq!(decide(&c).message, Some(missing_parent(&c)));
+        c.target_parent_exists = true;
+        c.current_exists = false;
+        assert_eq!(decide(&c).message, Some(missing_current(&c)));
+        c.current_exists = true;
+        c.target_exists = true;
+        assert_eq!(decide(&c).message, Some(existing_target(&c)));
+        c.target_exists = false;
+        c.target_active = true;
+        assert!(
+            decide(&c)
+                .message
+                .unwrap()
+                .contains("--move requires a not active target")
+        );
+        c.target_active = false;
+        c.same_filesystem = Some(false);
+        assert_eq!(decide(&c).message, Some(cross_filesystem(&c)));
+        c.same_filesystem = Some(true);
+        c.dry_run = true;
+        assert_eq!(
+            decide(&c),
+            Decision {
+                action: Action::Move,
+                exit_code: 0,
+                message: None,
+                plan_only: true
+            }
+        );
+        c.dry_run = false;
+        assert_eq!(
+            decide(&c),
+            Decision {
+                action: Action::Move,
+                exit_code: 1,
+                message: None,
+                plan_only: true
+            }
+        );
+        c.yes = true;
+        assert_eq!(decide(&c), decision(Action::Move, 0));
+        c.action = Some(RequestedAction::Switch);
+        c.yes = false;
+        assert_eq!(
+            decide(&c),
+            Decision {
+                action: Action::Switch,
+                exit_code: 1,
+                message: None,
+                plan_only: true
+            }
+        );
+        c.dry_run = true;
+        assert_eq!(
+            decide(&c),
+            Decision {
+                action: Action::Switch,
+                exit_code: 0,
+                message: None,
+                plan_only: true
+            }
+        );
+        c.dry_run = false;
+        c.yes = true;
+        assert_eq!(decide(&c), decision(Action::Switch, 0));
+    }
+
+    #[test]
+    fn run_move_covers_the_eleven_reference_exit_sites() {
+        let no_service = FakeServiceRunner::new([]);
+        let success = FakeInstaller { fail: false };
+
+        let root = test_root("move-parent");
+        let mut c = move_change(&root);
+        c.target_parent_exists = false;
+        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert!(c.current_path.exists());
+
+        let root = test_root("move-source");
+        let c = move_change(&root);
+        fs::remove_dir_all(&c.current_path).unwrap();
+        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert!(!c.current_path.exists());
+
+        let root = test_root("move-target");
+        let c = move_change(&root);
+        fs::create_dir_all(&c.target_path).unwrap();
+        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert!(c.current_path.exists());
+        assert!(c.target_path.exists());
+
+        let root = test_root("move-device");
+        let mut c = move_change(&root);
+        c.same_filesystem = Some(false);
+        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert!(c.current_path.exists());
+
+        let root = test_root("move-stop-missing");
+        let mut c = move_change(&root);
+        c.service_running = true;
+        let missing = FakeServiceRunner::new([ServiceCommandResult::ExecutableMissing {
+            error: io::Error::new(io::ErrorKind::NotFound, "stop"),
+        }]);
+        assert_eq!(run_move(&c, &missing, &success), 2);
+        assert!(c.current_path.exists());
+
+        let root = test_root("move-stop-nonzero");
+        let mut c = move_change(&root);
+        c.service_running = true;
+        let nonzero = FakeServiceRunner::new([ServiceCommandResult::Exited { code: 1 }]);
+        assert_eq!(run_move(&c, &nonzero, &success), 2);
+        assert!(c.current_path.exists());
+
+        let root = test_root("move-rename");
+        let mut c = move_change(&root);
+        let not_a_directory = root.join("not-a-directory");
+        fs::write(&not_a_directory, "file").unwrap();
+        c.target_path = not_a_directory.join("target");
+        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert!(c.current_path.exists());
+
+        let root = test_root("move-wrapper-write");
+        let c = move_change(&root);
+        assert_eq!(run_move(&c, &no_service, &FakeInstaller { fail: true }), 2);
+        assert!(c.current_path.exists());
+        assert!(!c.target_path.exists());
+
+        let root = test_root("move-wrapper-refusal");
+        let c = move_change(&root);
+        fs::write(&c.alias, "foreign wrapper").unwrap();
+        assert_eq!(run_move(&c, &no_service, &success), 1);
+        assert!(c.current_path.exists());
+        assert!(!c.target_path.exists());
+
+        let root = test_root("move-start-missing");
+        let mut c = move_change(&root);
+        c.service_installed = true;
+        c.service_running = true;
+        let start_missing = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::ExecutableMissing {
+                error: io::Error::new(io::ErrorKind::NotFound, "start"),
+            },
+        ]);
+        assert_eq!(run_move(&c, &start_missing, &success), 2);
+        assert!(!c.current_path.exists());
+        assert!(c.target_path.exists());
+
+        let root = test_root("move-start-nonzero");
+        let mut c = move_change(&root);
+        c.service_installed = true;
+        c.service_running = true;
+        let start_nonzero = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::Exited { code: 1 },
+        ]);
+        assert_eq!(run_move(&c, &start_nonzero, &success), 2);
+        assert!(!c.current_path.exists());
+        assert!(c.target_path.exists());
+    }
+
+    #[test]
+    fn move_uses_service_bin_to_stop_and_journal_wrapper_bin_to_start() {
+        let root = test_root("service-bins");
+        let mut c = move_change(&root);
+        c.service_installed = true;
+        c.service_running = true;
+        let service = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::Exited { code: 0 },
+        ]);
+        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: false }), 0);
+        assert_eq!(
+            *service.calls.lock().unwrap(),
+            vec![
+                (PathBuf::from("/service/journal"), ServiceCommand::Stop),
+                (PathBuf::from("/restart/journal"), ServiceCommand::Start),
+            ]
+        );
+    }
+
+    #[test]
+    fn move_wrapper_install_failure_rolls_back_and_success_twin_invokes_the_seam() {
+        let root = test_root("move-wrapper-installer");
+        let c = move_change(&root);
+        let sol_before = fs::read(&c.alias).unwrap();
+        let journal_before = fs::read(c.alias.with_file_name("journal")).unwrap();
+        let failing = RecordingInstaller {
+            fail: true,
+            calls: AtomicUsize::new(0),
+        };
+        assert_eq!(run_move(&c, &FakeServiceRunner::new([]), &failing), 2);
+        assert_eq!(failing.calls.load(Ordering::Relaxed), 1);
+        assert!(c.current_path.exists());
+        assert!(!c.target_path.exists());
+        assert_eq!(fs::read(&c.alias).unwrap(), sol_before);
+        assert_eq!(
+            fs::read(c.alias.with_file_name("journal")).unwrap(),
+            journal_before
+        );
+
+        let root = test_root("move-wrapper-installer-success");
+        let c = move_change(&root);
+        let succeeding = RecordingInstaller {
+            fail: false,
+            calls: AtomicUsize::new(0),
+        };
+        assert_eq!(run_move(&c, &FakeServiceRunner::new([]), &succeeding), 0);
+        assert_eq!(succeeding.calls.load(Ordering::Relaxed), 1);
+        assert!(!c.current_path.exists());
+        assert!(c.target_path.exists());
+    }
+
+    #[test]
+    fn wrapper_commit_failure_restores_both_wrappers_and_cleans_staging() {
+        let root = test_root("wrapper-rollback");
+        let sol = root.join("bin/sol");
+        let journal_alias = root.join("bin/journal");
+        fs::create_dir_all(sol.parent().unwrap()).unwrap();
+        fs::write(&sol, b"old sol bytes").unwrap();
+        fs::write(&journal_alias, b"old journal bytes").unwrap();
+        let bins = WrapperBins {
+            sol: PathBuf::from("/new/sol"),
+            journal: PathBuf::from("/new/journal"),
+        };
+        let committer = FailSecondCommit {
+            calls: AtomicUsize::new(0),
+        };
+        assert!(
+            install_wrappers_at(
+                &root.join("target"),
+                &bins,
+                &sol,
+                &journal_alias,
+                &committer
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&sol).unwrap(), b"old sol bytes");
+        assert_eq!(fs::read(&journal_alias).unwrap(), b"old journal bytes");
+        assert!(!root.join("bin/.sol.tmp-0").exists());
+        assert!(!root.join("bin/.journal.tmp-1").exists());
+    }
+
+    #[test]
+    fn wrapper_commit_success_replaces_both_wrappers_without_staging_artifacts() {
+        let root = test_root("wrapper-commit");
+        let sol = root.join("bin/sol");
+        let journal_alias = root.join("bin/journal");
+        fs::create_dir_all(sol.parent().unwrap()).unwrap();
+        fs::write(&sol, b"old sol bytes").unwrap();
+        fs::write(&journal_alias, b"old journal bytes").unwrap();
+        let bins = WrapperBins {
+            sol: PathBuf::from("/new/sol"),
+            journal: PathBuf::from("/new/journal"),
+        };
+        install_wrappers_at(
+            &root.join("target"),
+            &bins,
+            &sol,
+            &journal_alias,
+            &RealCommitter,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(&sol).unwrap(),
+            render_wrapper("sol", &root.join("target"), &bins.sol)
+        );
+        assert_eq!(
+            fs::read_to_string(&journal_alias).unwrap(),
+            render_wrapper("journal", &root.join("target"), &bins.journal)
+        );
+        assert!(!root.join("bin/.sol.tmp-0").exists());
+        assert!(!root.join("bin/.journal.tmp-1").exists());
+    }
+
+    #[test]
+    fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
+        let root = test_root("wrapper-lock");
+        let sol = root.join("bin/sol");
+        let journal_alias = root.join("bin/journal");
+        fs::create_dir_all(sol.parent().unwrap()).unwrap();
+        fs::write(&sol, b"old sol bytes").unwrap();
+        fs::write(&journal_alias, b"old journal bytes").unwrap();
+        let lock_file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(root.join("bin/.sol.lock"))
+            .unwrap();
+        let held = nix::fcntl::Flock::lock(lock_file, nix::fcntl::FlockArg::LockExclusive).unwrap();
+        let bins = WrapperBins {
+            sol: PathBuf::from("/new/sol"),
+            journal: PathBuf::from("/new/journal"),
+        };
+        let (done, finished) = mpsc::channel();
+        let writer_root = root.clone();
+        let writer_sol = sol.clone();
+        let writer_journal = journal_alias.clone();
+        let writer = std::thread::spawn(move || {
+            let result = install_wrappers_at(
+                &writer_root.join("target"),
+                &bins,
+                &writer_sol,
+                &writer_journal,
+                &RealCommitter,
+            );
+            done.send(result.is_ok()).unwrap();
+        });
+        assert!(matches!(
+            finished.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(fs::read(&sol).unwrap(), b"old sol bytes");
+        assert_eq!(fs::read(&journal_alias).unwrap(), b"old journal bytes");
+        drop(held);
+        assert!(finished.recv_timeout(Duration::from_secs(2)).unwrap());
+        writer.join().unwrap();
+    }
+
+    #[test]
+    fn plan_matches_all_six_reference_service_summaries() {
+        for (action, installed, running, expected) in [
+            (
+                Action::Move,
+                false,
+                false,
+                "service: not installed; will move and rewrite wrapper",
+            ),
+            (
+                Action::Move,
+                true,
+                false,
+                "service: installed but not running; will move and rewrite wrapper",
+            ),
+            (
+                Action::Move,
+                true,
+                true,
+                "service: installed and running; will stop, move, rewrite wrapper, restart",
+            ),
+            (
+                Action::Switch,
+                false,
+                false,
+                "service: not installed; will rewrite wrapper",
+            ),
+            (
+                Action::Switch,
+                true,
+                false,
+                "service: installed but not running; will rewrite wrapper",
+            ),
+            (
+                Action::Switch,
+                true,
+                true,
+                "service: installed and running; will rewrite wrapper, restart",
+            ),
+        ] {
+            let mut c = change(None);
+            c.service_installed = installed;
+            c.service_running = running;
+            let d = decision(action, 0);
+            assert_eq!(service_summary(&c, &d), expected);
+        }
+    }
+
+    #[test]
+    fn native_wrapper_template_is_reference_compatible() {
+        let wrapper = render_wrapper("sol", Path::new("/journal"), Path::new("/venv/bin/sol"));
+        assert_eq!(
+            wrapper,
+            "#!/bin/bash\n# sol — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${SOLSTONE_JOURNAL:=/journal}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='/venv/bin/sol'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${SOL_BIN%/.venv/bin/sol}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"sol: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'sol: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n"
+        );
+        assert_eq!(
+            parse_wrapper(&wrapper),
+            Some(("/journal".into(), PathBuf::from("/venv/bin/sol")))
+        );
+    }
+
+    #[test]
+    fn show_source_covers_all_reference_labels() {
+        assert_eq!(
+            show_source(Source::Env, Some("/wrapper"), Some("/wrapper")),
+            "wrapper-embedded"
+        );
+        assert_eq!(
+            show_source(Source::Env, Some("/wrapper"), Some("/caller")),
+            "caller-override"
+        );
+        assert_eq!(
+            show_source(Source::Config, None, None),
+            "user config (~/.config/solstone/config.toml)"
+        );
+        assert_eq!(
+            show_source(Source::Default, None, None),
+            "built-in default (~/journal)"
+        );
+        assert_eq!(
+            show_source(Source::Source, None, None),
+            "source-tree fallback"
+        );
+    }
+
+    #[test]
+    fn wrapper_status_covers_all_reference_states() {
+        let root = test_root("wrapper-status");
+        let alias = root.join("sol");
+        assert_eq!(wrapper_status(&alias), ("absent", None));
+
+        std::os::unix::fs::symlink("old-sol", &alias).unwrap();
+        assert_eq!(wrapper_status(&alias), ("legacy-symlink", None));
+        fs::remove_file(&alias).unwrap();
+
+        fs::write(&alias, "not a wrapper").unwrap();
+        assert_eq!(wrapper_status(&alias), ("foreign", None));
+        fs::remove_file(&alias).unwrap();
+        fs::create_dir(&alias).unwrap();
+        assert_eq!(wrapper_status(&alias), ("foreign", None));
+        fs::remove_dir(&alias).unwrap();
+
+        let legacy = render_wrapper("sol", Path::new("/legacy"), Path::new("/bin/sol"))
+            .replace("# managed-version: 7", "# managed-version: 5");
+        fs::write(&alias, legacy).unwrap();
+        assert_eq!(
+            wrapper_status(&alias),
+            ("managed", Some("/legacy".to_owned()))
+        );
+    }
+
+    #[test]
+    fn native_resolution_has_no_unconfigured_error_state() {
+        let resolved = resolve_journal_path(None, None, None, Path::new("/home/owner"));
+        assert_eq!(resolved.source, Source::Default);
+        assert_eq!(resolved.path, PathBuf::from("/home/owner/journal"));
+        assert_eq!(
+            show_source(resolved.source, None, None),
+            "built-in default (~/journal)"
+        );
+    }
+
+    #[test]
+    fn rewrite_always_emits_the_current_wrapper_marker() {
+        let root = test_root("wrapper-version");
+        let sol = root.join("bin/sol");
+        let journal_alias = root.join("bin/journal");
+        fs::create_dir_all(sol.parent().unwrap()).unwrap();
+        fs::write(
+            &sol,
+            render_wrapper("sol", Path::new("/old"), Path::new("/bin/sol"))
+                .replace("# managed-version: 7", "# managed-version: 5"),
+        )
+        .unwrap();
+        fs::write(
+            &journal_alias,
+            render_wrapper("journal", Path::new("/old"), Path::new("/bin/journal")),
+        )
+        .unwrap();
+        install_wrappers_at(
+            Path::new("/new"),
+            &WrapperBins {
+                sol: PathBuf::from("/bin/sol"),
+                journal: PathBuf::from("/bin/journal"),
+            },
+            &sol,
+            &journal_alias,
+            &RealCommitter,
+        )
+        .unwrap();
+        assert!(
+            fs::read_to_string(&sol)
+                .unwrap()
+                .contains("# managed-version: 7")
+        );
+    }
+
+    #[test]
+    fn non_strict_resolution_matches_pathlib_for_relative_home_and_missing_paths() {
+        let root = std::env::temp_dir().join(format!("config-resolve-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let cwd = root.join("cwd");
+        let home = root.join("home");
+        fs::create_dir_all(cwd.join("existing")).unwrap();
+        fs::create_dir_all(&home).unwrap();
+
+        assert_eq!(
+            resolve_non_strict_from(Path::new("existing/../relative"), &home, &cwd),
+            cwd.join("relative")
+        );
+        assert_eq!(
+            resolve_non_strict_from(Path::new("~/journal"), &home, &cwd),
+            home.join("journal")
+        );
+        assert_eq!(
+            resolve_non_strict_from(Path::new("existing/new-leaf"), &home, &cwd),
+            cwd.join("existing/new-leaf")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn move_refusal_is_strict_but_plan_collapses_indeterminate() {
+        let mut c = change(Some(RequestedAction::Move));
+        c.dry_run = true;
+        c.same_filesystem = None;
+        let d = decide(&c);
+        assert_eq!(d.action, Action::Move);
+        assert!(plan(&c, &d).contains("filesystem: different devices"));
+        c.same_filesystem = Some(false);
+        assert_eq!(decide(&c).action, Action::Refuse);
+    }
+
+    #[test]
+    fn parser_accepts_all_historical_marker_versions() {
+        for version in 1..=7 {
+            let content = format!(
+                "# managed-version: {version}\n: \"${{SOLSTONE_JOURNAL:=/journal}}\"\nSOL_BIN='/bin/it'\\''s'\n"
+            );
+            assert_eq!(
+                parse_wrapper(&content),
+                Some(("/journal".to_owned(), PathBuf::from("/bin/it's")))
+            );
+        }
+        assert!(parse_wrapper("# managed-version: 8\nSOL_BIN='/bin/sol'\n").is_none());
+    }
+
+    #[test]
+    fn active_distinguishes_missing_and_corrupt() {
+        let root = std::env::temp_dir().join(format!("config-active-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(active(&root), Ok(false));
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(root.join("config/journal.json"), "[]").unwrap();
+        assert!(
+            active(&root)
+                .unwrap_err()
+                .starts_with("I couldn't read your settings file at ")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}

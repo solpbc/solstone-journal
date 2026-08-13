@@ -565,6 +565,9 @@ pub const TRANSFER_SEND_HELP: &str = concat!(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    Config(ConfigCommand),
+    ConfigUsage,
+    ConfigHelp,
     Doctor(solstone_core_doctor::args::DoctorArgs),
     DoctorUsage(solstone_core_doctor::args::DoctorUsageError),
     DoctorHelp,
@@ -1006,6 +1009,36 @@ pub enum JournalConfigCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigCommand {
+    Show,
+    Journal(ConfigJournalOptions),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigAction {
+    Move,
+    Switch,
+    Merge,
+    Force,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigJournalOptions {
+    pub path: String,
+    pub action: Option<ConfigAction>,
+    pub yes: bool,
+    pub dry_run: bool,
+}
+
+pub const CONFIG_USAGE: &str = "usage: journal config [-h] {show,journal} ...\n";
+pub const CONFIG_HELP: &str = concat!(
+    "usage: journal config [-h] {show,journal} ...\n\n",
+    "positional arguments:\n  {show,journal}\n",
+    "    show          show the configured journal path and source\n",
+    "    journal       rewrite the wrapper's embedded journal path\n"
+);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalConfigReadOptions {
     pub journal_override: Option<OsString>,
 }
@@ -1183,6 +1216,14 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("journal-config") => {
             parse_journal_config(rest).map(Command::JournalConfig)
+        }
+        [command, rest @ ..] if command == OsStr::new("config") => {
+            let help = |arg: &OsString| arg == OsStr::new("-h") || arg == OsStr::new("--help");
+            if rest.iter().any(help) {
+                Ok(Command::ConfigHelp)
+            } else {
+                Ok(parse_config(rest).map_or(Command::ConfigUsage, Command::Config))
+            }
         }
         [command] if command == OsStr::new("speaker-transcript-write") => {
             Ok(Command::SpeakerTranscriptWrite)
@@ -2898,6 +2939,36 @@ fn parse_journal_config(args: &[OsString]) -> Result<JournalConfigCommand, Usage
         }
         [command, rest @ ..] if command == OsStr::new("commit") => {
             parse_journal_config_commit(rest).map(JournalConfigCommand::Commit)
+        }
+        _ => Err(UsageError),
+    }
+}
+
+fn parse_config(args: &[OsString]) -> Result<ConfigCommand, UsageError> {
+    match args {
+        [show] if show == OsStr::new("show") => Ok(ConfigCommand::Show),
+        [journal, path, rest @ ..] if journal == OsStr::new("journal") => {
+            let path = path.to_str().ok_or(UsageError)?.to_owned();
+            let mut action = None;
+            let mut yes = false;
+            let mut dry_run = false;
+            for arg in rest {
+                match arg.to_str() {
+                    Some("--move") if action.is_none() => action = Some(ConfigAction::Move),
+                    Some("--switch") if action.is_none() => action = Some(ConfigAction::Switch),
+                    Some("--merge") if action.is_none() => action = Some(ConfigAction::Merge),
+                    Some("--force") if action.is_none() => action = Some(ConfigAction::Force),
+                    Some("--yes") if !dry_run => yes = true,
+                    Some("--dry-run") if !yes => dry_run = true,
+                    _ => return Err(UsageError),
+                }
+            }
+            Ok(ConfigCommand::Journal(ConfigJournalOptions {
+                path,
+                action,
+                yes,
+                dry_run,
+            }))
         }
         _ => Err(UsageError),
     }
