@@ -42,6 +42,7 @@ struct State {
     pending_files: HashSet<(String, PathBuf)>,
     health: Health,
     stopping: bool,
+    draining: bool,
 }
 
 pub struct SenseDispatcher {
@@ -49,6 +50,7 @@ pub struct SenseDispatcher {
     state: Arc<Mutex<State>>,
     outbound: mpsc::Sender<Outbound>,
     pools: HashMap<&'static str, Mutex<WorkerPool>>,
+    workers: Mutex<Vec<thread::JoinHandle<()>>>,
     admission: Admission,
     handler_program: Option<PathBuf>,
 }
@@ -112,8 +114,10 @@ impl SenseDispatcher {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            draining: false,
         }));
         let mut pools = HashMap::new();
+        let mut worker_handles = Vec::new();
         for handler in HANDLERS {
             let workers = resolve_concurrency(&read_config(&journal), handler);
             let mut senders = Vec::with_capacity(workers);
@@ -124,7 +128,7 @@ impl SenseDispatcher {
                 let outbound = outbound.clone();
                 let journal = journal.clone();
                 let admission = admission.clone();
-                thread::Builder::new()
+                let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
                     .spawn(move || {
                         worker(
@@ -132,6 +136,7 @@ impl SenseDispatcher {
                         )
                     })
                     .expect("sense worker thread");
+                worker_handles.push(worker);
             }
             pools.insert(handler, Mutex::new(WorkerPool { senders, next: 0 }));
         }
@@ -140,6 +145,7 @@ impl SenseDispatcher {
             state,
             outbound,
             pools,
+            workers: Mutex::new(worker_handles),
             admission,
             handler_program,
         }
@@ -242,9 +248,9 @@ impl SenseDispatcher {
             let Some(spec) = match_handler(&self.journal, &path, &registry) else {
                 continue;
             };
-            let key = (spec.name.to_owned(), path.clone());
+            let pending_key = (spec.name.to_owned(), path.clone());
             let mut state = self.state.lock().expect("sense state");
-            if !state.pending_files.insert(key) {
+            if !state.pending_files.insert(pending_key) {
                 continue;
             }
             state
@@ -254,19 +260,33 @@ impl SenseDispatcher {
                 .pending
                 .insert(path.clone());
             drop(state);
+            let handler = spec.name;
             let item = WorkItem {
                 context: context.clone(),
-                file_path: path,
-                handler: spec.name.to_owned(),
+                file_path: path.clone(),
+                handler: handler.to_owned(),
                 queued_at: SystemTime::now(),
             };
-            if let Some(pool) = self.pools.get(spec.name) {
+            let queued = if let Some(pool) = self.pools.get(handler) {
                 let mut pool = pool.lock().expect("sense worker pool");
-                let _ = pool.send(Job {
+                pool.send(Job {
                     item,
                     spec,
                     config: config.clone(),
-                });
+                })
+            } else {
+                false
+            };
+            if !queued {
+                complete(
+                    &self.state,
+                    &self.outbound,
+                    &self.journal,
+                    &context.key,
+                    Some(&path),
+                    Some(format!("{handler} pool unavailable")),
+                    None,
+                );
             }
         }
         if self
@@ -309,6 +329,20 @@ impl SenseDispatcher {
     pub fn stop(&self) {
         self.state.lock().expect("sense state").stopping = true;
     }
+    pub fn stop_and_wait(&self) {
+        self.stop();
+        self.join_workers();
+    }
+    pub fn drain_and_wait(&self) {
+        self.state.lock().expect("sense state").draining = true;
+        self.join_workers();
+    }
+    fn join_workers(&self) {
+        let workers = std::mem::take(&mut *self.workers.lock().expect("sense workers"));
+        for worker in workers {
+            let _ = worker.join();
+        }
+    }
 }
 
 struct WorkerPool {
@@ -334,10 +368,17 @@ fn worker(
     debug: bool,
 ) {
     loop {
-        let job = receiver.recv();
-        match job {
+        let stopping = {
+            let state = state.lock().expect("sense state");
+            state.stopping || state.draining
+        };
+        if stopping {
+            return;
+        }
+        match receiver.recv_timeout(Duration::from_millis(50)) {
             Ok(job) => run_job(job, &state, &outbound, &journal, &admission, verbose, debug),
-            Err(_) => return,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
         }
     }
 }
@@ -351,7 +392,10 @@ fn run_job(
     verbose: bool,
     debug: bool,
 ) {
-    let stopping = || state.lock().expect("sense state").stopping;
+    let admission_stopping = || {
+        let state = state.lock().expect("sense state");
+        state.stopping || state.draining
+    };
     let stage = job.item.handler.clone();
     let context = job.item.context.clone();
     let key = context.key.clone();
@@ -359,7 +403,7 @@ fn run_job(
     let admitted = admission.wait(
         &stage,
         &job.config,
-        stopping,
+        admission_stopping,
         |available, floor| {
             let _ = outbound.send(Outbound {
                 tract: "observe",
@@ -434,7 +478,7 @@ fn run_job(
         if std::time::Instant::now() >= deadline {
             break None;
         }
-        if stopping() {
+        if state.lock().expect("sense state").stopping {
             if let Err(error) = process.terminate(Duration::from_secs(2)) {
                 let _ = termination_detail(&job.item.handler, error);
             }
@@ -688,6 +732,50 @@ mod tests {
     }
 
     #[test]
+    fn unavailable_worker_pool_completes_segment_with_error() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        std::fs::create_dir_all(temp.path().join("config")).expect("config");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"openai"}}}"#,
+        )
+        .expect("settings");
+        let file = temp
+            .path()
+            .join("chronicle/20260812/one/120000_1/audio.flac");
+        std::fs::create_dir_all(file.parent().expect("segment")).expect("segment");
+        std::fs::write(&file, b"audio").expect("audio");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
+        let (sender, failed_receiver) = mpsc::channel();
+        drop(failed_receiver);
+        dispatcher
+            .pools
+            .get("transcribe")
+            .expect("transcribe pool")
+            .lock()
+            .expect("pool")
+            .senders = vec![sender];
+        let mut message = observing("one", "120000_1");
+        message.extra.insert("files".into(), json!(["audio.flac"]));
+        dispatcher.handle(&message);
+        let observed = receiver
+            .try_iter()
+            .find(|event| event.event == "observed")
+            .expect("observed");
+        assert_eq!(observed.fields["error"], true);
+        assert!(
+            observed.fields["errors"][0]
+                .as_str()
+                .expect("error")
+                .contains("transcribe pool unavailable")
+        );
+        let state = dispatcher.state.lock().expect("state");
+        assert!(state.segments.is_empty());
+        assert!(state.pending_files.is_empty());
+    }
+
+    #[test]
     fn process_tree_not_reaped_becomes_a_path_free_segment_error_detail() {
         let detail = termination_detail(
             "describe",
@@ -716,6 +804,7 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            draining: false,
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -774,6 +863,7 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            draining: false,
         }));
         for (segment, batch) in [("live", false)] {
             let key = SegmentKey {

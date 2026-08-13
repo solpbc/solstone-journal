@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::future::Future;
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 use serde_json::Map;
 use solstone_core_callosum::CallosumSocketConnection;
@@ -42,18 +43,52 @@ pub fn run_native_service(
 }
 
 async fn run(journal: PathBuf, options: SenseOptions) {
-    let mut connection =
+    let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
-    connection.start();
     let (outbound, receiver) = mpsc::channel::<Outbound>();
-    let dispatcher = SenseDispatcher::new(journal, options.verbose, options.debug, outbound);
+    let dispatcher = Arc::new(SenseDispatcher::new(
+        journal,
+        options.verbose,
+        options.debug,
+        outbound,
+    ));
+    run_until(connection, dispatcher, receiver, shutdown_signal()).await;
+}
+
+/// Drives the service loop until the supplied shutdown future resolves.
+///
+/// The production signal path and socket integration tests share this exact
+/// lifecycle so worker output is always drained after bounded termination.
+pub async fn run_until<F>(
+    mut connection: CallosumSocketConnection,
+    dispatcher: Arc<SenseDispatcher>,
+    receiver: mpsc::Receiver<Outbound>,
+    shutdown: F,
+) where
+    F: Future<Output = ()> + Send + 'static,
+{
+    connection.start();
     let mut interval = tokio::time::interval(Duration::from_secs(5));
+    let mut outbound_interval = tokio::time::interval(Duration::from_millis(10));
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    outbound_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    tokio::pin!(shutdown);
     loop {
-        tokio::select! { _ = interval.tick() => dispatcher.status(), _ = shutdown_signal() => { dispatcher.stop(); break; }, message = connection.next_message() => { if let Some(message) = message { dispatcher.handle(&message); } else { break; } } }
-        drain(&connection, &receiver);
+        tokio::select! {
+            _ = interval.tick() => dispatcher.status(),
+            _ = outbound_interval.tick() => drain(&connection, &receiver),
+            _ = &mut shutdown => break,
+            message = connection.next_message() => {
+                if let Some(message) = message {
+                    dispatcher.handle(&message);
+                } else {
+                    break;
+                }
+            }
+        }
     }
-    dispatcher.stop();
+    let stopping_dispatcher = Arc::clone(&dispatcher);
+    let _ = tokio::task::spawn_blocking(move || stopping_dispatcher.drain_and_wait()).await;
     drain(&connection, &receiver);
     connection.stop().await;
 }

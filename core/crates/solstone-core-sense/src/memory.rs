@@ -4,6 +4,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
+use std::process::Command;
+
 use serde_json::{Map, Value};
 
 const MIB: u64 = 1024 * 1024;
@@ -27,23 +30,77 @@ pub trait MemoryProbe: Send + Sync {
 pub struct SystemMemoryProbe;
 impl MemoryProbe for SystemMemoryProbe {
     fn available_bytes(&self) -> Option<u64> {
-        if std::env::consts::OS != "linux" {
-            return None;
+        #[cfg(target_os = "linux")]
+        {
+            let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+            return meminfo(&text, "MemAvailable");
         }
-        let text = std::fs::read_to_string("/proc/meminfo").ok()?;
-        meminfo(&text, "MemAvailable")
+        #[cfg(target_os = "macos")]
+        {
+            return command_text("/usr/bin/vm_stat", &[]).and_then(|text| macos_available(&text));
+        }
+        #[allow(unreachable_code)]
+        None
     }
     fn total_bytes(&self) -> Option<u64> {
-        if std::env::consts::OS != "linux" {
-            return None;
+        #[cfg(target_os = "linux")]
+        {
+            let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+            return meminfo(&text, "MemTotal");
         }
-        let text = std::fs::read_to_string("/proc/meminfo").ok()?;
-        meminfo(&text, "MemTotal")
+        #[cfg(target_os = "macos")]
+        {
+            return command_text("/usr/sbin/sysctl", &["-n", "hw.memsize"])
+                .and_then(|text| macos_total(&text));
+        }
+        #[allow(unreachable_code)]
+        None
     }
     fn unified_memory(&self) -> bool {
         std::env::consts::OS == "macos" && std::env::consts::ARCH == "aarch64"
     }
 }
+
+#[cfg(target_os = "macos")]
+fn command_text(program: &str, args: &[&str]) -> Option<String> {
+    Command::new(program)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_total(text: &str) -> Option<u64> {
+    text.trim().parse().ok()
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_available(text: &str) -> Option<u64> {
+    let page_size = text
+        .split("page size of ")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?;
+    let pages = text
+        .lines()
+        .filter(|line| line.starts_with("Pages free") || line.starts_with("Pages inactive"))
+        .try_fold(0_u64, |total, line| {
+            let value = line
+                .split_once(':')?
+                .1
+                .trim()
+                .trim_end_matches('.')
+                .parse::<u64>()
+                .ok()?;
+            total.checked_add(value)
+        })?;
+    pages.checked_mul(page_size)
+}
+#[cfg(target_os = "linux")]
 fn meminfo(text: &str, wanted: &str) -> Option<u64> {
     let value = text.lines().find_map(|line| {
         let (key, rest) = line.split_once(':')?;
@@ -225,5 +282,12 @@ mod tests {
         assert!(started.load(Ordering::SeqCst));
         assert!(completed.load(Ordering::SeqCst));
         assert!(!admission.state().throttled);
+    }
+
+    #[test]
+    fn macos_vm_stat_memory_arithmetic_is_correct() {
+        let vm_stat = "Mach Virtual Memory Statistics: (page size of 4096 bytes)\nPages free:                               10.\nPages inactive:                           20.\n";
+        assert_eq!(macos_total("34359738368\n"), Some(34_359_738_368));
+        assert_eq!(macos_available(vm_stat), Some(30 * 4096));
     }
 }

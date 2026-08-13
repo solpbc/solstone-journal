@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
-use solstone_core_sense::{SenseDispatcher, dispatch::Outbound};
+use solstone_core_sense::{SenseDispatcher, dispatch::Outbound, service::run_until};
 use tokio::sync::oneshot;
 
 fn observing(files: &[&str]) -> Map<String, serde_json::Value> {
@@ -29,8 +29,7 @@ async fn start_service(
     oneshot::Sender<()>,
 ) {
     let socket = journal.join("health/callosum.sock");
-    let mut service = CallosumSocketConnection::new(&socket, Map::new());
-    service.start();
+    let service = CallosumSocketConnection::new(&socket, Map::new());
     let (outbound, receiver) = mpsc::channel::<Outbound>();
     let dispatcher = Arc::new(SenseDispatcher::new_with_fixture_program(
         journal, false, false, outbound, fixture,
@@ -38,18 +37,10 @@ async fn start_service(
     let loop_dispatcher = Arc::clone(&dispatcher);
     let (stop_tx, mut stop_rx) = oneshot::channel();
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(Duration::from_millis(10));
-        loop {
-            tokio::select! {
-                _ = &mut stop_rx => { loop_dispatcher.stop(); break; }
-                _ = tick.tick() => while let Ok(event) = receiver.try_recv() { let _ = service.emit(event.tract, event.event, event.fields); },
-                message = service.next_message() => match message { Some(message) => loop_dispatcher.handle(&message), None => break },
-            }
-        }
-        while let Ok(event) = receiver.try_recv() {
-            let _ = service.emit(event.tract, event.event, event.fields);
-        }
-        service.stop().await;
+        run_until(service, loop_dispatcher, receiver, async move {
+            let _ = (&mut stop_rx).await;
+        })
+        .await;
     });
     let mut peer = CallosumSocketConnection::new(&socket, Map::new());
     peer.start();
@@ -379,7 +370,7 @@ async fn watchdog_timeout_during_shutdown_still_notifies() {
     std::fs::write(segment.join("sleep.flac"), b"audio").expect("audio");
     let socket = root.path().join("health/callosum.sock");
     let server = CallosumSocketServer::bind(&socket).await.expect("server");
-    let (mut peer, dispatcher, stop) = start_service(
+    let (mut peer, _dispatcher, stop) = start_service(
         root.path().to_path_buf(),
         PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler")),
     )
@@ -387,8 +378,8 @@ async fn watchdog_timeout_during_shutdown_still_notifies() {
     wait_for_clients(&server).await;
     assert!(peer.emit("observe", "observing", observing(&["sleep.flac"])));
     let _ = next_event(&mut peer, "observe", "detected").await;
-    tokio::time::sleep(Duration::from_millis(1050)).await;
-    dispatcher.stop();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let _ = stop.send(());
     let notification = next_event(&mut peer, "notification", "show").await;
     assert!(
         notification.extra["message"]
@@ -404,7 +395,6 @@ async fn watchdog_timeout_during_shutdown_still_notifies() {
             .expect("error")
             .contains("watchdog_timeout")
     );
-    let _ = stop.send(());
     server.stop().await;
 }
 
