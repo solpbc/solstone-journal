@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! W2 mutation conformance tests driven exclusively by the captured corpus.
+//! Mutation conformance tests driven exclusively by the captured corpus.
 
 use std::{fs, time::Duration};
 

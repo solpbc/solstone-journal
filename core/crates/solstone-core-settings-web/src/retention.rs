@@ -4,7 +4,7 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use axum::{body::Bytes, response::Response};
-use chrono::{Local, Utc};
+use chrono::{Days, Local, Utc};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config_write::{
@@ -32,6 +32,283 @@ pub(crate) struct RetentionPolicy {
     per_stream: Vec<(String, RetentionRule)>,
     minimum_age: i64,
     enabled: bool,
+}
+
+struct LogRetentionConfig {
+    enabled: bool,
+    days: i64,
+}
+
+fn python_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
+fn python_int(value: &Value) -> Option<i64> {
+    if value.is_boolean() {
+        return None;
+    }
+    value
+        .as_i64()
+        .or_else(|| {
+            value.as_f64().and_then(|value| {
+                (value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64)
+                    .then(|| value.trunc() as i64)
+            })
+        })
+        .or_else(|| value.as_str().and_then(|value| value.trim().parse().ok()))
+}
+
+fn log_retention_config(config: &Map<String, Value>) -> Result<LogRetentionConfig, ()> {
+    let retention = config
+        .get("retention")
+        .filter(|value| python_truthy(value))
+        .map(|value| value.as_object().ok_or(()))
+        .transpose()?;
+    let journal_logs = retention
+        .and_then(|retention| retention.get("journal_logs"))
+        .filter(|value| python_truthy(value))
+        .map(|value| value.as_object().ok_or(()))
+        .transpose()?;
+    let enabled = journal_logs
+        .and_then(|journal_logs| journal_logs.get("enabled"))
+        .map_or(Ok(true), |value| value.as_bool().ok_or(()))?;
+    let days = journal_logs
+        .and_then(|journal_logs| journal_logs.get("days"))
+        .map_or(Ok(30), |value| python_int(value).ok_or(()))?;
+    (days >= 1)
+        .then_some(LogRetentionConfig { enabled, days })
+        .ok_or(())
+}
+
+fn cutoff_day(days: i64) -> Option<String> {
+    Local::now()
+        .date_naive()
+        .checked_sub_days(Days::new(days.try_into().ok()?))
+        .map(|day| day.format("%Y%m%d").to_string())
+}
+
+fn count(value: Option<&Value>) -> i64 {
+    value.and_then(Value::as_i64).unwrap_or(0)
+}
+
+fn reason(value: Option<&Value>) -> String {
+    value
+        .and_then(Value::as_str)
+        .unwrap_or("unknown error")
+        .to_owned()
+}
+
+fn human_bytes(bytes: i64) -> String {
+    let mut value = bytes as f64;
+    for unit in ["B", "KB", "MB", "GB", "TB"] {
+        if value.abs() < 1024.0 {
+            return if unit == "B" {
+                format!("{} B", value as i64)
+            } else {
+                format!("{value:.1} {unit}")
+            };
+        }
+        value /= 1024.0;
+    }
+    format!("{value:.1} PB")
+}
+
+fn compaction_result(stats: Option<&Map<String, Value>>, dry_run: bool) -> Value {
+    let stats = stats.cloned().unwrap_or_default();
+    let bytes_freed = if !dry_run && !python_truthy(stats.get("rewritten").unwrap_or(&Value::Null))
+    {
+        0
+    } else {
+        count(stats.get("bytes_before")) - count(stats.get("bytes_after"))
+    };
+    let errors = stats
+        .get("errors")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .map(|error| reason(error.get("reason")))
+        .collect::<Vec<_>>();
+    json!({
+        "exists": python_truthy(stats.get("exists").unwrap_or(&Value::Null)),
+        "lines_total": count(stats.get("lines_total")),
+        "lines_kept": count(stats.get("lines_kept")),
+        "lines_removed": count(stats.get("lines_dropped")),
+        "unparseable_lines_kept": count(stats.get("undateable_kept")),
+        "bytes_freed": bytes_freed,
+        "rewritten": python_truthy(stats.get("rewritten").unwrap_or(&Value::Null)),
+        "errors": errors,
+    })
+}
+
+fn empty_prune_result(enabled: bool, dry_run: Value, days: i64) -> Option<Value> {
+    Some(json!({
+        "enabled": enabled,
+        "dry_run": dry_run,
+        "days": days,
+        "cutoff_day": cutoff_day(days)?,
+        "files_deleted": 0,
+        "dirs_deleted": 0,
+        "bytes_freed": 0,
+        "bytes_freed_human": "0 B",
+        "by_class": {},
+        "by_day": {},
+        "root_task_log": {},
+        "retention_log": {},
+        "errors": [],
+        "audit_written": false,
+        "partial_error": false,
+    }))
+}
+
+fn prune_result_from_receipt(receipt: &Value, dry_run: Value, days: i64) -> Option<Value> {
+    let plan = receipt
+        .get("detail")
+        .and_then(Value::as_object)
+        .map_or_else(|| receipt.get("plan"), |detail| detail.get("plan"))?
+        .as_object()?;
+    let dry_run_truthy = python_truthy(&dry_run);
+    let prefix = if dry_run_truthy { "planned" } else { "removed" };
+    let mut by_class = Map::new();
+    for (name, stats) in plan
+        .get("by_class")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let Some(stats) = stats.as_object() else {
+            continue;
+        };
+        let errors = stats
+            .get("errors")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object)
+            .map(|error| Value::String(reason(error.get("reason"))))
+            .collect::<Vec<_>>();
+        by_class.insert(
+            name.clone(),
+            json!({
+                "files_deleted": count(stats.get(&format!("{prefix}_files"))),
+                "bytes_freed": count(stats.get(&format!("{prefix}_bytes"))),
+                "dirs_deleted": count(stats.get(&format!("{prefix}_dirs"))),
+                "skipped": count(stats.get("skipped")),
+                "errors": errors,
+            }),
+        );
+    }
+    let mut by_day = Map::new();
+    for (day, stats) in plan
+        .get("by_day")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let Some(stats) = stats.as_object() else {
+            continue;
+        };
+        by_day.insert(
+            day.clone(),
+            json!({
+                "files_deleted": count(stats.get(&format!("{prefix}_files"))),
+                "bytes_freed": count(stats.get(&format!("{prefix}_bytes"))),
+                "dirs_deleted": count(stats.get(&format!("{prefix}_dirs"))),
+            }),
+        );
+    }
+    let errors = plan
+        .get("errors")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .map(|error| {
+            let reason = reason(error.get("reason"));
+            json!({
+                "class": error.get("class").cloned().unwrap_or(Value::Null),
+                "path": error.get("path").cloned().unwrap_or(Value::Null),
+                "day": error.get("day").cloned().unwrap_or(Value::Null),
+                "reason": reason,
+                "message": reason,
+                "hint": error.get("hint").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect::<Vec<_>>();
+    let partial_error = !errors.is_empty();
+    let compactions = plan.get("compactions").and_then(Value::as_object);
+    let root_task_log = compaction_result(
+        compactions
+            .and_then(|compactions| compactions.get("root_task_log"))
+            .and_then(Value::as_object),
+        dry_run_truthy,
+    );
+    let retention_log = compaction_result(
+        compactions
+            .and_then(|compactions| compactions.get("retention_log"))
+            .and_then(Value::as_object),
+        dry_run_truthy,
+    );
+    let files_deleted = by_class
+        .values()
+        .map(|stats| count(stats.get("files_deleted")))
+        .sum::<i64>();
+    let dirs_deleted = by_class
+        .values()
+        .map(|stats| count(stats.get("dirs_deleted")))
+        .sum::<i64>();
+    let bytes_freed = by_class
+        .values()
+        .map(|stats| count(stats.get("bytes_freed")))
+        .sum::<i64>()
+        + count(root_task_log.get("bytes_freed"))
+        + count(retention_log.get("bytes_freed"));
+    Some(json!({
+        "enabled": true,
+        "dry_run": dry_run,
+        "days": days,
+        "cutoff_day": cutoff_day(days)?,
+        "files_deleted": files_deleted,
+        "dirs_deleted": dirs_deleted,
+        "bytes_freed": bytes_freed,
+        "bytes_freed_human": human_bytes(bytes_freed),
+        "by_class": by_class,
+        "by_day": by_day,
+        "root_task_log": root_task_log,
+        "retention_log": retention_log,
+        "errors": errors,
+        "audit_written": false,
+        "partial_error": partial_error,
+    }))
+}
+
+fn prune_response(journal_root: &std::path::Path, result: Value, dry_run: bool) -> Response {
+    if !dry_run
+        && solstone_core_facets::append_action_log(
+            journal_root,
+            None,
+            "app",
+            "settings",
+            "prune_logs",
+            json!({
+                "days": result["days"],
+                "files_deleted": result["files_deleted"],
+                "dirs_deleted": result["dirs_deleted"],
+            }),
+        )
+        .is_err()
+    {
+        settings_operation_failed()
+    } else {
+        json_response(result)
+    }
 }
 
 fn rule(mode: Option<&str>, days: Option<&Value>) -> RetentionRule {
@@ -402,30 +679,41 @@ pub async fn prune_logs(journal_root: PathBuf, body: Bytes) -> Response {
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
-    let effective = days
-        .and_then(Value::as_i64)
-        .or_else(|| {
-            config
-                .get("retention")
-                .and_then(|value| value.get("journal_logs"))
-                .and_then(|value| value.get("days"))
-                .and_then(Value::as_i64)
-        })
-        .unwrap_or(30);
+    let Ok(log_retention) = log_retention_config(&config) else {
+        return settings_operation_failed();
+    };
+    let effective = days.and_then(Value::as_i64).unwrap_or(log_retention.days);
     let dry_run = request
         .get("dry_run")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
+        .cloned()
+        .unwrap_or_else(|| json!(true));
+    let dry_run_truthy = python_truthy(&dry_run);
+    if !log_retention.enabled {
+        return empty_prune_result(false, dry_run, effective)
+            .map_or_else(settings_operation_failed, json_response);
+    }
     match retention_executor::prune_logs(
-        journal_root,
+        journal_root.clone(),
         Local::now().format("%Y-%m-%d").to_string(),
         effective.to_string(),
-        dry_run,
+        dry_run_truthy,
     )
     .await
     {
-        Ok(receipt) => json_response(receipt),
-        Err(ExecutorError::Refused(_)) => settings_operation_failed(),
+        Ok(receipt) => prune_result_from_receipt(&receipt, dry_run.clone(), effective)
+            .map_or_else(settings_operation_failed, |result| {
+                prune_response(&journal_root, result, dry_run_truthy)
+            }),
+        // Reference contract: a refusal still carries a useful prune result.
+        // Do not unify this with executor unavailability below.
+        Err(ExecutorError::Refused(refused)) => {
+            prune_result_from_receipt(&refused.0, dry_run, effective)
+                .map_or_else(settings_operation_failed, |result| {
+                    prune_response(&journal_root, result, dry_run_truthy)
+                })
+        }
+        // Reference contract: an unavailable executor is the generic envelope.
+        // Do not unify this with the receipt-bearing refusal arm above.
         Err(ExecutorError::Unavailable(_)) => settings_operation_failed(),
     }
 }

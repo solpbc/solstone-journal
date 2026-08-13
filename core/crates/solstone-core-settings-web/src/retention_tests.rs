@@ -12,6 +12,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
+use chrono::{Days, Local};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::sync::{Mutex, MutexGuard};
@@ -651,6 +652,51 @@ fn ac8_prune_unavailable_is_generic_while_purge_carries_the_tool_detail() {
             .as_str()
             .is_some_and(|detail| detail.contains("solstone-retention"))
     );
+}
+
+#[test]
+fn prune_logs_disabled_is_a_noop_without_an_executor() {
+    let harness = Harness::new(&json!({
+        "journal_logs": {"enabled": false, "days": 14},
+    }));
+    assert!(!harness.root.path().join("solstone-retention").exists());
+    let (status, body) =
+        ExecutorEnvironment::install(None, harness.root.path(), &harness.log, None, || {
+            run_async(send(
+                harness.router(),
+                "POST",
+                "/app/settings/api/storage/prune-logs",
+                Some(&json!({"dry_run": false})),
+            ))
+        });
+    let cutoff_day = Local::now()
+        .date_naive()
+        .checked_sub_days(Days::new(14))
+        .expect("cutoff date")
+        .format("%Y%m%d")
+        .to_string();
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({
+            "enabled": false,
+            "dry_run": false,
+            "days": 14,
+            "cutoff_day": cutoff_day,
+            "files_deleted": 0,
+            "dirs_deleted": 0,
+            "bytes_freed": 0,
+            "bytes_freed_human": "0 B",
+            "by_class": {},
+            "by_day": {},
+            "root_task_log": {},
+            "retention_log": {},
+            "errors": [],
+            "audit_written": false,
+            "partial_error": false,
+        })
+    );
+    assert!(harness.invocations().is_empty());
 }
 
 #[test]
