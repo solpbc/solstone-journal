@@ -2830,6 +2830,7 @@ dependencies = [
  "solstone-core-sol-link",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
+ "solstone-core-spl",
  "solstone-core-thinking",
  "solstone-core-thinking-copy",
  "spl-core",

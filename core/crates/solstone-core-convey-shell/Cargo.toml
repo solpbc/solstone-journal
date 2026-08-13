@@ -33,6 +33,7 @@ host = [
     "dep:percent-encoding",
     "dep:solstone-core-callosum",
     "dep:solstone-core-sol-link",
+    "dep:solstone-core-spl",
     "dep:solstone-core-thinking",
     "dep:solstone-core-thinking-copy",
     "solstone-core-sol-link/host",
@@ -71,6 +72,7 @@ solstone-core-settings-web.workspace = true
 spl-home = { workspace = true, optional = true }
 spl-core = { workspace = true, optional = true }
 solstone-core-sol-link = { workspace = true, optional = true }
+solstone-core-spl = { workspace = true, optional = true }
 solstone-core-thinking = { workspace = true, optional = true }
 solstone-core-thinking-copy = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
