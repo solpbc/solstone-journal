@@ -157,6 +157,8 @@ def _check_models_pin(extras: dict, member_version: str | None) -> list[str]:
 def _native_marker_pins(distribution: str, version: str) -> list[str]:
     if distribution == "solstone-core-vulkan-probe":
         return list(solstone_core_vulkan_probe_marker_pins(version))
+    if distribution == "solstone-core-describe":
+        return list(solstone_core_describe_marker_pins(version))
     return [
         dep.replace("solstone-core==", f"{distribution}==", 1)
         for dep in solstone_core_marker_pins(version)

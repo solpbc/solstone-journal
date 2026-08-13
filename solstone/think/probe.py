@@ -145,6 +145,14 @@ SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS: tuple[CorePlatform, ...] = (
     ("linux", "aarch64"),
 )
 
+# Describe is Linux-only. Its family builds on the zig GNU manylinux_2_27 lane and
+# this wave ships no macOS wheel, so a darwin pin here would be a marker nothing
+# can satisfy -- an unresolvable `pip install solstone-journal` on macOS.
+SOLSTONE_CORE_DESCRIBE_COVERED_PLATFORMS: tuple[CorePlatform, ...] = (
+    ("linux", "x86_64"),
+    ("linux", "aarch64"),
+)
+
 
 def _solstone_core_speakers_analyze_platform_tag(
     platform_tuple: CorePlatform,
@@ -172,6 +180,10 @@ SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_TAGS: dict[CorePlatform, str] = {
 SOLSTONE_CORE_VULKAN_PROBE_PLATFORM_MARKERS: tuple[str, ...] = tuple(
     _solstone_core_platform_marker(platform_tuple)
     for platform_tuple in SOLSTONE_CORE_VULKAN_PROBE_COVERED_PLATFORMS
+)
+SOLSTONE_CORE_DESCRIBE_PLATFORM_MARKERS: tuple[str, ...] = tuple(
+    _solstone_core_platform_marker(platform_tuple)
+    for platform_tuple in SOLSTONE_CORE_DESCRIBE_COVERED_PLATFORMS
 )
 
 
@@ -221,7 +233,7 @@ def solstone_core_speakers_analyze_marker_pins(version: str) -> tuple[str, ...]:
 def solstone_core_describe_marker_pins(version: str) -> tuple[str, ...]:
     return tuple(
         f"solstone-core-describe=={version}; {marker}"
-        for marker in SOLSTONE_CORE_PLATFORM_MARKERS
+        for marker in SOLSTONE_CORE_DESCRIBE_PLATFORM_MARKERS
     )
 
 

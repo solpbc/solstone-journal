@@ -3008,7 +3008,7 @@ dependencies = [
     { name = "solstone", extra = ["journal-host"] },
     { name = "solstone-core", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-depict", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
-    { name = "solstone-core-describe", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "solstone-core-describe", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-journal", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-retention", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
@@ -3024,7 +3024,6 @@ requires-dist = [
     { name = "solstone-core-depict", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-depict" },
     { name = "solstone-core-depict", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-depict" },
     { name = "solstone-core-depict", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-depict" },
-    { name = "solstone-core-describe", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-describe", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-describe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-journal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-journal" },
@@ -3056,7 +3055,7 @@ dependencies = [
     { name = "solstone", extra = ["journal-host"] },
     { name = "solstone-core", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-depict", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
-    { name = "solstone-core-describe", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "solstone-core-describe", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-journal", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "solstone-core-retention", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
@@ -3078,7 +3077,6 @@ requires-dist = [
     { name = "solstone-core-depict", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-depict" },
     { name = "solstone-core-depict", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-depict" },
     { name = "solstone-core-depict", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-depict" },
-    { name = "solstone-core-describe", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-describe", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-describe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", editable = "packages/solstone-core-describe" },
     { name = "solstone-core-journal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", editable = "packages/solstone-core-journal" },
