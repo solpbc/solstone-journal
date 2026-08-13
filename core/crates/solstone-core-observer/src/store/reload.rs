@@ -10,6 +10,15 @@ use solstone_core_journal_io::{DirEntryKind, list_dir_entries};
 use super::paths::observer_path;
 use super::record::ObserverRecord;
 
+/// One canonical registry traversal.  `regular_json_entries` counts only
+/// regular `*.json` siblings: it intentionally follows the same kind-before-
+/// extension ordering as the loader.
+#[derive(Debug)]
+pub struct ObserverLoad {
+    pub records: Vec<ObserverRecord>,
+    pub regular_json_entries: usize,
+}
+
 #[derive(Debug)]
 pub enum ReloadError {
     Directory(String),
@@ -28,14 +37,25 @@ impl std::error::Error for ReloadError {}
 /// Canonical registry scan. Invalid siblings are intentionally skipped, just
 /// like Python's ObserverRegistry reload path.
 pub fn load_observers(journal_root: &Path) -> Result<Vec<ObserverRecord>, ReloadError> {
+    Ok(load_observers_with_inventory(journal_root)?.records)
+}
+
+/// Load usable records and retain the raw regular-json denominator for callers
+/// that must fail closed when an invalid registry sibling was skipped.
+pub fn load_observers_with_inventory(journal_root: &Path) -> Result<ObserverLoad, ReloadError> {
     let directory = super::paths::observers_dir(journal_root);
     let entries =
         list_dir_entries(&directory).map_err(|error| ReloadError::Directory(error.to_string()))?;
     let mut records = Vec::new();
+    let mut regular_json_entries = 0;
     for entry in entries {
-        if entry.kind != DirEntryKind::File || !entry.name.to_string_lossy().ends_with(".json") {
+        if entry.kind != DirEntryKind::File {
             continue;
         }
+        if !entry.name.to_string_lossy().ends_with(".json") {
+            continue;
+        }
+        regular_json_entries += 1;
         let Ok(bytes) = fs::read(&entry.path) else {
             continue;
         };
@@ -51,7 +71,10 @@ pub fn load_observers(journal_root: &Path) -> Result<Vec<ObserverRecord>, Reload
         records.push(record);
     }
     records.sort_by_key(|record| std::cmp::Reverse(record.created_at().unwrap_or(0)));
-    Ok(records)
+    Ok(ObserverLoad {
+        records,
+        regular_json_entries,
+    })
 }
 
 pub fn find_observer(
@@ -150,6 +173,20 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Some("newer"), Some("older")]
         );
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn inventory_counts_only_regular_json_entries() {
+        let root = root("inventory");
+        write(&root, "abcdefgh.json", valid("abcdefgh-more", "visible", 1));
+        fs::create_dir(super::super::paths::observers_dir(&root).join("x.json"))
+            .expect("json-named directory");
+        write(&root, "broken.json", json!({"key": "wrong-prefix-more"}));
+
+        let loaded = load_observers_with_inventory(&root).expect("load inventory");
+        assert_eq!(loaded.regular_json_entries, 2);
+        assert_eq!(loaded.records.len(), 1);
         fs::remove_dir_all(root).expect("cleanup");
     }
 

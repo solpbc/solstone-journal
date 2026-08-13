@@ -10,3 +10,8 @@ pub mod reconcile;
 pub mod record;
 pub mod reload;
 pub mod write;
+
+pub use history::{HistoryRead, HistoryStop, history_days, load_history};
+pub use paths::{history_path, observers_dir};
+pub use record::ObserverRecord;
+pub use reload::{ObserverLoad, ReloadError, load_observers, load_observers_with_inventory};
