@@ -14,11 +14,15 @@ use std::io::Write as _;
 use std::os::unix::ffi::OsStringExt as _;
 use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
 use std::process::{Child, ExitStatus};
 use std::process::{Command, Output, Stdio};
+#[cfg(target_os = "linux")]
 use std::thread;
+#[cfg(target_os = "linux")]
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
 use nix::sys::signal::{Signal, kill};
 #[cfg(all(
     target_os = "linux",
@@ -30,6 +34,7 @@ use nix::sys::stat::Mode;
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 use nix::sys::{ptrace, wait::WaitPidFlag, wait::WaitStatus, wait::waitpid};
+#[cfg(target_os = "linux")]
 use nix::unistd::Pid;
 #[cfg(all(
     target_os = "linux",
@@ -305,6 +310,7 @@ fn one_shot_preserves_non_utf8_journal_identity_in_safe_diagnostics() {
     let journal = outer
         .path()
         .join(OsString::from_vec(b"journal-\\-\xff-\n-\x1b".to_vec()));
+    #[cfg(target_os = "linux")]
     fs::create_dir_all(journal.join("health/service.log")).unwrap();
 
     let output = run(journal.as_os_str(), &args(&["service", "logs"]));
@@ -312,7 +318,10 @@ fn one_shot_preserves_non_utf8_journal_identity_in_safe_diagnostics() {
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(stderr.lines().count(), 1);
+    #[cfg(target_os = "linux")]
     assert!(stderr.starts_with("service logs: read failed for "));
+    #[cfg(target_os = "macos")]
+    assert!(stderr.starts_with("service logs: metadata failed for "));
     assert!(stderr.contains("journal-\\\\-\\xff-\\n-\\x1b/health/service.log"));
     assert!(!stderr.contains('\u{1b}'));
 }
@@ -393,11 +402,13 @@ fn resolver_failure_precedes_metadata_and_output() {
     );
 }
 
+#[cfg(target_os = "linux")]
 struct ChildGuard {
     child: Option<Child>,
     deadline: Instant,
 }
 
+#[cfg(target_os = "linux")]
 impl ChildGuard {
     fn spawn(mut command: Command, deadline: Instant) -> Self {
         Self {
@@ -447,6 +458,7 @@ impl ChildGuard {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if self.child.is_none() {
@@ -459,6 +471,7 @@ impl Drop for ChildGuard {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn wait_until(deadline: Instant, mut condition: impl FnMut() -> bool) {
     while Instant::now() < deadline {
         if condition() {
