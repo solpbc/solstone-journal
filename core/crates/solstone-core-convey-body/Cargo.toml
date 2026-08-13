@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-convey-body"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+log.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+solstone-core-body-source = { path = "../solstone-core-body-source" }
+solstone-core-body-store = { path = "../solstone-core-body-store" }
+solstone-core-journal-io.workspace = true
+
+[dev-dependencies]
+solstone-core-body-rebuild.workspace = true

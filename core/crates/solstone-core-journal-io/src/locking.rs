@@ -107,6 +107,45 @@ pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLoc
     }
 }
 
+/// Reports whether another process currently holds `path`'s sidecar lock.
+///
+/// This probe never creates the sidecar; a missing sidecar means no lock is held.
+pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
+    let path = path.as_ref();
+    let parent = parent_dir(path);
+    let file_name = path.file_name().ok_or_else(|| {
+        io_error(
+            path,
+            io::Error::new(io::ErrorKind::InvalidInput, "lock path has no file name"),
+        )
+    })?;
+    let sidecar = parent.join(format!("{}.lock", file_name.to_string_lossy()));
+    let mut open_options = OpenOptions::new();
+    open_options.read(true).create(false);
+    #[cfg(unix)]
+    open_options.custom_flags(nix::libc::O_NOFOLLOW);
+    let file = match open_options.open(&sidecar) {
+        Ok(file) => file,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(source) => return Err(io_error(path, source)),
+    };
+
+    match Flock::lock(file, FlockArg::LockSharedNonblock) {
+        Ok(guard) => {
+            drop(guard);
+            Ok(false)
+        }
+        Err((file, Errno::EACCES | Errno::EAGAIN)) => {
+            drop(file);
+            Ok(true)
+        }
+        Err((file, source)) => {
+            drop(file);
+            Err(io_error(path, io::Error::from_raw_os_error(source as i32)))
+        }
+    }
+}
+
 fn retry_delay(poll_interval: Duration) -> Duration {
     let sleep_max = if poll_interval.is_zero() {
         DEFAULT_LOCK_POLL_INTERVAL

@@ -78,6 +78,7 @@ members = [
     "crates/solstone-core-body-store",
     "crates/solstone-core-body-rebuild",
     "crates/solstone-core-body-ingest",
+    "crates/solstone-core-convey-body",
     "crates/solstone-core-system",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
@@ -123,6 +124,7 @@ solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
+solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }
 solstone-core-identity = { path = "crates/solstone-core-identity" }
