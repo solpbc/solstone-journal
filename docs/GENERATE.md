@@ -37,8 +37,8 @@ Three record types, three schema identifiers:
 | protocol error | `solstone-generate-error-v2` |
 
 The **contract fixture** `core/fixtures/generate_contract.json` is the single source for the schema
-identifiers, every closed vocabulary, the exit-code table and the conformance vectors. Both the Rust
-crate and the Python shim read that file. ⛔ **Neither language holds its own copy of any vocabulary.**
+identifiers, every closed vocabulary, the exit-code table and the conformance vectors. The Rust crate
+reads that file. ⛔ **No implementation holds its own copy of any vocabulary.**
 
 ### Request
 
@@ -328,27 +328,30 @@ something must send the signal, and a killed caller cannot. A parent-death signa
 this tree builds for Apple targets. A supervising reaper is a third process with the same problem one
 level up. **One JSON line settles it portably.**
 
-⚠ **The Python shim does not meet this guarantee today, and that is measured rather than suspected.**
-On bare end-of-file it does set its abort flag and cancel the in-flight request, but the cancellation
-cannot reach the work: the bundled local lane runs the provider call on a worker thread wrapping a
-blocking subprocess call that takes no timeout of its own, so interpreter shutdown then joins that
-thread. The child exits only when the provider call returns by itself — measured at 30.1 s for a
-request carrying `timeout_s: 30` — and the helper process it spawned lives exactly as long. A caller
-that sends no `timeout_s` inherits the 120 s default, so the same bound there is two minutes. Two
-processes hold a provider slot for that window after their caller is already gone.
+✅ **The guarantee holds today.** `criterion_8_killing_session_owner_aborts_wire_without_usage` in
+`core/crates/solstone-core/tests/generate_session.rs` is the test that holds it. It is an ordinary
+`#[test]` with no `#[ignore]` and no feature gate, so `make ci` runs it, and it passes.
 
-✅ **The usage half of the guarantee does hold.** A request whose provider answered after the caller
-died wrote no token-log line, against a control that writes one for an ordinary completion. Nothing is
-recorded against work nobody will receive.
+📌 **It did not always, and the reason is worth keeping — it is a constraint on any future
+implementation of this lane, not a closed ticket.** The retired Python shim failed this guarantee, and
+the failure was measured rather than suspected: on bare end-of-file it set its abort flag and cancelled
+the in-flight request, but the cancellation could not reach the work. The bundled local lane ran the
+provider call on a worker thread wrapping a blocking subprocess call that took no timeout of its own,
+so interpreter shutdown joined that thread. The child exited only when the provider call returned by
+itself — 30.1 s for a request carrying `timeout_s: 30`, and 120 s for a caller that sent none — and the
+helper process it spawned lived exactly as long. Two processes held a provider slot for that window
+after their caller was already gone.
 
-🔴 **It is a regression, not a property of the shim.** Before the bundled lane was cut over to the
-native `local generate` verb the same request aborted **0.2 s** after end-of-file; after the cutover it
-takes 30.2 s. The cutover replaced an awaited in-process call with a worker thread wrapping a blocking
-subprocess call, and an abort cannot reach work parked there. Whatever implements this lane must keep
-the provider call cancellable, or exit outright — which the contract permits, because nothing further is
-to be answered anyway. `criterion_8` in the session differential is the test that holds it. It fails
-today for exactly this reason, and it runs from the cross-language differential target rather than the
-native gate, which is how the cutover landed green.
+⚠ **That was a regression introduced by a cutover, which is the part that generalises.** Before the
+bundled lane moved to the native `local generate` verb the same request aborted **0.2 s** after
+end-of-file; after it, 30.2 s. The cutover replaced an awaited in-process call with a worker thread
+wrapping a blocking subprocess call, and an abort cannot reach work parked there. 🔴 **Whatever
+implements this lane must keep the provider call cancellable, or exit outright** — which the contract
+permits, because nothing further is to be answered anyway.
+
+✅ **The usage half held even while the abort half did not.** A request whose provider answered after
+the caller died wrote no token-log line, against a control that writes one for an ordinary completion.
+Nothing is recorded against work nobody will receive.
 
 🔴 **One child per consumer process, never a shared daemon.** The child is launched by the consumer,
 lives as long as the consumer, and dies with it. The pipeline's failure containment — one process per
