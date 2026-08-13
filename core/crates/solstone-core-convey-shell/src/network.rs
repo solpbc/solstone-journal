@@ -15,7 +15,10 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_sol_link::ledger::AuthorizationLedger;
+use solstone_core_sol_link::ledger::{
+    AuthorizationLedger, AuthorizedClientsRead, DeviceActivityRead, read_authorized_clients,
+    read_device_activity,
+};
 use solstone_core_sol_link::pairing::addresses::{
     PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source, snapshot_from_sources,
 };
@@ -25,6 +28,22 @@ use solstone_core_sol_link::pairing::{
 };
 
 use crate::JournalRoot;
+
+/// Exact network-device response vocabulary mirrored from
+/// `solstone/apps/network/routes.py::_entry_to_json`.
+pub(crate) const NETWORK_DEVICE_FIELDS: [&str; 11] = [
+    "fingerprint",
+    "fingerprint_short",
+    "device_label",
+    "display_label",
+    "client_label",
+    "paired_at",
+    "last_seen_at",
+    "role",
+    "network",
+    "kind",
+    "observer_handle",
+];
 
 #[derive(Deserialize)]
 pub(crate) struct NonceQuery {
@@ -109,6 +128,72 @@ pub(crate) async fn nonce_status(
     let nonce = NonceStore::new(&root.0).peek(&query.nonce);
     Json(json!({"present": nonce.is_some(), "used": nonce.is_some_and(|entry| entry.used)}))
         .into_response()
+}
+
+pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+    let authorized_path = root.0.join("link/authorized_clients.json");
+    let entries = match read_authorized_clients(&authorized_path) {
+        AuthorizedClientsRead::Present(entries) => entries,
+        AuthorizedClientsRead::Missing => Vec::new(),
+        AuthorizedClientsRead::Unreadable | AuthorizedClientsRead::Malformed => {
+            log::warn!("network devices could not read the authorization ledger");
+            Vec::new()
+        }
+    };
+    let activity = match read_device_activity(&root.0.join("link/devices.json")) {
+        DeviceActivityRead::Present(activity) => Some(activity),
+        DeviceActivityRead::Missing => None,
+        DeviceActivityRead::Unreadable | DeviceActivityRead::Malformed => {
+            log::warn!("network devices could not read device activity metadata");
+            None
+        }
+    };
+    let devices = entries
+        .iter()
+        .map(|entry| network_device_json(entry, activity.as_ref()))
+        .collect::<Vec<_>>();
+    Json(json!({"devices": devices})).into_response()
+}
+
+fn network_device_json(
+    entry: &solstone_core_sol_link::ledger::ClientEntry,
+    activity: Option<&Map<String, Value>>,
+) -> Value {
+    let last_seen_at = activity
+        .and_then(|devices| devices.get(&entry.fingerprint))
+        .and_then(Value::as_object)
+        .and_then(|device| device.get("last_seen_at"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let value = Map::from_iter([
+        ("fingerprint".to_owned(), json!(entry.fingerprint)),
+        (
+            "fingerprint_short".to_owned(),
+            json!(
+                entry
+                    .fingerprint
+                    .strip_prefix("sha256:")
+                    .unwrap_or(&entry.fingerprint)
+                    .chars()
+                    .take(16)
+                    .collect::<String>()
+            ),
+        ),
+        ("device_label".to_owned(), json!(entry.device_label)),
+        ("display_label".to_owned(), json!(entry.display_label())),
+        ("client_label".to_owned(), json!(entry.client_label)),
+        ("paired_at".to_owned(), json!(entry.paired_at)),
+        ("last_seen_at".to_owned(), last_seen_at),
+        ("role".to_owned(), json!(entry.role.as_wire())),
+        ("network".to_owned(), json!(entry.network)),
+        ("kind".to_owned(), json!(entry.kind)),
+        // Verified from `solstone/think/link/auth.py`: the loader never
+        // populates this field (line 322) and the writer omits it (line 358),
+        // so every reloaded reference entry has `None` here.
+        ("observer_handle".to_owned(), Value::Null),
+    ]);
+    debug_assert_eq!(value.len(), NETWORK_DEVICE_FIELDS.len());
+    Value::Object(value)
 }
 
 pub(crate) async fn pair(
@@ -570,5 +655,74 @@ mod tests {
                 .expect("stored nonce")
                 .same_machine
         );
+    }
+
+    #[tokio::test]
+    async fn devices_route_projects_the_exact_network_device_vocabulary() {
+        let temporary = TempDir::new();
+        fs::create_dir_all(temporary.path().join("config")).expect("config directory");
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"setup":{"completed_at":1}}"#,
+        )
+        .expect("established journal");
+        fs::create_dir_all(temporary.path().join("link")).expect("link directory");
+        fs::write(
+            temporary.path().join("link/authorized_clients.json"),
+            json!([{
+                "fingerprint": "sha256:0123456789abcdef0123456789abcdef",
+                "device_label": "phone",
+                "paired_at": "2026-08-13T00:00:00Z",
+                "instance_id": "device-instance",
+                "role": "owner",
+                "network": "home",
+                "client_label": "Phone",
+                "kind": "cert",
+            }])
+            .to_string(),
+        )
+        .expect("authorization ledger");
+        fs::write(
+            temporary.path().join("link/devices.json"),
+            json!({
+                "sha256:0123456789abcdef0123456789abcdef": {
+                    "last_seen_at": "2026-08-13T00:01:00Z"
+                }
+            })
+            .to_string(),
+        )
+        .expect("activity metadata");
+
+        let response = crate::router(temporary.path().to_path_buf())
+            .oneshot(
+                Request::get("/app/network/api/devices")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        let device = &body["devices"][0];
+        let actual = device
+            .as_object()
+            .expect("device object")
+            .keys()
+            .map(String::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = NETWORK_DEVICE_FIELDS
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            actual, expected,
+            "the projection neither widens nor narrows"
+        );
+        assert_eq!(device["last_seen_at"], "2026-08-13T00:01:00Z");
+        assert_eq!(device["observer_handle"], Value::Null);
     }
 }

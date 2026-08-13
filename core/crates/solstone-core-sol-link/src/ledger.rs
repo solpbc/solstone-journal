@@ -211,6 +211,15 @@ pub enum DevicesMutationError {
     Write(solstone_core_journal_io::AtomicWriteError),
 }
 
+/// Read-only view of the non-authoritative device activity ledger.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeviceActivityRead {
+    Present(Map<String, Value>),
+    Missing,
+    Unreadable,
+    Malformed,
+}
+
 impl fmt::Display for DevicesMutationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -543,6 +552,35 @@ pub fn read_authorized_clients(path: &Path) -> AuthorizedClientsRead {
         Err(AuthorizedClientsLoadError::Unreadable { .. }) => AuthorizedClientsRead::Unreadable,
         Err(AuthorizedClientsLoadError::Malformed { .. }) => AuthorizedClientsRead::Malformed,
     }
+}
+
+/// Read `link/devices.json` without acquiring a lock or changing the file.
+///
+/// Device activity is presentation metadata only; callers must never use this
+/// result as authorization evidence.
+pub fn read_device_activity(path: &Path) -> DeviceActivityRead {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return DeviceActivityRead::Missing;
+        }
+        Err(_) => return DeviceActivityRead::Unreadable,
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return DeviceActivityRead::Malformed;
+    };
+    let Some(devices) = value.as_object().cloned() else {
+        return DeviceActivityRead::Malformed;
+    };
+    if devices.values().any(|device| {
+        let Some(device) = device.as_object() else {
+            return true;
+        };
+        device.len() != 1 || device.get("last_seen_at").and_then(Value::as_str).is_none()
+    }) {
+        return DeviceActivityRead::Malformed;
+    }
+    DeviceActivityRead::Present(devices)
 }
 
 fn lock(path: &Path) -> Result<solstone_core_journal_io::FileLock, AuthorizedClientsMutationError> {

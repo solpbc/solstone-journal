@@ -447,6 +447,7 @@ pub fn router(journal_root: PathBuf) -> Router {
             get(network::nonce_status),
         )
         .route(spl_core::PAIR_PATH, post(network::pair))
+        .route("/app/network/api/devices", get(network::devices))
         .route("/app/devices/", get(devices::shell))
         .route("/app/devices/workspace", get(devices::workspace))
         .route("/app/devices/api/list", get(devices::list))
