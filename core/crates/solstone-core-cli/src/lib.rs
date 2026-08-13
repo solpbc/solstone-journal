@@ -4775,13 +4775,15 @@ mod tests {
     #[test]
     fn service_port_fixture_rows_fail_at_first_complete_port() {
         let fixture = health_text_fixture::health_text_fixture();
+        assert_eq!(fixture.port_cases.len(), 13);
+        let mut non_materializable = 0;
+        let mut replayed = 0;
         for case in &fixture.port_cases {
-            let argv = materialize_port_argv(&case.argv);
-            if case.id == "lone-surrogate" {
-                assert!(argv.is_none());
+            let Some(argv) = materialize_port_argv(&case.argv) else {
+                non_materializable += 1;
                 continue;
-            }
-            let argv = argv.expect("materializable port argv");
+            };
+            replayed += 1;
             match &case.result {
                 PortResult::Return { value } => assert_eq!(
                     parse_service_port_argv(&argv).unwrap().canonical_decimal(),
@@ -4796,15 +4798,22 @@ mod tests {
                 }
             }
         }
+        assert_eq!(non_materializable, 1);
+        assert_eq!(replayed, 12);
     }
 
     #[test]
     fn service_port_errors_are_derived_from_os_sanitization() {
         let fixture = health_text_fixture::health_text_fixture();
+        assert_eq!(fixture.port_cases.len(), 13);
+        let mut non_materializable = 0;
+        let mut replayed = 0;
         for case in &fixture.port_cases {
             let Some(argv) = materialize_port_argv(&case.argv) else {
+                non_materializable += 1;
                 continue;
             };
+            replayed += 1;
             if !matches!(&case.result, PortResult::Exit { .. }) {
                 continue;
             }
@@ -4823,6 +4832,8 @@ mod tests {
             );
             assert_eq!(render_service_diagnostic(&error), expected, "{}", case.id);
         }
+        assert_eq!(non_materializable, 1);
+        assert_eq!(replayed, 12);
         #[cfg(unix)]
         {
             let argv = vec![
