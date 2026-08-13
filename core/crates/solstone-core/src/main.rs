@@ -37,10 +37,11 @@ use solstone_core_cli::{
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
-    SenseReprocessKind, ServiceOptions, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions,
-    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
-    evaluate_args, version_line,
+    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
+    SpeakerResolveCommand, SplCommand, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
+    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
+    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic,
+    version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
@@ -54,6 +55,7 @@ mod import_sources;
 mod install_models;
 mod install_provider;
 mod navigate;
+mod service;
 mod service_logs;
 mod settings;
 mod supervisor;
@@ -270,7 +272,25 @@ fn main() -> ExitCode {
         Ok(Command::HealthLogs(args)) => health_logs::run(args),
         Ok(Command::HealthLogsUsage(args)) => health_logs::usage(args),
         Ok(Command::HealthLogsHelp(args)) => health_logs::help(args),
-        Ok(Command::ServiceLogs(args)) => service_logs::run(args),
+        Ok(Command::Service(outcome)) => match outcome {
+            ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
+                service_logs::run(solstone_core_cli::ServiceLogsArgs { follow })
+            }
+            ServiceParseOutcome::Dispatch(action) => service::run(action),
+            ServiceParseOutcome::Exit {
+                code,
+                stdout,
+                stderr,
+            } => {
+                if let Some(stdout) = stdout {
+                    print!("{stdout}");
+                }
+                if let Some(stderr) = stderr {
+                    eprint!("{}", render_service_diagnostic(&stderr));
+                }
+                ExitCode::from(code)
+            }
+        },
         Ok(Command::Observer(command)) => run_observer(command),
         Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
         Ok(Command::NavigateHelp) => {

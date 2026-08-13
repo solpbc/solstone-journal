@@ -22,8 +22,8 @@ pub use readiness::{ReadinessMarker, START_TIME_TOLERANCE_SECONDS};
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
 pub use shutdown::{ShutdownDriver, ShutdownPhase, ShutdownRegime, ShutdownReport, shutdown};
 pub use state::{
-    append_supervisor_log, clear_self_heartbeat, compact_log_if_oversized, recorded_supervisor_pid,
-    write_sync_heartbeat,
+    append_supervisor_log, clear_ready as clear_readiness, clear_self_heartbeat,
+    compact_log_if_oversized, recorded_supervisor_pid, write_sync_heartbeat,
 };
 pub use sweep::{OrphanSweepOutcome, OrphanSweepReport, sweep_orphans};
 pub use sync::{

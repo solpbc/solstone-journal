@@ -703,7 +703,7 @@ pub enum Command {
     HealthLogs(HealthLogsArgs),
     HealthLogsUsage(HealthLogsArgs),
     HealthLogsHelp(HealthLogsArgs),
-    ServiceLogs(ServiceLogsArgs),
+    Service(ServiceParseOutcome),
     Observer(ObserverCommand),
     Navigate {
         path: Option<String>,
@@ -1533,10 +1533,34 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 Err(()) => Command::TopUsage,
             })
         }
-        [command, subcommand, rest @ ..]
-            if command == OsStr::new("service") && subcommand == OsStr::new("logs") =>
-        {
-            Ok(Command::ServiceLogs(parse_service_logs(rest)))
+        [command, rest @ ..] if command == OsStr::new("service") => {
+            Ok(Command::Service(parse_service_args(rest)))
+        }
+        [command, rest @ ..] if command == OsStr::new("up") => {
+            Ok(Command::Service(if rest.is_empty() {
+                ServiceParseOutcome::Dispatch(ServiceAction::Up)
+            } else {
+                ServiceParseOutcome::Exit {
+                    code: 1,
+                    stdout: None,
+                    stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
+                        rest[0].as_os_str(),
+                    )),
+                }
+            }))
+        }
+        [command, rest @ ..] if command == OsStr::new("down") => {
+            Ok(Command::Service(if rest.is_empty() {
+                ServiceParseOutcome::Dispatch(ServiceAction::Down)
+            } else {
+                ServiceParseOutcome::Exit {
+                    code: 1,
+                    stdout: None,
+                    stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
+                        rest[0].as_os_str(),
+                    )),
+                }
+            }))
         }
         [command, rest @ ..] if command == OsStr::new("observer") => {
             // Help is not one of the observer parser's tokens, so it must be
@@ -7327,7 +7351,9 @@ mod tests {
     fn service_logs_selects_follow_anywhere_and_ignores_other_trailing_tokens() {
         assert_eq!(
             evaluate_args(&args(&["service", "logs"])),
-            Ok(Command::ServiceLogs(ServiceLogsArgs { follow: false }))
+            Ok(Command::Service(ServiceParseOutcome::Dispatch(
+                ServiceAction::Logs { follow: false }
+            )))
         );
         for values in [
             &["service", "logs", "--help"][..],
@@ -7335,7 +7361,9 @@ mod tests {
         ] {
             assert_eq!(
                 evaluate_args(&args(values)),
-                Ok(Command::ServiceLogs(ServiceLogsArgs { follow: false })),
+                Ok(Command::Service(ServiceParseOutcome::Dispatch(
+                    ServiceAction::Logs { follow: false }
+                ))),
                 "{values:?}"
             );
         }
@@ -7345,17 +7373,34 @@ mod tests {
         ] {
             assert_eq!(
                 evaluate_args(&args(values)),
-                Ok(Command::ServiceLogs(ServiceLogsArgs { follow: true })),
+                Ok(Command::Service(ServiceParseOutcome::Dispatch(
+                    ServiceAction::Logs { follow: true }
+                ))),
                 "{values:?}"
             );
         }
-        for values in [
-            &["service"][..],
-            &["service", "--help"][..],
-            &["service", "status"][..],
-        ] {
-            assert!(evaluate_args(&args(values)).is_err(), "{values:?}");
-        }
+        assert!(matches!(
+            evaluate_args(&args(&["service"])),
+            Ok(Command::Service(ServiceParseOutcome::Exit {
+                code: 1,
+                stdout: Some(SERVICE_USAGE),
+                stderr: None,
+            }))
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["service", "--help"])),
+            Ok(Command::Service(ServiceParseOutcome::Exit {
+                code: 0,
+                stdout: Some(SERVICE_USAGE),
+                stderr: None,
+            }))
+        ));
+        assert_eq!(
+            evaluate_args(&args(&["service", "status"])),
+            Ok(Command::Service(ServiceParseOutcome::Dispatch(
+                ServiceAction::Status
+            )))
+        );
     }
 
     #[cfg(unix)]
@@ -7369,14 +7414,19 @@ mod tests {
                 OsString::from("logs"),
                 OsString::from_vec(vec![0xff]),
             ]),
-            Ok(Command::ServiceLogs(ServiceLogsArgs { follow: false }))
+            Ok(Command::Service(ServiceParseOutcome::Dispatch(
+                ServiceAction::Logs { follow: false }
+            )))
         );
-        for route in [
-            vec![OsString::from_vec(vec![0xff]), OsString::from("logs")],
-            vec![OsString::from("service"), OsString::from_vec(vec![0xff])],
-        ] {
-            assert!(evaluate_args(&route).is_err());
-        }
+        assert!(evaluate_args(&[OsString::from_vec(vec![0xff]), OsString::from("logs")]).is_err());
+        assert!(matches!(
+            evaluate_args(&[OsString::from("service"), OsString::from_vec(vec![0xff])]),
+            Ok(Command::Service(ServiceParseOutcome::Exit {
+                code: 1,
+                stdout: None,
+                stderr: Some(_),
+            }))
+        ));
     }
 
     #[test]

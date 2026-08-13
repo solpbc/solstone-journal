@@ -1,0 +1,1819 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Native owner for background-service lifecycle.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
+use std::fs::{self, File};
+use std::io::{self, Read};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::process::ExitStatusExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use solstone_core_cli::ServiceAction;
+use solstone_core_journal_io::{
+    DetailedAtomicOutcome, acquire_existing_parent_lock, atomic_replace_detailed,
+};
+use solstone_core_service_unit::{
+    build_service_environment, render_launchd_plist, render_systemd_unit,
+};
+use solstone_core_system::lifecycle::{clear_readiness, wait_ready};
+
+use crate::{discover_binary_home, resolve_process_journal_path};
+
+const LABEL: &str = "org.solpbc.solstone";
+const UNIT: &str = "solstone.service";
+const LOCK_NAME: &str = ".solstone-service.lock";
+const UNIT_LIMIT: u64 = 1024 * 1024;
+const OUTPUT_LIMIT: u64 = 256 * 1024;
+const OBSERVATION_TIMEOUT: Duration = Duration::from_secs(15);
+const START_TIMEOUT: Duration = Duration::from_secs(130);
+const STOP_TIMEOUT: Duration = Duration::from_secs(40);
+const MUTATION_TIMEOUT: Duration = Duration::from_secs(60);
+const READY_TIMEOUT: Duration = Duration::from_secs(120);
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Platform {
+    Linux,
+    Darwin,
+}
+
+#[derive(Debug)]
+enum UnitTruth {
+    Absent,
+    Managed(UnitSnapshot),
+    Foreign,
+    Unknown(String),
+}
+
+#[derive(Clone, Debug)]
+struct UnitSnapshot {
+    device: u64,
+    inode: u64,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum RuntimeTruth {
+    Absent,
+    Managed { active: bool },
+    Foreign,
+    Unknown(String),
+}
+
+struct CommandResult {
+    code: i32,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+pub fn run(action: ServiceAction) -> ExitCode {
+    match run_inner(action) {
+        Ok(code) => code,
+        Err(message) => {
+            eprintln!("error: {}", safe(&message));
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
+    let platform = platform()?;
+    let home = discover_binary_home().map_err(|error| format!("service home: {error:?}"))?;
+    match action {
+        ServiceAction::Install { port } => {
+            install(platform, &home, port.canonical_decimal()).map(ExitCode::from)
+        }
+        ServiceAction::Uninstall => uninstall(platform, &home).map(ExitCode::from),
+        ServiceAction::Start => start(platform, &home).map(ExitCode::from),
+        ServiceAction::Stop | ServiceAction::Down => stop(platform, &home).map(ExitCode::from),
+        ServiceAction::Restart { if_installed } => {
+            restart(platform, &home, if_installed).map(ExitCode::from)
+        }
+        ServiceAction::Status => status(platform, &home),
+        ServiceAction::Up => up(platform, &home),
+        ServiceAction::Logs { .. } => unreachable!("logs dispatch is handled by main"),
+    }
+}
+
+fn platform() -> Result<Platform, String> {
+    if cfg!(target_os = "linux") {
+        Ok(Platform::Linux)
+    } else if cfg!(target_os = "macos") {
+        Ok(Platform::Darwin)
+    } else {
+        Err("service management is supported only on linux and mac".to_owned())
+    }
+}
+
+fn unit_path(platform: Platform, home: &Path) -> PathBuf {
+    match platform {
+        Platform::Linux => home.join(".config/systemd/user").join(UNIT),
+        Platform::Darwin => home
+            .join("Library/LaunchAgents")
+            .join(format!("{LABEL}.plist")),
+    }
+}
+
+fn install(platform: Platform, home: &Path, port: &str) -> Result<u8, String> {
+    let _lock = service_lock(home)?;
+    let journal = resolve_process_journal_path()
+        .map_err(|_| "service install: could not resolve journal".to_owned())?
+        .path;
+    if platform == Platform::Darwin {
+        cleanup_stale_launchd(home)?;
+    }
+    let target = unit_path(platform, home);
+    let initial = classify_unit(platform, &target)?;
+    if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
+        return Err(truth_error("install", &target, &initial));
+    }
+    ensure_health_dir(&journal)?;
+    let runtime = observe_runtime(platform, &target)?;
+    if matches!(runtime, RuntimeTruth::Foreign | RuntimeTruth::Unknown(_)) {
+        return Err(runtime_error("install", runtime));
+    }
+
+    let parent = target
+        .parent()
+        .ok_or_else(|| "service unit has no parent".to_owned())?;
+    ensure_real_dir_chain(home, parent)?;
+    let launcher = home.join(".local/bin/journal");
+    let launcher_metadata = fs::metadata(&launcher)
+        .map_err(|error| format!("service launcher is unavailable: {error}"))?;
+    if !launcher_metadata.is_file() || launcher_metadata.permissions().mode() & 0o111 == 0 {
+        return Err("service launcher is not an executable regular file".to_owned());
+    }
+    let runtime_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .ok_or_else(|| "service install: current executable has no directory".to_owned())?;
+    let environment = build_service_environment(
+        path_text(home)?,
+        std::env::var("PATH").ok().as_deref(),
+        path_text(&runtime_dir)?,
+    );
+    let bytes = match platform {
+        Platform::Linux => render_systemd_unit(
+            &environment,
+            path_text(&launcher)?,
+            port,
+            path_text(&journal)?,
+        )
+        .map(String::into_bytes),
+        Platform::Darwin => render_launchd_plist(
+            &environment,
+            path_text(&launcher)?,
+            port,
+            path_text(&journal)?,
+        ),
+    }
+    .map_err(|error| format!("service unit render failed: {error}"))?;
+
+    revalidate_initial(platform, &target, &initial)?;
+    require_published(atomic_replace_detailed(&target, &bytes, 0o644))?;
+    println!("wrote {}", path_display(&target));
+
+    match platform {
+        Platform::Linux => {
+            require_success(
+                run_fixed(systemctl(&["--user", "daemon-reload"]), MUTATION_TIMEOUT)?,
+                "reload systemd",
+            )?;
+            require_success(
+                run_fixed(systemctl(&["--user", "enable", UNIT]), MUTATION_TIMEOUT)?,
+                "enable service",
+            )?;
+            println!("service enabled");
+        }
+        Platform::Darwin => {
+            let uid = nix::unistd::Uid::effective().as_raw();
+            if matches!(runtime, RuntimeTruth::Managed { .. }) {
+                require_success(
+                    run_fixed(
+                        launchctl(&["bootout", &format!("gui/{uid}/{LABEL}")]),
+                        STOP_TIMEOUT,
+                    )?,
+                    "request launchd unload",
+                )?;
+                clear_readiness(&journal).map_err(|error| {
+                    format!("could not clear the service's ready state: {error}")
+                })?;
+                wait_runtime_absent(platform, &target)?;
+            } else {
+                clear_readiness(&journal).map_err(|error| {
+                    format!("could not clear the service's ready state: {error}")
+                })?;
+            }
+            require_success(
+                run_fixed(
+                    launchctl(&["bootstrap", &format!("gui/{uid}"), path_text(&target)?]),
+                    START_TIMEOUT,
+                )?,
+                "load service",
+            )?;
+            println!("service loaded into launchd");
+        }
+    }
+    Ok(0)
+}
+
+fn uninstall(platform: Platform, home: &Path) -> Result<u8, String> {
+    let _lock = service_lock(home)?;
+    let target = unit_path(platform, home);
+    let initial = classify_unit(platform, &target)?;
+    let runtime = observe_runtime(platform, &target)?;
+    if matches!(runtime, RuntimeTruth::Foreign | RuntimeTruth::Unknown(_)) {
+        return Err(runtime_error("uninstall", runtime));
+    }
+    if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
+        return Err(truth_error("uninstall", &target, &initial));
+    }
+    if matches!(initial, UnitTruth::Absent) {
+        return match runtime {
+            RuntimeTruth::Absent => {
+                println!("service was not installed");
+                Ok(0)
+            }
+            RuntimeTruth::Managed { .. } => {
+                remove_runtime_registration(platform, &target)?;
+                println!("removed stale service registration");
+                Ok(0)
+            }
+            other => Err(runtime_error("uninstall", other)),
+        };
+    }
+    let UnitTruth::Managed(snapshot) = initial else {
+        unreachable!("foreign and unknown unit truth returned above")
+    };
+    verify_snapshot(platform, &target, &snapshot)?;
+    match platform {
+        Platform::Linux => {
+            if matches!(runtime, RuntimeTruth::Managed { .. }) {
+                require_success(
+                    run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
+                    "stop service",
+                )?;
+                require_success(
+                    run_fixed(systemctl(&["--user", "disable", UNIT]), MUTATION_TIMEOUT)?,
+                    "disable service",
+                )?;
+            }
+        }
+        Platform::Darwin if matches!(runtime, RuntimeTruth::Managed { .. }) => {
+            let uid = nix::unistd::Uid::effective().as_raw();
+            require_success(
+                run_fixed(
+                    launchctl(&["bootout", &format!("gui/{uid}/{LABEL}")]),
+                    STOP_TIMEOUT,
+                )?,
+                "request launchd unload",
+            )?;
+            wait_runtime_absent(platform, &target)?;
+        }
+        Platform::Darwin => {}
+    }
+    verify_snapshot(platform, &target, &snapshot)?;
+    fs::remove_file(&target).map_err(|error| format!("remove service unit: {error}"))?;
+    if platform == Platform::Linux {
+        require_success(
+            run_fixed(systemctl(&["--user", "daemon-reload"]), MUTATION_TIMEOUT)?,
+            "reload systemd",
+        )?;
+    }
+    println!("removed {}", path_display(&target));
+    Ok(0)
+}
+
+fn remove_runtime_registration(platform: Platform, target: &Path) -> Result<(), String> {
+    match platform {
+        Platform::Linux => {
+            require_success(
+                run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
+                "stop stale service",
+            )?;
+            require_success(
+                run_fixed(systemctl(&["--user", "disable", UNIT]), MUTATION_TIMEOUT)?,
+                "disable stale service",
+            )
+        }
+        Platform::Darwin => {
+            let uid = nix::unistd::Uid::effective().as_raw();
+            require_success(
+                run_fixed(
+                    launchctl(&["bootout", &format!("gui/{uid}/{LABEL}")]),
+                    STOP_TIMEOUT,
+                )?,
+                "unload stale service",
+            )?;
+            wait_runtime_absent(platform, target)
+        }
+    }
+}
+
+fn start(platform: Platform, home: &Path) -> Result<u8, String> {
+    let _lock = service_lock(home)?;
+    let target = unit_path(platform, home);
+    require_managed(platform, &target)?;
+    require_owned_runtime(platform, &target, true)?;
+    let journal = resolved_journal()?;
+    clear_readiness(&journal)
+        .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
+    let result = match platform {
+        Platform::Linux => run_fixed(systemctl(&["--user", "start", UNIT]), START_TIMEOUT)?,
+        Platform::Darwin => {
+            let uid = nix::unistd::Uid::effective().as_raw();
+            run_fixed(
+                launchctl(&["kickstart", &format!("gui/{uid}/{LABEL}")]),
+                START_TIMEOUT,
+            )?
+        }
+    };
+    require_success(result, "start service")?;
+    println!("service started");
+    Ok(0)
+}
+
+fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
+    let _lock = service_lock(home)?;
+    let target = unit_path(platform, home);
+    let unit = classify_unit(platform, &target)?;
+    if matches!(unit, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
+        return Err(truth_error("stop", &target, &unit));
+    }
+    let runtime = observe_runtime(platform, &target)?;
+    match runtime {
+        RuntimeTruth::Foreign | RuntimeTruth::Unknown(_) => {
+            return Err(runtime_error("stop", runtime));
+        }
+        RuntimeTruth::Absent if matches!(unit, UnitTruth::Absent) => {
+            return Err(not_installed());
+        }
+        RuntimeTruth::Absent | RuntimeTruth::Managed { active: false } => {}
+        RuntimeTruth::Managed { active: true } => {
+            let result = match platform {
+                Platform::Linux => run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
+                Platform::Darwin => {
+                    let uid = nix::unistd::Uid::effective().as_raw();
+                    run_fixed(
+                        launchctl(&["kill", "SIGTERM", &format!("gui/{uid}/{LABEL}")]),
+                        STOP_TIMEOUT,
+                    )?
+                }
+            };
+            require_success(result, "stop service")?;
+        }
+    }
+    if let Ok(journal) = resolved_journal() {
+        clear_readiness(&journal).map_err(|error| {
+            format!("service stopped, but its ready state could not be cleared: {error}")
+        })?;
+    }
+    println!("service stopped");
+    Ok(0)
+}
+
+fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, String> {
+    let _lock = service_lock(home)?;
+    let target = unit_path(platform, home);
+    let unit = classify_unit(platform, &target)?;
+    match &unit {
+        UnitTruth::Absent => {}
+        UnitTruth::Managed(_) => {}
+        other => return Err(truth_error("restart", &target, other)),
+    }
+    let runtime = require_owned_runtime(platform, &target, true)?;
+    if matches!(unit, UnitTruth::Absent) && matches!(runtime, RuntimeTruth::Absent) {
+        return if if_installed {
+            Ok(0)
+        } else {
+            Err(not_installed())
+        };
+    }
+    let journal = resolved_journal()?;
+    clear_readiness(&journal)
+        .map_err(|error| format!("could not clear the service's ready state: {error}"))?;
+    let result = match platform {
+        Platform::Linux => run_fixed(systemctl(&["--user", "restart", UNIT]), START_TIMEOUT)?,
+        Platform::Darwin => {
+            let uid = nix::unistd::Uid::effective().as_raw();
+            if matches!(runtime, RuntimeTruth::Managed { active: true }) {
+                let kill = run_fixed(
+                    launchctl(&["kill", "SIGTERM", &format!("gui/{uid}/{LABEL}")]),
+                    STOP_TIMEOUT,
+                )?;
+                require_success(kill, "stop service before restart")?;
+            }
+            run_fixed(
+                launchctl(&["kickstart", &format!("gui/{uid}/{LABEL}")]),
+                START_TIMEOUT,
+            )?
+        }
+    };
+    require_success(result, "restart service")?;
+    if wait_ready(&journal, READY_TIMEOUT, POLL_INTERVAL).is_none() {
+        return Err("service did not become ready within 120 seconds".to_owned());
+    }
+    println!("service restarted");
+    Ok(0)
+}
+
+fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
+    let target = unit_path(platform, home);
+    match classify_unit(platform, &target)? {
+        UnitTruth::Absent => {
+            println!("service: not installed");
+            println!("run 'journal setup' or 'journal service install' to install it.");
+            Ok(ExitCode::from(1))
+        }
+        UnitTruth::Managed(_) => {
+            println!("service: installed");
+            match observe_runtime(platform, &target)? {
+                RuntimeTruth::Managed { active: true } => {
+                    println!(
+                        "state: running ({})",
+                        if platform == Platform::Linux {
+                            "systemd"
+                        } else {
+                            "launchd"
+                        }
+                    );
+                    println!();
+                    return Ok(crate::health::run(false, false));
+                }
+                RuntimeTruth::Managed { active: false } | RuntimeTruth::Absent => {
+                    println!("state: stopped");
+                }
+                other => return Err(runtime_error("status", other)),
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        other => Err(truth_error("status", &target, &other)),
+    }
+}
+
+fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
+    let target = unit_path(platform, home);
+    require_managed(platform, &target)?;
+    match observe_runtime(platform, &target)? {
+        RuntimeTruth::Absent | RuntimeTruth::Managed { active: false } => {
+            start(platform, home)?;
+        }
+        RuntimeTruth::Managed { active: true } => {}
+        other => return Err(runtime_error("up", other)),
+    }
+    let journal = resolved_journal()?;
+    if wait_ready(&journal, READY_TIMEOUT, POLL_INTERVAL).is_none() {
+        return Err("service did not become ready within 120 seconds".to_owned());
+    }
+    let _ = status(platform, home)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn resolved_journal() -> Result<PathBuf, String> {
+    resolve_process_journal_path()
+        .map(|line| line.path)
+        .map_err(|_| "could not resolve journal".to_owned())
+}
+
+fn service_lock(home: &Path) -> Result<solstone_core_journal_io::ExistingParentLock, String> {
+    acquire_existing_parent_lock(
+        home,
+        OsStr::new(LOCK_NAME),
+        Duration::from_secs(10),
+        Duration::from_millis(50),
+    )
+    .map_err(|error| format!("service lock: {error}"))
+}
+
+fn classify_unit(platform: Platform, path: &Path) -> Result<UnitTruth, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(UnitTruth::Absent);
+        }
+        Err(error) => return Ok(UnitTruth::Unknown(format!("metadata: {error}"))),
+    };
+    if !metadata.file_type().is_file() {
+        return Ok(UnitTruth::Foreign);
+    }
+    if metadata.len() > UNIT_LIMIT {
+        return Ok(UnitTruth::Unknown("unit exceeds 1 MiB".to_owned()));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    match File::open(path).and_then(|file| file.take(UNIT_LIMIT + 1).read_to_end(&mut bytes)) {
+        Ok(_) if bytes.len() as u64 <= UNIT_LIMIT => {}
+        Ok(_) => return Ok(UnitTruth::Unknown("unit exceeds 1 MiB".to_owned())),
+        Err(error) => return Ok(UnitTruth::Unknown(format!("read: {error}"))),
+    }
+    let Some(launchers) = expected_launchers(platform, path) else {
+        return Ok(UnitTruth::Unknown(
+            "unit path has no trusted home ancestor".to_owned(),
+        ));
+    };
+    let managed = match platform {
+        Platform::Linux => launchers
+            .iter()
+            .any(|launcher| systemd_managed(&bytes, launcher)),
+        Platform::Darwin => launchers
+            .iter()
+            .any(|launcher| launchd_managed(&bytes, launcher, LABEL)),
+    };
+    Ok(if managed {
+        UnitTruth::Managed(UnitSnapshot {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            bytes,
+        })
+    } else {
+        UnitTruth::Foreign
+    })
+}
+
+fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let sections = text
+        .lines()
+        .filter(|line| line.starts_with('['))
+        .collect::<Vec<_>>();
+    if sections != ["[Unit]", "[Service]", "[Install]"] {
+        return false;
+    }
+    let mut singleton = BTreeMap::new();
+    let mut environment = BTreeMap::new();
+    let allowed = BTreeSet::from([
+        "Description",
+        "After",
+        "StartLimitIntervalSec",
+        "StartLimitBurst",
+        "Type",
+        "TimeoutStartSec",
+        "ExecStart",
+        "Restart",
+        "RestartSec",
+        "KillMode",
+        "TimeoutStopSec",
+        "LimitNOFILE",
+        "StandardOutput",
+        "StandardError",
+        "WantedBy",
+    ]);
+    for line in text
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('['))
+    {
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        if key == "Environment" {
+            let value = value.trim_matches('"');
+            let Some((name, value)) = value.split_once('=') else {
+                return false;
+            };
+            if !matches!(
+                name,
+                "HOME"
+                    | "PATH"
+                    | "PYTHONUNBUFFERED"
+                    | "_SOLSTONE_JOURNAL_OVERRIDE"
+                    | "ANTHROPIC_API_KEY"
+                    | "GOOGLE_API_KEY"
+                    | "OPENAI_API_KEY"
+                    | "PLAUD_ACCESS_TOKEN"
+                    | "REVAI_ACCESS_TOKEN"
+            ) || environment.insert(name, value).is_some()
+            {
+                return false;
+            }
+        } else if !allowed.contains(key) || singleton.insert(key, value).is_some() {
+            return false;
+        }
+    }
+    let Some(exec) = singleton.get("ExecStart") else {
+        return false;
+    };
+    let service_type = singleton.get("Type").copied();
+    let safety_fields = match (
+        singleton.get("KillMode").copied(),
+        singleton.get("TimeoutStopSec").copied(),
+    ) {
+        (Some("control-group"), Some("30")) => true,
+        (None, None) => {
+            service_type == Some("simple") && systemd_unit_is_legacy_supervisor(exec, launcher)
+        }
+        _ => false,
+    };
+    singleton.get("Description") == Some(&"Solstone Supervisor")
+        && singleton.get("After") == Some(&"default.target")
+        && systemd_unit_exec_matches(exec, launcher)
+        && environment.contains_key("HOME")
+        && environment.contains_key("PATH")
+        && environment
+            .get("PYTHONUNBUFFERED")
+            .is_none_or(|value| *value == "1")
+        && matches!(service_type, Some("notify" | "simple"))
+        && singleton
+            .get("StartLimitIntervalSec")
+            .is_none_or(|value| *value == "120")
+        && singleton
+            .get("StartLimitBurst")
+            .is_none_or(|value| *value == "10")
+        && singleton.contains_key("StartLimitIntervalSec")
+            == singleton.contains_key("StartLimitBurst")
+        && singleton
+            .get("TimeoutStartSec")
+            .is_none_or(|value| *value == "120")
+        && singleton.get("Restart") == Some(&"on-failure")
+        && singleton.get("RestartSec") == Some(&"5")
+        && safety_fields
+        && singleton
+            .get("LimitNOFILE")
+            .is_none_or(|value| *value == "4096")
+        && singleton.get("WantedBy") == Some(&"default.target")
+        && systemd_logs_are_managed(&singleton)
+}
+
+fn systemd_unit_exec_matches(value: &str, launcher: &Path) -> bool {
+    systemd_unit_arguments(value, launcher)
+        .is_some_and(|arguments| managed_command_tail(&arguments[1..]))
+}
+
+fn systemd_unit_is_legacy_supervisor(value: &str, launcher: &Path) -> bool {
+    systemd_unit_arguments(value, launcher)
+        .is_some_and(|arguments| arguments.get(1).is_some_and(|verb| verb == "supervisor"))
+}
+
+fn systemd_unit_arguments(value: &str, launcher: &Path) -> Option<Vec<String>> {
+    let expected = launcher.to_str()?;
+    if let Some(tail) = value
+        .strip_prefix(expected)
+        .and_then(|tail| tail.strip_prefix(' '))
+    {
+        let mut arguments = vec![expected.to_owned()];
+        arguments.extend(tail.split_whitespace().map(str::to_owned));
+        return Some(arguments);
+    }
+    parse_systemd_words(value)
+        .filter(|arguments| arguments.first().is_some_and(|value| value == expected))
+}
+
+fn systemd_logs_are_managed(singleton: &BTreeMap<&str, &str>) -> bool {
+    match (
+        singleton.get("StandardOutput"),
+        singleton.get("StandardError"),
+    ) {
+        (None, None) => true,
+        (Some(output), Some(error)) => {
+            output.starts_with("append:")
+                && output.ends_with("/health/service.log")
+                && (*error == *output || *error == "inherit")
+        }
+        _ => false,
+    }
+}
+
+fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool {
+    let Ok(value) = plist::Value::from_reader_xml(bytes) else {
+        return false;
+    };
+    let Some(dict) = value.as_dictionary() else {
+        return false;
+    };
+    let allowed = BTreeSet::from([
+        "EnvironmentVariables",
+        "KeepAlive",
+        "Label",
+        "ProgramArguments",
+        "RunAtLoad",
+        "SoftResourceLimits",
+        "StandardErrorPath",
+        "StandardOutPath",
+    ]);
+    let keys = dict.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if !keys.is_subset(&allowed)
+        || !BTreeSet::from([
+            "EnvironmentVariables",
+            "KeepAlive",
+            "Label",
+            "ProgramArguments",
+            "RunAtLoad",
+        ])
+        .is_subset(&keys)
+    {
+        return false;
+    }
+    let Some(arguments) = dict
+        .get("ProgramArguments")
+        .and_then(plist::Value::as_array)
+    else {
+        return false;
+    };
+    let args = arguments
+        .iter()
+        .map(plist::Value::as_string)
+        .collect::<Option<Vec<_>>>();
+    let Some(args) = args else {
+        return false;
+    };
+    let environment = dict
+        .get("EnvironmentVariables")
+        .and_then(plist::Value::as_dictionary);
+    let env_keys = environment.map(|env| env.keys().map(String::as_str).collect::<BTreeSet<_>>());
+    let allowed_env = BTreeSet::from([
+        "HOME",
+        "PATH",
+        "PYTHONUNBUFFERED",
+        "_SOLSTONE_JOURNAL_OVERRIDE",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "PLAUD_ACCESS_TOKEN",
+        "REVAI_ACCESS_TOKEN",
+    ]);
+    let keep_alive = dict.get("KeepAlive").and_then(plist::Value::as_dictionary);
+    let limits = dict
+        .get("SoftResourceLimits")
+        .and_then(plist::Value::as_dictionary);
+    dict.get("Label").and_then(plist::Value::as_string) == Some(expected_label)
+        && args.len() >= 2
+        && path_text(launcher).is_ok_and(|expected| args[0] == expected)
+        && managed_command_tail(&args[1..])
+        && env_keys.is_some_and(|keys| {
+            keys.is_subset(&allowed_env) && keys.contains("HOME") && keys.contains("PATH")
+        })
+        && environment
+            .and_then(|env| env.get("PYTHONUNBUFFERED"))
+            .is_none_or(|value| value == &plist::Value::String("1".to_owned()))
+        && environment.is_some_and(|env| env.values().all(|value| value.as_string().is_some()))
+        && dict.get("RunAtLoad").and_then(plist::Value::as_boolean) == Some(true)
+        && launchd_keep_alive_is_managed(dict.get("KeepAlive"), keep_alive)
+        && limits.is_none_or(|value| {
+            value.len() == 1
+                && value.get("NumberOfFiles") == Some(&plist::Value::Integer(4096_i64.into()))
+        })
+        && launchd_logs_are_managed(dict)
+}
+
+fn launchd_keep_alive_is_managed(
+    value: Option<&plist::Value>,
+    dictionary: Option<&plist::Dictionary>,
+) -> bool {
+    value.and_then(plist::Value::as_boolean) == Some(true)
+        || dictionary.is_some_and(|value| {
+            value.len() == 1 && value.get("SuccessfulExit") == Some(&plist::Value::Boolean(false))
+        })
+}
+
+fn launchd_logs_are_managed(dict: &plist::Dictionary) -> bool {
+    let stdout = dict
+        .get("StandardOutPath")
+        .and_then(plist::Value::as_string);
+    let stderr = dict
+        .get("StandardErrorPath")
+        .and_then(plist::Value::as_string);
+    match (stdout, stderr) {
+        (None, None) => true,
+        (Some(stdout), Some(stderr)) => {
+            (stdout.ends_with("/health/service.log") && stdout == stderr)
+                || (stdout.ends_with("/health/launchd-stdout.log")
+                    && stderr.ends_with("/health/launchd-stderr.log"))
+        }
+        _ => false,
+    }
+}
+
+fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
+    let directory = home.join("Library/LaunchAgents");
+    let metadata = match fs::symlink_metadata(&directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("inspect launchd directory: {error}")),
+    };
+    if !metadata.file_type().is_dir() {
+        return Err("launchd directory is not a real directory".to_owned());
+    }
+    let canonical = directory.join(format!("{LABEL}.plist"));
+    let mut candidates = fs::read_dir(&directory)
+        .map_err(|error| format!("scan launchd directory: {error}"))?
+        .map(|entry| {
+            entry
+                .map(|entry| entry.path())
+                .map_err(|error| format!("scan launchd entry: {error}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    candidates.sort();
+    for candidate in candidates {
+        if candidate != canonical && !stale_launchd_name(&candidate) {
+            continue;
+        }
+        let snapshot = read_unit_snapshot(&candidate)
+            .map_err(|error| format!("inspect stale launchd unit: {error}"))?;
+        let value = plist::Value::from_reader_xml(snapshot.bytes.as_slice())
+            .map_err(|error| format!("parse stale launchd unit: {error}"))?;
+        let dictionary = value
+            .as_dictionary()
+            .ok_or_else(|| "stale launchd unit is not a dictionary".to_owned())?;
+        let label = dictionary
+            .get("Label")
+            .and_then(plist::Value::as_string)
+            .ok_or_else(|| "stale launchd unit has no label".to_owned())?;
+        if label != LABEL && !label.starts_with(&format!("{LABEL}.")) {
+            return Err("stale launchd unit has a foreign label".to_owned());
+        }
+        let arguments = dictionary
+            .get("ProgramArguments")
+            .and_then(plist::Value::as_array);
+        let program = dictionary.get("Program").and_then(plist::Value::as_string);
+        if arguments.is_some() && program.is_some() {
+            return Err("stale launchd unit has conflicting program fields".to_owned());
+        }
+        let launcher = arguments
+            .and_then(|arguments| arguments.first())
+            .and_then(plist::Value::as_string)
+            .or(program)
+            .map(PathBuf::from)
+            .ok_or_else(|| "stale launchd unit has no launcher".to_owned())?;
+        let current_launchers = [home.join(".local/bin/journal"), home.join(".local/bin/sol")];
+        if current_launchers.contains(&launcher) {
+            continue;
+        }
+        let program_only = arguments.is_none();
+        if !matches!(
+            launcher.file_name().and_then(OsStr::to_str),
+            Some("journal" | "sol")
+        ) || !stale_launchd_managed(dictionary, label, &launcher)
+        {
+            return Err("stale launchd unit is foreign or unrecognized".to_owned());
+        }
+        let launchers = [launcher.clone(), launcher.clone()];
+        match observe_launchd_registration(label, &candidate, &launchers, program_only)? {
+            RuntimeTruth::Absent => {}
+            RuntimeTruth::Managed { .. } => {
+                let uid = nix::unistd::Uid::effective().as_raw();
+                require_success(
+                    run_fixed(
+                        launchctl(&["bootout", &format!("gui/{uid}"), path_text(&candidate)?]),
+                        STOP_TIMEOUT,
+                    )?,
+                    "unload stale launchd service",
+                )?;
+                wait_launchd_absent(label, &candidate, &launchers, program_only)?;
+            }
+            other => return Err(runtime_error("clean stale launchd service", other)),
+        }
+        let actual = read_unit_snapshot(&candidate)
+            .map_err(|error| format!("recheck stale launchd unit: {error}"))?;
+        if !same_snapshot(&snapshot, &actual) {
+            return Err(format!(
+                "stale launchd plist changed during cleanup; preserved {}",
+                path_display(&candidate)
+            ));
+        }
+        fs::remove_file(&candidate)
+            .map_err(|error| format!("remove stale launchd unit: {error}"))?;
+        println!("removed stale launchd plist {}", path_display(&candidate));
+    }
+    Ok(())
+}
+
+fn stale_launchd_managed(dictionary: &plist::Dictionary, label: &str, launcher: &Path) -> bool {
+    let allowed = BTreeSet::from([
+        "EnvironmentVariables",
+        "KeepAlive",
+        "Label",
+        "Program",
+        "ProgramArguments",
+        "RunAtLoad",
+        "SoftResourceLimits",
+        "StandardErrorPath",
+        "StandardOutPath",
+    ]);
+    if !dictionary.keys().all(|key| allowed.contains(key.as_str()))
+        || dictionary.get("Label").and_then(plist::Value::as_string) != Some(label)
+    {
+        return false;
+    }
+    match (
+        dictionary
+            .get("ProgramArguments")
+            .and_then(plist::Value::as_array),
+        dictionary.get("Program").and_then(plist::Value::as_string),
+    ) {
+        (Some(arguments), None) => {
+            let arguments = arguments
+                .iter()
+                .map(plist::Value::as_string)
+                .collect::<Option<Vec<_>>>();
+            arguments.is_some_and(|arguments| {
+                arguments.first().copied() == launcher.to_str()
+                    && managed_command_tail(&arguments[1..])
+            })
+        }
+        (None, Some(program)) => Some(program) == launcher.to_str(),
+        _ => false,
+    }
+}
+
+fn stale_launchd_name(path: &Path) -> bool {
+    let Some(name) = path.file_name() else {
+        return false;
+    };
+    let bytes = name.as_encoded_bytes();
+    bytes.starts_with(b"org.solpbc.solstone.") && bytes.ends_with(b".plist")
+}
+
+fn read_unit_snapshot(path: &Path) -> Result<UnitSnapshot, String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| format!("metadata: {error}"))?;
+    if !metadata.file_type().is_file() {
+        return Err("entry is not a regular file".to_owned());
+    }
+    if metadata.len() > UNIT_LIMIT {
+        return Err("unit exceeds 1 MiB".to_owned());
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    File::open(path)
+        .and_then(|file| file.take(UNIT_LIMIT + 1).read_to_end(&mut bytes))
+        .map_err(|error| format!("read: {error}"))?;
+    if bytes.len() as u64 > UNIT_LIMIT {
+        return Err("unit exceeds 1 MiB".to_owned());
+    }
+    Ok(UnitSnapshot {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        bytes,
+    })
+}
+
+fn parse_systemd_words(value: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut characters = value.chars().peekable();
+    let mut quoted = false;
+    while let Some(character) = characters.next() {
+        match character {
+            '"' => quoted = !quoted,
+            '\\' => {
+                let escaped = characters.next()?;
+                match escaped {
+                    'n' => word.push('\n'),
+                    'r' => word.push('\r'),
+                    't' => word.push('\t'),
+                    'x' => word.push(char::from_u32(parse_hex(&mut characters, 2)?)?),
+                    'u' => word.push(char::from_u32(parse_hex(&mut characters, 4)?)?),
+                    other => word.push(other),
+                }
+            }
+            '$' if characters.peek() == Some(&'$') => {
+                characters.next();
+                word.push('$');
+            }
+            '%' if characters.peek() == Some(&'%') => {
+                characters.next();
+                word.push('%');
+            }
+            character if character.is_whitespace() && !quoted => {
+                if !word.is_empty() {
+                    words.push(std::mem::take(&mut word));
+                }
+            }
+            character => word.push(character),
+        }
+    }
+    if quoted {
+        return None;
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    Some(words)
+}
+
+fn parse_hex(
+    characters: &mut std::iter::Peekable<impl Iterator<Item = char>>,
+    digits: usize,
+) -> Option<u32> {
+    let mut value = 0_u32;
+    for _ in 0..digits {
+        value = value.checked_mul(16)?;
+        value = value.checked_add(characters.next()?.to_digit(16)?)?;
+    }
+    Some(value)
+}
+
+fn observe_runtime(platform: Platform, canonical: &Path) -> Result<RuntimeTruth, String> {
+    let launchers = expected_launchers(platform, canonical)
+        .ok_or_else(|| "service unit has no trusted home ancestor".to_owned())?;
+    match platform {
+        Platform::Linux => {
+            let result = run_fixed(
+                systemctl(&[
+                    "--user",
+                    "show",
+                    UNIT,
+                    "--property=Id,LoadState,ActiveState,SubState,FragmentPath,SourcePath,DropInPaths,ExecStart,UnitFileState",
+                    "--no-pager",
+                ]),
+                OBSERVATION_TIMEOUT,
+            )?;
+            classify_systemd_runtime(&result, canonical, &launchers)
+        }
+        Platform::Darwin => observe_launchd_registration(LABEL, canonical, &launchers, false),
+    }
+}
+
+fn classify_systemd_runtime(
+    result: &CommandResult,
+    canonical: &Path,
+    launchers: &[PathBuf; 2],
+) -> Result<RuntimeTruth, String> {
+    if result.code != 0 || !result.stderr.is_empty() {
+        return Ok(RuntimeTruth::Unknown(result_message(result)));
+    }
+    let text = std::str::from_utf8(&result.stdout)
+        .map_err(|_| "systemd observation was not UTF-8".to_owned())?;
+    let mut values = BTreeMap::new();
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            return Ok(RuntimeTruth::Unknown(
+                "malformed systemd property".to_owned(),
+            ));
+        };
+        if values.insert(key, value).is_some() {
+            return Ok(RuntimeTruth::Unknown(format!(
+                "duplicate systemd property: {key}"
+            )));
+        }
+    }
+    let absent_keys = BTreeSet::from([
+        "Id",
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "FragmentPath",
+        "SourcePath",
+        "DropInPaths",
+        "UnitFileState",
+    ]);
+    let Some(id) = values.get("Id") else {
+        return Ok(RuntimeTruth::Unknown(
+            "incomplete systemd property set".to_owned(),
+        ));
+    };
+    let Some(load_state) = values.get("LoadState") else {
+        return Ok(RuntimeTruth::Unknown(
+            "incomplete systemd property set".to_owned(),
+        ));
+    };
+    if *id != UNIT {
+        return Ok(RuntimeTruth::Foreign);
+    }
+    if *load_state == "not-found" {
+        return if values.keys().copied().collect::<BTreeSet<_>>() == absent_keys
+            && values["ActiveState"] == "inactive"
+            && values["SubState"] == "dead"
+            && values["FragmentPath"].is_empty()
+            && values["SourcePath"].is_empty()
+            && values["DropInPaths"].is_empty()
+            && values["UnitFileState"].is_empty()
+        {
+            Ok(RuntimeTruth::Absent)
+        } else {
+            Ok(RuntimeTruth::Unknown(
+                "conflicting absent systemd state".to_owned(),
+            ))
+        };
+    }
+    let loaded_keys = BTreeSet::from([
+        "Id",
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "FragmentPath",
+        "SourcePath",
+        "DropInPaths",
+        "ExecStart",
+        "UnitFileState",
+    ]);
+    if values.keys().copied().collect::<BTreeSet<_>>() != loaded_keys {
+        return Ok(RuntimeTruth::Unknown(
+            "incomplete systemd property set".to_owned(),
+        ));
+    }
+    if values["LoadState"] != "loaded"
+        || values["FragmentPath"] != path_text(canonical)?
+        || !values["SourcePath"].is_empty()
+        || !values["DropInPaths"].is_empty()
+        || !matches!(values["UnitFileState"], "enabled" | "disabled" | "static")
+        || !launchers
+            .iter()
+            .any(|launcher| systemd_runtime_exec_matches(values["ExecStart"], launcher))
+    {
+        return Ok(RuntimeTruth::Foreign);
+    }
+    let active = match (values["ActiveState"], values["SubState"]) {
+        ("active", "running") => true,
+        ("inactive", "dead") | ("failed", "failed") => false,
+        ("activating", "start")
+        | ("activating", "start-pre")
+        | ("deactivating", "stop")
+        | ("deactivating", "stop-sigterm") => false,
+        _ => {
+            return Ok(RuntimeTruth::Unknown(
+                "unrecognized systemd active/substate pair".to_owned(),
+            ));
+        }
+    };
+    Ok(RuntimeTruth::Managed { active })
+}
+
+fn systemd_runtime_exec_matches(value: &str, launcher: &Path) -> bool {
+    let Some(expected) = launcher.to_str() else {
+        return false;
+    };
+    let Some(value) = value
+        .strip_prefix("{ ")
+        .and_then(|value| value.strip_suffix(" }"))
+    else {
+        return false;
+    };
+    let allowed = BTreeSet::from([
+        "path",
+        "argv[]",
+        "ignore_errors",
+        "start_time",
+        "stop_time",
+        "pid",
+        "code",
+        "status",
+    ]);
+    let mut fields = BTreeMap::new();
+    for field in value.split(" ; ") {
+        let Some((name, value)) = field.split_once('=') else {
+            return false;
+        };
+        if !allowed.contains(name) || fields.insert(name, value).is_some() {
+            return false;
+        }
+    }
+    let Some(arguments) = fields
+        .get("argv[]")
+        .and_then(|value| parse_systemd_words(value))
+    else {
+        return false;
+    };
+    fields.get("path") == Some(&expected)
+        && arguments.first().is_some_and(|value| value == expected)
+        && managed_command_tail(&arguments[1..])
+        && fields.get("ignore_errors") == Some(&"no")
+}
+
+fn observe_launchd_registration(
+    label: &str,
+    canonical: &Path,
+    launchers: &[PathBuf; 2],
+    program_only: bool,
+) -> Result<RuntimeTruth, String> {
+    let uid = nix::unistd::Uid::effective().as_raw();
+    let result = run_fixed(
+        launchctl(&["print", &format!("gui/{uid}/{label}")]),
+        OBSERVATION_TIMEOUT,
+    )?;
+    let absent =
+        format!("Bad request.\nCould not find service \"{label}\" in domain for user gui: {uid}\n");
+    if result.code == 113 && result.stdout.is_empty() && result.stderr == absent.as_bytes() {
+        return Ok(RuntimeTruth::Absent);
+    }
+    if result.code != 0 || !result.stderr.is_empty() {
+        return Ok(RuntimeTruth::Unknown(result_message(&result)));
+    }
+    classify_launchd_runtime(&result, label, canonical, launchers, uid, program_only)
+}
+
+fn classify_launchd_runtime(
+    result: &CommandResult,
+    label: &str,
+    canonical: &Path,
+    launchers: &[PathBuf; 2],
+    uid: u32,
+    program_only: bool,
+) -> Result<RuntimeTruth, String> {
+    if result.code != 0 || !result.stderr.is_empty() {
+        return Ok(RuntimeTruth::Unknown(result_message(result)));
+    }
+    let text = std::str::from_utf8(&result.stdout)
+        .map_err(|_| "launchd observation was not UTF-8".to_owned())?;
+    if !text.starts_with(&format!("gui/{uid}/{label} = {{\n"))
+        || field(text, "path") != Some(path_text(canonical)?)
+        || field(text, "type") != Some("LaunchAgent")
+    {
+        return Ok(RuntimeTruth::Foreign);
+    }
+    let Some(arguments) = launchd_arguments(text) else {
+        return Ok(RuntimeTruth::Unknown(
+            "launchd omitted or malformed arguments".to_owned(),
+        ));
+    };
+    if !launchers.iter().any(|launcher| {
+        field(text, "program") == launcher.to_str()
+            && arguments.first().copied() == launcher.to_str()
+    }) || !(managed_command_tail(&arguments[1..]) || (program_only && arguments.len() == 1))
+    {
+        return Ok(RuntimeTruth::Foreign);
+    }
+    match field(text, "state") {
+        Some("running") => Ok(RuntimeTruth::Managed { active: true }),
+        Some("not running") => Ok(RuntimeTruth::Managed { active: false }),
+        _ => Ok(RuntimeTruth::Unknown(
+            "unrecognized launchd runtime state".to_owned(),
+        )),
+    }
+}
+
+fn launchd_arguments(text: &str) -> Option<Vec<&str>> {
+    let tail = text.split_once("\targuments = {\n")?.1;
+    let block = tail.split_once("\t}\n")?.0;
+    let arguments = block
+        .lines()
+        .map(|line| line.strip_prefix("\t\t"))
+        .collect::<Option<Vec<_>>>()?;
+    (!arguments.is_empty()).then_some(arguments)
+}
+
+fn managed_command_tail(arguments: &[impl AsRef<str>]) -> bool {
+    match arguments {
+        [verb, port]
+            if matches!(verb.as_ref(), "start" | "supervisor")
+                && solstone_core_operational_logs::parse_service_port(port.as_ref()).is_ok() =>
+        {
+            true
+        }
+        [verb] if verb.as_ref() == "supervisor" => true,
+        _ => false,
+    }
+}
+
+fn expected_launchers(platform: Platform, unit: &Path) -> Option<[PathBuf; 2]> {
+    let home = match platform {
+        Platform::Linux => unit.ancestors().nth(4),
+        Platform::Darwin => unit.ancestors().nth(3),
+    }?;
+    Some([home.join(".local/bin/journal"), home.join(".local/bin/sol")])
+}
+
+fn wait_launchd_absent(
+    label: &str,
+    target: &Path,
+    launchers: &[PathBuf; 2],
+    program_only: bool,
+) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match observe_launchd_registration(label, target, launchers, program_only)? {
+            RuntimeTruth::Absent => return Ok(()),
+            RuntimeTruth::Managed { .. } if Instant::now() < deadline => {
+                thread::sleep(POLL_INTERVAL);
+            }
+            RuntimeTruth::Managed { .. } => {
+                return Err(
+                    "launchd accepted the unload request, but the service is still present"
+                        .to_owned(),
+                );
+            }
+            other => return Err(runtime_error("verify unload", other)),
+        }
+    }
+}
+
+fn wait_runtime_absent(platform: Platform, target: &Path) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match observe_runtime(platform, target)? {
+            RuntimeTruth::Absent => return Ok(()),
+            RuntimeTruth::Managed { .. } if Instant::now() < deadline => {
+                thread::sleep(POLL_INTERVAL);
+            }
+            RuntimeTruth::Managed { .. } => {
+                return Err(
+                    "launchd accepted the unload request, but the service is still present"
+                        .to_owned(),
+                );
+            }
+            other => return Err(runtime_error("verify unload", other)),
+        }
+    }
+}
+
+fn require_owned_runtime(
+    platform: Platform,
+    target: &Path,
+    allow_absent: bool,
+) -> Result<RuntimeTruth, String> {
+    let truth = observe_runtime(platform, target)?;
+    match truth {
+        RuntimeTruth::Managed { .. } => Ok(truth),
+        RuntimeTruth::Absent if allow_absent => Ok(truth),
+        other => Err(runtime_error("operate", other)),
+    }
+}
+
+fn require_managed(platform: Platform, path: &Path) -> Result<UnitSnapshot, String> {
+    match classify_unit(platform, path)? {
+        UnitTruth::Managed(snapshot) => Ok(snapshot),
+        UnitTruth::Absent => Err(not_installed()),
+        other => Err(truth_error("operate", path, &other)),
+    }
+}
+
+fn revalidate_initial(platform: Platform, path: &Path, initial: &UnitTruth) -> Result<(), String> {
+    match (initial, classify_unit(platform, path)?) {
+        (UnitTruth::Absent, UnitTruth::Absent) => Ok(()),
+        (UnitTruth::Managed(expected), UnitTruth::Managed(actual))
+            if same_snapshot(expected, &actual) =>
+        {
+            Ok(())
+        }
+        _ => Err("service unit changed before publication; nothing was written".to_owned()),
+    }
+}
+
+fn verify_snapshot(platform: Platform, path: &Path, expected: &UnitSnapshot) -> Result<(), String> {
+    match classify_unit(platform, path)? {
+        UnitTruth::Managed(actual) if same_snapshot(expected, &actual) => Ok(()),
+        _ => Err("service unit changed during operation; preserved replacement".to_owned()),
+    }
+}
+
+fn same_snapshot(left: &UnitSnapshot, right: &UnitSnapshot) -> bool {
+    left.device == right.device && left.inode == right.inode && left.bytes == right.bytes
+}
+
+fn ensure_real_dir_chain(home: &Path, target: &Path) -> Result<(), String> {
+    let relative = target
+        .strip_prefix(home)
+        .map_err(|_| "service directory escaped home".to_owned())?;
+    let mut current = home.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Err("service directory contains unsafe component".to_owned());
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_dir() => {}
+            Ok(_) => {
+                return Err(format!(
+                    "unsafe service directory: {}",
+                    path_display(&current)
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                fs::create_dir(&current)
+                    .map_err(|source| format!("create service directory: {source}"))?;
+            }
+            Err(error) => return Err(format!("inspect service directory: {error}")),
+        }
+    }
+    Ok(())
+}
+
+fn ensure_health_dir(journal: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(journal) {
+        Ok(metadata) if metadata.file_type().is_dir() => {}
+        Ok(_) => return Err("service journal root is not a real directory".to_owned()),
+        Err(error) => return Err(format!("inspect service journal root: {error}")),
+    }
+    let health = journal.join("health");
+    match fs::symlink_metadata(&health) {
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
+        Ok(_) => Err("service health path is not a real directory".to_owned()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir(&health)
+            .map_err(|source| format!("create service health directory: {source}")),
+        Err(error) => Err(format!("inspect service health directory: {error}")),
+    }
+}
+
+fn require_published(
+    result: Result<DetailedAtomicOutcome, solstone_core_journal_io::DetailedAtomicError>,
+) -> Result<(), String> {
+    match result {
+        Ok(DetailedAtomicOutcome::Published) => Ok(()),
+        Ok(other) => Err(format!(
+            "service unit published with uncertain durability: {other:?}"
+        )),
+        Err(error) => Err(format!("service unit publication failed: {error}")),
+    }
+}
+
+fn systemctl(args: &[&str]) -> Command {
+    let mut command = Command::new("/usr/bin/systemctl");
+    command
+        .args(args)
+        .env("LANG", "C")
+        .env("LC_ALL", "C")
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+    command
+}
+
+fn launchctl(args: &[&str]) -> Command {
+    let mut command = Command::new("/bin/launchctl");
+    command
+        .args(args)
+        .env("LANG", "C")
+        .env("LC_ALL", "C")
+        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+    command
+}
+
+fn run_fixed(mut command: Command, timeout: Duration) -> Result<CommandResult, String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("service command spawn failed: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "service stdout unavailable".to_owned())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "service stderr unavailable".to_owned())?;
+    let out_thread = thread::spawn(move || read_bounded(stdout));
+    let err_thread = thread::spawn(move || read_bounded(stderr));
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = out_thread.join();
+                let _ = err_thread.join();
+                return Err("service command timed out".to_owned());
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = out_thread.join();
+                let _ = err_thread.join();
+                return Err(format!("service command wait failed: {error}"));
+            }
+        }
+    };
+    let stdout = out_thread
+        .join()
+        .map_err(|_| "service stdout reader panicked".to_owned())??;
+    let stderr = err_thread
+        .join()
+        .map_err(|_| "service stderr reader panicked".to_owned())??;
+    Ok(CommandResult {
+        code: status.code().unwrap_or(128 + status.signal().unwrap_or(0)),
+        stdout,
+        stderr,
+    })
+}
+
+fn read_bounded(reader: impl Read) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    reader
+        .take(OUTPUT_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("service command output failed: {error}"))?;
+    if bytes.len() as u64 > OUTPUT_LIMIT {
+        Err("service command output exceeded 256 KiB".to_owned())
+    } else {
+        Ok(bytes)
+    }
+}
+
+fn require_success(result: CommandResult, operation: &str) -> Result<(), String> {
+    if result.code == 0 {
+        Ok(())
+    } else {
+        Err(format!("{operation} failed: {}", result_message(&result)))
+    }
+}
+
+fn result_message(result: &CommandResult) -> String {
+    format!(
+        "exit={} stdout={} stderr={}",
+        result.code,
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    )
+}
+
+fn field<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    text.lines()
+        .find_map(|line| line.strip_prefix(&format!("\t{name} = ")))
+}
+
+fn truth_error(operation: &str, path: &Path, truth: &UnitTruth) -> String {
+    let detail = match truth {
+        UnitTruth::Foreign => "not recognized as a service file created by journal".to_owned(),
+        UnitTruth::Unknown(cause) => format!("could not verify the service file: {cause}"),
+        UnitTruth::Absent => "absent".to_owned(),
+        UnitTruth::Managed(_) => "managed".to_owned(),
+    };
+    format!(
+        "service {operation} refused {}: {detail}",
+        path_display(path)
+    )
+}
+
+fn runtime_error(operation: &str, truth: RuntimeTruth) -> String {
+    match truth {
+        RuntimeTruth::Foreign => {
+            format!("service {operation} refused a runtime registration not created by journal")
+        }
+        RuntimeTruth::Unknown(cause) => {
+            format!("service {operation} could not check the service registration: {cause}")
+        }
+        _ => format!("service {operation} runtime state was unexpected"),
+    }
+}
+
+fn not_installed() -> String {
+    "service not installed. run 'journal service install' first.".to_owned()
+}
+
+fn path_text(path: &Path) -> Result<&str, String> {
+    path.to_str()
+        .ok_or_else(|| "service path is not UTF-8".to_owned())
+}
+
+fn path_display(path: &Path) -> String {
+    solstone_core_system_health::sanitize_os_bytes_for_terminal(path.as_os_str().as_encoded_bytes())
+}
+
+fn safe(value: &str) -> String {
+    solstone_core_system_health::sanitize_for_terminal(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_truth_accepts_current_renderers_and_rejects_extensions() {
+        let environment = BTreeMap::from([
+            ("HOME".to_owned(), "/home/owner".to_owned()),
+            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
+        ]);
+        let systemd = render_systemd_unit(
+            &environment,
+            "/home/owner/.local/bin/journal",
+            "5015",
+            "/srv/journal",
+        )
+        .unwrap();
+        let launcher = Path::new("/home/owner/.local/bin/journal");
+        assert!(systemd_managed(systemd.as_bytes(), launcher));
+        assert!(!systemd_managed(
+            systemd
+                .replace("KillMode=control-group\n", "")
+                .replace("TimeoutStopSec=30\n", "")
+                .as_bytes(),
+            launcher,
+        ));
+        assert!(!systemd_managed(
+            systemd.replace("KillMode=control-group\n", "").as_bytes(),
+            launcher,
+        ));
+        assert!(!systemd_managed(
+            format!("{systemd}ExecStartPre=/bin/false\n").as_bytes(),
+            launcher,
+        ));
+        assert!(!systemd_managed(
+            systemd
+                .replace("KillMode=control-group", "KillMode=process")
+                .as_bytes(),
+            launcher,
+        ));
+        let plist = render_launchd_plist(
+            &environment,
+            "/home/owner/.local/bin/journal",
+            "5015",
+            "/srv/journal",
+        )
+        .unwrap();
+        assert!(launchd_managed(&plist, launcher, LABEL));
+        let hostile_launcher = Path::new("/tmp/foreign/journal");
+        assert!(!launchd_managed(&plist, hostile_launcher, LABEL));
+    }
+
+    #[test]
+    fn unit_truth_derives_launcher_and_unbounded_port_values() {
+        let launcher = Path::new("/home/owner space/$runtime%/.local/bin/journal");
+        let environment = BTreeMap::from([
+            ("HOME".to_owned(), "/home/owner space/$runtime%".to_owned()),
+            ("PATH".to_owned(), "/runtime:/usr/bin:/bin".to_owned()),
+            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
+        ]);
+        let port = "123456789012345678901234567890";
+        let systemd = render_systemd_unit(
+            &environment,
+            path_text(launcher).unwrap(),
+            port,
+            "/srv/journal",
+        )
+        .unwrap();
+        assert!(systemd_managed(systemd.as_bytes(), launcher));
+        let plist = render_launchd_plist(
+            &environment,
+            path_text(launcher).unwrap(),
+            port,
+            "/srv/journal",
+        )
+        .unwrap();
+        assert!(launchd_managed(&plist, launcher, LABEL));
+    }
+
+    #[test]
+    fn historical_wrappers_and_units_remain_managed() {
+        let sol = Path::new("/home/owner/.local/bin/sol");
+        let legacy_systemd = concat!(
+            "[Unit]\n",
+            "Description=Solstone Supervisor\n",
+            "After=default.target\n",
+            "\n[Service]\n",
+            "Type=simple\n",
+            "Environment=HOME=/home/owner\n",
+            "Environment=PATH=/usr/bin:/bin\n",
+            "ExecStart=/home/owner/.local/bin/sol supervisor 5015\n",
+            "Restart=on-failure\n",
+            "RestartSec=5\n",
+            "\n[Install]\n",
+            "WantedBy=default.target\n",
+        );
+        assert!(systemd_managed(legacy_systemd.as_bytes(), sol));
+
+        let environment = BTreeMap::from([
+            ("HOME".to_owned(), "/home/owner".to_owned()),
+            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
+        ]);
+        let current = render_launchd_plist(
+            &environment,
+            "/home/owner/.local/bin/journal",
+            "5015",
+            "/srv/journal",
+        )
+        .unwrap();
+        let historical = String::from_utf8(current)
+            .unwrap()
+            .replace(
+                "/home/owner/.local/bin/journal",
+                "/home/owner/.local/bin/sol",
+            )
+            .replace("<string>start</string>", "<string>supervisor</string>");
+        assert!(launchd_managed(historical.as_bytes(), sol, LABEL));
+    }
+
+    #[test]
+    fn runtime_truth_requires_complete_managed_identity() {
+        let canonical = Path::new("/home/owner/.config/systemd/user/solstone.service");
+        let launchers = [
+            PathBuf::from("/home/owner/.local/bin/journal"),
+            PathBuf::from("/home/owner/.local/bin/sol"),
+        ];
+        let absent = CommandResult {
+            code: 0,
+            stdout: concat!(
+                "Id=solstone.service\n",
+                "LoadState=not-found\n",
+                "ActiveState=inactive\n",
+                "SubState=dead\n",
+                "FragmentPath=\n",
+                "SourcePath=\n",
+                "DropInPaths=\n",
+                "UnitFileState=\n",
+            )
+            .as_bytes()
+            .to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_systemd_runtime(&absent, canonical, &launchers).unwrap(),
+            RuntimeTruth::Absent
+        );
+
+        let loaded_stdout = concat!(
+            "Id=solstone.service\n",
+            "LoadState=loaded\n",
+            "ActiveState=active\n",
+            "SubState=running\n",
+            "FragmentPath=/home/owner/.config/systemd/user/solstone.service\n",
+            "SourcePath=\n",
+            "DropInPaths=\n",
+            "ExecStart={ path=/home/owner/.local/bin/sol ; argv[]=/home/owner/.local/bin/sol supervisor 5015 ; ignore_errors=no }\n",
+            "UnitFileState=enabled\n",
+        );
+        let loaded = CommandResult {
+            code: 0,
+            stdout: loaded_stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_systemd_runtime(&loaded, canonical, &launchers).unwrap(),
+            RuntimeTruth::Managed { active: true }
+        );
+        let drop_in = CommandResult {
+            code: 0,
+            stdout: loaded_stdout
+                .replace("DropInPaths=\n", "DropInPaths=/tmp/foreign.conf\n")
+                .into_bytes(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(),
+            RuntimeTruth::Foreign
+        );
+    }
+
+    #[test]
+    fn launchd_runtime_requires_path_program_and_arguments() {
+        let canonical = Path::new("/home/owner/Library/LaunchAgents/org.solpbc.solstone.plist");
+        let launchers = [
+            PathBuf::from("/home/owner/.local/bin/journal"),
+            PathBuf::from("/home/owner/.local/bin/sol"),
+        ];
+        let stdout = concat!(
+            "gui/501/org.solpbc.solstone = {\n",
+            "\tpath = /home/owner/Library/LaunchAgents/org.solpbc.solstone.plist\n",
+            "\ttype = LaunchAgent\n",
+            "\tstate = running\n",
+            "\tprogram = /home/owner/.local/bin/sol\n",
+            "\targuments = {\n",
+            "\t\t/home/owner/.local/bin/sol\n",
+            "\t\tsupervisor\n",
+            "\t\t5015\n",
+            "\t}\n",
+            "}\n",
+        );
+        let managed = CommandResult {
+            code: 0,
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_launchd_runtime(&managed, LABEL, canonical, &launchers, 501, false).unwrap(),
+            RuntimeTruth::Managed { active: true }
+        );
+        let foreign = CommandResult {
+            code: 0,
+            stdout: stdout.replace("\t\t5015\n", "\t\t--foreign\n").into_bytes(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_launchd_runtime(&foreign, LABEL, canonical, &launchers, 501, false).unwrap(),
+            RuntimeTruth::Foreign
+        );
+    }
+
+    #[test]
+    fn stale_launchd_truth_accepts_retained_program_shapes() {
+        let launcher = Path::new("/old/checkout/.venv/bin/sol");
+        for value in [
+            plist::Value::Dictionary(plist::Dictionary::from_iter([
+                ("Label".to_owned(), plist::Value::String(LABEL.to_owned())),
+                (
+                    "ProgramArguments".to_owned(),
+                    plist::Value::Array(vec![
+                        plist::Value::String(path_text(launcher).unwrap().to_owned()),
+                        plist::Value::String("supervisor".to_owned()),
+                        plist::Value::String("5015".to_owned()),
+                    ]),
+                ),
+            ])),
+            plist::Value::Dictionary(plist::Dictionary::from_iter([
+                ("Label".to_owned(), plist::Value::String(LABEL.to_owned())),
+                (
+                    "Program".to_owned(),
+                    plist::Value::String(path_text(launcher).unwrap().to_owned()),
+                ),
+            ])),
+        ] {
+            assert!(stale_launchd_managed(
+                value.as_dictionary().unwrap(),
+                LABEL,
+                launcher
+            ));
+        }
+    }
+}
