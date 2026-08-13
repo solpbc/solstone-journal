@@ -816,6 +816,7 @@ mod tests {
         serde_json::to_value(status).unwrap()
     }
 
+    #[cfg(target_os = "linux")]
     fn stage_ready_parakeet(journal: &Path) -> (PathBuf, PathBuf) {
         use solstone_core_local::install::{manifest, pins};
 
@@ -1658,6 +1659,7 @@ mod tests {
         })
     }
 
+    #[cfg(target_os = "linux")]
     fn assert_no_temporary_files(root: &Path) {
         for entry in fs::read_dir(root).unwrap() {
             let entry = entry.unwrap();

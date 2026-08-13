@@ -63,6 +63,7 @@ fn host_platform() -> HostPlatform {
         arch: arch.into(),
     }
 }
+#[cfg(target_os = "linux")]
 fn meminfo() -> Option<(u64, u64)> {
     let text = fs::read_to_string("/proc/meminfo").ok()?;
     let mut total = None;
@@ -87,6 +88,10 @@ fn memory() -> MemoryInput {
                 available_bytes: (total > 0 && available > 0 && available <= total)
                     .then_some(available),
             };
+        }
+        MemoryInput {
+            total_bytes: None,
+            available_bytes: None,
         }
     }
     #[cfg(target_os = "macos")]
@@ -115,11 +120,12 @@ fn memory() -> MemoryInput {
             }
             Some(count * page)
         });
-        return MemoryInput {
+        MemoryInput {
             total_bytes: total,
             available_bytes: available,
-        };
+        }
     }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     MemoryInput {
         total_bytes: None,
         available_bytes: None,
