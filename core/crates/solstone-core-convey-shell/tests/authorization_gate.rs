@@ -2,21 +2,31 @@
 // Copyright (c) 2026 sol pbc
 
 mod door_support;
+#[path = "support/warn_capture.rs"]
+mod warn_capture;
+
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::net::Ipv4Addr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use nix::sys::stat::Mode;
+use nix::unistd::mkfifo;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
-use solstone_core_convey_shell::authorization_gate::authorized_router;
+use solstone_core_convey_shell::authorization_gate::{
+    authorization_gate_read_ticks, authorized_router,
+};
 use solstone_core_convey_shell::{
     ConveyServeOptions, DoorOutcome, bind_with_authorization, router,
 };
 use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
-use std::net::Ipv4Addr;
-use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 use tower::ServiceExt;
@@ -48,7 +58,11 @@ fn posture(fixture: &Fixture) -> DeviceDoorAuthorization {
     DeviceDoorAuthorization::from(AuthorizationLedger::new(&fixture.root).read_state())
 }
 
-async fn request(app: axum::Router, path: &str, basis: Option<AccessBasis>) -> (StatusCode, Value) {
+async fn request_bytes(
+    app: axum::Router,
+    path: &str,
+    basis: Option<AccessBasis>,
+) -> (StatusCode, Vec<u8>) {
     let mut request = Request::get(path)
         .body(Body::empty())
         .expect("request builds");
@@ -59,7 +73,13 @@ async fn request(app: axum::Router, path: &str, basis: Option<AccessBasis>) -> (
     let status = response.status();
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
-        .expect("response reads");
+        .expect("response reads")
+        .to_vec();
+    (status, body)
+}
+
+async fn request(app: axum::Router, path: &str, basis: Option<AccessBasis>) -> (StatusCode, Value) {
+    let (status, body) = request_bytes(app, path, basis).await;
     let json = serde_json::from_slice(&body).unwrap_or_else(|_| json!({}));
     (status, json)
 }
@@ -70,6 +90,89 @@ fn revoked_body() -> Value {
         "reason": "pl_revoked",
         "reason_code": "pl_revoked",
         "detail": "paired device revoked",
+    })
+}
+
+fn authorization_path(fixture: &Fixture) -> PathBuf {
+    fixture.root.join("link/authorized_clients.json")
+}
+
+fn remove_authorization_path(path: &Path) {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => {
+            fs::remove_dir(path).expect("authorization directory removes")
+        }
+        Ok(_) => fs::remove_file(path).expect("authorization file removes"),
+        Err(_) => {}
+    }
+}
+
+#[derive(Clone, Copy)]
+enum DiskPosture {
+    Present,
+    Missing,
+    Unreadable,
+    Malformed,
+}
+
+fn induce_posture(fixture: &Fixture, posture: DiskPosture) {
+    match posture {
+        DiskPosture::Present => fixture.warm_authorization_to_present(),
+        DiskPosture::Missing => remove_authorization_path(&authorization_path(fixture)),
+        DiskPosture::Unreadable => {
+            fixture.warm_authorization_to_present();
+            fixture.induce_unreadable_authorization();
+        }
+        DiskPosture::Malformed => {
+            fixture.warm_authorization_to_present();
+            fixture.induce_malformed_authorization();
+        }
+    }
+}
+
+/// Keeps both FIFO ends open so a blocking `fs::read` cannot observe EOF.
+struct BlockingAuthorizationFifo {
+    path: PathBuf,
+    drain: Option<File>,
+}
+
+impl BlockingAuthorizationFifo {
+    fn replace(path: PathBuf) -> Self {
+        remove_authorization_path(&path);
+        mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).expect("authorization FIFO creates");
+        let drain = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("authorization FIFO drain opens");
+        Self {
+            path,
+            drain: Some(drain),
+        }
+    }
+}
+
+impl Drop for BlockingAuthorizationFifo {
+    fn drop(&mut self) {
+        self.drain.take();
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn write_fifo_after_delay(
+    path: PathBuf,
+    bytes: Vec<u8>,
+    delay: Duration,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        let mut writer = OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("authorization FIFO writer opens");
+        writer
+            .write_all(&bytes)
+            .expect("authorization FIFO writer writes");
     })
 }
 
@@ -153,35 +256,47 @@ async fn get_over_carrier(
 }
 
 #[tokio::test]
+async fn ac1_disk_revocation_wins_over_stale_present_channel_and_ac2_disk_present_wins() {
+    let fixture = Fixture::established(1);
+    let listed = linked_device(&fixture, 0);
+    let (sender, receiver) = watch::channel(posture(&fixture));
+    let app = authorized_router(fixture.root.clone(), receiver);
+
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    let (status, body) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, revoked_body());
+
+    fixture.warm_authorization_to_present();
+    sender.send_replace(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Unreadable,
+    ));
+    let (status, _) = request(app, "/api/system/status", Some(listed)).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn ac3_authorization_postures_refuse_except_for_a_listed_device() {
     let fixture = Fixture::established(1);
     let listed = linked_device(&fixture, 0);
-    let cases = [
+    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
-        AuthorizedClientsRead::Unreadable,
-        AuthorizedClientsRead::Malformed,
-        AuthorizedClientsRead::Present(Vec::new()),
-    ];
+    ));
+    let app = authorized_router(fixture.root.clone(), receiver);
 
-    for state in cases {
-        let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(state));
-        let (status, body) = request(
-            authorized_router(fixture.root.clone(), receiver),
-            "/api/system/status",
-            Some(listed.clone()),
-        )
-        .await;
+    for posture in [
+        DiskPosture::Missing,
+        DiskPosture::Unreadable,
+        DiskPosture::Malformed,
+    ] {
+        induce_posture(&fixture, posture);
+        let (status, body) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(body, revoked_body());
     }
 
-    let (_, receiver) = watch::channel(posture(&fixture));
-    let (status, _) = request(
-        authorized_router(fixture.root.clone(), receiver),
-        "/api/system/status",
-        Some(listed),
-    )
-    .await;
+    induce_posture(&fixture, DiskPosture::Present);
+    let (status, _) = request(app, "/api/system/status", Some(listed)).await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -220,12 +335,101 @@ async fn ac5_missing_access_basis_refuses_before_the_route() {
     assert_eq!(body, revoked_body());
 }
 
-#[tokio::test]
-async fn ac7_only_boot_assets_are_exempt() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
     let fixture = Fixture::established(1);
+    let listed = linked_device(&fixture, 0);
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
+    let app = authorized_router(fixture.root.clone(), receiver);
+    let path = authorization_path(&fixture);
+
+    warn_capture::install_and_clear();
+    log::warn!("authorization-gate warn capture control");
+    assert!(warn_capture::contains("warn capture control"));
+
+    warn_capture::clear();
+    let (status, _) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(warn_capture::is_empty(), "normal ledger read must not warn");
+
+    let bytes = fs::read(&path).expect("authorization fixture reads");
+    remove_authorization_path(&path);
+    mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).expect("delayed authorization FIFO creates");
+    let writer = write_fifo_after_delay(path.clone(), bytes, Duration::from_millis(300));
+    warn_capture::clear();
+    let delayed_started = Instant::now();
+    let (status, _) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
+    writer.join().expect("delayed authorization writer joins");
+    assert!(
+        delayed_started.elapsed() >= Duration::from_millis(200),
+        "the completing FIFO read waited for its delayed writer"
+    );
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        warn_capture::is_empty(),
+        "completed delayed ledger read must not warn"
+    );
+    fs::remove_file(&path).expect("delayed authorization FIFO removes");
+    induce_posture(&fixture, DiskPosture::Missing);
+    let (_, expected_body) =
+        request_bytes(app.clone(), "/api/system/status", Some(listed.clone())).await;
+    assert_eq!(
+        serde_json::from_slice::<Value>(&expected_body).expect("revoked baseline JSON"),
+        revoked_body()
+    );
+    fixture.warm_authorization_to_present();
+
+    warn_capture::clear();
+    let started = Instant::now();
+    let (status, body) = {
+        let _fifo = BlockingAuthorizationFifo::replace(path.clone());
+        request_bytes(app, "/api/system/status", Some(listed)).await
+    };
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "hung read must be bounded"
+    );
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        body, expected_body,
+        "timeout refusal body is byte-identical"
+    );
+    assert!(warn_capture::contains("authorization read timed out"));
+}
+
+#[tokio::test]
+async fn ac7_gate_reads_every_matched_request_without_posture_memoization() {
+    let fixture = Fixture::established(1);
+    let listed = linked_device(&fixture, 0);
+    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let app = authorized_router(fixture.root.clone(), receiver);
+
+    for (posture, expected) in [
+        (DiskPosture::Present, StatusCode::OK),
+        (DiskPosture::Missing, StatusCode::FORBIDDEN),
+        (DiskPosture::Unreadable, StatusCode::FORBIDDEN),
+        (DiskPosture::Malformed, StatusCode::FORBIDDEN),
+    ] {
+        induce_posture(&fixture, posture);
+        let before = authorization_gate_read_ticks();
+        for _ in 0..2 {
+            let (status, _) =
+                request(app.clone(), "/api/system/status", Some(listed.clone())).await;
+            assert_eq!(status, expected);
+        }
+        assert_eq!(authorization_gate_read_ticks() - before, 2);
+    }
+}
+
+#[tokio::test]
+async fn ac7_only_boot_assets_are_exempt() {
+    let fixture = Fixture::established(1);
+    induce_posture(&fixture, DiskPosture::Missing);
+    let (_, receiver) = watch::channel(posture(&fixture));
     let app = authorized_router(fixture.root.clone(), receiver);
 
     for path in ["/favicon.ico", "/static/shell.html"] {
@@ -235,21 +439,13 @@ async fn ac7_only_boot_assets_are_exempt() {
     let (status, body) = request(app, "/api/shell", Some(linked_device(&fixture, 0))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body, revoked_body());
-
-    let (_, receiver) = watch::channel(posture(&fixture));
-    let app = authorized_router(fixture.root.clone(), receiver);
-    for path in ["/favicon.ico", "/static/shell.html"] {
-        let (status, _) = request(app.clone(), path, Some(linked_device(&fixture, 0))).await;
-        assert_eq!(status, StatusCode::OK, "authorized device: {path}");
-    }
 }
 
 #[tokio::test]
 async fn ac8_unmatched_path_keeps_the_shell_fallback() {
     let fixture = Fixture::established(1);
-    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Missing,
-    ));
+    induce_posture(&fixture, DiskPosture::Missing);
+    let (_, receiver) = watch::channel(posture(&fixture));
     let (status, _) = request(
         authorized_router(fixture.root.clone(), receiver),
         "/no-such-route",
@@ -261,11 +457,60 @@ async fn ac8_unmatched_path_keeps_the_shell_fallback() {
 }
 
 #[tokio::test]
+async fn ac9_refusal_body_has_the_reference_shape() {
+    let fixture = Fixture::established(1);
+    induce_posture(&fixture, DiskPosture::Malformed);
+    let (_, receiver) = watch::channel(posture(&fixture));
+    let (status, body) = request(
+        authorized_router(fixture.root.clone(), receiver),
+        "/api/system/status",
+        Some(linked_device(&fixture, 0)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, revoked_body());
+    assert_eq!(body.as_object().expect("object").len(), 4);
+}
+
+#[tokio::test]
+async fn ac12_every_composed_shell_route_is_gated() {
+    let fixture = Fixture::established(1);
+    induce_posture(&fixture, DiskPosture::Unreadable);
+    let (_, receiver) = watch::channel(posture(&fixture));
+    let (status, body) = request(
+        authorized_router(fixture.root.clone(), receiver),
+        "/app/speakers/api/state",
+        Some(linked_device(&fixture, 0)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, revoked_body());
+}
+
+#[tokio::test]
+async fn ac14_authorization_refusal_precedes_a_corrupt_session_response() {
+    let fixture = Fixture::established(1);
+    fs::write(fixture.root.join("config/journal.json"), b"{bad").expect("corrupt config");
+    induce_posture(&fixture, DiskPosture::Missing);
+    let (_, receiver) = watch::channel(posture(&fixture));
+    let (status, body) = request(
+        authorized_router(fixture.root.clone(), receiver),
+        "/api/system/status",
+        Some(linked_device(&fixture, 0)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, revoked_body());
+}
+
+#[tokio::test]
 async fn ac17_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
     let fixture = Fixture::established(1);
-    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Missing,
-    ));
+    induce_posture(&fixture, DiskPosture::Missing);
+    let (_, receiver) = watch::channel(posture(&fixture));
     let app = authorized_router(fixture.root.clone(), receiver);
     let mut method_mismatch = Request::post("/api/system/status")
         .body(Body::empty())
@@ -287,66 +532,12 @@ async fn ac17_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
 }
 
 #[tokio::test]
-async fn ac9_refusal_body_has_the_reference_shape() {
-    let fixture = Fixture::established(1);
-    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Missing,
-    ));
-    let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
-        "/api/system/status",
-        Some(linked_device(&fixture, 0)),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
-    assert_eq!(body.as_object().expect("object").len(), 4);
-}
-
-#[tokio::test]
-async fn ac12_every_composed_shell_route_is_gated() {
-    // router() uses one chained route builder, without a merge/nest boundary;
-    // this proves the layer reaches a route registered deep in that chain.
-    let fixture = Fixture::established(1);
-    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Missing,
-    ));
-    let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
-        "/app/speakers/api/state",
-        Some(linked_device(&fixture, 0)),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
-}
-
-#[tokio::test]
-async fn ac14_authorization_refusal_precedes_a_corrupt_session_response() {
-    let fixture = Fixture::established(1);
-    std::fs::write(fixture.root.join("config/journal.json"), b"{bad").expect("corrupt config");
-    let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Missing,
-    ));
-    let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
-        "/api/system/status",
-        Some(linked_device(&fixture, 0)),
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
-}
-
-#[tokio::test]
 async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it() {
     let fixture = Fixture::established(1);
     let (authorization_sender, authorization_receiver) = watch::channel(posture(&fixture));
     let door_router = authorized_router(fixture.root.clone(), authorization_receiver);
-    let handle = bind_with_authorization(
+    let app = door_router.clone();
+    let mut handle = bind_with_authorization(
         ConveyServeOptions {
             journal_root: fixture.root.clone(),
             loopback_port: 0,
@@ -369,7 +560,7 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
     let initial = get_over_carrier(&mut carrier, &mut decoder, &mut dialer, path).await;
     assert_eq!(initial.status, 200, "listed device opens the carrier");
 
-    let authorization_path = fixture.root.join("link/authorized_clients.json");
+    let authorization_path = authorization_path(&fixture);
     fixture.induce_unreadable_authorization();
     let refused = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
@@ -395,8 +586,8 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
         revoked_body()
     );
 
-    std::fs::remove_dir(&authorization_path).expect("unreadable directory removes");
-    std::fs::write(&authorization_path, b"[]").expect("explicit revocation writes");
+    fs::remove_dir(&authorization_path).expect("unreadable directory removes");
+    fs::write(&authorization_path, b"[]").expect("explicit revocation writes");
     let closed = tokio::time::timeout(Duration::from_secs(3), async {
         let mut buffer = [0_u8; 1024];
         loop {
@@ -411,26 +602,28 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
         closed.is_ok(),
         "carrier did not close after definite authorization absence"
     );
-    handle.shutdown();
-}
 
-#[tokio::test]
-async fn posture_change_applies_to_the_next_request() {
-    let fixture = Fixture::established(1);
-    let (sender, receiver) = watch::channel(posture(&fixture));
-    let app = authorized_router(fixture.root.clone(), receiver);
-
-    let (status, _) = request(
+    // AC12b: this is a fresh request after the publisher is stopped, so recovery
+    // proves the gate itself has no remembered unreadable posture.
+    handle.stop_authorization_refresh().await;
+    fixture.warm_authorization_to_present();
+    fixture.induce_unreadable_authorization();
+    let (status, body) = request(
         app.clone(),
         "/api/system/status",
         Some(linked_device(&fixture, 0)),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    sender.send_replace(DeviceDoorAuthorization::from(
-        AuthorizedClientsRead::Unreadable,
-    ));
-    let (status, body) = request(app, "/api/system/status", Some(linked_device(&fixture, 0))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body, revoked_body());
+
+    fixture.warm_authorization_to_present();
+    let recovered = tokio::time::timeout(
+        Duration::from_secs(2),
+        request(app, "/api/system/status", Some(linked_device(&fixture, 0))),
+    )
+    .await
+    .expect("valid ledger recovers promptly");
+    assert_eq!(recovered.0, StatusCode::OK);
+    handle.shutdown();
 }

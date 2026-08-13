@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::State;
@@ -12,12 +14,23 @@ use axum::{Json, Router};
 use serde::Serialize;
 use solstone_core_convey_http::identity::{AccessBasis, LinkedDeviceDid};
 use solstone_core_sol_link::DeviceDoorAuthorization;
-use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+use solstone_core_sol_link::ledger::{
+    AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
+};
 use tokio::sync::watch;
+
+static AUTHORIZATION_GATE_READ_TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// Cumulative count of authorization-ledger reads made by the request gate.
+/// Debug builds only advance it; assert deltas, never an absolute value.
+pub fn authorization_gate_read_ticks() -> u64 {
+    AUTHORIZATION_GATE_READ_TICKS.load(Ordering::Relaxed)
+}
 
 #[derive(Clone)]
 pub struct AuthorizationGateState {
     pub authorization: watch::Receiver<DeviceDoorAuthorization>,
+    pub authorized_clients_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +60,9 @@ pub fn authorized_router(
     journal_root: PathBuf,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
 ) -> Router {
+    let authorized_clients_path = AuthorizationLedger::new(&journal_root)
+        .authorized_clients_path()
+        .to_path_buf();
     // [check] Axum 0.8.9 `Router::route_layer` runs only for a matching route,
     // so router()'s existing fallback still returns 404 rather than this gate's
     // 403. It still applies before a matched route's 405 method response; using
@@ -54,7 +70,10 @@ pub fn authorized_router(
     // Applying it after router() has composed every route wraps the full
     // surface, including routes from merged sub-routers.
     crate::router(journal_root).route_layer(middleware::from_fn_with_state(
-        AuthorizationGateState { authorization },
+        AuthorizationGateState {
+            authorization,
+            authorized_clients_path,
+        },
         require_authorization,
     ))
 }
@@ -99,14 +118,29 @@ async fn require_authorization(
     let AccessBasis::LinkedDevice { did, .. } = basis else {
         return next.run(request).await;
     };
-    // [check] Keep the watch borrow scoped before await: `watch::Ref` should not
-    // cross unrelated async work, and this avoids cloning the posture's entries
-    // for every request.
-    let decision = {
-        let posture = state.authorization.borrow();
-        is_authorized(posture.as_read(), did)
+    // This gate resolves each request's authorization by reading the ledger;
+    // carrier-level revocation is separate and lives in the door's carrier loop.
+    // The gate holds no watch borrow: the posture is read from the ledger per request.
+    let path = state.authorized_clients_path.clone();
+    #[cfg(debug_assertions)]
+    AUTHORIZATION_GATE_READ_TICKS.fetch_add(1, Ordering::Relaxed);
+    let posture = match tokio::time::timeout(
+        Duration::from_millis(1000),
+        tokio::task::spawn_blocking(move || read_authorized_clients(&path)),
+    )
+    .await
+    {
+        Ok(Ok(posture)) => posture,
+        Err(_) => {
+            log::warn!("paired-device authorization read timed out after 1000 ms");
+            return pl_revoked_response();
+        }
+        Ok(Err(error)) => {
+            log::warn!("paired-device authorization read task failed: {error}");
+            return pl_revoked_response();
+        }
     };
-    if !decision {
+    if !is_authorized(&posture, did) {
         return pl_revoked_response();
     }
     next.run(request).await
