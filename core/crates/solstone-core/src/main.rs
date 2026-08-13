@@ -38,9 +38,9 @@ use solstone_core_cli::{
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
     SenseReprocessKind, ServiceOptions, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions, TransferCommand,
-    TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE, evaluate_args,
-    version_line,
+    TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions,
+    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
+    evaluate_args, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
@@ -252,6 +252,18 @@ fn main() -> ExitCode {
         Ok(Command::HealthUsage) => render_usage_error(HEALTH_USAGE, "journal health"),
         Ok(Command::HealthHelp) => {
             print!("{HEALTH_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Top { verbose, debug }) => match solstone_core_top::run(verbose, debug) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("solstone-core top: {error}");
+                ExitCode::from(EXIT_UNAVAILABLE)
+            }
+        },
+        Ok(Command::TopUsage) => render_usage_error(TOP_USAGE, "solstone-core top"),
+        Ok(Command::TopHelp) => {
+            print!("{TOP_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::HealthLogs(args)) => health_logs::run(args),

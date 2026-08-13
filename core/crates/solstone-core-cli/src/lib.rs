@@ -17,7 +17,7 @@ pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
-    "  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
+    "  solstone-core top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
@@ -412,6 +412,17 @@ pub const SUPERVISOR_HELP: &str = concat!(
 
 pub const HEALTH_USAGE: &str = "usage: journal health [-h] [-v] [-d]\n";
 
+pub const TOP_USAGE: &str = "usage: solstone-core top [-h] [-v] [-d]\n";
+
+pub const TOP_HELP: &str = concat!(
+    "usage: solstone-core top [-h] [-v] [-d]\n",
+    "\nShow interactive service, observation, task, and brain activity.\n\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  enable verbose output\n",
+    "  -d, --debug    enable debug output\n",
+);
+
 pub const HEALTH_HELP: &str = concat!(
     "usage: journal health [-h] [-v] [-d]\n",
     "\n",
@@ -679,6 +690,12 @@ pub enum Command {
     },
     HealthUsage,
     HealthHelp,
+    Top {
+        verbose: bool,
+        debug: bool,
+    },
+    TopUsage,
+    TopHelp,
     HealthLogs(HealthLogsArgs),
     HealthLogsUsage(HealthLogsArgs),
     HealthLogsHelp(HealthLogsArgs),
@@ -1495,6 +1512,15 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(match parse_health(rest) {
                 Ok((verbose, debug)) => Command::Health { verbose, debug },
                 Err(()) => Command::HealthUsage,
+            })
+        }
+        [command, rest @ ..] if command == OsStr::new("top") => {
+            if rest.iter().any(is_help) {
+                return Ok(Command::TopHelp);
+            }
+            Ok(match parse_health(rest) {
+                Ok((verbose, debug)) => Command::Top { verbose, debug },
+                Err(()) => Command::TopUsage,
             })
         }
         [command, rest @ ..] if command == OsStr::new("observer") => {
@@ -6348,6 +6374,25 @@ mod tests {
         );
         assert!(
             matches!(evaluate_args(&args(&["health", "logs", "--service=first", "--service", "last", "-f", "-f", "-v", "-v", "-d", "-d"])), Ok(Command::HealthLogs(HealthLogsArgs { service: Some(service), follow: true, verbose: true, debug: true, .. })) if service == "last")
+        );
+    }
+
+    #[test]
+    fn parses_top_flags_and_uses_command_specific_usage() {
+        assert_eq!(
+            evaluate_args(&args(&["top", "-v", "--debug"])),
+            Ok(Command::Top {
+                verbose: true,
+                debug: true,
+            })
+        );
+        assert_eq!(
+            evaluate_args(&args(&["top", "--bogus"])),
+            Ok(Command::TopUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["top", "--help"])),
+            Ok(Command::TopHelp)
         );
     }
 
