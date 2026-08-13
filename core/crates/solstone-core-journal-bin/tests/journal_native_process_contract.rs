@@ -193,6 +193,12 @@ const PROBES: &[Probe] = &[
         stderr_anchor: None,
     },
     Probe {
+        token: "sense",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal sense"),
+    },
+    Probe {
         token: "observer",
         argv: &["--nonsense"],
         expected_exit: 2,
@@ -300,7 +306,13 @@ impl TempDir {
             .duration_since(UNIX_EPOCH)
             .expect("time should be available")
             .as_nanos();
-        let path = env::temp_dir().join(format!(
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("core workspace root")
+            .join("target/journal-native-process-contract-tmp");
+        fs::create_dir_all(&base).expect("create contract test target directory");
+        let path = base.join(format!(
             "solstone-core-journal-native-process-contract-{label}-{}-{stamp}",
             std::process::id()
         ));
@@ -367,12 +379,18 @@ impl Harness {
 
         let dispatcher = sibling_dir.join("solstone-core-journal");
         copy_executable(&dispatcher_source, &dispatcher);
+        std::os::unix::fs::symlink(&dispatcher, sibling_dir.join("journal"))
+            .expect("link journal command to dispatcher sibling");
         copy_executable(&core_source, &sibling_dir.join("solstone-core"));
         copy_executable(&depict_source, &sibling_dir.join("solstone-core-depict"));
         copy_executable(
             &describe_source,
             &sibling_dir.join("solstone-core-describe"),
         );
+        let speakers_helper = sibling_dir.join("solstone-core-speakers-analyze");
+        fs::write(&speakers_helper, "#!/bin/sh\nexit 1\n")
+            .expect("write speakers-analyze placeholder");
+        make_executable(&speakers_helper);
         for interpreter in ["python", "python3", "pytest", "uv", "ruff"] {
             let path = sibling_dir.join(interpreter);
             fs::write(&path, POISON_INTERPRETER).expect("write poison interpreter");
@@ -566,6 +584,25 @@ fn run_dispatcher_with_output(
         .env("HOME", context.home)
         .env("SOLSTONE_JOURNAL", context.journal)
         .env("PATH", context.sibling_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+}
+
+fn run_dispatcher_with_output_and_environment(
+    context: &VerdictContext<'_>,
+    token: &str,
+    argv: &[&str],
+    environment: &[(&str, &str)],
+) -> io::Result<std::process::Output> {
+    Command::new(context.dispatcher)
+        .arg(token)
+        .args(argv)
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        .env("PATH", context.sibling_dir)
+        .envs(environment.iter().copied())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -772,6 +809,55 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         context.poison_marker.exists(),
         "{token}: poison-liveness expected the poisoned interpreter marker"
     );
+}
+
+#[test]
+fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_blocked() {
+    let harness = Harness::new();
+    let context = harness.context();
+    let day = "20990101";
+    let stream = "capture";
+    let segment = "120000_1";
+    let directory = context
+        .journal
+        .join("chronicle")
+        .join(day)
+        .join(stream)
+        .join(segment);
+    fs::create_dir_all(&directory).expect("create batch segment");
+    fs::write(directory.join("audio.flac"), b"not a flac file").expect("write garbage audio");
+    fs::write(directory.join("screen.webm"), b"not a webm file").expect("write garbage video");
+
+    // AJ-D has not landed: describe still resolves through the Python process
+    // table and must touch the poisoned sibling python3. When AJ-D becomes a
+    // native process spec, tighten this expectation to require no shim touch.
+    let output = run_dispatcher_with_output_and_environment(
+        &context,
+        "sense",
+        &["--day", day, "--stream", stream, "--segment", segment],
+        &[("SOL_SKIP_SUPERVISOR_CHECK", "1")],
+    )
+    .expect("run native sense batch through dispatcher");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "sense stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let sidecar: serde_json::Value = serde_json::from_slice(
+        &fs::read(directory.join("audio.jsonl")).expect("native transcribe decode-failure sidecar"),
+    )
+    .expect("transcribe sidecar JSON");
+    assert_eq!(sidecar["_solstone_processing"]["handler"], "transcribe");
+    assert_eq!(sidecar["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        sidecar["_solstone_processing"]["reason_code"],
+        "corrupt_input"
+    );
+
+    let poison = fs::read_to_string(context.poison_marker).expect("describe Python poison marker");
+    assert_eq!(poison.lines().collect::<Vec<_>>(), ["reached:python3"]);
 }
 
 #[test]
