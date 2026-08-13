@@ -27,8 +27,6 @@ pub enum TopLoopError {
     Terminal(String),
     #[error("transport failure: {0}")]
     Transport(String),
-    #[error("reducer failure: {0}")]
-    Reducer(String),
 }
 
 /// Fully injected terminal seam; no test needs a TTY.
@@ -81,8 +79,7 @@ pub fn run_top_with(
                     monotonic_seconds: clock.monotonic_seconds(),
                     wall_datetime: clock.datetime(),
                 };
-                let effects = apply_receive_event(state, &event, &sample, observer)
-                    .map_err(|error| TopLoopError::Reducer(error.to_string()))?;
+                let effects = apply_receive_event(state, &event, &sample, observer);
                 if effects.refresh_brain {
                     state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
                     state.brain_health_ts = sample.wall_seconds;

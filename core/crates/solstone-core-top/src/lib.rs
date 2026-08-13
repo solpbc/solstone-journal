@@ -17,8 +17,8 @@ pub use r#loop::{
 };
 pub use process::{ProcessObserver, ProcessSample, ProcessUnavailableReason, platform_observer};
 pub use reduce::{
-    ReductionEffects, ReductionSample, STATUS_TIMEOUT_SECONDS, TopReduceError, apply_receive_event,
-    cleanup_processes, reduce_envelope,
+    ReductionDisposition, ReductionEffects, ReductionSample, STATUS_TIMEOUT_SECONDS, TopMalformed,
+    TopMalformedKind, TopRoute, apply_receive_event, cleanup_processes, reduce_envelope,
 };
 pub use render::{
     FrameSample, PlainTopStyle, TopStyle, format_log_age, format_runtime, format_uptime,

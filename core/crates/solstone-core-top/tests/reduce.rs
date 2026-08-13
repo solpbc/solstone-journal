@@ -8,8 +8,9 @@ use solstone_core_callosum::{
 use std::collections::VecDeque;
 
 use solstone_core_top::{
-    FrameSample, PlainTopStyle, ProcessObserver, ProcessSample, ReductionSample, TopReduceError,
-    TopState, apply_receive_event, cleanup_processes, reduce_envelope, render_frame,
+    FrameSample, PlainTopStyle, ProcessObserver, ProcessSample, ReductionDisposition,
+    ReductionSample, TopState, apply_receive_event, cleanup_processes, reduce_envelope,
+    render_frame,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/top_reference.json");
@@ -41,13 +42,13 @@ fn retained_valid_events_reduce_in_order_without_singleton_shortcuts() {
     };
     let mut observer = Observer;
     for (index, entry) in fixture["events"].as_array().unwrap().iter().enumerate() {
-        reduce_envelope(
+        let result = reduce_envelope(
             &mut state,
             &envelope(&entry["event"]),
             &ReductionSample::fixture(1_800_000_000.0 + index as f64 * 7.0, "2027-01-15T08:00:00"),
             &mut observer,
-        )
-        .unwrap();
+        );
+        assert!(matches!(result, ReductionDisposition::Applied(_)));
     }
     assert_eq!(state.services.len(), 2);
     assert_eq!(
@@ -72,29 +73,39 @@ fn retained_malformed_cases_are_classified_without_coercion() {
             &ReductionSample::fixture(1_800_000_000.0, "2027-01-15T08:00:00"),
             &mut observer,
         );
-        match case["name"].as_str().unwrap() {
-            "supervisor-service-missing-pid" => {
-                assert_eq!(result.unwrap_err(), TopReduceError::MissingServicePid)
-            }
-            "supervisor-services-wrong-type" => {
-                assert_eq!(result.unwrap_err(), TopReduceError::ServicesWrongType)
-            }
-            "supervisor-queues-wrong-type" => {
-                assert_eq!(result.unwrap_err(), TopReduceError::QueuesWrongType)
-            }
-            "queue-wrong-count" => {
-                assert_eq!(result.unwrap_err(), TopReduceError::QueueCountWrongType)
+        let name = case["name"].as_str().unwrap();
+        match name {
+            "unknown-tract" => {
+                assert_eq!(result, ReductionDisposition::Ignored);
+                assert_eq!(state.malformed_events, 0);
             }
             "logs-line-wrong-stream" => {
-                result.unwrap();
-                assert_eq!(state.last_log_lines["r"][1], 7);
+                assert!(matches!(result, ReductionDisposition::Malformed(_)));
+                assert_eq!(state.fixture_value(), TopState::default().fixture_value());
+                assert_eq!(state.malformed_events, 1);
             }
             "observe-duration-wrong-type" => {
-                result.unwrap();
-                assert_eq!(state.recent_segments[0][2], "sixty");
+                assert!(matches!(result, ReductionDisposition::Malformed(_)));
+                assert_eq!(state.fixture_value(), TopState::default().fixture_value());
+                assert_eq!(state.malformed_events, 1);
             }
-            "think-completed-defaults" => assert!(result.unwrap().refresh_brain),
-            _ => assert!(result.is_ok(), "{}", case["name"]),
+            "think-completed-defaults" => {
+                assert!(matches!(result, ReductionDisposition::Malformed(_)));
+                assert_eq!(state.fixture_value(), TopState::default().fixture_value());
+                assert_eq!(state.malformed_events, 1);
+            }
+            _ => {
+                assert!(
+                    matches!(result, ReductionDisposition::Malformed(_)),
+                    "{name}"
+                );
+                assert_eq!(
+                    state.fixture_value(),
+                    TopState::default().fixture_value(),
+                    "{name}"
+                );
+                assert_eq!(state.malformed_events, 1, "{name}");
+            }
         }
     }
 }
@@ -103,28 +114,31 @@ fn retained_malformed_cases_are_classified_without_coercion() {
 fn malformed_cases_each_have_a_same_route_valid_twin() {
     let twins = [
         serde_json::json!({"tract":"other","event":"status"}),
-        serde_json::json!({"tract":"supervisor","event":"status","services":[],"crashed":[]}),
-        serde_json::json!({"tract":"supervisor","event":"status","services":[{"name":"ok","pid":1}]}),
-        serde_json::json!({"tract":"supervisor","event":"status","services":[]}),
-        serde_json::json!({"tract":"supervisor","event":"status","queues":{}}),
+        serde_json::json!({"tract":"supervisor","event":"status","services":[],"crashed":[],"queues":{}}),
+        serde_json::json!({"tract":"supervisor","event":"restarting","service":"ok"}),
+        serde_json::json!({"tract":"supervisor","event":"started","service":"ok"}),
+        serde_json::json!({"tract":"supervisor","event":"stopped","service":"ok"}),
         serde_json::json!({"tract":"supervisor","event":"queue","command":"x","queued":1}),
         serde_json::json!({"tract":"supervisor","event":"queue","command":"x","queued":1}),
         serde_json::json!({"tract":"logs","event":"exec","name":"n","ref":"r","pid":1}),
-        serde_json::json!({"tract":"logs","event":"line","ref":"r","line":"x"}),
-        serde_json::json!({"tract":"logs","event":"line","ref":"r","stream":"stdout","line":"x"}),
-        serde_json::json!({"tract":"observe","event":"observed","day":"d","segment":"s"}),
+        serde_json::json!({"tract":"logs","event":"line","ref":"r","name":"n","pid":1,"stream":"stdout","line":"x"}),
+        serde_json::json!({"tract":"observe","event":"status","mode":"idle"}),
         serde_json::json!({"tract":"observe","event":"observed","day":"d","segment":"s","duration":1}),
-        serde_json::json!({"tract":"think","event":"completed"}),
+        serde_json::json!({"tract":"think","event":"completed","success":1,"failed":0,"duration_ms":1,"failed_names":[]}),
     ];
     for value in twins {
         let mut state = TopState::default();
-        reduce_envelope(
+        let result = reduce_envelope(
             &mut state,
             &envelope(&value),
             &ReductionSample::fixture(0.0, "x"),
             &mut Observer,
-        )
-        .unwrap();
+        );
+        if value["tract"] == "other" {
+            assert_eq!(result, ReductionDisposition::Ignored);
+        } else {
+            assert!(matches!(result, ReductionDisposition::Applied(_)));
+        }
     }
 }
 
@@ -133,17 +147,17 @@ fn identity_and_order_twins_preserve_distinct_refs_and_service_order() {
     let mut state = TopState::default();
     let mut observer = Observer;
     for value in [
-        serde_json::json!({"tract":"supervisor","event":"status","services":[{"name":"svc-10","pid":10},{"name":"svc-2","pid":2}]}),
+        serde_json::json!({"tract":"supervisor","event":"status","services":[{"name":"svc-10","ref":"r10","pid":10,"uptime_seconds":0},{"name":"svc-2","ref":"r2","pid":2,"uptime_seconds":0}],"crashed":[],"queues":{}}),
         serde_json::json!({"tract":"logs","event":"exec","ref":"a","name":"same","pid":3}),
         serde_json::json!({"tract":"logs","event":"exec","ref":"b","name":"same","pid":4}),
     ] {
-        reduce_envelope(
+        let result = reduce_envelope(
             &mut state,
             &envelope(&value),
             &ReductionSample::fixture(0.0, "x"),
             &mut observer,
-        )
-        .unwrap();
+        );
+        assert!(matches!(result, ReductionDisposition::Applied(_)));
     }
     assert_eq!(state.services[0]["name"], "svc-10");
     assert_eq!(state.services[1]["name"], "svc-2");
@@ -172,8 +186,7 @@ fn new_connection_generation_invalidates_stale_supervisor_state_until_status() {
         },
         &ReductionSample::fixture(0.0, "x"),
         &mut Observer,
-    )
-    .unwrap();
+    );
     assert!(state.services.is_empty());
     assert!(state.continuity.supervisor.is_incomplete());
 }
@@ -253,8 +266,7 @@ fn domain_gaps_render_then_clear_on_fresh_domain_events() {
         },
         &ReductionSample::fixture(0.0, "x"),
         &mut observer,
-    )
-    .unwrap();
+    );
     assert!(
         state.continuity.tasks.is_incomplete()
             && state.continuity.observe.is_incomplete()
@@ -272,10 +284,9 @@ fn domain_gaps_render_then_clear_on_fresh_domain_events() {
         },
         &ReductionSample::fixture(1.0, "x"),
         &mut observer,
-    )
-    .unwrap();
+    );
     for value in [
-        serde_json::json!({"tract":"supervisor","event":"status","services":[]}),
+        serde_json::json!({"tract":"supervisor","event":"status","services":[],"crashed":[],"queues":{}}),
         serde_json::json!({"tract":"logs","event":"exec","ref":"task","name":"backup","pid":3}),
         serde_json::json!({"tract":"observe","event":"status","mode":"idle"}),
         serde_json::json!({"tract":"think","event":"started"}),
@@ -289,8 +300,7 @@ fn domain_gaps_render_then_clear_on_fresh_domain_events() {
             },
             &ReductionSample::fixture(1.0, "x"),
             &mut observer,
-        )
-        .unwrap();
+        );
     }
     assert!(!state.continuity.supervisor.is_incomplete());
     assert!(

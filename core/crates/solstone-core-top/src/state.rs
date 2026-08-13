@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumConnectionPhase;
 
-use crate::RestartAttempt;
+use crate::{RestartAttempt, TopMalformed};
 
 /// Continuity metadata is native-only and deliberately excluded from the
 /// retained Python fixture projection.
@@ -104,6 +104,10 @@ pub struct TopState {
     pub brain_health: Option<Value>,
     pub brain_health_ts: f64,
     pub continuity: DomainContinuity,
+    /// Native-only malformed-event evidence, excluded from the retained fixture projection.
+    pub malformed_events: u64,
+    /// The latest typed malformed route classification, also native-only.
+    pub last_malformed: Option<TopMalformed>,
     pub restart_attempts: BTreeMap<String, RestartAttempt>,
 }
 
@@ -134,6 +138,8 @@ impl Default for TopState {
             brain_health: None,
             brain_health_ts: 0.0,
             continuity: DomainContinuity::default(),
+            malformed_events: 0,
+            last_malformed: None,
             restart_attempts: BTreeMap::new(),
         }
     }

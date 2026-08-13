@@ -74,6 +74,22 @@ pub fn render_frame(
     output.push_str(&center(title, width));
     output.push_str(style.normal());
     output.push_str("\n\n");
+    if state.malformed_events > 0 {
+        output.push_str(style.red());
+        dynamic_line(
+            &mut output,
+            &format!(
+                "  malformed events: {} ({})",
+                state.malformed_events,
+                state
+                    .last_malformed
+                    .as_ref()
+                    .map_or("unknown".to_owned(), ToString::to_string)
+            ),
+            style,
+        );
+        output.push_str(style.normal());
+    }
     output.push_str(style.bold());
     output.push_str("  Service         PID      Uptime            MB      %  Last Log");
     output.push_str(style.normal());

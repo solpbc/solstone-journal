@@ -47,8 +47,7 @@ fn connected(state: &mut TopState, observer: &mut Observer) {
         },
         &sample(),
         observer,
-    )
-    .unwrap();
+    );
 }
 
 fn gap(state: &mut TopState, observer: &mut Observer) {
@@ -64,8 +63,7 @@ fn gap(state: &mut TopState, observer: &mut Observer) {
         },
         &sample(),
         observer,
-    )
-    .unwrap();
+    );
 }
 
 #[test]
@@ -92,8 +90,7 @@ fn owner_rejects_wrong_generation_or_epoch_before_reduction() {
             },
             &sample(),
             &mut observer,
-        )
-        .unwrap();
+        );
     }
     assert_eq!(state.running_tasks, before.running_tasks);
     assert_eq!(observer.calls, 0);
@@ -115,8 +112,7 @@ fn supervisor_snapshot_recovers_only_supervisor_domain() {
         },
         &sample(),
         &mut observer,
-    )
-    .unwrap();
+    );
     apply_receive_event(
         &mut state,
         &CallosumReceiveEvent::Envelope {
@@ -134,8 +130,7 @@ fn supervisor_snapshot_recovers_only_supervisor_domain() {
         },
         &sample(),
         &mut observer,
-    )
-    .unwrap();
+    );
     assert_eq!(state.continuity.supervisor, DomainRecovery::Complete);
     assert!(state.continuity.tasks.is_incomplete());
     assert!(state.continuity.observe.is_incomplete());
@@ -161,8 +156,7 @@ fn gap_marks_domains_independently_and_evidence_does_not_complete_them() {
         },
         &sample(),
         &mut observer,
-    )
-    .unwrap();
+    );
     for (tract, event, extra) in [
         (
             "logs",
@@ -189,8 +183,7 @@ fn gap_marks_domains_independently_and_evidence_does_not_complete_them() {
             },
             &sample(),
             &mut observer,
-        )
-        .unwrap();
+        );
     }
     assert_eq!(
         state.continuity.tasks,
@@ -227,8 +220,7 @@ fn observe_extension_only_row_is_byte_equivalent_noop_after_gap() {
         },
         &sample(),
         &mut observer,
-    )
-    .unwrap();
+    );
     let before = state.clone();
     apply_receive_event(
         &mut state,
@@ -243,7 +235,6 @@ fn observe_extension_only_row_is_byte_equivalent_noop_after_gap() {
         },
         &sample(),
         &mut observer,
-    )
-    .unwrap();
+    );
     assert_eq!(state, before);
 }
