@@ -62,6 +62,7 @@ pub mod receipt;
 pub mod remove_marked;
 pub mod scan;
 pub mod staging;
+pub mod summary;
 pub mod sweep;
 pub mod tombstone;
 
@@ -73,4 +74,5 @@ pub use notify::{IndexNotify, NoIndex, NotifyError, PruneCounts};
 pub use policy::{Anchor, Days, Eligibility, Policy, Rule, SegmentAge};
 pub use receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
 pub use staging::{STAGED_PREFIX, original_name, staged_name};
+pub use summary::{StorageSummary, compute_storage_summary, human_bytes};
 pub use tombstone::{ExecutorStamp, RemovalReason, TombstoneBody, tombstone_bytes};

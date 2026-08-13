@@ -47,6 +47,7 @@ solstone-core-npy.workspace = true
 solstone-core-observer.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
+solstone-core-settings-web.workspace = true
 spl-home = { workspace = true, optional = true }
 spl-core = { workspace = true, optional = true }
 solstone-core-sol-link = { workspace = true, optional = true }

@@ -36,3 +36,4 @@ solstone-core-indexer-store = { workspace = true }
 # tombstone and activity log both carry it -- so one test asserts on real JSON
 # rather than on a mock of both sides.
 serde_json = { workspace = true }
+tempfile = "3.24.0"

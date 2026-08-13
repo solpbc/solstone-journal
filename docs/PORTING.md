@@ -62,6 +62,14 @@ future TLS and loopback-binding work is host-specific; retaining it in the
 iOS canary would confuse incidental portability with the supported deployment
 shape.
 
+`solstone-core-settings-web` is also excluded from the iOS canary. It is the
+host-side Settings HTTP adapter: phones are clients, never hosts. Its router is
+merged into Convey before the shell extensions and `session_gate` route layer,
+and the exported router carries no fallback so it can compose with the other
+native web lanes. Settings reads the pure category registry from
+`solstone-core-describe-categories`; the describe crate re-exports that leaf so
+the category API stays stable without carrying FFmpeg into a web settings read.
+
 ## Native Dependency Release Proof
 
 A Rust conversion that adds or bumps a dependency with C/C++ build steps or

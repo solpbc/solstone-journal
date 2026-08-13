@@ -1,0 +1,31 @@
+[package]
+name = "solstone-core-settings-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["tokio"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+solstone-core-describe-categories.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-journal-io.workspace = true
+solstone-core-retention.workspace = true
+solstone-core-sense.workspace = true
+
+[build-dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+solstone-core-convey-shell.workspace = true
+tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower.workspace = true

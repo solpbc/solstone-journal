@@ -63,6 +63,7 @@ members = [
     "crates/solstone-core-vulkan-probe",
     "crates/solstone-core-pdf",
     "crates/solstone-core-describe",
+    "crates/solstone-core-describe-categories",
     "crates/solstone-core-grab",
     "crates/solstone-core-observe-audio",
     "crates/solstone-core-depict",
@@ -88,6 +89,7 @@ members = [
     "crates/solstone-core-reprocess-cli",
     "crates/solstone-core-backfill-cli",
     "crates/solstone-core-steward-prune",
+    "crates/solstone-core-settings-web",
 ]
 exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
@@ -152,9 +154,11 @@ solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
+solstone-core-describe-categories = { path = "crates/solstone-core-describe-categories" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-sense = { path = "crates/solstone-core-sense" }
+solstone-core-settings-web = { path = "crates/solstone-core-settings-web" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
 solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
 solstone-core-import = { path = "crates/solstone-core-import" }
