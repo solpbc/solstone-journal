@@ -544,6 +544,25 @@ pub(crate) fn clock(time: NaiveDateTime) -> String {
     )
 }
 pub(crate) fn long_day(day: NaiveDate) -> String {
+    format!(
+        "{} {}, {}",
+        month_full_name(day.month()),
+        day.day(),
+        day.year()
+    )
+}
+pub(crate) fn short_day(day: &str) -> Option<String> {
+    parse_day(day).map(|day| format!("{} {}", month_abbr(day.month()), day.day()))
+}
+
+pub(crate) fn month_abbr(month: u32) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    MONTHS[month as usize - 1]
+}
+
+pub(crate) fn month_full_name(month: u32) -> &'static str {
     const MONTHS: [&str; 12] = [
         "January",
         "February",
@@ -558,20 +577,13 @@ pub(crate) fn long_day(day: NaiveDate) -> String {
         "November",
         "December",
     ];
-    format!(
-        "{} {}, {}",
-        MONTHS[day.month0() as usize],
-        day.day(),
-        day.year()
-    )
+    MONTHS[month as usize - 1]
 }
-pub(crate) fn short_day(day: &str) -> Option<String> {
-    parse_day(day).map(|day| {
-        const MONTHS: [&str; 12] = [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        ];
-        format!("{} {}", MONTHS[day.month0() as usize], day.day())
-    })
+
+pub(crate) fn valid_day(value: &str) -> bool {
+    value.len() == 8
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && NaiveDate::parse_from_str(value, "%Y%m%d").is_ok()
 }
 
 fn sleep_analysis(
@@ -1341,6 +1353,18 @@ pub(crate) fn grouped_decimal(value: f64, places: usize) -> String {
         .rev()
         .collect::<String>();
     format!("{sign}{grouped}.{fraction}")
+}
+
+pub(crate) fn grouped_unsigned(value: u64) -> String {
+    grouped_decimal(value as f64, 0)
+        .trim_end_matches('.')
+        .to_owned()
+}
+
+pub(crate) fn grouped_signed(value: i64) -> String {
+    grouped_decimal(value as f64, 0)
+        .trim_end_matches('.')
+        .to_owned()
 }
 
 #[cfg(test)]

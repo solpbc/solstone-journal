@@ -15,13 +15,22 @@ use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
-use crate::day::{DayError, build_day, family, long_day, number, short_day};
+use crate::day::{
+    DayError, build_day, family, grouped_unsigned, long_day, month_abbr, month_full_name, number,
+    short_day, valid_day,
+};
 use crate::freshness::{build_source_freshness, quiet_day_expectations};
+use crate::query::decoded_query_params;
 use crate::router::{StoreError, ready_stats, unavailable_response};
 use crate::{
     BodyImportInventoryEntry, HealthDedupeStats, MonthReader, coverage_month_keys,
     friendly_type_name, read_body_import_inventory,
 };
+
+#[cfg(test)]
+thread_local! {
+    static TEST_ARCHIVE_ENTRY_TOTAL_DELTA: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 
 pub(crate) const RECENT_DAY_LIMIT: usize = 14;
 pub(crate) const RECENT_BATCH_LIMIT_CAP: usize = 31;
@@ -54,7 +63,7 @@ pub(crate) async fn recent_route(
     State(root): State<Arc<PathBuf>>,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
-    let params = query_params(raw_query.as_deref().unwrap_or_default());
+    let params = decoded_query_params(raw_query.as_deref().unwrap_or_default());
     let before = params.get("before").map_or("", String::as_str);
     if !valid_day(before) {
         return invalid_day_response();
@@ -155,9 +164,10 @@ pub(crate) fn latest_sources_snapshot(root: &Path) -> Result<SourcesSnapshot, St
         let source = crate::day::source_label(row);
         *by_source.entry(source.clone()).or_insert(0) += 1;
         if let Some(time) = row.row_time()
+            // Source last-seen is chronological across offsets, unlike manifest imported_at.
             && latest_by_source
                 .get(&source)
-                .is_none_or(|current: &String| time > current.as_str())
+                .is_none_or(|current: &String| later_timestamp(time, current))
         {
             latest_by_source.insert(source, time.to_owned());
         }
@@ -173,6 +183,7 @@ fn imports(root: &Path) -> Result<Vec<Value>, StoreError> {
     let inventory =
         read_body_import_inventory(root).map_err(|error| StoreError::Read(error.to_string()))?;
     let mut entries = inventory.entries;
+    // The reference deliberately orders manifest imported_at as raw strings, not datetimes.
     entries.sort_by_key(|entry| std::cmp::Reverse(import_sort_key(entry)));
     Ok(entries.into_iter().map(import_manifest).collect())
 }
@@ -196,6 +207,9 @@ fn build_archive(
     imports: &[Value],
     recent: &SourcesSnapshot,
 ) -> Result<Value, StoreError> {
+    let entry_total = stats.total;
+    #[cfg(test)]
+    let entry_total = entry_total + TEST_ARCHIVE_ENTRY_TOTAL_DELTA.with(std::cell::Cell::get);
     let months = stats.by_month.keys().cloned().collect::<Vec<_>>();
     let days = stats.by_day.keys().cloned().collect::<Vec<_>>();
     let (recent_days, recent_days_has_more) =
@@ -208,8 +222,8 @@ fn build_archive(
         _ => Value::Null,
     };
     Ok(json!({
-        "entry_total": stats.total,
-        "entry_total_label": grouped(stats.total),
+        "entry_total": entry_total,
+        "entry_total_label": grouped(entry_total),
         "import_count": imports.len(),
         "months_observed": stats.by_month.len(),
         "coverage": coverage,
@@ -325,10 +339,13 @@ fn source_chips(recent: &SourcesSnapshot) -> Vec<Value> {
     let newest = recent
         .latest_by_source
         .values()
-        .filter_map(|time| parse_time(time))
+        .filter_map(|time| parse_fixed_offset_time(time))
         .max();
     recent.by_source.iter().map(|(name, count)| {
-        let latest = recent.latest_by_source.get(name).and_then(|time| parse_time(time));
+        let latest = recent
+            .latest_by_source
+            .get(name)
+            .and_then(|time| parse_fixed_offset_time(time));
         let stale = newest
             .zip(latest)
             .is_some_and(|(newest, latest)| newest - latest > chrono::Duration::days(STALE_SOURCE_DAYS));
@@ -394,16 +411,10 @@ fn month_label_positions(weeks: &[Vec<Value>]) -> Vec<Value> {
             let month = &day[4..6];
             (previous != Some(month)).then(|| {
                 previous = Some(month);
-                json!({"index": index, "label": month_abbr(month)})
+                json!({"index": index, "label": month_abbr(month.parse().expect("month"))})
             })
         })
         .collect()
-}
-
-fn valid_day(day: &str) -> bool {
-    day.len() == 8
-        && day.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
 }
 
 fn invalid_day_response() -> Response {
@@ -425,46 +436,57 @@ fn invalid_limit_response(detail: &str) -> Response {
     .into_response()
 }
 
-fn query_params(raw: &str) -> BTreeMap<String, String> {
-    raw.split('&')
-        .filter_map(|part| part.split_once('='))
-        .map(|(key, value)| (key.to_owned(), value.to_owned()))
-        .collect()
-}
 fn grouped(value: u64) -> String {
-    crate::day::grouped_decimal(value as f64, 0)
-        .trim_end_matches('.')
-        .to_owned()
+    grouped_unsigned(value)
 }
-fn parse_time(value: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+fn parse_fixed_offset_time(value: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
     chrono::DateTime::parse_from_rfc3339(value).ok()
 }
-fn month_abbr(month: &str) -> &'static str {
-    [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ][month.parse::<usize>().expect("month") - 1]
+
+fn later_timestamp(candidate: &str, current: &str) -> bool {
+    match (
+        parse_fixed_offset_time(candidate),
+        parse_fixed_offset_time(current),
+    ) {
+        (Some(candidate), Some(current)) => candidate > current,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => candidate > current,
+    }
+}
+
+#[cfg(test)]
+struct ArchiveEntryTotalPerturbation {
+    previous: u64,
+}
+
+#[cfg(test)]
+impl ArchiveEntryTotalPerturbation {
+    fn add(delta: u64) -> Self {
+        let previous = TEST_ARCHIVE_ENTRY_TOTAL_DELTA.with(|current| current.replace(delta));
+        Self { previous }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ArchiveEntryTotalPerturbation {
+    fn drop(&mut self) {
+        TEST_ARCHIVE_ENTRY_TOTAL_DELTA.with(|current| current.set(self.previous));
+    }
 }
 fn month_label(month: &str) -> String {
-    format!("{} {}", month_abbr(&month[5..]), &month[..4])
+    format!(
+        "{} {}",
+        month_abbr(month[5..].parse().expect("month")),
+        &month[..4]
+    )
 }
 fn month_full_label(month: &str) -> String {
-    format!("{} {}", month_full_name(&month[5..]), &month[..4])
-}
-fn month_full_name(month: &str) -> &'static str {
-    [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ][month.parse::<usize>().expect("month") - 1]
+    format!(
+        "{} {}",
+        month_full_name(month[5..].parse().expect("month")),
+        &month[..4]
+    )
 }
 fn month_range_label(first: Option<&str>, last: Option<&str>) -> Option<String> {
     match (first, last) {
@@ -486,6 +508,7 @@ fn month_range_label(first: Option<&str>, last: Option<&str>) -> Option<String> 
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -794,25 +817,68 @@ mod tests {
         )));
     }
 
+    #[tokio::test]
+    async fn recent_route_decodes_percent_encoded_before_and_limit() {
+        let root = TempDir::new();
+        seed_body_journal(
+            root.path(),
+            &test_seed(vec![test_bundle(
+                "encoded",
+                "2026-08",
+                vec![test_row(
+                    "encoded-row",
+                    "20260801",
+                    "Source",
+                    "Signal",
+                    Some(json!(1)),
+                    None,
+                    None,
+                    None,
+                )],
+                Map::new(),
+            )]),
+        )
+        .unwrap();
+        let response = crate::api_router(root.path())
+            .oneshot(
+                Request::get("/app/body/api/recent?before=202608%30%32&limit=%31")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["days"].as_array().unwrap().len(), 1);
+    }
+
     #[test]
     fn corpus_comparator_rejects_a_native_builder_perturbation() {
         let root = TempDir::new();
         crate::day::tests::seed_populated_body_journal(root.path());
         let stats = read_health_dedupe_stats(root.path()).unwrap();
-        let mut payload = build_status(
-            root.path(),
-            stats.as_deref(),
-            NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
-        )
-        .unwrap();
-        payload["archive"]["entry_total"] = json!(571);
-        let difference = crate::corpus_test::first_difference(
-            &payload,
-            &crate::corpus_test::recorded("first_run", "/app/body/api/status"),
-            "$",
-        )
-        .expect("builder perturbation differs");
-        assert_eq!(difference, "$.archive.entry_total: left=571; right=570");
+        let failure = catch_unwind(AssertUnwindSafe(|| {
+            let _perturbation = ArchiveEntryTotalPerturbation::add(1);
+            let payload = build_status(
+                root.path(),
+                stats.as_deref(),
+                NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
+            )
+            .unwrap();
+            assert_recorded_payload("first_run", "/app/body/api/status", root.path(), &payload);
+        }))
+        .expect_err("the builder perturbation must fail corpus replay");
+        let message = failure
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| failure.downcast_ref::<&str>().copied())
+            .expect("string panic message");
+        assert_eq!(
+            message,
+            "recorded corpus structural mismatch: $.archive.entry_total: left=571; right=570"
+        );
     }
 
     #[test]
@@ -967,13 +1033,52 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_chooses_latest_source_timestamp_chronologically_across_offsets() {
+        let root = TempDir::new();
+        let mut offset_earlier = test_row(
+            "offset-earlier",
+            "20260801",
+            "Watch",
+            "Signal",
+            Some(json!(1)),
+            None,
+            None,
+            None,
+        );
+        offset_earlier.insert("start_date".into(), json!("2026-08-01T10:00:00+02:00"));
+        let mut utc_later = test_row(
+            "utc-later",
+            "20260801",
+            "Watch",
+            "Signal",
+            Some(json!(1)),
+            None,
+            None,
+            None,
+        );
+        utc_later.insert("start_date".into(), json!("2026-08-01T09:00:00Z"));
+        seed_body_journal(
+            root.path(),
+            &test_seed(vec![test_bundle(
+                "mixed-offsets",
+                "2026-08",
+                vec![offset_earlier, utc_later],
+                Map::new(),
+            )]),
+        )
+        .unwrap();
+        let snapshot = latest_sources_snapshot(root.path()).unwrap();
+        assert_eq!(snapshot.latest_by_source["Watch"], "2026-08-01T09:00:00Z");
+    }
+
+    #[test]
     fn imports_sort_by_raw_manifest_timestamp_and_empty_bundle_uses_directory_id() {
         let root = TempDir::new();
         seed_body_journal(
             root.path(),
             &test_seed(vec![
                 test_bundle(
-                    "earlier",
+                    "chronologically-later",
                     "2026-08",
                     vec![test_row(
                         "row",
@@ -985,13 +1090,13 @@ mod tests {
                         None,
                         None,
                     )],
-                    Map::from_iter([("imported_at".into(), json!("2026-08-10T09:00:00Z"))]),
+                    Map::from_iter([("imported_at".into(), json!("2026-08-10T08:30:00Z"))]),
                 ),
                 test_bundle(
-                    "empty-directory",
+                    "lexically-newer-directory",
                     "2026-08",
                     Vec::new(),
-                    Map::from_iter([("imported_at".into(), json!("2026-08-10T10:00:00Z"))]),
+                    Map::from_iter([("imported_at".into(), json!("2026-08-10T09:00:00+02:00"))]),
                 ),
             ]),
         )
@@ -1003,9 +1108,12 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
         )
         .unwrap();
-        assert_eq!(payload["imports"][0]["import_id"], "empty-directory");
+        assert_eq!(
+            payload["imports"][0]["import_id"],
+            "lexically-newer-directory"
+        );
         assert_eq!(payload["imports"][0]["normalized_months_label"], "—");
-        assert_eq!(payload["imports"][1]["import_id"], "earlier");
+        assert_eq!(payload["imports"][1]["import_id"], "chronologically-later");
     }
 
     #[test]

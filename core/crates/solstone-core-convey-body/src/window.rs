@@ -16,9 +16,11 @@ use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::day::{
-    clock, duration, end_time, family, is_sleep_type, number, record_time, resolve_canonical_rows,
-    source_label, string_field, value_number, workout_item,
+    clock, duration, family, grouped_signed as grouped_i64, grouped_unsigned, is_sleep_type,
+    number, resolve_canonical_rows, round1, source_label, string_field, valid_day, value_number,
+    workout_item,
 };
+use crate::query::decoded_query_params;
 use crate::{
     MonthReader, NormalizedRow, SLEEP_SESSION_GAP_MINUTES, ShardReadError, friendly_type_name,
     friendly_unit_label, pick_day_sleep,
@@ -45,7 +47,7 @@ pub(crate) async fn window_route(
     State(root): State<Arc<PathBuf>>,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
-    let params = query_params(raw_query.as_deref().unwrap_or_default());
+    let params = decoded_query_params(raw_query.as_deref().unwrap_or_default());
     let Some(window_start) = parse_window_bound(params.get("from").map(String::as_str)) else {
         return invalid_window_response(INVALID_BOUNDS);
     };
@@ -87,10 +89,22 @@ pub(crate) fn parse_window_bound(value: Option<&str>) -> Option<DateTime<FixedOf
         text.pop();
         text.push_str("+00:00");
     }
-    if let Ok(value) = DateTime::parse_from_rfc3339(&text) {
-        return Some(value);
+    for format in [
+        "%Y-%m-%dT%H:%M:%S%.f%:z",
+        "%Y-%m-%d %H:%M:%S%.f%:z",
+        "%Y-%m-%dT%H:%M%:z",
+        "%Y-%m-%d %H:%M%:z",
+    ] {
+        if let Ok(value) = DateTime::parse_from_str(&text, format) {
+            return Some(value);
+        }
     }
-    for format in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
+    for format in [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+    ] {
         if let Ok(value) = NaiveDateTime::parse_from_str(&text, format) {
             return Some(DateTime::from_naive_utc_and_offset(
                 value,
@@ -115,12 +129,12 @@ pub(crate) fn build_window(
 ) -> Result<Value, ShardReadError> {
     let rows = rows_for_window(root, window_start, window_end)?;
     let heart_rate = window_heart_rate(&rows);
-    let glucose = window_glucose(&rows, window_start.offset());
+    let glucose = window_glucose(&rows);
     let steps = window_steps(&rows);
     let workouts = workout_window_items(&rows, window_start, window_end);
     let events = window_events(&rows, window_start, window_end);
     let brief = window_brief(&heart_rate, &glucose, &steps, &workouts);
-    let span_minutes = (window_end - window_start).num_seconds() as f64 / 60.0;
+    let span_minutes = round1((window_end - window_start).num_seconds() as f64 / 60.0);
     Ok(json!({
         "from": iso(window_start), "to": iso(window_end), "span_minutes": span_minutes,
         "has_data": !rows.is_empty(), "entry_total": rows.len(), "entry_total_label": grouped(rows.len()),
@@ -147,7 +161,7 @@ fn rows_for_window(
             {
                 continue;
             }
-            let Some((start, end)) = row_interval(row, window_start.offset()) else {
+            let Some((start, end)) = row_interval(row) else {
                 continue;
             };
             if interval_overlaps(start, end, window_start, window_end) {
@@ -166,7 +180,7 @@ fn rows_for_window(
     for rows in by_day.into_values() {
         undated.extend(resolve_canonical_rows(rows));
     }
-    undated.sort_by_key(record_time);
+    undated.sort_by_key(row_timestamp);
     Ok(undated)
 }
 
@@ -250,14 +264,14 @@ fn window_heart_rate(rows: &[NormalizedRow]) -> Value {
     json!({"count":values.len(),"count_label":grouped(values.len()),"min":low,"max":high,"unit":unit,"label":label})
 }
 
-fn window_glucose(rows: &[NormalizedRow], offset: &FixedOffset) -> Value {
+fn window_glucose(rows: &[NormalizedRow]) -> Value {
     let mut readings = rows
         .iter()
         .filter_map(|row| {
             let record_type = string_field(&row.record_type).unwrap_or_default();
             (family(record_type) == "Glucose").then_some(())?;
             let value = value_number(row)?;
-            let time = row_time(row, offset)?;
+            let time = row_timestamp(row)?;
             let unit = string_field(&row.unit).filter(|unit| !unit.is_empty());
             Some((time, value, unit.map(str::to_owned), source_label(row)))
         })
@@ -341,13 +355,17 @@ fn workout_window_items(
 ) -> Vec<Value> {
     let mut items = rows.iter().filter_map(|row| {
         (string_field(&row.kind) == Some("workout")).then_some(())?;
-        let (start, end) = row_interval(row, window_start.offset())?;
+        let (start, end) = row_interval(row)?;
         let minutes = overlap_minutes(start, end, window_start, window_end);
         (minutes > 0.0).then_some(())?;
         let item = workout_item(row);
         Some(json!({"name":item["name"],"start":iso(start),"end":iso(end),"start_label":clock(start.naive_local()),"end_label":clock(end.naive_local()),"overlap_minutes":round1(minutes),"overlap_label":duration(minutes),"duration_label":item["duration"],"source":item["source"],"distance":item["distance"],"energy":item["energy"],"metric_labels":item["metric_labels"],"metrics_label":item["metrics_label"]}))
     }).collect::<Vec<_>>();
-    items.sort_by_key(|item| item["start"].as_str().map(str::to_owned));
+    items.sort_by_key(|item| {
+        item["start"]
+            .as_str()
+            .and_then(|value| parse_window_bound(Some(value)))
+    });
     items
 }
 
@@ -359,18 +377,33 @@ fn window_events(
     let mut events = workout_window_items(rows, window_start, window_end).into_iter().map(|item| json!({"kind":"workout","label":item["name"],"start":item["start"],"end":item["end"],"start_label":item["start_label"],"end_label":item["end_label"],"overlap_minutes":item["overlap_minutes"],"overlap_label":item["overlap_label"],"metric_labels":item["metric_labels"],"metrics_label":item["metrics_label"],"distance":item["distance"],"energy":item["energy"],"source":item["source"]})).collect::<Vec<_>>();
     let mut by_source =
         BTreeMap::<String, Vec<(NaiveDateTime, NaiveDateTime, Option<String>)>>::new();
+    let mut fixed_intervals = BTreeMap::<
+        String,
+        Vec<(
+            NaiveDateTime,
+            NaiveDateTime,
+            DateTime<FixedOffset>,
+            DateTime<FixedOffset>,
+        )>,
+    >::new();
     for row in rows {
         if !is_sleep_type(string_field(&row.record_type).unwrap_or_default()) {
             continue;
         }
-        let Some(start) = record_time(row) else {
+        let Some((start, end)) = row_interval(row) else {
             continue;
         };
-        let end = end_time(row).unwrap_or(start).max(start);
+        let local_start = start.naive_local();
+        let local_end = end.naive_local();
+        let source = source_label(row);
         by_source
-            .entry(source_label(row))
+            .entry(source.clone())
             .or_default()
-            .push((start, end, None));
+            .push((local_start, local_end, None));
+        fixed_intervals
+            .entry(source)
+            .or_default()
+            .push((local_start, local_end, start, end));
     }
     let final_day = (window_end - Duration::microseconds(1)).date_naive();
     let mut day = window_start.date_naive();
@@ -378,8 +411,23 @@ fn window_events(
     while day <= final_day {
         if let Some(sleep) = pick_day_sleep(&by_source, day, SLEEP_SESSION_GAP_MINUTES) {
             for (start, end) in sleep.main.into_iter().chain(sleep.naps) {
-                let start = at_offset(start, window_start.offset());
-                let end = at_offset(end, window_start.offset());
+                let Some(intervals) = fixed_intervals.get(&sleep.source) else {
+                    continue;
+                };
+                let Some(start) = intervals
+                    .iter()
+                    .find(|(local_start, _, _, _)| *local_start == start)
+                    .map(|(_, _, start, _)| *start)
+                else {
+                    continue;
+                };
+                let Some(end) = intervals
+                    .iter()
+                    .find(|(_, local_end, _, _)| *local_end == end)
+                    .map(|(_, _, _, end)| *end)
+                else {
+                    continue;
+                };
                 let minutes = overlap_minutes(start, end, window_start, window_end);
                 let key = (sleep.source.clone(), iso(start), iso(end));
                 if minutes > 0.0 && seen.insert(key) {
@@ -389,7 +437,11 @@ fn window_events(
         }
         day = day.succ_opt().expect("valid next day");
     }
-    events.sort_by_key(|item| item["start"].as_str().map(str::to_owned));
+    events.sort_by_key(|item| {
+        item["start"]
+            .as_str()
+            .and_then(|value| parse_window_bound(Some(value)))
+    });
     events
 }
 
@@ -415,14 +467,14 @@ fn window_hourly_items(
             let bucket_rows = rows
                 .iter()
                 .filter(|row| {
-                    row_interval(row, bucket_start.offset()).is_some_and(|(start, end)| {
+                    row_interval(row).is_some_and(|(start, end)| {
                         interval_overlaps(start, end, bucket_start, bucket_end)
                     })
                 })
                 .cloned()
                 .collect::<Vec<_>>();
             let heart_rate = window_heart_rate(&bucket_rows);
-            let glucose = window_glucose(&bucket_rows, bucket_start.offset());
+            let glucose = window_glucose(&bucket_rows);
             let steps = window_steps(&bucket_rows);
             let bucket_events = event_slice_for_bucket(events, bucket_start, bucket_end);
             let summary = hourly_summary(&heart_rate, &glucose, &steps, &bucket_events);
@@ -535,23 +587,25 @@ fn hourly_summary(
     items
 }
 
-fn row_interval(
-    row: &NormalizedRow,
-    offset: &FixedOffset,
-) -> Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
-    let start = row_time(row, offset)?;
-    let end = end_time(row)
-        .map(|time| at_offset(time, offset))
-        .unwrap_or(start)
-        .max(start);
+fn row_interval(row: &NormalizedRow) -> Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
+    let start = row_timestamp(row)?;
+    let end = end_timestamp(row).unwrap_or(start).max(start);
     Some((start, end))
 }
 
-fn row_time(row: &NormalizedRow, offset: &FixedOffset) -> Option<DateTime<FixedOffset>> {
-    record_time(row).map(|time| at_offset(time, offset))
+fn row_timestamp(row: &NormalizedRow) -> Option<DateTime<FixedOffset>> {
+    [
+        string_field(&row.start_date),
+        string_field(&row.start_time),
+        string_field(&row.end_date),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|value| parse_window_bound(Some(value)))
 }
-fn at_offset(time: NaiveDateTime, offset: &FixedOffset) -> DateTime<FixedOffset> {
-    DateTime::from_naive_utc_and_offset(time, *offset)
+
+fn end_timestamp(row: &NormalizedRow) -> Option<DateTime<FixedOffset>> {
+    string_field(&row.end_date).and_then(|value| parse_window_bound(Some(value)))
 }
 fn interval_overlaps(
     start: DateTime<FixedOffset>,
@@ -597,65 +651,14 @@ fn month_keys_between(start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) 
 fn iso(time: DateTime<FixedOffset>) -> String {
     time.to_rfc3339()
 }
-fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
-}
 fn grouped(value: usize) -> String {
-    format_grouped(value.to_string())
+    grouped_unsigned(value as u64)
 }
 fn grouped_signed(value: i64) -> String {
-    format_grouped(value.to_string())
-}
-fn format_grouped(value: String) -> String {
-    let (sign, digits) = value
-        .strip_prefix('-')
-        .map_or(("", value.as_str()), |digits| ("-", digits));
-    let mut output = String::new();
-    for (index, character) in digits.chars().rev().enumerate() {
-        if index > 0 && index % 3 == 0 {
-            output.push(',');
-        }
-        output.push(character);
-    }
-    format!("{sign}{}", output.chars().rev().collect::<String>())
-}
-fn valid_day(value: &str) -> bool {
-    value.len() == 8
-        && value.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(value, "%Y%m%d").is_ok()
+    grouped_i64(value)
 }
 fn is_audit_only_oura(record_type: &str) -> bool {
     matches!(record_type, "oura.session" | "oura.enhanced_tag")
-}
-fn query_params(raw: &str) -> BTreeMap<String, String> {
-    raw.split('&')
-        .filter_map(|item| item.split_once('='))
-        .map(|(key, value)| (percent_decode(key), percent_decode(value)))
-        .collect()
-}
-fn percent_decode(value: &str) -> String {
-    let mut output = Vec::new();
-    let bytes = value.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%'
-            && index + 2 < bytes.len()
-            && let Some(hex) = std::str::from_utf8(&bytes[index + 1..index + 3])
-                .ok()
-                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        {
-            output.push(hex);
-            index += 3;
-            continue;
-        }
-        output.push(if bytes[index] == b'+' {
-            b' '
-        } else {
-            bytes[index]
-        });
-        index += 1;
-    }
-    String::from_utf8_lossy(&output).into_owned()
 }
 
 #[cfg(test)]
@@ -827,6 +830,35 @@ mod tests {
     }
 
     #[test]
+    fn offset_bearing_rows_keep_their_own_offset_for_window_events() {
+        let root = TempDir::new();
+        seed(
+            root.path(),
+            BodyAggregateSeed::Absent,
+            vec![row(
+                "offset-workout",
+                "20260801",
+                "Watch",
+                "HKWorkoutActivityTypeRunning",
+                None,
+                "2026-08-01T10:00:00+02:00",
+                Some("2026-08-01T11:00:00+02:00"),
+                Some("workout"),
+            )],
+        );
+        let payload = build_window(
+            root.path(),
+            bound("2026-08-01T07:30:00Z"),
+            bound("2026-08-01T08:30:00Z"),
+        )
+        .unwrap();
+        assert_eq!(payload["entry_total"], 1);
+        assert_eq!(payload["workouts"][0]["start"], "2026-08-01T10:00:00+02:00");
+        assert_eq!(payload["events"][0]["start"], "2026-08-01T10:00:00+02:00");
+        assert_eq!(payload["events"][0]["overlap_minutes"], 30.0);
+    }
+
+    #[test]
     fn bucket_events_recompute_their_distinct_partial_overlaps() {
         let root = TempDir::new();
         seed(
@@ -917,6 +949,31 @@ mod tests {
         ] {
             assert_eq!(get(path).await.status(), StatusCode::OK, "{path}");
         }
+    }
+
+    #[test]
+    fn window_bounds_accept_minute_precision_and_round_span_minutes() {
+        assert_eq!(
+            parse_window_bound(Some("2026-08-01T10:30"))
+                .unwrap()
+                .to_rfc3339(),
+            "2026-08-01T10:30:00+00:00"
+        );
+        assert_eq!(
+            parse_window_bound(Some("2026-08-01T10:30+02:00"))
+                .unwrap()
+                .to_rfc3339(),
+            "2026-08-01T10:30:00+02:00"
+        );
+        let root = TempDir::new();
+        seed(root.path(), BodyAggregateSeed::Absent, Vec::new());
+        let payload = build_window(
+            root.path(),
+            bound("2026-08-01T00:00:00Z"),
+            bound("2026-08-01T00:01:35Z"),
+        )
+        .unwrap();
+        assert_eq!(payload["span_minutes"], 1.6);
     }
 
     #[test]

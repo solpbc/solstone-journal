@@ -14,6 +14,7 @@ mod health;
 mod inventory;
 mod month;
 mod presentation;
+mod query;
 mod router;
 mod seed;
 mod shard;

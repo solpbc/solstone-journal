@@ -10,7 +10,7 @@ use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
 use solstone_core_journal_config::read_journal_config;
 
-use crate::day::{source_label, string_field};
+use crate::day::{long_day, source_label, string_field, valid_day};
 use crate::{MonthReader, coverage_month_keys};
 
 pub(crate) const FRESHNESS_SCAN_MONTH_CAP: usize = 6;
@@ -81,7 +81,10 @@ pub(crate) fn expected_source_last_days(
     let existing = coverage_month_keys(root).map_err(|error| error.to_string())?;
     let mut reader = MonthReader::new(root);
     for month in recent_month_keys(today, FRESHNESS_SCAN_MONTH_CAP) {
-        if !existing.contains(&month) || last_days.values().all(Option::is_some) {
+        if last_days.values().all(Option::is_some) {
+            break;
+        }
+        if !existing.contains(&month) {
             continue;
         }
         let rows = reader
@@ -153,16 +156,6 @@ pub(crate) fn build_source_freshness(
         sources.push(entry);
     }
     Ok(json!({"sources": sources, "quiet_lines": quiet_lines, "quiet": !quiet_lines.is_empty()}))
-}
-
-fn valid_day(day: &str) -> bool {
-    day.len() == 8
-        && day.bytes().all(|byte| byte.is_ascii_digit())
-        && NaiveDate::parse_from_str(day, "%Y%m%d").is_ok()
-}
-
-fn long_day(day: NaiveDate) -> String {
-    crate::day::long_day(day)
 }
 
 #[cfg(test)]
@@ -323,5 +316,29 @@ mod tests {
             .find(|source| source["name"] == "Source")
             .unwrap();
         assert_eq!(source["last_day"], Value::Null);
+    }
+
+    #[test]
+    fn source_scan_stops_after_all_expected_sources_are_found() {
+        let root = TempDir::new();
+        seeded(
+            root.path(),
+            json!({"body":{"freshness":{"quiet_days":{"Source":1}}}}),
+            "20260801",
+            "Source Device",
+        );
+        let unreadable_older = root.path().join("imports/older/normalized/2026-07.jsonl");
+        fs::create_dir_all(unreadable_older.parent().unwrap()).unwrap();
+        fs::write(unreadable_older, "not json\n").unwrap();
+        let expected = quiet_day_expectations(root.path());
+        assert_eq!(
+            expected_source_last_days(
+                root.path(),
+                &expected,
+                NaiveDate::from_ymd_opt(2026, 8, 2).unwrap(),
+            )
+            .unwrap(),
+            BTreeMap::from([("Source".to_owned(), Some("20260801".to_owned()))])
+        );
     }
 }
