@@ -43,7 +43,7 @@ use x509_parser::oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY};
 
 use door_support::{
     EchoObservation, Fixture, body_echo_router, body_echo_router_with_observations,
-    multiplexed_requests, tree,
+    get_over_carrier, multiplexed_requests, tree,
 };
 
 #[derive(Debug)]
@@ -288,59 +288,6 @@ async fn complete_status_exchange(
                     .into_response()
                     .expect("complete stream B response");
             }
-        }
-    }
-}
-
-async fn get_over_carrier(
-    carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
-    decoder: &mut FrameDecoder,
-    dialer: &mut FrameDialer,
-    path: &str,
-) -> spl_core::http::HttpResponse {
-    let stream_id = dialer.allocate();
-    let request = format!("GET {path} HTTP/1.1\r\nhost: spl.local\r\ncontent-length: 0\r\n\r\n");
-    carrier
-        .write_all(
-            &Frame::new(stream_id, FLAG_OPEN | FLAG_DATA, request.into_bytes())
-                .encode()
-                .expect("request frame"),
-        )
-        .await
-        .expect("request writes");
-    carrier
-        .write_all(
-            &Frame::new(stream_id, FLAG_CLOSE, Vec::new())
-                .encode()
-                .expect("request close frame"),
-        )
-        .await
-        .expect("request closes");
-    carrier.flush().await.expect("request flushes");
-
-    let mut response = ResponseAssembler::new(stream_id);
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = carrier.read(&mut buffer).await.expect("response reads");
-        assert!(read > 0, "carrier closed before the response completed");
-        decoder.feed(&buffer[..read]);
-        for frame in decoder.drain().expect("response frames") {
-            if frame.stream_id != stream_id {
-                continue;
-            }
-            let output = response
-                .feed(&frame.encode().expect("routed response frame"))
-                .expect("response frame");
-            for frame in output.pongs.into_iter().chain(output.emit_frames) {
-                carrier
-                    .write_all(&frame)
-                    .await
-                    .expect("control frame writes");
-            }
-        }
-        carrier.flush().await.expect("control flushes");
-        if response.is_closed() {
-            return response.into_response().expect("complete response");
         }
     }
 }
@@ -1271,7 +1218,7 @@ async fn ac3_handshake_uses_the_ledger_while_publication_is_stale() {
     let (sender, publication) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    let handle = solstone_core_convey_shell::bind_with_authorization(
+    let mut handle = solstone_core_convey_shell::bind_with_authorization(
         options(&fixture, router(fixture.root.clone()), 0),
         router(fixture.root.clone()),
         sender,
@@ -1309,6 +1256,7 @@ async fn ac3_handshake_uses_the_ledger_while_publication_is_stale() {
         fresh_door_connection_is_refused(&fixture, port).await,
         "the TLS verifier must read the ledger instead of the stale publication"
     );
+    handle.stop_authorization_refresh().await;
     handle.shutdown();
 }
 

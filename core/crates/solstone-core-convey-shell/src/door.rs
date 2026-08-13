@@ -574,7 +574,10 @@ fn capture_to_basis(identity: &IdentityCell, peer: Option<SocketAddr>) -> Option
 }
 
 fn close_for_revocation(posture: &AuthorizedClientsRead, did: &LinkedDeviceDid) -> bool {
-    // The handshake fails closed on every non-`Present` posture it reads from the ledger itself. Once a device is authenticated, only a definite `Present` removal observed on this arm ends its carrier: a transient malformed/unreadable read must not discard captured material that exists nowhere else, and a dead publication now ends no carrier at all.
+    // The handshake fails closed on every non-`Present` posture it reads from the ledger itself.
+    // Once a device is authenticated, only a definite `Present` removal observed on this arm
+    // ends its carrier: a transient malformed/unreadable read must not discard captured material
+    // that exists nowhere else, and a dead publication now ends no carrier at all.
     matches!(posture, AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == did.as_str()))
 }
 

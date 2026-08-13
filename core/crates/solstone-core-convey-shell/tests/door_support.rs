@@ -23,6 +23,7 @@ use solstone_core_sol_link::ca::{generate_ca, jid_from_spki, sign_csr};
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsMutationError, ClientEntry, ClientRole, RemoveOutcome,
 };
+use spl_core::frame::{FLAG_CLOSE, FLAG_DATA, FLAG_OPEN, Frame, FrameDecoder, FrameDialer};
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -330,6 +331,59 @@ pub fn tree(root: &std::path::Path) -> Vec<PathBuf> {
     visit(root, root, &mut result);
     result.sort();
     result
+}
+
+pub async fn get_over_carrier(
+    carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    decoder: &mut FrameDecoder,
+    dialer: &mut FrameDialer,
+    path: &str,
+) -> spl_core::http::HttpResponse {
+    let stream_id = dialer.allocate();
+    let request = format!("GET {path} HTTP/1.1\r\nhost: spl.local\r\ncontent-length: 0\r\n\r\n");
+    carrier
+        .write_all(
+            &Frame::new(stream_id, FLAG_OPEN | FLAG_DATA, request.into_bytes())
+                .encode()
+                .expect("request frame"),
+        )
+        .await
+        .expect("request writes");
+    carrier
+        .write_all(
+            &Frame::new(stream_id, FLAG_CLOSE, Vec::new())
+                .encode()
+                .expect("request close frame"),
+        )
+        .await
+        .expect("request closes");
+    carrier.flush().await.expect("request flushes");
+
+    let mut response = ResponseAssembler::new(stream_id);
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = carrier.read(&mut buffer).await.expect("response reads");
+        assert!(read > 0, "carrier closed before the response completed");
+        decoder.feed(&buffer[..read]);
+        for frame in decoder.drain().expect("response frames") {
+            if frame.stream_id != stream_id {
+                continue;
+            }
+            let output = response
+                .feed(&frame.encode().expect("routed response frame"))
+                .expect("response frame");
+            for frame in output.pongs.into_iter().chain(output.emit_frames) {
+                carrier
+                    .write_all(&frame)
+                    .await
+                    .expect("control frame writes");
+            }
+        }
+        carrier.flush().await.expect("control flushes");
+        if response.is_closed() {
+            return response.into_response().expect("complete response");
+        }
+    }
 }
 
 /// Drive several HTTP uploads over one already-handshaken SPL carrier.
