@@ -1152,7 +1152,7 @@ fn pdf_runtime_mapping_ignores_make_control_plane_overrides() {
         fs::write(&makefile_path, makefile).expect("extend fixture Makefile");
 
         let output = Command::new("make")
-            .arg("print-pdf-runtime-contract")
+            .args(["--no-print-directory", "print-pdf-runtime-contract"])
             .args([
                 "HOST_SYSTEM=Plan9",
                 "HOST_ARCH=mips",
