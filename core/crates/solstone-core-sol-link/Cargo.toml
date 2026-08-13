@@ -14,11 +14,13 @@ default = ["client", "host"]
 client = []
 host = [
     "client",
+    "dep:base64",
     "dep:argon2",
     "dep:axum",
     "dep:hkdf",
     "dep:indexmap",
     "dep:log",
+    "dep:libc",
     "dep:rcgen",
     "dep:ring",
     "dep:sha2",
@@ -31,11 +33,13 @@ host = [
 ]
 
 [dependencies]
+base64 = { version = "0.22.1", optional = true }
 argon2 = { version = "0.5.3", optional = true }
 axum = { workspace = true, optional = true }
 hkdf = { version = "0.12.4", optional = true }
 indexmap = { version = "2.14.0", features = ["serde"], optional = true }
 log = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
 rcgen = { workspace = true, optional = true }
 ring = { version = "0.17.14", optional = true }
 rustls = { workspace = true }
@@ -74,5 +78,5 @@ required-features = ["host"]
 name = "device_door_tls"
 required-features = ["host"]
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"

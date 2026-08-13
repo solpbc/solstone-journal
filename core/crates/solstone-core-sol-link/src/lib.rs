@@ -30,6 +30,8 @@ pub mod http;
 pub mod ledger;
 #[cfg(feature = "host")]
 pub mod mark;
+#[cfg(feature = "host")]
+pub mod pairing;
 #[cfg(feature = "client")]
 mod pairing_entry;
 #[cfg(feature = "client")]

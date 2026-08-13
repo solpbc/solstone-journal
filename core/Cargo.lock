@@ -3456,8 +3456,10 @@ version = "1.0.22"
 dependencies = [
  "argon2",
  "axum",
+ "base64 0.22.1",
  "hkdf",
  "indexmap",
+ "libc",
  "log",
  "rcgen",
  "ring",
