@@ -91,7 +91,7 @@ pub fn spawn_authorization_refresh(
 
 /// TLS client-certificate verifier for the journal's paired-device door.
 ///
-/// ```compile_fail
+/// ```compile_fail,E0308
 /// use std::path::PathBuf;
 /// use solstone_core_sol_link::DeviceDoorVerifier;
 /// use solstone_core_sol_link::ledger::AuthorizationLedger;
@@ -102,7 +102,7 @@ pub fn spawn_authorization_refresh(
 /// ```
 pub struct DeviceDoorVerifier {
     inner: Arc<dyn ClientCertVerifier>,
-    authorization: watch::Receiver<DeviceDoorAuthorization>,
+    authorization: DeviceDoorAuthorization,
 }
 
 impl fmt::Debug for DeviceDoorVerifier {
@@ -114,10 +114,7 @@ impl fmt::Debug for DeviceDoorVerifier {
 }
 
 impl DeviceDoorVerifier {
-    pub fn new(
-        inner: Arc<dyn ClientCertVerifier>,
-        authorization: watch::Receiver<DeviceDoorAuthorization>,
-    ) -> Self {
+    pub fn new(inner: Arc<dyn ClientCertVerifier>, authorization: DeviceDoorAuthorization) -> Self {
         Self {
             inner,
             authorization,
@@ -148,8 +145,7 @@ impl ClientCertVerifier for DeviceDoorVerifier {
             .verify_client_cert(end_entity, intermediates, now)?;
 
         let lookup_key = certificate_lookup_key(end_entity);
-        let authorization = self.authorization.borrow().clone();
-        match authorization.as_read() {
+        match self.authorization.as_read() {
             AuthorizedClientsRead::Present(entries)
                 if entries.iter().any(|entry| entry.fingerprint == lookup_key) =>
             {
@@ -234,7 +230,10 @@ pub fn build_device_door_server_config(
     )
     .build()
     .map_err(DeviceDoorConfigError::Verifier)?;
-    let verifier = Arc::new(DeviceDoorVerifier::new(inner, authorization));
+    let verifier = Arc::new(DeviceDoorVerifier::new(
+        inner,
+        authorization.borrow().clone(),
+    ));
     let config = ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(DeviceDoorConfigError::Rustls)?
@@ -326,7 +325,9 @@ mod tests {
     fn supported_verify_schemes_match_inner_verifier() {
         let fixture = Fixture::new();
         assert_eq!(
-            fixture.verifier.supported_verify_schemes(),
+            fixture
+                .verifier_for(AuthorizedClientsRead::Missing)
+                .supported_verify_schemes(),
             fixture.inner.supported_verify_schemes()
         );
     }
@@ -334,19 +335,20 @@ mod tests {
     #[test]
     fn matching_present_entry_is_accepted() {
         let fixture = Fixture::new();
-        fixture.publish(AuthorizedClientsRead::Present(vec![entry(
-            &fixture.client_cert,
-        )]));
-        assert!(fixture.verify().is_ok());
+        assert!(
+            fixture
+                .verify(AuthorizedClientsRead::Present(vec![entry(
+                    &fixture.client_cert
+                )]))
+                .is_ok()
+        );
     }
 
     #[test]
     fn absent_present_entry_and_missing_are_access_denied() {
         let fixture = Fixture::new();
-        fixture.publish(AuthorizedClientsRead::Present(Vec::new()));
-        assert_access_denied(fixture.verify());
-        fixture.publish(AuthorizedClientsRead::Missing);
-        assert_access_denied(fixture.verify());
+        assert_access_denied(fixture.verify(AuthorizedClientsRead::Present(Vec::new())));
+        assert_access_denied(fixture.verify(AuthorizedClientsRead::Missing));
     }
 
     #[test]
@@ -359,8 +361,7 @@ mod tests {
             AuthorizationLedger::from_paths(path, temporary.path().join("devices.json"));
         let state = ledger.read_state();
         assert_eq!(state, AuthorizedClientsRead::Unreadable);
-        fixture.publish(state);
-        assert_certificate_unknown(fixture.verify());
+        assert_certificate_unknown(fixture.verify(state));
     }
 
     #[test]
@@ -373,28 +374,23 @@ mod tests {
             AuthorizationLedger::from_paths(path, temporary.path().join("devices.json"));
         let state = ledger.read_state();
         assert_eq!(state, AuthorizedClientsRead::Malformed);
-        fixture.publish(state);
-        assert_certificate_unknown(fixture.verify());
+        assert_certificate_unknown(fixture.verify(state));
     }
 
     #[test]
     fn unrelated_ca_is_rejected_before_authorization_lookup() {
         let fixture = Fixture::new();
         let unrelated = Fixture::new();
-        fixture.publish(AuthorizedClientsRead::Present(vec![entry(
-            &unrelated.client_cert,
-        )]));
-        let result =
-            fixture
-                .verifier
-                .verify_client_cert(&unrelated.client_cert, &[], UnixTime::now());
+        let result = fixture
+            .verifier_for(AuthorizedClientsRead::Present(vec![entry(
+                &unrelated.client_cert,
+            )]))
+            .verify_client_cert(&unrelated.client_cert, &[], UnixTime::now());
         assert!(result.is_err());
     }
 
     struct Fixture {
         inner: Arc<dyn ClientCertVerifier>,
-        verifier: DeviceDoorVerifier,
-        sender: watch::Sender<DeviceDoorAuthorization>,
         client_cert: CertificateDer<'static>,
     }
 
@@ -415,25 +411,15 @@ mod tests {
             let client = client_params.signed_by(&client_key, &ca, &ca_key).unwrap();
             let client_cert = CertificateDer::from(client.der().to_vec());
             let inner = inner_for(CertificateDer::from(ca.der().to_vec()));
-            let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
-                AuthorizedClientsRead::Missing,
-            ));
-            let verifier = DeviceDoorVerifier::new(inner.clone(), receiver);
-            Self {
-                inner,
-                verifier,
-                sender,
-                client_cert,
-            }
+            Self { inner, client_cert }
         }
 
-        fn publish(&self, state: AuthorizedClientsRead) {
-            self.sender
-                .send_replace(DeviceDoorAuthorization::from(state));
+        fn verifier_for(&self, state: AuthorizedClientsRead) -> DeviceDoorVerifier {
+            DeviceDoorVerifier::new(self.inner.clone(), DeviceDoorAuthorization::from(state))
         }
 
-        fn verify(&self) -> Result<ClientCertVerified, RustlsError> {
-            self.verifier
+        fn verify(&self, state: AuthorizedClientsRead) -> Result<ClientCertVerified, RustlsError> {
+            self.verifier_for(state)
                 .verify_client_cert(&self.client_cert, &[], UnixTime::now())
         }
     }
@@ -590,10 +576,12 @@ mod tests {
             inner,
             recorded: Mutex::new(None),
         });
-        let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
-            AuthorizedClientsRead::Present(vec![entry(&client_certificate)]),
+        let verifier = Arc::new(DeviceDoorVerifier::new(
+            recorder.clone(),
+            DeviceDoorAuthorization::from(AuthorizedClientsRead::Present(vec![entry(
+                &client_certificate,
+            )])),
         ));
-        let verifier = Arc::new(DeviceDoorVerifier::new(recorder.clone(), receiver));
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let server_config = Arc::new(
             ServerConfig::builder_with_provider(provider.clone())
@@ -627,7 +615,6 @@ mod tests {
             assert!(server.is_ok());
             assert!(client.is_ok());
         });
-        drop(sender);
         let signature = recorder.take();
         CapturedSignature {
             verifier,

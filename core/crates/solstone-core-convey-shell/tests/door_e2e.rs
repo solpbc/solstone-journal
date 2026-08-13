@@ -5,20 +5,26 @@
 //! integration-test crate, stronger than a feature-gated library test surface.
 
 mod door_support;
+#[path = "support/warn_capture.rs"]
+mod warn_capture;
 
+use std::fs::{self, File, OpenOptions};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::Extension;
 use axum::Router;
 use axum::routing::get;
+use nix::sys::stat::Mode;
+use nix::unistd::mkfifo;
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_shell::authorization_gate::authorized_router;
 use solstone_core_convey_shell::{
-    ConveyServeOptions, DoorOutcome, DoorWithheldReason, router, serve,
+    ConveyServeOptions, DoorOutcome, DoorWithheldReason, bind_with_authorization, router, serve,
 };
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
@@ -123,6 +129,45 @@ async fn tls_handshake(config: rustls::ClientConfig, port: u16) -> std::io::Resu
         )),
         Ok(Ok(_)) => Ok(()),
         Err(_) => Ok(()),
+    }
+}
+
+fn assert_tls_alert(result: std::io::Result<()>, alert: rustls::AlertDescription) {
+    let error = result.expect_err("TLS handshake must fail");
+    let rustls_error = error
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<rustls::Error>());
+    assert!(matches!(
+        rustls_error,
+        Some(rustls::Error::AlertReceived(received)) if *received == alert
+    ));
+}
+
+struct BlockingAuthorizationFifo {
+    path: std::path::PathBuf,
+    drain: Option<File>,
+}
+
+impl BlockingAuthorizationFifo {
+    fn replace(path: std::path::PathBuf) -> Self {
+        let _ = fs::remove_file(&path);
+        mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).expect("authorization FIFO creates");
+        let drain = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("authorization FIFO drain opens");
+        Self {
+            path,
+            drain: Some(drain),
+        }
+    }
+}
+
+impl Drop for BlockingAuthorizationFifo {
+    fn drop(&mut self) {
+        self.drain.take();
+        let _ = fs::remove_file(&self.path);
     }
 }
 
@@ -243,6 +288,59 @@ async fn complete_status_exchange(
                     .into_response()
                     .expect("complete stream B response");
             }
+        }
+    }
+}
+
+async fn get_over_carrier(
+    carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    decoder: &mut FrameDecoder,
+    dialer: &mut FrameDialer,
+    path: &str,
+) -> spl_core::http::HttpResponse {
+    let stream_id = dialer.allocate();
+    let request = format!("GET {path} HTTP/1.1\r\nhost: spl.local\r\ncontent-length: 0\r\n\r\n");
+    carrier
+        .write_all(
+            &Frame::new(stream_id, FLAG_OPEN | FLAG_DATA, request.into_bytes())
+                .encode()
+                .expect("request frame"),
+        )
+        .await
+        .expect("request writes");
+    carrier
+        .write_all(
+            &Frame::new(stream_id, FLAG_CLOSE, Vec::new())
+                .encode()
+                .expect("request close frame"),
+        )
+        .await
+        .expect("request closes");
+    carrier.flush().await.expect("request flushes");
+
+    let mut response = ResponseAssembler::new(stream_id);
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = carrier.read(&mut buffer).await.expect("response reads");
+        assert!(read > 0, "carrier closed before the response completed");
+        decoder.feed(&buffer[..read]);
+        for frame in decoder.drain().expect("response frames") {
+            if frame.stream_id != stream_id {
+                continue;
+            }
+            let output = response
+                .feed(&frame.encode().expect("routed response frame"))
+                .expect("response frame");
+            for frame in output.pongs.into_iter().chain(output.emit_frames) {
+                carrier
+                    .write_all(&frame)
+                    .await
+                    .expect("control frame writes");
+            }
+        }
+        carrier.flush().await.expect("control flushes");
+        if response.is_closed() {
+            return response.into_response().expect("complete response");
         }
     }
 }
@@ -399,6 +497,7 @@ fn options(fixture: &Fixture, app: Router, door_port: u16) -> ConveyServeOptions
         stream_stall_timeout: Duration::from_secs(2),
         router: app,
         carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
     }
 }
 
@@ -502,19 +601,28 @@ async fn door_connection_outcome(fixture: &Fixture, port: u16) -> DoorConnection
 async fn fresh_door_connection_is_refused(fixture: &Fixture, port: u16) -> bool {
     match tokio::time::timeout(Duration::from_secs(3), async {
         match tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await {
-            Err(_) => false,
-            Ok(stream) => TlsConnector::from(Arc::new(fixture.client_config(0)))
+            Err(_) => true,
+            Ok(stream) => match TlsConnector::from(Arc::new(fixture.client_config(0)))
                 .connect(
                     rustls::pki_types::ServerName::try_from("spl.local").expect("server name"),
                     stream,
                 )
                 .await
-                .is_ok(),
+            {
+                Err(_) => true,
+                Ok(mut stream) => {
+                    let mut byte = [0_u8; 1];
+                    matches!(
+                        tokio::time::timeout(Duration::from_secs(1), stream.read(&mut byte)).await,
+                        Ok(Err(_)) | Ok(Ok(0))
+                    )
+                }
+            },
         }
     })
     .await
     {
-        Ok(connected) => !connected,
+        Ok(refused) => refused,
         Err(_) => panic!("fresh door connection timed out after shutdown"),
     }
 }
@@ -554,6 +662,7 @@ async fn ac1_carrier_loop_counter_advances() {
         stream_stall_timeout: Duration::from_secs(2),
         router: router(fixture.root.clone()),
         carrier_loop_iterations: carrier_loop_iterations.clone(),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
     })
     .await
     .expect("serve");
@@ -595,6 +704,7 @@ async fn ac2_stop_authorization_refresh_stops_only_the_publisher() {
             stream_stall_timeout: Duration::from_secs(2),
             router: router(fixture.root.clone()),
             carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
         },
         router(fixture.root.clone()),
         authorization_sender,
@@ -637,6 +747,7 @@ async fn ac3_stop_authorization_refresh_is_noop_when_door_is_withheld() {
         stream_stall_timeout: Duration::from_secs(1),
         router: Router::new(),
         carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
     })
     .await
     .expect("loopback");
@@ -1155,6 +1266,141 @@ async fn ac9_revocation_refuses_a_new_connection_after_the_present_transition() 
 }
 
 #[tokio::test]
+async fn ac3_handshake_uses_the_ledger_while_publication_is_stale() {
+    let fixture = Fixture::established(1);
+    let (sender, publication) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let handle = solstone_core_convey_shell::bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        router(fixture.root.clone()),
+        sender,
+    )
+    .await
+    .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+
+    let established = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if matches!(
+                publication.borrow().as_read(),
+                AuthorizedClientsRead::Present(entries)
+                    if entries.iter().any(|entry| entry.fingerprint == did)
+            ) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await;
+    assert!(
+        established.is_ok(),
+        "publisher never reported the listed client"
+    );
+
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    assert!(matches!(
+        publication.borrow().as_read(),
+        AuthorizedClientsRead::Present(entries)
+            if entries.iter().any(|entry| entry.fingerprint == did)
+    ));
+    assert!(
+        fresh_door_connection_is_refused(&fixture, port).await,
+        "the TLS verifier must read the ledger instead of the stale publication"
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac4_each_carrier_snapshots_a_fresh_ledger_read() {
+    let fixture = Fixture::established(1);
+    let handshake_authorization_read_ticks = Arc::new(AtomicU64::new(0));
+    let (sender, _) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let mut handle = solstone_core_convey_shell::bind_with_authorization(
+        ConveyServeOptions {
+            journal_root: fixture.root.clone(),
+            loopback_port: 0,
+            door_port: 0,
+            handshake_timeout: Duration::from_secs(2),
+            stream_stall_timeout: Duration::from_secs(2),
+            router: router(fixture.root.clone()),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: handshake_authorization_read_ticks.clone(),
+        },
+        router(fixture.root.clone()),
+        sender,
+    )
+    .await
+    .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let before = handshake_authorization_read_ticks.load(Ordering::Relaxed);
+
+    drop(live_carrier(&fixture, port).await);
+    handle.stop_authorization_refresh().await;
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    assert_eq!(
+        ledger_posture(&fixture),
+        AuthorizedClientsRead::Present(Vec::new())
+    );
+    assert!(fresh_door_connection_is_refused(&fixture, port).await);
+    fixture.restore_authorization(0);
+    drop(live_carrier(&fixture, port).await);
+
+    // These three dials are the only carriers against this door in this window.
+    assert_eq!(
+        handshake_authorization_read_ticks.load(Ordering::Relaxed) - before,
+        3
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
+    let fixture = Fixture::established(1);
+    let (sender, _) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let mut handle = solstone_core_convey_shell::bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        router(fixture.root.clone()),
+        sender,
+    )
+    .await
+    .expect("serve");
+    let port = door_port(handle.door_outcome());
+    handle.stop_authorization_refresh().await;
+    let path = fixture.root.join("link/authorized_clients.json");
+
+    warn_capture::install_and_clear();
+    log::warn!("handshake warn capture control");
+    assert!(warn_capture::contains("warn capture control"));
+    warn_capture::clear();
+    let started = Instant::now();
+    let result = {
+        let _fifo = BlockingAuthorizationFifo::replace(path);
+        tls_handshake(fixture.client_config(0), port).await
+    };
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "hung read is bounded"
+    );
+    assert_tls_alert(result, rustls::AlertDescription::CertificateUnknown);
+    assert!(warn_capture::contains(
+        "handshake authorization read timed out"
+    ));
+
+    warn_capture::clear();
+    fixture.restore_authorization(0);
+    drop(live_carrier(&fixture, port).await);
+    assert!(warn_capture::is_empty(), "completed read must not warn");
+    handle.shutdown();
+}
+
+
+#[tokio::test]
 async fn ac13_python_shaped_state_with_and_without_locked_at_opens_the_door() {
     for locked_at in [None, Some("2026-01-01T00:00:00Z")] {
         let fixture = Fixture::established(1);
@@ -1567,6 +1813,7 @@ async fn ac23_unestablished_or_corrupt_session_withholds_door_without_ca_write()
             stream_stall_timeout: Duration::from_secs(1),
             router: Router::new(),
             carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
         })
         .await
         .expect("loopback");

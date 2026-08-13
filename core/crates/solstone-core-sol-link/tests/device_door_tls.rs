@@ -108,14 +108,14 @@ async fn unreadable_ledger_is_refused_with_certificate_unknown() {
 }
 
 #[tokio::test]
-async fn refresh_once_revokes_an_existing_server_config() {
+async fn server_config_built_after_refresh_snapshots_revoked_posture() {
     let temporary = TempDir::new();
     let fixture = TlsFixture::new();
     let mut ledger = AuthorizationLedger::new(temporary.path());
     let entry = fixture.entry();
     ledger.add(entry.clone()).unwrap();
     let (sender, receiver) = authorization_channel(&mut ledger);
-    let config = fixture.server_config(receiver);
+    let config = fixture.server_config(receiver.clone());
 
     let (server, client) = handshake(config.clone(), fixture.client_config()).await;
     assert!(server.is_ok());
@@ -128,19 +128,20 @@ async fn refresh_once_revokes_an_existing_server_config() {
             .authorized_removed
     );
     refresh_once(&mut ledger, &sender);
-    let (server, client) = handshake(config, fixture.client_config()).await;
+    let refreshed_config = fixture.server_config(receiver);
+    let (server, client) = handshake(refreshed_config, fixture.client_config()).await;
     assert!(server.is_err());
     assert_peer_alert(client, AlertDescription::AccessDenied);
 }
 
 #[tokio::test]
-async fn refresh_once_replaces_last_good_value_when_ledger_becomes_unreadable() {
+async fn server_config_built_after_refresh_snapshots_unreadable_posture() {
     let temporary = TempDir::new();
     let fixture = TlsFixture::new();
     let mut ledger = AuthorizationLedger::new(temporary.path());
     ledger.add(fixture.entry()).unwrap();
     let (sender, receiver) = authorization_channel(&mut ledger);
-    let config = fixture.server_config(receiver);
+    let config = fixture.server_config(receiver.clone());
 
     let (server, client) = handshake(config.clone(), fixture.client_config()).await;
     assert!(server.is_ok());
@@ -150,7 +151,8 @@ async fn refresh_once_replaces_last_good_value_when_ledger_becomes_unreadable() 
     fs::remove_file(&path).unwrap();
     fs::create_dir(&path).unwrap();
     refresh_once(&mut ledger, &sender);
-    let (server, client) = handshake(config, fixture.client_config()).await;
+    let refreshed_config = fixture.server_config(receiver);
+    let (server, client) = handshake(refreshed_config, fixture.client_config()).await;
     assert!(server.is_err());
     assert_peer_alert(client, AlertDescription::CertificateUnknown);
 }

@@ -25,7 +25,9 @@ use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid}
 use solstone_core_convey_http::serve::{mux_builder, serve_connection};
 use solstone_core_sol_link::ca::issue_server_certificate;
 use solstone_core_sol_link::committed::load_committed_identity;
-use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
+use solstone_core_sol_link::ledger::{
+    AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
+};
 use solstone_core_sol_link::{
     DeviceDoorAuthorization, DeviceDoorVerifier, spawn_authorization_refresh,
 };
@@ -48,6 +50,7 @@ pub(super) struct DoorStartOptions {
     pub stream_stall_timeout: Duration,
     pub router: Router,
     pub carrier_loop_iterations: Arc<AtomicU64>,
+    pub handshake_authorization_read_ticks: Arc<AtomicU64>,
     pub authorization_sender: watch::Sender<DeviceDoorAuthorization>,
 }
 
@@ -254,9 +257,12 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
-    // [check] This refresh adopts the sender supplied to bind_with_authorization.
-    // Production (run_convey) and authorization-gate tests share it with the
-    // gate router; serve() callers use the plain router and a disposable channel.
+    // [check] This refresh adopts the sender supplied to bind_with_authorization
+    // for carrier-loop revocation observation. The gate resolves its ledger
+    // directly; serve() callers use the plain router and a disposable channel.
+    let authorized_clients_path = AuthorizationLedger::new(&options.journal_root)
+        .authorized_clients_path()
+        .to_path_buf();
     let authorization = options.authorization_sender.subscribe();
     let refresh_task = spawn_authorization_refresh(
         AuthorizationLedger::new(&options.journal_root),
@@ -273,7 +279,9 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         authorization,
         handshake_timeout: options.handshake_timeout,
         journal_root: options.journal_root,
+        authorized_clients_path,
         carrier_loop_iterations: options.carrier_loop_iterations,
+        handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
     });
     let accept_task = tokio::spawn(accept_loop(
         listener,
@@ -295,7 +303,9 @@ struct DoorConnectionConfig {
     authorization: watch::Receiver<DeviceDoorAuthorization>,
     handshake_timeout: Duration,
     journal_root: PathBuf,
+    authorized_clients_path: PathBuf,
     carrier_loop_iterations: Arc<AtomicU64>,
+    handshake_authorization_read_ticks: Arc<AtomicU64>,
 }
 
 async fn accept_loop(
@@ -331,9 +341,30 @@ async fn serve_carrier(
         log::debug!("paired-device door could not configure TCP keepalive: {error}");
     }
     let identity: IdentityCell = Arc::new(Mutex::new(None));
+    let path = config.authorized_clients_path.clone();
+    #[cfg(debug_assertions)]
+    config
+        .handshake_authorization_read_ticks
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let authorization = match tokio::time::timeout(
+        Duration::from_millis(1000),
+        tokio::task::spawn_blocking(move || read_authorized_clients(&path)),
+    )
+    .await
+    {
+        Ok(Ok(posture)) => DeviceDoorAuthorization::from(posture),
+        Err(_) => {
+            log::warn!("paired-device handshake authorization read timed out after 1000 ms");
+            DeviceDoorAuthorization::from(AuthorizedClientsRead::Unreadable)
+        }
+        Ok(Err(error)) => {
+            log::warn!("paired-device handshake authorization read task failed: {error}");
+            DeviceDoorAuthorization::from(AuthorizedClientsRead::Unreadable)
+        }
+    };
     let device_verifier = Arc::new(DeviceDoorVerifier::new(
         config.verifier.clone(),
-        config.authorization.clone(),
+        authorization,
     ));
     let home_config = HomeConfig {
         certificate_chain: config.certificate_chain.clone(),

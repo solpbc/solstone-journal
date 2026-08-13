@@ -546,6 +546,7 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
             stream_stall_timeout: Duration::from_secs(2),
             router: router(fixture.root.clone()),
             carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
         },
         door_router,
         authorization_sender,

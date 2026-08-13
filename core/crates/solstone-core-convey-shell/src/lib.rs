@@ -160,6 +160,7 @@ pub struct ConveyServeOptions {
     pub stream_stall_timeout: Duration,
     pub router: Router,
     pub carrier_loop_iterations: Arc<AtomicU64>,
+    pub handshake_authorization_read_ticks: Arc<AtomicU64>,
 }
 
 /// Live host listener set. Call [`Self::shutdown`] in test and embedded lifecycles.
@@ -278,6 +279,7 @@ pub async fn bind_with_authorization(
         stream_stall_timeout: options.stream_stall_timeout,
         router: door_router,
         carrier_loop_iterations: options.carrier_loop_iterations,
+        handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         authorization_sender,
     })
     .await;
@@ -345,6 +347,7 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
                 stream_stall_timeout: Duration::from_secs(60),
                 router: loopback_router,
                 carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+                handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
             },
             door_router,
             authorization_sender,

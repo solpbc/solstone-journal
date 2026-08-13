@@ -21,7 +21,7 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use solstone_core_sol_link::ca::{generate_ca, jid_from_spki, sign_csr};
 use solstone_core_sol_link::ledger::{
-    AuthorizationLedger, AuthorizedClientsMutationError, RemoveOutcome,
+    AuthorizationLedger, AuthorizedClientsMutationError, ClientEntry, ClientRole, RemoveOutcome,
 };
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -126,6 +126,7 @@ pub struct Fixture {
     ca_der: CertificateDer<'static>,
     clients: Vec<Client>,
     established_authorized_clients: Vec<u8>,
+    instance_id: String,
 }
 pub struct Client {
     pub certificate: CertificateDer<'static>,
@@ -196,6 +197,7 @@ impl Fixture {
             ca_der,
             clients,
             established_authorized_clients,
+            instance_id,
         }
     }
     pub fn client_config(&self, index: usize) -> rustls::ClientConfig {
@@ -269,6 +271,39 @@ impl Fixture {
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 Err(error) => panic!("authorization removal failed: {error}"),
+            }
+        }
+    }
+
+    /// Restores one fixture client to the authorization ledger.
+    ///
+    /// A prior unreadable-posture induction can leave a directory here; clear
+    /// that non-file before `AuthorizationLedger::add` opens the ledger.
+    pub fn restore_authorization(&self, index: usize) {
+        let path = self.authorized_clients_path();
+        if matches!(fs::metadata(&path), Ok(metadata) if metadata.is_dir()) {
+            fs::remove_dir(&path).expect("unreadable authorization directory removes");
+        }
+        let entry = ClientEntry::new(
+            format!(
+                "sha256:{}",
+                spl_core::ca::sha256_hex(self.client_der(index))
+            ),
+            format!("device {index}"),
+            "2026-01-01T00:00:00Z",
+            self.instance_id.clone(),
+            ClientRole::Roleless,
+        );
+        let mut attempts = 0;
+        loop {
+            let mut ledger = AuthorizationLedger::new(&self.root);
+            match ledger.add(entry.clone()) {
+                Ok(_) => return,
+                Err(AuthorizedClientsMutationError::Lock(_)) if attempts < 5 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => panic!("authorization restore failed: {error}"),
             }
         }
     }
