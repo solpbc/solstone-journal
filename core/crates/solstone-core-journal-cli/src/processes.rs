@@ -102,6 +102,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["restart-convey"],
     },
     NativeProcessSpec {
+        token: "health",
+        binary: "solstone-core",
+        preset_argv: &["health"],
+    },
+    NativeProcessSpec {
         token: "check",
         binary: "solstone-core",
         preset_argv: &["check"],

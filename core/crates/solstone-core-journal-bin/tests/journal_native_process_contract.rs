@@ -19,7 +19,8 @@ mod production_processes;
 
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
 use solstone_core_cli::{
-    CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE,
+    CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
+    INSTALL_MODELS_USAGE,
 };
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
@@ -96,6 +97,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(RESTART_CONVEY_USAGE_ANCHOR),
+    },
+    Probe {
+        token: "health",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(HEALTH_USAGE.as_bytes()),
     },
     // Doctor's invalid-argument path exits 2 only after the sibling recognizes
     // the verb and emits its owner-facing usage. If the doctor arm were absent,
@@ -1192,6 +1199,7 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
 fn mandatory_native_sibling_failures_are_operator_errors() {
     for (token, binary) in [
         ("check", "solstone-core"),
+        ("health", "solstone-core"),
         ("depict", "solstone-core-depict"),
     ] {
         let harness = Harness::new();
@@ -1206,10 +1214,15 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
             "{token}: missing stderr={}",
             String::from_utf8_lossy(&output.stderr)
         );
+        assert!(
+            !context.poison_marker.exists(),
+            "{token}: no Python fallback"
+        );
     }
 
     for (token, binary) in [
         ("check", "solstone-core"),
+        ("health", "solstone-core"),
         ("depict", "solstone-core-depict"),
     ] {
         let harness = Harness::new();
@@ -1225,7 +1238,40 @@ fn mandatory_native_sibling_failures_are_operator_errors() {
             "{token}: non-executable stderr={}",
             String::from_utf8_lossy(&output.stderr)
         );
+        assert!(
+            !context.poison_marker.exists(),
+            "{token}: no Python fallback"
+        );
     }
+}
+
+#[test]
+fn native_health_dispatch_reaches_both_real_bodies_without_python() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal).expect("create isolated health journal");
+
+    let health =
+        run_dispatcher_with_output(&context, "health", &[]).expect("dispatch native health body");
+    assert_eq!(health.status.code(), Some(1));
+    assert!(health.stdout.is_empty());
+    assert_eq!(
+        health.stderr,
+        format!(
+            "Cannot connect: callosum socket not found at {}/health/callosum.sock\n",
+            context.journal.display()
+        )
+        .as_bytes()
+    );
+    assert!(!context.poison_marker.exists());
+
+    let logs = run_dispatcher_with_output(&context, "health", &["logs", "-f"])
+        .expect("dispatch native health logs body");
+    assert_eq!(logs.status.code(), Some(0));
+    assert!(logs.stdout.is_empty());
+    assert_eq!(logs.stderr, b"No health directory found.\n");
+    assert!(!context.poison_marker.exists());
 }
 
 #[test]
