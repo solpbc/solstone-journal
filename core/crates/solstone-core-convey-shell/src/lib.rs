@@ -457,6 +457,14 @@ pub fn router(journal_root: PathBuf) -> Router {
         )
         .route("/app/devices/api/{key_prefix}/key", get(devices::key))
         .route("/app/devices/api/create", post(devices::create_retired))
+        .route(
+            "/app/observer/callosum",
+            get(devices::observer_wire_refusal),
+        )
+        .route(
+            "/app/observer/ingest/{*tail}",
+            get(devices::observer_wire_refusal),
+        )
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))
         .route("/app/speakers/workspace", get(speakers::workspace))
