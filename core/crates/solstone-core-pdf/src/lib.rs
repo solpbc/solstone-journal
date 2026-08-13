@@ -1027,12 +1027,54 @@ fn apply_rlimits_from_env() -> Result<(), String> {
     let address_space = positive_env_int(ENV_RLIMIT_AS_MB, DEFAULT_RLIMIT_AS_MB)?;
     let cpu = positive_env_int(ENV_RLIMIT_CPU_SECONDS, DEFAULT_RLIMIT_CPU_SECONDS)?;
     if let Some(value) = address_space {
-        set_limit(libc::RLIMIT_AS, value.saturating_mul(1024 * 1024))?;
+        let budget = value.saturating_mul(1024 * 1024);
+        set_limit(libc::RLIMIT_AS, address_space_limit(budget)?)?;
     }
     if let Some(value) = cpu {
         set_limit(libc::RLIMIT_CPU, value)?;
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn address_space_limit(budget: u64) -> Result<u64, String> {
+    Ok(budget)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(
+    deprecated,
+    reason = "libc's wrapper is deprecated in favor of a new crate, not a different Darwin API"
+)]
+fn current_task() -> libc::mach_port_t {
+    unsafe { libc::mach_task_self() }
+}
+
+#[cfg(target_os = "macos")]
+fn address_space_limit(budget: u64) -> Result<u64, String> {
+    let mut info = std::mem::MaybeUninit::<libc::mach_task_basic_info>::zeroed();
+    let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
+    let status = unsafe {
+        libc::task_info(
+            current_task(),
+            libc::MACH_TASK_BASIC_INFO,
+            info.as_mut_ptr().cast::<libc::integer_t>(),
+            &mut count,
+        )
+    };
+    if status != libc::KERN_SUCCESS {
+        return Err(format!("task_info(MACH_TASK_BASIC_INFO): {status}"));
+    }
+    if count < libc::MACH_TASK_BASIC_INFO_COUNT {
+        return Err(format!(
+            "task_info(MACH_TASK_BASIC_INFO): short result ({count})"
+        ));
+    }
+    let info = unsafe { info.assume_init() };
+    let baseline = info.virtual_size;
+    baseline
+        .checked_add(budget)
+        .ok_or_else(|| "Darwin address-space limit overflow".to_owned())
 }
 
 fn positive_env_int(name: &str, default: u64) -> Result<Option<u64>, String> {
