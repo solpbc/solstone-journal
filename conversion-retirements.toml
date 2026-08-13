@@ -59,11 +59,11 @@ test_only_dependency_locations = []
 
 [[waves]]
 id = "AJ-C-config-cli"
-status = "in_progress"
+status = "done"
 # First-party Python-process retirement only: this wave retires no PyPI
 # distribution. `content_roots` intentionally excludes `core/`, so this
 # manifest proves removal from shipped Python content, not the Rust
-# replacement. Flip to status = "done" once config_cli.py is deleted.
+# replacement.
 distribution = "first-party-only"
 python_roots = ["solstone/think/config_cli.py"]
 import_roots = ["solstone.think.config_cli"]
