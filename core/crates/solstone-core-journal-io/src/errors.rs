@@ -4,6 +4,7 @@
 //! Error types for journal file-I/O primitives.
 
 use std::error::Error;
+use std::ffi::OsString;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -106,6 +107,94 @@ impl Error for LockError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Timeout(error) => Some(error),
+        }
+    }
+}
+
+/// Failure while acquiring a persistent lock entry under an existing parent.
+#[derive(Debug)]
+pub enum ExistingParentLockError {
+    /// The caller did not supply exactly one normal lock-entry name.
+    InvalidLockPath { name: OsString },
+    /// The requested parent directory does not exist.
+    MissingParent { parent: PathBuf },
+    /// The requested parent is a symlink or is not a directory.
+    UnsafeParent { parent: PathBuf, kind: &'static str },
+    /// The persistent lock entry is a symlink or is not a regular file.
+    UnsafeLockEntry { path: PathBuf, kind: &'static str },
+    /// The persistent lock entry does not have the required mode.
+    WrongMode { path: PathBuf, observed: u32 },
+    /// A filesystem operation failed.
+    Io {
+        operation: &'static str,
+        path: PathBuf,
+        source: io::Error,
+    },
+    /// The requested parent changed after it was inspected.
+    ParentChanged { parent: PathBuf },
+    /// The persistent lock-entry name changed during acquisition.
+    NamespaceChanged { path: PathBuf },
+    /// Acquisition exceeded the supplied deadline.
+    Timeout(LockTimeout),
+}
+
+impl fmt::Display for ExistingParentLockError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLockPath { name } => {
+                write!(formatter, "invalid persistent lock entry {name:?}")
+            }
+            Self::MissingParent { parent } => {
+                write!(
+                    formatter,
+                    "persistent lock parent is missing: {}",
+                    parent.display()
+                )
+            }
+            Self::UnsafeParent { parent, kind } => write!(
+                formatter,
+                "persistent lock parent is an unsafe {kind}: {}",
+                parent.display()
+            ),
+            Self::UnsafeLockEntry { path, kind } => write!(
+                formatter,
+                "persistent lock entry is an unsafe {kind}: {}",
+                path.display()
+            ),
+            Self::WrongMode { path, observed } => write!(
+                formatter,
+                "persistent lock entry has mode {observed:o}, expected 600: {}",
+                path.display()
+            ),
+            Self::Io {
+                operation,
+                path,
+                source,
+            } => write!(
+                formatter,
+                "{operation} failed for {}: {source}",
+                path.display()
+            ),
+            Self::ParentChanged { parent } => write!(
+                formatter,
+                "persistent lock parent changed during acquisition: {}",
+                parent.display()
+            ),
+            Self::NamespaceChanged { path } => write!(
+                formatter,
+                "persistent lock entry changed during acquisition: {}",
+                path.display()
+            ),
+            Self::Timeout(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for ExistingParentLockError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            _ => None,
         }
     }
 }
