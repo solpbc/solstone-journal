@@ -68,3 +68,33 @@ impl Error for EnumerationError {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum CollectError {
+    HealthDirectoryProbe(HealthDirectoryProbeError),
+    SupervisorProbe(HealthDirectoryProbeError),
+    Enumeration(EnumerationError),
+    InvalidUtf8(OrdinaryTailError),
+}
+
+impl fmt::Display for CollectError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::HealthDirectoryProbe(error) | Self::SupervisorProbe(error) => {
+                error.fmt(formatter)
+            }
+            Self::Enumeration(error) => error.fmt(formatter),
+            Self::InvalidUtf8(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for CollectError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::HealthDirectoryProbe(error) | Self::SupervisorProbe(error) => Some(error),
+            Self::Enumeration(error) => Some(error),
+            Self::InvalidUtf8(error) => Some(error),
+        }
+    }
+}

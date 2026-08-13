@@ -197,7 +197,7 @@ fn read_exact(file: &mut dyn TailFile, buffer: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn tail_slice(mut lines: Vec<String>, count: i64) -> Vec<String> {
+pub(crate) fn tail_slice<T>(mut lines: Vec<T>, count: i64) -> Vec<T> {
     let start = if count == 0 {
         0
     } else if count > 0 {

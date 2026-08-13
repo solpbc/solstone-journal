@@ -13,8 +13,10 @@ publish = false
 workspace = true
 
 [dependencies]
+chrono.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-journal-io.workspace = true
 
 [dev-dependencies]
 base64 = "0.22.1"

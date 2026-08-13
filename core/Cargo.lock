@@ -3266,9 +3266,11 @@ name = "solstone-core-operational-logs"
 version = "1.0.22"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-journal-io",
  "solstone-core-system",
  "solstone-core-system-health",
  "tempfile",
