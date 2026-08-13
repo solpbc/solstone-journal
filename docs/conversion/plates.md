@@ -94,18 +94,46 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 ⚠ **"Emits two strands" is stale** — it predates the wire/durable split. This plate emits **five** Tier-1 strands with five different contracts (`:journal-segment` fixture · `:system` schema · `:journal-segment-events` fixture · `:thinking` schema · `:segment-processing` fixture) plus the Tier-2 `S:segment-sense:speaker-id`. ⛔ The wire and durable halves of the event contract are deliberately separate; do not re-merge them.
 
-**Shape, measured 2026-08-05.** One long-running dispatcher plus three handlers, all separate processes:
+**Shape, re-measured 2026-08-13 — the plate is NATIVE.** One long-running dispatcher plus three
+handlers, all separate processes. ⛔ `observe/sense.py` and `observe/describe.py` **no longer exist**;
+both were deleted from `main` on 2026-08-13 (Lane AJ, `req_mvti7llt`).
 
 | | Module | Reads | Writes | Notes |
 |---|---|---|---|---|
-| dispatcher | `observe/sense.py` (1,508) | the `observe.observing` bus event, or a `--day` scan | nothing in the segment | spawns handlers by **file extension**, one `ThreadPoolExecutor` per handler, memory-gated, per-job wall-clock caps (`describe` 1800s · `transcribe` 2700s · `depict` 600s) |
+| dispatcher | **`solstone-core-sense`** (library crate, wired as the `solstone-core sense` subcommand) | the `observe.observing` bus event, or a `--day` scan | nothing in the segment | spawns handlers by **file extension**, one worker pool per handler, memory-gated, per-job wall-clock caps (`describe` 1800s · `transcribe` 2700s · `depict` 600s) |
 | audio | `observe/transcribe/` (~3,100) | `.flac .opus .ogg .m4a .mp3 .wav` | `<stem>.jsonl`, `<stem>.npz` | VAD → silence reduction → backend registry → STT → native speaker analysis |
-| screen | retired Python reference `observe/describe.py` (1,660) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract |
+| screen | **`solstone-core-describe`** (sibling binary, 7,221 lines) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract. ⚠ **Linux-only** — see below |
 | image reference | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | frozen oracle for the native handler |
 
-🔴 **The dispatcher is the plate.** Its behaviour is not incidental: skip and defer gates, re-entry rules, the memory gate, the watchdog, `exit 69` hold-raw, and segment completion all live there, and none of it is in a handler. ⚠ `observe/{hear,screen,see,grab,pdf_worker}.py` (2,269 lines) carry `observe/` names but are **read-side or other plates entirely** — sense reaches none of them.
+🍎 **`describe` ships Linux-only, deliberately.** A macOS journal host has no `journal describe`: it
+dispatches to a sibling not installed there and exits **70**, which `sense` records as a segment error
+and notifies. 🔒 Founder decision 2026-08-13
+([rec](../../records/decisions/260812-founder-describe-cuts-over-linux-only-and-macos-loses-it.md) in
+the org repo) — holding the cut would have stranded a landed handler behind a signing credential no
+session can obtain. ⚠ The mac wheel **builds**; only signing is missing.
+
+⚠ **The dispatcher spawns handlers by NAME** (`["journal", "describe", …]`), so the `journal` entry
+point must be on `PATH`. An absolute-path invocation without it makes **every** handler spawn fail.
+
+🔴 **The dispatcher is the plate.** Its behaviour is not incidental: skip and defer gates, re-entry rules, the memory gate, the watchdog, `exit 69` hold-raw, and segment completion all live there, and none of it is in a handler. ⚠ **Two more that were never written down and the native port carries:** the **deferred / no-engine gate** — for a *live* (non-batch) segment, `mode == "deferred"` or no thinking engine chosen means no file is tracked, **no handler spawns**, and `observed` is emitted immediately with note `deferred` / `no_engine`, which is the owner's don't-process-live switch — and **`<day>/health/stream.updated`**, touched on completion for **live segments only**, with named downstream consumers; ⛔ batch (re-process / importer) segments must not advance it. ⚠ `observe/{hear,screen,see,grab,pdf_worker}.py` (2,269 lines) carry `observe/` names but are **read-side or other plates entirely** — sense reaches none of them.
 
 ⚠ **Handler exit codes are a contract of their own** and `observe/exit_codes.py` declares only part of it: `EXIT_PROVIDER_BLOCKED = 69`, plus `WATCHDOG_TIMEOUT`, which despite the module name is **a log string compared against nothing**. Also live and undeclared: **1** (transcribe hard failure and speaker-analysis failure), and **78** — ⚠ which is *not* a handler code at all but the dispatcher's own startup exit (`sense.py:1423`), before any handler runs.
+
+🔴 **A code CHANGED MEANING on 2026-08-13** (Lane AJ, `req_mvti7llt`). The dispatcher's result for an
+**unresolvable native sibling** moved from **69 to 70** across all native tokens, so **69 now means
+only** *"a handler ran and hit an owner-remediable provider condition."* ⚠ The reason is the one that
+matters: at 69 the dispatcher reads a missing sibling as an honest deferral — no error recorded, no
+notification, input left in place, re-picked forever — so a verb genuinely unavailable on a platform
+looks identical to a busy provider. **70 surfaces; 69 defers.** ⛔ Do not re-collapse them.
+📌 Three greppable operator diagnostics distinguish the causes, since the exit code no longer does:
+`native-helper-missing:` · `native-helper-not-executable:` · `native-helper-current-exe:`.
+
+🔴 **⛔ `sense` exits 0 and prints a success banner when EVERY handler fails to spawn** — measured
+2026-08-13. Its `observed` event correctly carries `error: true` and a populated `errors` list, so the
+plate contract holds; the CLI discards it. ⚠ Compounded by `solstone-core` installing no logger, which
+leaves the `ManagedProcess` log for a failed handler at **zero bytes**. Carrier `vpe-244` in the org
+repo. ⚠ Related: `describe` discards a *specific* refusal reason on its own blocked path — the reason
+is carried to `RunError::Blocked`, which is a unit variant that drops it (`vpe-242`).
 
 🔴 **CORRECTED 2026-08-05 — "a deferral records neither success nor failure" is FALSE, and the comment that says so is in the code.** `sense.py:549-560` states the intent and does not implement it. The `69` branch and the `exit 0` branch **both** call `_check_segment_observed(file_path)`; the *only* difference is that success additionally calls `_record_successful_contact()`, a health-beacon counter — and that same counter is also ticked by the idle status loop every 5 seconds (`:885-887`), so it distinguishes nothing durable either.
 
@@ -581,6 +609,20 @@ The speculative-facet aggregation and candidate-record upsert are native, and `j
 ## `P-journal-config`
 
 `journal/config/journal.json`. Durable, `0o600`, mutated under `hold_lock` + `atomic_replace` with an explicit transaction type.
+
+⚠ **The PLATE is that file; the owner VERB reaches wider — do not conflate them.** `journal config`
+(native since 2026-08-13, `solstone-core config`; `think/config_cli.py` deleted) touches this file only
+through `journal_is_active`. Its other surfaces are **not** this plate's: `~/.config/solstone/config.toml`,
+and the managed `sol`/`journal` wrapper scripts in `~/.local/bin/` — whose embedded `SOLSTONE_JOURNAL`
+and `SOL_BIN` it parses and rewrites under an `flock` on `~/.local/bin/.sol.lock`, with the version
+marker **read `[1-7]` and written `7`** — and **the owner's journal directory itself**, which `--move`
+renames. ⚠ `--merge` is a **stub** that refuses with fixed owner copy. ⚠ Eight destructive-path exits,
+seven of them `2` and one `1` after a post-rename rollback that prints nothing on success.
+
+🔴 **The single-owner lint is now blind, exactly as this section predicted.** It said: *"once the
+durable write lives behind a process boundary, the real writer is a subprocess, which no lint over
+Python call shapes can observe."* That boundary now exists. ⛔ Do not read a green
+`check_journal_config_owner.py` as the invariant it used to approximate.
 
 ⚠ **"Read by 30 production modules" is one row of four, and it is a floor for the plate.** Measured by AST over the non-test tree: **31** modules import the reader (30 excluding the config module itself, so the figure is right for what it counts), **19** modules make **46** calls to the mutator, 17 import the read-side helpers, 7 import the error type. **The union is 55 production modules**, and the writer half is where a cutover's work is. ⚠ None of the 36 reader call sites sits inside a loop.
 
