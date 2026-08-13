@@ -2793,6 +2793,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-journal-io",
  "solstone-core-npy",
+ "solstone-core-observer",
  "solstone-core-sol-link",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",

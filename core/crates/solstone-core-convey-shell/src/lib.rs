@@ -90,6 +90,7 @@ use solstone_core_sol_link::DeviceDoorAuthorization;
 mod assets;
 #[cfg(feature = "host")]
 pub mod authorization_gate;
+mod devices;
 #[cfg(feature = "host")]
 mod door;
 #[cfg(feature = "host")]
@@ -446,6 +447,15 @@ pub fn router(journal_root: PathBuf) -> Router {
             get(network::nonce_status),
         )
         .route(spl_core::PAIR_PATH, post(network::pair))
+        .route("/app/devices/", get(devices::shell))
+        .route("/app/devices/workspace", get(devices::workspace))
+        .route("/app/devices/api/list", get(devices::list))
+        .route(
+            "/app/devices/api/{key_prefix}",
+            axum::routing::delete(devices::delete),
+        )
+        .route("/app/devices/api/{key_prefix}/key", get(devices::key))
+        .route("/app/devices/api/create", post(devices::create_retired))
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))
         .route("/app/speakers/workspace", get(speakers::workspace))

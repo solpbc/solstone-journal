@@ -157,10 +157,17 @@ fn main() {
     let favicon = root.join("favicon.ico");
     let workspace = speakers_root.join("workspace.html");
     let speakers_static = speakers_root.join("who_is_this.js");
+    let devices_workspace = manifest.join("assets/devices/workspace.html");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
-    for path in [&favicon, &workspace, &speakers_static, &speakers_copy] {
+    for path in [
+        &favicon,
+        &workspace,
+        &speakers_static,
+        &speakers_copy,
+        &devices_workspace,
+    ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 
@@ -174,6 +181,7 @@ fn main() {
         assets.push((format!("/static/{relative}"), path));
     }
     assets.push(("/favicon.ico".to_owned(), favicon));
+    assets.push(("/app/devices/workspace".to_owned(), devices_workspace));
     assets.push(("/app/speakers/workspace".to_owned(), workspace));
     assets.push((
         "/app/speakers/static/who_is_this.js".to_owned(),
