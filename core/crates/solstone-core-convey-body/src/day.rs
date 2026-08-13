@@ -779,14 +779,18 @@ fn primary_total(rows: &[NormalizedRow]) -> Option<(f64, String, usize, Vec<Stri
             entry.2 += 1;
         }
     }
-    let (source, (total, _, samples)) = values
-        .iter()
-        .filter(|(_, (_, coverage, _))| *coverage > 0.0)
-        .max_by(|(a, (_, ac, _)), (b, (_, bc, _))| {
-            ac.partial_cmp(bc)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| b.cmp(a))
-        })?;
+    let (source, (total, _, samples)) = if values.len() == 1 {
+        values.iter().next()?
+    } else {
+        values
+            .iter()
+            .filter(|(_, (_, coverage, _))| *coverage > 0.0)
+            .max_by(|(a, (_, ac, _)), (b, (_, bc, _))| {
+                ac.partial_cmp(bc)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| b.cmp(a))
+            })?
+    };
     Some((
         *total,
         source.clone(),
@@ -961,14 +965,24 @@ fn heart_series(samples: &[(&NormalizedRow, f64)]) -> Option<Value> {
     if samples.len() < HEART_CURVE_MIN_READINGS {
         return None;
     };
-    let units = samples
+    let raw_units = samples
         .iter()
         .filter_map(|(row, _)| unit(row))
         .collect::<BTreeSet<_>>();
-    if units.len() != 1 {
-        return None;
+    let unit = match raw_units.len() {
+        0 => None,
+        1 => raw_units.iter().next().map(|unit| (*unit).to_owned()),
+        _ => {
+            let display_units = raw_units
+                .iter()
+                .filter_map(|unit| friendly_unit_label(HEART_RATE, Some(unit)))
+                .collect::<BTreeSet<_>>();
+            if display_units.len() != 1 {
+                return None;
+            }
+            display_units.into_iter().next()
+        }
     };
-    let unit = *units.iter().next()?;
     let mut readings = samples
         .iter()
         .filter_map(|(row, value)| record_time(row).map(|time| (time, *value)))
@@ -1037,7 +1051,7 @@ fn heart_series(samples: &[(&NormalizedRow, f64)]) -> Option<Value> {
         Vec::new()
     };
     Some(
-        json!({"unit":unit,"unit_label":friendly_unit_label(HEART_RATE,Some(unit)),"count":values.len(),"count_label":values.len().to_string(),"min":low,"max":high,"bucket_minutes":5,"points":stats.iter().map(|(x,mid,_,_)|json!([x,mid])).collect::<Vec<_>>(),"bands":stats.iter().map(|(x,_,low,high)|json!([x,low,high])).collect::<Vec<_>>(),"svg":{"width":SVG_WIDTH,"height":SVG_HEIGHT,"paths":paths,"band_paths":band_paths,"dots":[],"y_min_label":number(lo),"y_max_label":number(hi)}}),
+        json!({"unit":unit,"unit_label":friendly_unit_label(HEART_RATE,unit.as_deref()),"count":values.len(),"count_label":values.len().to_string(),"min":low,"max":high,"bucket_minutes":5,"points":stats.iter().map(|(x,mid,_,_)|json!([x,mid])).collect::<Vec<_>>(),"bands":stats.iter().map(|(x,_,low,high)|json!([x,low,high])).collect::<Vec<_>>(),"svg":{"width":SVG_WIDTH,"height":SVG_HEIGHT,"paths":paths,"band_paths":band_paths,"dots":[],"y_min_label":number(lo),"y_max_label":number(hi)}}),
     )
 }
 
@@ -1475,7 +1489,7 @@ mod tests {
     }
 
     /// Rust transcription of the deterministic Python corpus seed.
-    fn seed_populated_body_journal(root: &Path) {
+    fn seed_populated_body_journal(root: &Path) -> crate::BodySeedReport {
         let anchor = NaiveDate::from_ymd_opt(2026, 8, 1).expect("anchor");
         let mut apple = Vec::new();
         let mut oura = Vec::new();
@@ -1751,7 +1765,7 @@ mod tests {
             ],
             aggregate: BodyAggregateSeed::Direct,
         };
-        seed_body_journal(root, &seed).expect("corpus journal seeds");
+        let report = seed_body_journal(root, &seed).expect("corpus journal seeds");
         // The Python aggregate skips the one intentionally keyless row; the
         // generic Rust fixture writer otherwise records every supplied row.
         rusqlite::Connection::open(root.join("imports/health-dedupe.sqlite"))
@@ -1765,6 +1779,7 @@ mod tests {
             "{\"import_id\": \"unreadable\"",
         )
         .expect("broken manifest writes");
+        report
     }
 
     fn row(import_id: &str, dedupe_key: &str) -> NormalizedRow {
@@ -1890,6 +1905,50 @@ mod tests {
             hrv_mirror.record_type =
                 FieldState::Present(json!("HKQuantityTypeIdentifierHeartRateVariabilitySDNN"));
             assert_eq!(resolve_canonical_rows(vec![api, hrv_mirror]).len(), 2);
+        }
+
+        #[test]
+        fn mirror_rows_without_an_api_pipe_remain_in_the_payload() {
+            let root = TempDir::new();
+            let heart = health_row(
+                HEART_RATE,
+                "2026-01-01T08:00:00+00:00".to_owned(),
+                Some(json!(60)),
+                Some("count/min"),
+                "Oura Ring",
+                None,
+                None,
+                None,
+            );
+            let hrv = health_row(
+                "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+                "2026-01-01T08:05:00+00:00".to_owned(),
+                Some(json!(40)),
+                Some("ms"),
+                "Oura Ring",
+                None,
+                None,
+                None,
+            );
+            seed_fixture(
+                root.path(),
+                vec![bundle("20260102_080000", APPLE, vec![heart, hrv])],
+            );
+            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let audit_total = payload["audit"]["types"]
+                .as_object()
+                .unwrap()
+                .values()
+                .map(Value::as_u64)
+                .sum::<Option<u64>>()
+                .unwrap();
+            assert_eq!(payload["entry_total"], audit_total);
+            assert!(payload["audit"]["types"].get(HEART_RATE).is_some());
+            assert!(
+                payload["audit"]["types"]
+                    .get("HKQuantityTypeIdentifierHeartRateVariabilitySDNN")
+                    .is_some()
+            );
         }
 
         #[test]
@@ -2125,7 +2184,7 @@ mod tests {
             short.end_date = FieldState::Present(json!("2026-01-02T05:00:00+00:00"));
             short.source_name = FieldState::Present(json!("Watch"));
             let mut long = short.clone();
-            long.source_name = FieldState::Present(json!("Watch"));
+            long.source_name = FieldState::Present(json!("Ring"));
             long.start_date = FieldState::Present(json!("2026-01-01T21:00:00+00:00"));
             let mut clipped = simple_row(
                 OURA_SLEEP,
@@ -2134,7 +2193,7 @@ mod tests {
                 Some(json!(1)),
             );
             clipped.end_date = FieldState::Present(json!("2026-01-02T18:02:00+00:00"));
-            clipped.source_name = FieldState::Present(json!("Watch"));
+            clipped.source_name = FieldState::Present(json!("Ring"));
             let mut dropped = simple_row(
                 OURA_SLEEP,
                 "20260102",
@@ -2142,7 +2201,7 @@ mod tests {
                 Some(json!(1)),
             );
             dropped.end_date = FieldState::Present(json!("2026-01-02T18:10:00+00:00"));
-            dropped.source_name = FieldState::Present(json!("Watch"));
+            dropped.source_name = FieldState::Present(json!("Ring"));
             let sleep = sleep_analysis(
                 &[clipped, dropped],
                 &[short, long],
@@ -2321,6 +2380,21 @@ mod tests {
             z.source_name = FieldState::Present(json!("Zulu"));
             assert_eq!(primary_total(&[z, a]).unwrap().1, "Alpha");
         }
+
+        #[test]
+        fn single_source_steps_without_an_interval_keep_the_total_mode() {
+            let mut row = simple_row(
+                "HKQuantityTypeIdentifierStepCount",
+                "20260101",
+                "2026-01-01T08:00:00+00:00",
+                Some(json!(1234)),
+            );
+            row.source_name = FieldState::Present(json!("Watch"));
+            let steps = activity_analysis(&[row]).unwrap()["steps"].clone();
+            assert_eq!(steps["mode"], "total");
+            assert_eq!(steps["total"], 1234);
+            assert_eq!(steps["source"], "Watch");
+        }
         #[test]
         fn workout_kind_is_the_discriminator() {
             let base = simple_row(
@@ -2380,6 +2454,31 @@ mod tests {
                 12
             );
         }
+
+        #[test]
+        fn curve_combines_display_equivalent_units_across_pipes() {
+            let rows = (0..HEART_CURVE_MIN_READINGS)
+                .map(|index| {
+                    let is_oura = index % 2 == 1;
+                    let mut row = simple_row(
+                        if is_oura { OURA_HEART_RATE } else { HEART_RATE },
+                        "20260101",
+                        &format!("2026-01-01T08:{:02}:00+00:00", index),
+                        Some(json!(60 + index)),
+                    );
+                    row.unit =
+                        FieldState::Present(json!(if is_oura { "bpm" } else { "count/min" }));
+                    row.source_family =
+                        FieldState::Present(json!(if is_oura { OURA_API } else { APPLE }));
+                    row.source_name =
+                        FieldState::Present(json!(if is_oura { "Oura API" } else { "Watch" }));
+                    row
+                })
+                .collect::<Vec<_>>();
+            let series = heart_analysis(&rows, &BTreeMap::new()).unwrap()["series"].clone();
+            assert_eq!(series["count"], HEART_CURVE_MIN_READINGS);
+            assert_eq!(series["unit_label"], "bpm");
+        }
         #[test]
         fn ring_resting_hr_is_a_comparison_not_a_second_fact() {
             let mut watch = simple_row(
@@ -2404,6 +2503,20 @@ mod tests {
                 "Watch 58 bpm · Oura (API) 56 bpm"
             );
         }
+
+        #[test]
+        fn ring_only_resting_hr_has_no_comparison_line() {
+            let mut ring = simple_row(
+                OURA_SLEEP,
+                "20260101",
+                "2026-01-01T23:00:00+00:00",
+                Some(json!(1)),
+            );
+            ring.metadata = FieldState::Present(json!({"lowest_heart_rate":56}));
+            let card = heart_analysis(&[ring], &BTreeMap::new()).unwrap();
+            assert_eq!(card["facts"][0]["value"], "56 bpm · Oura's measurement");
+            assert!(card["resting_comparison_line"].is_null());
+        }
         #[test]
         fn cardiovascular_age_is_in_card_and_audit_appendix() {
             let mut row = simple_row(
@@ -2419,6 +2532,18 @@ mod tests {
                 "Vascular age"
             );
             assert_eq!(oura_appendix(&[row]).len(), 1);
+        }
+
+        #[test]
+        fn cardiovascular_age_without_velocity_has_no_audit_appendix() {
+            let mut row = simple_row(
+                OURA_CARDIOVASCULAR_AGE,
+                "20260101",
+                "2026-01-01T04:00:00+00:00",
+                Some(json!(42)),
+            );
+            row.source_family = FieldState::Present(json!(OURA_API));
+            assert!(oura_appendix(&[row]).is_empty());
         }
         #[test]
         fn glucose_stays_partitioned_by_unit() {
@@ -2469,7 +2594,8 @@ mod tests {
             seed_populated_body_journal(root.path());
             let db = root.path().join("imports/health-dedupe.sqlite");
             fs::remove_file(&db).unwrap();
-            let (_, missing) = get(root.path(), "/app/body/api/day/20260801").await;
+            let (status, missing) = get(root.path(), "/app/body/api/day/20260801").await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
             assert_eq!(missing["reason_code"], "body_store_aggregate_missing");
             rusqlite::Connection::open(&db)
                 .unwrap()
@@ -2531,8 +2657,19 @@ mod tests {
             let (status, body) = get(root.path(), "/app/body/api/day/20260102").await;
             assert_eq!(status, StatusCode::OK);
             assert!(!body["has_data"].as_bool().unwrap());
+            assert_eq!(body["entry_total"], 0);
             assert!(body["sleep"].is_null());
+            assert!(body["glucose"].is_null());
+            assert!(body["glucose_series"].as_array().unwrap().is_empty());
             assert!(body["activity"].is_null());
+            assert!(body["heart"].is_null());
+            assert!(body["recovery"].is_null());
+            assert!(body["sources"].is_null());
+            assert!(body["mind_sound"].is_null());
+            assert!(body["walking"].is_null());
+            assert!(body["body_measurements"].is_null());
+            assert!(body["other_signals"].is_null());
+            assert!(body["prompts"].as_array().unwrap().is_empty());
             assert_eq!(body["nearest"]["prev"], "20260101");
             assert_eq!(body["nearest"]["next"], "20260103");
         }
@@ -2554,6 +2691,25 @@ mod tests {
                 .clone()
         }
 
+        fn baseline_fields_are(payload: &Value, present: bool) {
+            for (container, key) in [
+                (&payload["heart"]["facts"][0], "typical"),
+                (&payload["heart"]["facts"][0], "typical_label"),
+                (&payload["recovery"]["facts"][0], "typical"),
+                (&payload["recovery"]["facts"][0], "typical_label"),
+                (&payload["sleep"], "asleep_typical"),
+                (&payload["sleep"], "asleep_typical_label"),
+                (&payload["sleep"], "score_typical"),
+                (&payload["sleep"], "score_typical_label"),
+            ] {
+                assert_eq!(
+                    container.as_object().unwrap().contains_key(key),
+                    present,
+                    "{key} presence"
+                );
+            }
+        }
+
         #[test]
         fn first_run_day_payload_matches_recorded_corpus() {
             let root = TempDir::new();
@@ -2566,6 +2722,7 @@ mod tests {
             )
             .expect("day builds");
             let expected = recorded("first_run", "/app/body/api/day/<day>");
+            baseline_fields_are(&actual, false);
             assert_eq!(first_difference(&actual, &expected, "$"), None);
         }
 
@@ -2635,6 +2792,7 @@ mod tests {
                 stats.as_deref(),
             )
             .expect("day builds");
+            baseline_fields_are(&actual, true);
             assert_eq!(
                 first_difference(&actual, &recorded("fixed", "/app/body/api/day/<day>"), "$"),
                 None
@@ -2644,7 +2802,7 @@ mod tests {
         #[test]
         fn seeded_journal_metrics_match_corpus() {
             let root = TempDir::new();
-            seed_populated_body_journal(root.path());
+            let report = seed_populated_body_journal(root.path());
             let corpus: Value =
                 serde_json::from_str(include_str!("../../../fixtures/convey_body_corpus.json"))
                     .expect("corpus");
@@ -2663,6 +2821,45 @@ mod tests {
                     )
                 })
                 .collect::<BTreeMap<_, _>>();
+            let valid_import_ids = entries.keys().cloned().collect::<BTreeSet<_>>();
+            let expected_valid_import_ids = journal["valid_import_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(valid_import_ids, expected_valid_import_ids);
+            let excluded_import_ids = inventory
+                .skipped
+                .iter()
+                .map(|skip| match skip {
+                    crate::BodyImportSkip::UnreadableManifest { path, .. }
+                    | crate::BodyImportSkip::UnknownSourceFamily { path, .. } => path
+                        .parent()
+                        .and_then(Path::file_name)
+                        .and_then(|name| name.to_str())
+                        .unwrap()
+                        .to_owned(),
+                })
+                .collect::<BTreeSet<_>>();
+            let expected_excluded_import_ids = journal["excluded_import_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(excluded_import_ids, expected_excluded_import_ids);
+            assert_eq!(
+                report.dates,
+                BTreeSet::from([journal["anchor_day"].as_str().unwrap().to_owned()])
+            );
+            let expected_raw_rows = journal["raw_row_counts_by_start_date"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(day, count)| (day.clone(), count.as_u64().unwrap()))
+                .collect::<BTreeMap<_, _>>();
+            assert_eq!(report.rows_by_start_date_day, expected_raw_rows);
             assert_eq!(entries.get("20260810_080000"), Some(&206));
             assert_eq!(entries.get("20260810_090000"), Some(&365));
             assert_eq!(entries.get("20260810_100000"), Some(&1));
@@ -2688,22 +2885,57 @@ mod tests {
                     .as_u64()
                     .expect("dedupe total")
             );
+            for expected in journal["import_bundles"].as_array().unwrap() {
+                let import_id = expected["import_id"].as_str().unwrap();
+                let entry = inventory
+                    .entries
+                    .iter()
+                    .find(|entry| entry.import_id == import_id)
+                    .unwrap();
+                let expected_months = expected["months"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>();
+                assert_eq!(entry.normalized_months, expected_months);
+                let expected_days = expected["days_affected"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap().to_owned())
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(bundle_days(root.path(), import_id), expected_days);
+            }
+        }
+
+        fn bundle_days(root: &Path, import_id: &str) -> BTreeSet<String> {
+            let mut paths = fs::read_dir(root.join("imports").join(import_id).join("normalized"))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect::<Vec<_>>();
+            paths.sort();
+            paths
+                .into_iter()
+                .flat_map(|path| crate::read_normalized_shard(path).unwrap())
+                .filter_map(|row| string_field(&row.day).map(str::to_owned))
+                .collect()
         }
 
         fn first_difference(left: &Value, right: &Value, path: &str) -> Option<String> {
             match (left, right) {
-                (Value::Object(left), Value::Object(right)) => left
-                    .keys()
-                    .chain(right.keys())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .find_map(|key| {
-                        first_difference(
-                            left.get(key).unwrap_or(&Value::Null),
-                            right.get(key).unwrap_or(&Value::Null),
-                            &format!("{path}.{key}"),
-                        )
-                    }),
+                (Value::Object(left), Value::Object(right)) => {
+                    let keys = left.keys().chain(right.keys()).collect::<BTreeSet<_>>();
+                    keys.into_iter()
+                        .find_map(|key| match (left.get(key), right.get(key)) {
+                            (Some(left), Some(right)) => {
+                                first_difference(left, right, &format!("{path}.{key}"))
+                            }
+                            (Some(_), None) => Some(format!("{path}.{key}: key missing on right")),
+                            (None, Some(_)) => Some(format!("{path}.{key}: key missing on left")),
+                            (None, None) => None,
+                        })
+                }
                 (Value::Array(left), Value::Array(right)) if left.len() == right.len() => left
                     .iter()
                     .zip(right)
