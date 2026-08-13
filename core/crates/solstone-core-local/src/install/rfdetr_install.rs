@@ -73,10 +73,10 @@ pub fn rfdetr_platform_supported(os_name: &str, arch: &str) -> bool {
 fn root(journal: &Path) -> PathBuf {
     journal.join("cache/providers/rfdetr")
 }
-fn binary_path(journal: &Path) -> PathBuf {
+pub fn binary_path(journal: &Path) -> PathBuf {
     root(journal).join("engine").join(ENGINE_REF).join(BINARY)
 }
-fn model_path(journal: &Path) -> PathBuf {
+pub fn model_path(journal: &Path) -> PathBuf {
     root(journal)
         .join("model")
         .join(MODEL_REVISION)

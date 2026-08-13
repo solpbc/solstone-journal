@@ -418,7 +418,9 @@ pub fn run_with_factory(
             final_rows.push(result);
             continue;
         };
-        if let Some(detections) = maybe_detect(&mut detection_disabled, analysis, &row.png) {
+        if let Some(detections) =
+            maybe_detect(&mut detection_disabled, analysis, &row.png, options.journal)
+        {
             result["detections"] = detections;
         }
         if !selected.contains(&row.frame_id) {
@@ -746,13 +748,18 @@ fn verdict(decode_failed: bool, failures: bool) -> (&'static str, &'static str) 
     }
 }
 
-fn maybe_detect(disabled: &mut bool, analysis: &Value, png: &[u8]) -> Option<Value> {
+fn maybe_detect(
+    disabled: &mut bool,
+    analysis: &Value,
+    png: &[u8],
+    journal: &Path,
+) -> Option<Value> {
     if *disabled {
         return None;
     }
     let gate = detect::screen_gate(analysis)?;
-    let result =
-        detect::detect(png).and_then(|result| detect::detections_block(&result, "screen", &gate));
+    let result = detect::detect(png, journal)
+        .and_then(|result| detect::detections_block(&result, "screen", &gate));
     match result {
         Ok(result) => Some(result),
         Err(_) => {

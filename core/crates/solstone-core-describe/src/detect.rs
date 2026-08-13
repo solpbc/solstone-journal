@@ -5,12 +5,15 @@
 
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+use solstone_core_local::install::rfdetr_install::{
+    RfdetrInstallError, RfdetrInstallRecord, binary_path, check_rfdetr_model, model_path,
+};
 
 const THRESHOLD: &str = "0.25";
 const ENGINE_NAME: &str = "rf-detr.cpp";
@@ -49,19 +52,10 @@ pub fn detections_block(result: &Value, source: &str, gate: &str) -> Result<Valu
     }))
 }
 
-pub fn detect(full_png: &[u8]) -> Result<Value, String> {
+pub fn detect(full_png: &[u8], journal: &Path) -> Result<Value, String> {
     let (binary, model) = match env::var_os(BINARY_ENV) {
         Some(binary) => (PathBuf::from(binary), PathBuf::from("stub-model")),
-        None => {
-            let paths = query_paths()?;
-            if paths.status != "installed" {
-                return Err("RF-DETR is not installed".to_owned());
-            }
-            match (paths.binary, paths.model) {
-                (Some(binary), Some(model)) => (binary, model),
-                _ => return Err("installed RF-DETR query omitted paths".to_owned()),
-            }
-        }
+        None => native_paths(journal)?,
     };
     let temp = TempDir::new()?;
     let input = temp.path.join("input.png");
@@ -112,49 +106,29 @@ fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, St
     }
 }
 
-struct Paths {
-    status: String,
-    binary: Option<PathBuf>,
-    model: Option<PathBuf>,
+fn native_paths(journal: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let result = check_rfdetr_model(journal, env::consts::OS, env::consts::ARCH);
+    paths_from_install_check(result, journal)
 }
 
-fn query_paths() -> Result<Paths, String> {
-    let python = sibling_python()?;
-    let output = Command::new(python)
-        .args(["-P", "-m", "solstone.observe.rfdetr_paths_query"])
-        .output()
-        .map_err(|error| error.to_string())?;
-    if !output.status.success() {
-        return Err("RF-DETR install-state query failed".to_owned());
-    }
-    let value: Value = serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
-    Ok(Paths {
-        status: value
-            .get("status")
-            .and_then(Value::as_str)
-            .ok_or("RF-DETR query has no status")?
-            .to_owned(),
-        binary: value
-            .get("binary_path")
-            .and_then(Value::as_str)
-            .map(PathBuf::from),
-        model: value
-            .get("model_path")
-            .and_then(Value::as_str)
-            .map(PathBuf::from),
-    })
-}
-
-fn sibling_python() -> Result<PathBuf, String> {
-    let current = env::current_exe().map_err(|error| error.to_string())?;
-    let directory = current.parent().ok_or("native executable has no parent")?;
-    for name in ["python3", "python"] {
-        let candidate = directory.join(name);
-        if candidate.is_file() {
-            return Ok(candidate);
+fn paths_from_install_check(
+    result: Result<RfdetrInstallRecord, RfdetrInstallError>,
+    journal: &Path,
+) -> Result<(PathBuf, PathBuf), String> {
+    match result {
+        Ok(RfdetrInstallRecord::PlatformUnavailable) => {
+            Err("RF-DETR is unavailable on this platform".to_owned())
+        }
+        Err(_) => Err("RF-DETR is not installed".to_owned()),
+        Ok(RfdetrInstallRecord::Installed) => {
+            let binary = binary_path(journal);
+            let model = model_path(journal);
+            if !binary.is_file() || !model.is_file() {
+                return Err("RF-DETR is not installed".to_owned());
+            }
+            Ok((binary, model))
         }
     }
-    Err("missing sibling Python interpreter".to_owned())
 }
 
 struct TempDir {
@@ -182,7 +156,12 @@ impl Drop for TempDir {
 
 #[cfg(test)]
 mod tests {
-    use super::{detections_block, screen_gate};
+    use std::fs;
+
+    use super::{
+        RfdetrInstallError, RfdetrInstallRecord, binary_path, detections_block, model_path,
+        paths_from_install_check, screen_gate,
+    };
     use serde_json::json;
 
     #[test]
@@ -206,5 +185,46 @@ mod tests {
         )
         .expect("block");
         assert_eq!(result["objects"][0]["score"], 0.1);
+    }
+
+    #[test]
+    fn native_install_query_covers_all_provider_worlds_at_the_given_journal() {
+        let journal = std::env::temp_dir().join(format!(
+            "solstone-describe-detect-journal-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&journal).expect("create unique journal");
+
+        assert_eq!(
+            paths_from_install_check(Ok(RfdetrInstallRecord::PlatformUnavailable), &journal),
+            Err("RF-DETR is unavailable on this platform".to_owned())
+        );
+        assert_eq!(
+            paths_from_install_check(
+                Err(RfdetrInstallError::new("sidecar_missing", "missing", 65)),
+                &journal,
+            ),
+            Err("RF-DETR is not installed".to_owned())
+        );
+
+        let binary = binary_path(&journal);
+        let model = model_path(&journal);
+        fs::create_dir_all(binary.parent().expect("binary parent")).expect("binary parent");
+        fs::create_dir_all(model.parent().expect("model parent")).expect("model parent");
+        fs::write(&binary, b"binary").expect("write binary");
+        fs::write(&model, b"model").expect("write model");
+        assert_eq!(
+            paths_from_install_check(Ok(RfdetrInstallRecord::Installed), &journal),
+            Ok((binary.clone(), model.clone()))
+        );
+        assert!(binary.starts_with(&journal));
+        assert!(model.starts_with(&journal));
+
+        fs::remove_file(&model).expect("remove installed model");
+        assert_eq!(
+            paths_from_install_check(Ok(RfdetrInstallRecord::Installed), &journal),
+            Err("RF-DETR is not installed".to_owned())
+        );
+        fs::remove_dir_all(&journal).expect("remove unique journal");
     }
 }

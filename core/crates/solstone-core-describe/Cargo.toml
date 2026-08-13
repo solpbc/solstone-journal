@@ -20,6 +20,8 @@ solstone-core-format.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-cli.workspace = true
+solstone-core-local.workspace = true
 base64 = "0.22.1"
 chrono.workspace = true
 
