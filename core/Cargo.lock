@@ -2703,6 +2703,11 @@ dependencies = [
  "solstone-core-doctor",
  "solstone-core-format",
  "solstone-core-observer",
+ "solstone-core-operational-logs",
+ "solstone-core-system-health",
+ "serde",
+ "serde_json",
+ "sha2",
  "unicode-general-category",
 ]
 

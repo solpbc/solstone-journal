@@ -36,6 +36,31 @@ pub enum CountParseError {
     TooManyDigits { digit_count: usize },
 }
 
+/// A CPython-compatible integer rendered as canonical signed ASCII decimal.
+///
+/// The representation retains every accepted digit, without imposing a machine
+/// integer range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalInteger(String);
+
+impl CanonicalInteger {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A service port represented without imposing a machine integer range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServicePort(CanonicalInteger);
+
+impl ServicePort {
+    #[must_use]
+    pub fn canonical_decimal(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 /// Expose the whitespace CPython `int(str)` strips for fixture verification.
 /// This is narrower than `str.isspace()` and excludes U+001C through U+001F.
 #[doc(hidden)]
@@ -44,8 +69,8 @@ pub fn python_int_whitespace_ranges() -> &'static [(u32, u32)] {
     PYTHON_INT_WHITESPACE_RANGES
 }
 
-/// Parse one count with CPython's Unicode integer text grammar.
-pub fn parse_health_log_count(input: &str) -> Result<ParsedCount, CountParseError> {
+/// Parse CPython integer text into canonical signed ASCII decimal.
+pub fn parse_integer_text(input: &str) -> Result<CanonicalInteger, CountParseError> {
     let input = input.trim_matches(python_int_whitespace);
     if input.is_empty() {
         return Err(CountParseError::Empty);
@@ -62,7 +87,8 @@ pub fn parse_health_log_count(input: &str) -> Result<ParsedCount, CountParseErro
         return Err(CountParseError::Invalid);
     }
 
-    let mut digits = 0_usize;
+    let mut digit_count = 0_usize;
+    let mut canonical_digits = String::with_capacity(body.len());
     let mut previous_was_digit = false;
     let mut scalars = body.chars().peekable();
     while let Some(scalar) = scalars.next() {
@@ -77,44 +103,63 @@ pub fn parse_health_log_count(input: &str) -> Result<ParsedCount, CountParseErro
             previous_was_digit = false;
             continue;
         }
-        if decimal_digit_value(scalar).is_none() {
+        let Some(digit) = decimal_digit_value(scalar) else {
             return Err(CountParseError::Invalid);
-        }
-        digits += 1;
+        };
+        digit_count += 1;
+        canonical_digits.push(char::from(b'0' + digit));
         previous_was_digit = true;
     }
-    if digits == 0 || !previous_was_digit {
+    if digit_count == 0 || !previous_was_digit {
         return Err(CountParseError::Invalid);
     }
-    if digits > MAX_PYTHON_INT_DIGITS {
-        return Err(CountParseError::TooManyDigits {
-            digit_count: digits,
-        });
+    if digit_count > MAX_PYTHON_INT_DIGITS {
+        return Err(CountParseError::TooManyDigits { digit_count });
     }
 
-    let magnitude = body
-        .chars()
-        .filter_map(decimal_digit_value)
-        .fold(0_u64, |value, digit| {
-            value.saturating_mul(10).saturating_add(u64::from(digit))
-        });
-    if magnitude == 0 {
-        return Ok(ParsedCount::Value(0));
+    let magnitude = canonical_digits.trim_start_matches('0');
+    if magnitude.is_empty() {
+        return Ok(CanonicalInteger("0".to_owned()));
     }
-    if !negative {
-        return match i64::try_from(magnitude) {
-            Ok(value) => Ok(ParsedCount::Value(value)),
-            Err(_) => Ok(ParsedCount::SaturatedPositive),
-        };
-    }
-    let min_magnitude = i64::MIN.unsigned_abs();
-    if magnitude == min_magnitude {
-        Ok(ParsedCount::Value(i64::MIN))
-    } else if let Ok(value) = i64::try_from(magnitude) {
-        Ok(ParsedCount::Value(-value))
+    let canonical = if negative {
+        format!("-{magnitude}")
     } else {
-        Ok(ParsedCount::SaturatedNegative)
+        magnitude.to_owned()
+    };
+    Ok(CanonicalInteger(canonical))
+}
+
+/// Parse one count with CPython's Unicode integer text grammar.
+pub fn parse_health_log_count(input: &str) -> Result<ParsedCount, CountParseError> {
+    let canonical = parse_integer_text(input)?;
+    let (negative, magnitude) = canonical
+        .as_str()
+        .strip_prefix('-')
+        .map_or((false, canonical.as_str()), |magnitude| (true, magnitude));
+    let maximum = if negative {
+        "9223372036854775808"
+    } else {
+        "9223372036854775807"
+    };
+    if magnitude.len() > maximum.len() || (magnitude.len() == maximum.len() && magnitude > maximum)
+    {
+        return Ok(if negative {
+            ParsedCount::SaturatedNegative
+        } else {
+            ParsedCount::SaturatedPositive
+        });
     }
+    Ok(ParsedCount::Value(
+        canonical
+            .as_str()
+            .parse()
+            .expect("canonical i64-range integer"),
+    ))
+}
+
+/// Parse a service port without imposing a machine integer range.
+pub fn parse_service_port(input: &str) -> Result<ServicePort, CountParseError> {
+    parse_integer_text(input).map(ServicePort)
 }
 
 fn python_int_whitespace(scalar: char) -> bool {

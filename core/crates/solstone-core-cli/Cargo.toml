@@ -14,3 +14,11 @@ solstone-core-observer.workspace = true
 solstone-core-doctor.workspace = true
 unicode-general-category.workspace = true
 solstone-core-format.workspace = true
+solstone-core-operational-logs.workspace = true
+solstone-core-system-health.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+unicode-general-category.workspace = true

@@ -16,7 +16,8 @@ mod fixture;
 
 pub use collect::{HealthLogsQuery, collect_health_logs};
 pub use count::{
-    CountParseError, ParsedCount, parse_health_log_count, python_int_whitespace_ranges,
+    CanonicalInteger, CountParseError, ParsedCount, ServicePort, parse_health_log_count,
+    parse_integer_text, parse_service_port, python_int_whitespace_ranges,
 };
 pub use error::{CollectError, EnumerationError, HealthDirectoryProbeError, OrdinaryTailError};
 pub use follow::{

@@ -7,6 +7,10 @@ use std::path::PathBuf;
 use solstone_core_format::segment::segment_key;
 use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
+#[cfg(test)]
+#[path = "../../solstone-core-system-health/tests/support/fixtures.rs"]
+mod health_text_fixture;
+
 macro_rules! speaker_resolve_usage {
     () => {
         "  solstone-core speaker-resolve <accumulate-voiceprints|write-owner-centroid|rebuild-owner-centroid|write-owner-candidate|read-owner-candidate|screen-owner-contamination|clear-owner-candidate|write-voiceprint|remove-voiceprint|backfill-voiceprint-last-seen|write-stub-labels|write-full-labels|patch-labels|restore-label-rows|append-correction|wipe-speaker-artifacts|identify|undo-identify|bootstrap-voiceprints|seed-from-imports|merge-names|backfill|backfill-status>\n"
@@ -3642,6 +3646,195 @@ fn parse_service_logs(args: &[OsString]) -> ServiceLogsArgs {
     }
 }
 
+// SERVICE_ARGS_FOUNDATION_BEGIN
+/// The usage text retained by the private service lifecycle grammar.
+#[doc(hidden)]
+pub const SERVICE_USAGE: &str = concat!(
+    "Usage: journal service <install|uninstall|start|stop|restart|status|logs>\n",
+    "       journal service install [--port PORT]  (default: 5015)\n",
+    "       journal service restart [--if-installed]  (restart; --if-installed noops if not installed)\n",
+    "       journal up                             (start + status; service must be installed)\n",
+    "       journal down                           (stop)\n",
+);
+
+/// A parsed service lifecycle action. This pure grammar is not executable.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceAction {
+    Install {
+        port: solstone_core_operational_logs::ServicePort,
+    },
+    Uninstall,
+    Start,
+    Stop,
+    Restart {
+        if_installed: bool,
+    },
+    Status,
+    Logs {
+        follow: bool,
+    },
+    Up,
+    Down,
+}
+
+/// A dynamic service diagnostic sanitized for exactly one terminal rendering.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SafeServiceDiagnostic(String);
+
+impl SafeServiceDiagnostic {
+    fn invalid_port_text(value: &str) -> Self {
+        Self(format!(
+            "Error: invalid port '{}'",
+            solstone_core_system_health::sanitize_for_terminal(value)
+        ))
+    }
+
+    fn invalid_port_value(value: &OsStr) -> Self {
+        Self(format!(
+            "Error: invalid port '{}'",
+            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
+        ))
+    }
+
+    fn unknown_subcommand(value: &OsStr) -> Self {
+        // The retained Python owner prints this guidance on two lines. This pure
+        // foundation deliberately keeps dynamic failures to one physical line.
+        Self(format!(
+            "Unknown subcommand: {}; Available: install, uninstall, start, stop, restart, status, logs",
+            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
+        ))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Render a sanitized service diagnostic as exactly one physical stderr line.
+#[doc(hidden)]
+#[must_use]
+pub fn render_service_diagnostic(diagnostic: &SafeServiceDiagnostic) -> String {
+    format!("{}\n", diagnostic.as_str())
+}
+
+/// The outcome of parsing the service lifecycle argument grammar.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceParseOutcome {
+    Dispatch(ServiceAction),
+    Exit {
+        code: u8,
+        stdout: Option<&'static str>,
+        stderr: Option<SafeServiceDiagnostic>,
+    },
+}
+
+/// Parse the retained `--port` argv grammar without converting argv lossily.
+#[doc(hidden)]
+pub fn parse_service_port_argv(
+    args: &[OsString],
+) -> Result<solstone_core_operational_logs::ServicePort, SafeServiceDiagnostic> {
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if argument == OsStr::new("--port") {
+            let Some(value) = args.get(index + 1) else {
+                break;
+            };
+            let Some(value_text) = value.to_str() else {
+                return Err(SafeServiceDiagnostic::invalid_port_value(value.as_os_str()));
+            };
+            return solstone_core_operational_logs::parse_service_port(value_text)
+                .map_err(|_| SafeServiceDiagnostic::invalid_port_text(value_text));
+        }
+        if let Some(argument_text) = argument.to_str()
+            && let Some(value) = argument_text.strip_prefix("--port=")
+        {
+            return solstone_core_operational_logs::parse_service_port(value)
+                .map_err(|_| SafeServiceDiagnostic::invalid_port_text(argument_text));
+        }
+        index += 1;
+    }
+    solstone_core_operational_logs::parse_service_port("5015")
+        .map_err(|_| SafeServiceDiagnostic::invalid_port_value(OsStr::new("5015")))
+}
+
+/// Parse the complete retained service lifecycle grammar without dispatching it.
+#[doc(hidden)]
+pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
+    if let [command, rest @ ..] = args
+        && command == OsStr::new("logs")
+    {
+        let parsed = parse_service_logs(rest);
+        return ServiceParseOutcome::Dispatch(ServiceAction::Logs {
+            follow: parsed.follow,
+        });
+    }
+    if args
+        .iter()
+        .any(|argument| argument == OsStr::new("--help") || argument == OsStr::new("-h"))
+    {
+        return ServiceParseOutcome::Exit {
+            code: 0,
+            stdout: Some(SERVICE_USAGE),
+            stderr: None,
+        };
+    }
+    let Some(command) = args.first() else {
+        return ServiceParseOutcome::Exit {
+            code: 1,
+            stdout: Some(SERVICE_USAGE),
+            stderr: None,
+        };
+    };
+    let rest = &args[1..];
+    if command == OsStr::new("install") {
+        return match parse_service_port_argv(rest) {
+            Ok(port) => ServiceParseOutcome::Dispatch(ServiceAction::Install { port }),
+            Err(stderr) => ServiceParseOutcome::Exit {
+                code: 1,
+                stdout: None,
+                stderr: Some(stderr),
+            },
+        };
+    }
+    if command == OsStr::new("up") {
+        return ServiceParseOutcome::Dispatch(ServiceAction::Up);
+    }
+    if command == OsStr::new("restart") {
+        return ServiceParseOutcome::Dispatch(ServiceAction::Restart {
+            if_installed: rest.iter().any(|argument| argument == "--if-installed"),
+        });
+    }
+    let action = if command == OsStr::new("uninstall") {
+        Some(ServiceAction::Uninstall)
+    } else if command == OsStr::new("start") {
+        Some(ServiceAction::Start)
+    } else if command == OsStr::new("stop") {
+        Some(ServiceAction::Stop)
+    } else if command == OsStr::new("status") {
+        Some(ServiceAction::Status)
+    } else if command == OsStr::new("down") {
+        Some(ServiceAction::Down)
+    } else {
+        None
+    };
+    action.map_or_else(
+        || ServiceParseOutcome::Exit {
+            code: 1,
+            stdout: None,
+            stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
+                command.as_os_str(),
+            )),
+        },
+        ServiceParseOutcome::Dispatch,
+    )
+}
+// SERVICE_ARGS_FOUNDATION_END
+
 enum HealthLogsParse {
     Run(HealthLogsArgs),
     Help(HealthLogsArgs),
@@ -4336,10 +4529,478 @@ pub fn version_line(version: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::health_text_fixture::{PortArgv, PortResult, ResultCase, ScalarRecipe};
     use super::*;
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    fn scalar_input(recipe: &ScalarRecipe) -> Option<String> {
+        match recipe {
+            ScalarRecipe::Literal { text } => Some(text.clone()),
+            ScalarRecipe::Codepoints { values } => values
+                .iter()
+                .copied()
+                .map(char::from_u32)
+                .collect::<Option<String>>(),
+            ScalarRecipe::Repeat {
+                codepoint,
+                count,
+                leading,
+                separator,
+                sign,
+                trailing,
+            } => {
+                let digit = char::from_u32(*codepoint)?;
+                let leading = leading
+                    .iter()
+                    .copied()
+                    .map(char::from_u32)
+                    .collect::<Option<String>>()?;
+                let trailing = trailing
+                    .iter()
+                    .copied()
+                    .map(char::from_u32)
+                    .collect::<Option<String>>()?;
+                Some(format!(
+                    "{leading}{sign}{}{}",
+                    std::iter::repeat_n(digit.to_string(), *count as usize)
+                        .collect::<Vec<_>>()
+                        .join(separator),
+                    trailing
+                ))
+            }
+        }
+    }
+
+    fn expected_health_count(value: &str) -> solstone_core_operational_logs::ParsedCount {
+        match value.parse::<i64>() {
+            Ok(value) => solstone_core_operational_logs::ParsedCount::Value(value),
+            Err(_) if value.starts_with('-') => {
+                solstone_core_operational_logs::ParsedCount::SaturatedNegative
+            }
+            Err(_) => solstone_core_operational_logs::ParsedCount::SaturatedPositive,
+        }
+    }
+
+    fn materialize_port_argv(argv: &PortArgv) -> Option<Vec<OsString>> {
+        match argv {
+            PortArgv::Text { values } => Some(values.iter().map(OsString::from).collect()),
+            PortArgv::Codepoints { prefix, values } => {
+                let value = values
+                    .iter()
+                    .copied()
+                    .map(char::from_u32)
+                    .collect::<Option<String>>()?;
+                Some(
+                    prefix
+                        .iter()
+                        .map(OsString::from)
+                        .chain(std::iter::once(OsString::from(value)))
+                        .collect(),
+                )
+            }
+            PortArgv::Surrogateescape { bytes_hex, prefix } => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::ffi::OsStringExt;
+
+                    let bytes = (0..bytes_hex.len())
+                        .step_by(2)
+                        .map(|index| u8::from_str_radix(&bytes_hex[index..index + 2], 16).unwrap())
+                        .collect();
+                    Some(
+                        prefix
+                            .iter()
+                            .map(OsString::from)
+                            .chain(std::iter::once(OsString::from_vec(bytes)))
+                            .collect(),
+                    )
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = (bytes_hex, prefix);
+                    None
+                }
+            }
+        }
+    }
+
+    enum PortDiagnosticInput<'a> {
+        Separate(&'a OsStr),
+        Attached(&'a OsStr),
+    }
+
+    fn first_complete_port_argument(args: &[OsString]) -> Option<PortDiagnosticInput<'_>> {
+        for (index, argument) in args.iter().enumerate() {
+            if argument == "--port" {
+                return args
+                    .get(index + 1)
+                    .map(|value| PortDiagnosticInput::Separate(value.as_os_str()));
+            }
+            if argument
+                .to_str()
+                .is_some_and(|value| value.starts_with("--port="))
+            {
+                return Some(PortDiagnosticInput::Attached(argument.as_os_str()));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn canonical_integer_fixture_cases_drive_the_shared_parser_and_health_projection() {
+        let fixture = health_text_fixture::health_text_fixture();
+        for case in &fixture.scalar_cases {
+            let input = scalar_input(&case.recipe);
+            match (&case.result, input) {
+                (ResultCase::Value { value }, Some(input)) => {
+                    let parsed =
+                        solstone_core_operational_logs::parse_integer_text(&input).unwrap();
+                    assert_eq!(parsed.as_str(), value, "{} canonical", case.id);
+                    assert_eq!(
+                        solstone_core_operational_logs::parse_health_log_count(&input).unwrap(),
+                        expected_health_count(value),
+                        "{} health projection",
+                        case.id
+                    );
+                }
+                (ResultCase::ValueError, Some(input)) => {
+                    assert!(
+                        solstone_core_operational_logs::parse_integer_text(&input).is_err(),
+                        "{}",
+                        case.id
+                    );
+                    assert!(
+                        solstone_core_operational_logs::parse_health_log_count(&input).is_err(),
+                        "{} health projection",
+                        case.id
+                    );
+                }
+                (ResultCase::ValueError, None) => assert_eq!(case.id, "lone-surrogate"),
+                (ResultCase::Value { .. }, None) => panic!("{} must be materializable", case.id),
+            }
+        }
+        for (scalar, _digit, single, mixed) in &fixture.decimal_cases {
+            let scalar = char::from_u32(*scalar).unwrap();
+            for (input, expected) in [(scalar.to_string(), single), (format!("1{scalar}2"), mixed)]
+            {
+                let ResultCase::Value { value } = expected else {
+                    panic!("decimal fixture result");
+                };
+                assert_eq!(
+                    solstone_core_operational_logs::parse_integer_text(&input)
+                        .unwrap()
+                        .as_str(),
+                    value
+                );
+                assert_eq!(
+                    solstone_core_operational_logs::parse_health_log_count(&input).unwrap(),
+                    expected_health_count(value)
+                );
+            }
+        }
+        for (scalar, expected) in &fixture.whitespace_cases {
+            let scalar = char::from_u32(*scalar).unwrap();
+            let input = format!("{scalar}12{scalar}");
+            match expected {
+                ResultCase::Value { value } => assert_eq!(
+                    solstone_core_operational_logs::parse_integer_text(&input)
+                        .unwrap()
+                        .as_str(),
+                    value
+                ),
+                ResultCase::ValueError => {
+                    assert!(solstone_core_operational_logs::parse_integer_text(&input).is_err())
+                }
+            }
+            if let ResultCase::Value { value } = expected {
+                assert_eq!(
+                    solstone_core_operational_logs::parse_health_log_count(&input).unwrap(),
+                    expected_health_count(value)
+                );
+            } else {
+                assert!(solstone_core_operational_logs::parse_health_log_count(&input).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_integer_preserves_beyond_i128_fixture_values() {
+        let fixture = health_text_fixture::health_text_fixture();
+        for case in &fixture.scalar_cases {
+            if !matches!(
+                case.id.as_str(),
+                "beyond-i128-positive" | "beyond-i128-negative"
+            ) {
+                continue;
+            }
+            let ResultCase::Value { value } = &case.result else {
+                panic!("{case:?}");
+            };
+            let input = scalar_input(&case.recipe).unwrap();
+            assert_eq!(
+                solstone_core_operational_logs::parse_integer_text(&input)
+                    .unwrap()
+                    .as_str(),
+                value
+            );
+        }
+    }
+
+    #[test]
+    fn health_count_projection_preserves_i64_boundaries() {
+        use solstone_core_operational_logs::ParsedCount;
+
+        for (input, expected) in [
+            (i64::MAX.to_string(), ParsedCount::Value(i64::MAX)),
+            (
+                "9223372036854775808".to_owned(),
+                ParsedCount::SaturatedPositive,
+            ),
+            (i64::MIN.to_string(), ParsedCount::Value(i64::MIN)),
+            (
+                "-9223372036854775809".to_owned(),
+                ParsedCount::SaturatedNegative,
+            ),
+        ] {
+            assert_eq!(
+                solstone_core_operational_logs::parse_health_log_count(&input),
+                Ok(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn service_port_fixture_rows_fail_at_first_complete_port() {
+        let fixture = health_text_fixture::health_text_fixture();
+        for case in &fixture.port_cases {
+            let argv = materialize_port_argv(&case.argv);
+            if case.id == "lone-surrogate" {
+                assert!(argv.is_none());
+                continue;
+            }
+            let argv = argv.expect("materializable port argv");
+            match &case.result {
+                PortResult::Return { value } => assert_eq!(
+                    parse_service_port_argv(&argv).unwrap().canonical_decimal(),
+                    value.to_string(),
+                    "{}",
+                    case.id
+                ),
+                PortResult::Exit { code, .. } => {
+                    let error = parse_service_port_argv(&argv).unwrap_err();
+                    assert_eq!(*code, 1, "{}", case.id);
+                    assert!(error.as_str().starts_with("Error: invalid port '"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn service_port_errors_are_derived_from_os_sanitization() {
+        let fixture = health_text_fixture::health_text_fixture();
+        for case in &fixture.port_cases {
+            let Some(argv) = materialize_port_argv(&case.argv) else {
+                continue;
+            };
+            if !matches!(&case.result, PortResult::Exit { .. }) {
+                continue;
+            }
+            let error = parse_service_port_argv(&argv).unwrap_err();
+            let selected = first_complete_port_argument(&argv).unwrap();
+            let value = match selected {
+                PortDiagnosticInput::Separate(value) | PortDiagnosticInput::Attached(value) => {
+                    value
+                }
+            };
+            let expected = format!(
+                "Error: invalid port '{}'\n",
+                solstone_core_system_health::sanitize_os_bytes_for_terminal(
+                    value.as_encoded_bytes()
+                )
+            );
+            assert_eq!(render_service_diagnostic(&error), expected, "{}", case.id);
+        }
+        #[cfg(unix)]
+        {
+            let argv = vec![
+                OsString::from("--port"),
+                std::os::unix::ffi::OsStringExt::from_vec(vec![0xff]),
+            ];
+            assert_eq!(
+                render_service_diagnostic(&parse_service_port_argv(&argv).unwrap_err()),
+                "Error: invalid port '\\xff'\n"
+            );
+        }
+    }
+
+    #[test]
+    fn lone_surrogate_fixture_is_non_scalar_provenance_only() {
+        assert!(char::from_u32(55296).is_none());
+        let fixture = health_text_fixture::health_text_fixture();
+        let case = fixture
+            .port_cases
+            .iter()
+            .find(|case| case.id == "lone-surrogate")
+            .unwrap();
+        assert!(matches!(
+            &case.argv,
+            PortArgv::Codepoints { values, .. } if values == &[55296]
+        ));
+        assert!(materialize_port_argv(&case.argv).is_none());
+    }
+
+    #[test]
+    fn service_args_logs_delegates_to_frozen_service_logs_parser() {
+        assert_eq!(
+            parse_service_args(&args(&["logs", "ignored", "--follow"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow: true })
+        );
+        assert_eq!(
+            parse_service_args(&args(&["logs", "--help"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow: false })
+        );
+    }
+
+    #[test]
+    fn service_args_preserves_lifecycle_arm_order_and_streams() {
+        assert!(matches!(
+            parse_service_args(&args(&["logs", "--help"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::Logs { .. })
+        ));
+        assert_eq!(
+            parse_service_args(&args(&["install", "--help"])),
+            ServiceParseOutcome::Exit {
+                code: 0,
+                stdout: Some(SERVICE_USAGE),
+                stderr: None,
+            }
+        );
+        assert_eq!(
+            parse_service_args(&args(&[])),
+            ServiceParseOutcome::Exit {
+                code: 1,
+                stdout: Some(SERVICE_USAGE),
+                stderr: None,
+            }
+        );
+        assert_eq!(
+            parse_service_args(&args(&["restart", "ignored", "--if-installed"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::Restart { if_installed: true })
+        );
+        let ServiceParseOutcome::Exit {
+            code,
+            stdout,
+            stderr: Some(stderr),
+        } = parse_service_args(&args(&["unknown"]))
+        else {
+            panic!("unknown outcome");
+        };
+        assert_eq!(code, 1);
+        assert_eq!(stdout, None);
+        assert_eq!(
+            stderr.as_str(),
+            "Unknown subcommand: unknown; Available: install, uninstall, start, stop, restart, status, logs"
+        );
+    }
+
+    #[test]
+    fn service_args_parses_all_closed_actions() {
+        for (argv, expected) in [
+            (
+                args(&["install", "--port", "7"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Install {
+                    port: solstone_core_operational_logs::parse_service_port("7").unwrap(),
+                }),
+            ),
+            (
+                args(&["uninstall", "ignored"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Uninstall),
+            ),
+            (
+                args(&["start", "ignored"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Start),
+            ),
+            (
+                args(&["stop", "ignored"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Stop),
+            ),
+            (
+                args(&["restart"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Restart {
+                    if_installed: false,
+                }),
+            ),
+            (
+                args(&["status", "ignored"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Status),
+            ),
+            (
+                args(&["logs"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow: false }),
+            ),
+            (
+                args(&["up", "ignored"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Up),
+            ),
+            (
+                args(&["down", "ignored"]),
+                ServiceParseOutcome::Dispatch(ServiceAction::Down),
+            ),
+        ] {
+            assert_eq!(parse_service_args(&argv), expected);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn service_port_invalid_os_bytes_are_reversible() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let argv = vec![OsString::from("--port"), OsString::from_vec(vec![0xff])];
+        assert_eq!(
+            render_service_diagnostic(&parse_service_port_argv(&argv).unwrap_err()),
+            "Error: invalid port '\\xff'\n"
+        );
+    }
+
+    #[test]
+    fn service_args_foundation_has_no_execution_or_python_bridge() {
+        let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
+        let start = source
+            .find("// SERVICE_ARGS_FOUNDATION_BEGIN")
+            .expect("foundation start");
+        let end = source
+            .find("// SERVICE_ARGS_FOUNDATION_END")
+            .expect("foundation end");
+        let foundation = &source[start..end];
+        assert!(foundation.contains("parse_service_logs(rest)"));
+        for forbidden in [
+            "Command::new",
+            "std::process",
+            "std::env",
+            "std::fs",
+            "std::net",
+            "CommandExt",
+            ".exec(",
+            "File::",
+            "PathBuf",
+            "Path::",
+            "Mutex",
+            "RwLock",
+            ".lock(",
+            "PYTHON_BOOTSTRAP_SCRIPT",
+            "solstone.think.service",
+            "-f",
+            "--follow",
+        ] {
+            assert!(
+                !foundation.contains(forbidden),
+                "foundation reaches forbidden surface {forbidden}"
+            );
+        }
     }
 
     fn indexer(command: IndexerCommand) -> Command {
