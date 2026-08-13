@@ -463,28 +463,40 @@ async fn request_result(
     .await
 }
 
-async fn accepted_door_connection_is_tls_refused(fixture: &Fixture, port: u16) -> bool {
-    tokio::time::timeout(Duration::from_secs(3), async {
-        let stream = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
-            .await
-            .expect("door TCP accepts after refresh stops");
-        let mut stream = TlsConnector::from(Arc::new(fixture.client_config(0)))
+#[derive(Debug, PartialEq, Eq)]
+enum DoorConnectionOutcome {
+    TcpRefused,
+    AcceptedThenAlert,
+    AcceptedThenTimeout,
+}
+
+async fn door_connection_outcome(fixture: &Fixture, port: u16) -> DoorConnectionOutcome {
+    match tokio::time::timeout(Duration::from_secs(3), async {
+        let stream = match tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await {
+            Ok(stream) => stream,
+            Err(_) => return DoorConnectionOutcome::TcpRefused,
+        };
+        let mut stream = match TlsConnector::from(Arc::new(fixture.client_config(0)))
             .connect(
                 rustls::pki_types::ServerName::try_from("spl.local").expect("server name"),
                 stream,
             )
-            .await;
-        let Ok(ref mut stream) = stream else {
-            return true;
+            .await
+        {
+            Ok(stream) => stream,
+            Err(_) => return DoorConnectionOutcome::AcceptedThenAlert,
         };
         let mut byte = [0_u8; 1];
         match tokio::time::timeout(Duration::from_secs(1), stream.read(&mut byte)).await {
-            Ok(Err(_)) | Ok(Ok(0)) => true,
-            Ok(Ok(_)) | Err(_) => false,
+            Ok(Err(_)) | Ok(Ok(0)) => DoorConnectionOutcome::AcceptedThenAlert,
+            Ok(Ok(_)) | Err(_) => DoorConnectionOutcome::AcceptedThenTimeout,
         }
     })
     .await
-    .expect("door TLS refusal completes")
+    {
+        Ok(outcome) => outcome,
+        Err(_) => DoorConnectionOutcome::AcceptedThenTimeout,
+    }
 }
 
 async fn fresh_door_connection_is_refused(fixture: &Fixture, port: u16) -> bool {
@@ -596,7 +608,12 @@ async fn ac2_stop_authorization_refresh_stops_only_the_publisher() {
     let stopped_at = authorization_publication_ticks();
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert_eq!(authorization_publication_ticks(), stopped_at);
-    assert!(accepted_door_connection_is_tls_refused(&fixture, port).await);
+    let outcome = door_connection_outcome(&fixture, port).await;
+    assert_eq!(
+        outcome,
+        DoorConnectionOutcome::AcceptedThenAlert,
+        "door connection after refresh stop had unexpected outcome: {outcome:?}"
+    );
     assert!(matches!(
         loopback_status(handle.loopback_ipv4_addr()).await,
         Ok(200)
@@ -623,6 +640,7 @@ async fn ac3_stop_authorization_refresh_is_noop_when_door_is_withheld() {
     })
     .await
     .expect("loopback");
+    assert!(matches!(handle.door_outcome(), DoorOutcome::Withheld(_)));
     handle.stop_authorization_refresh().await;
     handle.shutdown();
     std::fs::remove_dir_all(root).expect("temporary root removes");
