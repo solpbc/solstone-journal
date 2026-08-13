@@ -54,6 +54,7 @@ mod import_sources;
 mod install_models;
 mod install_provider;
 mod navigate;
+mod service_logs;
 mod settings;
 mod supervisor;
 use solstone_core_indexer_query::{
@@ -269,6 +270,7 @@ fn main() -> ExitCode {
         Ok(Command::HealthLogs(args)) => health_logs::run(args),
         Ok(Command::HealthLogsUsage(args)) => health_logs::usage(args),
         Ok(Command::HealthLogsHelp(args)) => health_logs::help(args),
+        Ok(Command::ServiceLogs(args)) => service_logs::run(args),
         Ok(Command::Observer(command)) => run_observer(command),
         Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
         Ok(Command::NavigateHelp) => {

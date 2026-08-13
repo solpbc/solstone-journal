@@ -123,7 +123,7 @@ tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-th
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 image.workspace = true
-nix = { workspace = true, features = ["signal"] }
+nix = { workspace = true, features = ["ptrace", "signal"] }
 rcgen.workspace = true
 rustls.workspace = true
 rusqlite.workspace = true

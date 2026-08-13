@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Proves the native `health` bodies exist independently before the journal
-//! dispatcher is cut over. This deliberately invokes the real `solstone-core`
-//! artifact directly: dispatcher ownership is a separate, later change.
+//! Proves the native `health` and service-log bodies exist independently before
+//! their journal dispatcher cuts. This deliberately invokes the real
+//! `solstone-core` artifact directly: dispatcher ownership is separate work.
 
 #![cfg(unix)]
 
@@ -36,6 +36,11 @@ const PROBES: &[Probe] = &[
     Probe {
         token: "health-logs",
         args: &["health", "logs", "-f"],
+        expected_exit: 0,
+    },
+    Probe {
+        token: "service-logs",
+        args: &["service", "logs"],
         expected_exit: 0,
     },
 ];
@@ -232,13 +237,22 @@ fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
 }
 
 #[test]
-fn health_and_health_logs_real_native_bodies_survive_live_interpreter_poisons() {
+fn health_and_service_log_real_native_bodies_survive_live_interpreter_poisons() {
+    assert_eq!(
+        PROBES.len(),
+        PROBES
+            .iter()
+            .map(|probe| probe.token)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        "the pre-cut body registry must not contain duplicate tokens"
+    );
     assert_eq!(
         PROBES
             .iter()
             .map(|probe| probe.token)
             .collect::<BTreeSet<_>>(),
-        BTreeSet::from(["health", "health-logs"]),
+        BTreeSet::from(["health", "health-logs", "service-logs"]),
         "the pre-cut body registry is closed"
     );
 
@@ -254,19 +268,23 @@ fn health_and_health_logs_real_native_bodies_survive_live_interpreter_poisons() 
             probe.token,
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(
-            output.stdout.is_empty(),
-            "{}: stdout must be empty",
+        let (expected_stdout, expected_stderr) = match probe.token {
+            "health" => (
+                Vec::new(),
+                format!(
+                    "Cannot connect: callosum socket not found at {}/health/callosum.sock\n",
+                    harness.journal.display()
+                ),
+            ),
+            "health-logs" => (Vec::new(), "No health directory found.\n".to_owned()),
+            "service-logs" => (b"=== service.log === (not found)\n".to_vec(), String::new()),
+            other => panic!("unregistered probe {other}"),
+        };
+        assert_eq!(
+            output.stdout, expected_stdout,
+            "{}: body stdout",
             probe.token
         );
-        let expected_stderr = if probe.token == "health" {
-            format!(
-                "Cannot connect: callosum socket not found at {}/health/callosum.sock\n",
-                harness.journal.display()
-            )
-        } else {
-            "No health directory found.\n".to_owned()
-        };
         assert_eq!(
             output.stderr,
             expected_stderr.as_bytes(),

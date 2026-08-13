@@ -699,6 +699,7 @@ pub enum Command {
     HealthLogs(HealthLogsArgs),
     HealthLogsUsage(HealthLogsArgs),
     HealthLogsHelp(HealthLogsArgs),
+    ServiceLogs(ServiceLogsArgs),
     Observer(ObserverCommand),
     Navigate {
         path: Option<String>,
@@ -758,6 +759,11 @@ pub enum HealthLogsValueCheck {
     Count(String),
     Since(String),
     Grep(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServiceLogsArgs {
+    pub follow: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1522,6 +1528,11 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 Ok((verbose, debug)) => Command::Top { verbose, debug },
                 Err(()) => Command::TopUsage,
             })
+        }
+        [command, subcommand, rest @ ..]
+            if command == OsStr::new("service") && subcommand == OsStr::new("logs") =>
+        {
+            Ok(Command::ServiceLogs(parse_service_logs(rest)))
         }
         [command, rest @ ..] if command == OsStr::new("observer") => {
             // Help is not one of the observer parser's tokens, so it must be
@@ -3621,6 +3632,14 @@ fn parse_health(args: &[OsString]) -> Result<(bool, bool), ()> {
         return Err(());
     }
     Ok((verbose, debug))
+}
+
+fn parse_service_logs(args: &[OsString]) -> ServiceLogsArgs {
+    ServiceLogsArgs {
+        follow: args
+            .iter()
+            .any(|argument| argument == OsStr::new("-f") || argument == OsStr::new("--follow")),
+    }
 }
 
 enum HealthLogsParse {
@@ -6617,6 +6636,62 @@ mod tests {
             ]),
             Ok(Command::HealthLogsUsage(_))
         ));
+    }
+
+    #[test]
+    fn service_logs_selects_follow_anywhere_and_ignores_other_trailing_tokens() {
+        assert_eq!(
+            evaluate_args(&args(&["service", "logs"])),
+            Ok(Command::ServiceLogs(ServiceLogsArgs { follow: false }))
+        );
+        for values in [
+            &["service", "logs", "--help"][..],
+            &["service", "logs", "ignored", "-x"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::ServiceLogs(ServiceLogsArgs { follow: false })),
+                "{values:?}"
+            );
+        }
+        for values in [
+            &["service", "logs", "-f"][..],
+            &["service", "logs", "ignored", "--follow", "--help"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::ServiceLogs(ServiceLogsArgs { follow: true })),
+                "{values:?}"
+            );
+        }
+        for values in [
+            &["service"][..],
+            &["service", "--help"][..],
+            &["service", "status"][..],
+        ] {
+            assert!(evaluate_args(&args(values)).is_err(), "{values:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn service_logs_keeps_ignored_non_utf8_opaque_but_rejects_route_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+
+        assert_eq!(
+            evaluate_args(&[
+                OsString::from("service"),
+                OsString::from("logs"),
+                OsString::from_vec(vec![0xff]),
+            ]),
+            Ok(Command::ServiceLogs(ServiceLogsArgs { follow: false }))
+        );
+        for route in [
+            vec![OsString::from_vec(vec![0xff]), OsString::from("logs")],
+            vec![OsString::from("service"), OsString::from_vec(vec![0xff])],
+        ] {
+            assert!(evaluate_args(&route).is_err());
+        }
     }
 
     #[test]
