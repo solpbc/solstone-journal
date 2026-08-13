@@ -98,6 +98,67 @@ WALL_CLOCK_CALLS = (
     ("_expected_source_last_days", "datetime.now()"),
     ("_build_source_freshness", "datetime.now()"),
 )
+NATIVE_DEVIATION_KEYS = frozenset(
+    {"routes", "store_state", "reference", "native", "why"}
+)
+EXPECTED_NATIVE_DEVIATION_COUNT = 2
+
+NATIVE_DEVIATIONS: list[dict[str, Any]] = [
+    {
+        "routes": [
+            "/app/body/api/index",
+            "/app/body/api/stats/{month}",
+        ],
+        "store_state": (
+            "torn_no_db: bundle manifests claim rows, but "
+            "imports/health-dedupe.sqlite is absent."
+        ),
+        "reference": (
+            "Fixture torn_phase_analysis.matrix.torn_no_db.index and "
+            "torn_phase_analysis.matrix.torn_no_db.stats are both 200 with "
+            "reason_code null."
+        ),
+        "native": (
+            "503 body_store_aggregate_missing: "
+            "solstone-core-convey-body/src/health.rs:109 returns "
+            "Torn(AggregateMissing) for claimed rows with an absent aggregate; "
+            "solstone-core-convey-body/src/router.rs:69-99 maps Torn verdicts "
+            "to the shared 503 envelope."
+        ),
+        "why": (
+            "The reference treats a missing dedupe aggregate as empty, while "
+            "native treats the positive manifest claim plus missing aggregate "
+            "as a torn store and refuses aggregate-derived date-navigation data."
+        ),
+    },
+    {
+        "routes": [
+            "/app/body/api/index",
+            "/app/body/api/stats/{month}",
+        ],
+        "store_state": (
+            "torn_db_unreadable: bundle manifests claim rows and "
+            "imports/health-dedupe.sqlite exists, but health_dedupe is unreadable."
+        ),
+        "reference": (
+            "Fixture torn_phase_analysis.matrix.torn_db_unreadable.index and "
+            "torn_phase_analysis.matrix.torn_db_unreadable.stats are both 500 "
+            "with reason_code internal_error."
+        ),
+        "native": (
+            "503 body_store_aggregate_unreadable: "
+            "solstone-core-convey-body/src/health.rs:112 returns "
+            "Torn(AggregateUnreadable) for a claimed unreadable aggregate; "
+            "solstone-core-convey-body/src/router.rs:69-99 maps Torn verdicts "
+            "to the shared 503 envelope."
+        ),
+        "why": (
+            "The reference exposes its shared SQL failure as an internal error, "
+            "while native converts the claimed unreadable aggregate into a "
+            "typed safe-unavailability response."
+        ),
+    },
+]
 WALL_CLOCK_RE = re.compile(r"\b(?:datetime\.now\(\)|date\.today\(\))")
 FUNCTION_RE = re.compile(r"^def ([A-Za-z_][A-Za-z0-9_]*)\(")
 
@@ -515,7 +576,23 @@ def _assert_and_analyze(
         for case in all_cases
     )
     assert hash_basis_is_binary
-    assert native_deviations == []
+    native_deviations_match_contract = (
+        native_deviations == NATIVE_DEVIATIONS
+        and len(native_deviations) == EXPECTED_NATIVE_DEVIATION_COUNT
+        and all(
+            isinstance(deviation, dict)
+            and set(deviation) == NATIVE_DEVIATION_KEYS
+            and isinstance(deviation["routes"], list)
+            and bool(deviation["routes"])
+            and all(isinstance(route, str) and route for route in deviation["routes"])
+            and all(
+                isinstance(deviation[key], str) and deviation[key]
+                for key in NATIVE_DEVIATION_KEYS - {"routes"}
+            )
+            for deviation in native_deviations
+        )
+    )
+    assert native_deviations_match_contract
 
     generator_source = Path(__file__).read_text(encoding="utf-8")
     assert not re.search(
@@ -636,7 +713,7 @@ def _assert_and_analyze(
             and "typical" in fixed_day["recovery"]["facts"][0]
         ),
         "criterion_12_hash_basis_and_native_deviations": (
-            hash_basis_is_binary and native_deviations == []
+            hash_basis_is_binary and native_deviations_match_contract
         ),
         "criterion_13_default_exception_propagation": testing_default,
     }
@@ -661,7 +738,7 @@ def build_corpus() -> dict[str, Any]:
     from solstone.apps.body import routes
 
     cases_by_phase: dict[str, list[dict[str, Any]]] = {}
-    native_deviations: list[Any] = []
+    native_deviations: list[Any] = list(NATIVE_DEVIATIONS)
     clock_reads = _validate_wall_clock_contract(routes)
     with tempfile.TemporaryDirectory(prefix="convey-body-corpus-") as temp:
         temp_root = Path(temp)

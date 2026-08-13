@@ -11487,7 +11487,28 @@
       "20260810_100000"
     ]
   },
-  "native_deviations": [],
+  "native_deviations": [
+    {
+      "native": "503 body_store_aggregate_missing: solstone-core-convey-body/src/health.rs:109 returns Torn(AggregateMissing) for claimed rows with an absent aggregate; solstone-core-convey-body/src/router.rs:69-99 maps Torn verdicts to the shared 503 envelope.",
+      "reference": "Fixture torn_phase_analysis.matrix.torn_no_db.index and torn_phase_analysis.matrix.torn_no_db.stats are both 200 with reason_code null.",
+      "routes": [
+        "/app/body/api/index",
+        "/app/body/api/stats/{month}"
+      ],
+      "store_state": "torn_no_db: bundle manifests claim rows, but imports/health-dedupe.sqlite is absent.",
+      "why": "The reference treats a missing dedupe aggregate as empty, while native treats the positive manifest claim plus missing aggregate as a torn store and refuses aggregate-derived date-navigation data."
+    },
+    {
+      "native": "503 body_store_aggregate_unreadable: solstone-core-convey-body/src/health.rs:112 returns Torn(AggregateUnreadable) for a claimed unreadable aggregate; solstone-core-convey-body/src/router.rs:69-99 maps Torn verdicts to the shared 503 envelope.",
+      "reference": "Fixture torn_phase_analysis.matrix.torn_db_unreadable.index and torn_phase_analysis.matrix.torn_db_unreadable.stats are both 500 with reason_code internal_error.",
+      "routes": [
+        "/app/body/api/index",
+        "/app/body/api/stats/{month}"
+      ],
+      "store_state": "torn_db_unreadable: bundle manifests claim rows and imports/health-dedupe.sqlite exists, but health_dedupe is unreadable.",
+      "why": "The reference exposes its shared SQL failure as an internal error, while native converts the claimed unreadable aggregate into a typed safe-unavailability response."
+    }
+  ],
   "normalization_contract": {
     "allowlist": {
       "/app/body/api/trends": [
