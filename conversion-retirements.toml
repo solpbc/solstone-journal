@@ -56,3 +56,15 @@ distribution = "litellm"
 python_roots = []
 import_roots = ["litellm"]
 test_only_dependency_locations = []
+
+[[waves]]
+id = "AJ-C-config-cli"
+status = "done"
+# First-party Python-process retirement only: this wave retires no PyPI
+# distribution. `content_roots` intentionally excludes `core/`, so this
+# manifest proves removal from shipped Python content, not the Rust
+# replacement.
+distribution = "first-party-only"
+python_roots = ["solstone/think/config_cli.py"]
+import_roots = ["solstone.think.config_cli"]
+test_only_dependency_locations = []

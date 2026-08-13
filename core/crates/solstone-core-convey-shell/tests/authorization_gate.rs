@@ -15,6 +15,7 @@ use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
@@ -353,6 +354,7 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
             handshake_timeout: Duration::from_secs(2),
             stream_stall_timeout: Duration::from_secs(2),
             router: router(fixture.root.clone()),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
         },
         door_router,
         authorization_sender,
@@ -368,8 +370,7 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
     assert_eq!(initial.status, 200, "listed device opens the carrier");
 
     let authorization_path = fixture.root.join("link/authorized_clients.json");
-    std::fs::remove_file(&authorization_path).expect("authorization file removes");
-    std::fs::create_dir(&authorization_path).expect("authorization path becomes unreadable");
+    fixture.induce_unreadable_authorization();
     let refused = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let response = get_over_carrier(&mut carrier, &mut decoder, &mut dialer, path).await;

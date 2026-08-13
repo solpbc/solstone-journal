@@ -56,6 +56,11 @@ const SUPERVISOR_SERVICE: &[&str] = &["supervisor"];
 /// proof that the owner-facing grammar is ready to cut over.
 pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
     NativeProcessSpec {
+        token: "config",
+        binary: "solstone-core",
+        preset_argv: &["config"],
+    },
+    NativeProcessSpec {
         token: "depict",
         binary: "solstone-core-depict",
         preset_argv: EMPTY,

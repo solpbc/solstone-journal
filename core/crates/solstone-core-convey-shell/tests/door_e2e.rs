@@ -7,6 +7,8 @@
 mod door_support;
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::os::unix::fs::MetadataExt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,13 +20,17 @@ use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_shell::{
     ConveyServeOptions, DoorOutcome, DoorWithheldReason, router, serve,
 };
-use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
+use solstone_core_sol_link::ledger::{
+    AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
+};
+use solstone_core_sol_link::{DeviceDoorAuthorization, authorization_publication_ticks};
 use spl_core::frame::{
     FLAG_CLOSE, FLAG_DATA, FLAG_OPEN, FLAG_RESET, Frame, FrameDecoder, FrameDialer,
 };
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
 use spl_transport::connection::request_once;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::watch;
 use tokio_rustls::TlsConnector;
 use x509_parser::extensions::ParsedExtension;
 use x509_parser::oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY};
@@ -392,6 +398,7 @@ fn options(fixture: &Fixture, app: Router, door_port: u16) -> ConveyServeOptions
         handshake_timeout: Duration::from_secs(2),
         stream_stall_timeout: Duration::from_secs(2),
         router: app,
+        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
     }
 }
 
@@ -456,6 +463,62 @@ async fn request_result(
     .await
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum DoorConnectionOutcome {
+    TcpRefused,
+    AcceptedThenAlert,
+    AcceptedThenTimeout,
+}
+
+async fn door_connection_outcome(fixture: &Fixture, port: u16) -> DoorConnectionOutcome {
+    match tokio::time::timeout(Duration::from_secs(3), async {
+        let stream = match tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await {
+            Ok(stream) => stream,
+            Err(_) => return DoorConnectionOutcome::TcpRefused,
+        };
+        let mut stream = match TlsConnector::from(Arc::new(fixture.client_config(0)))
+            .connect(
+                rustls::pki_types::ServerName::try_from("spl.local").expect("server name"),
+                stream,
+            )
+            .await
+        {
+            Ok(stream) => stream,
+            Err(_) => return DoorConnectionOutcome::AcceptedThenAlert,
+        };
+        let mut byte = [0_u8; 1];
+        match tokio::time::timeout(Duration::from_secs(1), stream.read(&mut byte)).await {
+            Ok(Err(_)) | Ok(Ok(0)) => DoorConnectionOutcome::AcceptedThenAlert,
+            Ok(Ok(_)) | Err(_) => DoorConnectionOutcome::AcceptedThenTimeout,
+        }
+    })
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(_) => DoorConnectionOutcome::AcceptedThenTimeout,
+    }
+}
+
+async fn fresh_door_connection_is_refused(fixture: &Fixture, port: u16) -> bool {
+    match tokio::time::timeout(Duration::from_secs(3), async {
+        match tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await {
+            Err(_) => false,
+            Ok(stream) => TlsConnector::from(Arc::new(fixture.client_config(0)))
+                .connect(
+                    rustls::pki_types::ServerName::try_from("spl.local").expect("server name"),
+                    stream,
+                )
+                .await
+                .is_ok(),
+        }
+    })
+    .await
+    {
+        Ok(connected) => !connected,
+        Err(_) => panic!("fresh door connection timed out after shutdown"),
+    }
+}
+
 #[test]
 fn ac3_serve_accepts_only_the_prebuilt_router() {
     // `__door_test/basis` and the test-crate body-echo route are the only test
@@ -471,10 +534,230 @@ fn ac3_serve_accepts_only_the_prebuilt_router() {
         .expect("serve body ends");
     assert!(!serve.contains("router("));
     assert!(!serve.contains("solstone_core_sol_link::http::router"));
+    assert_eq!(source.matches("pub async fn serve").count(), 1);
+    assert!(serve.contains("ConveyServeHandle {"));
 }
 
 fn ledger_posture(fixture: &Fixture) -> AuthorizedClientsRead {
     AuthorizationLedger::new(&fixture.root).read_state()
+}
+
+#[tokio::test]
+async fn ac1_carrier_loop_counter_advances() {
+    let fixture = Fixture::established(1);
+    let carrier_loop_iterations = Arc::new(AtomicU64::new(0));
+    let handle = serve(ConveyServeOptions {
+        journal_root: fixture.root.clone(),
+        loopback_port: 0,
+        door_port: 0,
+        handshake_timeout: Duration::from_secs(2),
+        stream_stall_timeout: Duration::from_secs(2),
+        router: router(fixture.root.clone()),
+        carrier_loop_iterations: carrier_loop_iterations.clone(),
+    })
+    .await
+    .expect("serve");
+    let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+    exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
+        .await
+        .expect("carrier exchange");
+    assert!(carrier_loop_iterations.load(Ordering::Relaxed) > 0);
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac1_publication_tick_counter_advances() {
+    let fixture = Fixture::established(1);
+    let before = authorization_publication_ticks();
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(authorization_publication_ticks() > before);
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac2_stop_authorization_refresh_stops_only_the_publisher() {
+    let fixture = Fixture::established(1);
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    let (authorization_sender, authorization_receiver) = watch::channel(
+        DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
+    );
+    let mut handle = solstone_core_convey_shell::bind_with_authorization(
+        ConveyServeOptions {
+            journal_root: fixture.root.clone(),
+            loopback_port: 0,
+            door_port: 0,
+            handshake_timeout: Duration::from_secs(2),
+            stream_stall_timeout: Duration::from_secs(2),
+            router: router(fixture.root.clone()),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        },
+        router(fixture.root.clone()),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    let port = door_port(handle.door_outcome());
+
+    handle.stop_authorization_refresh().await;
+    assert!(authorization_receiver.has_changed().is_err());
+    let stopped_at = authorization_publication_ticks();
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(authorization_publication_ticks(), stopped_at);
+    let outcome = door_connection_outcome(&fixture, port).await;
+    assert_eq!(
+        outcome,
+        DoorConnectionOutcome::AcceptedThenAlert,
+        "door connection after refresh stop had unexpected outcome: {outcome:?}"
+    );
+    assert!(matches!(
+        loopback_status(handle.loopback_ipv4_addr()).await,
+        Ok(200)
+    ));
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac3_stop_authorization_refresh_is_noop_when_door_is_withheld() {
+    let root = std::env::temp_dir().join(format!(
+        "solstone-door-stop-refresh-withheld-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("config")).expect("config");
+    let mut handle = serve(ConveyServeOptions {
+        journal_root: root.clone(),
+        loopback_port: 0,
+        door_port: 0,
+        handshake_timeout: Duration::from_secs(1),
+        stream_stall_timeout: Duration::from_secs(1),
+        router: Router::new(),
+        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+    })
+    .await
+    .expect("loopback");
+    assert!(matches!(handle.door_outcome(), DoorOutcome::Withheld(_)));
+    handle.stop_authorization_refresh().await;
+    handle.shutdown();
+    std::fs::remove_dir_all(root).expect("temporary root removes");
+}
+
+#[tokio::test]
+async fn ac4_shutdown_aborts_every_listener_task() {
+    let fixture = Fixture::established(1);
+    let before = authorization_publication_ticks();
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let loopback = handle.loopback_ipv4_addr();
+    let port = door_port(handle.door_outcome());
+    assert!(matches!(loopback_status(loopback).await, Ok(200)));
+    let mut carrier = live_carrier(&fixture, port).await;
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+    exchange_over_carrier(&mut carrier, &mut decoder, ids.allocate())
+        .await
+        .expect("carrier exchange");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(authorization_publication_ticks() > before);
+
+    handle.shutdown();
+    let stopped_at = authorization_publication_ticks();
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(!matches!(
+        tokio::time::timeout(Duration::from_secs(1), loopback_status(loopback)).await,
+        Ok(Ok(200))
+    ));
+    assert!(fresh_door_connection_is_refused(&fixture, port).await);
+    assert_eq!(authorization_publication_ticks(), stopped_at);
+}
+
+#[test]
+fn ac5_posture_induction_helpers_change_inodes_and_postures() {
+    let fixture = Fixture::established(1);
+    let path = fixture.root.join("link/authorized_clients.json");
+    let mut inode = std::fs::metadata(&path)
+        .expect("authorization metadata")
+        .ino();
+
+    fixture.warm_authorization_to_present();
+    assert!(matches!(
+        read_authorized_clients(&path),
+        AuthorizedClientsRead::Present(_)
+    ));
+    let warmed_inode = std::fs::metadata(&path).expect("warmed metadata").ino();
+    assert_ne!(warmed_inode, inode);
+    inode = warmed_inode;
+
+    fixture.induce_unreadable_authorization();
+    assert_eq!(
+        read_authorized_clients(&path),
+        AuthorizedClientsRead::Unreadable
+    );
+    let unreadable_inode = std::fs::metadata(&path).expect("unreadable metadata").ino();
+    assert_ne!(unreadable_inode, inode);
+
+    fixture.warm_authorization_to_present();
+    assert!(matches!(
+        read_authorized_clients(&path),
+        AuthorizedClientsRead::Present(_)
+    ));
+    let rewarmed_inode = std::fs::metadata(&path).expect("rewarmed metadata").ino();
+    assert_ne!(rewarmed_inode, unreadable_inode);
+
+    fixture.induce_malformed_authorization();
+    assert_eq!(
+        read_authorized_clients(&path),
+        AuthorizedClientsRead::Malformed
+    );
+    let malformed_inode = std::fs::metadata(&path).expect("malformed metadata").ino();
+    assert_ne!(malformed_inode, rewarmed_inode);
+
+    fixture.warm_authorization_to_present();
+    assert!(matches!(
+        read_authorized_clients(&path),
+        AuthorizedClientsRead::Present(_)
+    ));
+    assert_ne!(
+        std::fs::metadata(&path)
+            .expect("final warmed metadata")
+            .ino(),
+        malformed_inode
+    );
+}
+
+#[test]
+fn ac6_remove_authorization_uses_the_ledger_writer() {
+    let fixture = Fixture::established(1);
+    let path = fixture.root.join("link/authorized_clients.json");
+    let before_inode = std::fs::metadata(&path)
+        .expect("authorization metadata")
+        .ino();
+    let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+
+    let outcome = fixture.remove_authorization(0);
+
+    assert!(outcome.authorized_removed);
+    assert!(matches!(
+        read_authorized_clients(&path),
+        AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == did)
+    ));
+    assert_ne!(
+        std::fs::metadata(&path)
+            .expect("updated authorization metadata")
+            .ino(),
+        before_inode
+    );
+    assert!(
+        fixture
+            .root
+            .join("link/authorized_clients.json.lock")
+            .exists()
+    );
 }
 
 async fn presented_chain(
@@ -795,9 +1078,7 @@ async fn ac11_tls12_only_client_is_refused() {
 #[tokio::test]
 async fn ac6_unreadable_ledger_is_refused() {
     let fixture = Fixture::established(1);
-    let path = fixture.root.join("link/authorized_clients.json");
-    std::fs::remove_file(&path).expect("authorization file removes");
-    std::fs::create_dir(&path).expect("unreadable authorization directory");
+    fixture.induce_unreadable_authorization();
     assert_eq!(ledger_posture(&fixture), AuthorizedClientsRead::Unreadable);
     let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
         .await
@@ -813,8 +1094,7 @@ async fn ac6_unreadable_ledger_is_refused() {
 #[tokio::test]
 async fn ac6_malformed_ledger_is_refused() {
     let fixture = Fixture::established(1);
-    std::fs::write(fixture.root.join("link/authorized_clients.json"), b"{}")
-        .expect("malformed authorization");
+    fixture.induce_malformed_authorization();
     assert_eq!(ledger_posture(&fixture), AuthorizedClientsRead::Malformed);
     let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
         .await
@@ -969,8 +1249,7 @@ async fn ac10_transient_unreadable_posture_does_not_close_admitted_carrier() {
             .is_ok()
     );
     let authorization = fixture.root.join("link/authorized_clients.json");
-    std::fs::remove_file(&authorization).expect("authorization removes");
-    std::fs::create_dir(&authorization).expect("unreadable authorization directory");
+    fixture.induce_unreadable_authorization();
     assert_eq!(ledger_posture(&fixture), AuthorizedClientsRead::Unreadable);
     tokio::time::sleep(Duration::from_millis(1_600)).await;
     assert!(
@@ -1287,6 +1566,7 @@ async fn ac23_unestablished_or_corrupt_session_withholds_door_without_ca_write()
             handshake_timeout: Duration::from_secs(1),
             stream_stall_timeout: Duration::from_secs(1),
             router: Router::new(),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
         })
         .await
         .expect("loopback");

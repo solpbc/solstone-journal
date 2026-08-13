@@ -43,7 +43,8 @@ pub use acceptor::{
 #[cfg(feature = "host")]
 pub use door::{
     DeviceDoorAuthorization, DeviceDoorConfigError, DeviceDoorVerifier,
-    build_device_door_server_config, refresh_once, spawn_authorization_refresh,
+    authorization_publication_ticks, build_device_door_server_config, refresh_once,
+    spawn_authorization_refresh,
 };
 #[cfg(feature = "client")]
 pub use serve::SplLinkServeRunner;

@@ -49,6 +49,12 @@ const SUPERVISOR_USAGE_ANCHOR: &[u8] =
 
 const PROBES: &[Probe] = &[
     Probe {
+        token: "config",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal config"),
+    },
+    Probe {
         token: "depict",
         argv: &[],
         expected_exit: 1,
@@ -924,6 +930,112 @@ fn native_check_and_install_models_malformed_argv_use_exported_usage_through_dis
         );
         assert!(!context.poison_marker.exists(), "{token}");
     }
+}
+
+#[test]
+fn native_config_branches_remain_poison_clean_through_dispatcher() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+
+    let show = run_dispatcher_with_output(&context, "config", &["show"])
+        .expect("run native config show through dispatcher");
+    assert_eq!(show.status.code(), Some(0));
+    assert!(show.stderr.is_empty());
+    assert!(
+        !context.poison_marker.exists(),
+        "config show reached poison"
+    );
+
+    let missing_parent = context.home.join("missing-parent/target");
+    let missing_parent_arg = missing_parent.display().to_string();
+    let refusal = run_dispatcher_with_output(
+        &context,
+        "config",
+        &["journal", &missing_parent_arg, "--move", "--yes"],
+    )
+    .expect("run native config refusal through dispatcher");
+    assert_eq!(refusal.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&refusal.stderr).contains("move target parent does not exist"));
+    assert!(
+        !context.poison_marker.exists(),
+        "config refusal reached poison"
+    );
+
+    let aliases = context.home.join(".local/bin");
+    fs::create_dir_all(&aliases).expect("create wrapper directory");
+    let current = context.home.join("current-journal");
+    let sol = aliases.join("sol");
+    fs::write(
+        &sol,
+        format!(
+            "# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nSOL_BIN='/native/sol'\n",
+            current.display()
+        ),
+    )
+    .expect("write managed sol wrapper");
+
+    let plan_target = context.home.join("planned-journal");
+    let plan_target_arg = plan_target.display().to_string();
+    let plan = run_dispatcher_with_output(
+        &context,
+        "config",
+        &["journal", &plan_target_arg, "--switch", "--dry-run"],
+    )
+    .expect("run native config plan through dispatcher");
+    assert_eq!(plan.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&plan.stdout).contains("dry-run: yes; nothing will be changed")
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "config plan reached poison"
+    );
+
+    let no_service_target = context.home.join("no-service-journal");
+    let no_service_target_arg = no_service_target.display().to_string();
+    let no_service = run_dispatcher_with_output(
+        &context,
+        "config",
+        &["journal", &no_service_target_arg, "--switch", "--yes"],
+    )
+    .expect("run native config no-service branch through dispatcher");
+    assert_eq!(no_service.status.code(), Some(0));
+    assert_eq!(
+        no_service.stdout,
+        b"service not installed; wrapper updated.\n"
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "config no-service branch reached poison"
+    );
+
+    #[cfg(target_os = "macos")]
+    let service_unit = context
+        .home
+        .join("Library/LaunchAgents/org.solpbc.solstone.plist");
+    #[cfg(not(target_os = "macos"))]
+    let service_unit = context.home.join(".config/systemd/user/solstone.service");
+    fs::create_dir_all(service_unit.parent().expect("service parent"))
+        .expect("create service parent");
+    fs::write(&service_unit, "unit").expect("write service unit");
+    let stopped_target = context.home.join("stopped-service-journal");
+    let stopped_target_arg = stopped_target.display().to_string();
+    let stopped = run_dispatcher_with_output(
+        &context,
+        "config",
+        &["journal", &stopped_target_arg, "--switch", "--yes"],
+    )
+    .expect("run native config stopped-service branch through dispatcher");
+    assert_eq!(stopped.status.code(), Some(0));
+    assert_eq!(
+        stopped.stdout,
+        b"service installed but not running; wrapper updated.\n"
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "config stopped-service branch reached poison"
+    );
 }
 
 #[test]
