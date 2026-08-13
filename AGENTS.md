@@ -138,6 +138,44 @@ The focused Python Make targets are frozen; run the Python suite directly when
 it is needed.
 Do not rerun an unchanged failure merely to seek green.
 
+### Rust test topology
+
+Treat every Cargo test target as a build-cost decision. [By default, Cargo
+builds each top-level integration-test file as a separate
+executable](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#integration-tests),
+so prefer the narrowest owning crate and a grouped harness; explicit `[[test]]`
+targets have the same cost. Preserve black-box tests when the process boundary
+is the behavior; the goal is fewer binaries, not relabeling integration tests.
+
+- Put same-crate behavior tests in `#[cfg(test)]` modules beside the owning
+  code. Put public API and process contracts in the narrowest owning leaf crate
+  unless the behavior genuinely belongs to the aggregate `solstone-core`
+  composition boundary.
+- Add cases to an existing grouped domain harness; if none fits, create one.
+  Any additional top-level target must state its Cargo-level reason, such as
+  irreconcilable process-global setup, `required-features`, or custom harness
+  configuration. Check [`autotests`](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#target-auto-discovery)
+  before adding a file and confirm new targets in `cargo metadata`; packages
+  with discovery disabled need explicit wiring.
+  Use OS-assigned ephemeral ports; environment mutation, shared state, and
+  subprocess lifecycle do not alone justify another target.
+- Put repository, source, manifest, Makefile, packaging, and workspace-policy
+  assertions in a dedicated lightweight repository-contract crate or target so
+  they do not link the product graph. Establish that home from a concrete
+  inventory; do not broaden a product crate or add an empty architectural
+  placeholder.
+- Iterate with the narrowest command, such as `cargo test --manifest-path
+  core/Cargo.toml -p <package> --lib` or the affected `--test <harness> <test>`.
+  [`make ci`](Makefile) is the routine gate: a formatting check, static Clippy
+  checks of ordinary workspace targets, and library/binary unit harnesses. It
+  does not link or execute integration-test binaries, so run affected harnesses
+  directly.
+- Run [`make ci-full`](Makefile) once on the exact final tree before merge or
+  release. This host-conditional gate reports unsupported platform legs as
+  skipped, so run affected platform lanes on their supported hosts. Separately
+  run `make check-differentials` when a Rust/Python seam changes and `make
+  check-rust-race` for concurrency-sensitive supervisor changes.
+
 ### Verification against a running sandbox
 
 | Target | When to use |
