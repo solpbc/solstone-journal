@@ -43,10 +43,18 @@ here is read from any real journal, and nothing here may be pointed at one.
 process on their success paths, so only their *refusal* paths are probed -- which
 is the half a port actually gets wrong, and the half that is reproducible.
 
-Determinism: ``TZ`` is pinned to UTC before any solstone import. The durable
-brain record is seeded with pinned timestamps so ``evidence.age_seconds`` and
-``age_text`` are **pinned rather than erased** -- an oracle that normalizes the
-value it exists to check reports green on a port that computes it wrongly.
+Determinism: ``TZ`` is pinned to UTC before any solstone import.
+
+⛔ **The brain record's instants and the ages derived from them are NOT pinned by
+this corpus, and an earlier draft of this docstring claimed they were.** Seeding
+on a pinned clock was tried and does not work: the record's ``updated_at`` is
+stamped by the native writer in a *separate process*, which no in-process clock
+patch reaches, so a frozen reader sees a record from its own future and the
+reference bakes ``brain_record_stale`` into the record itself -- every phase then
+pins the stale branch while looking fully populated. The seed therefore runs on
+the real clock and seven instants are normalized to ``<CAPTURE_CLOCK>``.
+🔴 **So duration arithmetic is ungraded here and needs its own unit test.** Saying
+otherwise is the exact failure this corpus exists to prevent, one layer up.
 
 🔴 Normalization is a PATH ALLOWLIST, never a shape test, and every normalized
 field is named per case in ``normalized_fields``. Host-dependent fields (physical
@@ -166,6 +174,11 @@ Probe = tuple[str, str, "dict[str, Any] | None", str]
 PROBES: list[Probe] = [
     # ---- the shell half -------------------------------------------------
     ("GET", "/app/thinking/", None, "the app index: must be the shell, byte-identical"),
+    # ⚠ Flask redirects a missing trailing slash; axum does not, and a port that
+    # inherits the router default answers the unconverted-app refusal instead. A
+    # sibling lane shipped three silent narrowings of exactly this kind, one of
+    # them a trailing slash the reference accepted.
+    ("GET", "/app/thinking", None, "🔴 NO trailing slash -- the reference's own redirect behaviour"),
     ("GET", "/app/thinking/workspace", None, "the app fragment bytes the shell injects"),
     ("GET", "/app/thinking/static/thinking.js", None, "per-app static; the whole client"),
     # ---- the read surface ------------------------------------------------
@@ -392,6 +405,37 @@ def _build_journal(root: Path, phase: str) -> None:
         )
         _seed_brain_record(root)
         return
+    if phase == "confidential_inactive":
+        # Confidential is PROVISIONED but is not the active lane, which is the
+        # only way to reach the attestation view's `inactive` branch. The active
+        # provider is a cloud one, so `derive_active_brain_lane` answers
+        # `byo-cloud` while `spp_configured` stays true.
+        _write_config(
+            root,
+            _established(
+                env={"OPENAI_API_KEY": "sk-corpus-not-a-real-key"},
+                providers={
+                    "active": {"provider": "openai", "model": "gpt-5"},
+                    "local": {
+                        "endpoint_url": CONFIDENTIAL_ENDPOINT_URL,
+                        "served_model_id": CONFIDENTIAL_SERVED_MODEL,
+                        "credential": CONFIDENTIAL_CREDENTIAL,
+                    },
+                },
+                services={
+                    "confidential": {
+                        "endpoint_url": CONFIDENTIAL_ENDPOINT_URL,
+                        "served_model_id": CONFIDENTIAL_SERVED_MODEL,
+                        "credential_fingerprint_sha256": _sha256_hex(
+                            CONFIDENTIAL_CREDENTIAL
+                        ),
+                        "prior_active": {"provider": "openai", "model": "gpt-5"},
+                    }
+                },
+            ),
+        )
+        _seed_brain_record(root)
+        return
     if phase == "confidential":
         # The only phase that reaches the attestation view's non-`off` branches.
         # `services.confidential` + `providers.local.credential` is what
@@ -489,6 +533,7 @@ PHASES = (
     "bundled_local",
     "byo_cloud",
     "byo_endpoint",
+    "confidential_inactive",
     "confidential",
 )
 
@@ -529,7 +574,25 @@ def build_corpus() -> dict[str, Any]:
         # 🔴 Where the NATIVE surface deliberately differs. A checker reads this
         # and honours it; anything NOT listed here is a defect. ⛔ Declaring a
         # deviation only in prose means every independent check re-finds it.
-        "native_deviations": [],
+        "native_deviations": [
+            {
+                "path": "/app/thinking/api/generators",
+                "method": "PUT",
+                "when": "the request carries no body",
+                "reference": "500 settings_operation_failed -- the handler calls "
+                "request.get_json() without silent=True, werkzeug raises "
+                "UnsupportedMediaType, and the route's blanket except turns an "
+                "unhandled exception into a generic failure",
+                "native": "400 missing_request_body, the same typed refusal every "
+                "other write route on this surface already answers",
+                "why": "a raise is not a refusal. Every sibling route on this "
+                "surface answers missing_request_body for the identical input, "
+                "and the reference's own generator comments approve of that "
+                "answer; reproducing the 500 would be preserving a defect, not "
+                "fidelity. ⚠ This is the ONLY declared deviation -- anything "
+                "else that differs from a recorded case is a defect.",
+            }
+        ],
         "phases": cases,
     }
 
