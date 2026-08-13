@@ -17,6 +17,7 @@ pub const USAGE: &str = concat!(
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  journal health [-h] [-v | --verbose] [-d | --debug]\n",
+    "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
@@ -618,6 +619,7 @@ pub enum Command {
     ScheduleUsage(ScheduleUsageError),
     Grab(GrabCommand),
     Spl(SplCommand),
+    Sense(ServiceOptions),
     Supervisor(SupervisorOptions),
     SupervisorUsage,
     SupervisorHelp,
@@ -1364,6 +1366,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(Command::Grab(parse_grab(rest)))
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
+        [command, rest @ ..] if command == OsStr::new("sense") => {
+            parse_service(rest).map(Command::Sense)
+        }
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             let help = |argument: &OsString| {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")

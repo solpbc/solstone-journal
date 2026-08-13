@@ -227,6 +227,7 @@ fn main() -> ExitCode {
         }
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
+        Ok(Command::Sense(options)) => run_sense_service(options),
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
         Ok(Command::SupervisorHelp) => {
@@ -4515,6 +4516,29 @@ fn run_spl_service(options: ServiceOptions) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("spl service failed: {}", error.class());
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
+}
+
+fn run_sense_service(options: ServiceOptions) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_sense::run_native_service(
+        journal.path,
+        solstone_core_sense::SenseOptions {
+            verbose: options.verbose,
+            debug: options.debug,
+        },
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("sense service failed: {}", error.class());
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }
