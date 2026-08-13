@@ -62,7 +62,7 @@ What remains in this package is the home-side ingest-and-processing pipeline:
 
 - **sense.py** — File watcher that dispatches transcription and description jobs
 - **transcribe/** — Audio transcription with native speaker-analysis embeddings. Exit-code contract, retry/deferral semantics, and the `observe.transcribed` field table: [transcribe/failure-and-telemetry.md](../solstone/observe/transcribe/failure-and-telemetry.md)
-- **describe.py** — Provider-routed vision analysis with category-based prompts
+- **solstone-core-describe** — Native vision analysis helper reached via `journal describe`; the Python reference is retired
 - **categories/** — Category-specific prompts for screen content (see [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md))
 
 ### Vision input sizing

@@ -72,7 +72,7 @@ Processed sense output written back.
 
 ⚠ **The `_solstone_processing` header moved out of this strand 2026-08-05** — it is now `S:segment-sense:segment-processing`, below. What stays here is the analysis output itself: `<stem>.jsonl` rows and the `<stem>.npz` speaker-embedding sidecar, whose formats `observe/screen.schema.json` and `observe/transcribe/audio.schema.json` own.
 
-⚠ Both of those schemas **under-declare their own headers**, and both carry `additionalProperties: true`, so nothing ever fails validation. Undeclared but written: `_solstone_thinking` (`describe.py:653-657`) and audio's `overlap_fraction`, `overlap_detector`, `device`, `compute_type`, `speaker_analysis_producer`, `noisy_rms`, `noisy_s`, `loud_windows`, `speech_loud_windows`, `loud_speech_ratio`.
+⚠ Both of those schemas **under-declare their own headers**, and both carry `additionalProperties: true`, so nothing ever fails validation. Undeclared but historically written by retired `describe.py:653-657`: `_solstone_thinking`; audio's live fields are `overlap_fraction`, `overlap_detector`, `device`, `compute_type`, `speaker_analysis_producer`, `noisy_rms`, `noisy_s`, `loud_windows`, `speech_loud_windows`, `loud_speech_ratio`.
 
 🆕 **The audio record gains `sentence_id` (additive), and the audio analysis-output writer is `P-speaker-id`'s to build — operator call, 2026-08-07.** Rule 4a's remaining instance is this strand's `<stem>.jsonl` row: `build_statement` mints a 1-based ordinal and `_statements_to_jsonl` discards it, so six sites re-derive it from file position and two durable stores persist it as a join key. Persisting it needs a native writer, and "no more Python ships" forbids the one-line Python edit — so `P-speaker-id` builds the native writer for the analysis output (`<stem>.jsonl` rows **and** the `<stem>.npz` sidecar). ⛔ **Strand ownership does not move: `P-journal` still owns this contract.** `sentence_id` goes into `$defs.record.properties` and `x-journal-contract.key_fields`, ⛔ **never into `required`** — the reference journal's 200,583 existing rows all lack it and must stay valid.
 
@@ -84,7 +84,7 @@ Processed sense output written back.
 
 ⚠ **Three scope corrections to those three, all verified by reading the code:**
 - 🔴 **The unlink half of terminal-empty is RETIRED 2026-08-05 by operator ruling — the marker discipline is not.** `transcribe` writes the terminal-empty marker exactly as it does today (`transcribe/main.py:1182-1191`, `:810-819`; durable because `write_text` fsyncs the temp, `os.replace`s, then fsyncs the parent) and then **hands the raw to `P-journal-retention` instead of calling `unlink()`** (`:1209`, `:836`). ⛔ Retention is the only plate that removes owner media. ⚠ The *ordering* invariant survives intact and still matters — the marker must be durable before the raw is handed over, never after. The discipline was transcribe-only in any case: describe writes the empty marker and never unlinked the video.
-- **"Header last" is true of the *decision*, false of the *byte order*.** In the promoted file the header is physically line 1; what happens last is *determining* it, inside `_promote` (`describe.py:896-925`), once the run knows its verdict. ⛔ A rebuild that appends the header at the end of the file has read this backwards.
+- **"Header last" is true of the *decision*, false of the *byte order*.** In the retired Python reference's promoted file the header was physically line 1; what happened last was *determining* it, inside `_promote` (`describe.py:896-925`), once the run knew its verdict. ⛔ A rebuild that appends the header at the end of the file has read this backwards.
 - **Detections are filtered at exactly one read site** — `qualified_objects` (`observe/detect.py:106-122`) has a single production caller, `observe/screen.py:225`. ⚠ So `depict`'s stored `source="still"` detections are **never** filtered on any read path.
 
 ### `S:segment-sense:segment-processing`
@@ -96,7 +96,7 @@ Processed sense output written back.
 
 | producer | writes | via |
 |---|---|---|
-| `observe/describe.py:911-918` | screen verdicts | `build_processing_record` (`observe/processing_record.py:160-190`) |
+| retired Python `observe/describe.py:911-918` | screen verdicts | `build_processing_record` (`observe/processing_record.py:160-190`) |
 | `observe/transcribe/main.py` at **`:791-796`** (empty), **`:1147-1152`** (failed), **`:877-882`** (analyzed) | audio verdicts | same ⚠ `:631-632` is the metadata-assembly line, not a call site |
 | 🔴 **`think/backfill_processing_records.py:170-198`** | `state=empty` with `source="backfill"`, and `input_size` from the media sibling — **or `0` when the sibling is absent or `stat()` raises** | same |
 
@@ -111,7 +111,7 @@ Processed sense output written back.
 | Reader | Decides |
 |---|---|
 | `observe/sense.py:1066` | whether a batch scan re-enters a file |
-| `observe/describe.py:1577`, `:178` | handler self-skip, and which rows an incremental re-run reuses |
+| retired Python `observe/describe.py:1577`, `:178` | handler self-skip, and which rows an incremental re-run reuses |
 | `think/data_state.py:54` | the shared modality state, consumed by `think/cluster.py:503` and `apps/transcripts/routes.py:747` |
 | `think/retention.py:135-142` | 🔴 **irreversible raw-media deletion** |
 | `apps/observer/processing_proof.py:61` | 🔴 **that a device may drop its local copy** |

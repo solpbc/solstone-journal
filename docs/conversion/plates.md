@@ -100,7 +100,7 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 |---|---|---|---|---|
 | dispatcher | `observe/sense.py` (1,508) | the `observe.observing` bus event, or a `--day` scan | nothing in the segment | spawns handlers by **file extension**, one `ThreadPoolExecutor` per handler, memory-gated, per-job wall-clock caps (`describe` 1800s · `transcribe` 2700s · `depict` 600s) |
 | audio | `observe/transcribe/` (~3,100) | `.flac .opus .ogg .m4a .mp3 .wav` | `<stem>.jsonl`, `<stem>.npz` | VAD → silence reduction → backend registry → STT → native speaker analysis |
-| screen | `observe/describe.py` (1,660) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract |
+| screen | retired Python reference `observe/describe.py` (1,660) | `.webm .mp4 .mov` | `<stem>.jsonl` | dHash winnow → ArUco mask → categorize → select → extract |
 | image reference | `observe/depict.py` (104) | `.png .jpg .jpeg .heic .heif .gif .webp .tiff` | `<stem>.jsonl` | frozen oracle for the native handler |
 
 🔴 **The dispatcher is the plate.** Its behaviour is not incidental: skip and defer gates, re-entry rules, the memory gate, the watchdog, `exit 69` hold-raw, and segment completion all live there, and none of it is in a handler. ⚠ `observe/{hear,screen,see,grab,pdf_worker}.py` (2,269 lines) carry `observe/` names but are **read-side or other plates entirely** — sense reaches none of them.
@@ -115,7 +115,7 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 ⚠ **Two more undeclared behaviours in the same file.** Segment identity in every tracking structure is the **bare `HHMMSS_LEN` key**, not `(day, stream, segment)` — so two streams whose segments start in the same second collide, merging pending sets and landing errors on the wrong segment. And **shutdown records in-flight work as terminal failure** (`_run_handler:573-584`): a SIGTERM'd handler's non-zero exit becomes a segment error and emits `observed` with `error: True` — ⚠ and the daily repair phase runs the batch dispatcher under a wall-clock budget (`think/thinking.py:4611`), so a phase that runs over systematically writes **false failures**.
 
-🔴 **Two silent-success paths.** `describe.py:964-967` and `depict.py:64-69` **return exit 0 having written nothing** when no thinking engine is configured, and the dispatcher reads that as success — it records a successful contact and marks the file done (`sense.py:562-571`). The live path is protected by a gate (`sense.py:817-825`); ⚠ **the `--day` batch path is not**, and the daily sense-repair pre-phase (`think/thinking.py:4592-4632`) is exactly that path. Re-entry eventually recovers because no output exists, but the success signal is false while it does.
+🔴 **Two historical silent-success paths.** Retired `describe.py:964-967` and `depict.py:64-69` **returned exit 0 having written nothing** when no thinking engine was configured, and the dispatcher read that as success — it recorded a successful contact and marked the file done (`sense.py:562-571`). The live path was protected by a gate (`sense.py:817-825`); ⚠ **the `--day` batch path was not**, and the daily sense-repair pre-phase (`think/thinking.py:4592-4632`) was exactly that path. Re-entry eventually recovered because no output existed, but the success signal was false while it did.
 
 🆕 🔴 **MEASURED 2026-08-09 by running the handler: `transcribe` has TWO sites that unlink the owner's raw audio, not one, and they are 440 lines apart.**
 
@@ -232,7 +232,7 @@ Consistent formatting of **structured journal data** for its consumers — the i
 
 🔴 **The plate's import count is not the contract's fan-out, and the difference is tenfold.** 46 production modules import `think.models`; **11 of them import a `generate` entry point** (`generate`, `generate_with_result`, `agenerate`, `agenerate_with_result`), and one of those 11 is the wire itself. The other 35 import model constants, the error classes, `resolve_provider`, or cost helpers — `think.models` is a grab-bag module and its import count is a property of the module, not of this boundary. ⛔ Do not size `generate` work from the module's importers.
 
-⚠ **Ten of the eleven are one-shot; one is a fan-out.** `think/batch.py` is the only caller that needs many completions in flight, and it has three consumers of its own (`observe/describe.py`, `apps/timeline/rollup.py`, `apps/timeline/maintenance.py`). That single asymmetry is why `generate` is one vocabulary in **two framings** rather than one shape or two contracts.
+⚠ **Ten of the eleven were one-shot; one was a fan-out.** `think/batch.py` was the only caller that needed many completions in flight, and it had three consumers of its own (retired `observe/describe.py`, `apps/timeline/rollup.py`, `apps/timeline/maintenance.py`). That historical asymmetry is why `generate` is one vocabulary in **two framings** rather than one shape or two contracts.
 
 🔴 **The retry and hold-raw decisions are keyed on a reason code, and the classification belongs here.** `is_non_retryable_generate_reason` (`providers/shared.py:275`) and `is_blocking_reason` (`convey/provider_readiness.py:420`) map a reason code to *retry or not* and *hold the owner's raw media or not*. ⛔ A caller that re-derives them owns a copy of this plate's contract — the boundary publishes the decisions.
 
