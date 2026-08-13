@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! W2 mutation conformance tests driven exclusively by the captured corpus.
+//! Mutation conformance tests driven exclusively by the captured corpus.
 
 use std::{fs, time::Duration};
 
@@ -13,21 +13,7 @@ use serde_json::{Value, json};
 use solstone_core_journal_config_write::{LockOptions, hold_lock};
 use tower::ServiceExt;
 
-const W3_MUTATION_CASES: [&str; 4] = [
-    "PUT storage.journal-logs",
-    "PUT storage.per-stream",
-    "PUT storage.retention",
-    "POST prune-logs.dry-run",
-];
-
-const W3_STORAGE_REFUSAL_CASES: [&str; 4] = [
-    "POST prune-logs.bad-days",
-    "PUT storage.bad-days",
-    "PUT storage.bad-mode",
-    "PUT storage.logs-bad-days",
-]; // W3 owns the storage/prune routes and they are deliberately unregistered in W2.
-
-const W2_MUTATION_PAIRS: [(&str, &str); 16] = [
+const MUTATION_PAIRS: [(&str, &str); 19] = [
     ("PUT", "/app/settings/api/config"),
     ("POST", "/app/settings/api/config"),
     ("PUT", "/app/settings/api/sol_voice"),
@@ -50,6 +36,9 @@ const W2_MUTATION_PAIRS: [(&str, &str); 16] = [
         "/app/settings/api/facet/work-life/activities/meeting",
     ),
     ("PUT", "/app/settings/api/sync"),
+    ("PUT", "/app/settings/api/storage"),
+    ("POST", "/app/settings/api/storage/purge"),
+    ("POST", "/app/settings/api/storage/prune-logs"),
 ];
 
 fn write_config(root: &std::path::Path, config: &Value) {
@@ -131,12 +120,11 @@ async fn request(
     )
 }
 
-fn w2_mutations<'a>(corpus: &'a Value, collection: &str) -> Vec<(&'a str, &'a Value)> {
+fn mutation_cases<'a>(corpus: &'a Value, collection: &str) -> Vec<(&'a str, &'a Value)> {
     corpus[collection]
         .as_object()
         .expect("mutation collection")
         .iter()
-        .filter(|(name, _)| !W3_MUTATION_CASES.contains(&name.as_str()))
         .map(|(name, case)| (name.as_str(), case))
         .collect()
 }
@@ -234,23 +222,34 @@ fn assert_config_result(case_name: &str, case: &Value, root: &std::path::Path) {
     );
 }
 
-#[tokio::test]
-async fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
+// This replay contains `POST prune-logs.dry-run`, whose recorded 500 is the
+// contract on a host *without* the retention executor. `retention_executor.rs`
+// resolves `solstone-retention` off ambient PATH, and `make install` puts one at
+// `.venv/bin/solstone-retention` — so without the pin below the outcome is the
+// host's, not the corpus's: the suite passes 48/48 on a bare box and fails
+// 46/48 on any developer machine with the venv active. The pin, not the host,
+// establishes absence. Nothing else in this crate launches a process — AC 15
+// holds `retention_executor.rs` as the sole exemption and forbids every launch
+// API elsewhere — so narrowing PATH cannot perturb any other replayed route.
+#[test]
+fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
+    let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
-    let cases = w2_mutations(&corpus, "mutations");
-    assert_eq!(cases.len(), 16);
-    for (name, case) in cases {
-        let root = root_from(&case["config_before"]);
-        let (status, body) = request(
-            crate::test_support::shell_router(root.path()),
-            case["method"].as_str().expect("method"),
-            case["path"].as_str().expect("path"),
-            Some(&case["sent"]),
-        )
-        .await;
-        assert_response(name, case, root.path(), status, body);
-        assert_config_result(name, case, root.path());
-    }
+    let cases = mutation_cases(&corpus, "mutations");
+    assert_eq!(cases.len(), 21);
+    crate::retention_tests::without_executor(|| {
+        for (name, case) in cases {
+            let root = root_from(&case["config_before"]);
+            let (status, body) = crate::retention_tests::run_async(request(
+                crate::test_support::shell_router(root.path()),
+                case["method"].as_str().expect("method"),
+                case["path"].as_str().expect("path"),
+                Some(&case["sent"]),
+            ));
+            assert_response(name, case, root.path(), status, body);
+            assert_config_result(name, case, root.path());
+        }
+    });
 }
 
 #[tokio::test]
@@ -419,43 +418,122 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
     assert!(!lifecycle.path().join("facets/renamed").exists());
 }
 
-#[tokio::test]
-async fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
+// Same executor-absence pin as `ac1`, for the same reason: this collection
+// replays `POST prune-logs.dry-run` too.
+#[test]
+fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
+    let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
-    let cases = w2_mutations(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 16);
-    for (name, case) in cases {
-        let root = root_from(&case["config_before"]);
-        let before_bytes = fs::read(root.path().join("config/journal.json")).expect("before bytes");
-        let before = case["config_before"].as_object().expect("before object");
-        let malformed_before = ["retention", "observe", "describe", "identity"]
-            .iter()
-            .filter_map(|key| {
-                before
-                    .get(*key)
-                    .map(|_| ((*key).to_owned(), raw_top_level_field(&before_bytes, key)))
-            })
-            .collect::<Vec<_>>();
-        let (status, body) = request(
-            crate::test_support::shell_router(root.path()),
-            case["method"].as_str().expect("method"),
-            case["path"].as_str().expect("path"),
-            Some(&case["sent"]),
-        )
-        .await;
-        assert_response(name, case, root.path(), status, body);
-        assert_config_result(name, case, root.path());
-        let after_bytes = fs::read(root.path().join("config/journal.json")).expect("config after");
-        for (section, bytes) in malformed_before {
-            if case["config_before"][&section] == case["config_after"][&section] {
-                assert_eq!(
-                    raw_top_level_field(&after_bytes, &section),
-                    bytes,
-                    "{name} malformed {section} bytes"
-                );
+    let cases = mutation_cases(&corpus, "mutations_malformed");
+    assert_eq!(cases.len(), 21);
+    crate::retention_tests::without_executor(|| {
+        for (name, case) in cases {
+            let root = root_from(&case["config_before"]);
+            let before_bytes =
+                fs::read(root.path().join("config/journal.json")).expect("before bytes");
+            let before = case["config_before"].as_object().expect("before object");
+            let malformed_before = ["retention", "observe", "describe", "identity"]
+                .iter()
+                .filter_map(|key| {
+                    before
+                        .get(*key)
+                        .map(|_| ((*key).to_owned(), raw_top_level_field(&before_bytes, key)))
+                })
+                .collect::<Vec<_>>();
+            let (status, body) = crate::retention_tests::run_async(request(
+                crate::test_support::shell_router(root.path()),
+                case["method"].as_str().expect("method"),
+                case["path"].as_str().expect("path"),
+                Some(&case["sent"]),
+            ));
+            assert_response(name, case, root.path(), status, body);
+            assert_config_result(name, case, root.path());
+            let after_bytes =
+                fs::read(root.path().join("config/journal.json")).expect("config after");
+            for (section, bytes) in malformed_before {
+                if case["config_before"][&section] == case["config_after"][&section] {
+                    assert_eq!(
+                        raw_top_level_field(&after_bytes, &section),
+                        bytes,
+                        "{name} malformed {section} bytes"
+                    );
+                }
             }
         }
+    });
+}
+
+// Negative twin for the two pins above. It stages the exact host state that
+// broke the replay — a resolvable `solstone-retention` on PATH *and* in
+// SOLSTONE_RETENTION_BIN, i.e. any machine that has run `make install` — and
+// asserts the pinned replay still reproduces the recorded 500 without ever
+// spawning it. Without this, a future change that drops the pin stays green on
+// a bare CI box and only turns red on a developer's machine.
+#[test]
+fn prune_logs_replay_refuses_even_when_a_host_executor_is_resolvable() {
+    let _serialized = crate::retention_tests::executor_env_guard();
+    let host = tempfile::Builder::new()
+        .prefix("w3-host-executor-")
+        .tempdir()
+        .expect("space-free host directory");
+    assert!(!host.path().display().to_string().contains(' '));
+    let planted = host.path().join(crate::retention_executor::BINARY);
+    let marker = host.path().join("spawned.marker");
+    fs::write(
+        &planted,
+        format!(
+            "#!/bin/sh\nprintf 'spawned\\n' >> {}\nprintf '%s' '{{\"marks\":{{}}}}'\n",
+            marker.display()
+        ),
+    )
+    .expect("planted executor bytes");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&planted, fs::Permissions::from_mode(0o755)).expect("planted mode");
     }
+
+    let corpus = crate::test_support::corpus();
+    let name = "POST prune-logs.dry-run";
+    let case = &corpus["mutations"][name];
+    assert_eq!(case["status"].as_u64(), Some(500), "recorded contract");
+    let root = root_from(&case["config_before"]);
+
+    let host_path = host.path().display().to_string();
+    let planted_path = planted.display().to_string();
+    let (status, body) = temp_env::with_vars(
+        [
+            ("PATH", Some(host_path.as_str())),
+            ("SOLSTONE_RETENTION_BIN", Some(planted_path.as_str())),
+        ],
+        || {
+            // The staged host is genuinely hostile: the production resolver
+            // finds the planted executor before the pin is applied.
+            assert!(
+                crate::retention_executor::binary().is_ok(),
+                "staged host must resolve an executor, or this twin proves nothing"
+            );
+            crate::retention_tests::without_executor(|| {
+                assert!(
+                    crate::retention_executor::binary().is_err(),
+                    "the pin must make the executor unresolvable"
+                );
+                crate::retention_tests::run_async(request(
+                    crate::test_support::shell_router(root.path()),
+                    case["method"].as_str().expect("method"),
+                    case["path"].as_str().expect("path"),
+                    Some(&case["sent"]),
+                ))
+            })
+        },
+    );
+
+    assert_response(name, case, root.path(), status, body);
+    assert_config_result(name, case, root.path());
+    assert!(
+        !marker.exists(),
+        "the pinned replay must never spawn the host executor"
+    );
 }
 
 fn refusal_route(name: &str) -> (&'static str, &'static str) {
@@ -482,7 +560,11 @@ fn refusal_route(name: &str) -> (&'static str, &'static str) {
         "POST facet.rename-no-name" => ("POST", "/app/settings/api/facet/no-such/rename"),
         "PUT chat.bad-thinking-surfaces" => ("PUT", "/app/settings/api/chat"),
         "PUT sol_voice.not-object" => ("PUT", "/app/settings/api/sol_voice"),
-        other => panic!("unknown W2 refusal route: {other}"),
+        "PUT storage.bad-mode" | "PUT storage.bad-days" | "PUT storage.logs-bad-days" => {
+            ("PUT", "/app/settings/api/storage")
+        }
+        "POST prune-logs.bad-days" => ("POST", "/app/settings/api/storage/prune-logs"),
+        other => panic!("unknown refusal route: {other}"),
     }
 }
 
@@ -495,30 +577,30 @@ fn inventory_path(path: &str) -> &str {
 }
 
 #[tokio::test]
-async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
+async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
     let corpus = crate::test_support::corpus();
     let phases = ["established", "rich", "populated", "tokened", "malformed"];
     let mut total = 0;
     let mut per_phase = None;
     for phase in phases {
         let cases = corpus["phases"][phase].as_object().expect("phase");
-        let w2_cases = cases
+        let mutation_cases = cases
             .iter()
             .filter(|(name, _)| {
-                (name.starts_with("POST ")
-                    || name.starts_with("PUT ")
-                    || name.starts_with("DELETE "))
-                    && !W3_STORAGE_REFUSAL_CASES.contains(&name.as_str())
+                name.starts_with("POST ") || name.starts_with("PUT ") || name.starts_with("DELETE ")
             })
             .collect::<Vec<_>>();
-        assert_eq!(per_phase.get_or_insert(w2_cases.len()), &w2_cases.len());
-        for (name, case) in w2_cases {
+        assert_eq!(
+            per_phase.get_or_insert(mutation_cases.len()),
+            &mutation_cases.len()
+        );
+        for (name, case) in mutation_cases {
             let root = crate::test_support::phase_root(phase);
             let before = fs::read(root.path().join("config/journal.json")).expect("config before");
             let (method, path) = refusal_route(name);
             assert!(
-                W2_MUTATION_PAIRS.contains(&(method, inventory_path(path))),
-                "{phase} {name} maps to a W2 route"
+                MUTATION_PAIRS.contains(&(method, inventory_path(path))),
+                "{phase} {name} maps to an inventory route"
             );
             let sent = if matches!(
                 name.as_str(),
@@ -557,8 +639,8 @@ async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(per_phase, Some(23));
-    assert_eq!(total, 23 * 5);
+    assert_eq!(per_phase, Some(27));
+    assert_eq!(total, 27 * 5);
 }
 
 #[tokio::test]
@@ -763,14 +845,38 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
 }
 
 #[tokio::test]
-async fn ac12_explicit_sixteen_pair_inventory() {
-    assert_eq!(W2_MUTATION_PAIRS.len(), 16);
+async fn ac12_explicit_nineteen_pair_inventory() {
+    assert_eq!(MUTATION_PAIRS.len(), 19);
     let root = crate::test_support::populated_root();
-    for (method, path) in W2_MUTATION_PAIRS {
+    for (method, path) in MUTATION_PAIRS {
         let response = crate::test_support::shell_router(root.path())
             .oneshot(body_request(method, path, Some(&json!({}))))
             .await
             .expect("response");
         assert_ne!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+    }
+    let corpus = crate::test_support::corpus();
+    for collection in ["mutations", "mutations_malformed"] {
+        for (name, case) in corpus[collection].as_object().expect("mutation collection") {
+            assert!(
+                MUTATION_PAIRS.contains(&(
+                    case["method"].as_str().expect("method"),
+                    inventory_path(case["path"].as_str().expect("path"))
+                )),
+                "{collection} {name}"
+            );
+        }
+    }
+    for (phase, cases) in corpus["phases"].as_object().expect("phases") {
+        for (name, _) in cases.as_object().expect("phase") {
+            if name.starts_with("POST ") || name.starts_with("PUT ") || name.starts_with("DELETE ")
+            {
+                let (method, path) = refusal_route(name);
+                assert!(
+                    MUTATION_PAIRS.contains(&(method, inventory_path(path))),
+                    "{phase} {name}"
+                );
+            }
+        }
     }
 }

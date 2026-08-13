@@ -26,10 +26,16 @@ pub fn facet_not_found() -> Response {
 }
 
 pub fn settings_operation_failed() -> Response {
+    settings_operation_failed_with_detail(
+        "something went wrong — try again, and if it persists, check the health dashboard",
+    )
+}
+
+pub fn settings_operation_failed_with_detail(detail: impl Into<String>) -> Response {
     error_envelope(
         "settings_operation_failed",
         "I couldn't save those settings.",
-        "something went wrong — try again, and if it persists, check the health dashboard",
+        detail.into(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
     .into_response()
