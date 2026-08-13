@@ -81,6 +81,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import pathlib
 import hashlib
 import json
 import os
@@ -98,6 +99,15 @@ if hasattr(time, "tzset"):
     time.tzset()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from corpus_scrub import (  # noqa: E402
+    assert_egress_guard_can_see,
+    assert_guard_can_see,
+    assert_no_egress_attempted,
+    assert_publishable,
+    forbid_non_loopback_egress,
+)
+
 CORPUS_PATH = REPO_ROOT / "core" / "fixtures" / "convey_thinking_corpus.json"
 
 # A fixed instant so `setup.completed_at` is reproducible across regenerations.
@@ -646,6 +656,16 @@ def build_corpus() -> dict[str, Any]:
     }
 
 
+LABEL = "convey_thinking_corpus"
+
+# The two destinations the guard's OWN positive control provokes. Anything else
+# in the attempt log is a reference route reaching out.
+# ⚠ Matching is EXACT, not substring, so ignoring "example.invalid" does NOT
+# mask this corpus's seeded confidential endpoint "spp.example.invalid" -- if a
+# route dialled the seed, it would still be caught.
+CONTROL_DESTINATIONS = ("example.invalid", "198.51.100.7")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -653,7 +673,28 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # 🔴 "Capture is read-only" is an ASSUMPTION, not a property. Driving a
+    # reference route can egress: a sibling surface's read routes minted a
+    # keypair, signed the live terms and registered a real agent handle on a
+    # production service, from what looked like a harmless probe.
+    #
+    # ⛔ A byte-identical corpus is NOT sufficient proof that nothing left the
+    # host. A route can attempt an outbound call, SWALLOW the exception, and
+    # answer unchanged -- so the diff passes while the unguarded run egressed.
+    # The decisive artifact is a log of blocked destinations asserted EMPTY.
+    forbid_non_loopback_egress()
+    assert_egress_guard_can_see(LABEL)  # the guard is installed, not merely imported
+
     rendered = json.dumps(build_corpus(), indent=2, sort_keys=True) + "\n"
+
+    # nothing left the host while the reference was being driven
+    assert_no_egress_attempted(LABEL, ignore=CONTROL_DESTINATIONS)
+
+    # ⚠ This fixture ships in a PUBLIC repo: whatever it captures, we publish.
+    # 127.0.0.1 is authored -- the byo_endpoint phase seeds it as the owner's
+    # own endpoint -- not observed from this host.
+    assert_publishable(rendered, label=LABEL, allowed_ipv4=("127.0.0.1",))
+    assert_guard_can_see(LABEL)  # the publication guard fires on a planted leak
 
     if args.check:
         if not CORPUS_PATH.exists():
