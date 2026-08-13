@@ -244,6 +244,22 @@ PROBES: list[Probe] = [
     ("PUT", "/app/thinking/api/generators", None, "missing body"),
     ("PUT", "/app/thinking/api/generators", {"k": {"disabled": "yes"}}, "disabled must be boolean"),
     ("PUT", "/app/thinking/api/generators", {"k": {"extract": 1}}, "extract must be boolean"),
+    # ---- routes the URL MAP registers that a decorator grep cannot see --------
+    # 🔴 `AppRegistry._inject_fragment_routes` adds /workspace and /background at
+    # blueprint REGISTRATION time via a deferred `blueprint.record(...)`, so they
+    # carry the app's endpoint prefix but appear in no decorator and in no
+    # `routes.py` read. Found by driving `app.url_map.iter_rules()` and diffing
+    # against this probe list -- ⚠ a completeness check has to derive its
+    # expectation from a DIFFERENT instrument than the thing it checks.
+    ("GET", "/app/thinking/background", None, "🔴 injected fragment route; no decorator declares it"),
+    ("GET", "/app/thinking/static/nope.js", None, "the per-app static 404 shape"),
+    ("GET", "/app/thinking/static/../../../etc/passwd", None, "per-app static traversal refusal"),
+    ("PUT", "/app/thinking/api/providers", None, "⚠ PUT shares POST's handler and was never probed"),
+    # ⛔ LAST, and deliberately so: this is the corpus's only MUTATING probe.
+    # Probes run in sequence against one journal per phase, so anything appended
+    # after it would read a journal the recording does not describe. In the
+    # confidential phase it reaches a refusal sentence nothing else does.
+    ("DELETE", "/app/thinking/api/local/endpoint", None, "🔴 the only DELETE the reference registers -- and the confidential-clear refusal"),
 ]
 
 
