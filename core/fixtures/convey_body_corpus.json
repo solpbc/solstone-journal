@@ -11005,6 +11005,7 @@
   },
   "coverage_limitations": [
     {
+      "also": "Read-named routes here are not side-effect free: serving a request can populate in-process module-global caches. That is process state, not owner data on disk -- but a port must not assume a GET handler writes nothing.",
       "limitation": "This corpus probes routes. The cache warm functions are invoked at app startup rather than through any probed route, so a green replay is NOT evidence about them. Their fill-only-when-fresh guard and single-flight behaviour must be verified by reading the producer.",
       "producers": "warm_dedupe_stats_cache, warm_trends_cache",
       "reached_by": "app startup (events.py), not by any HTTP route",
@@ -11012,9 +11013,9 @@
     },
     {
       "limitation": "The number that bounds a corpus's authority over mutation is not how many write cases it records but how many actually mutated and returned 2xx. Here that count is zero because this app declares no write route at all -- ten routes, all GET -- so the zero is a property of the surface, not of the probe set. A green replay IS evidence about this app's route surface. Do not carry this conclusion to a plate that has write routes: there a large write-case count can be almost entirely refusals, which grade refusal envelopes and gate behaviour rather than mutation, and a true aggregate is not a claim about the thing you care about.",
-      "measured": "44 recorded cases; 44 GET; 0 mutating probes returned 2xx",
       "producers": "none",
       "reached_by": "n/a",
+      "see": "mutation_census (computed from the recorded cases)",
       "subject": "mutation semantics"
     },
     {
@@ -11558,6 +11559,14 @@
       "20260810_090000",
       "20260810_100000"
     ]
+  },
+  "mutation_census": {
+    "cases_by_method": {
+      "GET": 44
+    },
+    "mutating_probes_detail": [],
+    "mutating_probes_that_returned_2xx": 0,
+    "total_cases": 44
   },
   "native_deviations": [
     {
