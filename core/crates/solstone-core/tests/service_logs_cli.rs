@@ -307,13 +307,24 @@ fn symlink_loop_is_metadata_uncertainty_not_missing() {
 #[test]
 fn one_shot_preserves_non_utf8_journal_identity_in_safe_diagnostics() {
     let outer = tempfile::tempdir().unwrap();
+    #[cfg(target_os = "linux")]
     let journal = outer
         .path()
         .join(OsString::from_vec(b"journal-\\-\xff-\n-\x1b".to_vec()));
     #[cfg(target_os = "linux")]
     fs::create_dir_all(journal.join("health/service.log")).unwrap();
+    #[cfg(target_os = "macos")]
+    let blocked = outer.path().join("blocked");
+    #[cfg(target_os = "macos")]
+    fs::create_dir(&blocked).unwrap();
+    #[cfg(target_os = "macos")]
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+    #[cfg(target_os = "macos")]
+    let journal = blocked.join(OsString::from_vec(b"journal-\\-\xff-\n-\x1b".to_vec()));
 
     let output = run(journal.as_os_str(), &args(&["service", "logs"]));
+    #[cfg(target_os = "macos")]
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
