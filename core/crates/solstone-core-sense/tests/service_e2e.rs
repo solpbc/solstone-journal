@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
