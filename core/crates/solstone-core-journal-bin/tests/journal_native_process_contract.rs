@@ -38,8 +38,7 @@ const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
 const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
-const REQUIRED_NATIVE_TOKENS: &[&str] =
-    &["engage", "maintenance", "heartbeat", "maint", "backup"];
+const REQUIRED_NATIVE_TOKENS: &[&str] = &["engage", "maintenance", "heartbeat", "maint", "backup"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -123,6 +122,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(HEALTH_USAGE.as_bytes()),
+    },
+    Probe {
+        token: "heartbeat",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal heartbeat [-h] [--force]\n"),
     },
     Probe {
         token: "top",

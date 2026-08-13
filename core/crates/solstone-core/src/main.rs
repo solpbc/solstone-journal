@@ -25,15 +25,15 @@ use solstone_core_cli::{
     CONVEY_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, EXPORT_HELP,
     EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP,
     GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP,
-    HEALTH_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP,
-    IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE,
-    IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP,
-    INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
-    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
-    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE,
+    IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP,
+    IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE,
+    INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
@@ -50,6 +50,7 @@ mod contract;
 mod facet_candidates;
 mod health;
 mod health_logs;
+mod heartbeat;
 mod identity;
 mod import_sources;
 mod install_models;
@@ -272,6 +273,15 @@ fn main() -> ExitCode {
         Ok(Command::HealthLogs(args)) => health_logs::run(args),
         Ok(Command::HealthLogsUsage(args)) => health_logs::usage(args),
         Ok(Command::HealthLogsHelp(args)) => health_logs::help(args),
+        Ok(Command::Heartbeat { force }) => match resolve_process_journal_path() {
+            Ok(resolved) => heartbeat::run(&resolved.path, force),
+            Err(error) => print_journal_error(error),
+        },
+        Ok(Command::HeartbeatUsage) => render_usage_error(HEARTBEAT_USAGE, "journal heartbeat"),
+        Ok(Command::HeartbeatHelp) => {
+            print!("{HEARTBEAT_HELP}");
+            ExitCode::SUCCESS
+        }
         Ok(Command::Service(outcome)) => match outcome {
             ServiceParseOutcome::Dispatch(ServiceAction::Logs { follow }) => {
                 service_logs::run(solstone_core_cli::ServiceLogsArgs { follow })

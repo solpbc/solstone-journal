@@ -11,6 +11,8 @@ mod check_vulkan_absence;
 mod facet_candidates_cli;
 #[path = "health_logs_cli.rs"]
 mod health_logs_cli;
+#[path = "heartbeat_cli.rs"]
+mod heartbeat_cli;
 #[path = "navigate_cli.rs"]
 mod navigate_cli;
 #[path = "schedule_cli.rs"]

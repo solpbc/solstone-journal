@@ -57,6 +57,19 @@ pub const DESCRIBE_USAGE: &str = "usage: journal describe [-h] [--frames-only] [
 /// the command the owner typed.
 pub const NAVIGATE_USAGE: &str = "usage: journal navigate [-h] [-f FACET | --facet FACET] [PATH]\n";
 
+/// Owner-facing grammar for the deterministic heartbeat pass.
+pub const HEARTBEAT_USAGE: &str = "usage: journal heartbeat [-h] [--force]\n";
+
+pub const HEARTBEAT_HELP: &str = concat!(
+    "usage: journal heartbeat [-h] [--force]\n",
+    "\n",
+    "Run deterministic health repair pass\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --force     Run full check regardless of recency\n",
+);
+
 /// `journal navigate --help` in the owner-facing command vocabulary.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
 /// the command the owner typed.
@@ -703,6 +716,11 @@ pub enum Command {
     HealthLogs(HealthLogsArgs),
     HealthLogsUsage(HealthLogsArgs),
     HealthLogsHelp(HealthLogsArgs),
+    Heartbeat {
+        force: bool,
+    },
+    HeartbeatUsage,
+    HeartbeatHelp,
     Service(ServiceParseOutcome),
     Observer(ObserverCommand),
     Navigate {
@@ -1523,6 +1541,33 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 Ok((verbose, debug)) => Command::Health { verbose, debug },
                 Err(()) => Command::HealthUsage,
             })
+        }
+        [command, rest @ ..] if command == OsStr::new("heartbeat") => {
+            let option_end = rest
+                .iter()
+                .position(|argument| argument == OsStr::new("--"))
+                .unwrap_or(rest.len());
+            if rest[..option_end].iter().any(is_help) {
+                return Ok(Command::HeartbeatHelp);
+            }
+            let trailing = if option_end == rest.len() {
+                &rest[option_end..]
+            } else {
+                &rest[option_end + 1..]
+            };
+            Ok(
+                if trailing.is_empty()
+                    && rest[..option_end]
+                        .iter()
+                        .all(|argument| argument == OsStr::new("--force"))
+                {
+                    Command::Heartbeat {
+                        force: option_end > 0,
+                    }
+                } else {
+                    Command::HeartbeatUsage
+                },
+            )
         }
         [command, rest @ ..] if command == OsStr::new("top") => {
             if rest.iter().any(is_help) {
