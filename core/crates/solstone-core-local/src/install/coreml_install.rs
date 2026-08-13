@@ -6,12 +6,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
 use solstone_core_assets::{Artifact, Platform, catalog};
 use solstone_core_journal_config::{
     JournalConfigRead,
     parakeet_coreml::{
-        default_parakeet_coreml_cache_dir, parakeet_coreml_cache_dir, parakeet_coreml_model_root,
+        ParakeetCoremlSentinel, parakeet_coreml_cache_dir, parakeet_coreml_model_root,
+        parakeet_coreml_sentinel_path, read_valid_parakeet_coreml_sentinel,
     },
 };
 use thiserror::Error;
@@ -21,9 +21,7 @@ use super::publish_staged_tree_with;
 use super::{archive, publish_staged_tree};
 
 const UNIT: &str = "parakeet-coreml";
-const MODEL_VERSION: &str = "v3";
 const FLUIDAUDIO_VERSION: &str = "0.14.0";
-const INSTALL_COMPLETE: &str = ".install-complete";
 
 /// Printed by `install-models` before it asks this installer to fetch assets.
 pub const PARAKEET_COREML_DOWNLOAD_DISCLOSURE: &str = "parakeet assets: downloading the parakeet-tdt-0.6b-v3 Core ML model (CC-BY-4.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
@@ -44,24 +42,6 @@ impl CoremlInstallError {
             exit_code,
         }
     }
-}
-
-#[derive(Serialize)]
-struct Sentinel<'a> {
-    schema_version: u8,
-    backend: &'static str,
-    variant: &'static str,
-    model_version: &'static str,
-    quantization: &'static str,
-    fluidaudio_version: &'static str,
-    platform: SentinelPlatform<'a>,
-    cache_dir: &'a Path,
-}
-
-#[derive(Serialize)]
-struct SentinelPlatform<'a> {
-    os: &'a str,
-    arch: &'a str,
 }
 
 fn rows() -> Result<Vec<&'static Artifact>, CoremlInstallError> {
@@ -118,16 +98,11 @@ fn archive_error(error: archive::ArchiveError) -> CoremlInstallError {
     CoremlInstallError::new(reason_code, error.to_string(), 74)
 }
 
-fn sentinel_path(home_dir: &Path) -> PathBuf {
-    default_parakeet_coreml_cache_dir(home_dir).join(INSTALL_COMPLETE)
-}
-
-fn write_sentinel(path: &Path, sentinel: &Sentinel<'_>) -> std::io::Result<()> {
+fn write_sentinel(path: &Path, sentinel: &ParakeetCoremlSentinel) -> std::io::Result<()> {
     let parent = path.parent().expect("sentinel has a parent");
     fs::create_dir_all(parent)?;
     let temporary = parent.join(format!(
-        ".{}.tmp{}",
-        INSTALL_COMPLETE,
+        ".install-complete.tmp{}",
         uuid::Uuid::new_v4().simple()
     ));
     let bytes = serde_json::to_vec(sentinel).expect("static CoreML sentinel serializes");
@@ -158,13 +133,13 @@ pub fn install_parakeet_coreml_model(
 /// Verify the model tree and install sentinel without fetching.
 pub fn check_parakeet_coreml_install(
     home_dir: &Path,
-    config: &JournalConfigRead,
+    _config: &JournalConfigRead,
 ) -> Result<(), CoremlInstallError> {
     let (os_name, arch) = current_platform();
-    check_parakeet_coreml_install_with_platform(home_dir, config, os_name, arch)
+    check_parakeet_coreml_install_with_platform(home_dir, os_name, arch)
 }
 
-pub(crate) fn install_parakeet_coreml_model_with_policy(
+fn install_parakeet_coreml_model_with_policy(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
@@ -207,13 +182,13 @@ fn install_with_rows_and_seams(
     platform: (&str, &str),
     rows: &[&Artifact],
     publish: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
-    write: &mut impl FnMut(&Path, &Sentinel<'_>) -> std::io::Result<()>,
+    write: &mut impl FnMut(&Path, &ParakeetCoremlSentinel) -> std::io::Result<()>,
 ) -> Result<PathBuf, CoremlInstallError> {
     let (os_name, arch) = platform;
     require_coreml_host(os_name, arch)?;
     let cache_dir = parakeet_coreml_cache_dir(config, home_dir);
     let target = parakeet_coreml_model_root(&cache_dir);
-    if !force && check_with_rows(home_dir, config, os_name, arch, rows).is_ok() {
+    if !force && check_with_rows(home_dir, os_name, arch, rows).is_ok() {
         return Ok(target);
     }
 
@@ -234,18 +209,12 @@ fn install_with_rows_and_seams(
         publish(&staging, &target)
             .map_err(|error| CoremlInstallError::new("publish_failed", error.to_string(), 74))?;
 
-        let path = sentinel_path(home_dir);
+        fs::create_dir_all(&cache_dir)
+            .map_err(|error| CoremlInstallError::new("install_failed", error.to_string(), 74))?;
+        let path = parakeet_coreml_sentinel_path(home_dir);
         let _ = fs::remove_file(&path);
-        let record = Sentinel {
-            schema_version: 1,
-            backend: "parakeet",
-            variant: "coreml",
-            model_version: MODEL_VERSION,
-            quantization: "fp32",
-            fluidaudio_version: FLUIDAUDIO_VERSION,
-            platform: SentinelPlatform { os: os_name, arch },
-            cache_dir: &cache_dir,
-        };
+        let record =
+            ParakeetCoremlSentinel::new(cache_dir.clone(), os_name, arch, FLUIDAUDIO_VERSION);
         write(&path, &record).map_err(|error| {
             CoremlInstallError::new("sentinel_write_failed", error.to_string(), 74)
         })?;
@@ -259,24 +228,32 @@ fn install_with_rows_and_seams(
 
 fn check_parakeet_coreml_install_with_platform(
     home_dir: &Path,
-    config: &JournalConfigRead,
     os_name: &str,
     arch: &str,
 ) -> Result<(), CoremlInstallError> {
     let rows = rows()?;
-    check_with_rows(home_dir, config, os_name, arch, &rows)
+    check_with_rows(home_dir, os_name, arch, &rows)
 }
 
 fn check_with_rows(
     home_dir: &Path,
-    config: &JournalConfigRead,
     os_name: &str,
     arch: &str,
     rows: &[&Artifact],
 ) -> Result<(), CoremlInstallError> {
     require_coreml_host(os_name, arch)?;
-    let cache_dir = parakeet_coreml_cache_dir(config, home_dir);
-    let model_root = parakeet_coreml_model_root(&cache_dir);
+    let sentinel =
+        read_valid_parakeet_coreml_sentinel(home_dir, os_name, arch).ok_or_else(|| {
+            CoremlInstallError::new(
+                "sentinel_not_ready",
+                format!(
+                    "parakeet CoreML sentinel not ready: {}; install it with: journal install-models",
+                    parakeet_coreml_sentinel_path(home_dir).display(),
+                ),
+                65,
+            )
+        })?;
+    let model_root = parakeet_coreml_model_root(sentinel.cache_dir());
     for row in rows {
         if !model_root.join(row.filename).is_file() {
             return Err(CoremlInstallError::new(
@@ -288,16 +265,6 @@ fn check_with_rows(
                 65,
             ));
         }
-    }
-    if !sentinel_path(home_dir).is_file() {
-        return Err(CoremlInstallError::new(
-            "sentinel_missing",
-            format!(
-                "parakeet CoreML sentinel missing: {}",
-                sentinel_path(home_dir).display()
-            ),
-            65,
-        ));
     }
     Ok(())
 }
@@ -415,13 +382,19 @@ mod tests {
             configured.parent().unwrap().join("parakeet-tdt-0.6b-v3")
         );
         assert!(target.join(artifact.filename).is_file());
-        let sentinel = sentinel_path(&home);
+        let sentinel = parakeet_coreml_sentinel_path(&home);
         assert!(sentinel.is_file());
-        assert!(!configured.parent().unwrap().join(INSTALL_COMPLETE).exists());
+        assert!(
+            !configured
+                .parent()
+                .unwrap()
+                .join(".install-complete")
+                .exists()
+        );
         let record: serde_json::Value =
             serde_json::from_slice(&fs::read(sentinel).unwrap()).unwrap();
         assert_eq!(record["cache_dir"], configured.display().to_string());
-        assert!(check_with_rows(&home, &config, "darwin", "arm64", &rows).is_ok());
+        assert!(check_with_rows(&home, "darwin", "arm64", &rows).is_ok());
     }
 
     #[test]
@@ -458,7 +431,7 @@ mod tests {
                 .join(artifact.filename)
                 .is_file()
         );
-        assert!(!sentinel_path(&home).exists());
+        assert!(!parakeet_coreml_sentinel_path(&home).exists());
     }
 
     #[test]
@@ -483,7 +456,22 @@ mod tests {
         .unwrap();
         server.join().unwrap();
 
-        check_with_rows(&home, &config, "darwin", "arm64", &rows).unwrap();
+        check_with_rows(&home, "darwin", "arm64", &rows).unwrap();
+    }
+
+    #[test]
+    fn check_rejects_a_sentinel_for_a_removed_cache_directory() {
+        let temporary = tempfile::tempdir().unwrap();
+        let home = temporary.path().join("home");
+        let missing = temporary.path().join("removed/cache");
+        let record = ParakeetCoremlSentinel::new(missing, "darwin", "arm64", FLUIDAUDIO_VERSION);
+        let path = parakeet_coreml_sentinel_path(&home);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_sentinel(&path, &record).unwrap();
+
+        let error =
+            check_parakeet_coreml_install_with_platform(&home, "darwin", "arm64").unwrap_err();
+        assert_eq!(error.reason_code, "sentinel_not_ready");
     }
 
     #[test]
@@ -502,7 +490,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.reason_code, "download_host_refused");
         assert!(!parakeet_coreml_model_root(&parakeet_coreml_cache_dir(&config, &home)).exists());
-        assert!(!sentinel_path(&home).exists());
+        assert!(!parakeet_coreml_sentinel_path(&home).exists());
     }
 
     #[test]
@@ -528,7 +516,7 @@ mod tests {
         server.join().unwrap();
         assert_eq!(error.reason_code, "download_host_refused");
         assert!(!parakeet_coreml_model_root(&parakeet_coreml_cache_dir(&config, &home)).exists());
-        assert!(!sentinel_path(&home).exists());
+        assert!(!parakeet_coreml_sentinel_path(&home).exists());
     }
 
     #[test]
@@ -550,11 +538,10 @@ mod tests {
     fn check_empty_host_names_the_install_command_without_requests() {
         let temporary = tempfile::tempdir().unwrap();
         let home = temporary.path().join("home");
-        let config = config(&temporary.path().join("cache"));
         let artifact = row("model.mil", b"model");
         let rows = [&artifact];
-        let error = check_with_rows(&home, &config, "darwin", "arm64", &rows).unwrap_err();
-        assert_eq!(error.reason_code, "model_incomplete");
+        let error = check_with_rows(&home, "darwin", "arm64", &rows).unwrap_err();
+        assert_eq!(error.reason_code, "sentinel_not_ready");
         assert!(error.to_string().contains("journal install-models"));
     }
 
@@ -582,20 +569,9 @@ mod tests {
             .unwrap();
         }
         fs::create_dir_all(&configured).unwrap();
-        let record = Sentinel {
-            schema_version: 1,
-            backend: "parakeet",
-            variant: "coreml",
-            model_version: MODEL_VERSION,
-            quantization: "fp32",
-            fluidaudio_version: FLUIDAUDIO_VERSION,
-            platform: SentinelPlatform {
-                os: "darwin",
-                arch: "arm64",
-            },
-            cache_dir: &configured,
-        };
-        write_sentinel(&sentinel_path(&home), &record).unwrap();
+        let record =
+            ParakeetCoremlSentinel::new(configured.clone(), "darwin", "arm64", FLUIDAUDIO_VERSION);
+        write_sentinel(&parakeet_coreml_sentinel_path(&home), &record).unwrap();
         let (base, server) = response_server(vec![
             "HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nnew one".to_owned(),
         ]);
@@ -612,8 +588,8 @@ mod tests {
         server.join().unwrap();
         assert_eq!(error.reason_code, "download_digest_mismatch");
         assert_eq!(fs::read(target.join("one")).unwrap(), b"old one");
-        assert!(sentinel_path(&home).is_file());
-        check_with_rows(&home, &config, "darwin", "arm64", &rows).unwrap();
+        assert!(parakeet_coreml_sentinel_path(&home).is_file());
+        check_with_rows(&home, "darwin", "arm64", &rows).unwrap();
     }
 
     #[test]
@@ -646,7 +622,7 @@ mod tests {
         server.join().unwrap();
         assert_eq!(error.reason_code, "publish_failed");
         assert!(!parakeet_coreml_model_root(&configured).exists());
-        assert!(!sentinel_path(&home).exists());
+        assert!(!parakeet_coreml_sentinel_path(&home).exists());
     }
 
     #[test]
@@ -670,7 +646,7 @@ mod tests {
         )
         .unwrap();
         server.join().unwrap();
-        check_with_rows(&home, &config, "darwin", "arm64", &rows).unwrap();
+        check_with_rows(&home, "darwin", "arm64", &rows).unwrap();
     }
 
     #[test]

@@ -12,6 +12,7 @@ use serde_json::Value;
 use solstone_core_assets::catalog;
 use solstone_core_journal_config::parakeet_coreml::{
     default_parakeet_coreml_cache_dir, parakeet_coreml_model_root,
+    read_valid_parakeet_coreml_sentinel,
 };
 use solstone_core_local::install::pins;
 
@@ -157,45 +158,20 @@ pub fn check_parakeet_coreml_cache(
     arch: &str,
 ) -> Result<PathBuf, String> {
     let cache = default_parakeet_coreml_cache_dir(home_dir);
-    let sentinel = cache.join(".install-complete");
-    let payload = fs::read(&sentinel)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|value| value.as_object().cloned())
-        .ok_or_else(|| {
-            format!(
-                "parakeet check failed: sentinel not ready at {}",
-                sentinel.display()
-            )
-        })?;
-    let platform = payload.get("platform").and_then(Value::as_object);
-    let ready = payload.get("schema_version").and_then(Value::as_i64) == Some(1)
-        && payload.get("backend").and_then(Value::as_str) == Some("parakeet")
-        && payload.get("variant").and_then(Value::as_str) == Some("coreml")
-        && payload.get("model_version").and_then(Value::as_str) == Some("v3")
-        && payload.get("quantization").and_then(Value::as_str) == Some("fp32")
-        && payload.get("fluidaudio_version").is_some()
-        && platform.is_some_and(|platform| {
-            platform.get("os").and_then(Value::as_str) == Some(os_name)
-                && platform.get("arch").and_then(Value::as_str) == Some(arch)
-        });
-    let configured = payload
-        .get("cache_dir")
-        .and_then(Value::as_str)
-        .map(PathBuf::from)
-        .filter(|path| path.exists());
-    let Some(configured) = configured.filter(|_| ready) else {
+    let sentinel = read_valid_parakeet_coreml_sentinel(home_dir, os_name, arch);
+    let Some(sentinel) = sentinel else {
         return Err(format!(
             "parakeet check failed: sentinel not ready at {}",
-            sentinel.display()
+            cache.join(".install-complete").display()
         ));
     };
-    let model_root = parakeet_coreml_model_root(&configured);
+    let configured = sentinel.cache_dir();
+    let model_root = parakeet_coreml_model_root(configured);
     let complete = catalog()
         .iter()
         .filter(|artifact| artifact.unit == "parakeet-coreml")
         .all(|artifact| model_root.join(artifact.filename).is_file());
-    complete.then_some(configured.clone()).ok_or_else(|| {
+    complete.then_some(configured.to_path_buf()).ok_or_else(|| {
         format!(
             "parakeet check failed: cache verification failed at {}",
             configured.display()
