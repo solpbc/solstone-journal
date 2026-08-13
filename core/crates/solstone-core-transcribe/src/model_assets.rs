@@ -99,8 +99,16 @@ impl Error for ModelAssetError {
 
 /// Resolve a named bundled transcription model asset.
 pub fn resolve_model_asset(name: &str) -> Result<PathBuf, ModelAssetError> {
+    resolve_model_asset_path(name).and_then(|path| verify_digest(name, path))
+}
+
+/// Locate a model asset using the same layout resolution as [`resolve_model_asset`].
+///
+/// This deliberately does not verify bytes. It is used only to construct a
+/// generation proof before deciding whether an inherited proof can be borrowed.
+pub(crate) fn resolve_model_asset_path(name: &str) -> Result<PathBuf, ModelAssetError> {
     let override_directory = env::var_os(MODEL_ASSETS_ENV).map(PathBuf::from);
-    resolve_model_asset_from(
+    resolve_model_asset_path_from(
         name,
         override_directory.as_deref(),
         Path::new(env!("CARGO_MANIFEST_DIR")),
@@ -108,7 +116,7 @@ pub fn resolve_model_asset(name: &str) -> Result<PathBuf, ModelAssetError> {
     )
 }
 
-fn resolve_model_asset_from(
+fn resolve_model_asset_path_from(
     name: &str,
     override_directory: Option<&Path>,
     manifest_directory: &Path,
@@ -120,24 +128,24 @@ fn resolve_model_asset_from(
                 asset: name.to_owned(),
                 directory: directory.to_path_buf(),
             })?;
-        return verify_digest(name, asset);
+        return Ok(asset);
     }
 
     let source_directories = source_asset_directories(manifest_directory);
     if let Some(asset) = resolve_from_directories(name, &source_directories) {
-        return verify_digest(name, asset);
+        return Ok(asset);
     }
 
     let executable =
         current_executable.map_err(|source| ModelAssetError::CurrentExecutable { source })?;
     let executable_relative_directories = executable_relative_asset_directories(&executable);
     if let Some(asset) = resolve_from_directories(name, &executable_relative_directories) {
-        return verify_digest(name, asset);
+        return Ok(asset);
     }
 
     let installed_directories = installed_asset_directories(&executable);
     if let Some(asset) = resolve_from_directories(name, &installed_directories) {
-        return verify_digest(name, asset);
+        return Ok(asset);
     }
 
     let searched = source_directories
@@ -149,6 +157,22 @@ fn resolve_model_asset_from(
         asset: name.to_owned(),
         searched,
     })
+}
+
+#[cfg(test)]
+fn resolve_model_asset_from(
+    name: &str,
+    override_directory: Option<&Path>,
+    manifest_directory: &Path,
+    current_executable: Result<PathBuf, io::Error>,
+) -> Result<PathBuf, ModelAssetError> {
+    resolve_model_asset_path_from(
+        name,
+        override_directory,
+        manifest_directory,
+        current_executable,
+    )
+    .and_then(|path| verify_digest(name, path))
 }
 
 fn executable_relative_asset_directories(executable: &Path) -> Vec<PathBuf> {

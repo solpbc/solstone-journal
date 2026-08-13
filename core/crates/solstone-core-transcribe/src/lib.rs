@@ -14,6 +14,7 @@ mod config;
 #[allow(dead_code)]
 mod event;
 mod model_assets;
+mod speakers_installation;
 // The standalone CLI is introduced in a later step; retain the completed
 // stage pieces without treating that staged integration as a lint failure.
 #[allow(dead_code)]
@@ -37,6 +38,10 @@ pub use model_assets::{
     resolve_model_asset,
 };
 pub use speakers::SpeakerAnalyzeError;
+pub use speakers_installation::{
+    SpeakersAnalyzeGeneration, check_speakers_analyze_installation_for_journal,
+    enter_speakers_analyze_generation,
+};
 
 use std::path::{Path, PathBuf};
 
@@ -107,7 +112,7 @@ pub fn run_cli(
         config::confidential_audio_enabled(&config),
     )
     .map_err(CliRunError::Transcribe)?;
-    args::check_speakers_analyze_installation().map_err(CliRunError::Cli)?;
+    let _generation = enter_speakers_analyze_generation(journal_path).map_err(CliRunError::Cli)?;
     let attestation_state = AttestationStateStore::new();
     if parsed.all {
         return run_all(

@@ -10,7 +10,7 @@ publish = false
 chrono = { workspace = true }
 getrandom = { workspace = true }
 log = { workspace = true }
-nix = { workspace = true }
+nix = { workspace = true, features = ["fs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-journal = { workspace = true }

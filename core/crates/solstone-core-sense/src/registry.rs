@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+use solstone_core_format::segment::segment_key;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandlerSpec {
     pub name: &'static str,
@@ -14,7 +16,7 @@ pub fn default_registry(describe_jobs: usize) -> Vec<HandlerSpec> {
     vec![
         HandlerSpec {
             name: "transcribe",
-            patterns: &[".flac", ".wav", ".mp3", ".m4a"],
+            patterns: &[".flac", ".opus", ".ogg", ".m4a", ".mp3", ".wav"],
             command: vec!["journal".into(), "transcribe".into(), "{file}".into()],
         },
         HandlerSpec {
@@ -30,7 +32,9 @@ pub fn default_registry(describe_jobs: usize) -> Vec<HandlerSpec> {
         },
         HandlerSpec {
             name: "depict",
-            patterns: &[".png", ".jpg", ".jpeg", ".heic", ".webp", ".tiff"],
+            patterns: &[
+                ".png", ".jpg", ".jpeg", ".heic", ".heif", ".gif", ".webp", ".tiff",
+            ],
             command: vec!["journal".into(), "depict".into(), "{file}".into()],
         },
     ]
@@ -54,10 +58,19 @@ pub fn match_handler(journal: &Path, path: &Path, registry: &[HandlerSpec]) -> O
         .or_else(|_| path.strip_prefix(journal))
         .ok()?;
     let parts: Vec<_> = relative.components().collect();
-    if parts.len() != 4 {
-        return None;
-    }
-    let day = parts[0].as_os_str().to_str()?;
+    let (day, _segment, _file) = match parts.as_slice() {
+        [day, segment, file]
+            if segment
+                .as_os_str()
+                .to_str()
+                .is_some_and(|value| segment_key(value).as_deref() == Some(value)) =>
+        {
+            (day, segment, file)
+        }
+        [day, _stream, _segment, file] => (day, _segment, file),
+        _ => return None,
+    };
+    let day = day.as_os_str().to_str()?;
     if day.len() != 8 || !day.bytes().all(|c| c.is_ascii_digit()) {
         return None;
     }
@@ -120,7 +133,7 @@ mod tests {
         );
     }
     #[test]
-    fn four_part_dated_segment_shape_is_required() {
+    fn named_and_default_stream_paths_require_a_valid_day_and_segment() {
         let root = Path::new("/j");
         let registry = default_registry(10);
         assert!(
@@ -138,6 +151,24 @@ mod tests {
                 &registry
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn three_part_default_stream_segment_path_is_accepted() {
+        let root = Path::new("/j");
+        let registry = default_registry(10);
+        assert_eq!(
+            match_handler(
+                root,
+                Path::new("/j/chronicle/20260101/120000_3/a.webm"),
+                &registry
+            )
+            .expect("default-stream video"),
+            default_registry(10)
+                .into_iter()
+                .find(|spec| spec.name == "describe")
+                .expect("describe spec")
         );
     }
     #[test]

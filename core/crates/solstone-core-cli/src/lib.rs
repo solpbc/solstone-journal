@@ -4,6 +4,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+use solstone_core_format::segment::segment_key;
 use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
 macro_rules! speaker_resolve_usage {
@@ -437,6 +438,32 @@ pub const HEALTH_LOGS_HELP: &str = concat!(
     "  -d, --debug           enable debug output\n",
 );
 
+pub const SENSE_USAGE: &str = concat!(
+    "usage: journal sense [-h] [--day DAY] [-j JOBS]\n",
+    "                    [--reprocess {screen,audio,all}] [--segment SEGMENT]\n",
+    "                    [--stream STREAM] [--dry-run] [-v] [-d]\n",
+);
+
+pub const SENSE_HELP: &str = concat!(
+    "usage: journal sense [-h] [--day DAY] [-j JOBS]\n",
+    "                    [--reprocess {screen,audio,all}] [--segment SEGMENT]\n",
+    "                    [--stream STREAM] [--dry-run] [-v] [-d]\n",
+    "\n",
+    "Unified observe file processor\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --day DAY             Process files from specific day (YYYYMMDD format) instead of watching\n",
+    "  -j JOBS, --jobs JOBS  Max concurrent screen-describe jobs when using --day (default: 1).\n",
+    "  --reprocess {screen,audio,all}\n",
+    "                        Delete existing outputs and reprocess (requires --day)\n",
+    "  --segment SEGMENT     Filter to specific segment (HHMMSS_LEN format, requires --day)\n",
+    "  --stream STREAM       Filter to specific stream (requires --day)\n",
+    "  --dry-run             Show what would be processed (or deleted with --reprocess) without making changes\n",
+    "  -v, --verbose         Enable verbose output\n",
+    "  -d, --debug           Enable debug logging\n",
+);
+
 pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
 
 pub const CHECK_HELP: &str = concat!(
@@ -639,7 +666,9 @@ pub enum Command {
     ScheduleUsage(ScheduleUsageError),
     Grab(GrabCommand),
     Spl(SplCommand),
-    Sense(ServiceOptions),
+    Sense(SenseOptions),
+    SenseUsage,
+    SenseHelp,
     Supervisor(SupervisorOptions),
     SupervisorUsage,
     SupervisorHelp,
@@ -1111,6 +1140,25 @@ pub struct ServiceOptions {
     pub debug: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SenseReprocessKind {
+    Screen,
+    Audio,
+    All,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SenseOptions {
+    pub day: Option<String>,
+    pub jobs: i64,
+    pub reprocess: Option<SenseReprocessKind>,
+    pub segment: Option<String>,
+    pub stream: Option<String>,
+    pub dry_run: bool,
+    pub verbose: bool,
+    pub debug: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GrabCommand {
     Help,
@@ -1408,9 +1456,11 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(Command::Grab(parse_grab(rest)))
         }
         [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
-        [command, rest @ ..] if command == OsStr::new("sense") => {
-            parse_service(rest).map(Command::Sense)
-        }
+        [command, rest @ ..] if command == OsStr::new("sense") => match parse_sense(rest) {
+            Ok(SenseParse::Run(options)) => Ok(Command::Sense(options)),
+            Ok(SenseParse::Help) => Ok(Command::SenseHelp),
+            Err(()) => Ok(Command::SenseUsage),
+        },
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             let help = |argument: &OsString| {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")
@@ -3408,6 +3458,119 @@ fn parse_service(args: &[OsString]) -> Result<ServiceOptions, UsageError> {
         return Err(UsageError);
     }
     Ok(ServiceOptions { verbose, debug })
+}
+
+enum SenseParse {
+    Run(SenseOptions),
+    Help,
+}
+
+fn parse_sense(args: &[OsString]) -> Result<SenseParse, ()> {
+    let mut day = None;
+    let mut jobs = 1;
+    let mut reprocess = None;
+    let mut segment = None;
+    let mut stream = None;
+    let mut dry_run = false;
+    let mut verbose = false;
+    let mut debug = false;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].as_os_str();
+        if matches!(argument.to_str(), Some("-h" | "--help")) {
+            return Ok(SenseParse::Help);
+        }
+        match argument.to_str() {
+            Some("-v" | "--verbose") => verbose = true,
+            Some("-d" | "--debug") => debug = true,
+            Some("--dry-run") => dry_run = true,
+            Some("-j" | "--jobs") => {
+                let value = sense_value(args, &mut index)?;
+                jobs = value.parse::<i64>().map_err(|_| ())?;
+            }
+            Some("--day") => day = Some(sense_value(args, &mut index)?),
+            Some("--segment") => segment = Some(sense_value(args, &mut index)?),
+            Some("--stream") => stream = Some(sense_value(args, &mut index)?),
+            Some("--reprocess") => {
+                reprocess = Some(match sense_value(args, &mut index)?.as_str() {
+                    "screen" => SenseReprocessKind::Screen,
+                    "audio" => SenseReprocessKind::Audio,
+                    "all" => SenseReprocessKind::All,
+                    _ => return Err(()),
+                });
+            }
+            Some(value) if value.starts_with("--day=") => {
+                day = Some(value[6..].to_owned());
+            }
+            Some(value) if value.starts_with("--segment=") => {
+                segment = Some(value[10..].to_owned());
+            }
+            Some(value) if value.starts_with("--stream=") => {
+                stream = Some(value[9..].to_owned());
+            }
+            Some(value) if value.starts_with("--jobs=") => {
+                jobs = value[7..].parse::<i64>().map_err(|_| ())?;
+            }
+            Some(value) if value.starts_with("--reprocess=") => {
+                reprocess = Some(match &value[12..] {
+                    "screen" => SenseReprocessKind::Screen,
+                    "audio" => SenseReprocessKind::Audio,
+                    "all" => SenseReprocessKind::All,
+                    _ => return Err(()),
+                });
+            }
+            _ => return Err(()),
+        }
+        index += 1;
+    }
+    // Match the reference's combination validation order before validating the
+    // individual filter formats. This parser runs before journal resolution.
+    if reprocess.is_some() && day.is_none()
+        || segment.is_some() && day.is_none()
+        || stream.is_some() && day.is_none()
+        || dry_run && day.is_none()
+    {
+        return Err(());
+    }
+    if segment
+        .as_deref()
+        .is_some_and(|value| segment_key(value).is_none())
+    {
+        return Err(());
+    }
+    if stream
+        .as_deref()
+        .is_some_and(|value| !valid_stream_name(value))
+    {
+        return Err(());
+    }
+    Ok(SenseParse::Run(SenseOptions {
+        day,
+        jobs,
+        reprocess,
+        segment,
+        stream,
+        dry_run,
+        verbose,
+        debug,
+    }))
+}
+
+fn sense_value(args: &[OsString], index: &mut usize) -> Result<String, ()> {
+    *index += 1;
+    let value = args.get(*index).ok_or(())?;
+    if value.to_string_lossy().starts_with('-') {
+        return Err(());
+    }
+    value.clone().into_string().map_err(|_| ())
+}
+
+fn valid_stream_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    matches!(bytes.next(), Some(byte) if byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && bytes.all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+        })
 }
 
 fn parse_health(args: &[OsString]) -> Result<(bool, bool), ()> {
@@ -6510,5 +6673,76 @@ mod tests {
                 "unrecognized arguments: --nonsense".to_owned()
             )))
         );
+    }
+
+    #[test]
+    fn parses_sense_batch_options_before_any_runtime_touch() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "sense",
+                "--day",
+                "not-a-date",
+                "-j",
+                "9",
+                "--reprocess",
+                "screen",
+                "--segment",
+                "120000_1",
+                "--stream",
+                "capture.1",
+                "--dry-run",
+                "-v",
+                "-d",
+            ])),
+            Ok(Command::Sense(SenseOptions {
+                day: Some("not-a-date".into()),
+                jobs: 9,
+                reprocess: Some(SenseReprocessKind::Screen),
+                segment: Some("120000_1".into()),
+                stream: Some("capture.1".into()),
+                dry_run: true,
+                verbose: true,
+                debug: true,
+            }))
+        );
+    }
+
+    #[test]
+    fn sense_event_options_keep_jobs_as_an_inert_parse_value() {
+        assert_eq!(
+            evaluate_args(&args(&["sense", "--jobs", "99"])),
+            Ok(Command::Sense(SenseOptions {
+                day: None,
+                jobs: 99,
+                reprocess: None,
+                segment: None,
+                stream: None,
+                dry_run: false,
+                verbose: false,
+                debug: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn sense_help_and_invalid_combinations_have_verb_owned_outcomes() {
+        assert_eq!(
+            evaluate_args(&args(&["sense", "--help"])),
+            Ok(Command::SenseHelp)
+        );
+        for values in [
+            &["sense", "--nonsense"][..],
+            &["sense", "--reprocess", "bogus", "--day", "20260812"][..],
+            &["sense", "--segment", "120000_1"][..],
+            &["sense", "--stream", "Upper"][..],
+            &["sense", "--dry-run"][..],
+            &["sense", "--jobs", "not-an-int"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::SenseUsage),
+                "{values:?}"
+            );
+        }
     }
 }

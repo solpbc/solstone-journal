@@ -15,12 +15,15 @@ use solstone_core_processing_record::{record_attempts, vocab};
 use crate::decode::{QualifiedFrame, process_video_with_transform, resize_for_vlm_png};
 use crate::detect;
 use crate::extraction;
+use crate::merge;
 use crate::notify;
 use crate::request;
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
 use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFactory};
 use crate::{ConveyFiducialMask, WinnowConfig};
-use crate::{merge, reentry};
+use solstone_core_processing_record::{
+    read_processing_record_header, should_reenter_analysis_output, vocab,
+};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;
@@ -136,8 +139,8 @@ pub fn run_with_factory(
     let mut previous_attempts = 0;
     let mut incremental_source = None;
     if !options.redo && output.exists() {
-        let record = reentry::read_processing_record_header(&output);
-        if !reentry::should_reenter_analysis_output(record.as_ref(), &output) {
+        let record = read_processing_record_header(&output);
+        if !should_reenter_analysis_output(record.as_ref(), &output, vocab::HANDLER_DESCRIBE) {
             return Ok(());
         }
         previous_attempts = record.as_ref().map(record_attempts).unwrap_or(0);

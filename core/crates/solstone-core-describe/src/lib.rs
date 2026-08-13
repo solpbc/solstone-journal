@@ -13,7 +13,6 @@ mod hash;
 mod merge;
 mod notify;
 pub mod pipeline;
-mod reentry;
 pub mod request;
 pub mod selection;
 pub mod session;

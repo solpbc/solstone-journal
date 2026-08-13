@@ -4,7 +4,6 @@
 //! Bounded subprocess adaptation for native speaker analysis.
 
 use std::collections::BTreeSet;
-use std::env;
 use std::fmt;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -17,13 +16,11 @@ use std::time::{Duration, Instant, SystemTime};
 use serde_json::{Map, Value, json};
 use solstone_core_observe_audio::{AudioError, write_f32le_exclusive};
 
-use crate::resolve_model_asset;
+use crate::speakers_installation::validate_speakers_analyze_runtime;
 
 const REQUEST_SCHEMA: &str = "solstone-speaker-analyze-request-v1";
 const RESPONSE_SCHEMA: &str = "solstone-speaker-analyze-response-v1";
 const ERROR_SCHEMA: &str = "solstone-speaker-analyze-error-v1";
-const SPEAKERS_BINARY_NAME: &str = "solstone-core-speakers-analyze";
-const SPEAKERS_BINARY_ENV: &str = "SOLSTONE_SPEAKERS_ANALYZE_BINARY";
 const TEMP_ROOT: &str = "/var/tmp";
 const TEMP_PREFIX: &str = "solstone-speakers-analyze-";
 const TEMP_DIR_MODE: u32 = 0o700;
@@ -160,12 +157,14 @@ pub(crate) fn analyze_speakers(
     sample_rate: u32,
     min_statement_duration: f64,
 ) -> Result<SpeakerAnalyzeResult, SpeakerAnalyzeError> {
-    let wespeaker_model = resolve_model_asset("wespeaker-resnet34-256.onnx")
-        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
-    let pyannote_model = resolve_model_asset("pyannote-segmentation-3.0.onnx")
-        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
-    let binary = speakers_analyze_binary_path()
-        .map_err(|error| SpeakerAnalyzeError::new(raw_path, "invoke", error, None))?;
+    let installation = validate_speakers_analyze_runtime().map_err(|error| {
+        SpeakerAnalyzeError::new(
+            raw_path,
+            "request",
+            error.message().unwrap_or("speakers-installation-failed"),
+            None,
+        )
+    })?;
     let temporary = create_speakers_analyze_temp_dir(raw_path)
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "request", error.to_string(), None))?;
 
@@ -180,11 +179,11 @@ pub(crate) fn analyze_speakers(
             statements_restored,
             sample_rate,
             min_statement_duration,
-            &wespeaker_model,
-            &pyannote_model,
+            &installation.wespeaker_model,
+            &installation.pyannote_model,
             |request| {
                 invoke_speakers_analyze_helper(
-                    &binary,
+                    &installation.helper,
                     request,
                     raw_path,
                     SpeakersAnalyzeBudget::default(),
@@ -326,26 +325,6 @@ fn remove_partial_sidecar(path: &Path, error: AudioError) -> AudioError {
         let _ = fs::remove_file(path);
     }
     error
-}
-
-pub(crate) fn speakers_analyze_binary_path() -> Result<PathBuf, String> {
-    let executable = env::current_exe().map_err(|error| error.to_string())?;
-    let directory = executable
-        .parent()
-        .ok_or_else(|| "current executable has no parent directory".to_owned())?;
-    let candidate = match env::var(SPEAKERS_BINARY_ENV) {
-        Ok(path) if !path.is_empty() => PathBuf::from(path),
-        _ => directory.join(SPEAKERS_BINARY_NAME),
-    };
-    candidate
-        .is_file()
-        .then_some(candidate.clone())
-        .ok_or_else(|| {
-            format!(
-                "speaker-analysis helper binary is missing: {}",
-                candidate.display()
-            )
-        })
 }
 
 fn invoke_speakers_analyze_helper(

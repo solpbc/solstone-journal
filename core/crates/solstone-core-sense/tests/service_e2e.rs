@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(feature = "test-stubs")]
+
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
 use std::process::Command;
@@ -9,7 +11,12 @@ use std::time::Duration;
 
 use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
-use solstone_core_sense::{SenseDispatcher, dispatch::Outbound, service::run_until};
+use solstone_core_sense::{
+    SenseDispatcher,
+    batch::{BatchRequest, process_day_with_fixture_program},
+    dispatch::Outbound,
+    service::run_until,
+};
 use tokio::sync::oneshot;
 
 fn observing(files: &[&str]) -> Map<String, serde_json::Value> {
@@ -92,6 +99,53 @@ async fn wait_for_clients(server: &CallosumSocketServer) {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!("service and peer did not connect");
+}
+
+async fn wait_for_client_count(server: &CallosumSocketServer, count: usize) {
+    for _ in 0..50 {
+        if server.client_count() >= count {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("callosum clients did not connect");
+}
+
+#[tokio::test]
+async fn batch_processing_publishes_observed_to_a_real_callosum_socket() {
+    let root = tempfile::tempdir().expect("journal");
+    let segment = root.path().join("chronicle/20260812/default/120000_2");
+    std::fs::create_dir_all(&segment).expect("segment");
+    std::fs::write(segment.join("audio.flac"), b"audio").expect("audio");
+    let socket = root.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.expect("server");
+    let mut peer = CallosumSocketConnection::new(&socket, Map::new());
+    peer.start();
+    wait_for_client_count(&server, 1).await;
+
+    let request = BatchRequest {
+        day: "20260812".into(),
+        jobs: 1,
+        reprocess: None,
+        segment: Some("120000_2".into()),
+        stream: Some("default".into()),
+        dry_run: false,
+        verbose: false,
+        debug: false,
+    };
+    let journal = root.path().to_path_buf();
+    let handler = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler"));
+    tokio::task::spawn_blocking(move || {
+        process_day_with_fixture_program(&journal, &request, None, handler)
+    })
+    .await
+    .expect("batch task")
+    .expect("batch processing");
+
+    let observed = next_event(&mut peer, "observe", "observed").await;
+    assert_eq!(observed.extra["segment"], "120000_2");
+    assert!(segment.join("audio.flac.handler").is_file());
+    server.stop().await;
 }
 
 #[tokio::test]

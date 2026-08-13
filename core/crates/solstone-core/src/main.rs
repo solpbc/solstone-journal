@@ -34,12 +34,13 @@ use solstone_core_cli::{
     JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
     JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
     OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
-    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE,
-    SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, ServiceOptions,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
-    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
-    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, version_line,
+    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
+    SenseReprocessKind, ServiceOptions, SettingsParseError, SpeakerResolveCommand, SplCommand,
+    TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions, TransferCommand,
+    TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE, evaluate_args,
+    version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod check;
@@ -228,7 +229,12 @@ fn main() -> ExitCode {
         }
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
-        Ok(Command::Sense(options)) => run_sense_service(options),
+        Ok(Command::Sense(options)) => run_sense(options),
+        Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "journal sense"),
+        Ok(Command::SenseHelp) => {
+            print!("{SENSE_HELP}");
+            ExitCode::SUCCESS
+        }
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
         Ok(Command::SupervisorHelp) => {
@@ -4543,6 +4549,65 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("sense service failed: {}", error.class());
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
+}
+
+fn run_sense(options: SenseOptions) -> ExitCode {
+    let Some(day) = options.day.clone() else {
+        return run_sense_service(ServiceOptions {
+            verbose: options.verbose,
+            debug: options.debug,
+        });
+    };
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    if let Err(error) = solstone_core_transcribe::require_solstone(&journal.path) {
+        if let Some(message) = error.message() {
+            eprintln!("{message}");
+        }
+        return ExitCode::from(error.exit_code() as u8);
+    }
+    let _generation =
+        match solstone_core_transcribe::enter_speakers_analyze_generation(&journal.path) {
+            Ok(generation) => generation,
+            Err(error) => {
+                if let Some(message) = error.message() {
+                    eprintln!("{message}");
+                }
+                return ExitCode::from(error.exit_code() as u8);
+            }
+        };
+    solstone_core_sense::batch::install_batch_signal_handlers();
+    let reprocess = options.reprocess.map(|kind| match kind {
+        SenseReprocessKind::Screen => solstone_core_sense::batch::ReprocessKind::Screen,
+        SenseReprocessKind::Audio => solstone_core_sense::batch::ReprocessKind::Audio,
+        SenseReprocessKind::All => solstone_core_sense::batch::ReprocessKind::All,
+    });
+    let request = solstone_core_sense::batch::BatchRequest {
+        day,
+        jobs: options.jobs,
+        reprocess,
+        segment: options.segment,
+        stream: options.stream,
+        dry_run: options.dry_run,
+        verbose: options.verbose,
+        debug: options.debug,
+    };
+    match solstone_core_sense::batch::run_batch_with_environment(
+        &journal.path,
+        &request,
+        &_generation.inheritance_environment(),
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("sense batch failed: {error}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }

@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use nix::errno::Errno;
-use nix::fcntl::{Flock, FlockArg};
+use nix::fcntl::{FcntlArg, Flock, FlockArg, fcntl};
 use nix::sys::stat::{Mode, fchmod};
 
 use crate::errors::LeaseError;
@@ -56,6 +56,17 @@ impl FileLease {
     /// The lease file protected by this guard.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Duplicate this lease descriptor for inheritance across an `exec`.
+    ///
+    /// Callers pair the inherited descriptor with their own authenticated token
+    /// in the lease file and close the returned descriptor when their process
+    /// tree no longer needs it.
+    #[cfg(unix)]
+    pub fn duplicate_for_inheritance(&self) -> Result<i32, LeaseError> {
+        fcntl(&*self._guard, FcntlArg::F_DUPFD(3))
+            .map_err(|error| io_error(&self.path, io::Error::from_raw_os_error(error as i32)))
     }
 }
 
@@ -205,6 +216,23 @@ mod tests {
             0o640
         );
         drop(lease);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inherited_descriptor_is_a_live_duplicate() {
+        let temporary = TempDir::new();
+        let lease = acquire_file_lease(
+            temporary.path().join("generation.lock"),
+            LeaseOptions::default(),
+        )
+        .unwrap()
+        .expect("lease");
+        let descriptor = lease
+            .duplicate_for_inheritance()
+            .expect("duplicate descriptor");
+        assert!(Path::new("/dev/fd").join(descriptor.to_string()).exists());
+        nix::unistd::close(descriptor).expect("close duplicate");
     }
 
     #[test]

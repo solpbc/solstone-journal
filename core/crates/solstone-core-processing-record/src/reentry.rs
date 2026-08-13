@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Describe-side evidence reads and re-entry decisions.
+//! Bounded JSONL evidence reads and analysis-output re-entry decisions.
 
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_processing_record::{is_failure_exhausted, vocab};
+
+use crate::{is_failure_exhausted, vocab};
 
 /// Read one bounded JSONL metadata header's processing record.
 pub fn read_processing_record_header(path: &Path) -> Option<Value> {
@@ -61,8 +62,12 @@ pub fn jsonl_has_row_with_key(path: &Path, row_key: &str) -> bool {
         })
 }
 
-/// Return whether this describe output should be retried.
-pub fn should_reenter_analysis_output(record: Option<&Value>, output_path: &Path) -> bool {
+/// Return whether an existing analysis output should be retried by `handler`.
+pub fn should_reenter_analysis_output(
+    record: Option<&Value>,
+    output_path: &Path,
+    handler: &str,
+) -> bool {
     if let Some(record) = record
         && record.get("state").and_then(Value::as_str) == Some(vocab::STATE_FAILED)
         && record.get("handler").and_then(Value::as_str) == Some(vocab::HANDLER_DESCRIBE)
@@ -70,7 +75,9 @@ pub fn should_reenter_analysis_output(record: Option<&Value>, output_path: &Path
     {
         return true;
     }
-    record.is_none() && !jsonl_has_row_with_key(output_path, vocab::SCREEN_ANALYSIS_ROW_KEY)
+    record.is_none()
+        && handler == vocab::HANDLER_DESCRIBE
+        && !jsonl_has_row_with_key(output_path, vocab::SCREEN_ANALYSIS_ROW_KEY)
 }
 
 #[cfg(test)]
@@ -80,16 +87,18 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
-    use solstone_core_processing_record::vocab;
 
     use super::{read_processing_record_header, should_reenter_analysis_output};
+    use crate::vocab;
 
     fn temporary_path(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        std::env::temp_dir().join(format!("solstone-describe-reentry-{name}-{nanos}.jsonl"))
+        std::env::temp_dir().join(format!(
+            "solstone-processing-record-reentry-{name}-{nanos}.jsonl"
+        ))
     }
 
     fn write(path: &Path, contents: &str) {
@@ -105,14 +114,22 @@ mod tests {
             "handler": vocab::HANDLER_DESCRIBE,
             "attempts": 2,
         });
-        assert!(should_reenter_analysis_output(Some(&retryable), &path));
+        assert!(should_reenter_analysis_output(
+            Some(&retryable),
+            &path,
+            vocab::HANDLER_DESCRIBE
+        ));
 
         let exhausted = json!({
             "state": vocab::STATE_FAILED,
             "handler": vocab::HANDLER_DESCRIBE,
             "attempts": 3,
         });
-        assert!(!should_reenter_analysis_output(Some(&exhausted), &path));
+        assert!(!should_reenter_analysis_output(
+            Some(&exhausted),
+            &path,
+            vocab::HANDLER_DESCRIBE
+        ));
 
         let corrupt = json!({
             "state": vocab::STATE_FAILED,
@@ -120,28 +137,49 @@ mod tests {
             "reason_code": vocab::REASON_CORRUPT_INPUT,
             "attempts": 0,
         });
-        assert!(!should_reenter_analysis_output(Some(&corrupt), &path));
+        assert!(!should_reenter_analysis_output(
+            Some(&corrupt),
+            &path,
+            vocab::HANDLER_DESCRIBE
+        ));
 
         let transcribe = json!({
             "state": vocab::STATE_FAILED,
             "handler": vocab::HANDLER_TRANSCRIBE,
             "attempts": 2,
         });
-        assert!(!should_reenter_analysis_output(Some(&transcribe), &path));
+        assert!(!should_reenter_analysis_output(
+            Some(&transcribe),
+            &path,
+            vocab::HANDLER_TRANSCRIBE
+        ));
         fs::remove_file(path).expect("remove sidecar");
     }
 
     #[test]
-    fn recordless_outputs_reenter_only_without_row_evidence() {
+    fn recordless_outputs_reenter_only_without_describe_row_evidence() {
         let path = temporary_path("recordless");
         write(&path, "{\"raw\":\"screen.webm\"}\n");
-        assert!(should_reenter_analysis_output(None, &path));
+        assert!(should_reenter_analysis_output(
+            None,
+            &path,
+            vocab::HANDLER_DESCRIBE
+        ));
 
         write(
             &path,
             "{\"raw\":\"screen.webm\"}\n{\"frame_id\":1,\"timestamp\":0.0}\n",
         );
-        assert!(!should_reenter_analysis_output(None, &path));
+        assert!(!should_reenter_analysis_output(
+            None,
+            &path,
+            vocab::HANDLER_DESCRIBE
+        ));
+        assert!(!should_reenter_analysis_output(
+            None,
+            &path,
+            vocab::HANDLER_TRANSCRIBE
+        ));
         fs::remove_file(path).expect("remove sidecar");
     }
 
@@ -152,7 +190,8 @@ mod tests {
         assert_eq!(read_processing_record_header(&path), None);
         assert!(should_reenter_analysis_output(
             read_processing_record_header(&path).as_ref(),
-            &path
+            &path,
+            vocab::HANDLER_DESCRIBE
         ));
         fs::remove_file(path).expect("remove sidecar");
     }

@@ -13,3 +13,4 @@ workspace = true
 solstone-core-observer.workspace = true
 solstone-core-doctor.workspace = true
 unicode-general-category.workspace = true
+solstone-core-format.workspace = true

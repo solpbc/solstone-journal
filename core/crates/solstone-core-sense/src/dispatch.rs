@@ -52,6 +52,7 @@ pub struct SenseDispatcher {
     workers: Mutex<Vec<thread::JoinHandle<()>>>,
     admission: Admission,
     handler_program: Option<PathBuf>,
+    batch_describe_workers: Option<usize>,
 }
 
 impl SenseDispatcher {
@@ -77,7 +78,16 @@ impl SenseDispatcher {
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
     ) -> Self {
-        Self::new_inner(journal, verbose, debug, outbound, admission, None)
+        Self::new_inner(
+            journal,
+            verbose,
+            debug,
+            outbound,
+            admission,
+            None,
+            None,
+            BTreeMap::new(),
+        )
     }
 
     /// Construct a dispatcher that uses a built fixture executable. This keeps
@@ -97,6 +107,71 @@ impl SenseDispatcher {
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
             Some(program),
+            None,
+            BTreeMap::new(),
+        )
+    }
+
+    /// Construct a batch dispatcher whose native children receive scoped
+    /// process environment supplied by the batch owner.
+    pub(crate) fn new_batch_with_environment(
+        journal: PathBuf,
+        verbose: bool,
+        debug: bool,
+        outbound: mpsc::Sender<Outbound>,
+        describe_workers: usize,
+        child_environment: BTreeMap<OsString, OsString>,
+    ) -> Self {
+        Self::new_batch_inner(
+            journal,
+            verbose,
+            debug,
+            outbound,
+            describe_workers,
+            child_environment,
+            None,
+        )
+    }
+
+    /// Construct a batch dispatcher that uses the built fixture handler.
+    #[cfg(feature = "test-stubs")]
+    pub(crate) fn new_batch_with_fixture_program(
+        journal: PathBuf,
+        verbose: bool,
+        debug: bool,
+        outbound: mpsc::Sender<Outbound>,
+        describe_workers: usize,
+        program: PathBuf,
+    ) -> Self {
+        Self::new_batch_inner(
+            journal,
+            verbose,
+            debug,
+            outbound,
+            describe_workers,
+            BTreeMap::new(),
+            Some(program),
+        )
+    }
+
+    fn new_batch_inner(
+        journal: PathBuf,
+        verbose: bool,
+        debug: bool,
+        outbound: mpsc::Sender<Outbound>,
+        describe_workers: usize,
+        child_environment: BTreeMap<OsString, OsString>,
+        handler_program: Option<PathBuf>,
+    ) -> Self {
+        Self::new_inner(
+            journal,
+            verbose,
+            debug,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            handler_program,
+            Some(describe_workers),
+            child_environment,
         )
     }
 
@@ -107,6 +182,8 @@ impl SenseDispatcher {
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
         handler_program: Option<PathBuf>,
+        batch_describe_workers: Option<usize>,
+        child_environment: BTreeMap<OsString, OsString>,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
             segments: HashMap::new(),
@@ -117,7 +194,12 @@ impl SenseDispatcher {
         let mut pools = HashMap::new();
         let mut worker_handles = Vec::new();
         for handler in HANDLERS {
-            let workers = resolve_concurrency(&read_config(&journal), handler);
+            let workers = if handler == "describe" {
+                batch_describe_workers
+                    .unwrap_or_else(|| resolve_concurrency(&read_config(&journal), handler))
+            } else {
+                resolve_concurrency(&read_config(&journal), handler)
+            };
             let mut senders = Vec::with_capacity(workers);
             for _ in 0..workers {
                 let (sender, receiver) = mpsc::channel();
@@ -126,11 +208,19 @@ impl SenseDispatcher {
                 let outbound = outbound.clone();
                 let journal = journal.clone();
                 let admission = admission.clone();
+                let child_environment = child_environment.clone();
                 let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
                     .spawn(move || {
                         worker(
-                            receiver, state, outbound, journal, admission, verbose, debug,
+                            receiver,
+                            state,
+                            outbound,
+                            journal,
+                            admission,
+                            verbose,
+                            debug,
+                            child_environment,
                         )
                     })
                     .expect("sense worker thread");
@@ -146,6 +236,7 @@ impl SenseDispatcher {
             workers: Mutex::new(worker_handles),
             admission,
             handler_program,
+            batch_describe_workers,
         }
     }
 
@@ -208,9 +299,12 @@ impl SenseDispatcher {
         };
         let config = read_config(&self.journal);
         let deferred = !batch && (processing_deferred(&config) || no_thinking_engine(&config));
+        let describe_workers = self
+            .batch_describe_workers
+            .unwrap_or_else(|| resolve_concurrency(&config, "describe"));
         let mut registry = default_registry(crate::config::describe_per_proc_jobs(
             &config,
-            resolve_concurrency(&config, "describe"),
+            describe_workers,
             &self.journal,
         ));
         if let Some(program) = &self.handler_program {
@@ -336,6 +430,19 @@ impl SenseDispatcher {
         self.stop();
         self.join_workers();
     }
+
+    pub(crate) fn wait_until_idle(&self) {
+        loop {
+            let idle = {
+                let state = self.state.lock().expect("sense state");
+                state.pending_files.is_empty() && state.segments.is_empty()
+            };
+            if idle {
+                return;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+    }
     fn join_workers(&self) {
         let workers = std::mem::take(&mut *self.workers.lock().expect("sense workers"));
         for worker in workers {
@@ -365,6 +472,7 @@ fn worker(
     admission: Admission,
     verbose: bool,
     debug: bool,
+    child_environment: BTreeMap<OsString, OsString>,
 ) {
     loop {
         let stopping = {
@@ -375,7 +483,16 @@ fn worker(
             return;
         }
         match receiver.recv_timeout(Duration::from_millis(50)) {
-            Ok(job) => run_job(job, &state, &outbound, &journal, &admission, verbose, debug),
+            Ok(job) => run_job(
+                job,
+                &state,
+                &outbound,
+                &journal,
+                &admission,
+                verbose,
+                debug,
+                &child_environment,
+            ),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         }
@@ -390,6 +507,7 @@ fn run_job(
     admission: &Admission,
     verbose: bool,
     debug: bool,
+    child_environment: &BTreeMap<OsString, OsString>,
 ) {
     let admission_stopping = || {
         let state = state.lock().expect("sense state");
@@ -447,6 +565,7 @@ fn run_job(
         "SOL_QUEUE_WAIT_MS".into(),
         events::queue_wait_ms(job.item.queued_at).to_string().into(),
     );
+    environment.extend(child_environment.clone());
     let options = SpawnOptions {
         journal_root: journal.to_path_buf(),
         reference,

@@ -9,8 +9,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::speakers::speakers_analyze_binary_path;
-use crate::{TranscribeError, backend::KNOWN_BACKENDS, resolve_model_asset};
+use crate::{TranscribeError, backend::KNOWN_BACKENDS};
 
 const SUPERVISOR_MESSAGE: &str =
     "sol: solstone isn't running. Start it with 'journal up' and retry.";
@@ -161,15 +160,6 @@ fn read_convey_port(journal_path: &Path) -> Option<u16> {
         .ok()
 }
 
-/// Check the runtime pieces Python validates before it opens any input audio.
-/// Check the native speakers-analyze helper and its two required model assets.
-/// Consumed by the W3c doctor speakers-analyze installation check.
-pub fn check_speakers_analyze_installation() -> Result<(), CliError> {
-    check_speakers_analyze_installation_with(speakers_analyze_binary_path, |asset| {
-        resolve_model_asset(asset).map_err(TranscribeError::from)
-    })
-}
-
 pub fn check_speakers_analyze_installation_with<B, M>(binary: B, model: M) -> Result<(), CliError>
 where
     B: FnOnce() -> Result<PathBuf, String>,
@@ -189,6 +179,11 @@ where
         model(asset).map_err(|error| installation_error(format!("asset-missing: {error}")))?;
     }
     Ok(())
+}
+
+/// Check the native helper and pinned model assets for host diagnostics.
+pub fn check_speakers_analyze_installation() -> Result<(), CliError> {
+    crate::speakers_installation::validate_speakers_analyze_runtime().map(|_| ())
 }
 
 /// The repair guidance paired with speakers-analyze installation failures.
@@ -340,7 +335,7 @@ fn is_segment_directory(value: &str) -> bool {
     )
 }
 
-fn installation_error(detail: impl Into<String>) -> CliError {
+pub(crate) fn installation_error(detail: impl Into<String>) -> CliError {
     CliError::SpeakersInstallation {
         message: format!(
             "Speakers-analyze installation is incomplete ({}). Repair: {}.",
