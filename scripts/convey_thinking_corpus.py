@@ -43,6 +43,16 @@ here is read from any real journal, and nothing here may be pointed at one.
 process on their success paths, so only their *refusal* paths are probed -- which
 is the half a port actually gets wrong, and the half that is reproducible.
 
+🔴 **``GET /api/validate-keys`` was probed here, and it broke that rule.** It reads
+as a non-persisting *read* and it is not: it recomputes validation, so in the two
+phases carrying a saved key it performed a live provider call and recorded both the
+provider's answer and a microsecond wall-clock stamp. Neither is reproducible, and
+the recorded payload was an artifact of the corpus's own fake key rather than a
+contract. ⛔ **The route is therefore NOT in this corpus at all** -- its contract is
+stated and unit-tested against a stubbed provider instead. 📌 The tell was that the
+route's name says read and its body says write; classify by what a handler *does*,
+never by its method.
+
 Determinism: ``TZ`` is pinned to UTC before any solstone import.
 
 ⛔ **The brain record's instants and the ages derived from them are NOT pinned by
@@ -188,7 +198,6 @@ PROBES: list[Probe] = [
     ("GET", "/app/thinking/api/providers?local_model=nope", None, "🔴 unknown local model REFUSES; it does not degrade"),
     ("GET", "/app/thinking/api/providers?local_model=", None, "empty local_model falls back to the default"),
     ("GET", "/app/thinking/api/keys", None, "key presence + cached validation, never the key"),
-    ("GET", "/app/thinking/api/validate-keys", None, "GET is the non-persisting validation read"),
     ("GET", "/app/thinking/api/providers/local/status", None, "local readiness, the local row alone"),
     ("GET", "/app/thinking/api/local/availability", None, "host fit for the bundled model"),
     ("GET", "/app/thinking/api/local/availability?model=nope", None, "unknown model refusal on the availability route"),
@@ -589,9 +598,28 @@ def build_corpus() -> dict[str, Any]:
                 "surface answers missing_request_body for the identical input, "
                 "and the reference's own generator comments approve of that "
                 "answer; reproducing the 500 would be preserving a defect, not "
-                "fidelity. ⚠ This is the ONLY declared deviation -- anything "
-                "else that differs from a recorded case is a defect.",
-            }
+                "fidelity.",
+            },
+            {
+                "path": "/app/thinking",
+                "method": "GET",
+                "when": "the journal is unestablished or its config is corrupt",
+                "reference": "308 to /app/thinking/ in EVERY phase -- Werkzeug "
+                "raises the strict-slash redirect during URL matching, which is "
+                "before before_request, so the session gate never sees it",
+                "native": "the session gate's own answer -- 302 to /init when "
+                "unestablished, 500 in the owner's voice when corrupt -- and the "
+                "308 in the six established phases",
+                "why": "the redirect is a route in the native shell, so it sits "
+                "INSIDE the session-gate layer rather than ahead of it. Matching "
+                "the reference here would mean widening a shared, closed "
+                "session-gate exemption inventory for a redirect, and the "
+                "owner-visible result is better without it: someone who has not "
+                "set up a journal is sent to setup rather than to a page that "
+                "will immediately send them to setup. ⚠ This is a FRAMEWORK "
+                "difference, not a narrowed contract -- the 308 itself is "
+                "reproduced wherever the gate admits the request.",
+            },
         ],
         "phases": cases,
     }
