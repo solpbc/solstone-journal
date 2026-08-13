@@ -34,12 +34,12 @@
 //! ## D5: generated, dependency-free asset embedding
 //!
 //! `build.rs` emits auditable `include_bytes!` entries for the full top-level
-//! static tree plus the speakers and devices workspace assets. This avoids a proc-macro asset crate
+//! static tree plus the speakers, devices, and entities workspace assets. This avoids a proc-macro asset crate
 //! while retaining byte-identical source assets in the binary.
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Speakers and Devices are converted workspaces in this wave. Every other known
+//! Speakers, Devices, and entities are converted workspaces in this wave. Every other known
 //! app receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
 //!
