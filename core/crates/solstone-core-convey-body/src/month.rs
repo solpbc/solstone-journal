@@ -70,6 +70,60 @@ pub fn read_normalized_rows(
     Ok(rows)
 }
 
+/// Every month with a normalized shard in any import bundle, unique and ascending.
+pub fn coverage_month_keys(journal_root: impl AsRef<Path>) -> Result<Vec<String>, ShardReadError> {
+    let imports = journal_root.as_ref().join("imports");
+    let entries = match fs::read_dir(&imports) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => {
+            return Err(ShardReadError::Read {
+                path: imports,
+                source,
+            });
+        }
+    };
+    let mut months = std::collections::BTreeSet::new();
+    for entry in entries {
+        let entry = entry.map_err(|source| ShardReadError::Read {
+            path: imports.clone(),
+            source,
+        })?;
+        let normalized = entry.path().join("normalized");
+        let shards = match fs::read_dir(&normalized) {
+            Ok(shards) => shards,
+            Err(source)
+                if matches!(
+                    source.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                continue;
+            }
+            Err(source) => {
+                return Err(ShardReadError::Read {
+                    path: normalized,
+                    source,
+                });
+            }
+        };
+        for shard in shards {
+            let shard = shard.map_err(|source| ShardReadError::Read {
+                path: normalized.clone(),
+                source,
+            })?;
+            let path = shard.path();
+            if path.extension().and_then(|extension| extension.to_str()) == Some("jsonl")
+                && let Some(stem) = path.file_stem().and_then(|stem| stem.to_str())
+                && is_month(stem)
+            {
+                months.insert(stem.to_owned());
+            }
+        }
+    }
+    Ok(months.into_iter().collect())
+}
+
 fn normalized_shard_paths(
     journal_root: &Path,
     month: Option<&str>,
@@ -94,7 +148,14 @@ fn normalized_shard_paths(
         let normalized = entry.path().join("normalized");
         let shards = match fs::read_dir(&normalized) {
             Ok(shards) => shards,
-            Err(source) if source.kind() == io::ErrorKind::NotFound => continue,
+            Err(source)
+                if matches!(
+                    source.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                continue;
+            }
             Err(source) => {
                 return Err(ShardReadError::Read {
                     path: normalized,
@@ -121,6 +182,14 @@ fn normalized_shard_paths(
     }
     paths.sort_by(|left, right| right.cmp(left));
     Ok(paths)
+}
+
+fn is_month(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 7
+        && bytes[4] == b'-'
+        && bytes[..4].iter().all(|byte| byte.is_ascii_digit())
+        && bytes[5..].iter().all(|byte| byte.is_ascii_digit())
 }
 
 #[cfg(test)]

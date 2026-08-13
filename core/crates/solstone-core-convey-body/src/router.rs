@@ -13,6 +13,7 @@ use axum::{Json, Router};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
+use crate::trends::trends_response;
 use crate::{BodyStoreHealthVerdict, read_body_store_health, read_health_dedupe_stats};
 
 /// Build the mergeable read-only Body API route surface.
@@ -20,7 +21,12 @@ pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
     Router::new()
         .route("/app/body/api/index", get(index_route))
         .route("/app/body/api/stats/{month}", get(stats_route))
+        .route("/app/body/api/trends", get(trends_route))
         .with_state(Arc::new(journal_root.as_ref().to_path_buf()))
+}
+
+async fn trends_route(State(root): State<Arc<PathBuf>>) -> Response {
+    Json(trends_response(root)).into_response()
 }
 
 async fn index_route(State(root): State<Arc<PathBuf>>) -> Response {

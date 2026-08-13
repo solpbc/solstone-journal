@@ -47,10 +47,6 @@ pub async fn api_window_stub() -> Response {
     not_converted()
 }
 
-pub async fn api_trends_stub() -> Response {
-    not_converted()
-}
-
 fn day_refusal() -> Response {
     solstone_core_convey_http::envelope::error_envelope(
         "invalid_day",
@@ -206,7 +202,6 @@ mod tests {
             "/app/body/api/recent",
             "/app/body/api/day/20260801",
             "/app/body/api/window",
-            "/app/body/api/trends",
         ] {
             let response = get(app.clone(), path).await;
             assert_eq!(response.0, StatusCode::NOT_IMPLEMENTED, "{path}");

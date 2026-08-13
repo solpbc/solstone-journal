@@ -3,16 +3,17 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::UNIX_EPOCH;
 
 use rusqlite::{Connection, OpenFlags};
 
-type DbSignature = (u128, u64, u128, u64);
-type StatsCache = BTreeMap<String, (DbSignature, Arc<HealthDedupeStats>)>;
+use crate::{
+    DatabaseSignatureError, TrendsSignature, health_dedupe_database_path, read_database_signature,
+};
+
+type StatsCache = BTreeMap<String, (TrendsSignature, Arc<HealthDedupeStats>)>;
 
 static HEALTH_DEDUPE_STATS_CACHE: OnceLock<Mutex<StatsCache>> = OnceLock::new();
 
@@ -95,8 +96,8 @@ impl std::error::Error for HealthDedupeStatsError {
 pub fn read_health_dedupe_stats(
     journal_root: impl AsRef<Path>,
 ) -> Result<Option<Arc<HealthDedupeStats>>, HealthDedupeStatsError> {
-    let db_path = journal_root.as_ref().join("imports/health-dedupe.sqlite");
-    let Some(signature) = db_signature(&db_path)? else {
+    let db_path = health_dedupe_database_path(journal_root.as_ref());
+    let Some(signature) = read_database_signature(&db_path).map_err(signature_error)? else {
         return Ok(None);
     };
     let cache_key = db_path.to_string_lossy().into_owned();
@@ -114,50 +115,10 @@ pub fn read_health_dedupe_stats(
     Ok(Some(stats))
 }
 
-fn db_signature(path: &Path) -> Result<Option<DbSignature>, HealthDedupeStatsError> {
-    let database = match fs::metadata(path) {
-        Ok(metadata) => metadata,
-        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => {
-            return Err(HealthDedupeStatsError::Io {
-                path: path.to_path_buf(),
-                source,
-            });
-        }
-    };
-    let database_mtime = modified_nanos(path, &database)?;
-    let wal_path = path.with_file_name(format!(
-        "{}-wal",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
-    ));
-    let (wal_mtime, wal_size) = match fs::metadata(&wal_path) {
-        Ok(wal) => (modified_nanos(&wal_path, &wal)?, wal.len()),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => (0, 0),
-        Err(source) => {
-            return Err(HealthDedupeStatsError::Io {
-                path: wal_path,
-                source,
-            });
-        }
-    };
-    Ok(Some((database_mtime, database.len(), wal_mtime, wal_size)))
-}
-
-fn modified_nanos(path: &Path, metadata: &fs::Metadata) -> Result<u128, HealthDedupeStatsError> {
-    metadata
-        .modified()
-        .map_err(|source| HealthDedupeStatsError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .map_err(|source| HealthDedupeStatsError::Io {
-            path: path.to_path_buf(),
-            source: io::Error::other(source),
-        })
+fn signature_error(error: DatabaseSignatureError) -> HealthDedupeStatsError {
+    match error {
+        DatabaseSignatureError::Io { path, source } => HealthDedupeStatsError::Io { path, source },
+    }
 }
 
 fn fold_stats(path: &Path) -> Result<HealthDedupeStats, HealthDedupeStatsError> {

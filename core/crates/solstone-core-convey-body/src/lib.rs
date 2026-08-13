@@ -12,6 +12,7 @@ mod presentation;
 mod router;
 mod seed;
 mod shard;
+mod signature;
 mod sleep;
 mod trends;
 
@@ -26,7 +27,7 @@ pub use inventory::{
     BodyImportInventory, BodyImportInventoryEntry, BodyImportInventoryError, BodyImportSkip,
     ManifestEntryCount, ManifestReadError, read_body_import_inventory,
 };
-pub use month::{MonthReader, read_normalized_rows};
+pub use month::{MonthReader, coverage_month_keys, read_normalized_rows};
 pub use presentation::{
     FRIENDLY_CONTRIBUTOR_NAMES, FRIENDLY_TYPE_NAMES, HEALTH_CARD_STREAM_BY_FAMILY,
     HealthCardStreamError, SOURCE_APPLE_HEALTH, SOURCE_DEXCOM_CLARITY, SOURCE_OURA,
@@ -39,14 +40,17 @@ pub use seed::{
     BodySeedReport, seed_body_journal,
 };
 pub use shard::{NormalizedRow, NormalizedValue, ShardReadError, read_normalized_shard};
+pub use signature::{DatabaseSignatureError, TrendsSignature, trends_signature};
+pub(crate) use signature::{health_dedupe_database_path, read_database_signature};
 pub use sleep::{
     DaySleep, SLEEP_SESSION_GAP_MINUTES, SleepInterval, SleepStagedInterval, merge_sleep_sessions,
     pick_day_sleep, pick_main_session, sleep_stage_kind,
 };
 pub use solstone_core_body_source::{BodyValue, FieldState, ValueState};
 pub use trends::{
-    TrendAnnotation, TrendCoverage, TrendSignal, TrendsCacheError, TrendsPayload, TrendsSignature,
-    read_trends_cache, replace_trends_cache, typical_by_signal,
+    TrendAnnotation, TrendCoverage, TrendSignal, TrendValue, TrendsCacheError, TrendsFoldError,
+    TrendsPayload, TrendsWarmOutcome, read_trends_cache, replace_trends_cache,
+    trends_warm_invocations, typical_by_signal, warm_trends,
 };
 
 #[cfg(test)]
@@ -102,5 +106,17 @@ mod tests {
             .find(|line| line.contains("--target $(IOS_TARGET)"))
             .unwrap();
         assert!(ios_recipe.contains("--exclude solstone-core-convey-body"));
+    }
+
+    #[test]
+    fn body_manifest_has_no_ipc_dependencies() {
+        let manifest =
+            fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).unwrap();
+        for forbidden in ["callosum", "socket", "ipc"] {
+            assert!(
+                !manifest.contains(forbidden),
+                "Body trends must not add {forbidden} to Cargo.toml"
+            );
+        }
     }
 }

@@ -380,8 +380,11 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
         DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
     );
     let loopback_router = router(journal_root.clone());
-    let door_router =
-        authorization_gate::authorized_router(journal_root.clone(), authorization_receiver);
+    let door_router = authorization_gate::authorized_router_with_router(
+        loopback_router.clone(),
+        journal_root.clone(),
+        authorization_receiver,
+    );
     let handle = runtime
         .block_on(bind_with_authorization(
             ConveyServeOptions {
@@ -451,6 +454,7 @@ fn write_port_file(journal_root: &FsPath, port: u16) -> Result<(), String> {
 }
 
 pub fn router(journal_root: PathBuf) -> Router {
+    solstone_core_convey_body::warm_trends(journal_root.clone());
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let routes = Router::new()
@@ -693,7 +697,6 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/body/api/recent", get(body::api_recent_stub))
         .route("/app/body/api/day/{day}", get(body::api_day_stub))
         .route("/app/body/api/window", get(body::api_window_stub))
-        .route("/app/body/api/trends", get(body::api_trends_stub))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
@@ -770,4 +773,36 @@ fn app_response(app: &str) -> Response {
 
 async fn not_found() -> Response {
     not_found_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::router;
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn router_invokes_trends_warm_once() {
+        let path = std::env::temp_dir().join(format!(
+            "solstone-convey-shell-trends-{}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir(&path).unwrap();
+        let before = solstone_core_convey_body::trends_warm_invocations();
+        let _router = router(path.clone());
+        assert_eq!(
+            solstone_core_convey_body::trends_warm_invocations() - before,
+            1
+        );
+        let _ = fs::remove_dir_all(path);
+    }
 }
