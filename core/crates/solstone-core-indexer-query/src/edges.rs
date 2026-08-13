@@ -272,7 +272,9 @@ pub fn load_entity_network(
         // This carries Python's three-clause rule. The subject cannot be its own
         // peer because ranking SQL already excludes it, but fidelity keeps the clause.
         if !request.include_principal
-            && principal_id.is_some_and(|principal| principal != entity_id && row.peer == principal)
+            && principal_id.is_some_and(|principal| {
+                !principal.is_empty() && principal != entity_id && row.peer == principal
+            })
         {
             continue;
         }
@@ -422,6 +424,8 @@ pub fn load_network_overview(
         )?;
     }
     let names = load_endpoint_names(&connection, &ranking)?;
+    // Keep dst != src on this second UNION leg only: self-edges count once, deliberately
+    // (solstone/think/indexer/edges.py:925-930).
     let cte = format!(
         "WITH endpoint_edges AS (\n  SELECT src AS entity_id, kind, day, weight\n  FROM edges\n  WHERE 1 = 1 {}\n  UNION ALL\n  SELECT dst AS entity_id, kind, day, weight\n  FROM edges\n  WHERE 1 = 1\n    AND dst != src {}\n)\nSELECT entity_id, kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum\nFROM endpoint_edges\nGROUP BY entity_id, kind, day",
         ranking.sql, ranking.sql
@@ -519,6 +523,8 @@ impl FilterSql {
         let mut params = self.params.clone();
         params.push(text(reference_day));
         Self {
+            // NULL days are undated evidence, not future evidence; a bare day <= :ref
+            // would silently drop every undated edge (edges.py:342-346).
             sql: format!("{}\n  AND (day IS NULL OR day <= ?)", self.sql),
             params,
             payload: self.payload.clone(),
@@ -549,11 +555,9 @@ fn build_filters(filters: &EdgeFilters) -> Result<FilterSql, EdgeQueryError> {
             params.extend(kinds.iter().cloned().map(Into::into));
         }
     }
-    let facet = filters
-        .facet
-        .as_ref()
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_lowercase());
+    // HTTP sends None for an empty facet (routes.py:292-333); direct callers retain
+    // Some(\"\") to match edges.py:290-318.
+    let facet = filters.facet.as_ref().map(|value| value.to_lowercase());
     if let Some(value) = &facet {
         clauses.push("facet = ?".to_string());
         params.push(value.clone().into());
@@ -636,6 +640,9 @@ fn kind_weight(
         .iter()
         .find(|(candidate, _)| *candidate == kind)
     else {
+        // The edges DDL has no CHECK on kind, so foreign/older writer rows can reach scoring.
+        // Defaulting a weight would silently mis-rank connections; mirror Python's uncaught
+        // KeyError in edges.py:547-550 by failing loudly as Internal.
         return Err(EdgeQueryError::Internal {
             detail: format!("Unknown stored edge kind: {kind:?}"),
         });
@@ -681,12 +688,19 @@ fn unavailable(path: PathBuf, error: SqlError) -> EdgeQueryError {
     }
 }
 fn unavailable_db(connection: &Connection, error: SqlError) -> EdgeQueryError {
-    EdgeQueryError::EdgeIndexUnavailable {
-        path: connection
-            .path()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("<edge-index>")),
-        detail: error.to_string(),
+    // Mirror routes.py:394-402: SQLite operational/schema failures mean the index is
+    // unavailable; decoding, conversion, and binding failures remain Internal for W2b-2.
+    match error {
+        error @ SqlError::SqliteFailure(_, _) => unavailable(
+            connection
+                .path()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("<edge-index>")),
+            error,
+        ),
+        error => EdgeQueryError::Internal {
+            detail: error.to_string(),
+        },
     }
 }
 
@@ -850,6 +864,8 @@ fn load_endpoint_names(
     connection: &Connection,
     filter: &FilterSql,
 ) -> Result<BTreeMap<String, String>, EdgeQueryError> {
+    // Keep dst != src on this second UNION leg only: self-edges count once, deliberately
+    // (solstone/think/indexer/edges.py:522-528).
     let sql = format!(
         "WITH endpoint_edges AS ( SELECT src AS entity_id, src_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM edges WHERE 1 = 1 {} UNION ALL SELECT dst AS entity_id, dst_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM edges WHERE 1 = 1 AND dst != src {} ) SELECT entity_id, entity_name FROM endpoint_edges WHERE entity_name IS NOT NULL ORDER BY entity_id ASC, day IS NULL ASC, day DESC, ts IS NULL ASC, ts DESC, path ASC, anchor IS NULL ASC, anchor ASC, edge_rowid ASC",
         filter.sql, filter.sql

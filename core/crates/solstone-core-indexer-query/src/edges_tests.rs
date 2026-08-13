@@ -395,6 +395,37 @@ fn network_principal_and_self_guards_match_reference() {
 }
 
 #[test]
+fn network_treats_an_empty_principal_id_as_absent() {
+    let root = seed(
+        "empty-principal",
+        &[SeedEdge::new(
+            "subject",
+            "",
+            "works-with",
+            Some("20260501"),
+            "empty-peer",
+        )],
+    );
+    let response = load_entity_network(
+        &root,
+        "subject",
+        &default_network("20260530"),
+        Some(""),
+        ATTENDANCE,
+    )
+    .unwrap();
+    assert_eq!(
+        response
+            .neighbors
+            .iter()
+            .map(|item| item.entity_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![""]
+    );
+    cleanup(root);
+}
+
+#[test]
 fn evidence_class_and_future_ranking_cap_match_reference() {
     let root = seed(
         "classes",
@@ -486,6 +517,16 @@ fn filters_and_negative_pagination_are_invalid_before_query() {
             .total,
         0
     );
+    let empty_facet = EdgeEvidenceRequest {
+        filters: EdgeFilters {
+            facet: Some(String::new()),
+            ..EdgeFilters::default()
+        },
+        ..EdgeEvidenceRequest::default()
+    };
+    let response = load_edge_evidence(&root, "a", "b", &empty_facet).unwrap();
+    assert_eq!(response.filters.facet.as_deref(), Some(""));
+    assert_eq!(response.total, 0);
     cleanup(root);
 }
 
@@ -590,6 +631,24 @@ fn stored_unknown_kind_fails_loudly_as_internal_error() {
     drop(connection);
     assert!(matches!(
         load_network_overview(&root, &default_overview("20260530"), ATTENDANCE, &|_| None),
+        Err(EdgeQueryError::Internal { .. })
+    ));
+    cleanup(root);
+}
+
+#[test]
+fn stored_decode_failures_are_internal_not_index_unavailable() {
+    let root = seed("decode-failure", &[]);
+    let connection = Connection::open(db_path(&root)).unwrap();
+    connection
+        .execute(
+            "INSERT INTO edges(src,dst,kind,directed,source,path,weight) VALUES ('a','b','works-with',X'FF','test','bad-directed',1)",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+    assert!(matches!(
+        load_edge_evidence(&root, "a", "b", &EdgeEvidenceRequest::default()),
         Err(EdgeQueryError::Internal { .. })
     ));
     cleanup(root);
