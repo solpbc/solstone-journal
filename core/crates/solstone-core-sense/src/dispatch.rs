@@ -42,7 +42,6 @@ struct State {
     pending_files: HashSet<(String, PathBuf)>,
     health: Health,
     stopping: bool,
-    draining: bool,
 }
 
 pub struct SenseDispatcher {
@@ -114,7 +113,6 @@ impl SenseDispatcher {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
-            draining: false,
         }));
         let mut pools = HashMap::new();
         let mut worker_handles = Vec::new();
@@ -333,10 +331,6 @@ impl SenseDispatcher {
         self.stop();
         self.join_workers();
     }
-    pub fn drain_and_wait(&self) {
-        self.state.lock().expect("sense state").draining = true;
-        self.join_workers();
-    }
     fn join_workers(&self) {
         let workers = std::mem::take(&mut *self.workers.lock().expect("sense workers"));
         for worker in workers {
@@ -370,7 +364,7 @@ fn worker(
     loop {
         let stopping = {
             let state = state.lock().expect("sense state");
-            state.stopping || state.draining
+            state.stopping
         };
         if stopping {
             return;
@@ -394,7 +388,7 @@ fn run_job(
 ) {
     let admission_stopping = || {
         let state = state.lock().expect("sense state");
-        state.stopping || state.draining
+        state.stopping
     };
     let stage = job.item.handler.clone();
     let context = job.item.context.clone();
@@ -804,7 +798,6 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
-            draining: false,
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -863,7 +856,6 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
-            draining: false,
         }));
         for (segment, batch) in [("live", false)] {
             let key = SegmentKey {

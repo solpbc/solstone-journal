@@ -88,7 +88,7 @@ pub async fn run_until<F>(
         }
     }
     let stopping_dispatcher = Arc::clone(&dispatcher);
-    let _ = tokio::task::spawn_blocking(move || stopping_dispatcher.drain_and_wait()).await;
+    let _ = tokio::task::spawn_blocking(move || stopping_dispatcher.stop_and_wait()).await;
     drain(&connection, &receiver);
     connection.stop().await;
 }

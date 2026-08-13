@@ -328,7 +328,7 @@ async fn shutdown_nonzero_records_segment_error_without_notification() {
     std::fs::write(segment.join("sleep.flac"), b"audio").expect("audio");
     let socket = root.path().join("health/callosum.sock");
     let server = CallosumSocketServer::bind(&socket).await.expect("server");
-    let (mut peer, dispatcher, stop) = start_service(
+    let (mut peer, _dispatcher, stop) = start_service(
         root.path().to_path_buf(),
         PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler")),
     )
@@ -336,7 +336,7 @@ async fn shutdown_nonzero_records_segment_error_without_notification() {
     wait_for_clients(&server).await;
     assert!(peer.emit("observe", "observing", observing(&["sleep.flac"])));
     let _ = next_event(&mut peer, "observe", "detected").await;
-    dispatcher.stop();
+    let _ = stop.send(());
     let observed = next_event(&mut peer, "observe", "observed").await;
     assert_eq!(observed.extra["error"], true);
     assert!(
@@ -352,7 +352,54 @@ async fn shutdown_nonzero_records_segment_error_without_notification() {
         .is_err(),
         "shutdown non-zero path does not notify"
     );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn shutdown_promptly_terminates_within_cap_without_notification() {
+    let root = tempfile::tempdir().expect("journal");
+    std::fs::create_dir_all(root.path().join("config")).expect("config");
+    std::fs::write(
+        root.path().join("config/journal.json"),
+        br#"{"providers":{"active":{"provider":"openai"}}}"#,
+    )
+    .expect("settings");
+    let segment = root.path().join("chronicle/20260812/default/120000_2");
+    std::fs::create_dir_all(&segment).expect("segment");
+    std::fs::write(segment.join("sleep.flac"), b"audio").expect("audio");
+    let socket = root.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.expect("server");
+    let (mut peer, _dispatcher, stop) = start_service(
+        root.path().to_path_buf(),
+        PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler")),
+    )
+    .await;
+    wait_for_clients(&server).await;
+    assert!(peer.emit("observe", "observing", observing(&["sleep.flac"])));
+    let _ = next_event(&mut peer, "observe", "detected").await;
+    let started = tokio::time::Instant::now();
     let _ = stop.send(());
+    let observed = tokio::time::timeout(
+        Duration::from_secs(3),
+        next_event(&mut peer, "observe", "observed"),
+    )
+    .await
+    .expect("shutdown completes promptly");
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert_eq!(observed.extra["error"], true);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), async {
+            loop {
+                let event = peer.next_message().await.expect("peer");
+                if event.tract == "notification" && event.event == "show" {
+                    break event;
+                }
+            }
+        })
+        .await
+        .is_err(),
+        "within-cap shutdown does not notify"
+    );
     server.stop().await;
 }
 
@@ -378,7 +425,7 @@ async fn watchdog_timeout_during_shutdown_still_notifies() {
     wait_for_clients(&server).await;
     assert!(peer.emit("observe", "observing", observing(&["sleep.flac"])));
     let _ = next_event(&mut peer, "observe", "detected").await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(1050)).await;
     let _ = stop.send(());
     let notification = next_event(&mut peer, "notification", "show").await;
     assert!(
