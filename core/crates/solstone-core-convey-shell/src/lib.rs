@@ -34,7 +34,7 @@
 //! ## D5: generated, dependency-free asset embedding
 //!
 //! `build.rs` emits auditable `include_bytes!` entries for the full top-level
-//! static tree and the speakers assets. This avoids a proc-macro asset crate
+//! static tree plus the speakers and devices workspace assets. This avoids a proc-macro asset crate
 //! while retaining byte-identical source assets in the binary.
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest

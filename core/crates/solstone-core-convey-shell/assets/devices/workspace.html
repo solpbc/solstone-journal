@@ -630,6 +630,8 @@ function observerCardHTML(observer, labels = {}) {
   const label = observer.label;
   const safeLabel = escapeHtml(label);
   const liveLabel = observer.live === true ? (labels.live || '') : '';
+  // Replace this unavailable state when a native live-connection source is mounted
+  // and can determine device liveness.
   const liveUnavailable = observer.live === null
     ? '<span class="observer-live-unavailable" data-live-status="unavailable">live connection status unavailable</span>'
     : '';

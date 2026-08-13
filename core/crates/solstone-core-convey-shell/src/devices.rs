@@ -93,11 +93,11 @@ pub(crate) async fn delete(
         Ok(None) => return paired_device_not_found(),
         Err(error) => {
             log::warn!("devices delete could not load observer {prefix}: {error}");
-            return settings_operation_failed("Failed to revoke observer");
+            return settings_operation_failed("Failed to revoke device");
         }
     };
     if record.revoked() {
-        return pl_revoked(StatusCode::CONFLICT, "Observer already revoked");
+        return pl_revoked(StatusCode::CONFLICT, "Device already revoked");
     }
     match execute(
         &root.0,
@@ -109,14 +109,14 @@ pub(crate) async fn delete(
     ) {
         Ok(_) => Json(json!({"status": "ok"})).into_response(),
         Err(ObserverError::AlreadyRevoked(_)) => {
-            pl_revoked(StatusCode::CONFLICT, "Observer already revoked")
+            pl_revoked(StatusCode::CONFLICT, "Device already revoked")
         }
         Err(ObserverError::NotFound(_) | ObserverError::InvalidIdentifier) => {
             paired_device_not_found()
         }
         Err(error) => {
             log::warn!("devices delete could not revoke observer: {error}");
-            settings_operation_failed("Failed to revoke observer")
+            settings_operation_failed("Failed to revoke device")
         }
     }
 }
@@ -130,11 +130,11 @@ pub(crate) async fn key(
         Ok(None) => return paired_device_not_found(),
         Err(error) => {
             log::warn!("devices key could not load observer {prefix}: {error}");
-            return settings_operation_failed("Failed to read observer");
+            return settings_operation_failed("Failed to read device");
         }
     };
     if record.revoked() {
-        return pl_revoked(StatusCode::FORBIDDEN, "key unavailable — observer revoked");
+        return pl_revoked(StatusCode::FORBIDDEN, "key unavailable — device revoked");
     }
     let name = record.name().unwrap_or_default();
     if let Err(error) = append_journal_action_log(
@@ -161,7 +161,7 @@ pub(crate) async fn create_retired() -> Response {
         StatusCode::GONE,
         "operation_no_longer_available",
         "I couldn't finish because that action is no longer available.",
-        "Observer records are no longer created by hand. A device registers itself when you pair it.",
+        "Devices are no longer created by hand. A device registers itself when you pair it.",
     )
 }
 
@@ -209,6 +209,8 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
             "stats".to_owned(),
             json!(record.stats().cloned().unwrap_or_default()),
         ),
+        // Replace these nulls when a native live-connection source is mounted
+        // and can determine device liveness.
         ("live".to_owned(), Value::Null),
         ("last_chat_request_at".to_owned(), Value::Null),
         ("state".to_owned(), json!(freshness.state)),
@@ -338,7 +340,7 @@ fn paired_device_not_found() -> Response {
         StatusCode::NOT_FOUND,
         "paired_device_not_found",
         "I couldn't find that paired device.",
-        "Observer not found",
+        "Device not found",
     )
 }
 
@@ -376,6 +378,16 @@ mod tests {
     use super::*;
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    const INGEST_REJECTION_FIELDS: [&str; 7] = [
+        "reason_code",
+        "active_count",
+        "first_ts",
+        "latest_ts",
+        "summary",
+        "stream",
+        "version",
+    ];
 
     struct EstablishedJournal(PathBuf);
 
@@ -515,7 +527,15 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_fields = OBSERVER_ENTRY_FIELDS.into_iter().collect::<BTreeSet<_>>();
         assert_eq!(actual_fields, expected_fields);
-        assert_eq!(row["live"], Value::Null);
+        let corpus: Value =
+            serde_json::from_str(include_str!("../../../fixtures/convey_devices_corpus.json"))
+                .expect("devices corpus parses");
+        let environment_native = &corpus["environment_native"];
+        assert_eq!(row["live"], environment_native["live"]);
+        assert_eq!(
+            row["last_chat_request_at"],
+            environment_native["last_chat_request_at"]
+        );
         assert!(row["failing"].is_boolean());
 
         let (status, key) = request(
@@ -623,7 +643,15 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let rejection = &listed["observers"][0]["ingest_rejection"];
         assert_eq!(listed["observers"][0]["failing"], true);
-        assert_eq!(rejection.as_object().expect("rejection object").len(), 7);
+        let actual_fields = rejection
+            .as_object()
+            .expect("rejection object")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let expected_fields = INGEST_REJECTION_FIELDS.into_iter().collect::<BTreeSet<_>>();
+        assert_eq!(actual_fields.len(), INGEST_REJECTION_FIELDS.len());
+        assert_eq!(actual_fields, expected_fields);
         assert!(rejection.get("segment").is_none());
     }
 
