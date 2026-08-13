@@ -57,6 +57,31 @@ fn corpus() -> Value {
         .expect("corpus parses")
 }
 
+/// Permanent documented divergence, introduced 2026-08-13, with no expiry
+/// condition: the frozen capture permanently records the deleted reference's
+/// `observer`, while the shell permanently serves `devices`. Because this
+/// cannot expire, narrowness is the safeguard: this is keyed to the one
+/// renamed entry and exactly two keys. Never generalize this into a rule over
+/// app names or other keys, and never retire it.
+fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "observer").count(),
+        1,
+        "frozen shell contains exactly one observer app"
+    );
+    let observer = apps
+        .iter_mut()
+        .find(|app| app["name"] == "observer")
+        .expect("frozen shell contains observer app");
+    assert_eq!(observer["name"], "observer");
+    assert_eq!(observer["workspace_url"], "/app/observer/workspace");
+    observer["name"] = Value::String("devices".to_owned());
+    observer["workspace_url"] = Value::String("/app/devices/workspace".to_owned());
+}
+
 fn journal_for_phase(phase: &str) -> TempDir {
     let journal = TempDir::new(phase);
     match phase {
@@ -190,6 +215,9 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                 let mut actual: Value =
                     serde_json::from_slice(&body).expect("JSON response parses");
                 let mut expected = expected_json.clone();
+                if phase == "established" && path == "/api/shell" {
+                    apply_permanent_devices_shell_divergence(&mut expected);
+                }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");
                 assert_eq!(actual, expected, "{phase} {path}");
