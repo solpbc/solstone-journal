@@ -5,7 +5,6 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -218,20 +217,18 @@ fn value_validation_and_help_precede_journal_resolution() {
 }
 
 #[test]
-fn path_diagnostics_escape_invalid_bytes_and_backslashes_once() {
+fn path_diagnostics_escape_control_bytes_and_backslashes_once() {
     let outer = tempfile::tempdir().unwrap();
-    let journal = outer
-        .path()
-        .join(OsString::from_vec(b"journal-\\-\xff".to_vec()));
+    let journal = outer.path().join("journal-\\-\n-\x1b-\u{202e}");
     let day_health = journal
         .join("chronicle")
         .join(Local::now().format("%Y%m%d").to_string())
         .join("health");
     fs::create_dir_all(&day_health).unwrap();
-    let name = OsString::from_vec(b"bad-\\-\xff.log".to_vec());
+    let name = "bad-\\-\n-\x1b-\u{202e}.log";
     let target = journal.join("invalid-target");
     fs::write(&target, b"\xff").unwrap();
-    symlink(&target, day_health.join(&name)).unwrap();
+    symlink(&target, day_health.join(name)).unwrap();
 
     let output = run_path(
         journal.as_os_str().to_owned(),
@@ -243,7 +240,7 @@ fn path_diagnostics_escape_invalid_bytes_and_backslashes_once() {
     assert_eq!(
         stderr,
         format!(
-            "health logs: {}/journal-\\\\-\\xff/chronicle/{}/health/bad-\\\\-\\xff.log: invalid utf-8 sequence of 1 bytes from index 0\n",
+            "health logs: {}/journal-\\\\-\\n-\\x1b-\\u{{202e}}/chronicle/{}/health/bad-\\\\-\\n-\\x1b-\\u{{202e}}.log: invalid utf-8 sequence of 1 bytes from index 0\n",
             outer.path().display(),
             Local::now().format("%Y%m%d")
         )
@@ -253,12 +250,10 @@ fn path_diagnostics_escape_invalid_bytes_and_backslashes_once() {
 #[test]
 fn follow_warning_keeps_invalid_path_identity_once() {
     let outer = tempfile::tempdir().unwrap();
-    let journal = outer
-        .path()
-        .join(OsString::from_vec(b"journal-\\-\xff".to_vec()));
+    let journal = outer.path().join("journal-\\-\n-\x1b-\u{202e}");
     let health = journal.join("health");
     fs::create_dir_all(&health).unwrap();
-    let name = OsString::from_vec(b"broken-\\-\xff.log".to_vec());
+    let name = "broken-\\-\n-\x1b-\u{202e}.log";
     symlink("missing", health.join(name)).unwrap();
 
     let output = run_path(journal.as_os_str().to_owned(), &["health", "logs", "-f"]);
@@ -268,7 +263,7 @@ fn follow_warning_keeps_invalid_path_identity_once() {
     assert_eq!(
         stderr,
         format!(
-            "health logs: initial-open failed for {}/journal-\\\\-\\xff/health/broken-\\\\-\\xff.log\nNo log files found.\n",
+            "health logs: initial-open failed for {}/journal-\\\\-\\n-\\x1b-\\u{{202e}}/health/broken-\\\\-\\n-\\x1b-\\u{{202e}}.log\nNo log files found.\n",
             outer.path().display()
         )
     );
