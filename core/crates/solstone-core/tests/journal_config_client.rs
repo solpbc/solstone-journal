@@ -13,7 +13,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_journal_config::materialized_defaults;
-use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+use solstone_core_journal_config_write::{
+    JournalConfigMutation, LockOptions, mutate_journal_config,
+};
 
 struct TempDir {
     path: PathBuf,
@@ -217,9 +219,11 @@ mutate_journal_config(lambda config: JournalConfigMutation(False, None))
     let direct = TempDir::new("in-process");
     let direct_journal = direct.path.join("journal");
     fs::create_dir(&direct_journal).expect("create direct journal");
-    let transaction = mutate_journal_config(&direct_journal, |_config| JournalConfigMutation {
-        changed: false,
-        value: (),
+    let transaction = mutate_journal_config(&direct_journal, LockOptions::default(), |_config| {
+        JournalConfigMutation {
+            changed: false,
+            value: (),
+        }
     })
     .expect("direct materialization");
     assert!(transaction.written);

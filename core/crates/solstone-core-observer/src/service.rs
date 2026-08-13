@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use solstone_core_facets::append_journal_action_log;
+use solstone_core_facets::append_action_log;
 
 use crate::command::ObserverCommand;
 use crate::store::format::{fmt_bytes, render_list, render_status_all, render_status_single};
@@ -173,8 +173,9 @@ fn rename(root: &Path, old: &str, new: String, json_output: bool) -> Result<Stri
     observer.set_name(new.clone());
     save_observer(root, &observer)
         .map_err(|_| ObserverError::Internal("Error: failed to save observer".to_owned()))?;
-    append_journal_action_log(
+    append_action_log(
         root,
+        None,
         "app",
         "observer",
         "observer_rename",
@@ -228,8 +229,9 @@ fn revoke_record(
     observer.set_revoked_at(now_ms);
     save_observer(root, &observer)
         .map_err(|_| ObserverError::Internal("Error: failed to save observer".to_owned()))?;
-    append_journal_action_log(
+    append_action_log(
         root,
+        None,
         "app",
         "observer",
         "observer_revoke",

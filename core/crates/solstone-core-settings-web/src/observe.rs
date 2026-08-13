@@ -3,10 +3,19 @@
 
 use std::path::PathBuf;
 
-use axum::response::Response;
-use serde_json::{Value, json};
+use axum::{body::Bytes, response::Response};
+use serde_json::{Map, Value, json};
+use solstone_core_journal_config_write::{
+    JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
+};
 
-use crate::http::json_response;
+use crate::{
+    http::{
+        config_busy, invalid_config_value, json_response, missing_request_body,
+        settings_operation_failed,
+    },
+    request_body::{JsonBody, json_body},
+};
 
 pub async fn get(journal_root: PathBuf) -> Response {
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
@@ -24,4 +33,64 @@ pub async fn get(journal_root: PathBuf) -> Response {
         },
         "defaults": {"tmux": {"enabled": true, "capture_interval": 5, "capture_interval_min": 1, "capture_interval_max": 60}},
     }))
+}
+
+pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Bytes) -> Response {
+    let JsonBody::Value(Value::Object(request)) = json_body(body) else {
+        return missing_request_body();
+    };
+    if let Some(tmux) = request.get("tmux") {
+        let Some(tmux) = tmux.as_object() else {
+            return invalid_config_value("tmux must be an object");
+        };
+        if tmux.get("enabled").is_some_and(|value| !value.is_boolean()) {
+            return invalid_config_value("tmux.enabled must be a boolean");
+        }
+        if tmux.get("capture_interval").is_some_and(|value| {
+            !value.is_i64()
+                || value
+                    .as_i64()
+                    .is_none_or(|value| !(1..=60).contains(&value))
+        }) {
+            return invalid_config_value(
+                "tmux.capture_interval must be an integer between 1 and 60",
+            );
+        }
+    }
+    match mutate_journal_config(&journal_root, lock_options, |config| {
+        let observe = config
+            .entry("observe".to_owned())
+            .or_insert_with(|| Value::Object(Map::new()))
+            .as_object_mut();
+        let Some(observe) = observe else {
+            return JournalConfigMutation {
+                changed: false,
+                value: false,
+            };
+        };
+        let mut changed = false;
+        if let Some(tmux) = request.get("tmux").and_then(Value::as_object) {
+            let target = observe
+                .entry("tmux".to_owned())
+                .or_insert_with(|| Value::Object(Map::new()))
+                .as_object_mut()
+                .expect("object");
+            for key in ["enabled", "capture_interval"] {
+                if let Some(value) = tmux.get(key) {
+                    changed |= target.get(key) != Some(value);
+                    target.insert(key.to_owned(), value.clone());
+                }
+            }
+        }
+        JournalConfigMutation {
+            changed,
+            value: true,
+        }
+    }) {
+        Ok(_) => get(journal_root).await,
+        Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
+            _,
+        ))) => config_busy(),
+        Err(_) => settings_operation_failed(),
+    }
 }

@@ -8,13 +8,20 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use axum::{extract::Query, response::Response};
+use axum::{body::Bytes, extract::Query, response::Response};
 use chrono::{DateTime, Local, Utc};
 use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
+use solstone_core_journal_config_write::{
+    JournalConfigMutation, LockOptions, mutate_journal_config,
+};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 
-use crate::{http::json_response, state::sol_voice_constants};
+use crate::{
+    http::{invalid_config_value, json_response, settings_operation_failed},
+    request_body::{JsonBody, json_body},
+    state::sol_voice_constants,
+};
 
 pub async fn get(journal_root: PathBuf) -> Response {
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
@@ -22,6 +29,102 @@ pub async fn get(journal_root: PathBuf) -> Response {
         .config
         .unwrap_or_default();
     json_response(response(&journal_root, &config, now_ms()))
+}
+
+pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Bytes) -> Response {
+    let JsonBody::Value(Value::Object(updates)) = json_body(body) else {
+        return invalid_config_value("sol_voice update must be an object");
+    };
+    let allowed = [
+        "daily_cap",
+        "category_caps",
+        "rate_floor_minutes",
+        "mute_window",
+        "category_self_mute_hours",
+        "category_self_mute_clear_markers",
+        "default_dedupe_window",
+        "system_notifications",
+        "debug_show_throttled",
+    ];
+    if let Some(key) = updates.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return invalid_config_value(format!("sol_voice.{key} is not a recognized setting"));
+    }
+    if updates
+        .get("daily_cap")
+        .is_some_and(|value| !value.is_u64())
+        || updates
+            .get("rate_floor_minutes")
+            .is_some_and(|value| !value.is_u64())
+        || updates
+            .get("mute_window")
+            .is_some_and(|value| !value.is_object())
+    {
+        return invalid_config_value("invalid sol_voice settings");
+    }
+    match mutate_journal_config(&journal_root, lock_options, |config| {
+        let section = config
+            .entry("sol_voice".to_owned())
+            .or_insert_with(|| Value::Object(Map::new()))
+            .as_object_mut();
+        let Some(section) = section else {
+            return JournalConfigMutation {
+                changed: false,
+                value: false,
+            };
+        };
+        let mut changed = false;
+        for (key, value) in default_settings() {
+            if !section.contains_key(&key) {
+                section.insert(key, value);
+                changed = true;
+            }
+        }
+        changed |= merge_object(section, &updates);
+        JournalConfigMutation {
+            changed,
+            value: true,
+        }
+    }) {
+        Ok(_) => {
+            let config = solstone_core_journal_config::read_journal_config(&journal_root)
+                .ok()
+                .and_then(|value| value.config)
+                .unwrap_or_default();
+            json_response(response(&journal_root, &config, now_ms()))
+        }
+        Err(_) => settings_operation_failed(),
+    }
+}
+
+fn default_settings() -> Map<String, Value> {
+    serde_json::from_value(json!({
+        "daily_cap": 5,
+        "category_caps": {"arrival":3,"briefing":3,"commitment":2,"error":2,"notice":2,"pattern":2},
+        "rate_floor_minutes": 20,
+        "mute_window": {"enabled":false,"start_hour_local":22,"end_hour_local":7},
+        "category_self_mute_hours": 24,
+        "category_self_mute_clear_markers": {},
+        "default_dedupe_window": "24h",
+        "system_notifications": {"macos":false,"linux":false},
+        "debug_show_throttled": false,
+    }))
+    .expect("sol voice defaults")
+}
+
+fn merge_object(target: &mut Map<String, Value>, updates: &Map<String, Value>) -> bool {
+    let mut changed = false;
+    for (key, value) in updates {
+        if let (Some(existing), Some(nested)) = (
+            target.get_mut(key).and_then(Value::as_object_mut),
+            value.as_object(),
+        ) {
+            changed |= merge_object(existing, nested);
+        } else {
+            changed |= target.get(key) != Some(value);
+            target.insert(key.clone(), value.clone());
+        }
+    }
+    changed
 }
 
 fn response(journal_root: &Path, config: &Map<String, Value>, now: i64) -> Value {

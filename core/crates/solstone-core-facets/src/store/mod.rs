@@ -24,7 +24,9 @@ mod seeding;
 mod todos;
 mod write;
 
-pub use activities::{read_activity_file, write_activity_file};
+pub use activities::{
+    add_activity, read_activity_file, remove_activity, update_activity, write_activity_file,
+};
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
@@ -86,6 +88,6 @@ pub use seeding::{
 };
 pub use todos::{read_todo_file, write_todo_file};
 pub use write::{
-    FacetRenameResult, create_facet, delete_facet_entity_link, rename_facet,
+    FacetRenameResult, create_facet, delete_facet, delete_facet_entity_link, rename_facet,
     save_facet_entity_link, set_facet_entity_link_detached, set_facet_muted, update_facet,
 };

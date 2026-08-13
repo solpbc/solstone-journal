@@ -1593,7 +1593,7 @@ async fn accept_facet_candidate_route(
         let root = Arc::clone(&root);
         let facet_slug = facet_slug.clone();
         let title = title.clone();
-        move || solstone_core_facets::create_facet(&root, &facet_slug, &title, "", "", "")
+        move || solstone_core_facets::create_facet(&root, &facet_slug, &title, "", "", "", None)
     })
     .await
     {

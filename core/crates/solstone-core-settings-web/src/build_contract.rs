@@ -17,12 +17,14 @@ fn ac15_settings_build_and_sources_do_not_spawn_processes() {
         include_str!("logs.rs"),
         include_str!("observe.rs"),
         include_str!("processing.rs"),
+        include_str!("request_body.rs"),
         include_str!("storage.rs"),
         include_str!("sol_voice.rs"),
         include_str!("state.rs"),
         include_str!("sync.rs"),
         include_str!("transcribe.rs"),
         include_str!("vision.rs"),
+        include_str!("mutations.rs"),
     ];
     for source in sources {
         assert!(!source.contains("Command::new"));

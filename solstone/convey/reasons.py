@@ -136,6 +136,11 @@ CONFIG_BUSY = Reason(
     "I couldn't save those settings right now because they were busy. Try again in a moment.",
     503,
 )
+PLAUD_VALIDATION_UNAVAILABLE = Reason(
+    "plaud_validation_unavailable",
+    "I couldn't validate that Plaud token in this version.",
+    501,
+)
 CONVEY_OPERATION_FAILED = Reason(
     "convey_operation_failed",
     "I couldn't update the interface settings.",

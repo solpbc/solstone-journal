@@ -71,6 +71,7 @@ impl Error for ConfigMutationError {
 /// mutable map, exclusively after strict load has succeeded under the sidecar lock.
 pub fn mutate_journal_config<T, F>(
     journal_path: &Path,
+    lock_options: LockOptions,
     mutator: F,
 ) -> Result<JournalConfigTransaction<T>, ConfigMutationError>
 where
@@ -81,7 +82,7 @@ where
         &config_path,
         LockOptions {
             mode: Some(0o600),
-            ..LockOptions::default()
+            ..lock_options
         },
     )
     .map_err(ConfigMutationError::Lock)?;
@@ -120,7 +121,7 @@ mod tests {
     #[test]
     fn missing_config_materializes_canonical_defaults() {
         let temporary = TempDir::new();
-        let result = mutate_journal_config(temporary.path(), |config| {
+        let result = mutate_journal_config(temporary.path(), LockOptions::default(), |config| {
             assert_eq!(config["retention"]["raw_media"], json!("keep"));
             JournalConfigMutation {
                 changed: false,
@@ -145,9 +146,11 @@ mod tests {
         use std::os::unix::fs::MetadataExt;
 
         let temporary = TempDir::new();
-        mutate_journal_config(temporary.path(), |_config| JournalConfigMutation {
-            changed: false,
-            value: (),
+        mutate_journal_config(temporary.path(), LockOptions::default(), |_config| {
+            JournalConfigMutation {
+                changed: false,
+                value: (),
+            }
         })
         .unwrap();
         let path = get_journal_config_path(temporary.path());
@@ -164,7 +167,7 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"{\"known\":\"existing\"}\n").unwrap();
 
-        let result = mutate_journal_config(temporary.path(), |config| {
+        let result = mutate_journal_config(temporary.path(), LockOptions::default(), |config| {
             assert_eq!(config.get("known"), Some(&json!("existing")));
             assert!(!config.contains_key("identity"));
             JournalConfigMutation {
@@ -184,9 +187,11 @@ mod tests {
         let original = b"{not valid json\n";
         fs::write(&path, original).unwrap();
 
-        let error = mutate_journal_config(temporary.path(), |_config| JournalConfigMutation {
-            changed: true,
-            value: (),
+        let error = mutate_journal_config(temporary.path(), LockOptions::default(), |_config| {
+            JournalConfigMutation {
+                changed: true,
+                value: (),
+            }
         })
         .unwrap_err();
         assert_eq!(
@@ -210,7 +215,7 @@ mod tests {
         )
         .unwrap();
 
-        mutate_journal_config(temporary.path(), |config| {
+        mutate_journal_config(temporary.path(), LockOptions::default(), |config| {
             config.insert("known".to_owned(), json!("after"));
             JournalConfigMutation {
                 changed: true,
@@ -234,9 +239,11 @@ mod tests {
         fs::write(&path, b"{\"known\":\"existing\"}\n").unwrap();
         let inode = fs::metadata(&path).unwrap().ino();
 
-        let result = mutate_journal_config(temporary.path(), |_config| JournalConfigMutation {
-            changed: false,
-            value: (),
+        let result = mutate_journal_config(temporary.path(), LockOptions::default(), |_config| {
+            JournalConfigMutation {
+                changed: false,
+                value: (),
+            }
         })
         .unwrap();
         assert!(!result.written);

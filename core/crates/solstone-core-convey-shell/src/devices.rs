@@ -11,7 +11,7 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
-use solstone_core_facets::append_journal_action_log;
+use solstone_core_facets::append_action_log;
 use solstone_core_observer::store::record::ObserverRecord;
 use solstone_core_observer::store::reload::{find_observer, load_observers};
 use solstone_core_observer::{ObserverCommand, ObserverError, execute, system_now_ms};
@@ -137,8 +137,9 @@ pub(crate) async fn key(
         return pl_revoked(StatusCode::FORBIDDEN, "key unavailable — device revoked");
     }
     let name = record.name().unwrap_or_default();
-    if let Err(error) = append_journal_action_log(
+    if let Err(error) = append_action_log(
         &root.0,
+        None,
         "app",
         "observer",
         "observer_key_view",

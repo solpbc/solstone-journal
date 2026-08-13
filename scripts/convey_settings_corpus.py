@@ -940,6 +940,15 @@ def main() -> int:
                 "why": "same as above",
                 "scope": "non-corrupt phases only",
             },
+            {
+                "method": "PUT/POST",
+                "path": "/app/settings/api/config",
+                "when": "env.PLAUD_ACCESS_TOKEN is a non-empty value",
+                "reference": "performs a live Plaud token validation and stores its verdict",
+                "native": "stores the supplied token and clears service_key_validation.plaud",
+                "why": "native does not perform the live validation, so it clears rather than refreshes the stored verdict",
+                "scope": "the durable env write remains supported without fabricating a verdict",
+            },
         ],
     }
     malformed = json.loads(json.dumps(RICH))

@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use chrono::Local;
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
-use solstone_core_facets::{append_journal_action_log, hold_facet_trust_lock, write_news_file};
+use solstone_core_facets::{append_action_log, hold_facet_trust_lock, write_news_file};
 #[cfg(not(target_os = "ios"))]
 use solstone_core_indexer_query::{
     CountsResponse, IndexAccessError, Order, SearchHit, SearchRequest, search,
@@ -949,7 +949,7 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     if consent {
         params["consent"] = Value::Bool(true);
     }
-    if let Err(error) = append_journal_action_log(&journal, "cli", "user", "facet_merge", params) {
+    if let Err(error) = append_action_log(&journal, None, "cli", "user", "facet_merge", params) {
         let config_rollback = convey_update.as_ref().map(|update| {
             atomic_replace(
                 &update.path,

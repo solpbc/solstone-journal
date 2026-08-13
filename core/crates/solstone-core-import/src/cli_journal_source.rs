@@ -602,7 +602,7 @@ fn write_empty_if_absent(path: &Path) -> Result<(), ()> {
 }
 
 fn append_audit(journal: &Path, action: &str, params: Value) -> Result<(), ()> {
-    solstone_core_facets::append_journal_action_log(journal, "import", "import", action, params)
+    solstone_core_facets::append_action_log(journal, None, "import", "import", action, params)
         .map_err(|_| ())
 }
 

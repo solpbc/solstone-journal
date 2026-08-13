@@ -676,22 +676,26 @@ fn refresh(
         let next_access = access_token.clone();
         let next_refresh = refresh_token.clone();
         let next_type = token_type.clone();
-        mutate_journal_config(journal, move |config| {
-            let section = config
-                .entry("oura".to_owned())
-                .or_insert_with(|| Value::Object(Map::new()))
-                .as_object_mut()
-                .expect("checked settings preserve an object section");
-            let next = json!({
-                "access_token": next_access,
-                "refresh_token": next_refresh,
-                "expires_at": expires_at,
-                "token_type": next_type,
-            });
-            let changed = section.get("tokens") != Some(&next);
-            section.insert("tokens".to_owned(), next);
-            JournalConfigMutation { changed, value: () }
-        })
+        mutate_journal_config(
+            journal,
+            solstone_core_journal_config_write::LockOptions::default(),
+            move |config| {
+                let section = config
+                    .entry("oura".to_owned())
+                    .or_insert_with(|| Value::Object(Map::new()))
+                    .as_object_mut()
+                    .expect("checked settings preserve an object section");
+                let next = json!({
+                    "access_token": next_access,
+                    "refresh_token": next_refresh,
+                    "expires_at": expires_at,
+                    "token_type": next_type,
+                });
+                let changed = section.get("tokens") != Some(&next);
+                section.insert("tokens".to_owned(), next);
+                JournalConfigMutation { changed, value: () }
+            },
+        )
         .map_err(|_| failure(BodyIngestErrorKind::Publication, "token_store"))?;
     }
     settings.access_token = access_token;

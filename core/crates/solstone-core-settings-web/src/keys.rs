@@ -1,14 +1,54 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use axum::response::Response;
+use axum::{body::Bytes, response::Response};
 use serde_json::json;
+use solstone_core_journal_config_write::{
+    JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
+};
 
-use crate::http::json_response;
+use crate::http::{
+    config_busy, json_response, plaud_validation_unavailable, settings_operation_failed,
+};
 
 /// W2 owns live third-party validation. W1 exposes only the empty-token shape.
 pub async fn get() -> Response {
     json_response(json!({"key_validation": {}}))
+}
+
+pub async fn post(
+    journal_root: std::path::PathBuf,
+    lock_options: LockOptions,
+    _body: Bytes,
+) -> Response {
+    let config = match solstone_core_journal_config::read_journal_config(&journal_root) {
+        Ok(config) => config.config.unwrap_or_default(),
+        Err(_) => return settings_operation_failed(),
+    };
+    let token = config
+        .get("env")
+        .and_then(|value| value.get("PLAUD_ACCESS_TOKEN"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if !token.is_empty() {
+        return plaud_validation_unavailable();
+    }
+    match mutate_journal_config(&journal_root, lock_options, |config| {
+        let existing = config
+            .entry("service_key_validation".to_owned())
+            .or_insert_with(|| json!({}));
+        let changed = existing
+            .as_object_mut()
+            .is_some_and(|values| values.remove("plaud").is_some());
+        JournalConfigMutation { changed, value: () }
+    }) {
+        Ok(_) => json_response(json!({"success": true, "key_validation": {}})),
+        Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
+            _,
+        ))) => config_busy(),
+        Err(_) => settings_operation_failed(),
+    }
 }
 
 #[cfg(test)]

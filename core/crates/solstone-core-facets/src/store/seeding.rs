@@ -466,6 +466,7 @@ fn ensure_facet(journal_root: &Path, facet_dir: &str) -> Result<(), SeedEntities
             "",
             "#667eea",
             "📦",
+            None,
         )?;
     }
     Ok(())
@@ -813,7 +814,7 @@ mod tests {
             temporary.path().join("entities/legacy-alice-directory"),
         )
         .unwrap();
-        create_facet(temporary.path(), "work", "Work", "", "#667eea", "📦").unwrap();
+        create_facet(temporary.path(), "work", "Work", "", "#667eea", "📦", None).unwrap();
         save_facet_entity_link(
             temporary.path(),
             "work",

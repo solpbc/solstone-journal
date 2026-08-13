@@ -12,8 +12,9 @@ pub(crate) fn pending(
     entity_id: &str,
     pending_id: &str,
 ) -> Result<(), solstone_core_facets::AppendError> {
-    solstone_core_facets::append_journal_action_log(
+    solstone_core_facets::append_action_log(
         journal_root,
+        None,
         "app",
         "entities",
         "journal_entity_delete",
@@ -27,8 +28,9 @@ pub(crate) fn committed(
     pending_id: &str,
     facets_deleted: &[String],
 ) -> Result<(), solstone_core_facets::AppendError> {
-    solstone_core_facets::append_journal_action_log(
+    solstone_core_facets::append_action_log(
         journal_root,
+        None,
         "app",
         "entities",
         "journal_entity_delete",
@@ -45,8 +47,9 @@ pub(crate) fn cancelled(
     journal_root: &Path,
     pending_id: &str,
 ) -> Result<(), solstone_core_facets::AppendError> {
-    solstone_core_facets::append_journal_action_log(
+    solstone_core_facets::append_action_log(
         journal_root,
+        None,
         "app",
         "entities",
         "journal_entity_delete",

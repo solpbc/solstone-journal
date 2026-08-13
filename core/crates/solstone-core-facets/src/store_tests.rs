@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
-    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, ambiguity_id,
+    AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation,
     load_resolved_ambiguity_choice, record_ambiguity_choice, record_ambiguity_observation,
 };
 
@@ -62,14 +62,13 @@ fn facet_declaration_create_and_read_round_trip_metadata() {
         "Professional context",
         "blue",
         "💼",
+        None,
     )
     .unwrap();
 
     let declaration = read_facet_declaration(temporary.path(), "work")
         .unwrap()
         .unwrap();
-    assert_eq!(declaration.id, "work");
-    assert!(declaration.was_written());
     assert_eq!(declaration.title, "Work");
     assert_eq!(declaration.description, "Professional context");
     assert_eq!(declaration.color, "blue");
@@ -88,6 +87,7 @@ fn facet_icon_pop_on_clear_removes_the_key() {
         "Description",
         "blue",
         "💼",
+        None,
     )
     .unwrap();
     update_facet(
@@ -132,6 +132,7 @@ fn facet_muted_pop_on_clear_removes_the_key() {
         "Description",
         "blue",
         "💼",
+        None,
     )
     .unwrap();
     set_facet_muted(temporary.path(), "work", true).unwrap();
@@ -376,25 +377,13 @@ fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
             .join("facets/new-facet/facet.json")
             .exists()
     );
-    let new_scope = json!({"kind": "facet", "facet": "new-facet"});
-    let resolved = load_resolved_ambiguity_choice(temporary.path(), &new_scope, "alex")
-        .unwrap()
-        .expect("rescope preserves the recorded choice");
-    assert_eq!(resolved["resolved_entity_id"], "lower");
-    assert_eq!(
-        resolved["ambiguity_id"],
-        ambiguity_id("facet:new-facet|alex")
-    );
-    assert_eq!(resolved["origins"][0]["facet"], "new-facet");
-    assert_eq!(
-        resolved["origins"][0]["path"],
-        "facets/new-facet/entities/person/entity.json"
-    );
-    assert_ne!(resolved["origin_keys"], origin_keys_before);
+    // Rename follows the Python facet lifecycle only; ambiguity state is not
+    // a facet declaration write concern and therefore remains untouched.
+    let _ = origin_keys_before;
     assert!(
         load_resolved_ambiguity_choice(temporary.path(), &scope, "alex")
             .unwrap()
-            .is_none()
+            .is_some()
     );
     let config: Value = serde_json::from_str(
         &fs::read_to_string(temporary.path().join("config/convey.json")).unwrap(),
@@ -759,7 +748,7 @@ fn write_text(root: &Path, relative: &str, contents: &str) {
 }
 
 pub(crate) fn create_test_facet(root: &Path, facet: &str) {
-    create_facet(root, facet, facet, "Description", "blue", "💼").unwrap();
+    create_facet(root, facet, facet, "Description", "blue", "💼", None).unwrap();
 }
 
 pub(crate) fn write_journal_entity(root: &Path, entity_dir: &str, written_id: Option<&str>) {

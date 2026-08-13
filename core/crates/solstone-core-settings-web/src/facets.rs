@@ -6,14 +6,19 @@ use std::fs;
 use std::path::PathBuf;
 
 use axum::{
+    body::Bytes,
     extract::{Path, Query},
     response::Response,
 };
 use serde_json::{Value, json};
 
 use crate::{
-    http::{facet_not_found, json_response},
+    http::{
+        facet_not_found, invalid_config_value, invalid_request_value, json_response,
+        missing_request_body, missing_required_field, settings_operation_failed,
+    },
     icons,
+    request_body::{JsonBody, json_body},
 };
 
 pub async fn list(journal_root: PathBuf, Query(query): Query<HashMap<String, String>>) -> Response {
@@ -72,6 +77,174 @@ pub async fn get_one(journal_root: PathBuf, Path(facet_name): Path<String>) -> R
         ),
     );
     json_response(json!({"facet": facet_name, "config": config}))
+}
+
+pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
+    let JsonBody::Value(Value::Object(data)) = json_body(body) else {
+        return missing_request_body();
+    };
+    let Some(title) = data
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return missing_required_field("Title is required");
+    };
+    let slug = title
+        .to_ascii_lowercase()
+        .chars()
+        .map(|value| {
+            if value.is_ascii_lowercase() || value.is_ascii_digit() {
+                value
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_owned();
+    if slug.is_empty()
+        || !slug
+            .chars()
+            .next()
+            .is_some_and(|value| value.is_ascii_lowercase())
+    {
+        return invalid_request_value("Title must start with a letter.");
+    }
+    if facet(&journal_root, &slug).is_some() {
+        return invalid_config_value("invalid or existing facet title");
+    }
+    let emoji = data.get("emoji").and_then(Value::as_str).unwrap_or("📦");
+    let color = data
+        .get("color")
+        .and_then(Value::as_str)
+        .unwrap_or("#667eea");
+    let description = data
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let icon = data.get("icon").and_then(Value::as_str).map(str::trim);
+    match solstone_core_facets::create_facet(
+        &journal_root,
+        &slug,
+        title,
+        description,
+        color,
+        emoji,
+        icon,
+    ) {
+        Ok(()) => json_response(
+            json!({"success":true,"facet":slug,"config":{"title":title,"description":description,"color":color,"emoji":emoji,"icon":icon.unwrap_or("")}}),
+        ),
+        Err(_) => settings_operation_failed(),
+    }
+}
+
+pub async fn update(
+    journal_root: PathBuf,
+    Path(facet_name): Path<String>,
+    body: Bytes,
+) -> Response {
+    let JsonBody::Value(Value::Object(data)) = json_body(body) else {
+        return missing_request_body();
+    };
+    let Some(current) =
+        facet(&journal_root, &facet_name).and_then(|value| value.as_object().cloned())
+    else {
+        return facet_not_found();
+    };
+    let title = data
+        .get("title")
+        .and_then(Value::as_str)
+        .or_else(|| current.get("title").and_then(Value::as_str))
+        .unwrap_or(&facet_name);
+    let description = data
+        .get("description")
+        .and_then(Value::as_str)
+        .or_else(|| current.get("description").and_then(Value::as_str))
+        .unwrap_or("");
+    let color = data
+        .get("color")
+        .and_then(Value::as_str)
+        .or_else(|| current.get("color").and_then(Value::as_str))
+        .unwrap_or("");
+    let emoji = data
+        .get("emoji")
+        .and_then(Value::as_str)
+        .or_else(|| current.get("emoji").and_then(Value::as_str))
+        .unwrap_or("");
+    let icon = data
+        .get("icon")
+        .and_then(Value::as_str)
+        .or_else(|| current.get("icon").and_then(Value::as_str));
+    if solstone_core_facets::update_facet(
+        &journal_root,
+        &facet_name,
+        title,
+        description,
+        color,
+        emoji,
+        icon,
+    )
+    .is_err()
+    {
+        return settings_operation_failed();
+    }
+    if let Some(muted) = data.get("muted").and_then(Value::as_bool)
+        && solstone_core_facets::set_facet_muted(&journal_root, &facet_name, muted).is_err()
+    {
+        return settings_operation_failed();
+    }
+    let config = facet(&journal_root, &facet_name).unwrap_or(Value::Null);
+    json_response(json!({"success":true,"facet":facet_name,"config":config}))
+}
+
+pub async fn delete(
+    journal_root: PathBuf,
+    Path(facet_name): Path<String>,
+    body: Bytes,
+) -> Response {
+    let JsonBody::Value(Value::Object(data)) = json_body(body) else {
+        return missing_request_body();
+    };
+    let Some(consent) = data.get("consent") else {
+        return missing_required_field("consent is required");
+    };
+    if consent != &Value::Bool(true) {
+        return invalid_request_value("consent must be true");
+    }
+    match solstone_core_facets::delete_facet(&journal_root, &facet_name) {
+        Ok(true) => json_response(json!({"success":true,"facet":facet_name})),
+        Ok(false) => facet_not_found(),
+        Err(_) => settings_operation_failed(),
+    }
+}
+
+pub async fn rename(
+    journal_root: PathBuf,
+    Path(facet_name): Path<String>,
+    body: Bytes,
+) -> Response {
+    let JsonBody::Value(Value::Object(data)) = json_body(body) else {
+        return missing_request_body();
+    };
+    let Some(new_name) = data
+        .get("new_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return missing_required_field("new_name is required");
+    };
+    if !data.get("consent").is_none_or(Value::is_boolean) {
+        return invalid_config_value("consent must be boolean");
+    }
+    match solstone_core_facets::rename_facet(&journal_root, &facet_name, new_name) {
+        Ok(_) => json_response(json!({"success":true,"facet":new_name})),
+        Err(_) => settings_operation_failed(),
+    }
 }
 
 pub(crate) fn facet(journal_root: &std::path::Path, name: &str) -> Option<Value> {

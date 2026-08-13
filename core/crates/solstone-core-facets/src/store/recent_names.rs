@@ -177,7 +177,7 @@ mod tests {
         aka: &[&str],
         relationship_fields: Map<String, Value>,
     ) {
-        create_facet(root, facet, facet, "", "blue", "💼").unwrap();
+        create_facet(root, facet, facet, "", "blue", "💼", None).unwrap();
         let identity = json!({
             "id": entity_id,
             "name": name,

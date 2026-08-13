@@ -753,8 +753,9 @@ struct FacetEffects {
 
 impl ImportForceEffects for FacetEffects {
     fn append_force_reimport(&self, audit: &ForceReimportAudit) -> Result<(), AuditSinkError> {
-        solstone_core_facets::append_journal_action_log(
+        solstone_core_facets::append_action_log(
             &self.journal,
+            None,
             "import",
             "import",
             "import_force_reimport",

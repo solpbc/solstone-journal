@@ -238,22 +238,26 @@ fn token_values(payload: &Value) -> Result<TokenValues, BodyIngestError> {
 }
 
 fn persist_tokens(journal: &Path, tokens: TokenValues) -> Result<(), BodyIngestError> {
-    mutate_journal_config(journal, move |config| {
-        let section = config
-            .entry("oura".to_owned())
-            .or_insert_with(|| Value::Object(Map::new()))
-            .as_object_mut()
-            .expect("the client configuration was checked as an object");
-        let next = json!({
-            "access_token": tokens.access_token,
-            "refresh_token": tokens.refresh_token,
-            "expires_at": tokens.expires_at,
-            "token_type": tokens.token_type,
-        });
-        let changed = section.get("tokens") != Some(&next);
-        section.insert("tokens".to_owned(), next);
-        JournalConfigMutation { changed, value: () }
-    })
+    mutate_journal_config(
+        journal,
+        solstone_core_journal_config_write::LockOptions::default(),
+        move |config| {
+            let section = config
+                .entry("oura".to_owned())
+                .or_insert_with(|| Value::Object(Map::new()))
+                .as_object_mut()
+                .expect("the client configuration was checked as an object");
+            let next = json!({
+                "access_token": tokens.access_token,
+                "refresh_token": tokens.refresh_token,
+                "expires_at": tokens.expires_at,
+                "token_type": tokens.token_type,
+            });
+            let changed = section.get("tokens") != Some(&next);
+            section.insert("tokens".to_owned(), next);
+            JournalConfigMutation { changed, value: () }
+        },
+    )
     .map(|_| ())
     .map_err(|_| publication("token_store"))
 }

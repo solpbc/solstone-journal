@@ -4,13 +4,17 @@
 use std::fs;
 use std::path::PathBuf;
 
-use axum::{extract::Path, response::Response};
-use serde_json::{Value, json};
+use axum::{body::Bytes, extract::Path, response::Response};
+use serde_json::{Map, Value, json};
 
 use crate::{
     facets,
-    http::{facet_not_found, json_response},
+    http::{
+        facet_not_found, invalid_config_value, json_response, missing_request_body,
+        missing_required_field, settings_operation_failed,
+    },
     icons,
+    request_body::{JsonBody, json_body},
 };
 
 mod default_activities {
@@ -47,6 +51,122 @@ pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) ->
         }
     }
     json_response(json!({"activities": activities, "defaults": default_records()}))
+}
+
+pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: Bytes) -> Response {
+    if facets::facet(&journal_root, &facet_name).is_none() {
+        return facet_not_found();
+    }
+    let JsonBody::Value(Value::Object(data)) = json_body(body) else {
+        return missing_request_body();
+    };
+    let id = data
+        .get("id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .or_else(|| data.get("name").and_then(Value::as_str).map(slug))
+        .unwrap_or_default();
+    if id.is_empty() {
+        return missing_required_field("Either id or name is required");
+    }
+    let known = raw_default_records()
+        .into_iter()
+        .any(|record| record["id"].as_str() == Some(&id));
+    if !known && data.get("name").and_then(Value::as_str).is_none() {
+        return missing_required_field("name is required for custom activities");
+    }
+    if data
+        .get("priority")
+        .is_some_and(|value| !matches!(value.as_str(), Some("high" | "normal" | "low")))
+    {
+        return invalid_config_value("invalid priority");
+    }
+    let mut row = Map::new();
+    row.insert("id".to_owned(), Value::String(id.clone()));
+    if known {
+        row.insert("custom".to_owned(), Value::Bool(false));
+    } else {
+        row.insert("custom".to_owned(), Value::Bool(true));
+        for key in [
+            "name",
+            "description",
+            "instructions",
+            "priority",
+            "emoji",
+            "icon",
+        ] {
+            if let Some(value) = data.get(key) {
+                row.insert(key.to_owned(), value.clone());
+            }
+        }
+    }
+    match solstone_core_facets::add_activity(&journal_root, &facet_name, Value::Object(row)) {
+        Ok(activity) => json_response(json!({"success":true,"activity":public_record(activity)})),
+        Err(_) => settings_operation_failed(),
+    }
+}
+
+pub async fn update(
+    journal_root: PathBuf,
+    Path((facet_name, activity_id)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    if facets::facet(&journal_root, &facet_name).is_none() {
+        return facet_not_found();
+    };
+    let JsonBody::Value(Value::Object(data)) = json_body(body) else {
+        return missing_request_body();
+    };
+    if data
+        .get("priority")
+        .is_some_and(|value| !matches!(value.as_str(), Some("high" | "normal" | "low")))
+    {
+        return invalid_config_value("invalid priority");
+    }
+    match solstone_core_facets::update_activity(&journal_root, &facet_name, &activity_id, &data) {
+        Ok(Some(activity)) => {
+            json_response(json!({"success":true,"activity":public_record(activity)}))
+        }
+        Ok(None) => invalid_config_value("Activity not found in facet"),
+        Err(_) => settings_operation_failed(),
+    }
+}
+
+pub async fn remove(
+    journal_root: PathBuf,
+    Path((facet_name, activity_id)): Path<(String, String)>,
+    _body: Bytes,
+) -> Response {
+    if facets::facet(&journal_root, &facet_name).is_none() {
+        return facet_not_found();
+    };
+    if always_on_records()
+        .iter()
+        .any(|row| row["id"].as_str() == Some(&activity_id))
+    {
+        return crate::http::activity_protected();
+    }
+    match solstone_core_facets::remove_activity(&journal_root, &facet_name, &activity_id) {
+        Ok(true) => json_response(json!({"success":true})),
+        Ok(false) => invalid_config_value("Activity not found in facet"),
+        Err(_) => settings_operation_failed(),
+    }
+}
+
+fn slug(value: &str) -> String {
+    value
+        .to_ascii_lowercase()
+        .chars()
+        .map(|value| {
+            if value.is_ascii_alphanumeric() {
+                value
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_owned()
 }
 
 fn read_attached(journal_root: &std::path::Path, facet_name: &str) -> Vec<Value> {

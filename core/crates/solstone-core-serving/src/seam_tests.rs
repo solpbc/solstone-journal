@@ -384,7 +384,7 @@ async fn save_entity_identity_runs_through_the_seam() {
 async fn create_facet_runs_through_the_seam() {
     let temporary = TempDir::new();
     let root = temporary.path().to_owned();
-    run_blocking(move || create_facet(&root, "work", "Work", "", "blue", ""))
+    run_blocking(move || create_facet(&root, "work", "Work", "", "blue", "", None))
         .await
         .unwrap()
         .unwrap();

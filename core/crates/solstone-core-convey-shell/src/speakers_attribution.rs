@@ -1037,7 +1037,7 @@ fn encoder() -> EncoderIdentity {
     }
 }
 pub(crate) fn action(root: &std::path::Path, action: &str, params: Value) -> Result<(), String> {
-    solstone_core_facets::append_journal_action_log(root, "app", "speakers", action, params)
+    solstone_core_facets::append_action_log(root, None, "app", "speakers", action, params)
         .map_err(|error| error.to_string())
 }
 async fn request_json(request: Request) -> Result<Value, Response> {

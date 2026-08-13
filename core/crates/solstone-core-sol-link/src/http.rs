@@ -388,55 +388,59 @@ async fn init_finalize(
 
     // Deliberately does not seed config/convey.json — see
     // solstone/convey/config.py:seed_default_app_navigation; out of scope this wave.
-    let result = mutate_journal_config(&state.journal_root, |config| {
-        if !finalize_config_sections_are_objects(config) {
-            return JournalConfigMutation {
-                changed: false,
-                value: false,
-            };
-        }
-        let mut changed = false;
-        let convey = object_mut(config, "convey");
-        if convey.remove("allow_network_access").is_some() {
-            changed = true;
-        }
-        let identity = object_mut(config, "identity");
-        for (key, value) in [
-            ("name", request.name.as_ref()),
-            ("preferred", request.preferred.as_ref()),
-            ("timezone", request.timezone.as_ref()),
-        ] {
-            if value.is_some_and(|value| value.as_str().is_some_and(|text| !text.is_empty()))
-                && identity.get(key) != value
-            {
-                identity.insert(key.to_owned(), value.unwrap().clone());
+    let result = mutate_journal_config(
+        &state.journal_root,
+        solstone_core_journal_config_write::LockOptions::default(),
+        |config| {
+            if !finalize_config_sections_are_objects(config) {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: false,
+                };
+            }
+            let mut changed = false;
+            let convey = object_mut(config, "convey");
+            if convey.remove("allow_network_access").is_some() {
                 changed = true;
             }
-        }
-        let setup = object_mut(config, "setup");
-        let completed_at = now_ms();
-        if setup.get("completed_at") != Some(&json!(completed_at)) {
-            setup.insert("completed_at".to_owned(), json!(completed_at));
-            changed = true;
-        }
-        let retention = object_mut(config, "retention");
-        for (key, value) in [
-            ("raw_media", Value::String(retention_mode)),
-            (
-                "raw_media_days",
-                retention_days.map_or(Value::Null, |days| json!(days)),
-            ),
-        ] {
-            if retention.get(key) != Some(&value) {
-                retention.insert(key.to_owned(), value);
+            let identity = object_mut(config, "identity");
+            for (key, value) in [
+                ("name", request.name.as_ref()),
+                ("preferred", request.preferred.as_ref()),
+                ("timezone", request.timezone.as_ref()),
+            ] {
+                if value.is_some_and(|value| value.as_str().is_some_and(|text| !text.is_empty()))
+                    && identity.get(key) != value
+                {
+                    identity.insert(key.to_owned(), value.unwrap().clone());
+                    changed = true;
+                }
+            }
+            let setup = object_mut(config, "setup");
+            let completed_at = now_ms();
+            if setup.get("completed_at") != Some(&json!(completed_at)) {
+                setup.insert("completed_at".to_owned(), json!(completed_at));
                 changed = true;
             }
-        }
-        JournalConfigMutation {
-            changed,
-            value: true,
-        }
-    });
+            let retention = object_mut(config, "retention");
+            for (key, value) in [
+                ("raw_media", Value::String(retention_mode)),
+                (
+                    "raw_media_days",
+                    retention_days.map_or(Value::Null, |days| json!(days)),
+                ),
+            ] {
+                if retention.get(key) != Some(&value) {
+                    retention.insert(key.to_owned(), value);
+                    changed = true;
+                }
+            }
+            JournalConfigMutation {
+                changed,
+                value: true,
+            }
+        },
+    );
     match result {
         Ok(transaction) if !transaction.value => return corrupt_config(),
         Ok(_) => {}
@@ -465,10 +469,14 @@ fn init_local_only() -> Response {
 }
 
 fn materialize_config(journal_root: &Path) -> Result<Map<String, Value>, ConfigMutationError> {
-    mutate_journal_config(journal_root, |config| JournalConfigMutation {
-        changed: false,
-        value: config.clone(),
-    })
+    mutate_journal_config(
+        journal_root,
+        solstone_core_journal_config_write::LockOptions::default(),
+        |config| JournalConfigMutation {
+            changed: false,
+            value: config.clone(),
+        },
+    )
     .map(|transaction| transaction.value)
 }
 

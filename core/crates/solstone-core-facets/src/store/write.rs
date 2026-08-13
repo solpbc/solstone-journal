@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_entity::{EntityAmbiguityRescopeReport, rescope_facet_ambiguities};
 use solstone_core_journal_io::{
     JsonWriteOptions, LockOptions, MalformedPolicy, hold_lock, path_lexists, read_json,
     remove_dir_all, write_json,
@@ -23,7 +22,6 @@ use super::paths::{convey_config_path, declaration_path, facet_dir_path, facet_e
 pub struct FacetRenameResult {
     pub old_name: String,
     pub new_name: String,
-    pub ambiguity_rescope: EntityAmbiguityRescopeReport,
     pub reindex_required: bool,
 }
 
@@ -35,10 +33,10 @@ pub fn create_facet(
     description: &str,
     color: &str,
     emoji: &str,
+    icon: Option<&str>,
 ) -> Result<(), FacetWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
     let mut declaration = Map::new();
-    declaration.insert("id".to_owned(), Value::String(facet_dir.to_owned()));
     declaration.insert("title".to_owned(), Value::String(title.to_owned()));
     declaration.insert(
         "description".to_owned(),
@@ -46,7 +44,24 @@ pub fn create_facet(
     );
     declaration.insert("color".to_owned(), Value::String(color.to_owned()));
     declaration.insert("emoji".to_owned(), Value::String(emoji.to_owned()));
+    if let Some(icon) = icon.filter(|icon| !icon.is_empty()) {
+        declaration.insert("icon".to_owned(), Value::String(icon.to_owned()));
+    }
     save_facet_declaration(journal_root, facet_dir, &Value::Object(declaration))
+}
+
+/// Delete a facet and clear its convey selection/order when applicable.
+pub fn delete_facet(journal_root: &Path, facet_dir: &str) -> Result<bool, FacetWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    let path = declaration_path(journal_root, facet_dir)?;
+    if read_facet_declaration(journal_root, facet_dir)?.is_none() {
+        return Ok(false);
+    }
+    clear_convey_facet_references(journal_root, facet_dir);
+    remove_dir_all(journal_root, &format!("facets/{facet_dir}"))
+        .map_err(FacetWriteError::EntityLinkRemoval)?;
+    let _ = path;
+    Ok(true)
 }
 
 /// Update facet metadata while preserving identity and unknown declaration fields.
@@ -214,20 +229,10 @@ pub fn rename_facet(
         new_path: new_path.clone(),
         source,
     })?;
-    let ambiguity_rescope = match rescope_facet_ambiguities(journal_root, old_name, new_name) {
-        Ok(report) => report,
-        Err(source) => {
-            return Err(FacetRenameError::AmbiguityRescope {
-                source,
-                rollback: fs::rename(&new_path, &old_path).err(),
-            });
-        }
-    };
-    update_convey_facet_references(journal_root, old_name, new_name)?;
+    update_convey_facet_references(journal_root, old_name, new_name);
     Ok(FacetRenameResult {
         old_name: old_name.to_owned(),
         new_name: new_name.to_owned(),
-        ambiguity_rescope,
         reindex_required: true,
     })
 }
@@ -259,29 +264,25 @@ fn valid_facet_name(name: &str) -> bool {
         })
 }
 
-fn update_convey_facet_references(
-    journal_root: &Path,
-    old_name: &str,
-    new_name: &str,
-) -> Result<(), FacetRenameError> {
-    let path = convey_config_path(journal_root).map_err(FacetRenameError::Path)?;
-    if !path_lexists(&path)
-        .map_err(FacetStoreError::from)
-        .map_err(FacetRenameError::Path)?
-    {
-        return Ok(());
+fn update_convey_facet_references(journal_root: &Path, old_name: &str, new_name: &str) {
+    let Ok(path) = convey_config_path(journal_root) else {
+        return;
+    };
+    if !path_lexists(&path).unwrap_or(false) {
+        return;
     }
-    let _lock = hold_lock(
+    let Ok(_lock) = hold_lock(
         &path,
         LockOptions {
             mode: Some(0o600),
             ..LockOptions::default()
         },
-    )
-    .map_err(FacetRenameError::ConveyConfigLock)?;
-    let mut config: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)
-        .map_err(FacetStoreError::from)
-        .map_err(FacetRenameError::ConveyConfigRead)?;
+    ) else {
+        return;
+    };
+    let Ok(mut config) = read_json(&path, Value::Null, MalformedPolicy::Raise) else {
+        return;
+    };
     let mut changed = false;
     if let Some(facets) = config.get_mut("facets").and_then(Value::as_object_mut) {
         if facets.get("selected").and_then(Value::as_str) == Some(old_name) {
@@ -298,7 +299,7 @@ fn update_convey_facet_references(
         }
     }
     if changed {
-        write_json(
+        let _ = write_json(
             &path,
             &config,
             JsonWriteOptions {
@@ -306,8 +307,42 @@ fn update_convey_facet_references(
                 indent: Some(2),
                 sort_keys: false,
             },
-        )
-        .map_err(FacetRenameError::ConveyConfigWrite)?;
+        );
     }
-    Ok(())
+}
+
+fn clear_convey_facet_references(journal_root: &Path, facet_name: &str) {
+    let Ok(path) = convey_config_path(journal_root) else {
+        return;
+    };
+    if !path_lexists(&path).unwrap_or(false) {
+        return;
+    }
+    let Ok(_lock) = hold_lock(
+        &path,
+        LockOptions {
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    ) else {
+        return;
+    };
+    let Ok(mut config) = read_json(&path, Value::Null, MalformedPolicy::Raise) else {
+        return;
+    };
+    let mut changed = false;
+    if let Some(facets) = config.get_mut("facets").and_then(Value::as_object_mut) {
+        if facets.get("selected").and_then(Value::as_str) == Some(facet_name) {
+            facets.insert("selected".to_owned(), Value::String(String::new()));
+            changed = true;
+        }
+        if let Some(order) = facets.get_mut("order").and_then(Value::as_array_mut) {
+            let before = order.len();
+            order.retain(|value| value.as_str() != Some(facet_name));
+            changed |= before != order.len();
+        }
+    }
+    if changed {
+        let _ = write_json(&path, &config, json_options());
+    }
 }

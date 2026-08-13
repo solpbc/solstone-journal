@@ -5,7 +5,11 @@
 
 use std::path::PathBuf;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post, put},
+};
+use solstone_core_journal_io::LockOptions;
 
 mod activities;
 mod assets;
@@ -19,6 +23,7 @@ mod keys;
 mod logs;
 mod observe;
 mod processing;
+mod request_body;
 mod sol_voice;
 mod state;
 mod storage;
@@ -27,24 +32,44 @@ mod transcribe;
 mod vision;
 
 pub fn routes(journal_root: PathBuf) -> Router {
-    let config_root = journal_root.clone();
+    routes_with_lock_options(journal_root, LockOptions::default())
+}
+
+pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: LockOptions) -> Router {
+    let config_get_root = journal_root.clone();
+    let config_put_root = journal_root.clone();
+    let config_post_root = journal_root.clone();
     let state_root = journal_root.clone();
     let convey_root = journal_root.clone();
-    let observe_root = journal_root.clone();
+    let observe_get_root = journal_root.clone();
+    let observe_put_root = journal_root.clone();
+    let observe_post_root = journal_root.clone();
     let transcribe_root = journal_root.clone();
     let processing_root = journal_root.clone();
-    let sol_voice_root = journal_root.clone();
+    let sol_voice_get_root = journal_root.clone();
+    let sol_voice_put_root = journal_root.clone();
     let throttled_root = journal_root.clone();
-    let chat_root = journal_root.clone();
-    let vision_root = journal_root.clone();
+    let chat_get_root = journal_root.clone();
+    let chat_put_root = journal_root.clone();
+    let keys_root = journal_root.clone();
+    let vision_get_root = journal_root.clone();
+    let vision_put_root = journal_root.clone();
     let facets_root = journal_root.clone();
     let muted_facets_root = journal_root.clone();
-    let facet_root = journal_root.clone();
-    let facet_activities_root = journal_root.clone();
+    let facet_get_root = journal_root.clone();
+    let facet_put_root = journal_root.clone();
+    let facet_delete_root = journal_root.clone();
+    let facet_create_root = journal_root.clone();
+    let facet_rename_root = journal_root.clone();
+    let facet_activities_get_root = journal_root.clone();
+    let facet_activities_add_root = journal_root.clone();
+    let facet_activities_update_root = journal_root.clone();
+    let facet_activities_delete_root = journal_root.clone();
     let logs_root = journal_root.clone();
     let facet_logs_root = journal_root.clone();
     let storage_root = journal_root.clone();
-    let sync_root = journal_root;
+    let sync_get_root = journal_root.clone();
+    let sync_put_root = journal_root;
     Router::new()
         .route("/app/settings/", get(assets::shell))
         .route("/app/settings/workspace", get(assets::workspace))
@@ -56,7 +81,11 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/config",
-            get(move || config::get(config_root.clone())),
+            get(move || config::get(config_get_root.clone()))
+                .put(move |body| config::update(config_put_root.clone(), config_lock_options, body))
+                .post(move |body| {
+                    config::update(config_post_root.clone(), config_lock_options, body)
+                }),
         )
         .route(
             "/app/settings/api/convey/status",
@@ -64,7 +93,13 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/observe",
-            get(move || observe::get(observe_root.clone())),
+            get(move || observe::get(observe_get_root.clone()))
+                .put(move |body| {
+                    observe::update(observe_put_root.clone(), config_lock_options, body)
+                })
+                .post(move |body| {
+                    observe::update(observe_post_root.clone(), config_lock_options, body)
+                }),
         )
         .route(
             "/app/settings/api/transcribe",
@@ -76,7 +111,9 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/sol_voice",
-            get(move || sol_voice::get(sol_voice_root.clone())),
+            get(move || sol_voice::get(sol_voice_get_root.clone())).put(move |body| {
+                sol_voice::update(sol_voice_put_root.clone(), config_lock_options, body)
+            }),
         )
         .route(
             "/app/settings/api/sol_voice/throttled",
@@ -84,12 +121,19 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/chat",
-            get(move || chat::get(chat_root.clone())),
+            get(move || chat::get(chat_get_root.clone()))
+                .put(move |body| chat::update(chat_put_root.clone(), config_lock_options, body)),
         )
-        .route("/app/settings/api/validate-keys", get(keys::get))
+        .route(
+            "/app/settings/api/validate-keys",
+            get(keys::get)
+                .post(move |body| keys::post(keys_root.clone(), config_lock_options, body)),
+        )
         .route(
             "/app/settings/api/vision",
-            get(move || vision::get(vision_root.clone())),
+            get(move || vision::get(vision_get_root.clone())).put(move |body| {
+                vision::update(vision_put_root.clone(), config_lock_options, body)
+            }),
         )
         .route(
             "/app/settings/api/facets",
@@ -101,7 +145,17 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/facet/{facet_name}",
-            get(move |path| facets::get_one(facet_root.clone(), path)),
+            get(move |path| facets::get_one(facet_get_root.clone(), path))
+                .put(move |path, body| facets::update(facet_put_root.clone(), path, body))
+                .delete(move |path, body| facets::delete(facet_delete_root.clone(), path, body)),
+        )
+        .route(
+            "/app/settings/api/facet",
+            post(move |body| facets::create(facet_create_root.clone(), body)),
+        )
+        .route(
+            "/app/settings/api/facet/{facet_name}/rename",
+            post(move |path, body| facets::rename(facet_rename_root.clone(), path, body)),
         )
         .route(
             "/app/settings/api/activities/defaults",
@@ -109,7 +163,18 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/facet/{facet_name}/activities",
-            get(move |path| activities::for_facet(facet_activities_root.clone(), path)),
+            get(move |path| activities::for_facet(facet_activities_get_root.clone(), path)).post(
+                move |path, body| activities::add(facet_activities_add_root.clone(), path, body),
+            ),
+        )
+        .route(
+            "/app/settings/api/facet/{facet_name}/activities/{activity_id}",
+            put(move |path, body| {
+                activities::update(facet_activities_update_root.clone(), path, body)
+            })
+            .delete(move |path, body| {
+                activities::remove(facet_activities_delete_root.clone(), path, body)
+            }),
         )
         .route(
             "/app/settings/api/logs",
@@ -125,7 +190,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/settings/api/sync",
-            get(move || sync::get(sync_root.clone())),
+            get(move || sync::get(sync_get_root.clone()))
+                .put(move |body| sync::update(sync_put_root.clone(), body)),
         )
         .route("/app/settings/api/icons", get(icons::search))
 }
@@ -134,6 +200,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
 mod build_contract;
 #[cfg(test)]
 mod corpus;
+#[cfg(test)]
+mod mutations;
 #[cfg(test)]
 mod router_contracts;
 #[cfg(test)]

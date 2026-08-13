@@ -123,7 +123,7 @@ async fn ac3_all_captured_get_cases_match_status_and_digest() {
     assert_eq!(total, 160);
 }
 
-fn normalize(value: Value, path: &str, root: &str) -> (Value, Vec<String>) {
+pub(crate) fn normalize(value: Value, path: &str, root: &str) -> (Value, Vec<String>) {
     let mut hits = Vec::new();
     if let Value::String(value) = value {
         if value.contains(root) {
@@ -181,7 +181,7 @@ fn normalize(value: Value, path: &str, root: &str) -> (Value, Vec<String>) {
     }
 }
 
-fn matches(path: &str, pattern: &str) -> bool {
+pub(crate) fn matches(path: &str, pattern: &str) -> bool {
     let path = path.split('.').collect::<Vec<_>>();
     let pattern = pattern.split('.').collect::<Vec<_>>();
     path.len() == pattern.len()
@@ -191,7 +191,7 @@ fn matches(path: &str, pattern: &str) -> bool {
             .all(|(part, pattern)| pattern == "*" || *part == pattern)
 }
 
-fn digest(value: &Value) -> String {
+pub(crate) fn digest(value: &Value) -> String {
     let bytes = python_json(value);
     format!("{:x}", Sha256::digest(bytes))
         .chars()
@@ -199,7 +199,7 @@ fn digest(value: &Value) -> String {
         .collect()
 }
 
-fn python_json(value: &Value) -> Vec<u8> {
+pub(crate) fn python_json(value: &Value) -> Vec<u8> {
     fn write(value: &Value, output: &mut String) {
         match value {
             Value::Object(values) => {
