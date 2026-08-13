@@ -257,7 +257,6 @@ CONVERTED_GLYPH_RESIDUE = {
         'icon = "🎙️"',
         'icon = "👁️"',
     ),
-    "solstone/observe/describe.py": ('"icon": "👁️",',),
     "solstone/convey/static/shell.html": (
         '<button id="notif-bell" title="enable browser notifications" aria-label="enable browser notifications">🔔</button>',
     ),
@@ -342,7 +341,6 @@ NOTIFICATION_ICON_EMITTERS = {
         ('icon = "🎙️"', "icon=_handler_icon(handler_name)"),
         ('icon = "👁️"', "icon=_handler_icon(handler_name)"),
     ),
-    "solstone/observe/describe.py": (('"icon": "👁️",', '"icon": "eye",'),),
 }
 
 

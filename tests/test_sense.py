@@ -14,13 +14,11 @@ import threading
 import time
 from concurrent.futures import Future
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from solstone.observe import describe as describe_module
 from solstone.observe.exit_codes import EXIT_PROVIDER_BLOCKED, WATCHDOG_TIMEOUT
 from solstone.observe.processing_record import (
     FAILED_ATTEMPT_BOUND,
@@ -244,48 +242,6 @@ def test_handler_icon_returns_notification_lucide_names():
     assert _handler_icon("transcribe") == "mic-vocal"
     assert _handler_icon("describe") == "eye"
     assert _handler_icon("depict") == "bot"
-
-
-def test_describe_blocked_notification_uses_lucide_eye_icon(monkeypatch):
-    sent = []
-
-    def fake_callosum_send(tract, event, **fields):
-        sent.append((tract, event, fields))
-        return True
-
-    monkeypatch.setattr(describe_module, "callosum_send", fake_callosum_send)
-
-    describe_module._emit_blocked_notification(
-        SimpleNamespace(
-            semantic_key="provider_key_missing:vision",
-            work_key="20260726/default/seg",
-            summary="screen descriptions paused",
-            reason_code="missing_key",
-            provider="provider",
-            model="model",
-            context="describe",
-            recovery_action=None,
-        )
-    )
-
-    assert sent == [
-        (
-            "notification",
-            "show",
-            {
-                "key": "provider_key_missing:vision",
-                "work_key": "20260726/default/seg",
-                "title": "Screen descriptions paused",
-                "message": "screen descriptions paused",
-                "icon": "eye",
-                "app": "sense",
-                "reason_code": "missing_key",
-                "provider": "provider",
-                "model": "model",
-                "context": "describe",
-            },
-        )
-    ]
 
 
 def _status_emit_calls(sensor):
@@ -1090,7 +1046,7 @@ def test_process_day_retries_failed_describe_until_attempt_bound(tmp_path, monke
     )
 
 
-def test_failed_describe_heals_on_daily_pass_and_processed_prune_releases_raw(
+def test_failed_describe_requeues_on_daily_pass_and_processed_prune_releases_raw(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
@@ -1106,55 +1062,31 @@ def test_failed_describe_heals_on_daily_pass_and_processed_prune_releases_raw(
     sensor = FileSensor(tmp_path)
     sensor.register("*.webm", "describe", ["journal", "describe", "{file}"])
     dispatched = []
-    observed_previous_attempts = []
-    observed_incremental_paths = []
-
-    class HealingProcessor:
-        def __init__(self, path: Path) -> None:
-            self.path = path
-
-        async def process_with_vision(self, **kwargs) -> None:
-            observed_previous_attempts.append(kwargs["previous_attempts"])
-            observed_incremental_paths.append(kwargs["incremental_source_path"])
-            header = {
-                "raw": self.path.name,
-                "_solstone_processing": build_processing_record(
-                    state=STATE_ANALYZED,
-                    reason_code=REASON_OK,
-                    handler=HANDLER_DESCRIBE,
-                    input_size=self.path.stat().st_size,
-                ),
-            }
-            output_path.write_text(
-                json.dumps(header)
-                + "\n"
-                + json.dumps({"frame_id": 1, "timestamp": 0.0, "content": {}})
-                + "\n",
-                encoding="utf-8",
-            )
-
     def fake_run(queued_item, *_args):
         dispatched.append(queued_item.file_path)
-        with patch.object(
-            sys,
-            "argv",
-            ["journal", str(queued_item.file_path)],
-        ):
-            import asyncio
+        header = {
+            "raw": queued_item.file_path.name,
+            "_solstone_processing": build_processing_record(
+                state=STATE_ANALYZED,
+                reason_code=REASON_OK,
+                handler=HANDLER_DESCRIBE,
+                input_size=queued_item.file_path.stat().st_size,
+            ),
+        }
+        output_path.write_text(
+            json.dumps(header)
+            + "\n"
+            + json.dumps({"frame_id": 1, "timestamp": 0.0, "content": {}})
+            + "\n",
+            encoding="utf-8",
+        )
 
-            asyncio.run(describe_module.async_main())
-
-    monkeypatch.setattr(describe_module, "VideoProcessor", HealingProcessor)
-    monkeypatch.setattr(describe_module, "require_solstone", lambda: None)
-    monkeypatch.setattr(describe_module, "callosum_send", lambda *a, **k: None)
     monkeypatch.setattr(sensor, "_run_handler", fake_run)
 
     sensor.process_day("20250101", max_jobs=1)
 
     record = read_processing_record_header(output_path)
     assert dispatched == [media_path]
-    assert observed_previous_attempts == [0]
-    assert observed_incremental_paths == [output_path]
     assert record["state"] == STATE_ANALYZED
     assert record["reason_code"] == REASON_OK
     assert "attempts" not in record

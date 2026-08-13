@@ -106,7 +106,6 @@ Context variables also get automatic uppercase-first versions (`$Day`, `$Day_yyy
 
 **References:**
 - Generator context building: `solstone/think/generate.py` (search for `prompt_context`)
-- Other callers: `solstone/observe/extract.py`
 
 ## Usage Patterns
 

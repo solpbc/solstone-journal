@@ -178,7 +178,6 @@ OWNER_FILES: frozenset[str] = frozenset(
         # route through importers/shared.py are not direct owners and are
         # intentionally omitted.
         "solstone/observe/depict.py",
-        "solstone/observe/describe.py",
         "solstone/observe/transcribe/main.py",
         "solstone/observe/transfer.py",
         "solstone/think/importers/cli.py",

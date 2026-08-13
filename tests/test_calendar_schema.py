@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from jsonschema import Draft202012Validator
 
-from solstone.observe import describe as describe_mod
+from solstone.observe import category_registry as registry_mod
 from solstone.observe.categories import calendar as calendar_mod
 from solstone.think.batch import Batch
 from solstone.think.schema_bounds import unbounded_nodes
@@ -17,7 +17,7 @@ from solstone.think.schema_bounds import unbounded_nodes
 def _load_schema() -> dict:
     return json.loads(
         (
-            Path(describe_mod.__file__).resolve().parent
+            Path(registry_mod.__file__).resolve().parent
             / "categories"
             / "calendar.schema.json"
         ).read_text(encoding="utf-8")
@@ -77,8 +77,8 @@ def test_calendar_schema_accepts_and_rejects_expected_values():
 def test_discover_categories_attaches_calendar_schema():
     expected = _load_schema()
 
-    assert describe_mod.CATEGORIES["calendar"]["json_schema"] == expected
-    assert describe_mod.CATEGORIES["calendar"]["output"] == "json"
+    assert registry_mod.CATEGORIES["calendar"]["json_schema"] == expected
+    assert registry_mod.CATEGORIES["calendar"]["output"] == "json"
 
 
 @pytest.mark.asyncio
@@ -89,7 +89,7 @@ async def test_calendar_extract_batch_call_passes_schema(mock_agenerate):
         "finish_reason": "stop",
     }
 
-    cat_meta = describe_mod.CATEGORIES["calendar"]
+    cat_meta = registry_mod.CATEGORIES["calendar"]
     batch = Batch(max_concurrent=1)
     req = batch.create(
         contents="Analyze this calendar screenshot.",

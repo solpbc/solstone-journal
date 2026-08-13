@@ -16,7 +16,7 @@ from solstone.observe.hear import load_transcript
 from solstone.observe.utils import parse_screen_filename
 from solstone.think.utils import DEFAULT_STREAM, iter_segments, segment_parse
 
-# Mirrors VideoProcessor.DHASH_THRESHOLD in solstone.observe.describe.
+# Screen-frame dHash threshold for Sense shadow-mode change detection.
 SCREEN_DHASH_THRESHOLD = 8
 # Bias to active: false redundant silently drops signal; false active only costs work.
 TRANSCRIPT_WORD_DELTA_FLOOR = 5

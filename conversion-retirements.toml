@@ -68,3 +68,16 @@ distribution = "first-party-only"
 python_roots = ["solstone/think/config_cli.py"]
 import_roots = ["solstone.think.config_cli"]
 test_only_dependency_locations = []
+
+[[waves]]
+id = "AJ-D-observe-describe-python-reference"
+status = "done"
+distribution = "solstone-observe-describe-python-reference"
+python_roots = [
+  "solstone/observe/describe.py",
+  "solstone/observe/extract.py",
+  "solstone/observe/aruco.py",
+  "solstone/observe/rfdetr_paths_query.py",
+]
+import_roots = ["solstone.observe.describe"]
+test_only_dependency_locations = []
