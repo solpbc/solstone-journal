@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::collections::BTreeMap;
+
+use plist::Value;
+use solstone_core_service_unit::{
+    build_service_environment, render_launchd_plist, render_systemd_unit,
+};
+
+mod support;
+
+const HOME: &str = "/home/sol";
+const PATH: &str = "/usr/bin:/bin";
+const RUNTIME_DIR: &str = "/opt/sol/bin";
+const LAUNCHER: &str = "/home/sol/.local/bin/journal";
+const PORT: &str = "5015";
+const JOURNAL: &str = "/srv/journal";
+
+fn render(
+    env: &BTreeMap<String, String>,
+    launcher: &str,
+    port: &str,
+    journal: &str,
+) -> (Value, support::ParsedUnit) {
+    let plist = render_launchd_plist(env, launcher, port, journal).expect("valid render");
+    let unit = render_systemd_unit(env, launcher, port, journal).expect("valid render");
+    (support::parse_plist(&plist), support::parse_unit(&unit))
+}
+
+fn arguments(plist: &Value) -> Vec<String> {
+    plist.as_dictionary().expect("plist dictionary")["ProgramArguments"]
+        .as_array()
+        .expect("arguments array")
+        .iter()
+        .map(|value| value.as_string().expect("argument string").to_owned())
+        .collect()
+}
+
+fn environment(plist: &Value) -> BTreeMap<String, String> {
+    plist.as_dictionary().expect("plist dictionary")["EnvironmentVariables"]
+        .as_dictionary()
+        .expect("environment dictionary")
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                value.as_string().expect("env string").to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn log_paths(plist: &Value) -> (String, String) {
+    let dictionary = plist.as_dictionary().expect("plist dictionary");
+    (
+        dictionary["StandardOutPath"]
+            .as_string()
+            .expect("stdout path")
+            .to_owned(),
+        dictionary["StandardErrorPath"]
+            .as_string()
+            .expect("stderr path")
+            .to_owned(),
+    )
+}
+
+#[test]
+fn one_input_at_a_time_changes_only_its_derived_field() {
+    let baseline_env = build_service_environment(HOME, Some(PATH), RUNTIME_DIR);
+    let (baseline_plist, baseline_unit) = render(&baseline_env, LAUNCHER, PORT, JOURNAL);
+
+    let (plist, unit) = render(&baseline_env, "/home/sol/a b/$journal", PORT, JOURNAL);
+    assert_eq!(arguments(&plist)[1..], arguments(&baseline_plist)[1..]);
+    assert_eq!(unit.exec_start[0], "/home/sol/a b/$journal");
+    assert_eq!(unit.exec_start[1..], baseline_unit.exec_start[1..]);
+    assert_eq!(environment(&plist), environment(&baseline_plist));
+
+    let (plist, unit) = render(&baseline_env, LAUNCHER, "5 815${PORT}%", JOURNAL);
+    assert_eq!(arguments(&plist)[0], arguments(&baseline_plist)[0]);
+    assert_eq!(arguments(&plist)[1], "start");
+    assert_eq!(arguments(&plist)[2], "5 815${PORT}%");
+    assert_eq!(unit.exec_start[2], "5 815${PORT}%");
+    assert_eq!(environment(&plist), environment(&baseline_plist));
+
+    let home_env = build_service_environment("/home/sol $ café", Some(PATH), RUNTIME_DIR);
+    let (plist, unit) = render(&home_env, LAUNCHER, PORT, JOURNAL);
+    assert_eq!(arguments(&plist), arguments(&baseline_plist));
+    assert_eq!(environment(&plist)["HOME"], "/home/sol $ café");
+    assert_eq!(unit.environment["HOME"], "/home/sol $ café");
+    assert_eq!(
+        environment(&plist)["PATH"],
+        environment(&baseline_plist)["PATH"]
+    );
+
+    let (plist, unit) = render(&baseline_env, LAUNCHER, PORT, "/srv/journal space%");
+    assert_eq!(arguments(&plist), arguments(&baseline_plist));
+    assert_eq!(environment(&plist), environment(&baseline_plist));
+    assert_eq!(
+        log_paths(&plist),
+        (
+            "/srv/journal space%/health/service.log".to_owned(),
+            "/srv/journal space%/health/service.log".to_owned(),
+        )
+    );
+    assert_eq!(unit.exec_start, baseline_unit.exec_start);
+    assert_eq!(unit.environment, baseline_unit.environment);
+}
+
+#[test]
+fn path_inputs_change_only_path_construction() {
+    let baseline = build_service_environment(HOME, Some(PATH), RUNTIME_DIR);
+    let (baseline_plist, baseline_unit) = render(&baseline, LAUNCHER, PORT, JOURNAL);
+    let duplicate = build_service_environment(
+        HOME,
+        Some("/usr/bin:/opt/sol/bin:/usr/bin:/bin"),
+        RUNTIME_DIR,
+    );
+    let absent = build_service_environment(HOME, None, RUNTIME_DIR);
+    assert_eq!(duplicate["HOME"], baseline["HOME"]);
+    assert_eq!(duplicate["PYTHONUNBUFFERED"], baseline["PYTHONUNBUFFERED"]);
+    assert_eq!(duplicate["PATH"], "/opt/sol/bin:/usr/bin:/bin");
+    assert_eq!(absent["PATH"], "/opt/sol/bin:/usr/local/bin:/usr/bin:/bin");
+
+    let alternate_runtime = build_service_environment(HOME, Some(PATH), "/runtime other");
+    assert_eq!(alternate_runtime["HOME"], baseline["HOME"]);
+    assert_eq!(
+        alternate_runtime["PYTHONUNBUFFERED"],
+        baseline["PYTHONUNBUFFERED"]
+    );
+    assert_eq!(alternate_runtime["PATH"], "/runtime other:/usr/bin:/bin");
+
+    for environment_input in [duplicate, absent, alternate_runtime] {
+        let (plist, unit) = render(&environment_input, LAUNCHER, PORT, JOURNAL);
+        assert_eq!(arguments(&plist), arguments(&baseline_plist));
+        assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+        assert_eq!(environment(&plist), environment_input);
+        assert_eq!(unit.exec_start, baseline_unit.exec_start);
+        assert_eq!(unit.environment, environment_input);
+    }
+}

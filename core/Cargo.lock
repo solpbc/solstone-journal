@@ -3444,6 +3444,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-service-legacy-evidence"
+version = "1.0.22"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
+name = "solstone-core-service-unit"
+version = "1.0.22"
+dependencies = [
+ "base64 0.22.1",
+ "plist",
+ "serde_json",
+ "solstone-core-service-legacy-evidence",
+ "unicode-general-category",
+]
+
+[[package]]
 name = "solstone-core-serving"
 version = "1.0.22"
 dependencies = [
