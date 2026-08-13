@@ -54,7 +54,7 @@
         "why": "per-app static stylesheet"
       },
       {
-        "body_sha256": "e7c5697f0fb9d4dd68861dcf3ded7780f4cf904974fd2e754f700883df09f02a",
+        "body_sha256": "010028509b983a7c69b14b03dc8291a7b2b1c068b22db00bb4ab93c3b1a2ed0b",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -69,7 +69,7 @@
             "bound": false
           },
           "last_backup": {
-            "error_reason": "repository_locked",
+            "error_reason": "locked",
             "snapshot_id": null,
             "status": "error",
             "time": 1770003600

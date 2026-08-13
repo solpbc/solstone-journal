@@ -218,7 +218,14 @@ def _backup_section(phase: str) -> dict[str, Any] | None:
             "time": PINNED_BACKUP_ERROR_TIME,
             "snapshot_id": None,
             "status": "error",
-            "error_reason": "repository_locked",
+            # ⚠ A REAL value from the engine's vocabulary. `reason_for_returncode`
+            # (`think/backup/runner.py:109`) emits `incomplete` · `repo_missing` ·
+            # `locked` · `auth_failed` · `timeout` · `failed`, and the engine adds
+            # `restic_unavailable` and `rclone_unavailable`. ⛔ An oracle carrying a
+            # value the producer cannot emit teaches the port a vocabulary that does
+            # not exist, and a label table built from it has a dead entry and eight
+            # missing ones.
+            "error_reason": "locked",
         }
         common["last_verification"] = {
             "time": PINNED_VERIFY_ERROR_TIME,
