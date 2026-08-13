@@ -1,4 +1,8 @@
 {
+  "capture_clock": "2026-05-15T12:00:00+00:00",
+  "capture_clock_day": "20260515",
+  "capture_clock_epoch": 1778846400.0,
+  "capture_clock_serialized": "2026-05-15T12:00:00",
   "generator": "scripts/convey_facets_corpus.py",
   "mutations": [
     {

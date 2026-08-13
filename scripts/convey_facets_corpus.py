@@ -1411,6 +1411,24 @@ def build_corpus() -> dict[str, Any]:
         "schema": SCHEMA,
         "generator": "scripts/convey_facets_corpus.py",
         "tz": "UTC",
+        # 🔴 THE INJECTED CLOCK, AS DATA. A replay has to establish the same
+        # condition the capture ran under, and it can only do that if the value
+        # travels in the fixture. A first version of this metadata carried only
+        # `placeholders.clock` -- a placeholder TOKEN, and a dead one, since the
+        # normalization allowlist is empty and no field is ever substituted --
+        # which left the real instant readable only from this generator's source.
+        # A consumer following that would have injected the literal string
+        # "<CAPTURE_CLOCK>".
+        #
+        # ⚠ `capture_clock_serialized` is the exact spelling the reference emits
+        # in a body (`datetime.now().isoformat()` under an injected naive-UTC
+        # clock): no zone suffix, no offset, no fractional seconds. A port that
+        # formats its clock as RFC 3339 emits `2026-05-15T12:00:00+00:00` and
+        # fails the hash for a reason that looks like a logic bug.
+        "capture_clock": CAPTURE_CLOCK_ISO,
+        "capture_clock_serialized": _CAPTURE_INSTANT.replace(tzinfo=None).isoformat(),
+        "capture_clock_day": _CAPTURE_INSTANT.strftime("%Y%m%d"),
+        "capture_clock_epoch": _CAPTURE_EPOCH,
         "pinned_completed_at": PINNED_COMPLETED_AT,
         "seed": {
             "day": SEED_DAY,
