@@ -8,9 +8,11 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
+use axum::Router;
 use axum::extract::{Extension, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
@@ -27,7 +29,7 @@ use solstone_core_sol_link::pairing::{
     CeremonyRequest, MintRequest, PairingError, complete_pairing, mint_pairing, pair_response_json,
 };
 
-use crate::JournalRoot;
+use crate::{JournalRoot, asset_response, assets};
 
 /// Exact network-device response vocabulary mirrored from
 /// `solstone/apps/network/routes.py::_entry_to_json`.
@@ -53,6 +55,55 @@ pub(crate) struct NonceQuery {
 #[derive(Deserialize)]
 pub(crate) struct PairTokenQuery {
     token: Option<String>,
+}
+
+pub fn router(journal: Arc<JournalRoot>) -> Router {
+    Router::new()
+        .route("/app/network/", get(shell))
+        .route("/app/network/workspace", get(workspace))
+        .route("/app/network/static/network.js", get(script))
+        .route("/app/network/api/state", get(state))
+        .layer(Extension(journal))
+}
+
+async fn shell() -> Response {
+    asset_response("/static/shell.html")
+}
+
+async fn workspace() -> Response {
+    asset_response("/app/network/workspace")
+}
+
+async fn script() -> Response {
+    asset_response("/app/network/static/network.js")
+}
+
+async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    let link_copy = serde_json::from_str::<Value>(assets::network_copy_json())
+        .expect("generated network copy JSON parses");
+    Json(json!({
+        "link_copy": link_copy,
+        "posture": read_posture(&journal.0),
+    }))
+    .into_response()
+}
+
+fn read_posture(journal_root: &std::path::Path) -> &'static str {
+    let posture = std::fs::read(journal_root.join("config/journal.json"))
+        .ok()
+        .and_then(|contents| serde_json::from_slice::<Value>(&contents).ok())
+        .and_then(|config| {
+            config
+                .get("link")?
+                .get("posture")?
+                .as_str()
+                .map(str::to_owned)
+        });
+    if posture.as_deref() == Some("spl") {
+        "spl"
+    } else {
+        "direct"
+    }
 }
 
 /// Pair-start accepts only the local owner; a linked device or pairing peer has
@@ -378,7 +429,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
-    use axum::http::Request;
+    use axum::http::{Request, header};
     use axum::routing::get;
     use axum::{Extension, Router};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier};
@@ -388,6 +439,8 @@ mod tests {
     use super::*;
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    const NETWORK_WORKSPACE: &str = include_str!("../assets/network/workspace.html");
+    const NETWORK_SCRIPT: &str = include_str!("../assets/network/network.js");
 
     struct TempDir(PathBuf);
 
@@ -429,6 +482,25 @@ mod tests {
             r#"{"pairing":{"home_address":"10.0.0.2:7657"}}"#,
         )
         .expect("config");
+    }
+
+    fn established_journal(root: &Path) {
+        fs::create_dir_all(root.join("config")).expect("config directory");
+        fs::write(
+            root.join("config/journal.json"),
+            br#"{"setup":{"completed_at":1}}"#,
+        )
+        .expect("established config");
+    }
+
+    async fn get_response(app: Router, path: &str) -> Response {
+        app.oneshot(
+            Request::get(path)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds")
     }
 
     #[tokio::test]
@@ -724,5 +796,299 @@ mod tests {
         );
         assert_eq!(device["last_seen_at"], "2026-08-13T00:01:00Z");
         assert_eq!(device["observer_handle"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn network_native_read_routes_serve_established_assets_and_state() {
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        let app = crate::router(temporary.path().to_path_buf());
+        for (path, content_type) in [
+            ("/app/network/", "text/html; charset=utf-8"),
+            ("/app/network/workspace", "text/html; charset=utf-8"),
+            (
+                "/app/network/static/network.js",
+                "text/javascript; charset=utf-8",
+            ),
+            ("/app/network/api/state", "application/json"),
+        ] {
+            let response = get_response(app.clone(), path).await;
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert_eq!(
+                response.headers()[header::CONTENT_TYPE],
+                content_type,
+                "{path}"
+            );
+            if path == "/app/network/api/state" {
+                let body: Value = serde_json::from_slice(
+                    &to_bytes(response.into_body(), usize::MAX)
+                        .await
+                        .expect("state body reads"),
+                )
+                .expect("state is JSON");
+                assert_eq!(body["posture"], "direct");
+                assert!(
+                    body["link_copy"]
+                        .as_object()
+                        .is_some_and(|copy| !copy.is_empty()),
+                    "state has the generated copy payload"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn network_workspace_and_script_obey_the_session_gate_in_all_phases() {
+        for phase in ["unestablished", "established", "corrupt"] {
+            let temporary = TempDir::new();
+            match phase {
+                "unestablished" => {}
+                "established" => established_journal(temporary.path()),
+                "corrupt" => {
+                    fs::create_dir_all(temporary.path().join("config")).expect("config directory");
+                    fs::write(
+                        temporary.path().join("config/journal.json"),
+                        br#"{"setup":{"completed_at":1"#,
+                    )
+                    .expect("corrupt config");
+                }
+                _ => unreachable!("known phase"),
+            }
+            for path in ["/app/network/workspace", "/app/network/static/network.js"] {
+                let response =
+                    get_response(crate::router(temporary.path().to_path_buf()), path).await;
+                match phase {
+                    "unestablished" => {
+                        assert_eq!(response.status(), StatusCode::FOUND, "{path}");
+                        assert_eq!(response.headers()[header::LOCATION], "/init", "{path}");
+                    }
+                    "established" => assert_eq!(response.status(), StatusCode::OK, "{path}"),
+                    "corrupt" => {
+                        assert_eq!(
+                            response.status(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "{path}"
+                        )
+                    }
+                    _ => unreachable!("known phase"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn network_router_is_fallback_free_and_shell_constructs() {
+        let temporary = TempDir::new();
+        let root = Arc::new(JournalRoot(temporary.path().to_path_buf()));
+        let _merged = Router::new()
+            .route("/x", get(|| async { StatusCode::OK }))
+            .fallback(|| async { StatusCode::NOT_FOUND })
+            .merge(super::router(root));
+        let _shell = crate::router(temporary.path().to_path_buf());
+    }
+
+    #[test]
+    fn network_shrunk_workspace_keeps_the_required_surface() {
+        for expected in [
+            "link-workspace-root",
+            "link-state-gate",
+            "link-dashboard-content",
+            "link-identity-header",
+            "link-identity-mark",
+            "link-identity-id-value",
+            "link-identity-id-copy",
+            "link-status-panel",
+            "link-status-dot",
+            "link-status-skeleton",
+            "link-status-text",
+            "link-reach-selector",
+            "link-reach-selector-title",
+            "link-seg-byo",
+            "link-seg-hosted",
+            "link-mode-byo-body",
+            "link-home-address-row",
+            "link-home-address",
+            "link-vpn-candidates-row",
+            "link-vpn-candidates",
+            "link-home-candidates-picker",
+            "link-home-candidates-list",
+            "link-home-candidates-problem",
+            "link-host-address-override",
+            "link-host-address-input",
+            "link-host-address-apply",
+            "link-host-address-clear",
+            "link-host-address-error",
+            "link-mode-hosted-setup",
+            "link-private-link-setup",
+            "link-mode-hosted-active",
+            "link-private-link-disable",
+            "link-spl-connecting-note",
+            "link-spl-check-again",
+            "link-private-link-operation",
+            "link-private-link-operation-headline",
+            "link-private-link-operation-detail",
+            "link-private-link-operation-link",
+            "link-private-link-operation-retry",
+            "link-toast",
+            ".link-app-onoff",
+            ".link-app-onoff-sub",
+            "data-copy-attr=\"data-byo-sub:APP_ONOFF_SUB_BYO; data-hosted-sub:APP_ONOFF_SUB_HOSTED\"",
+            "loadNetworkState",
+            "initLinkWorkspace",
+            "initLink",
+            "applyStatus",
+            "refreshStatus",
+            "renderReach",
+            "renderSelector",
+            "renderSplState",
+            "updateReachSelectorVisibility",
+            "renderVpnCandidates",
+            "renderHomeCandidates",
+            "selectHomeCandidate",
+            "applyHostAddressOverride",
+            "clearHostAddressOverride",
+            "submitHostAddress",
+            "renderPrivateLinkStatus",
+            "startPrivateLinkSetup",
+            "disablePrivateLink",
+            "pollPrivateLinkUntilTerminal",
+            "loadIdentity",
+            "renderIdentityMark",
+            "showToast",
+            "revealWorkspace",
+            "showWorkspaceStateError",
+        ] {
+            assert!(NETWORK_WORKSPACE.contains(expected), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn network_shrunk_workspace_drops_pairing_and_device_surface() {
+        for forbidden in [
+            "link-first-run-hero",
+            "link-hero-title",
+            "link-hero-pair",
+            "link-hero-how-reach",
+            "link-paired-section",
+            "link-paired-h2",
+            "link-devices-count",
+            "link-pair-btn",
+            "link-devices-list",
+            "link-recent-section",
+            "link-recent-h2",
+            "link-recent-list",
+            "link-pair-modal",
+            "link-pair-modal-title",
+            "link-present-selector",
+            "link-present-phone",
+            "link-present-computer",
+            "link-present-glasses",
+            "link-pair-code",
+            "link-qr-container",
+            "link-qr-expired",
+            "link-pair-regenerate",
+            "link-pair-network",
+            "link-pair-link-label",
+            "link-pair-link-input",
+            "link-pair-link-copy",
+            "link-device-label",
+            "link-pair-ca-fp",
+            "link-pair-cancel",
+            "link-pair-error",
+            "link-pair-error-cancel",
+            "link-pair-success",
+            "link-pair-success-heading",
+            "link-pair-success-subhead",
+            "link-pair-success-verify",
+            "link-pair-success-verify-note",
+            "link-pair-remove",
+            "link-pair-done",
+            "link-unpair-modal",
+            "link-unpair-title",
+            "link-unpair-confirm",
+            "link-unpair-cancel",
+            "devicesList",
+            "devicesCount",
+            "heroSection",
+            "heroPairBtn",
+            "heroHowReach",
+            "pairedSection",
+            "recentSection",
+            "recentList",
+            "pairBtn",
+            "pairModal",
+            "pairCancel",
+            "deviceLabelInput",
+            "presentSelector",
+            "pairCodeBox",
+            "qrContainer",
+            "qrExpired",
+            "pairLinkInput",
+            "pairLinkCopy",
+            "pairRegenerate",
+            "pairNetwork",
+            "caFpEl",
+            "pairError",
+            "pairErrorCancel",
+            "pairSuccess",
+            "pairSuccessHeading",
+            "pairSuccessSubhead",
+            "pairSuccessVerify",
+            "pairSuccessVerifyNote",
+            "pairRemove",
+            "pairDone",
+            "unpairModal",
+            "unpairTitle",
+            "unpairConfirm",
+            "unpairCancel",
+            "bindPairModalDismiss",
+            "handleMenuDocumentClick",
+            "handleMenuDocumentKey",
+            "presentButtons",
+            "refreshDevices",
+            "cleanupPairEvents",
+            "clearPairTimers",
+            ".link-hero",
+            ".link-hero-icon",
+            ".link-hero-body",
+            ".link-hero-actions",
+            ".link-hero-how-reach",
+            ".link-device-row",
+            ".link-skeleton-row",
+            ".link-rename-input",
+            "/app/network/rename",
+            "/app/network/unpair",
+            "/app/network/pair-start",
+            "/app/network/api/devices",
+            "[data-presentation-mode]",
+            "applyPosture",
+        ] {
+            assert!(
+                !NETWORK_WORKSPACE.contains(forbidden),
+                "unexpected {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn network_shrunk_workspace_stays_in_the_size_band() {
+        assert!((900..=1800).contains(&NETWORK_WORKSPACE.lines().count()));
+    }
+
+    #[test]
+    fn network_shrunk_script_keeps_copy_helpers_and_drops_pair_helpers() {
+        for expected in [
+            "function applyCopy",
+            "function findById",
+            "const NetworkRender = { applyCopy, resolve };",
+        ] {
+            assert!(NETWORK_SCRIPT.contains(expected), "missing {expected}");
+        }
+        for forbidden in ["applyPosture", "bindPairModalDismiss"] {
+            assert!(
+                !NETWORK_SCRIPT.contains(forbidden),
+                "unexpected {forbidden}"
+            );
+        }
     }
 }

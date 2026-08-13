@@ -698,6 +698,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
         .merge(thinking::router(route_journal_root.clone()))
+        .merge(network::router(route_journal_root.clone()))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root));
     session_gate::apply_layer(routes, journal_root).fallback(not_found)

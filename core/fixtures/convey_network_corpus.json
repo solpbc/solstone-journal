@@ -5,14 +5,6 @@
   },
   "established_deferred_native_responses": [
     {
-      "path": "/app/network/",
-      "phase": "established"
-    },
-    {
-      "path": "/app/network/api/state",
-      "phase": "established"
-    },
-    {
       "path": "/app/network/api/status",
       "phase": "established"
     },
@@ -475,6 +467,6 @@
     "host": "<HOST_DEPENDENT>",
     "journal_root": "<JOURNAL_ROOT>"
   },
-  "rev": "750be6e4b6a5568c509844f19148a30c1e60b0da",
+  "rev": "e13300430a7172fde2a141781784a0965e21b0a1",
   "schema": "solstone-convey-network-corpus-v1"
 }

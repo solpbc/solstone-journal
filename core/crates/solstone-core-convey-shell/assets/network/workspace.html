@@ -1,0 +1,934 @@
+<script src="/app/network/static/network.js"></script>
+
+<main id="link-workspace-root" class="link-dashboard">
+  <div id="link-state-gate" class="link-state-gate" aria-live="polite"></div>
+  <div id="link-dashboard-content" hidden>
+  <p class="link-brandlock"><span class="link-lockdot" aria-hidden="true"></span><span data-copy="BRANDLOCK_LINE"></span></p>
+
+  <section id="link-identity-header" class="link-identity" hidden>
+    <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
+    <div id="link-identity-mark" class="link-identity-mark" aria-hidden="true"></div>
+    <div class="link-identity-id">
+      <span class="link-identity-id-label" data-copy="IDENTITY_ID_LABEL"></span>
+      <code id="link-identity-id-value" class="link-identity-id-value"></code>
+      <button type="button" id="link-identity-id-copy" class="link-identity-id-copy" data-copy="IDENTITY_ID_COPY_LABEL"></button>
+    </div>
+  </section>
+
+  <header class="link-header">
+    <div id="link-status-panel" class="link-status-panel" aria-live="polite" aria-atomic="true">
+      <span id="link-status-dot" class="link-dot is-amber" aria-hidden="true"></span>
+      <span id="link-status-skeleton" class="skeleton-block link-status-skeleton" aria-hidden="true"></span>
+      <span id="link-status-text" hidden data-copy="STATUS_SENTENCES.checking"></span>
+    </div>
+  </header>
+
+
+  <section id="link-reach-selector" class="link-reach-selector" aria-labelledby="link-reach-selector-title" hidden>
+    <div
+      class="link-app-onoff"
+      data-copy-attr="data-byo-sub:APP_ONOFF_SUB_BYO; data-hosted-sub:APP_ONOFF_SUB_HOSTED"
+      hidden
+    >
+      <div>
+        <p class="link-app-onoff-lab" data-copy="APP_ONOFF_LABEL"></p>
+        <p class="link-app-onoff-sub"></p>
+      </div>
+      <span class="link-switch" aria-hidden="true"><span class="link-knob"></span></span>
+    </div>
+
+    <div class="link-reach-selector-head">
+      <p id="link-reach-selector-title" class="link-sectlab" data-copy="REACH_SELECTOR_TITLE"></p>
+      <p class="link-secthint" data-copy="REACH_SELECTOR_HINT"></p>
+    </div>
+
+    <div class="link-modeseg" role="radiogroup" aria-label="how your devices reach your journal">
+      <button
+        type="button"
+        id="link-seg-byo"
+        class="link-seg is-selected"
+        role="radio"
+        aria-checked="true"
+        aria-controls="link-mode-byo-body"
+      >
+        <span class="link-segtop">
+          <span class="link-seg-radio" aria-hidden="true"></span>
+          <span class="link-segname" data-copy="MODE_BYO_NAME"></span>
+        </span>
+        <span class="link-segdesc" data-copy="MODE_BYO_DESC"></span>
+        <span class="link-seg-byob" data-copy="MODE_BYO_DISCLOSURE"></span>
+      </button>
+      <button
+        type="button"
+        id="link-seg-hosted"
+        class="link-seg"
+        role="radio"
+        aria-checked="false"
+        aria-controls="link-mode-hosted-active link-mode-hosted-setup"
+      >
+        <span class="link-segtop">
+          <span class="link-seg-radio" aria-hidden="true"></span>
+          <span class="link-segname" data-copy="MODE_HOSTED_NAME"></span>
+        </span>
+        <span class="link-segdesc" data-copy="MODE_HOSTED_DESC"></span>
+        <span class="link-seg-oper" data-copy="MODE_HOSTED_DISCLOSURE"></span>
+      </button>
+    </div>
+
+    <div id="link-mode-byo-body" class="link-modebody">
+      <dl class="link-reach-details">
+        <div id="link-home-address-row" class="link-reach-detail-row" hidden>
+          <dt data-copy="REACH_HOME_ADDRESS_LABEL"></dt>
+          <dd><code id="link-home-address"></code></dd>
+        </div>
+        <div id="link-vpn-candidates-row" class="link-reach-detail-row" hidden>
+          <dt data-copy="REACH_VPN_CANDIDATE_LABEL"></dt>
+          <dd
+            id="link-vpn-candidates"
+            class="link-vpn-candidates"
+            data-copy-attr="data-row-label:REACH_VPN_CANDIDATE_LABEL; data-use-label:REACH_VPN_USE_THIS"
+          ></dd>
+        </div>
+      </dl>
+      <div
+        id="link-home-candidates-picker"
+        class="link-home-candidates-picker"
+        data-copy-attr="data-refresh-fail:REACH_HOME_CANDIDATES_REFRESH_FAIL; data-unavailable:REACH_HOME_CANDIDATES_UNAVAILABLE"
+        hidden
+      >
+        <p class="link-home-candidates-label" data-copy="REACH_HOME_CANDIDATES_LABEL"></p>
+        <div id="link-home-candidates-list" class="link-home-candidates-list"></div>
+        <p id="link-home-candidates-problem" class="link-home-candidates-problem" role="status" hidden></p>
+      </div>
+      <details id="link-host-address-override" class="link-host-address-override">
+        <summary data-copy="REACH_HOST_ADDRESS_DISCLOSURE"></summary>
+        <div class="link-host-address-controls">
+          <input
+            type="text"
+            id="link-host-address-input"
+            class="link-host-address-input"
+            data-copy-attr="placeholder:REACH_HOST_ADDRESS_PLACEHOLDER"
+            autocomplete="off"
+            inputmode="url"
+          >
+          <button type="button" id="link-host-address-apply" data-copy="REACH_HOST_ADDRESS_APPLY_LABEL"></button>
+          <button type="button" id="link-host-address-clear" data-copy="REACH_HOST_ADDRESS_CLEAR_LABEL"></button>
+        </div>
+        <p id="link-host-address-error" class="link-host-address-error" role="alert" hidden></p>
+      </details>
+      <p class="link-mode-note" data-copy="MODE_BYO_BODY_NOTE"></p>
+    </div>
+
+    <div id="link-mode-hosted-setup" class="link-modebody" hidden>
+      <p class="link-mode-note" data-copy="MODE_HOSTED_SETUP_NOTE"></p>
+      <div class="link-handoff">
+        <button type="button" id="link-private-link-setup" class="link-btn-primary" data-copy="MODE_HOSTED_SETUP_CTA"></button>
+      </div>
+    </div>
+
+    <div id="link-mode-hosted-active" class="link-modebody" hidden>
+      <p class="link-reach-detail" data-copy="REACH_SPL_ACTIVE_BODY"></p>
+      <p class="link-reach-detail link-spl-trust-line" data-copy="REACH_SPL_TRUST_LINE"></p>
+      <div class="link-handoff">
+        <a href="https://services.solstone.app/" target="_blank" rel="noopener noreferrer" data-copy="REACH_SPL_MANAGE_LABEL"></a>
+        <button type="button" id="link-private-link-disable" class="link-private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA"></button>
+      </div>
+      <p id="link-spl-connecting-note" class="link-spl-connecting-note" hidden data-copy="REACH_SPL_CONNECTING_NOTE"></p>
+      <button type="button" id="link-spl-check-again" class="link-spl-check-again" hidden><span aria-hidden="true">[ </span><span data-copy="CHECK_AGAIN_LABEL"></span><span aria-hidden="true"> ]</span></button>
+    </div>
+  </section>
+
+  <div id="link-private-link-operation" class="link-private-link-operation" role="status" aria-live="polite" hidden>
+    <p id="link-private-link-operation-headline"></p>
+    <p id="link-private-link-operation-detail"></p>
+    <a id="link-private-link-operation-link" href="" target="_blank" rel="noopener noreferrer" hidden></a>
+    <button type="button" id="link-private-link-operation-retry" hidden data-copy="PRIVATE_LINK_RETRY_CTA"></button>
+  </div>
+
+
+
+  <script>window.LinkCopy = window.LinkCopy || {};</script>
+
+
+  <div id="link-toast" class="link-toast" role="status" aria-live="polite" hidden></div>
+  </div>
+</main>
+
+<style>
+  .link-dashboard { max-width: 880px; margin: 0 auto; padding: 1.5em; color: #222; }
+  .link-header { margin-bottom: 1.5em; }
+  .link-status-panel { display: flex; align-items: center; gap: 0.55em; color: #333; font-size: 1rem; font-weight: 500; }
+  .link-dot { width: 0.7em; height: 0.7em; border-radius: 999px; flex: 0 0 auto; }
+  .link-dot.is-green { background: #1e7b42; }
+  .link-dot.is-amber { background: #b88400; }
+  .link-dot.is-red { background: #a53a1f; }
+  .link-trust { color: #666; font-size: 0.95em; margin: 0.45em 0 0; }
+  .skeleton-line, .skeleton-block { background: linear-gradient(90deg, #ededed 25%, #f5f5f5 50%, #ededed 75%); background-size: 200% 100%; animation: skeleton-pulse 1.4s ease-in-out infinite; border-radius: 4px; }
+  .skeleton-line { height: 0.85em; margin: 0.3em 0; }
+  .skeleton-block { height: 1.5em; }
+  @keyframes skeleton-pulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .link-status-skeleton { display: inline-block; width: 14em; max-width: 60vw; height: 1em; }
+  #link-status-text[hidden], #link-status-skeleton[hidden] { display: none; }
+
+  .link-identity { margin: 0 0 1.5em; padding: 1.15em 1.3em; border: 1px solid #e7d8c6; border-radius: 12px; background: #fffdf9; text-align: center; }
+  .link-identity-title { margin: 0 0 0.7em; font-size: 0.95rem; font-weight: 600; color: #B06A1A; }
+  .link-identity-mark { min-height: 48px; }
+  .link-mark-chips { display: flex; gap: 0.7em; justify-content: center; }
+  .link-mark-chip { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 2px solid #ccc; border-radius: 12px; box-sizing: border-box; }
+  .link-mark-chip svg { width: 28px; height: 28px; display: block; }
+  .link-mark-words { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.55em; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .3px; color: #222; }
+  .link-mark-words .link-mark-sep { color: #c2b9a6; }
+  .link-identity-id { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.9em; font-size: 0.9rem; color: #555; flex-wrap: wrap; }
+  .link-identity-id-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #222; word-break: break-all; }
+  .link-identity-id-copy { border: 1px solid #d9c4ab; background: #fff; color: #B06A1A; border-radius: 7px; padding: 0.2em 0.6em; cursor: pointer; font-size: 0.85rem; }
+
+
+  .link-brandlock { font-size: 0.9rem; color: #B06A1A; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .link-lockdot { width: 7px; height: 7px; border-radius: 50%; background: #E8923A; flex: none; }
+  .link-reach-selector { border: 1px solid #ECE3D0; border-radius: 8px; background: #FFFFFF; padding: 1em; margin-bottom: 1.5em; overflow-wrap: anywhere; }
+  .link-reach-selector[hidden] { display: none; }
+  .link-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
+  .link-section-heading h2 { font-size: 1.15em; margin: 0; font-weight: 600; color: #444; }
+  .link-app-onoff { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0; border-top: 1px solid #ECE3D0; border-bottom: 1px solid #ECE3D0; }
+  .link-app-onoff[hidden] { display: none; }
+  .link-app-onoff-lab { font-weight: 600; margin: 0; color: #1A1A1A; }
+  .link-app-onoff-sub { font-size: 0.84rem; color: #6E6453; margin: 1px 0 0; }
+  .link-switch { width: 46px; height: 28px; border-radius: 999px; background: #E8923A; position: relative; flex: none; }
+  .link-knob { position: absolute; top: 3px; left: 21px; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+  .link-sectlab { font-weight: 600; font-size: 0.95rem; margin: 20px 0 4px; color: #1A1A1A; }
+  .link-secthint { font-size: 0.84rem; color: #6E6453; margin: 0 0 12px; line-height: 1.45; }
+  .link-modeseg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .link-seg { border: 1.5px solid #E2D7BF; border-radius: 8px; padding: 13px 14px; background: #FEFCF8; cursor: pointer; position: relative; color: #1A1A1A; text-align: left; font: inherit; }
+  .link-seg.is-selected { border-color: #E8923A; background: #FFFFFF; box-shadow: 0 0 0 3px rgba(232,146,58,0.14); }
+  .link-seg:focus-visible { outline: 2px solid #b06a1a; outline-offset: 2px; }
+  .link-segtop { display: flex; align-items: center; gap: 8px; }
+  .link-seg-radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #E2D7BF; flex: none; }
+  .link-seg.is-selected .link-seg-radio { border-color: #E8923A; background: radial-gradient(circle at center, #E8923A 0 5px, #FFFFFF 5px 7px); }
+  .link-segname { font-weight: 600; font-size: 0.98rem; }
+  .link-segdesc { display: block; font-size: 0.82rem; color: #6E6453; margin-top: 6px; line-height: 1.4; }
+  .link-seg-oper { font-size: 0.76rem; color: #B06A1A; font-weight: 600; margin-top: 8px; display: inline-block; }
+  .link-seg-byob { font-size: 0.76rem; color: #6E6453; font-weight: 600; margin-top: 8px; display: inline-block; }
+  .link-modebody { margin-top: 14px; border: 1px solid #ECE3D0; border-radius: 8px; background: #FEFCF8; padding: 14px 16px; }
+  .link-modebody[hidden] { display: none; }
+  .link-mode-note { font-size: 0.84rem; color: #6E6453; margin: 8px 0 0; line-height: 1.45; }
+  .link-handoff { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .link-handoff a { color: #B06A1A; font-weight: 600; text-decoration: none; font-size: 0.88rem; }
+  .link-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #E8923A; border-radius: 8px; background: #E8923A; color: #1A1A1A; padding: 10px 16px; font: inherit; font-size: 0.92rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .link-btn-primary:hover { filter: brightness(1.02); }
+  .link-reach-detail { margin: 0.25em 0 0; color: #666; }
+  .link-reach-details { margin: 1em 0 0; }
+  .link-reach-detail-row { display: grid; grid-template-columns: minmax(7.5em, auto) 1fr; gap: 0.75em; align-items: start; margin-top: 0.65em; }
+  .link-reach-detail-row[hidden] { display: none; }
+  .link-reach-detail-row dt { color: #777; font-size: 0.9em; }
+  .link-reach-detail-row dd { margin: 0; min-width: 0; }
+  .link-reach-detail-row code { font-family: ui-monospace, monospace; color: #555; word-break: break-all; }
+  .link-host-address-override { margin-top: 0.8em; }
+  .link-host-address-override summary { cursor: pointer; color: #B06A1A; font-weight: 500; }
+  .link-host-address-controls { display: flex; gap: 0.5em; flex-wrap: wrap; margin-top: 0.65em; }
+  .link-host-address-input { min-width: min(18em, 100%); flex: 1 1 12em; border: 1px solid #d6cfc3; border-radius: 5px; padding: 0.55em 0.65em; font: inherit; }
+  .link-host-address-controls button { border: 1px solid #E2D7BF; background: #FEFCF8; color: #B06A1A; border-radius: 5px; padding: 0.55em 0.8em; cursor: pointer; font-weight: 500; }
+  .link-host-address-error { color: #8a2d1c; font-weight: 500; margin: 0.5em 0 0; }
+  .link-host-address-error[hidden] { display: none; }
+  .link-home-candidates-picker { margin-top: 0.85em; border: 1px solid #ECE3D0; border-radius: 8px; background: #fffdfa; padding: 0.8em; }
+  .link-home-candidates-picker[hidden] { display: none; }
+  .link-home-candidates-label { margin: 0 0 0.55em; color: #555; font-weight: 600; font-size: 0.9em; }
+  .link-home-candidates-list { display: flex; flex-direction: column; gap: 0.45em; }
+  .link-home-candidate-row { display: flex; align-items: center; gap: 0.55em; min-height: 34px; color: #444; }
+  .link-home-candidate-row input { flex: none; }
+  .link-home-candidate-row code { font-family: ui-monospace, monospace; color: #555; word-break: break-all; }
+  .link-home-candidates-problem { margin: 0; color: #8a2d1c; font-weight: 500; }
+  .link-home-candidates-problem[hidden] { display: none; }
+  .link-vpn-candidates { display: flex; flex-direction: column; gap: 0.4em; }
+  .link-vpn-candidate { display: flex; gap: 0.45em; align-items: baseline; flex-wrap: wrap; }
+  .link-vpn-candidate-label { color: #555; font-weight: 500; }
+  .link-vpn-candidate-use { color: #777; font-size: 0.85em; }
+  .link-private-link-disable { border: 0; background: transparent; padding: 0; color: #a53a1f; cursor: pointer; font: inherit; font-weight: 600; text-align: left; }
+  .link-private-link-operation { margin: 0 0 1.25em; border: 1px solid #e0d8cc; border-radius: 8px; background: #fffdfa; padding: 0.9em; }
+  .link-private-link-operation[hidden] { display: none; }
+  .link-private-link-operation p { margin: 0 0 0.55em; color: #444; }
+  .link-private-link-operation p:first-child { font-weight: 600; color: #222; }
+  .link-private-link-operation a { color: #B06A1A; overflow-wrap: anywhere; }
+  .link-private-link-operation button { margin-top: 0.6em; border: 1px solid #E2D7BF; background: #FEFCF8; color: #B06A1A; border-radius: 5px; padding: 0.55em 0.8em; cursor: pointer; font-weight: 500; }
+  .link-spl-connecting-note { margin: 0.35em 0 0; color: #666; font-size: 0.95em; }
+  .link-spl-check-again { margin-top: 0.35em; padding: 0; border: 0; background: transparent; color: #B06A1A; cursor: pointer; font: inherit; font-weight: 500; }
+  .link-spl-check-again:hover { text-decoration: underline; }
+  .link-spl-connecting-note[hidden], .link-spl-check-again[hidden] { display: none; }
+
+
+  @media (max-width: 540px) {
+    .link-dashboard { padding: 1em; }
+    .link-reach-selector { padding: 0.9em; }
+    .link-reach-detail-row { grid-template-columns: 1fr; gap: 0.25em; }
+    .link-section-heading { align-items: flex-start; }
+  }
+
+  @media (max-width: 600px) {
+    .link-modeseg { grid-template-columns: 1fr; }
+  }
+
+  .link-toast { position: fixed; bottom: 2em; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 0.75em 1.5em; border-radius: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1100; }
+</style>
+
+<script>
+(function () {
+  const workspaceRoot = document.getElementById('link-workspace-root');
+  const stateGate = document.getElementById('link-state-gate');
+  const dashboardContent = document.getElementById('link-dashboard-content');
+  const statusText = document.getElementById('link-status-text');
+  const statusDot = document.getElementById('link-status-dot');
+  const statusSkeleton = document.getElementById('link-status-skeleton');
+  const reachSelector = document.getElementById('link-reach-selector');
+  const appOnOff = document.querySelector('.link-app-onoff');
+  const appOnOffSub = document.querySelector('.link-app-onoff-sub');
+  const segByo = document.getElementById('link-seg-byo');
+  const segHosted = document.getElementById('link-seg-hosted');
+  const modeByoBody = document.getElementById('link-mode-byo-body');
+  const modeHostedSetup = document.getElementById('link-mode-hosted-setup');
+  const modeHostedActive = document.getElementById('link-mode-hosted-active');
+  const splConnectingNote = document.getElementById('link-spl-connecting-note');
+  const splCheckAgain = document.getElementById('link-spl-check-again');
+  const homeAddressRow = document.getElementById('link-home-address-row');
+  const homeAddressEl = document.getElementById('link-home-address');
+  const hostAddressInput = document.getElementById('link-host-address-input');
+  const hostAddressApply = document.getElementById('link-host-address-apply');
+  const hostAddressClear = document.getElementById('link-host-address-clear');
+  const hostAddressError = document.getElementById('link-host-address-error');
+  const hostAddressOverride = document.getElementById('link-host-address-override');
+  const homeCandidatesPicker = document.getElementById('link-home-candidates-picker');
+  const homeCandidatesList = document.getElementById('link-home-candidates-list');
+  const homeCandidatesProblem = document.getElementById('link-home-candidates-problem');
+  const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
+  const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
+  const privateLinkSetup = document.getElementById('link-private-link-setup');
+  const privateLinkDisable = document.getElementById('link-private-link-disable');
+  const privateLinkOperation = document.getElementById('link-private-link-operation');
+  const privateLinkOperationHeadline = document.getElementById('link-private-link-operation-headline');
+  const privateLinkOperationDetail = document.getElementById('link-private-link-operation-detail');
+  const privateLinkOperationLink = document.getElementById('link-private-link-operation-link');
+  const privateLinkOperationRetry = document.getElementById('link-private-link-operation-retry');
+  let latestStatus = null;
+  let latestPrivateLink = null;
+  let isFirstRun = false;
+  let viewedMode = null;
+  let lastPosture = null;
+  let reachRevealed = false;
+  let linkInitialized = false;
+  // Private-link product phases that finish the setup poll.
+  const PRIVATE_LINK_TERMINAL_PHASES = new Set(['enabled', 'needs_subscription', 'revoked', 'error']);
+  const PRIVATE_LINK_POLL_TIMEOUT_MS = 900000;
+  let privateLinkRetryAction = null;
+
+
+  const toast = document.getElementById('link-toast');
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.hidden = false;
+    setTimeout(() => { toast.hidden = true; }, 2500);
+  }
+
+  async function clipboardWriteText(text) {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+      return false;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      window.logError?.(err, { context: 'link: clipboard write failed' });
+      return false;
+    }
+  }
+
+  function renderIdentityMark(spec) {
+    const markEl = document.getElementById('link-identity-mark');
+    if (!markEl) return false;
+    const icons = spec ? [spec.icon1, spec.icon2] : [];
+    const words = Array.isArray(spec && spec.words) ? spec.words : [];
+    const validIcons = icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex);
+    if (!validIcons || words.length !== 2) return false;
+    markEl.innerHTML = '<div class="link-mark-chips"><div class="link-mark-chip"></div><div class="link-mark-chip"></div></div><div class="link-mark-words"><span></span><span class="link-mark-sep">·</span><span></span></div>';
+    const chips = markEl.querySelectorAll('.link-mark-chip');
+    chips.forEach((chip, index) => {
+      const icon = icons[index];
+      chip.style.borderColor = icon.color.hex;
+      chip.style.background = icon.color.hex + '1f';
+      if (icon.rot === 45) chip.style.transform = 'rotate(45deg)';
+      chip.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="${icon.color.hex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.svg}</svg>`;
+    });
+    const wordSpans = markEl.querySelectorAll('.link-mark-words span:not(.link-mark-sep)');
+    wordSpans[0].textContent = words[0];
+    wordSpans[1].textContent = words[1];
+    return true;
+  }
+
+  async function loadIdentity() {
+    const section = document.getElementById('link-identity-header');
+    if (!section) return;
+    let data;
+    try {
+      data = await window.apiJson('/app/network/api/identity');
+    } catch (err) {
+      window.logError?.(err, { context: 'link: identity load failed' });
+      return; // stays hidden/empty — quiet failure
+    }
+    if (!data || !data.committed || !data.mark) return; // quiet not-committed branch
+    if (!renderIdentityMark(data.mark)) return;          // malformed spec → stays hidden
+    const idValue = document.getElementById('link-identity-id-value');
+    if (idValue && typeof data.instance_id === 'string') idValue.textContent = data.instance_id;
+    section.hidden = false;
+  }
+
+
+  function clearRefreshError(containerId) {
+    const container = document.getElementById(containerId);
+    const siblingError = container?.nextElementSibling;
+    if (siblingError && siblingError.classList.contains('surface-state-refresh-error')) {
+      siblingError.remove();
+    }
+  }
+
+  function revealStatusPanel() {
+    if (statusSkeleton) statusSkeleton.hidden = true;
+    statusText.hidden = false;
+  }
+
+
+  function setHostAddressError(message) {
+    if (!hostAddressError) return;
+    hostAddressError.textContent = message || '';
+    hostAddressError.hidden = !message;
+  }
+
+  function selectStatusSentenceKey(data) {
+    const reachability = data?.reachability;
+    const posture = data?.posture;
+    if (reachability === 'reconnecting') return 'reconnecting';
+    if (reachability === 'lan-unreachable') return 'lan_unreachable';
+    if (posture === 'spl') {
+      if (reachability === 'online') return 'spl_online';
+      if (reachability === 'finishing-setup') return 'spl_finishing_setup';
+      if (reachability === 'offline') return 'spl_offline';
+    }
+    if (reachability === 'offline') return 'offline';
+    if (posture === 'direct' && reachability === 'online') {
+      return data?.vpn?.active != null ? 'direct_online_vpn' : 'direct_online';
+    }
+    return 'checking';
+  }
+
+  function setStatusSentence(key) {
+    const sentences = window.LinkCopy.STATUS_SENTENCES || {};
+    statusText.textContent = sentences[key] || sentences.checking || 'checking your journal…';
+    statusDot.classList.remove('is-green', 'is-amber', 'is-red');
+    if (['direct_online', 'direct_online_vpn', 'spl_online'].includes(key)) {
+      statusDot.classList.add('is-green');
+    } else if (['offline', 'lan_unreachable'].includes(key)) {
+      statusDot.classList.add('is-red');
+    } else {
+      statusDot.classList.add('is-amber');
+    }
+  }
+
+  function renderVpnCandidates(candidates) {
+    vpnCandidatesEl.textContent = '';
+    let rendered = 0;
+    for (const candidate of candidates) {
+      const address = typeof candidate?.address === 'string' ? candidate.address : '';
+      if (!address) continue;
+      const item = document.createElement('div');
+      item.className = 'link-vpn-candidate';
+      const label = document.createElement('span');
+      label.className = 'link-vpn-candidate-label';
+      label.textContent = typeof candidate.label === 'string' && candidate.label
+        ? candidate.label
+        : vpnCandidatesEl.dataset.rowLabel || '';
+      const code = document.createElement('code');
+      code.textContent = address;
+      const use = document.createElement('span');
+      use.className = 'link-vpn-candidate-use';
+      use.textContent = vpnCandidatesEl.dataset.useLabel || 'use this';
+      item.appendChild(label);
+      item.appendChild(code);
+      item.appendChild(use);
+      vpnCandidatesEl.appendChild(item);
+      rendered += 1;
+    }
+    vpnCandidatesRow.hidden = rendered === 0;
+  }
+
+  function setHomeCandidateRadiosDisabled(disabled) {
+    if (!homeCandidatesList) return;
+    homeCandidatesList.querySelectorAll('input[type="radio"]').forEach((radio) => {
+      radio.disabled = disabled;
+    });
+  }
+
+  function showHomeCandidateWriteError(message) {
+    setHostAddressError(message || '');
+    if (hostAddressOverride) hostAddressOverride.open = true;
+  }
+
+  function restoreHomeCandidatesFromStatus() {
+    renderHomeCandidates(latestStatus || {});
+  }
+
+  async function selectHomeCandidate(address) {
+    setHomeCandidateRadiosDisabled(true);
+    try {
+      const refreshed = await submitHostAddress(address);
+      if (!refreshed) {
+        showHomeCandidateWriteError(homeCandidatesPicker?.dataset.refreshFail || '');
+        restoreHomeCandidatesFromStatus();
+      }
+    } catch (err) {
+      showHomeCandidateWriteError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      restoreHomeCandidatesFromStatus();
+      window.logError?.(err, { context: 'link: home candidate select failed' });
+    } finally {
+      setHomeCandidateRadiosDisabled(false);
+    }
+  }
+
+  function renderHomeCandidates(data) {
+    if (!homeCandidatesPicker || !homeCandidatesList || !homeCandidatesProblem) return;
+    homeCandidatesList.textContent = '';
+    homeCandidatesProblem.textContent = '';
+    homeCandidatesProblem.hidden = true;
+    homeCandidatesList.hidden = true;
+
+    if (data?.home_candidates_state === 'unavailable') {
+      homeCandidatesPicker.hidden = false;
+      homeCandidatesProblem.textContent =
+        data?.home_candidates_error || homeCandidatesPicker.dataset.unavailable || '';
+      homeCandidatesProblem.hidden = false;
+      return;
+    }
+
+    const candidates = Array.isArray(data?.home_candidates) ? data.home_candidates : [];
+    if (candidates.length < 2) {
+      homeCandidatesPicker.hidden = true;
+      return;
+    }
+
+    homeCandidatesPicker.hidden = false;
+    homeCandidatesList.hidden = false;
+    candidates.forEach((candidate) => {
+      const address = typeof candidate?.address === 'string' ? candidate.address : '';
+      if (!address) return;
+      const row = document.createElement('label');
+      row.className = 'link-home-candidate-row';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'link-home-candidate';
+      radio.value = address;
+      radio.checked = Boolean(candidate.selected);
+      radio.addEventListener('change', () => {
+        if (radio.checked) selectHomeCandidate(address);
+      });
+      const code = document.createElement('code');
+      code.textContent = address;
+      row.appendChild(radio);
+      row.appendChild(code);
+      homeCandidatesList.appendChild(row);
+    });
+
+    if (!homeCandidatesList.children.length) {
+      homeCandidatesPicker.hidden = true;
+    }
+  }
+
+  function renderSplState(data) {
+    const isSpl = data?.posture === 'spl';
+    const reachability = data?.reachability;
+    const viewingHosted = viewedMode === 'hosted';
+    if (splConnectingNote) splConnectingNote.hidden = !(isSpl && viewingHosted && reachability === 'finishing-setup');
+    if (splCheckAgain) splCheckAgain.hidden = !(isSpl && viewingHosted && reachability === 'offline');
+  }
+
+  function updateReachSelectorVisibility() {
+    if (!reachSelector) return;
+    reachSelector.hidden = isFirstRun && !reachRevealed;
+  }
+
+  function setSegmentSelected(segment, selected) {
+    if (!segment) return;
+    segment.classList.toggle('is-selected', selected);
+    segment.setAttribute('aria-checked', String(selected));
+  }
+
+  function renderSelector(data) {
+    const posture = data?.posture;
+    const reachability = data?.reachability;
+    const mode = viewedMode || (posture === 'spl' ? 'hosted' : 'byo');
+    setSegmentSelected(segByo, mode === 'byo');
+    setSegmentSelected(segHosted, mode === 'hosted');
+    if (modeByoBody) modeByoBody.hidden = mode !== 'byo';
+    if (modeHostedSetup) modeHostedSetup.hidden = !(mode === 'hosted' && posture !== 'spl');
+    if (modeHostedActive) modeHostedActive.hidden = !(mode === 'hosted' && posture === 'spl');
+    if (appOnOff) {
+      appOnOff.hidden = reachability !== 'online';
+    }
+    if (appOnOffSub && appOnOff) {
+      appOnOffSub.textContent = posture === 'spl'
+        ? appOnOff.dataset.hostedSub || ''
+        : appOnOff.dataset.byoSub || '';
+    }
+    renderSplState(data);
+  }
+
+  function renderReach(data) {
+    const posture = data?.posture;
+    if (posture !== lastPosture || viewedMode === null) {
+      viewedMode = posture === 'spl' ? 'hosted' : 'byo';
+    }
+    lastPosture = posture;
+    updateReachSelectorVisibility();
+    renderSelector(data || {});
+
+    const homeAddress = typeof data?.home_address === 'string' ? data.home_address : '';
+    homeAddressEl.textContent = homeAddress;
+    homeAddressRow.hidden = !homeAddress;
+    if (hostAddressInput && document.activeElement !== hostAddressInput) {
+      hostAddressInput.value = homeAddress;
+    }
+
+    const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
+    renderVpnCandidates(candidates);
+    renderHomeCandidates(data || {});
+  }
+
+  async function submitHostAddress(address) {
+    await window.apiJson('/app/network/host-address', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home_address: address }),
+    });
+    setHostAddressError('');
+    return await refreshStatus();
+  }
+
+  async function applyHostAddressOverride() {
+    if (!hostAddressInput || !hostAddressApply) return;
+    hostAddressApply.disabled = true;
+    try {
+      await submitHostAddress(hostAddressInput.value);
+    } catch (err) {
+      setHostAddressError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      window.logError?.(err, { context: 'link: host address override failed' });
+    } finally {
+      hostAddressApply.disabled = false;
+    }
+  }
+
+  async function clearHostAddressOverride() {
+    if (!hostAddressClear) return;
+    hostAddressClear.disabled = true;
+    try {
+      await submitHostAddress(null);
+    } catch (err) {
+      setHostAddressError(err?.rawDetail || err?.serverMessage || err?.message || '');
+      window.logError?.(err, { context: 'link: host address clear failed' });
+    } finally {
+      hostAddressClear.disabled = false;
+    }
+  }
+
+
+  function applyStatus(data) {
+    revealStatusPanel();
+    latestStatus = data || {};
+    clearRefreshError('link-status-panel');
+    setStatusSentence(selectStatusSentenceKey(latestStatus));
+    renderReach(latestStatus);
+  }
+
+  async function refreshStatus() {
+    try {
+      const data = await window.apiJson('/app/network/api/status', { headers: { accept: 'application/json' } });
+      applyStatus(data || {});
+      return true;
+    } catch (err) {
+      window.logError(err, { context: 'link: refreshStatus failed' });
+      revealStatusPanel();
+      window.SurfaceState.replaceLoading('link-status-panel', window.SurfaceState.error({
+        heading: "Can't reach pairing service",
+        desc: window.CONVEY_COPY.RELOAD_HINT,
+        serverMessage: err.serverMessage,
+        detail: err,
+      }));
+      return false;
+    }
+  }
+
+  function privateLinkSleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function setPrivateLinkButtonsBusy(busy) {
+    [privateLinkSetup, privateLinkDisable, privateLinkOperationRetry]
+      .filter(Boolean)
+      .forEach((button) => {
+        button.disabled = busy;
+        button.setAttribute('aria-busy', String(busy));
+      });
+  }
+
+  function setPrivateLinkOperation(headline, detail = '', options = {}) {
+    if (!privateLinkOperation || !privateLinkOperationHeadline || !privateLinkOperationDetail) return;
+    privateLinkRetryAction = typeof options.retryAction === 'function' ? options.retryAction : null;
+    privateLinkOperation.hidden = !headline;
+    privateLinkOperationHeadline.textContent = headline || '';
+    privateLinkOperationDetail.textContent = detail || '';
+    privateLinkOperationDetail.hidden = !detail;
+    if (privateLinkOperationLink) {
+      const subscribeUrl = typeof options.subscribeUrl === 'string' ? options.subscribeUrl : '';
+      const portalUrl = !subscribeUrl && typeof options.portalUrl === 'string' ? options.portalUrl : '';
+      const linkUrl = subscribeUrl || portalUrl;
+      privateLinkOperationLink.hidden = !linkUrl;
+      privateLinkOperationLink.href = linkUrl;
+      privateLinkOperationLink.textContent = subscribeUrl
+        ? window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'set up a subscription'
+        : window.LinkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →';
+    }
+    if (privateLinkOperationRetry) {
+      privateLinkOperationRetry.hidden = !privateLinkRetryAction;
+      privateLinkOperationRetry.textContent = window.LinkCopy.PRIVATE_LINK_RETRY_CTA || 'try again';
+    }
+  }
+
+  function renderPrivateLinkStatus(data) {
+    latestPrivateLink = data || {};
+    const operation = latestPrivateLink.operation;
+    if (privateLinkSetup) {
+      privateLinkSetup.hidden = !!operation && !PRIVATE_LINK_TERMINAL_PHASES.has(operation.phase);
+    }
+    if (!operation) {
+      if (latestPrivateLink.state === 'inconsistent') {
+        setPrivateLinkOperation(
+          window.LinkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
+          '',
+          { retryAction: startPrivateLinkSetup },
+        );
+      } else {
+        setPrivateLinkOperation('');
+      }
+      return;
+    }
+
+    const phase = operation.phase;
+    let headline = window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network...';
+    let detail = typeof operation.guidance === 'string' ? operation.guidance : '';
+    let retryAction = null;
+    let subscribeUrl = '';
+
+    if (phase === 'enabled') {
+      headline = window.LinkCopy.PRIVATE_LINK_SETUP_SUCCESS || 'your private network is on.';
+    } else if (phase === 'needs_subscription') {
+      headline = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || 'your private network needs a subscription';
+      detail = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL || detail;
+      subscribeUrl = typeof operation.subscribe_url === 'string' ? operation.subscribe_url : '';
+    } else if (phase === 'revoked' || phase === 'error') {
+      headline = window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.";
+      retryAction = startPrivateLinkSetup;
+    }
+
+    const portalUrl = !subscribeUrl && typeof operation.portal_url === 'string'
+      ? operation.portal_url
+      : '';
+
+    setPrivateLinkOperation(headline, detail, { portalUrl, subscribeUrl, retryAction });
+  }
+
+  async function fetchPrivateLinkStatus() {
+    const data = await window.apiJson('/app/network/api/private-link', { headers: { accept: 'application/json' } });
+    renderPrivateLinkStatus(data || {});
+    return data || {};
+  }
+
+  async function refreshPrivateLinkStatus() {
+    try {
+      await fetchPrivateLinkStatus();
+    } catch (err) {
+      window.logError?.(err, { context: 'link: private link status failed' });
+    }
+  }
+
+  async function pollPrivateLinkUntilTerminal() {
+    const deadline = Date.now() + PRIVATE_LINK_POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const status = await fetchPrivateLinkStatus();
+      const phase = status?.operation?.phase;
+      if (PRIVATE_LINK_TERMINAL_PHASES.has(phase)) {
+        return status;
+      }
+      await privateLinkSleep(1000);
+    }
+    setPrivateLinkOperation(
+      window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
+      'timed out waiting for your private network.',
+      { retryAction: startPrivateLinkSetup },
+    );
+    return null;
+  }
+
+  async function startPrivateLinkSetup() {
+    setPrivateLinkButtonsBusy(true);
+    setPrivateLinkOperation(window.LinkCopy.PRIVATE_LINK_SETTING_UP || 'setting up your private network...');
+    try {
+      const start = await window.apiJson('/app/network/private-link/enable', { method: 'POST' });
+      const consentUrl = start?.operation?.portal_url;
+      if (consentUrl) window.open(consentUrl, '_blank', 'noopener');
+      renderPrivateLinkStatus({ operation: start?.operation || null });
+      await pollPrivateLinkUntilTerminal();
+      await refreshStatus();
+    } catch (err) {
+      setPrivateLinkOperation(
+        window.LinkCopy.PRIVATE_LINK_SETUP_FAILED || "couldn't finish setting up your private network.",
+        err?.rawDetail || err?.serverMessage || err?.message || '',
+        { retryAction: startPrivateLinkSetup },
+      );
+      window.logError?.(err, { context: 'link: private link setup failed' });
+    } finally {
+      setPrivateLinkButtonsBusy(false);
+    }
+  }
+
+  async function disablePrivateLink() {
+    setPrivateLinkButtonsBusy(true);
+    try {
+      const result = await window.apiJson('/app/network/private-link/disable', { method: 'POST' });
+      const status = result?.status || {};
+      latestPrivateLink = status;
+      if (status.state === 'not_enabled') {
+        setPrivateLinkOperation(window.LinkCopy.PRIVATE_LINK_DISABLE_SUCCESS || 'your private network is off.');
+      } else {
+        setPrivateLinkOperation(
+          window.LinkCopy.PRIVATE_LINK_NEEDS_REPAIR || 'your private network needs setting up again.',
+          '',
+          { retryAction: startPrivateLinkSetup },
+        );
+      }
+      await refreshStatus();
+    } catch (err) {
+      setPrivateLinkOperation(
+        window.LinkCopy.PRIVATE_LINK_DISABLE_FAILED || "couldn't turn off your private network.",
+        err?.rawDetail || err?.serverMessage || err?.message || '',
+        { retryAction: disablePrivateLink },
+      );
+      window.logError?.(err, { context: 'link: private link disable failed' });
+    } finally {
+      setPrivateLinkButtonsBusy(false);
+    }
+  }
+
+
+
+
+  function selectReachMode(mode) {
+    viewedMode = mode;
+    renderSelector(latestStatus || {});
+  }
+
+  hostAddressApply?.addEventListener('click', applyHostAddressOverride);
+  hostAddressClear?.addEventListener('click', clearHostAddressOverride);
+  hostAddressInput?.addEventListener('input', () => setHostAddressError(''));
+  splCheckAgain?.addEventListener('click', () => {
+    refreshStatus();
+    refreshPrivateLinkStatus();
+  });
+  segByo?.addEventListener('click', () => selectReachMode('byo'));
+  segHosted?.addEventListener('click', () => selectReachMode('hosted'));
+  privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
+  privateLinkDisable?.addEventListener('click', disablePrivateLink);
+  privateLinkOperationRetry?.addEventListener('click', () => {
+    if (privateLinkRetryAction) privateLinkRetryAction();
+  });
+
+
+  function showWorkspaceLoading() {
+    if (dashboardContent) dashboardContent.hidden = true;
+    if (!stateGate || !window.SurfaceState) return;
+    stateGate.hidden = false;
+    stateGate.innerHTML = window.SurfaceState.loading({ text: 'loading network...' });
+  }
+
+  function revealWorkspace() {
+    if (stateGate) {
+      stateGate.hidden = true;
+      stateGate.innerHTML = '';
+    }
+    if (dashboardContent) dashboardContent.hidden = false;
+  }
+
+  function showWorkspaceStateError(err) {
+    if (dashboardContent) dashboardContent.hidden = true;
+    if (!stateGate || !window.SurfaceState) return;
+    stateGate.hidden = false;
+    stateGate.innerHTML = window.SurfaceState.error({
+      heading: "Couldn't load network",
+      retry: true,
+      serverMessage: err?.serverMessage,
+      detail: err,
+    });
+    stateGate.querySelector('.surface-state-retry')?.addEventListener('click', initLinkWorkspace, { once: true });
+  }
+
+  async function loadNetworkState() {
+    const data = await window.apiJson('/app/network/api/state', { headers: { accept: 'application/json' } });
+    if (!data || typeof data.posture !== 'string') {
+      throw new Error('network state missing posture');
+    }
+    if (!data.link_copy || typeof data.link_copy !== 'object') {
+      throw new Error('network state missing link_copy');
+    }
+    if (!window.NetworkRender || typeof window.NetworkRender.applyCopy !== 'function') {
+      throw new Error('network renderer unavailable');
+    }
+    window.LinkCopy = data.link_copy;
+    window.NetworkRender.applyCopy(document, window.LinkCopy);
+    latestStatus = { posture: data.posture };
+    renderReach(latestStatus);
+    return data;
+  }
+
+  async function initLinkWorkspace() {
+    showWorkspaceLoading();
+    try {
+      await loadNetworkState();
+      revealWorkspace();
+      initLink();
+    } catch (err) {
+      window.logError?.(err, { context: 'link: state load failed' });
+      showWorkspaceStateError(err);
+    }
+  }
+
+  function initLink() {
+    if (linkInitialized) return;
+    linkInitialized = true;
+    refreshStatus();
+    refreshPrivateLinkStatus();
+    loadIdentity();
+    const identityCopyBtn = document.getElementById('link-identity-id-copy');
+    if (identityCopyBtn) {
+      identityCopyBtn.addEventListener('click', async () => {
+        const idValue = document.getElementById('link-identity-id-value');
+        const text = idValue ? idValue.textContent : '';
+        if (!text) return;
+        const ok = await clipboardWriteText(text);
+        showToast(ok ? (window.LinkCopy.IDENTITY_ID_COPY_SUCCESS_TOAST || 'journal id copied')
+                     : (window.LinkCopy.IDENTITY_ID_COPY_FAIL_TOAST || "couldn't copy journal id"));
+      });
+    }
+    setInterval(refreshStatus, 15000);
+    setInterval(refreshPrivateLinkStatus, 15000);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLinkWorkspace);
+  } else {
+    initLinkWorkspace();
+  }
+})();
+</script>

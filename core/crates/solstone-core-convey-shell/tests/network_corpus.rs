@@ -186,11 +186,7 @@ fn assert_not_converted(response: &(StatusCode, String, Option<String>, Vec<u8>)
 async fn network_corpus_replays_gated_cases_and_asserts_native_deferrals() {
     let corpus = corpus();
     let deferred = deferred_cases(&corpus);
-    assert_eq!(
-        deferred.len(),
-        6,
-        "all six established routes defer natively"
-    );
+    assert_eq!(deferred.len(), 4, "four established routes defer natively");
     let mut asserted = 0;
     let mut deferred_asserted = 0;
 
@@ -254,7 +250,7 @@ async fn network_corpus_replays_gated_cases_and_asserts_native_deferrals() {
         }
     }
     assert_eq!(asserted, 18, "every fixture case issues an assertion");
-    assert_eq!(deferred_asserted, 6, "every deferral is actively asserted");
+    assert_eq!(deferred_asserted, 4, "every deferral is actively asserted");
 }
 
 #[tokio::test]
