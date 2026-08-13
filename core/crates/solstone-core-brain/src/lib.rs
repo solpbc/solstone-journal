@@ -27,7 +27,10 @@ pub use presentation::{BrainEvidencePresentation, BrainPresentation, present_bra
 pub use record::{
     BrainStateRecord, ValidationError, validate_brain_state_record, validate_refresh_probe_outcome,
 };
-pub use runtime_health::{RuntimeRecordInspection, inspect_runtime_health};
+pub use runtime_health::{
+    RuntimeRecordInspection, RuntimeRetryError, RuntimeRetryRecord, inspect_runtime_health,
+    inspect_runtime_retry_token, request_runtime_retry,
+};
 pub use writer::{
     BeginPrerequisiteRenewal, BeginRefreshError, BrainRefreshPermit, REACHABLE_WRITE_CASES,
     RuntimeFailureResult, WriterError, abandon_prerequisite_renewal, abandon_refresh,

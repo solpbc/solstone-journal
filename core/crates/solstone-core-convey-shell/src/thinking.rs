@@ -14,6 +14,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use serde_json::{Value, json};
+use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::{JournalRoot, asset_response};
 
@@ -246,6 +247,17 @@ fn server_error(detail: String) -> Response {
         detail,
     )
         .into_response()
+}
+
+#[allow(dead_code)] // Wired by Thinking write routes in W2 chunks 2–3.
+fn thinking_config_busy_response() -> Response {
+    error_envelope(
+        "config_busy",
+        "I couldn't save those settings right now because they were busy. Try again in a moment.",
+        "settings are busy; try again",
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
+    .into_response()
 }
 
 #[cfg(test)]
