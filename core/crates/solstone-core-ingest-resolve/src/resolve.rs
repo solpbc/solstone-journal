@@ -76,6 +76,10 @@ pub struct ApplyPlan {
     pub landed_segment: String,
     pub segment: SegmentDir,
     pub files: Vec<PlannedFile>,
+    /// INDEPENDENT WRITE-PATH PARITY FIX: this lode carries Python's
+    /// directory-creation fact because it already changes ingest, not because
+    /// the observer read path depends on it.
+    pub created_segment: bool,
 }
 
 /// A terminal sidecar conflict in an otherwise content-identical candidate.
@@ -274,6 +278,7 @@ pub fn resolve_ingest(
                         },
                     })
                     .collect(),
+                created_segment: true,
             }));
         }
     }
@@ -479,6 +484,7 @@ fn plan_for_candidate(
                 },
             })
             .collect(),
+        created_segment: false,
     }
 }
 

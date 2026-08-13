@@ -152,7 +152,9 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
         segment: plan.segment.clone(),
         files: applied,
         bytes_written,
-        should_advance: plan.status != PlanStatus::Duplicate,
+        // Independent write-path parity fix: Python advances only after minting
+        // a segment directory, never merely because a candidate plan is non-duplicate.
+        should_advance: plan.created_segment,
     })
 }
 
