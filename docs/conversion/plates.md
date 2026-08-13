@@ -326,7 +326,7 @@ endpoint that rejects a tool-bearing request produces a **named reason code** (�
 fallback), a synthesised tool call arriving as prose under `finish_reason: "stop"` must **not** be
 finalized as an answer, and the bundled lane must be **exercised against the real runtime** before
 the cut. Full reasoning:
-[`records/decisions/260810-vpe-the-native-runtime-speaks-native-tool-calls-on-every-lane.md`](../../records/decisions/260810-vpe-the-native-runtime-speaks-native-tool-calls-on-every-lane.md).
+**the native runtime speaks native tool calls on every lane**.
 📌 **This paragraph was written at wave 0 and three later wave scopes were authored without
 re-reading it** — the divergence was taken implicitly in landed work and recorded only afterwards.
 ⛔ A conversion dictionary is only worth what re-reading it costs. ⚠ **And the condenser is local-only** —
@@ -383,18 +383,16 @@ documentation was what was wrong.
 
 Local model runtime, inside the security boundary. **Native**: `solstone-core-brain` owns the durable
 record; `solstone-core-local` owns the launch plan, the loopback bind, the connect client, the NVIDIA
-probe, the install machinery and `generate`. Both are reached as `solstone-core brain …` and
-`solstone-core local …` subcommands of the packaged binary, ⛔ never as a standalone executable — the
-wheel check builds an exact member set from a one-name script list, so a separate binary is unreachable
-on an installed host and a Rust-only gate cannot see that it is.
+probe, the install machinery and `generate`. Those command surfaces are reached as `solstone-core brain
+…` and `solstone-core local …` subcommands of the packaged binary. On Linux that binary is static musl
+and cannot host a Vulkan loader, so `solstone-core-vulkan-probe` ships separately as a Linux-only glibc
+sibling helper.
+Python `local_vulkan.py` still owns production probing today; the helper makes the Rust probe shippable
+for later selection.
 
-⚠ **Four things here are still Python, each for a stated reason**, so the remainder is not read as
+⚠ **Three things here are still Python, each for a stated reason**, so the remainder is not read as
 unfinished work:
 
-- the **Vulkan** device enumeration and its VRAM-usage sibling — they call `libvulkan` in-process
-  through `ctypes`, and `solstone-core` ships **static musl** on both Linux lanes, which cannot
-  `dlopen`. That is linkage, not effort; the shape it needs is a separately packaged, dynamically
-  linked helper on its own glibc lanes, the way the speaker analyzer ships;
 - the **endpoint and confidential arms** of the provider module, and the request builder, schema
   preparation, response parser and finish-reason normaliser they share with the bundled arm — those
   belong to `P-BYO` and `P-SPP`, and they are **egress**;
@@ -477,6 +475,11 @@ driver fault cannot take down the journal; a second, separate call reports per-d
 dynamically linked helper on its own glibc lanes, the way the speaker analyzer ships. ✅ The NVIDIA probe
 is **not** affected: it is a subprocess and a file read.
 
+The shipped shape is `solstone-core-vulkan-probe`: a Linux-only sibling helper
+which dynamically loads the host Vulkan loader and emits the isolated JSON
+device protocol. It must remain independent of the ONNX speaker helper so an
+audio-runtime loader failure cannot prevent GPU enumeration.
+
 🔴 **A native verb reaches this plate as `solstone-core <verb>`, never as a standalone binary.** The
 wheel check builds an **exact** member set from a one-name script list, and the Python↔Rust seam resolves
 that one name behind a version handshake. A separate executable is unreachable on an installed host, and
@@ -524,7 +527,7 @@ Per-statement embeddings → speaker fingerprints. ✅ A native kernel already s
 
 ✅ **THE CUT LANDED 2026-08-09 — this plate is DONE. Speaker identity runs entirely in Rust, and an owner's existing voiceprints resolve with no re-teach.** The per-statement embeddings, the voiceprint store, the label and correction stores, attribution layers 1-3, accumulation, the owner centroid, discovery, identify/undo and the backfill ledger are all native; every Python durable writer of the seven paths is retired, `apps/speakers/speaker_resolve_transport.py` is the sole Python transport, and the native verbs answer on the **built** binary — including the **label-write and correction verbs, which did not exist before the cut**. 🔴 **Proven by re-running the shipped reader IN PLACE on a real store a fourth time: 44/44 files, 51,186/51,186 rows, all version 0, zero unrecognized members — identical to all three earlier runs.** ⛔ The probe travelled to the data; the data never travelled.
 
-🔴 **"ZERO PYTHON" DOES NOT MEAN THE MODULES ARE GONE, AND A GATE KEYED ON THAT IS WRONG.** `save_speaker_labels` and `append_speaker_correction` still **exist** — as **transport shims** calling `native_speakers.*`. **The name survives; the write does not.** Several durable-write functions also survive **for Lane B's entity-merge flow only** (`update_speaker_labels`, `remap_speaker_corrections_for_entity_merge`, `apply_entity_merge_voiceprint_inverse`, `save_voiceprints_batch`), reachable **solely** from `think/entities/merge.py` — verified caller by caller. ⛔ **So the enforceable question is never "is the symbol defined"** — that reading goes green on a destructive implementation *and* red on a correct one — **but "does a call reach a write primitive with a path resolving to a speaker artifact."** `scripts/check_speaker_identity_cutover.py` asserts exactly that against a committed census. ⚠ **Its unit tests run `all_files=True` while the Makefile runs the CLI's `git ls-files` default — different code paths, so a green unit test does not prove the wired gate catches anything.** Falsify the mode you actually ship.
+🔴 **"ZERO PYTHON" DOES NOT MEAN THE MODULES ARE GONE, AND A GATE KEYED ON THAT IS WRONG.** `save_speaker_labels` and `append_speaker_correction` still **exist** — as **transport shims** calling `native_speakers.*`. **The name survives; the write does not.** Several durable-write functions also survive **for the entity-merge flow only** (`update_speaker_labels`, `remap_speaker_corrections_for_entity_merge`, `apply_entity_merge_voiceprint_inverse`, `save_voiceprints_batch`), reachable **solely** from `think/entities/merge.py` — verified caller by caller. ⛔ **So the enforceable question is never "is the symbol defined"** — that reading goes green on a destructive implementation *and* red on a correct one — **but "does a call reach a write primitive with a path resolving to a speaker artifact."** `scripts/check_speaker_identity_cutover.py` asserts exactly that against a committed census. ⚠ **Its unit tests run `all_files=True` while the Makefile runs the CLI's `git ls-files` default — different code paths, so a green unit test does not prove the wired gate catches anything.** Falsify the mode you actually ship.
 
 ⚠ **ONE THING THE CUT DELIBERATELY DID NOT CLOSE.** ✅ **The owner-contamination guard is now native and fail-closed for both automatic and UI writes; the Python `routes.py` surface no longer exists.** 🔴 **There is still NO cross-language differential for this plate**: `make check-differentials` runs nine legs, none of them speaker, and the speaker crates declare no `differential` feature — so the Makefile's own `every_differential_test_is_named_in_its_own_gate` purity assertion passes **vacuously**. ⛔ **An assertion cannot detect an absence, and "differentials green" is therefore not evidence about this plate.** The Python oracle stays recoverable in history at `45990f652`.
 
