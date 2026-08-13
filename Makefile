@@ -110,10 +110,111 @@ PDF_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 
 # the pinned URL/digest table — and the VAD targets reuse it rather than
 # provisioning a second copy. Only the wheel *payload* is per-package, because
 # each helper's build.rs rpath points at its own $ORIGIN/../lib/<package>.
-ONNX_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
-ONNX_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/speakers-analyze-runtime-link/$(ONNX_RUNTIME_HOST_TARGET)
-VAD_ANALYZE_HOST_ORT_ENV := ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)" LD_LIBRARY_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"
-REQUIRE_ONNX_HOST_RUNTIME = test -f "$(ONNX_RUNTIME_HOST_LINK_DIR)/libonnxruntime.so.1" || { echo "the pinned host ONNX Runtime is required to build and test the shipped analysis helpers; run 'make check-rust-onnx-stage' once outside make ci, then retry" >&2; exit 1; }
+# These inputs define what the native integrity gate measures. Protect the
+# shell, physical repository root, host probes, and pinned mapping from Make's
+# command-line variable precedence so a caller cannot redirect or narrow the
+# gate while still receiving a successful result.
+override SHELL := /bin/sh
+override .SHELLFLAGS := -c
+override REPO_ROOT := $(shell /bin/pwd -P)
+override HOST_SYSTEM := $(shell /usr/bin/uname -s)
+override HOST_ARCH := $(shell /usr/bin/uname -m)
+override ONNX_RUNTIME_LINUX_X86_64_TARGET := linux-x86_64
+override ONNX_RUNTIME_LINUX_X86_64_LINK_NAMES := libonnxruntime.so.1.25.0 libonnxruntime.so.1 libonnxruntime.so
+override ONNX_RUNTIME_LINUX_X86_64_DIGEST := 6976c9c6b2db120e835a7091e2f4bd2308a76d3856a7181beb7e7a9b1e08f9e5
+override ONNX_RUNTIME_LINUX_AARCH64_TARGET := linux-aarch64
+override ONNX_RUNTIME_LINUX_AARCH64_LINK_NAMES := libonnxruntime.so.1.25.0 libonnxruntime.so.1 libonnxruntime.so
+override ONNX_RUNTIME_LINUX_AARCH64_DIGEST := d47425026b2474e1deb0b8cf22f74cd943539af85873aa3fb8052862445beef3
+override ONNX_RUNTIME_MACOS_ARM64_TARGET := macos-arm64
+override ONNX_RUNTIME_MACOS_ARM64_LINK_NAMES := libonnxruntime.1.25.0.dylib libonnxruntime.dylib
+override ONNX_RUNTIME_MACOS_ARM64_DIGEST := bafe7d3f3fa8e31195501e5694e73ef240708d5df039feb272b8d506d2783a74
+override ONNX_RUNTIME_HOST_TARGET :=
+override ONNX_RUNTIME_HOST_LINK_NAMES :=
+override ONNX_RUNTIME_HOST_DIGEST :=
+override ONNX_RUNTIME_HOST_HASH_PROGRAM :=
+override ONNX_RUNTIME_HOST_HASH_ARGS :=
+override ONNX_RUNTIME_HOST_LOADER_ENV :=
+
+ifeq ($(HOST_SYSTEM),Linux)
+ifneq ($(filter x86_64 amd64,$(HOST_ARCH)),)
+override ONNX_RUNTIME_HOST_TARGET := $(ONNX_RUNTIME_LINUX_X86_64_TARGET)
+override ONNX_RUNTIME_HOST_DIGEST := $(ONNX_RUNTIME_LINUX_X86_64_DIGEST)
+override ONNX_RUNTIME_HOST_LINK_NAMES := $(ONNX_RUNTIME_LINUX_X86_64_LINK_NAMES)
+else ifneq ($(filter aarch64 arm64,$(HOST_ARCH)),)
+override ONNX_RUNTIME_HOST_TARGET := $(ONNX_RUNTIME_LINUX_AARCH64_TARGET)
+override ONNX_RUNTIME_HOST_DIGEST := $(ONNX_RUNTIME_LINUX_AARCH64_DIGEST)
+override ONNX_RUNTIME_HOST_LINK_NAMES := $(ONNX_RUNTIME_LINUX_AARCH64_LINK_NAMES)
+endif
+override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/sha256sum
+override ONNX_RUNTIME_HOST_LOADER_ENV := LD_LIBRARY_PATH
+else ifeq ($(HOST_SYSTEM),Darwin)
+ifneq ($(filter arm64 aarch64,$(HOST_ARCH)),)
+override ONNX_RUNTIME_HOST_TARGET := $(ONNX_RUNTIME_MACOS_ARM64_TARGET)
+override ONNX_RUNTIME_HOST_DIGEST := $(ONNX_RUNTIME_MACOS_ARM64_DIGEST)
+override ONNX_RUNTIME_HOST_LINK_NAMES := $(ONNX_RUNTIME_MACOS_ARM64_LINK_NAMES)
+override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/shasum
+override ONNX_RUNTIME_HOST_HASH_ARGS := -a 256
+override ONNX_RUNTIME_HOST_LOADER_ENV := DYLD_LIBRARY_PATH
+endif
+endif
+
+override ONNX_RUNTIME_HOST_LINK_DIR := $(REPO_ROOT)/target/speakers-analyze-runtime-link/$(ONNX_RUNTIME_HOST_TARGET)
+override ONNX_RUNTIME_HASH_PROBE_TEXT := solstone checksum verifier probe
+override ONNX_RUNTIME_HASH_PROBE_DIGEST := 1629c6bcea388b9f721343d214f545f712c0bc70ed9f34866a08b0f8ccb2edb7
+
+ifeq ($(ONNX_RUNTIME_HOST_LOADER_ENV),DYLD_LIBRARY_PATH)
+# macOS system binaries strip DYLD_* from their inherited environment under
+# SIP. Preserve an explicit Make value (`make DYLD_LIBRARY_PATH=...`) instead
+# of pretending a value stripped before the recipe shell is still observable.
+override VAD_ANALYZE_HOST_ORT_ENV := ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)" DYLD_LIBRARY_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)$(if $(DYLD_LIBRARY_PATH),:$(DYLD_LIBRARY_PATH))"
+else
+override VAD_ANALYZE_HOST_ORT_ENV := ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)" LD_LIBRARY_PATH="$(ONNX_RUNTIME_HOST_LINK_DIR)$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"
+endif
+
+REQUIRE_SUPPORTED_ONNX_HOST = test -n "$(ONNX_RUNTIME_HOST_TARGET)" || { echo "unsupported host for the pinned ONNX Runtime: observed $(HOST_SYSTEM)/$(HOST_ARCH); supported: Linux/x86_64, Linux/aarch64, Darwin/arm64" >&2; exit 1; }
+
+# Define a shell function that first proves the selected digest instrument on
+# fixed known input, then judges every link name from the pinned target table.
+# Return 20 when the instrument is broken and 10 when staged data is invalid;
+# callers can therefore prescribe a repair that can actually fix the failure.
+define DEFINE_ONNX_RUNTIME_VALIDATOR
+validate_onnx_runtime() { \
+	validation_error=''; \
+	if [ ! -x "$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" ]; then \
+		validation_error="ONNX Runtime checksum verifier is unavailable: $(ONNX_RUNTIME_HOST_HASH_PROGRAM); install or repair that verifier and retry"; \
+		return 20; \
+	fi; \
+	probe_file=$$(mktemp "$${TMPDIR:-/var/tmp}/solstone-onnx-hash-probe-XXXXXX") || { validation_error='could not create checksum verifier probe file'; return 20; }; \
+	printf '%s\n' '$(ONNX_RUNTIME_HASH_PROBE_TEXT)' > "$$probe_file"; \
+	if probe_output=$$("$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" $(ONNX_RUNTIME_HOST_HASH_ARGS) "$$probe_file" 2>&1); then probe_status=0; else probe_status=$$?; fi; \
+	rm -f "$$probe_file"; \
+	probe_digest=$${probe_output%%[[:space:]]*}; \
+	if [ "$$probe_status" -ne 0 ] || [ "$$probe_digest" != "$(ONNX_RUNTIME_HASH_PROBE_DIGEST)" ]; then \
+		validation_error="ONNX Runtime checksum verifier failed its known-input check: $(ONNX_RUNTIME_HOST_HASH_PROGRAM) $(ONNX_RUNTIME_HOST_HASH_ARGS); install or repair that verifier and retry"; \
+		return 20; \
+	fi; \
+	for library in $(ONNX_RUNTIME_HOST_LINK_NAMES); do \
+		library_path="$(ONNX_RUNTIME_HOST_LINK_DIR)/$$library"; \
+		if [ ! -f "$$library_path" ] || [ ! -r "$$library_path" ]; then \
+			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual missing, non-file, or unreadable); run 'make check-rust-onnx-stage' and retry"; \
+			return 10; \
+		fi; \
+		if digest_output=$$("$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" $(ONNX_RUNTIME_HOST_HASH_ARGS) "$$library_path" 2>&1); then digest_status=0; else digest_status=$$?; fi; \
+		actual_digest=$${digest_output%%[[:space:]]*}; \
+		if [ "$$digest_status" -ne 0 ] || [ -z "$$actual_digest" ]; then \
+			validation_error="could not checksum pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual checksum input failure); run 'make check-rust-onnx-stage' and retry"; \
+			return 10; \
+		fi; \
+		if [ "$$actual_digest" != "$(ONNX_RUNTIME_HOST_DIGEST)" ]; then \
+			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual $$actual_digest); run 'make check-rust-onnx-stage' and retry"; \
+			return 10; \
+		fi; \
+	done; \
+	return 0; \
+}
+endef
+
+REQUIRE_ONNX_HOST_RUNTIME = $(DEFINE_ONNX_RUNTIME_VALIDATOR); if validate_onnx_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 PDF_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
 PDF_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/pdfium-runtime-link/$(PDF_RUNTIME_HOST_TARGET)
 REQUIRE_PDF_HOST_RUNTIME = test -f "$(PDF_RUNTIME_HOST_LINK_DIR)/libpdfium.so" || { echo "the pinned host PDFium runtime is required to test solstone-core-pdf; run 'make check-rust-pdf-stage' once outside make ci, then retry" >&2; exit 1; }
@@ -154,7 +255,7 @@ JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu
 # report uv-absence themselves. Rust-only and frozen/gated goals are likewise
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
-UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-ios check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-deny check-service-legacy-evidence service-legacy-evidence-capture audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
+UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-ios check-rust-macos check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-deny check-service-legacy-evidence service-legacy-evidence-capture audit ci verify test build format format-check hopper-install test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
 ifndef UV
 ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -322,18 +423,41 @@ wheel-vulkan-probe-linux-aarch64:
 	rm -f dist/solstone_core_vulkan_probe-*.whl
 	MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vulkan-probe --wheel
 
-# Host-side staged runtime for the ONNX-linked crates' own cargo test runs.
-# Directory-existence rule, so a populated stage is not re-downloaded; the wheel
-# targets above always restage explicitly for their own cross target.
-$(ONNX_RUNTIME_HOST_LINK_DIR):
-	python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json
-
 # Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
 # it stays OUTSIDE ci/ci-under-poison, which cannot shell to an interpreter at
-# all. Run it once per checkout; the rule is directory-existence, so a populated
-# stage is not re-downloaded.
-check-rust-onnx-stage: $(ONNX_RUNTIME_HOST_LINK_DIR)
-	@echo "host ONNX Runtime staged at $(ONNX_RUNTIME_HOST_LINK_DIR)"
+# all. Validate every required link and its pinned digest on every invocation;
+# only invalid data invokes the existing staging operation. A healthy checkout
+# is therefore a no-op, while a surviving directory can no longer hide a
+# missing or corrupt library. Staging remains a single-writer operation, as it
+# was before this target became a validator; validation and Cargo consumption
+# are not an atomic snapshot.
+check-rust-onnx-stage:
+	@set -u; \
+	$(REQUIRE_SUPPORTED_ONNX_HOST); \
+	$(DEFINE_ONNX_RUNTIME_VALIDATOR); \
+	if validate_onnx_runtime; then \
+		echo "host ONNX Runtime verified at $(ONNX_RUNTIME_HOST_LINK_DIR)"; \
+		exit 0; \
+	else \
+		validation_status=$$?; \
+	fi; \
+	if [ "$$validation_status" -eq 20 ]; then \
+		echo "$$validation_error" >&2; \
+		exit "$$validation_status"; \
+	fi; \
+	echo "$$validation_error" >&2; \
+	echo "repairing the pinned host ONNX Runtime stage" >&2; \
+	if ! python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json; then \
+		echo "failed to stage the pinned host ONNX Runtime" >&2; \
+		exit 1; \
+	fi; \
+	if validate_onnx_runtime; then \
+		echo "host ONNX Runtime staged and verified at $(ONNX_RUNTIME_HOST_LINK_DIR)"; \
+	else \
+		validation_status=$$?; \
+		echo "$$validation_error" >&2; \
+		exit "$$validation_status"; \
+	fi
 
 # Staging PDFium also shells to Python and verifies a GitHub attestation, so it
 # stays OUTSIDE ci/ci-under-poison. The runtime-loaded crate itself remains in
@@ -468,21 +592,39 @@ check-rust-race: build
 	fi
 
 # macOS is a core platform with parity to Linux as an acceptance criterion
-# (founder, 2026-08-10), and until this target existed NOTHING compiled the
-# `#[cfg(target_os = "macos")]` paths: check-rust-ios targets aarch64-apple-ios,
-# which does not build macos cfg blocks, and no other gate names a darwin target.
-# Scoped to the crates that actually carry macOS code and cross-compile from
-# Linux; solstone-core-body-ingest is excluded because ring and libsqlite3-sys
-# need a darwin C toolchain, which is an environment limit rather than a defect.
+# (founder, 2026-08-10). This is deliberately native to the macOS SDK host:
+# Linux cross-compilation could not build the workspace's Darwin C dependencies
+# and the former four-package include list omitted both new crates and tests.
+# `--workspace --all-targets --no-run` makes every current and future member,
+# including its test targets, part of the gate by default. There are no crate
+# exclusions; a source that does not compile on macOS is work, not an excuse to
+# narrow the gate.
 check-rust-macos:
-	@$(REQUIRE_CARGO)
-	@$(REQUIRE_RUSTUP)
-	@rustup target list --installed 2>/dev/null | grep -qx "$(MACOS_TARGET)" || { echo "Rust target $(MACOS_TARGET) is required for the macOS gate; run rustup target add $(MACOS_TARGET)" >&2; exit 1; }
-	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core-system -p solstone-core-system-health -p solstone-core-cli -p solstone-core-local -p solstone-core-journal-io -p solstone-core-steward-prune --lib --target $(MACOS_TARGET) --locked
-	cargo check --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --target $(MACOS_TARGET) --locked
+	@set -eu; \
+	if [ "$(HOST_SYSTEM)" = "Linux" ] && [ -n "$(ONNX_RUNTIME_HOST_TARGET)" ]; then \
+		echo "check-rust-macos: not run on $(HOST_SYSTEM)/$(HOST_ARCH); the full-workspace gate is native to the macOS SDK host"; \
+		exit 0; \
+	fi; \
+	$(REQUIRE_SUPPORTED_ONNX_HOST); \
+	if [ "$(HOST_SYSTEM)" != "Darwin" ]; then \
+		echo "unsupported host for check-rust-macos: observed $(HOST_SYSTEM)/$(HOST_ARCH); supported execution host: Darwin/arm64" >&2; \
+		exit 1; \
+	fi; \
+	$(REQUIRE_CARGO); \
+	command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the macOS gate; install rustup and retry" >&2; exit 1; }; \
+	installed_targets=$$(mktemp "$${TMPDIR:-/var/tmp}/solstone-rustup-targets-XXXXXX"); \
+	trap 'rm -f "$$installed_targets"' EXIT INT TERM; \
+	if ! rustup target list --installed > "$$installed_targets" 2>&1; then \
+		echo "rustup failed to inspect installed targets for the macOS gate" >&2; \
+		exit 1; \
+	fi; \
+	grep -qx "aarch64-apple-darwin" "$$installed_targets" || { echo "Rust target aarch64-apple-darwin is required for the macOS gate; run rustup target add aarch64-apple-darwin" >&2; exit 1; }; \
+	$(REQUIRE_ONNX_HOST_RUNTIME); \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml --workspace --all-targets --no-run --target aarch64-apple-darwin --locked
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)
+	@# Host-only process/server crates, including Convey, are not iOS target concerns in this wave.
 	@set -eu; \
 	if [ "$$(uname -s)" != "Darwin" ]; then \
 		echo "check-rust-ios: not run on $$(uname -s); the Apple SDK is a native macOS-host gate"; \
@@ -491,7 +633,6 @@ check-rust-ios:
 		command -v xcrun >/dev/null 2>&1 || { echo "xcrun is required for the iOS gate; install Xcode and retry" >&2; exit 1; }; \
 		xcrun --sdk iphoneos --show-sdk-path >/dev/null || { echo "the iPhoneOS SDK is required for the iOS gate; select a complete Xcode installation and retry" >&2; exit 1; }; \
 		rustup target list --installed 2>/dev/null | grep -qx "$(IOS_TARGET)" || { echo "Rust target $(IOS_TARGET) is required for the iOS gate; run rustup target add $(IOS_TARGET)" >&2; exit 1; }; \
-		# Host-only process/server crates, including Convey, are not iOS target concerns in this wave. \
 		cargo check --manifest-path $(RUST_MANIFEST) --workspace --exclude solstone-core --exclude solstone-core-journal-cli --exclude solstone-core-indexer-store --exclude solstone-core-indexer-query --exclude solstone-core-entity --exclude solstone-core-facets --exclude solstone-core-sol-link --exclude solstone-core-spp-attest --exclude solstone-core-spp-ratls --exclude solstone-core-generate-wire --exclude solstone-core-transcribe --exclude solstone-core-convey-http --exclude solstone-core-convey-shell --exclude solstone-core-serving --exclude solstone-core-segment --exclude solstone-core-ingest --exclude solstone-core-entities --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-describe --exclude solstone-core-observe-audio --exclude solstone-core-body-rebuild --exclude solstone-core-vad-analyze --lib --target $(IOS_TARGET) --locked; \
 	fi
 
@@ -539,7 +680,7 @@ service-legacy-evidence-capture:
 	python3 scripts/service_legacy_capture.py --capture-input "$(CAPTURE_INPUT)"
 
 .PHONY: check-differentials
-check-differentials: $(ONNX_RUNTIME_HOST_LINK_DIR) build
+check-differentials: check-rust-onnx-stage build
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
 	@status=0; \

@@ -16,6 +16,8 @@ mod maturin_leaves;
 
 use maturin_leaves::{host_packaged_binaries, package_name};
 
+const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
 struct TempDir {
     path: PathBuf,
 }
@@ -67,6 +69,176 @@ fn write_recording_cargo_shim(path: &Path) {
     fs::write(path, script).expect("write recording Cargo shim");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
         .expect("make recording Cargo shim executable");
+}
+
+fn write_executable(path: &Path, script: &str) {
+    fs::write(path, script).expect("write executable fixture");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make fixture executable");
+}
+
+fn write_native_cargo_shim(path: &Path) {
+    if cfg!(target_os = "macos") {
+        let source = path.with_extension("c");
+        fs::write(
+            &source,
+            r#"#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+int main(int argc, char **argv) {
+    FILE *args = fopen(getenv("SOLSTONE_CARGO_ARGV"), "wb");
+    for (int i = 1; i < argc; i++) fwrite(argv[i], 1, strlen(argv[i]) + 1, args);
+    fclose(args);
+    FILE *env = fopen(getenv("SOLSTONE_CARGO_ENV"), "w");
+    const char *names[] = {"ORT_PREFER_DYNAMIC_LINK", "ORT_LIB_PATH", "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"};
+    for (int i = 0; i < 4; i++) {
+        const char *value = getenv(names[i]);
+        fprintf(env, "%s=%s\n", names[i], value ? value : "");
+    }
+    fclose(env);
+    return 0;
+}
+"#,
+        )
+        .expect("write native Cargo recorder source");
+        let output = Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(path)
+            .output()
+            .expect("compile native Cargo recorder");
+        assert!(
+            output.status.success(),
+            "compile native Cargo recorder: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    write_executable(
+        path,
+        "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_CARGO_ARGV\"\nprintf 'ORT_PREFER_DYNAMIC_LINK=%s\\nORT_LIB_PATH=%s\\nDYLD_LIBRARY_PATH=%s\\nLD_LIBRARY_PATH=%s\\n' \"${ORT_PREFER_DYNAMIC_LINK-}\" \"${ORT_LIB_PATH-}\" \"${DYLD_LIBRARY_PATH-}\" \"${LD_LIBRARY_PATH-}\" > \"$SOLSTONE_CARGO_ENV\"\n",
+    );
+}
+
+fn write_rustup_shim(path: &Path, body: &str) {
+    write_executable(path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
+}
+
+fn replace_once(text: &mut String, old: &str, new: &str) {
+    let count = text.matches(old).count();
+    assert_eq!(count, 1, "fixture seam must occur exactly once: {old}");
+    *text = text.replacen(old, new, 1);
+}
+
+fn write_host_makefile(root: &Path, system: &str, arch: &str) {
+    let mut makefile = makefile_text(&repo_root());
+    replace_once(
+        &mut makefile,
+        "override HOST_SYSTEM := $(shell /usr/bin/uname -s)",
+        &format!("override HOST_SYSTEM := {system}"),
+    );
+    replace_once(
+        &mut makefile,
+        "override HOST_ARCH := $(shell /usr/bin/uname -m)",
+        &format!("override HOST_ARCH := {arch}"),
+    );
+    let digest_key = match (system, arch) {
+        ("Linux", "x86_64" | "amd64") => "LINUX_X86_64",
+        ("Linux", "aarch64" | "arm64") => "LINUX_AARCH64",
+        ("Darwin", "arm64" | "aarch64") => "MACOS_ARM64",
+        _ => "",
+    };
+    if !digest_key.is_empty() {
+        replace_once(
+            &mut makefile,
+            &format!("override ONNX_RUNTIME_{digest_key}_DIGEST := "),
+            &format!("override ONNX_RUNTIME_{digest_key}_DIGEST := {EMPTY_SHA256}#"),
+        );
+    }
+    // Fixtures must use a real checksum implementation available on the
+    // executing host, independently of the host tuple they simulate.
+    if system == "Linux" && !Path::new("/usr/bin/sha256sum").is_file() {
+        replace_once(
+            &mut makefile,
+            "override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/sha256sum",
+            "override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/shasum",
+        );
+        replace_once(
+            &mut makefile,
+            "override ONNX_RUNTIME_HOST_HASH_ARGS :=\n",
+            "override ONNX_RUNTIME_HOST_HASH_ARGS := -a 256\n",
+        );
+    } else if system == "Darwin" && !Path::new("/usr/bin/shasum").is_file() {
+        replace_once(
+            &mut makefile,
+            "override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/shasum",
+            "override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/sha256sum",
+        );
+        replace_once(
+            &mut makefile,
+            "override ONNX_RUNTIME_HOST_HASH_ARGS := -a 256",
+            "override ONNX_RUNTIME_HOST_HASH_ARGS :=",
+        );
+    }
+    fs::write(root.join("Makefile"), makefile).expect("write host Makefile fixture");
+    fs::create_dir_all(root.join("core")).expect("create fixture core directory");
+    fs::write(root.join("core/Cargo.toml"), "[workspace]\nmembers = []\n")
+        .expect("write fixture Cargo manifest");
+}
+
+fn replace_makefile_once(root: &Path, old: &str, new: &str) {
+    let path = root.join("Makefile");
+    let mut makefile = fs::read_to_string(&path).expect("read fixture Makefile");
+    replace_once(&mut makefile, old, new);
+    fs::write(path, makefile).expect("rewrite fixture Makefile");
+}
+
+fn replace_linux_fixture_verifier(root: &Path, verifier: &Path) {
+    let (fixture_verifier, replacement_verifier) = if Path::new("/usr/bin/sha256sum").is_file() {
+        (
+            "override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/sha256sum".to_owned(),
+            format!(
+                "override ONNX_RUNTIME_HOST_HASH_PROGRAM := {}",
+                verifier.display()
+            ),
+        )
+    } else {
+        (
+                "override ONNX_RUNTIME_HOST_HASH_PROGRAM := /usr/bin/shasum\noverride ONNX_RUNTIME_HOST_LOADER_ENV := LD_LIBRARY_PATH".to_owned(),
+                format!(
+                    "override ONNX_RUNTIME_HOST_HASH_PROGRAM := {}\noverride ONNX_RUNTIME_HOST_LOADER_ENV := LD_LIBRARY_PATH",
+                    verifier.display()
+                ),
+            )
+    };
+    replace_makefile_once(root, &fixture_verifier, &replacement_verifier);
+}
+
+fn seed_runtime(root: &Path, target: &str, names: &[&str], bytes: &[u8]) -> PathBuf {
+    let link_dir = root
+        .join("target/speakers-analyze-runtime-link")
+        .join(target);
+    fs::create_dir_all(&link_dir).expect("create runtime fixture directory");
+    for name in names {
+        fs::write(link_dir.join(name), bytes).expect("write runtime fixture");
+    }
+    link_dir
+}
+
+fn fixture_path(shims: &Path) -> String {
+    format!(
+        "{}:{}",
+        shims.display(),
+        env::var("PATH").expect("PATH must be set")
+    )
+}
+
+fn nul_argv(path: &Path) -> Vec<String> {
+    fs::read(path)
+        .expect("read NUL argv log")
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8(part.to_vec()).expect("argv must be UTF-8"))
+        .collect()
 }
 
 fn dependency_keys(manifest: &str) -> BTreeSet<String> {
@@ -202,20 +374,54 @@ fn make_ci_never_executes_forbidden_interpreters() {
         return;
     }
 
-    let root = repo_root();
     let temp = TempDir::new("ci-gate-purity");
-    let shim_dir = temp.path.join("shims");
-    let venv_dir = temp.path.join("venv");
+    let root = &temp.path;
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch_output = Command::new("/usr/bin/uname")
+        .arg("-m")
+        .output()
+        .expect("inspect fixture host architecture");
+    assert!(arch_output.status.success());
+    let arch = String::from_utf8(arch_output.stdout)
+        .expect("host architecture is UTF-8")
+        .trim()
+        .to_owned();
+    write_host_makefile(root, system, &arch);
+    let shim_dir = root.join("shims");
+    let venv_dir = root.join("venv");
     let venv_bin = venv_dir.join("bin");
     let sentinel = temp.path.join("sentinel.log");
     let cargo_log = temp.path.join("cargo.log");
-    let onnx_link_dir = temp.path.join("onnx-link");
     let pdf_link_dir = temp.path.join("pdfium-link");
     fs::create_dir(&shim_dir).expect("create shim directory");
     fs::create_dir_all(&venv_bin).expect("create poison virtualenv bin directory");
-    fs::create_dir(&onnx_link_dir).expect("create fake ONNX link directory");
     fs::create_dir(&pdf_link_dir).expect("create fake PDFium link directory");
-    fs::write(onnx_link_dir.join("libonnxruntime.so.1"), []).expect("write fake ONNX runtime");
+    let onnx_names = if cfg!(target_os = "macos") {
+        ["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"].as_slice()
+    } else {
+        [
+            "libonnxruntime.so.1.25.0",
+            "libonnxruntime.so.1",
+            "libonnxruntime.so",
+        ]
+        .as_slice()
+    };
+    seed_runtime(
+        root,
+        if cfg!(target_os = "macos") {
+            "macos-arm64"
+        } else if matches!(arch.as_str(), "aarch64" | "arm64") {
+            "linux-aarch64"
+        } else {
+            "linux-x86_64"
+        },
+        onnx_names,
+        &[],
+    );
     fs::write(pdf_link_dir.join("libpdfium.so"), []).expect("write fake PDFium runtime");
     for name in ["python", "python3", "pytest", "ruff", "uv"] {
         write_forbidden_shim(&shim_dir.join(name));
@@ -235,10 +441,6 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .arg(format!("VENV={}", venv_dir.display()))
         .arg(format!("VENV_BIN={}", venv_bin.display()))
         .arg(format!("PYTHON={}", venv_bin.join("python").display()))
-        .arg(format!(
-            "ONNX_RUNTIME_HOST_LINK_DIR={}",
-            onnx_link_dir.display()
-        ))
         .arg(format!(
             "PDF_RUNTIME_HOST_LINK_DIR={}",
             pdf_link_dir.display()
@@ -283,9 +485,10 @@ fn make_ci_never_executes_forbidden_interpreters() {
     expected.push("build");
     expected.extend(["run"; if cfg!(target_os = "linux") { 10 } else { 7 }]);
     if cfg!(target_os = "macos") {
+        // Native iOS check, then native full-workspace macOS test compilation.
         expected.push("check");
+        expected.push("test");
     }
-    expected.extend(["check"; 2]);
     expected.extend(["fetch", "deny"]);
     assert_eq!(
         cargo_subcommands, expected,
@@ -489,7 +692,7 @@ fn manual_race_gate_is_selectable_without_uv() {
 }
 
 #[test]
-fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
+fn make_ci_keeps_apple_gates_native_to_apple_sdk_hosts() {
     let makefile = makefile_text(&repo_root());
     let ci = target_body(&makefile, "ci-under-poison");
     let ios = target_body(&makefile, "check-rust-ios");
@@ -514,15 +717,705 @@ fn make_ci_keeps_the_ios_gate_native_to_an_apple_sdk_host() {
         "make ci must retain the macOS cfg gate"
     );
     for protected in [
-        "-p solstone-core-system",
-        "-p solstone-core-local",
-        "--target $(MACOS_TARGET)",
+        "cargo test",
+        "--manifest-path core/Cargo.toml",
+        "--workspace",
+        "--all-targets",
+        "--no-run",
+        "--target aarch64-apple-darwin",
+        "--locked",
     ] {
         assert!(
             macos.contains(protected),
             "check-rust-macos lost its cfg-path assertion: {protected}"
         );
     }
+    for forbidden in [" -p ", "--exclude", "--lib", "cargo check"] {
+        assert!(
+            !macos.contains(forbidden),
+            "check-rust-macos silently narrowed the workspace with {forbidden}"
+        );
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct RuntimeSpecContract {
+    digest: String,
+    links: Vec<String>,
+}
+
+fn quoted_values(line: &str) -> Vec<String> {
+    line.split('"')
+        .enumerate()
+        .filter_map(|(index, value)| (index % 2 == 1).then_some(value.to_owned()))
+        .collect()
+}
+
+fn python_runtime_specs(text: &str) -> BTreeMap<String, RuntimeSpecContract> {
+    let target_start = text
+        .find("TARGETS = {")
+        .expect("stage script must define TARGETS");
+    let mut specs = BTreeMap::new();
+    let mut current_key: Option<String> = None;
+    let mut current_digest: Option<String> = None;
+    let mut current_links = Vec::new();
+    let mut reading_links = false;
+    let mut reading_digest = false;
+
+    for line in text[target_start..].lines().skip(1) {
+        let trimmed = line.trim();
+        if trimmed == "}" {
+            break;
+        }
+        if trimmed.starts_with('"') && trimmed.contains(": TargetSpec(") {
+            if let Some(key) = current_key.take() {
+                specs.insert(
+                    key,
+                    RuntimeSpecContract {
+                        digest: current_digest.take().expect("target runtime digest"),
+                        links: std::mem::take(&mut current_links),
+                    },
+                );
+            }
+            current_key = quoted_values(trimmed).into_iter().next();
+            reading_links = false;
+            reading_digest = false;
+            continue;
+        }
+        if trimmed.starts_with("runtime_sha256") {
+            let value = trimmed
+                .split_once('=')
+                .map(|(_name, value)| value)
+                .expect("runtime_sha256 assignment");
+            current_digest = quoted_values(value).into_iter().next();
+            reading_digest = current_digest.is_none();
+            continue;
+        }
+        if reading_digest {
+            current_digest = quoted_values(trimmed).into_iter().next();
+            if current_digest.is_some() {
+                reading_digest = false;
+            }
+            continue;
+        }
+        if trimmed.starts_with("link_names=") {
+            reading_links = true;
+        }
+        if reading_links {
+            current_links.extend(quoted_values(trimmed));
+            if trimmed.ends_with("),") {
+                reading_links = false;
+            }
+        }
+    }
+    if let Some(key) = current_key {
+        specs.insert(
+            key,
+            RuntimeSpecContract {
+                digest: current_digest.expect("target runtime digest"),
+                links: current_links,
+            },
+        );
+    }
+    specs
+}
+
+fn make_assignment(makefile: &str, name: &str) -> String {
+    let prefixes = [format!("override {name} := "), format!("{name} := ")];
+    makefile
+        .lines()
+        .find_map(|line| prefixes.iter().find_map(|prefix| line.strip_prefix(prefix)))
+        .unwrap_or_else(|| panic!("Makefile assignment must exist: {name}"))
+        .to_owned()
+}
+
+#[test]
+fn make_onnx_runtime_mapping_matches_the_staging_source_of_truth() {
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let script = fs::read_to_string(root.join("scripts/stage_speakers_analyze_runtime.py"))
+        .expect("read runtime staging script");
+    let actual = python_runtime_specs(&script);
+    assert_eq!(
+        actual.keys().cloned().collect::<Vec<_>>(),
+        ["linux-aarch64", "linux-x86_64", "macos-arm64"],
+        "parser positive control must see every runtime target"
+    );
+
+    for (make_key, script_key) in [
+        ("LINUX_X86_64", "linux-x86_64"),
+        ("LINUX_AARCH64", "linux-aarch64"),
+        ("MACOS_ARM64", "macos-arm64"),
+    ] {
+        let expected = actual.get(script_key).expect("script target must exist");
+        assert_eq!(
+            make_assignment(&makefile, &format!("ONNX_RUNTIME_{make_key}_TARGET")),
+            script_key
+        );
+        assert_eq!(
+            make_assignment(&makefile, &format!("ONNX_RUNTIME_{make_key}_DIGEST")),
+            expected.digest
+        );
+        assert_eq!(
+            make_assignment(&makefile, &format!("ONNX_RUNTIME_{make_key}_LINK_NAMES"))
+                .split_whitespace()
+                .collect::<Vec<_>>(),
+            expected.links,
+            "Make link names drifted from scripts/stage_speakers_analyze_runtime.py for {script_key}"
+        );
+    }
+}
+
+#[test]
+fn runtime_target_parser_ignores_decoys_and_formatting() {
+    let fixture = r#"
+DECOY = TargetSpec(
+    runtime_sha256="wrong",
+    link_names=("wrong",),
+)
+TARGETS = {
+  "fixture": TargetSpec(
+      runtime_sha256 =
+          "abc",
+      link_names=(
+          "one",
+          "two",
+      ),
+  ),
+}
+"#;
+    let parsed = python_runtime_specs(fixture);
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(
+        parsed.get("fixture"),
+        Some(&RuntimeSpecContract {
+            digest: "abc".to_owned(),
+            links: vec!["one".to_owned(), "two".to_owned()],
+        })
+    );
+}
+
+#[test]
+fn native_macos_gate_records_the_full_workspace_test_compile() {
+    for arch in ["arm64", "aarch64"] {
+        for prior_dyld in [None, Some("prior-dyld")] {
+            let temp = TempDir::new("native-macos-gate");
+            write_host_makefile(&temp.path, "Darwin", arch);
+            let shims = temp.path.join("shims");
+            fs::create_dir(&shims).expect("create shims");
+            write_native_cargo_shim(&shims.join("cargo"));
+            write_rustup_shim(&shims.join("rustup"), "printf '%s\\n' aarch64-apple-darwin");
+            let argv_log = temp.path.join("cargo.argv");
+            let env_log = temp.path.join("cargo.env");
+            let link_dir = seed_runtime(
+                &temp.path,
+                "macos-arm64",
+                &["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"],
+                &[],
+            );
+            let mut command = Command::new("make");
+            command
+                .arg("check-rust-macos")
+                .current_dir(&temp.path)
+                .env("PATH", fixture_path(&shims))
+                .env("SOLSTONE_CARGO_ARGV", &argv_log)
+                .env("SOLSTONE_CARGO_ENV", &env_log);
+            if let Some(value) = prior_dyld {
+                // macOS strips inherited DYLD_* before /usr/bin/make starts;
+                // the supported preservation seam is an explicit Make value.
+                command.arg(format!("DYLD_LIBRARY_PATH={value}"));
+            } else {
+                command.env_remove("DYLD_LIBRARY_PATH");
+            }
+            let output = command.output().expect("run simulated native macOS gate");
+            assert!(
+                output.status.success(),
+                "simulated macOS gate failed for {arch}:\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                nul_argv(&argv_log),
+                [
+                    "test",
+                    "--manifest-path",
+                    "core/Cargo.toml",
+                    "--workspace",
+                    "--all-targets",
+                    "--no-run",
+                    "--target",
+                    "aarch64-apple-darwin",
+                    "--locked",
+                ]
+            );
+            let recorded_env = fs::read_to_string(&env_log).expect("read Cargo env log");
+            assert!(recorded_env.contains("ORT_PREFER_DYNAMIC_LINK=true"));
+            let canonical_link_dir = fs::canonicalize(&link_dir).expect("canonical runtime dir");
+            assert!(
+                recorded_env.contains(&format!("ORT_LIB_PATH={}", canonical_link_dir.display()))
+            );
+            let expected_dyld = prior_dyld.map_or_else(
+                || canonical_link_dir.display().to_string(),
+                |prior| format!("{}:{prior}", canonical_link_dir.display()),
+            );
+            assert!(
+                recorded_env.contains(&format!("DYLD_LIBRARY_PATH={expected_dyld}")),
+                "DYLD loader path was not composed correctly:\n{recorded_env}"
+            );
+        }
+    }
+}
+
+#[test]
+fn native_macos_gate_ignores_make_control_plane_overrides() {
+    let temp = TempDir::new("native-macos-immutable");
+    write_host_makefile(&temp.path, "Darwin", "arm64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create shims");
+    write_native_cargo_shim(&shims.join("cargo"));
+    write_rustup_shim(&shims.join("rustup"), "printf '%s\n' aarch64-apple-darwin");
+    let argv_log = temp.path.join("cargo.argv");
+    let env_log = temp.path.join("cargo.env");
+    let link_dir = seed_runtime(
+        &temp.path,
+        "macos-arm64",
+        &["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"],
+        &[],
+    );
+    let output = Command::new("make")
+        .arg("check-rust-macos")
+        .args([
+            "SHELL=/bin/false",
+            ".SHELLFLAGS=-n",
+            "HOST_SYSTEM=Linux",
+            "HOST_ARCH=x86_64",
+            "CURDIR=/tmp/solstone-redirected",
+            "REPO_ROOT=/tmp/solstone-redirected",
+            "ONNX_RUNTIME_HOST_TARGET=linux-x86_64",
+            "ONNX_RUNTIME_HOST_DIGEST=attacker-chosen",
+            "ONNX_RUNTIME_HOST_LINK_DIR=/tmp/solstone-redirected",
+        ])
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CARGO_ARGV", &argv_log)
+        .env("SOLSTONE_CARGO_ENV", &env_log)
+        .output()
+        .expect("run immutable macOS gate fixture");
+    assert!(
+        output.status.success(),
+        "Make control-plane override changed the gate:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        nul_argv(&argv_log).first().map(String::as_str),
+        Some("test")
+    );
+    let recorded_env = fs::read_to_string(env_log).expect("read immutable gate environment");
+    assert!(recorded_env.contains(&format!(
+        "ORT_LIB_PATH={}",
+        fs::canonicalize(link_dir)
+            .expect("canonical runtime path")
+            .display()
+    )));
+    assert!(!recorded_env.contains("solstone-redirected"));
+}
+
+#[test]
+fn macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo() {
+    let names = ["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"];
+    for victim in names {
+        for state in ["missing", "corrupt"] {
+            let temp = TempDir::new("macos-runtime-negative");
+            write_host_makefile(&temp.path, "Darwin", "arm64");
+            let shims = temp.path.join("shims");
+            fs::create_dir(&shims).expect("create shims");
+            write_native_cargo_shim(&shims.join("cargo"));
+            write_rustup_shim(&shims.join("rustup"), "printf '%s\\n' aarch64-apple-darwin");
+            let link_dir = seed_runtime(&temp.path, "macos-arm64", &names, &[]);
+            if state == "missing" {
+                fs::remove_file(link_dir.join(victim)).expect("remove runtime fixture");
+            } else {
+                fs::write(link_dir.join(victim), b"corrupt").expect("corrupt runtime fixture");
+            }
+            let argv_log = temp.path.join("cargo.argv");
+            let output = Command::new("make")
+                .arg("check-rust-macos")
+                .current_dir(&temp.path)
+                .env("PATH", fixture_path(&shims))
+                .env("SOLSTONE_CARGO_ARGV", &argv_log)
+                .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+                .output()
+                .expect("run macOS runtime negative");
+            assert!(!output.status.success(), "{victim} {state} must fail");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains(victim),
+                "diagnostic omitted {victim}: {stderr}"
+            );
+            assert!(stderr.contains("make check-rust-onnx-stage"));
+            assert!(!argv_log.exists(), "Cargo ran with {victim} {state}");
+        }
+    }
+}
+
+#[test]
+fn macos_gate_distinguishes_rustup_failure_from_a_missing_target() {
+    for (rustup_body, expected) in [
+        ("exit 23", "rustup failed to inspect installed targets"),
+        (
+            "printf '%s\\n' x86_64-unknown-linux-gnu",
+            "Rust target aarch64-apple-darwin is required",
+        ),
+    ] {
+        let temp = TempDir::new("macos-rustup-negative");
+        write_host_makefile(&temp.path, "Darwin", "arm64");
+        let shims = temp.path.join("shims");
+        fs::create_dir(&shims).expect("create shims");
+        write_native_cargo_shim(&shims.join("cargo"));
+        write_rustup_shim(&shims.join("rustup"), rustup_body);
+        let argv_log = temp.path.join("cargo.argv");
+        let output = Command::new("make")
+            .arg("check-rust-macos")
+            .current_dir(&temp.path)
+            .env("PATH", fixture_path(&shims))
+            .env("SOLSTONE_CARGO_ARGV", &argv_log)
+            .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+            .output()
+            .expect("run rustup negative");
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
+        assert!(
+            !argv_log.exists(),
+            "Cargo ran after rustup prerequisite failure"
+        );
+    }
+}
+
+#[test]
+fn onnx_stage_is_a_noop_when_every_pinned_link_is_healthy() {
+    let temp = TempDir::new("onnx-stage-healthy");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create shims");
+    let python_sentinel = temp.path.join("python-ran");
+    write_executable(
+        &shims.join("python3"),
+        "#!/bin/sh\n: > \"$SOLSTONE_PYTHON_SENTINEL\"\nexit 97\n",
+    );
+    seed_runtime(
+        &temp.path,
+        "linux-x86_64",
+        &[
+            "libonnxruntime.so.1.25.0",
+            "libonnxruntime.so.1",
+            "libonnxruntime.so",
+        ],
+        &[],
+    );
+    let output = Command::new("make")
+        .arg("check-rust-onnx-stage")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_PYTHON_SENTINEL", &python_sentinel)
+        .output()
+        .expect("run healthy stage validator");
+    assert!(
+        output.status.success(),
+        "healthy stage validation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!python_sentinel.exists(), "healthy staging invoked Python");
+}
+
+#[test]
+fn onnx_stage_repairs_then_independently_validates_every_link() {
+    for (victim, post_state) in [
+        ("libonnxruntime.so.1.25.0", "missing"),
+        ("libonnxruntime.so.1", "corrupt"),
+        ("libonnxruntime.so", "missing"),
+    ] {
+        let temp = TempDir::new("onnx-stage-postcondition");
+        write_host_makefile(&temp.path, "Linux", "x86_64");
+        let shims = temp.path.join("shims");
+        fs::create_dir(&shims).expect("create shims");
+        let python_log = temp.path.join("python.log");
+        write_executable(
+            &shims.join("python3"),
+            &format!(
+                "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_PYTHON_LOG\"\ndir=target/speakers-analyze-runtime-link/linux-x86_64\nmkdir -p \"$dir\"\n: > \"$dir/libonnxruntime.so.1.25.0\"\n: > \"$dir/libonnxruntime.so.1\"\n: > \"$dir/libonnxruntime.so\"\n{}\n",
+                if post_state == "missing" {
+                    format!("rm -f \"$dir/{victim}\"")
+                } else {
+                    format!("printf corrupt > \"$dir/{victim}\"")
+                }
+            ),
+        );
+        let output = Command::new("make")
+            .arg("check-rust-onnx-stage")
+            .current_dir(&temp.path)
+            .env("PATH", fixture_path(&shims))
+            .env("SOLSTONE_PYTHON_LOG", &python_log)
+            .output()
+            .expect("run staging postcondition negative");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(victim),
+            "postvalidation omitted {victim}: {stderr}"
+        );
+        assert!(stderr.contains("make check-rust-onnx-stage"));
+        let python_argv = nul_argv(&python_log);
+        assert_eq!(
+            python_argv.iter().filter(|arg| *arg == "--target").count(),
+            1,
+            "repair must invoke the staging script exactly once"
+        );
+        assert!(
+            python_argv
+                .windows(2)
+                .any(|pair| pair == ["--target", "linux-x86_64"])
+        );
+    }
+}
+
+#[test]
+fn onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired() {
+    let temp = TempDir::new("onnx-stage-failed-repair");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create shims");
+    write_executable(
+        &shims.join("python3"),
+        "#!/bin/sh\nset -eu\ndir=target/speakers-analyze-runtime-link/linux-x86_64\nmkdir -p \"$dir\"\n: > \"$dir/libonnxruntime.so.1.25.0\"\n: > \"$dir/libonnxruntime.so.1\"\n: > \"$dir/libonnxruntime.so\"\nexit 23\n",
+    );
+    let output = Command::new("make")
+        .arg("check-rust-onnx-stage")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .output()
+        .expect("run failed staging fixture");
+    assert!(
+        !output.status.success(),
+        "failed staging process was masked"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("failed to stage the pinned host ONNX Runtime")
+    );
+}
+
+#[test]
+fn every_linux_runtime_link_is_required_by_the_real_consumer() {
+    let cases = [
+        (
+            "x86_64",
+            "linux-x86_64",
+            [
+                "libonnxruntime.so.1.25.0",
+                "libonnxruntime.so.1",
+                "libonnxruntime.so",
+            ],
+        ),
+        (
+            "aarch64",
+            "linux-aarch64",
+            [
+                "libonnxruntime.so.1.25.0",
+                "libonnxruntime.so.1",
+                "libonnxruntime.so",
+            ],
+        ),
+    ];
+    for (arch, target, names) in cases {
+        for victim in names {
+            for state in ["missing", "corrupt"] {
+                let temp = TempDir::new("linux-onnx-consumer-negative");
+                write_host_makefile(&temp.path, "Linux", arch);
+                let shims = temp.path.join("shims");
+                fs::create_dir(&shims).expect("create shims");
+                write_native_cargo_shim(&shims.join("cargo"));
+                write_executable(&shims.join("uname"), "#!/bin/sh\nprintf '%s\\n' Linux\n");
+                let link_dir = seed_runtime(&temp.path, target, &names, &[]);
+                if state == "missing" {
+                    fs::remove_file(link_dir.join(victim)).expect("remove runtime fixture");
+                } else {
+                    fs::write(link_dir.join(victim), b"corrupt").expect("corrupt runtime fixture");
+                }
+                let argv_log = temp.path.join("cargo.argv");
+                let output = Command::new("make")
+                    .arg("check-rust-onnx-test")
+                    .current_dir(&temp.path)
+                    .env("PATH", fixture_path(&shims))
+                    .env("SOLSTONE_CARGO_ARGV", &argv_log)
+                    .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+                    .output()
+                    .expect("run Linux ONNX consumer negative");
+                assert!(
+                    !output.status.success(),
+                    "{target}/{victim} {state} greened"
+                );
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    stderr.contains(victim),
+                    "diagnostic omitted {victim}: {stderr}"
+                );
+                assert!(stderr.contains("make check-rust-onnx-stage"));
+                assert!(
+                    !argv_log.exists(),
+                    "Cargo ran with {target}/{victim} {state}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn checksum_verifier_must_prove_itself_before_runtime_data_is_judged() {
+    for (body, expected) in [
+        ("exit 19", "failed its known-input check"),
+        (
+            "printf '%s\\n' not-a-digest",
+            "failed its known-input check",
+        ),
+    ] {
+        let temp = TempDir::new("onnx-verifier-negative");
+        write_host_makefile(&temp.path, "Linux", "x86_64");
+        let shims = temp.path.join("shims");
+        fs::create_dir(&shims).expect("create shims");
+        let verifier = shims.join("checksum");
+        write_executable(&verifier, &format!("#!/bin/sh\n{body}\n"));
+        replace_linux_fixture_verifier(&temp.path, &verifier);
+        let python_sentinel = temp.path.join("python-ran");
+        write_executable(
+            &shims.join("python3"),
+            "#!/bin/sh\n: > \"$SOLSTONE_PYTHON_SENTINEL\"\nexit 97\n",
+        );
+        let output = Command::new("make")
+            .arg("check-rust-onnx-stage")
+            .current_dir(&temp.path)
+            .env("PATH", fixture_path(&shims))
+            .env("SOLSTONE_PYTHON_SENTINEL", &python_sentinel)
+            .output()
+            .expect("run checksum verifier negative");
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "wrong verifier diagnostic: {stderr}"
+        );
+        assert!(stderr.contains("install or repair"));
+        assert!(!python_sentinel.exists(), "broken verifier invoked Python");
+    }
+}
+
+#[test]
+fn checksum_input_failure_is_not_misreported_as_a_broken_verifier() {
+    let temp = TempDir::new("onnx-checksum-input-failure");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create shims");
+    let verifier = shims.join("checksum");
+    write_executable(
+        &verifier,
+        "#!/bin/sh\nset -eu\nlast=\nfor argument in \"$@\"; do last=$argument; done\nprintf '%s\\n' \"$last\" >> \"$SOLSTONE_HASH_LOG\"\ncase \"$last\" in\n  *solstone-onnx-hash-probe-*) printf '1629c6bcea388b9f721343d214f545f712c0bc70ed9f34866a08b0f8ccb2edb7  %s\\n' \"$last\" ;;\n  *) exit 31 ;;\nesac\n",
+    );
+    replace_linux_fixture_verifier(&temp.path, &verifier);
+    let names = [
+        "libonnxruntime.so.1.25.0",
+        "libonnxruntime.so.1",
+        "libonnxruntime.so",
+    ];
+    seed_runtime(&temp.path, "linux-x86_64", &names, &[]);
+    let hash_log = temp.path.join("hash.log");
+    let python_sentinel = temp.path.join("python-ran");
+    write_executable(
+        &shims.join("python3"),
+        "#!/bin/sh\n: > \"$SOLSTONE_PYTHON_SENTINEL\"\nexit 97\n",
+    );
+    let output = Command::new("make")
+        .arg("check-rust-onnx-stage")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_HASH_LOG", &hash_log)
+        .env("SOLSTONE_PYTHON_SENTINEL", &python_sentinel)
+        .output()
+        .expect("run checksum input failure fixture");
+    assert!(!output.status.success());
+    let calls = fs::read_to_string(hash_log).expect("read checksum call order");
+    let calls = calls.lines().collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2, "unexpected checksum call order: {calls:?}");
+    assert!(calls[0].contains("solstone-onnx-hash-probe-"));
+    assert!(calls[1].ends_with(names[0]));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(names[0]));
+    assert!(stderr.contains("checksum input failure"));
+    assert!(stderr.contains("make check-rust-onnx-stage"));
+    assert!(!stderr.contains("install or repair that verifier"));
+    assert!(
+        python_sentinel.exists(),
+        "repairable input failure skipped staging"
+    );
+}
+
+#[test]
+fn supported_linux_skips_the_macos_gate_before_tool_requirements() {
+    let temp = TempDir::new("linux-macos-skip");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let output = Command::new("/usr/bin/make")
+        .arg("check-rust-macos")
+        .current_dir(&temp.path)
+        .env("PATH", "/path-with-no-tools")
+        .output()
+        .expect("run Linux macOS-gate skip");
+    assert!(
+        output.status.success(),
+        "Linux skip reached a tool requirement: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("not run on Linux/x86_64"));
+}
+
+#[test]
+fn unsupported_host_fails_only_when_a_host_gate_is_selected() {
+    let temp = TempDir::new("unsupported-host");
+    write_host_makefile(&temp.path, "Plan9", "mips");
+    let unrelated = Command::new("make")
+        .args(["-n", "check-rust-fmt"])
+        .current_dir(&temp.path)
+        .output()
+        .expect("dry-run unrelated target");
+    assert!(
+        unrelated.status.success(),
+        "unsupported host broke Make parsing"
+    );
+
+    let output = Command::new("make")
+        .arg("check-rust-macos")
+        .current_dir(&temp.path)
+        .output()
+        .expect("run unsupported host gate");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Plan9/mips"));
+    assert!(stderr.contains("supported"));
+}
+
+#[test]
+fn differential_gate_requires_validated_onnx_staging() {
+    let makefile = makefile_text(&repo_root());
+    let header = target_body(&makefile, "check-differentials")
+        .lines()
+        .next()
+        .expect("check-differentials header");
+    assert!(
+        header.contains("check-rust-onnx-stage"),
+        "check-differentials can bypass validated ONNX staging"
+    );
+    assert!(
+        !target_body(&makefile, "ci-under-poison").contains("check-rust-onnx-stage"),
+        "make ci must not invoke Python-backed staging"
+    );
 }
 
 #[test]
