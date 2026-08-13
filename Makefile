@@ -1617,6 +1617,7 @@ core-fixtures:
 check-core-fixtures: .installed
 	$(VENV_BIN)/python scripts/generate_observe_category_registry.py --check
 	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
+	$(VENV_BIN)/python scripts/check_service_runtime_reference.py
 
 check-release-advisory-liveness: .installed
 	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py
