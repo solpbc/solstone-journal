@@ -25,8 +25,9 @@ pub use render::{
     format_runtime, format_uptime, render_frame, transform_trusted_render,
 };
 pub use restart::{
-    RestartAttempt, RestartFailure, RestartPhase, RestartRequestOutcome, RestartTransition,
-    TopRestartError, TopRestartTransport, acknowledge_restart, advance_restart_attempts,
+    RestartAttempt, RestartEnqueueResult, RestartFailure, RestartIdError, RestartIdSource,
+    RestartPhase, RestartRequestError, RestartRequestOutcome, RestartTransition, SessionRestartIds,
+    TopRestartTransport, acknowledge_restart, advance_restart_attempts,
     fail_discontinuous_restarts, request_restart,
 };
 pub use state::{DomainContinuity, DomainRecovery, TopState};

@@ -240,6 +240,7 @@ pub fn apply_receive_event(
                     service,
                     envelope.extra.get("restart_id").and_then(Value::as_str),
                     *generation,
+                    *epoch,
                     &envelope.event,
                     sample.monotonic_seconds,
                 );
@@ -306,7 +307,9 @@ pub fn apply_receive_event(
                 for attempt in state.restart_attempts.values_mut() {
                     if matches!(
                         attempt.phase,
-                        crate::RestartPhase::Pending | crate::RestartPhase::Restarting
+                        crate::RestartPhase::Pending
+                            | crate::RestartPhase::Restarting
+                            | crate::RestartPhase::Stopped
                     ) {
                         attempt.phase =
                             crate::RestartPhase::Failed(crate::RestartFailure::Discontinuity);

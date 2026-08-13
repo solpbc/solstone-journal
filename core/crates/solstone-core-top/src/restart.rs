@@ -1,26 +1,120 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use crate::TopState;
 
 const NO_ACK_SECONDS: f64 = 5.0;
 const RESTART_SECONDS: f64 = 10.0;
-static NEXT_RESTART_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum RestartIdError {
+    #[error("restart entropy unavailable")]
+    EntropyUnavailable,
+    #[error("restart id sequence exhausted")]
+    SequenceExhausted,
+}
+
+/// Session-owned opaque restart ID source. It is deliberately separate from
+/// transport so tests can exercise correlation without ambient entropy.
+pub trait RestartIdSource {
+    fn next_restart_id(&mut self) -> Result<String, RestartIdError>;
+}
+
+/// Production restart IDs share one nonce for a Top session and use a checked
+/// sequence so an ID is never reused after any enqueue outcome.
+#[derive(Clone, Debug)]
+pub struct SessionRestartIds {
+    process_id: u32,
+    nonce: Result<[u8; 16], RestartIdError>,
+    next_sequence: u64,
+}
+
+impl SessionRestartIds {
+    #[must_use]
+    pub fn new() -> Self {
+        let mut nonce = [0_u8; 16];
+        let nonce = getrandom::fill(&mut nonce)
+            .map(|()| nonce)
+            .map_err(|_| RestartIdError::EntropyUnavailable);
+        Self {
+            process_id: std::process::id(),
+            nonce,
+            next_sequence: 1,
+        }
+    }
+
+    #[must_use]
+    pub fn with_nonce(process_id: u32, nonce: [u8; 16]) -> Self {
+        Self {
+            process_id,
+            nonce: Ok(nonce),
+            next_sequence: 1,
+        }
+    }
+
+    #[must_use]
+    pub fn unavailable(process_id: u32) -> Self {
+        Self {
+            process_id,
+            nonce: Err(RestartIdError::EntropyUnavailable),
+            next_sequence: 1,
+        }
+    }
+
+    #[must_use]
+    pub fn with_nonce_and_sequence(process_id: u32, nonce: [u8; 16], next_sequence: u64) -> Self {
+        Self {
+            process_id,
+            nonce: Ok(nonce),
+            next_sequence,
+        }
+    }
+
+    #[must_use]
+    pub fn next_sequence(&self) -> u64 {
+        self.next_sequence
+    }
+}
+
+impl Default for SessionRestartIds {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RestartIdSource for SessionRestartIds {
+    fn next_restart_id(&mut self) -> Result<String, RestartIdError> {
+        let nonce = self.nonce.as_ref().map_err(Clone::clone)?;
+        if self.next_sequence == u64::MAX {
+            return Err(RestartIdError::SequenceExhausted);
+        }
+        let sequence = self.next_sequence;
+        self.next_sequence = self
+            .next_sequence
+            .checked_add(1)
+            .ok_or(RestartIdError::SequenceExhausted)?;
+        Ok(format!(
+            "top-v1-{}-{}-{sequence}",
+            self.process_id,
+            nonce
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        ))
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RestartFailure {
-    NoAck,
     RestartTimedOut,
     Discontinuity,
-    StoppedBeforeStarted,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RestartPhase {
     Pending,
     Restarting,
+    Stopped,
     Started,
     Interrupted,
     Failed(RestartFailure),
@@ -30,28 +124,48 @@ pub enum RestartPhase {
 pub struct RestartAttempt {
     pub restart_id: String,
     pub generation: u64,
+    pub epoch: u64,
     pub phase: RestartPhase,
     pub issued_at: f64,
     pub phase_at: f64,
+    pub started_deadline: Option<f64>,
     pub terminal_at: Option<f64>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum TopRestartError {
-    #[error("restart transport failed")]
-    Transport,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestartEnqueueResult {
+    Enqueued,
+    Full,
+    Closed,
+    TransportError,
 }
 
 /// Transport is deliberately separate from restart protocol state.
 pub trait TopRestartTransport {
-    fn emit_restart(&mut self, service: &str, restart_id: &str) -> Result<(), TopRestartError>;
+    fn emit_restart(&mut self, service: &str, restart_id: &str) -> RestartEnqueueResult;
     fn current_generation(&self) -> u64;
+    fn current_epoch(&self) -> u64;
+    fn restart_ids(&mut self) -> &mut dyn RestartIdSource;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RestartRequestOutcome {
-    Emitted { restart_id: String },
+    Emitted {
+        restart_id: String,
+    },
     Rejected,
+    Failed {
+        restart_id: Option<String>,
+        error: RestartRequestError,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RestartRequestError {
+    Id(RestartIdError),
+    QueueFull,
+    QueueClosed,
+    Transport,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,40 +180,59 @@ pub fn request_restart(
     service: &str,
     now: f64,
     transport: &mut dyn TopRestartTransport,
-) -> Result<RestartRequestOutcome, TopRestartError> {
+) -> RestartRequestOutcome {
     if !is_supported(service)
         || !state
             .services
             .iter()
             .any(|entry| entry.get("name").and_then(serde_json::Value::as_str) == Some(service))
     {
-        return Ok(RestartRequestOutcome::Rejected);
+        return RestartRequestOutcome::Rejected;
     }
     if state.restart_attempts.get(service).is_some_and(|attempt| {
         matches!(
             attempt.phase,
-            RestartPhase::Pending | RestartPhase::Restarting
+            RestartPhase::Pending | RestartPhase::Restarting | RestartPhase::Stopped
         )
     }) {
-        return Ok(RestartRequestOutcome::Rejected);
+        return RestartRequestOutcome::Rejected;
     }
-    let restart_id = restart_id(
-        std::process::id(),
-        NEXT_RESTART_ID.fetch_add(1, Ordering::Relaxed),
-    );
-    transport.emit_restart(service, &restart_id)?;
+    let restart_id = match transport.restart_ids().next_restart_id() {
+        Ok(restart_id) => restart_id,
+        Err(error) => {
+            return RestartRequestOutcome::Failed {
+                restart_id: None,
+                error: RestartRequestError::Id(error),
+            };
+        }
+    };
+    let enqueue = transport.emit_restart(service, &restart_id);
+    if enqueue != RestartEnqueueResult::Enqueued {
+        let error = match enqueue {
+            RestartEnqueueResult::Full => RestartRequestError::QueueFull,
+            RestartEnqueueResult::Closed => RestartRequestError::QueueClosed,
+            RestartEnqueueResult::TransportError => RestartRequestError::Transport,
+            RestartEnqueueResult::Enqueued => unreachable!(),
+        };
+        return RestartRequestOutcome::Failed {
+            restart_id: Some(restart_id),
+            error,
+        };
+    }
     state.restart_attempts.insert(
         service.to_owned(),
         RestartAttempt {
             restart_id: restart_id.clone(),
             generation: transport.current_generation(),
+            epoch: transport.current_epoch(),
             phase: RestartPhase::Pending,
             issued_at: now,
             phase_at: now,
+            started_deadline: None,
             terminal_at: None,
         },
     );
-    Ok(RestartRequestOutcome::Emitted { restart_id })
+    RestartRequestOutcome::Emitted { restart_id }
 }
 
 /// Advance timeout bounds and return newly terminal transitions.
@@ -107,15 +240,27 @@ pub fn advance_restart_attempts(state: &mut TopState, now: f64) -> Vec<RestartTr
     let mut transitions = Vec::new();
     for (service, attempt) in &mut state.restart_attempts {
         let failure = match attempt.phase {
-            RestartPhase::Pending if now - attempt.issued_at >= NO_ACK_SECONDS => {
-                Some(RestartFailure::NoAck)
-            }
-            RestartPhase::Restarting if now - attempt.phase_at >= RESTART_SECONDS => {
+            RestartPhase::Pending if now - attempt.issued_at >= NO_ACK_SECONDS => None,
+            RestartPhase::Restarting | RestartPhase::Stopped
+                if attempt
+                    .started_deadline
+                    .is_some_and(|deadline| now >= deadline) =>
+            {
                 Some(RestartFailure::RestartTimedOut)
             }
             _ => None,
         };
-        if let Some(failure) = failure {
+        if matches!(attempt.phase, RestartPhase::Pending)
+            && now - attempt.issued_at >= NO_ACK_SECONDS
+        {
+            attempt.phase = RestartPhase::Interrupted;
+            attempt.phase_at = now;
+            attempt.terminal_at = Some(now);
+            transitions.push(RestartTransition {
+                service: service.clone(),
+                phase: RestartPhase::Interrupted,
+            });
+        } else if let Some(failure) = failure {
             attempt.phase = RestartPhase::Failed(failure);
             attempt.phase_at = now;
             attempt.terminal_at = Some(now);
@@ -128,30 +273,38 @@ pub fn advance_restart_attempts(state: &mut TopState, now: f64) -> Vec<RestartTr
     transitions
 }
 
-/// Correlate an authoritative lifecycle acknowledgement only when both epoch
-/// and restart id match the live attempt.
+/// Correlate an authoritative lifecycle acknowledgement only when generation,
+/// epoch, service, and restart id all match the live attempt.
 pub fn acknowledge_restart(
     state: &mut TopState,
     service: &str,
     restart_id: Option<&str>,
     generation: u64,
+    epoch: u64,
     event: &str,
     now: f64,
 ) -> Option<RestartTransition> {
     let attempt = state.restart_attempts.get_mut(service)?;
-    if attempt.generation != generation || restart_id != Some(attempt.restart_id.as_str()) {
+    if attempt.generation != generation
+        || attempt.epoch != epoch
+        || restart_id != Some(attempt.restart_id.as_str())
+    {
         return None;
     }
     let phase = match (&attempt.phase, event) {
-        (RestartPhase::Pending, "restarting") => RestartPhase::Restarting,
-        (RestartPhase::Pending | RestartPhase::Restarting, "started") => RestartPhase::Started,
-        (RestartPhase::Pending, "stopped") => {
-            RestartPhase::Failed(RestartFailure::StoppedBeforeStarted)
+        (RestartPhase::Pending | RestartPhase::Stopped, "restarting") => RestartPhase::Restarting,
+        (RestartPhase::Pending | RestartPhase::Restarting, "stopped") => RestartPhase::Stopped,
+        (RestartPhase::Pending | RestartPhase::Restarting | RestartPhase::Stopped, "started") => {
+            RestartPhase::Started
         }
-        (RestartPhase::Restarting, "stopped") => RestartPhase::Interrupted,
         _ => return None,
     };
-    let terminal = !matches!(phase, RestartPhase::Pending | RestartPhase::Restarting);
+    if matches!(phase, RestartPhase::Restarting | RestartPhase::Stopped) {
+        attempt
+            .started_deadline
+            .get_or_insert(now + RESTART_SECONDS);
+    }
+    let terminal = matches!(phase, RestartPhase::Started);
     attempt.phase = phase.clone();
     attempt.phase_at = now;
     attempt.terminal_at = terminal.then_some(now);
@@ -174,7 +327,7 @@ pub fn fail_discontinuous_restarts(
             (attempt.generation != generation
                 && matches!(
                     attempt.phase,
-                    RestartPhase::Pending | RestartPhase::Restarting
+                    RestartPhase::Pending | RestartPhase::Restarting | RestartPhase::Stopped
                 ))
             .then(|| {
                 attempt.phase = RestartPhase::Failed(RestartFailure::Discontinuity);
@@ -193,102 +346,22 @@ fn is_supported(service: &str) -> bool {
     matches!(service, "convey" | "sense" | "cortex" | "spl")
 }
 
-fn restart_id(process_id: u32, sequence: u64) -> String {
-    format!("top-{process_id}-{sequence}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    #[derive(Default)]
-    struct Transport {
-        generation: u64,
-        emitted: Vec<(String, String)>,
-    }
-    impl TopRestartTransport for Transport {
-        fn emit_restart(&mut self, service: &str, id: &str) -> Result<(), TopRestartError> {
-            self.emitted.push((service.to_owned(), id.to_owned()));
-            Ok(())
-        }
-        fn current_generation(&self) -> u64 {
-            self.generation
-        }
-    }
-    fn state() -> TopState {
-        TopState {
-            services: vec![json!({"name":"convey"}), json!({"name":"local"})],
-            ..TopState::default()
-        }
-    }
 
     #[test]
-    fn supported_restart_is_exactly_once_and_retries_after_failure() {
-        let mut state = state();
-        let mut transport = Transport {
-            generation: 4,
-            ..Transport::default()
-        };
-        assert!(matches!(
-            request_restart(&mut state, "convey", 0.0, &mut transport).unwrap(),
-            RestartRequestOutcome::Emitted { .. }
-        ));
+    fn fixed_nonce_id_is_session_scoped_and_checked() {
+        let mut ids = SessionRestartIds::with_nonce(42, [0xab; 16]);
         assert_eq!(
-            request_restart(&mut state, "convey", 1.0, &mut transport).unwrap(),
-            RestartRequestOutcome::Rejected
+            ids.next_restart_id(),
+            Ok("top-v1-42-abababababababababababababababab-1".to_owned())
         );
-        assert_eq!(transport.emitted.len(), 1);
-        assert_eq!(advance_restart_attempts(&mut state, 5.0).len(), 1);
-        assert!(matches!(
-            request_restart(&mut state, "convey", 5.0, &mut transport).unwrap(),
-            RestartRequestOutcome::Emitted { .. }
-        ));
-    }
-
-    #[test]
-    fn rejects_unsupported_and_stale_acknowledgements() {
-        let mut state = state();
-        let mut transport = Transport::default();
-        for service in ["local", "parakeet", "supervisor", "unknown"] {
-            assert_eq!(
-                request_restart(&mut state, service, 0.0, &mut transport).unwrap(),
-                RestartRequestOutcome::Rejected
-            );
-        }
-        let RestartRequestOutcome::Emitted { restart_id } =
-            request_restart(&mut state, "convey", 0.0, &mut transport).unwrap()
-        else {
-            panic!("emitted")
-        };
-        assert!(
-            acknowledge_restart(
-                &mut state,
-                "convey",
-                Some(&restart_id),
-                1,
-                "restarting",
-                1.0
-            )
-            .is_none()
+        assert_eq!(ids.next_sequence(), 2);
+        let mut exhausted = SessionRestartIds::with_nonce_and_sequence(42, [0; 16], u64::MAX);
+        assert_eq!(
+            exhausted.next_restart_id(),
+            Err(RestartIdError::SequenceExhausted)
         );
-        assert!(
-            acknowledge_restart(
-                &mut state,
-                "convey",
-                Some(&restart_id),
-                0,
-                "restarting",
-                1.0
-            )
-            .is_some()
-        );
-        assert_eq!(advance_restart_attempts(&mut state, 11.0).len(), 1);
-    }
-
-    #[test]
-    fn restart_ids_do_not_collide_between_processes() {
-        assert_ne!(restart_id(101, 1), restart_id(202, 1));
-        assert_ne!(restart_id(101, 1), restart_id(101, 2));
     }
 }

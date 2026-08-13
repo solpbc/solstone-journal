@@ -3740,6 +3740,7 @@ name = "solstone-core-top"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
  "sha2",

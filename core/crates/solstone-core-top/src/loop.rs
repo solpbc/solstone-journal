@@ -73,11 +73,14 @@ pub fn run_top_with(
         state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
         state.brain_health_ts = clock.wall_seconds();
         loop {
+            let frame_wall = clock.wall_seconds();
+            let frame_monotonic = clock.monotonic_seconds();
+            let frame_datetime = clock.datetime();
             while let Some(event) = receive.next().map_err(TopLoopError::Transport)? {
                 let sample = ReductionSample {
-                    wall_seconds: clock.wall_seconds(),
-                    monotonic_seconds: clock.monotonic_seconds(),
-                    wall_datetime: clock.datetime(),
+                    wall_seconds: frame_wall,
+                    monotonic_seconds: frame_monotonic,
+                    wall_datetime: frame_datetime.clone(),
                 };
                 let effects = apply_receive_event(state, &event, &sample, observer);
                 if effects.refresh_brain {
@@ -85,12 +88,12 @@ pub fn run_top_with(
                     state.brain_health_ts = sample.wall_seconds;
                 }
             }
-            let _ = advance_restart_attempts(state, clock.monotonic_seconds());
+            let _ = advance_restart_attempts(state, frame_monotonic);
             let frame = render_frame(
                 state,
                 FrameSample {
-                    wall_seconds: clock.wall_seconds(),
-                    monotonic_seconds: clock.monotonic_seconds(),
+                    wall_seconds: frame_wall,
+                    monotonic_seconds: frame_monotonic,
                 },
                 terminal.width().map_err(TopLoopError::Terminal)?,
                 &PlainTopStyle,
@@ -111,9 +114,7 @@ pub fn run_top_with(
                         .and_then(serde_json::Value::as_str)
                         .map(str::to_owned)
                     {
-                        let _ =
-                            request_restart(state, &service, clock.monotonic_seconds(), restart)
-                                .map_err(|error| TopLoopError::Transport(error.to_string()))?;
+                        let _ = request_restart(state, &service, frame_monotonic, restart);
                     }
                 }
                 TopInput::None => {}
@@ -158,6 +159,7 @@ pub fn run_top_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SessionRestartIds;
     use std::collections::VecDeque;
     struct Clock;
     impl TopClock for Clock {
@@ -223,31 +225,52 @@ mod tests {
             crate::ProcessSample::Missing
         }
     }
-    struct Restart;
+    struct Restart(SessionRestartIds);
+    impl Default for Restart {
+        fn default() -> Self {
+            Self(SessionRestartIds::with_nonce(1, [0; 16]))
+        }
+    }
     impl TopRestartTransport for Restart {
-        fn emit_restart(&mut self, _: &str, _: &str) -> Result<(), crate::TopRestartError> {
-            Ok(())
+        fn emit_restart(&mut self, _: &str, _: &str) -> crate::RestartEnqueueResult {
+            crate::RestartEnqueueResult::Enqueued
         }
         fn current_generation(&self) -> u64 {
             0
         }
+        fn current_epoch(&self) -> u64 {
+            0
+        }
+        fn restart_ids(&mut self) -> &mut dyn crate::RestartIdSource {
+            &mut self.0
+        }
     }
-    #[derive(Default)]
     struct RecordingRestart {
         emissions: Vec<(String, String)>,
+        ids: SessionRestartIds,
+    }
+    impl Default for RecordingRestart {
+        fn default() -> Self {
+            Self {
+                emissions: Vec::new(),
+                ids: SessionRestartIds::with_nonce(1, [0; 16]),
+            }
+        }
     }
     impl TopRestartTransport for RecordingRestart {
-        fn emit_restart(
-            &mut self,
-            service: &str,
-            restart_id: &str,
-        ) -> Result<(), crate::TopRestartError> {
+        fn emit_restart(&mut self, service: &str, restart_id: &str) -> crate::RestartEnqueueResult {
             self.emissions
                 .push((service.to_owned(), restart_id.to_owned()));
-            Ok(())
+            crate::RestartEnqueueResult::Enqueued
         }
         fn current_generation(&self) -> u64 {
             0
+        }
+        fn current_epoch(&self) -> u64 {
+            0
+        }
+        fn restart_ids(&mut self) -> &mut dyn crate::RestartIdSource {
+            &mut self.ids
         }
     }
     struct Brain;
@@ -272,7 +295,7 @@ mod tests {
                 &mut terminal,
                 &mut receive,
                 &mut Observer,
-                &mut Restart,
+                &mut Restart::default(),
                 &mut Brain
             )
             .is_ok()
@@ -611,7 +634,7 @@ mod tests {
             &mut terminal,
             &mut receive,
             &mut Observer,
-            &mut Restart,
+            &mut Restart::default(),
             &mut brain,
         )
         .unwrap();

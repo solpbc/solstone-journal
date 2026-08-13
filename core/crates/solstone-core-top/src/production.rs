@@ -19,8 +19,9 @@ use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_
 use solstone_core_system_health::sanitize_os_bytes_for_terminal;
 
 use crate::{
-    TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRestartError, TopRestartTransport,
-    TopState, TopTerminal, platform_observer, run_top_with,
+    RestartEnqueueResult, RestartIdSource, SessionRestartIds, TopBrainSource, TopClock, TopInput,
+    TopReceiveTransport, TopRestartTransport, TopState, TopTerminal, platform_observer,
+    run_top_with,
 };
 
 pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
@@ -115,6 +116,7 @@ struct ProductionCallosumInner {
     runtime: tokio::runtime::Runtime,
     connection: CallosumSocketConnection,
     generation: u64,
+    epoch: u64,
 }
 pub(crate) struct ProductionCallosum {
     inner: Mutex<ProductionCallosumInner>,
@@ -131,6 +133,7 @@ impl ProductionCallosum {
                 runtime,
                 connection: CallosumSocketConnection::new(path, Map::new()),
                 generation: 0,
+                epoch: 0,
             }),
         }))
     }
@@ -156,11 +159,16 @@ impl ProductionCallosum {
             .map_err(|_| "Callosum lock poisoned".to_owned())?;
         let event = inner.connection.try_next_event();
         if let Some(
-            CallosumReceiveEvent::Envelope { generation, .. }
-            | CallosumReceiveEvent::Continuity { generation, .. },
+            CallosumReceiveEvent::Envelope {
+                generation, epoch, ..
+            }
+            | CallosumReceiveEvent::Continuity {
+                generation, epoch, ..
+            },
         ) = &event
         {
             inner.generation = *generation;
+            inner.epoch = *epoch;
         }
         Ok(event)
     }
@@ -177,22 +185,27 @@ impl ProductionCallosum {
         runtime.block_on(connection.stop());
         Ok(())
     }
-    fn emit_restart(&self, service: &str, restart_id: &str) -> Result<(), TopRestartError> {
-        let inner = self.inner.lock().map_err(|_| TopRestartError::Transport)?;
+    fn emit_restart(&self, service: &str, restart_id: &str) -> RestartEnqueueResult {
+        let Ok(inner) = self.inner.lock() else {
+            return RestartEnqueueResult::TransportError;
+        };
         let mut values = Map::new();
         values.insert("service".to_owned(), Value::String(service.to_owned()));
         values.insert(
             "restart_id".to_owned(),
             Value::String(restart_id.to_owned()),
         );
-        inner
-            .connection
-            .emit("supervisor", "restart", values)
-            .then_some(())
-            .ok_or(TopRestartError::Transport)
+        if inner.connection.emit("supervisor", "restart", values) {
+            RestartEnqueueResult::Enqueued
+        } else {
+            RestartEnqueueResult::Closed
+        }
     }
     fn generation(&self) -> u64 {
         self.inner.lock().map_or(0, |inner| inner.generation)
+    }
+    fn epoch(&self) -> u64 {
+        self.inner.lock().map_or(0, |inner| inner.epoch)
     }
 }
 pub(crate) struct ProductionReceive {
@@ -216,18 +229,28 @@ impl TopReceiveTransport for ProductionReceive {
 }
 pub(crate) struct ProductionRestart {
     shared: Arc<ProductionCallosum>,
+    ids: SessionRestartIds,
 }
 impl ProductionRestart {
     pub(crate) fn new(shared: Arc<ProductionCallosum>) -> Self {
-        Self { shared }
+        Self {
+            shared,
+            ids: SessionRestartIds::new(),
+        }
     }
 }
 impl TopRestartTransport for ProductionRestart {
-    fn emit_restart(&mut self, service: &str, restart_id: &str) -> Result<(), TopRestartError> {
+    fn emit_restart(&mut self, service: &str, restart_id: &str) -> RestartEnqueueResult {
         self.shared.emit_restart(service, restart_id)
     }
     fn current_generation(&self) -> u64 {
         self.shared.generation()
+    }
+    fn current_epoch(&self) -> u64 {
+        self.shared.epoch()
+    }
+    fn restart_ids(&mut self) -> &mut dyn RestartIdSource {
+        &mut self.ids
     }
 }
 
@@ -347,7 +370,10 @@ mod tests {
             })
         ));
         assert_eq!(restart.current_generation(), 0);
-        assert!(restart.emit_restart("convey", "id").is_ok());
+        assert_eq!(
+            restart.emit_restart("convey", "id"),
+            RestartEnqueueResult::Enqueued
+        );
         receive.stop().unwrap();
     }
 

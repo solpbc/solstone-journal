@@ -318,9 +318,11 @@ fn malformed_event_has_no_side_effects_and_loop_continues() {
         RestartAttempt {
             restart_id: "id".to_owned(),
             generation: 1,
+            epoch: 1,
             phase: RestartPhase::Pending,
             issued_at: 0.0,
             phase_at: 0.0,
+            started_deadline: None,
             terminal_at: None,
         },
     );

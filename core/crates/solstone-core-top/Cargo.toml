@@ -19,6 +19,7 @@ solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-system-health.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-journal.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 sha2.workspace = true
