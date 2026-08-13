@@ -1400,6 +1400,53 @@ def _mutation_cases() -> list[dict[str, Any]]:
         return cases
 
 
+def _mutation_census(mutations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute, never hand-write, what the mutation replay actually exercised.
+
+    ⛔ A hand-written census is correct until someone adds a probe, and then it
+    is a FALSE NEGATIVE inside the artifact everyone trusts. Deriving it from
+    the recorded cases means it cannot go stale.
+
+    🔴 The load-bearing figure is `routes_called_twice_with_same_input`. A
+    surface whose helpers are fill-only-when-absent is graded ONLY by a
+    successful second call with identical input; every other probe grades
+    refusal envelopes or first-write behaviour.
+    """
+    mutating = {"POST", "PUT", "PATCH", "DELETE"}
+    posts = [case for case in mutations if case["method"] in mutating]
+    succeeded = [case for case in posts if 200 <= case["status"] < 300]
+
+    seen: dict[tuple[str, str], int] = {}
+    for case in succeeded:
+        key = (
+            case["path"],
+            json.dumps(case.get("request_json"), sort_keys=True),
+        )
+        seen[key] = seen.get(key, 0) + 1
+    repeated = sorted({path for (path, _), count in seen.items() if count > 1})
+
+    per_route: dict[str, int] = {}
+    for case in succeeded:
+        route = case["path"].split("?")[0]
+        per_route[route] = per_route.get(route, 0) + 1
+
+    refused_only = sorted(
+        {case["path"].split("?")[0] for case in posts if case["status"] >= 400}
+        - set(per_route)
+    )
+    return {
+        "cases_total": len(mutations),
+        "mutating_method_cases": len(posts),
+        "actually_mutated_2xx": len(succeeded),
+        "refusals": sum(1 for case in posts if case["status"] >= 400),
+        "post_state_reads": len(mutations) - len(posts),
+        "routes_that_mutated": dict(sorted(per_route.items())),
+        "routes_refused_only": refused_only,
+        "routes_called_twice_with_same_input": repeated,
+        "routes_called_twice_with_same_input_count": len(repeated),
+    }
+
+
 def build_corpus() -> dict[str, Any]:
     phases = {
         "unestablished": _phase_cases("unestablished", seed=False),
@@ -1407,6 +1454,7 @@ def build_corpus() -> dict[str, Any]:
         "established_empty": _phase_cases("established_empty", seed=False),
         "populated": _phase_cases("populated", seed=True),
     }
+    mutations = _mutation_cases()
     return {
         "schema": SCHEMA,
         "generator": "scripts/convey_facets_corpus.py",
@@ -1450,15 +1498,13 @@ def build_corpus() -> dict[str, Any]:
         # Written into the fixture rather than only into a scope, because a
         # future reader has the fixture in front of them and not the scope.
         "coverage_limitations": [
-            "MEASURED, because the aggregate misleads: of 26 mutation-phase "
-            "cases, 19 are POSTs, and only 10 of those returned 2xx and "
-            "therefore ACTUALLY MUTATED -- 9 are refusals grading envelopes "
-            "and 7 are post-state GETs. Those 10 span 8 routes, and EVERY "
-            "route mutated exactly ONCE (the 3 on /api/imports are three "
-            "different actions, not one call repeated). So the number of "
-            "routes successfully called TWICE WITH THE SAME INPUT is ZERO. "
-            "Quote that, never '26 mutation cases', which is true and reads "
-            "as coverage it does not have. "
+            "⛔ Do not quote the mutation-phase CASE COUNT as coverage. Read "
+            "`mutation_census` below, which is COMPUTED from the recorded "
+            "cases: it separates probes that actually mutated (2xx on a "
+            "mutating method) from refusals and post-state reads, and reports "
+            "how many routes were successfully called TWICE WITH THE SAME "
+            "INPUT -- the only number that speaks to the "
+            "fill-only-when-absent class. "
             "The replay therefore pins that a first call succeeds and says "
             "NOTHING about a second call with the same input. Two helpers "
             "under these routes are fill-only-when-absent: "
@@ -1477,6 +1523,14 @@ def build_corpus() -> dict[str, Any]:
             "pdf_text. reference_body_sha256 is a RECORD of what weasyprint "
             "emitted and must NOT be asserted by a port; no native renderer "
             "will reproduce those bytes.",
+            "⚠ THIRD FAILURE MODE, on this surface's READ routes: two "
+            "read-named helpers WRITE. `think/awareness._awareness_dir` and "
+            "`think/facet_review_candidates.facet_review_candidates_dir` both "
+            "mkdir on the way to a GET, so `GET /app/awareness/api/state` and "
+            "`GET /app/curation/api/facet/candidates` are not pure reads. Both "
+            "docstrings DO disclose it -- 'creating it if needed' -- but after "
+            "the word 'Return', which is where the eye has already stopped. A "
+            "replay cannot see a directory that gets created either way.",
             "Routes this lane DELETES are deliberately absent: the activities "
             "web UI (/, /{day}, /api/index, /api/stats/{month}, "
             "/api/day/{day}/activities, /api/activity_output/{path}) and every "
@@ -1484,7 +1538,8 @@ def build_corpus() -> dict[str, Any]:
             "an oversight.",
         ],
         "phases": phases,
-        "mutations": _mutation_cases(),
+        "mutations": mutations,
+        "mutation_census": _mutation_census(mutations),
     }
 
 

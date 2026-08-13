@@ -578,6 +578,66 @@ PHASES = (
 )
 
 
+
+# Reference routes this corpus never probes. ⚠ Authored deliberately: three are
+# a sibling wave's, and the rest are exercised by hand-written tests instead --
+# so a reader must not infer coverage from the fixture's size.
+UNPROBED_REFERENCE_ROUTES = (
+    "/app/thinking/api/brain/check",
+    "/app/thinking/api/confidential/disable",
+    "/app/thinking/api/confidential/enable",
+    "/app/thinking/api/confidential/recheck",
+    "/app/thinking/api/local/bootstrap",
+    "/app/thinking/api/validate-keys",
+)
+
+
+def _coverage_limits(cases: dict) -> dict:
+    """What a green replay of this corpus does NOT prove.
+
+    🔴 A green replay is NOT evidence about mutation semantics. Written INTO the
+    fixture, and COMPUTED from the cases rather than transcribed, so it cannot
+    drift out of true the way a hand-written note does.
+
+    ⚠ The trap this exists to defuse: "280 write-method cases across 9 routes"
+    is TRUE and reads as thorough, and is exactly the number quoted in a
+    close-out as evidence of coverage. The number that carries the claim is how
+    many probes actually MUTATED -- i.e. returned 2xx on a mutating method. It
+    is usually tiny. Here it is 6.
+
+    ⛔ The fill-only-when-absent defect class -- a helper named generate/ensure/
+    init/create/set whose safety lives in a guard rather than its name -- is
+    entirely about what a successful SECOND call does. This corpus cannot see
+    it, and neither route it does mutate is one of those.
+    """
+    flat = [c for phase in cases.values() for c in phase]
+    writes = [c for c in flat if c["method"] in ("POST", "PUT", "DELETE", "PATCH")]
+    mutated = [c for c in writes if 200 <= c["status"] < 300]
+    route = lambda c: f"{c['method']} {c['path'].split('?')[0]}"
+    probed = {c["path"].split("?")[0] for c in flat}
+    return {
+        "a_green_replay_does_not_prove": (
+            "mutation semantics. Write probes here are overwhelmingly REFUSALS: "
+            f"{len(writes)} cases use a mutating method but only {len(mutated)} "
+            "returned 2xx and therefore actually changed state. A route's refusal "
+            "envelope being pinned says nothing about what a SUCCESSFUL call does, "
+            "and nothing at all about what a successful SECOND call does."
+        ),
+        "write_method_cases": len(writes),
+        "cases_that_actually_mutated": len(mutated),
+        "routes_that_actually_mutated": sorted({route(c) for c in mutated}),
+        "registered_routes_with_no_probe_at_all": sorted(
+            r for r in UNPROBED_REFERENCE_ROUTES if r not in probed
+        ),
+        "read_the_producer": (
+            "For any handler this corpus does not exercise on its success path, "
+            "the oracle is the reference source, not this file. Helpers named "
+            "generate/ensure/init/create/set may be fill-only-when-absent; read "
+            "the guard before porting, and assert BOTH directions."
+        ),
+    }
+
+
 def build_corpus() -> dict[str, Any]:
     from solstone.convey import create_app
 
@@ -652,6 +712,7 @@ def build_corpus() -> dict[str, Any]:
                 "reproduced wherever the gate admits the request.",
             },
         ],
+        "coverage_limits": _coverage_limits(cases),
         "phases": cases,
     }
 

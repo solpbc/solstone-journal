@@ -3,6 +3,24 @@
     "machine": "x86_64",
     "platform": "linux"
   },
+  "coverage_limits": {
+    "a_green_replay_does_not_prove": "mutation semantics. Write probes here are overwhelmingly REFUSALS: 280 cases use a mutating method but only 6 returned 2xx and therefore actually changed state. A route's refusal envelope being pinned says nothing about what a SUCCESSFUL call does, and nothing at all about what a successful SECOND call does.",
+    "cases_that_actually_mutated": 6,
+    "read_the_producer": "For any handler this corpus does not exercise on its success path, the oracle is the reference source, not this file. Helpers named generate/ensure/init/create/set may be fill-only-when-absent; read the guard before porting, and assert BOTH directions.",
+    "registered_routes_with_no_probe_at_all": [
+      "/app/thinking/api/brain/check",
+      "/app/thinking/api/confidential/disable",
+      "/app/thinking/api/confidential/enable",
+      "/app/thinking/api/confidential/recheck",
+      "/app/thinking/api/local/bootstrap",
+      "/app/thinking/api/validate-keys"
+    ],
+    "routes_that_actually_mutated": [
+      "DELETE /app/thinking/api/local/endpoint",
+      "POST /app/thinking/api/providers"
+    ],
+    "write_method_cases": 280
+  },
   "generator": "scripts/convey_thinking_corpus.py",
   "native_deviations": [
     {
