@@ -36,7 +36,8 @@ pub enum CountParseError {
     TooManyDigits { digit_count: usize },
 }
 
-/// Expose the pinned Python `str.isspace()` subset for fixture verification.
+/// Expose the whitespace CPython `int(str)` strips for fixture verification.
+/// This is narrower than `str.isspace()` and excludes U+001C through U+001F.
 #[doc(hidden)]
 #[must_use]
 pub fn python_int_whitespace_ranges() -> &'static [(u32, u32)] {

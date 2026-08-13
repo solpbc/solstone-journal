@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Immutable readers for journal operational service logs.
+//! Read-only support for journal operational service logs: immutable readers,
+//! one-shot collection and rendering, an injected follower, and CPython-compatible count parsing.
 
 mod collect;
 mod count;

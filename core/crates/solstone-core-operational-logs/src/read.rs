@@ -10,7 +10,7 @@ use crate::error::{EnumerationError, HealthDirectoryProbeError, OrdinaryTailErro
 
 const REVERSE_TAIL_CHUNK_SIZE: usize = 65_536;
 
-/// A proven state of the day-scoped health directory.
+/// A proven metadata state of a probed path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthDirectoryState {
     Absent,
@@ -25,7 +25,7 @@ pub enum ProbeKind {
     Other,
 }
 
-/// Metadata seam for the day-scoped health directory check.
+/// Metadata seam for [`probe_health_directory`].
 pub trait ProbeOps {
     fn metadata_kind(&self, path: &Path) -> io::Result<ProbeKind>;
 }
@@ -47,7 +47,7 @@ impl ProbeOps for StdProbeOps {
     }
 }
 
-/// Probe a derived day health directory without creating it.
+/// Probe a path's metadata without creating it.
 ///
 /// The Python `today-day-path-permission` and `today-day-path-oserror`
 /// fixture cases belong to journal-root resolution, which occurs in the

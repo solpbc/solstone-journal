@@ -371,13 +371,9 @@ fn drain(
                 continue;
             }
             let service = parse_health_log_row(&line).map(|row| row.service);
-            render_stream_row(output, &line, service.as_deref(), is_tty, last_service).map_err(
-                |source| FollowFatalError {
-                    path: source_path_for_output(),
-                    operation: "output",
-                    source: Some(source),
-                },
-            )?;
+            render_stream_row(output, &line, service.as_deref(), is_tty, last_service)
+                .map_err(output_error)?;
+            output.flush().map_err(output_error)?;
         }
     }
     Ok(())
@@ -498,6 +494,14 @@ fn source_path_for_output() -> PathBuf {
     PathBuf::from("<stdout>")
 }
 
+fn output_error(source: io::Error) -> FollowFatalError {
+    FollowFatalError {
+        path: source_path_for_output(),
+        operation: "output",
+        source: Some(source),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
@@ -531,6 +535,24 @@ mod tests {
         events: VecDeque<ReadEvent>,
         seek_error: bool,
         closes: Rc<Cell<usize>>,
+    }
+
+    #[derive(Default)]
+    struct FlushTrackingWriter {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl Write for FlushTrackingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
     }
 
     impl Drop for FakeReader {
@@ -915,6 +937,40 @@ mod tests {
             output,
             b"malformed\n2026-01-01 12:00:00 [svc:out] cr-normalized\nunterminated\n"
         );
+    }
+
+    #[test]
+    fn drains_flush_each_row_in_both_output_modes() {
+        for is_tty in [false, true] {
+            let fs = FakeFs::default();
+            let mut state = initial(&fs, &["a.log"]);
+            state.tracked[0].reader = Box::new(FakeReader {
+                events: vec![
+                    ReadEvent::Line("2026-01-01 12:00:00 [svc:out] first"),
+                    ReadEvent::Line("2026-01-01 12:00:01 [svc:out] second"),
+                    ReadEvent::End,
+                ]
+                .into(),
+                seek_error: false,
+                closes: fs.closes.clone(),
+            });
+            let health = health();
+            let mut output = FlushTrackingWriter::default();
+            let mut last_service = None;
+            let mut warn = |_| {};
+            let mut context = FollowTickContext {
+                fs: &fs,
+                health_dir: &health,
+                stop: &|| false,
+                output: &mut output,
+                is_tty,
+                last_service: &mut last_service,
+                warn: &mut warn,
+            };
+
+            tick(&mut state, Duration::from_secs(1), &mut context).unwrap();
+            assert_eq!(output.flushes, 2, "is_tty={is_tty}");
+        }
     }
 
     #[test]
