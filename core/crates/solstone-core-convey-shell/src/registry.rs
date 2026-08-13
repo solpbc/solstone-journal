@@ -171,14 +171,14 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         converted: false,
     },
     AppDefinition {
-        name: "observer",
+        name: "devices",
         icon: "📡",
         label: "devices",
         lucide_icon: "antenna",
         date_nav: None,
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "reflections",

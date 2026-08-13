@@ -24,12 +24,12 @@
 //! and unmatched paths. Every registered route is gated by default; app-local
 //! static files are deliberately not top-level-static exemptions.
 //!
-//! ## D4: registry fidelity over dynamic configuration
+//! ## D4: fixed native registry inventory
 //!
-//! The 23 app definitions and Lucide mapping are compiled into this crate in
-//! corpus order. Configuration-driven ordering, stars, and agent renaming are
-//! intentionally deferred because the frozen reference fixture exercises none
-//! of them; chat-bar placeholder likewise uses its stable default, not live state.
+//! The app definitions and Lucide mapping are compiled into this crate as a
+//! fixed native inventory. Configuration-driven ordering and stars are
+//! intentionally deferred; chat-bar placeholder likewise uses its stable
+//! default, not live state.
 //!
 //! ## D5: generated, dependency-free asset embedding
 //!
@@ -37,10 +37,10 @@
 //! static tree and the speakers assets. This avoids a proc-macro asset crate
 //! while retaining byte-identical source assets in the binary.
 //!
-//! ## D6: one converted app, explicit named refusal for the rest
+//! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Speakers is the only converted workspace in this wave. Every other known
-//! app receives a 200 `app_not_converted` JSON payload carrying its app name;
+//! Speakers and Devices are converted workspaces in this wave. Every other known
+//! app receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
 //!
 //! ## D7: host transport has one indispensable listener and one capability
