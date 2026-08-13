@@ -4,12 +4,19 @@
 #[path = "support/fixtures.rs"]
 mod fixtures;
 
-use solstone_core_system_health::sanitize_for_terminal;
+use solstone_core_system_health::{sanitize_for_terminal, unsafe_ranges};
 
 #[test]
 fn pinned_fixture_and_all_unsafe_scalars_match_the_sanitizer() {
     fixtures::assert_fixture_shapes();
     let fixture = fixtures::health_text_fixture();
+    let expected_ranges = fixture
+        .unsafe_unicode
+        .ranges
+        .iter()
+        .map(|range| (range.start, range.end))
+        .collect::<Vec<_>>();
+    assert_eq!(unsafe_ranges(), expected_ranges);
     let mut all = fixture
         .unsafe_unicode
         .categories

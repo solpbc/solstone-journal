@@ -34,7 +34,7 @@ pub use event::{EventPayload, HealthEvent, RunLogRecord};
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern};
 pub use maint::{MaintTaskState, MaintTaskStatus, read_maint_task_state, read_maint_task_states};
 pub use progress::read_segment_progress;
-pub use safe_text::sanitize_for_terminal;
+pub use safe_text::{sanitize_for_terminal, unsafe_ranges};
 pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
 pub use source::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthLogSource, SegmentSource,

@@ -46,7 +46,7 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     }
 
     let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_time()
+        .enable_all()
         .build()
     {
         Ok(runtime) => runtime,
@@ -479,6 +479,20 @@ mod tests {
         assert_eq!(
             render_status(&status),
             "Services:\n  convey\\n          pid 3  uptime 1h 1m\n\nCrashed:\n  local            2 restart attempts\n\nTasks:\n  daily\\t           21s  SLOW (cap 20s)\n  queued z\\x1b        1\n\nHeartbeat: STALE (host (path\\r))\nCallosum: 2 clients\n"
+        );
+    }
+
+    #[test]
+    fn renderer_reports_empty_collections_without_optional_sections() {
+        let status: SupervisorStatus = serde_json::from_value(json!({
+            "services": [], "crashed": [], "tasks": [], "recent_tasks": [],
+            "queues": {}, "stale_heartbeats": [], "stale_heartbeat_details": [],
+            "schedules": [], "callosum_clients": 0
+        }))
+        .unwrap();
+        assert_eq!(
+            render_status(&status),
+            "Services:\n\nTasks: none\nHeartbeat: ok\nCallosum: 0 clients\n"
         );
     }
 

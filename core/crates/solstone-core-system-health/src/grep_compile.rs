@@ -337,7 +337,10 @@ fn validate_character_escape(
         let Some(rest) = pattern.get(after..) else {
             return invalid(offset);
         };
-        if !rest.starts_with('{') || rest.len() == 1 || !rest[1..].contains('}') {
+        let Some(name_end) = rest.find('}') else {
+            return invalid(offset);
+        };
+        if !rest.starts_with('{') || name_end == 1 {
             return invalid(offset);
         }
         return Ok(());
@@ -348,6 +351,18 @@ fn validate_character_escape(
     let candidate = rest.as_bytes().get(..required_digits);
     if candidate.is_none_or(|digits| !digits.iter().all(u8::is_ascii_hexdigit)) {
         return invalid(offset);
+    }
+    if escaped == 'U' {
+        let candidate = candidate.expect("candidate checked above");
+        let Ok(candidate) = std::str::from_utf8(candidate) else {
+            return invalid(offset);
+        };
+        let Ok(scalar) = u32::from_str_radix(candidate, 16) else {
+            return invalid(offset);
+        };
+        if scalar > 0x10ffff || (0xd800..=0xdfff).contains(&scalar) {
+            return invalid(offset);
+        }
     }
     Ok(())
 }

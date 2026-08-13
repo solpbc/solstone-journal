@@ -203,12 +203,19 @@ fn character_escape_family_is_closed_without_closing_literal_escapes() {
             })
         ));
     }
-    for pattern in ["\\x4", "\\c"] {
+    for pattern in ["\\x4", "\\c", "\\U00110000", "\\U0000D800", "\\N{}"] {
         assert!(matches!(
             compile_grep_pattern(pattern),
             Err(GrepCompileError::InvalidPattern { offset: 0 })
         ));
     }
+    assert!(matches!(
+        compile_grep_pattern("\\N{BULLET}"),
+        Err(GrepCompileError::UnsupportedFamily {
+            family: "character-escape",
+            offset: 0
+        })
+    ));
     assert!(compile_grep_pattern("\\.").unwrap().is_match("."));
     assert!(compile_grep_pattern("\\é").unwrap().is_match("é"));
 }

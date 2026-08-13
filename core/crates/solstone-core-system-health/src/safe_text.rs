@@ -31,6 +31,12 @@ const UNSAFE_RANGES: &[(u32, u32); 23] = &[
     (0xe0020, 0xe007f),
 ];
 
+#[doc(hidden)]
+#[must_use]
+pub fn unsafe_ranges() -> &'static [(u32, u32)] {
+    UNSAFE_RANGES
+}
+
 fn unsafe_scalar(scalar: u32) -> bool {
     UNSAFE_RANGES
         .binary_search_by(|(start, end)| {
