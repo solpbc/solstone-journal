@@ -77,6 +77,7 @@ pub fn render_frame(
     output.push_str(style.bold());
     output.push_str("  Service         PID      Uptime            MB      %  Last Log");
     output.push_str(style.normal());
+    reconnecting(&mut output, state.continuity.supervisor_gap, style);
     output.push('\n');
     rule(&mut output, width);
     if state.services.is_empty() {
@@ -103,6 +104,7 @@ pub fn render_frame(
     output.push_str(style.bold());
     output.push_str("  Task            PID      Runtime           MB      %  Last Log");
     output.push_str(style.normal());
+    reconnecting(&mut output, state.continuity.task_gap, style);
     output.push('\n');
     if state.running_tasks.is_empty() && state.finished_tasks.is_empty() {
         output.push_str(style.dim());
@@ -223,7 +225,7 @@ fn service_line(
             .get(&pid)
             .map_or("-".to_owned(), |cpu| format!("{cpu:.0}"))
     ));
-    let age = append_log(
+    append_log(
         out,
         service.get("ref").and_then(Value::as_str),
         state,
@@ -236,7 +238,6 @@ fn service_line(
         out.push_str(style.normal());
         out.push('\n');
     }
-    let _ = age;
 }
 
 fn task_line(
@@ -268,7 +269,7 @@ fn task_line(
             .get(&pid)
             .map_or("-".to_owned(), |cpu| format!("{cpu:.0}"))
     ));
-    let _ = append_log(
+    append_log(
         out,
         task.get("ref").and_then(Value::as_str),
         state,
@@ -285,13 +286,13 @@ fn append_log(
     frame: FrameSample,
     width: usize,
     style: &dyn TopStyle,
-) -> String {
+) {
     let Some(log) = reference
         .and_then(|reference| state.last_log_lines.get(reference))
         .and_then(Value::as_array)
     else {
         out.push('\n');
-        return String::new();
+        return;
     };
     let age = reference
         .and_then(|reference| state.last_log_at.get(reference))
@@ -311,7 +312,6 @@ fn append_log(
         out.push_str(style.normal());
     }
     out.push('\n');
-    age
 }
 
 fn observe_section(out: &mut String, state: &TopState, frame: FrameSample, style: &dyn TopStyle) {
@@ -319,6 +319,7 @@ fn observe_section(out: &mut String, state: &TopState, frame: FrameSample, style
     out.push_str(style.bold());
     out.push_str("Observe");
     out.push_str(style.normal());
+    reconnecting(out, state.continuity.observe_gap, style);
     out.push(' ');
     if state.observe_last_ts > 0.0 {
         let age = (frame.wall_seconds - state.observe_last_ts).max(0.0);
@@ -466,6 +467,7 @@ fn think_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
     out.push_str(style.bold());
     out.push_str("Think");
     out.push_str(style.normal());
+    reconnecting(out, state.continuity.think_gap, style);
     out.push('\n');
     if state.think_status.is_empty()
         && !state.think_running
@@ -512,6 +514,13 @@ fn crashed_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
 fn rule(out: &mut String, width: usize) {
     out.push_str(&"─".repeat(width));
     out.push('\n');
+}
+fn reconnecting(out: &mut String, is_reconnecting: bool, style: &dyn TopStyle) {
+    if is_reconnecting {
+        out.push_str(style.dim());
+        out.push_str(" (reconnecting)");
+        out.push_str(style.normal());
+    }
 }
 fn dynamic_line(out: &mut String, value: &str, _style: &dyn TopStyle) {
     out.push_str(&truncate_scalars(value, 1024));

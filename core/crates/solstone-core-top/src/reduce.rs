@@ -137,8 +137,12 @@ pub fn apply_receive_event(
                     sample.monotonic_seconds,
                 );
             }
-            if envelope.tract == "supervisor" && envelope.event == "status" {
-                state.continuity.supervisor_gap = false;
+            match (envelope.tract.as_str(), envelope.event.as_str()) {
+                ("supervisor", "status") => state.continuity.supervisor_gap = false,
+                ("logs", "exec" | "line") => state.continuity.task_gap = false,
+                ("observe", "status") => state.continuity.observe_gap = false,
+                ("think", "started" | "status") => state.continuity.think_gap = false,
+                _ => {}
             }
             Ok(effects)
         }
@@ -207,19 +211,27 @@ pub fn cleanup_processes(
     for reference in expired {
         state.finished_tasks.remove(&reference);
     }
-    let missing: Vec<(String, String, u32)> = state
+    let tasks: Vec<(String, String, u32)> = state
         .running_tasks
         .iter()
         .filter_map(|(reference, task)| {
             let pid = task.get("pid").and_then(Value::as_u64)? as u32;
             let name = task.get("name").and_then(Value::as_str)?.to_owned();
-            matches!(
-                observer.sample(pid, sample.monotonic_seconds),
-                ProcessSample::Missing | ProcessSample::Zombie
-            )
-            .then(|| (reference.clone(), name, pid))
+            Some((reference.clone(), name, pid))
         })
         .collect();
+    let mut missing = Vec::new();
+    for (reference, name, pid) in tasks {
+        let process_sample = observer.sample(pid, sample.monotonic_seconds);
+        if matches!(
+            process_sample,
+            ProcessSample::Missing | ProcessSample::Zombie
+        ) {
+            missing.push((reference, name, pid));
+        } else {
+            record_process_sample(state, pid, process_sample);
+        }
+    }
     for (reference, name, pid) in missing {
         let last_log = state
             .last_log_lines

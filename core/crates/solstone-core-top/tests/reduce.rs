@@ -3,9 +3,11 @@
 
 use serde_json::Value;
 use solstone_core_callosum::{CallosumDiscontinuity, CallosumEnvelope, CallosumReceiveEvent};
+use std::collections::VecDeque;
+
 use solstone_core_top::{
-    ProcessObserver, ProcessSample, ReductionSample, TopReduceError, TopState, apply_receive_event,
-    reduce_envelope,
+    FrameSample, PlainTopStyle, ProcessObserver, ProcessSample, ReductionSample, TopReduceError,
+    TopState, apply_receive_event, cleanup_processes, reduce_envelope, render_frame,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/top_reference.json");
@@ -168,4 +170,110 @@ fn new_connection_generation_invalidates_stale_supervisor_state_until_status() {
     .unwrap();
     assert!(state.services.is_empty());
     assert!(state.continuity.supervisor_gap);
+}
+
+#[test]
+fn cleanup_refreshes_live_task_metrics_on_every_cycle() {
+    struct SequenceObserver(VecDeque<ProcessSample>);
+    impl ProcessObserver for SequenceObserver {
+        fn sample(&mut self, _: u32, _: f64) -> ProcessSample {
+            self.0.pop_front().expect("one sample per cleanup cycle")
+        }
+    }
+
+    let mut state = TopState {
+        running_tasks: [(
+            "task".into(),
+            serde_json::json!({"ref":"task", "name":"backup", "pid":55}),
+        )]
+        .into(),
+        task_started_at: [("task".into(), 0.0)].into(),
+        ..TopState::default()
+    };
+    let mut observer = SequenceObserver(VecDeque::from([
+        ProcessSample::Live {
+            rss_bytes: 11 * 1_048_576,
+            cpu_percent: 12.0,
+        },
+        ProcessSample::Live {
+            rss_bytes: 47 * 1_048_576,
+            cpu_percent: 73.0,
+        },
+    ]));
+    cleanup_processes(
+        &mut state,
+        &ReductionSample::fixture(5.0, "x"),
+        &mut observer,
+    );
+    cleanup_processes(
+        &mut state,
+        &ReductionSample::fixture(10.0, "x"),
+        &mut observer,
+    );
+
+    assert_eq!(state.memory_cache.get(&55), Some(&(47 * 1_048_576)));
+    assert_eq!(state.cpu_cache.get(&55), Some(&73.0));
+    let rendered = render_frame(
+        &state,
+        FrameSample {
+            wall_seconds: 10.0,
+            monotonic_seconds: 10.0,
+        },
+        120,
+        &PlainTopStyle,
+    );
+    assert!(rendered.contains("     47     73"));
+}
+
+#[test]
+fn domain_gaps_render_then_clear_on_fresh_domain_events() {
+    let mut state = TopState {
+        continuity: solstone_core_top::DomainContinuity {
+            generation: 1,
+            ..solstone_core_top::DomainContinuity::default()
+        },
+        ..TopState::default()
+    };
+    let mut observer = Observer;
+    apply_receive_event(
+        &mut state,
+        &CallosumReceiveEvent::Discontinuity {
+            generation: 2,
+            reason: CallosumDiscontinuity::Connected,
+        },
+        &ReductionSample::fixture(0.0, "x"),
+        &mut observer,
+    )
+    .unwrap();
+    assert!(
+        state.continuity.task_gap && state.continuity.observe_gap && state.continuity.think_gap
+    );
+    let rendered = render_frame(&state, FrameSample::default(), 120, &PlainTopStyle);
+    assert_eq!(rendered.matches("(reconnecting)").count(), 4);
+
+    for value in [
+        serde_json::json!({"tract":"supervisor","event":"status","services":[]}),
+        serde_json::json!({"tract":"logs","event":"exec","ref":"task","name":"backup","pid":3}),
+        serde_json::json!({"tract":"observe","event":"status","mode":"idle"}),
+        serde_json::json!({"tract":"think","event":"started"}),
+    ] {
+        apply_receive_event(
+            &mut state,
+            &CallosumReceiveEvent::Envelope {
+                generation: 2,
+                envelope: envelope(&value),
+            },
+            &ReductionSample::fixture(1.0, "x"),
+            &mut observer,
+        )
+        .unwrap();
+    }
+    assert!(
+        !state.continuity.supervisor_gap
+            && !state.continuity.task_gap
+            && !state.continuity.observe_gap
+            && !state.continuity.think_gap
+    );
+    let rendered = render_frame(&state, FrameSample::default(), 120, &PlainTopStyle);
+    assert!(!rendered.contains("(reconnecting)"));
 }
