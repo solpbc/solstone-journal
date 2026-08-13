@@ -404,11 +404,10 @@ async fn serve_carrier(
         log::debug!("paired-device carrier completed without an accepted identity");
         return;
     };
-    let AccessBasis::LinkedDevice { did, .. } = &basis else {
-        unreachable!("accepted device carriers have a linked-device basis")
-    };
-    let did = did.clone();
-    record_completed_handshake(&config.journal_root, &did);
+    let did = linked_device_did(&basis);
+    if let Some(did) = &did {
+        record_completed_handshake(&config.journal_root, did);
+    }
     // The publisher feeds the door's carrier loop. Neither the gate nor the verifier consumes it for decisions.
     let mut authorization = config.authorization.clone();
     // `subscribe()` precedes `refresh_once()`, so this clone can inherit a
@@ -439,7 +438,9 @@ async fn serve_carrier(
             changed = authorization.changed(), if authorization_watch_open => {
                 match changed {
                     Ok(()) => {
-                        if close_for_revocation(authorization.borrow().as_read(), &did) {
+                        if did.as_ref().is_some_and(|did| {
+                            close_for_revocation(authorization.borrow().as_read(), did)
+                        }) {
                             let _ = connection.close();
                             break;
                         }
@@ -571,6 +572,40 @@ fn capture_to_basis(identity: &IdentityCell, peer: Option<SocketAddr>) -> Option
         carrier: carrier_from_peer(peer),
         did: accepted.did,
     })
+}
+
+fn linked_device_did(basis: &AccessBasis) -> Option<LinkedDeviceDid> {
+    match basis {
+        AccessBasis::LinkedDevice { did, .. } => Some(did.clone()),
+        // A cert-less pairing carrier has no device identity to refresh or revoke.
+        AccessBasis::PairingPeer { .. } => None,
+        AccessBasis::Localhost => None,
+    }
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::linked_device_did;
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+
+    const VALID_DID: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn carrier_basis_handling_keeps_linked_identity_and_accepts_pairing_peers() {
+        let linked = AccessBasis::LinkedDevice {
+            carrier: Carrier::Direct,
+            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+        };
+        assert_eq!(linked_device_did(&linked).unwrap().as_str(), VALID_DID);
+
+        assert!(
+            linked_device_did(&AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            })
+            .is_none()
+        );
+    }
 }
 
 fn close_for_revocation(posture: &AuthorizedClientsRead, did: &LinkedDeviceDid) -> bool {

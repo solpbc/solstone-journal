@@ -38,6 +38,8 @@ pub fn error_envelope(
 pub async fn not_found_fallback(
     Extension(basis): Extension<AccessBasis>,
 ) -> (StatusCode, Json<ErrorEnvelope>) {
+    // Deliberate non-site: this probe calls `require_access` and discards the
+    // result; it must not be treated as an access-admission decision.
     require_access(&basis);
     error_envelope(
         "not_found",

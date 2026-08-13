@@ -3,10 +3,11 @@
 
 use crate::identity::AccessBasis;
 
-/// Admit one of the two closed, accept-time access bases.
+/// Admit an owner-local or already linked accept-time access basis.
 pub fn require_access(basis: &AccessBasis) -> bool {
     match basis {
         AccessBasis::Localhost | AccessBasis::LinkedDevice { .. } => true,
+        AccessBasis::PairingPeer { .. } => false,
     }
 }
 
@@ -19,14 +20,14 @@ mod tests {
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
-    fn carrier_is_observability_only_at_the_access_gate() {
-        assert!(require_access(&AccessBasis::LinkedDevice {
-            carrier: Carrier::Direct,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
-        }));
-        assert!(require_access(&AccessBasis::LinkedDevice {
-            carrier: Carrier::ViaSpl,
-            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
-        }));
+    fn access_gate_accepts_established_bases_and_refuses_pairing_peers() {
+        assert!(require_access(&AccessBasis::Localhost));
+        for carrier in [Carrier::Direct, Carrier::ViaSpl] {
+            assert!(require_access(&AccessBasis::LinkedDevice {
+                carrier,
+                did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+            }));
+            assert!(!require_access(&AccessBasis::PairingPeer { carrier }));
+        }
     }
 }

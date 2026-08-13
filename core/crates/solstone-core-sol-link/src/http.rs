@@ -504,6 +504,20 @@ fn is_local(basis: &AccessBasis) -> bool {
     require_access(basis) && matches!(basis, AccessBasis::Localhost)
 }
 
+#[cfg(test)]
+mod access_tests {
+    use super::is_local;
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier};
+
+    #[test]
+    fn local_gate_accepts_localhost_and_refuses_pairing_peers() {
+        assert!(is_local(&AccessBasis::Localhost));
+        assert!(!is_local(&AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        }));
+    }
+}
+
 fn init_local_only() -> Response {
     error_envelope(
         "init_local_only",

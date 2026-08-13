@@ -115,6 +115,8 @@ async fn require_authorization(
     let Some(basis) = request.extensions().get::<AccessBasis>() else {
         return pl_revoked_response();
     };
+    // `PairingPeer` intentionally falls through here: the forthcoming door
+    // confinement layer refuses it before this authorization gate is reached.
     let AccessBasis::LinkedDevice { did, .. } = basis else {
         return next.run(request).await;
     };
@@ -148,7 +150,20 @@ async fn require_authorization(
 
 #[cfg(test)]
 mod tests {
-    use super::{AUTHORIZATION_GATE_EXEMPTIONS, AuthorizationExemption};
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use axum::{Router, middleware};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier};
+    use solstone_core_sol_link::DeviceDoorAuthorization;
+    use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+    use tokio::sync::watch;
+    use tower::ServiceExt;
+
+    use super::{
+        AUTHORIZATION_GATE_EXEMPTIONS, AuthorizationExemption, AuthorizationGateState,
+        require_authorization,
+    };
 
     #[test]
     fn exemption_inventory_is_named_and_closed() {
@@ -159,5 +174,24 @@ mod tests {
                 AuthorizationExemption::TopLevelStatic,
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn pairing_peer_falls_through_the_authorization_gate() {
+        let (_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let app = Router::new()
+            .route("/probe", get(|| async { StatusCode::OK }))
+            .route_layer(middleware::from_fn_with_state(
+                AuthorizationGateState { authorization },
+                require_authorization,
+            ));
+        let mut request = Request::get("/probe").body(Body::empty()).unwrap();
+        request.extensions_mut().insert(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        });
+
+        assert_eq!(app.oneshot(request).await.unwrap().status(), StatusCode::OK);
     }
 }

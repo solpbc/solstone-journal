@@ -124,13 +124,13 @@
 //!    exercises `serve::tcp_builder`, `serve::mux_builder`, and the
 //!    `RequestBodyLimitLayer` path for 128 MiB bodies, 32 headers, and the
 //!    64 KiB HTTP/1 buffer bound.
-//! 6. `identity.rs::tests::access_basis_has_exactly_two_variants` uses
-//!    exhaustive matches over `AccessBasis` and `Carrier`, so adding an
-//!    AccessBasis variant is a compile-time test failure.
+//! 6. `identity.rs::tests::access_basis_variants_remain_exhaustive` uses
+//!    exhaustive matches over `AccessBasis` and `Carrier`, so adding a future
+//!    `AccessBasis` variant is a compile-time test failure.
 //!
-//! `gate.rs::tests::carrier_is_observability_only_at_the_access_gate` remains
-//! a supporting test: it proves both `Carrier` variants authorize identically,
-//! but does not replace the criterion-two round-trip test. Likewise,
+//! `gate.rs::tests::access_gate_accepts_established_bases_and_refuses_pairing_peers`
+//! remains a supporting test: it proves both `Carrier` variants authorize
+//! identically, but does not replace the criterion-two round-trip test. Likewise,
 //! `envelope.rs::tests::error_envelope_uses_the_legacy_json_shape` protects
 //! D6's compatibility surface.
 //!
@@ -138,7 +138,7 @@
 //! discipline during implementation. In particular, criteria 3 and 4 must be
 //! made red by temporarily deriving identity from request data and by making
 //! one listener bind a wildcard address; criterion 6 is made red by a
-//! temporary third identity variant, which produces the intended compile
+//! temporary fourth identity variant, which produces the intended compile
 //! failure in its exhaustive-match test. Criteria 1, 2, and 5 likewise require
 //! a deliberate regression and observed red result before the correct code is
 //! restored.

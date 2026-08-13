@@ -16,6 +16,11 @@ pub fn validate_access(basis: &AccessBasis) -> Result<String, (ReasonCode, Statu
             StatusCode::FORBIDDEN,
             "a linked device identity is required".to_owned(),
         )),
+        AccessBasis::PairingPeer { .. } => Err((
+            ReasonCode::LinkedDeviceRequired,
+            StatusCode::FORBIDDEN,
+            "a linked device identity is required".to_owned(),
+        )),
     }
 }
 
@@ -122,7 +127,30 @@ mod tests {
 
     use crate::model::ReasonCode;
 
-    use super::{PROTOCOL_HEADER, validate_protocol, validate_segment, validate_source};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+
+    use super::{
+        PROTOCOL_HEADER, validate_access, validate_protocol, validate_segment, validate_source,
+    };
+
+    const VALID_DID: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn access_validation_accepts_linked_devices_and_refuses_pairing_peers() {
+        let linked = AccessBasis::LinkedDevice {
+            carrier: Carrier::Direct,
+            did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+        };
+        assert_eq!(validate_access(&linked), Ok(VALID_DID.to_owned()));
+
+        let refusal = validate_access(&AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        })
+        .unwrap_err();
+        assert_eq!(refusal.0, ReasonCode::LinkedDeviceRequired);
+        assert_eq!(refusal.1, StatusCode::FORBIDDEN);
+    }
 
     #[test]
     fn segment_length_has_no_numeric_ceiling() {

@@ -50,13 +50,17 @@ pub enum Carrier {
     ViaSpl,
 }
 
-/// The only bases on which the HTTP substrate admits a connection.
+/// The accept-time bases available to the HTTP substrate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessBasis {
     Localhost,
     LinkedDevice {
         carrier: Carrier,
         did: LinkedDeviceDid,
+    },
+    /// An accepted cert-less carrier restricted by the door's pairing confinement.
+    PairingPeer {
+        carrier: Carrier,
     },
 }
 
@@ -68,13 +72,15 @@ mod tests {
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     #[test]
-    fn access_basis_has_exactly_two_variants() {
-        // This match deliberately has no wildcard: adding an AccessBasis variant
-        // makes the test fail to compile, enforcing the closed access basis.
+    fn access_basis_variants_remain_exhaustive() {
+        // A third basis is authorized for cert-less pairing. This match deliberately
+        // has no wildcard: a fourth variant must fail to compile until this test is
+        // updated, preserving the closed-set invariant.
         fn assert_access_basis_is_exhaustive(basis: AccessBasis) {
             match basis {
                 AccessBasis::Localhost => {}
                 AccessBasis::LinkedDevice { carrier: _, did: _ } => {}
+                AccessBasis::PairingPeer { carrier: _ } => {}
             }
         }
 
@@ -90,6 +96,9 @@ mod tests {
         assert_access_basis_is_exhaustive(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),
+        });
+        assert_access_basis_is_exhaustive(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
         });
         assert_carrier_is_exhaustive(Carrier::Direct);
         assert_carrier_is_exhaustive(Carrier::ViaSpl);
