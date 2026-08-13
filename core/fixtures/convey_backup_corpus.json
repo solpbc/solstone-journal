@@ -269,7 +269,7 @@
         "method": "POST",
         "path": "/app/backup/restore",
         "status": 400,
-        "why": "restore with no body: the missing-field refusal on the destructive route"
+        "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
         "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
@@ -286,7 +286,7 @@
           "recovery_key": "   "
         },
         "status": 400,
-        "why": "restore with a blank recovery key: whitespace is not a key"
+        "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
         "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
@@ -465,7 +465,7 @@
         "method": "POST",
         "path": "/app/backup/restore",
         "status": 500,
-        "why": "restore with no body: the missing-field refusal on the destructive route"
+        "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
         "body_bytes": 183,
@@ -482,7 +482,7 @@
           "recovery_key": "   "
         },
         "status": 500,
-        "why": "restore with a blank recovery key: whitespace is not a key"
+        "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
         "body_bytes": 183,
@@ -770,7 +770,7 @@
         "method": "POST",
         "path": "/app/backup/restore",
         "status": 400,
-        "why": "restore with no body: the missing-field refusal on the destructive route"
+        "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
         "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
@@ -787,7 +787,7 @@
           "recovery_key": "   "
         },
         "status": 400,
-        "why": "restore with a blank recovery key: whitespace is not a key"
+        "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
         "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
@@ -1075,7 +1075,7 @@
         "method": "POST",
         "path": "/app/backup/restore",
         "status": 400,
-        "why": "restore with no body: the missing-field refusal on the destructive route"
+        "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
         "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
@@ -1092,7 +1092,7 @@
           "recovery_key": "   "
         },
         "status": 400,
-        "why": "restore with a blank recovery key: whitespace is not a key"
+        "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
         "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
@@ -1380,7 +1380,7 @@
         "method": "POST",
         "path": "/app/backup/restore",
         "status": 400,
-        "why": "restore with no body: the missing-field refusal on the destructive route"
+        "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
         "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
@@ -1397,7 +1397,7 @@
           "recovery_key": "   "
         },
         "status": 400,
-        "why": "restore with a blank recovery key: whitespace is not a key"
+        "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
         "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
@@ -1543,7 +1543,7 @@
         "method": "POST",
         "path": "/app/backup/restore",
         "status": 302,
-        "why": "restore with no body: the missing-field refusal on the destructive route"
+        "why": "restore with no body: refuses before reaching the restore engine"
       },
       {
         "body_bytes": 197,
@@ -1557,7 +1557,7 @@
           "recovery_key": "   "
         },
         "status": 302,
-        "why": "restore with a blank recovery key: whitespace is not a key"
+        "why": "restore with a blank key: whitespace refuses before reaching the restore engine"
       },
       {
         "body_bytes": 197,

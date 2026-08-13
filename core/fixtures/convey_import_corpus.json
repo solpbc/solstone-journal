@@ -453,7 +453,7 @@
           "path": "/nonexistent/corpus/path"
         },
         "status": 500,
-        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+        "why": "register-a-path pointing at nothing: refuses before the source is read"
       },
       {
         "body_normalized": [
@@ -1103,7 +1103,7 @@
           "path": "/nonexistent/corpus/path"
         },
         "status": 404,
-        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+        "why": "register-a-path pointing at nothing: refuses before the source is read"
       },
       {
         "body_sha256": "c4033225676f468e936dc5be368aafdb6b5be13fcf96bd38aaed83b0bbc5c022",
@@ -1950,7 +1950,7 @@
           "path": "/nonexistent/corpus/path"
         },
         "status": 404,
-        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+        "why": "register-a-path pointing at nothing: refuses before the source is read"
       },
       {
         "body_sha256": "c4033225676f468e936dc5be368aafdb6b5be13fcf96bd38aaed83b0bbc5c022",
@@ -2368,7 +2368,7 @@
           "path": "/nonexistent/corpus/path"
         },
         "status": 302,
-        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+        "why": "register-a-path pointing at nothing: refuses before the source is read"
       },
       {
         "body_bytes": 197,

@@ -84,6 +84,15 @@ CONTROL_DESTINATIONS = ("example.invalid", "198.51.100.7")
 # about which routes reach out; loopback stays open for callosum and friends.
 forbid_non_loopback_egress()
 assert_egress_guard_can_see(__file__)
+# ⚠ **The unit of analysis is the BLUEPRINT, not the route.** A drain registered
+# on `before_request`/`after_request` runs for every request to that blueprint,
+# including refusals, so auditing the routes you intend to probe does not bound
+# what probing them reaches. Audited on 2026-08-13 with a positive control:
+# `app:support` registers `_drain_pending_acknowledgements_{before,after}_request`
+# and the query found both, while `app:import` and `app:backup` register **no**
+# blueprint-scoped hooks at all. The four app-wide hooks are convey core —
+# identity stamp, request id, the access gate, the loopback-origin guard.
+
 
 PLACEHOLDER_ROOT = "<JOURNAL_ROOT>"
 PLACEHOLDER_CTIME = "<DIR_CTIME>"
@@ -247,7 +256,11 @@ PROBES: tuple[Probe, ...] = (
         "POST",
         "/app/import/api/save-path",
         {"client_item_id": "corpus-1", "path": "/nonexistent/corpus/path"},
-        "🔴 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written",
+        # 🔴 The path must not exist, and the reason is not that a missing path is
+        # the interesting case. A path that DOES exist is hashed by `hash_source`
+        # and recorded as a staged import against the seeded journal, so the probe
+        # would be a mutation. ⛔ Do not point this at a real file.
+        "register-a-path pointing at nothing: refuses before the source is read",
     ),
     (
         "POST",
