@@ -942,31 +942,29 @@ mod tests {
             health: Health::default(),
             stopping: false,
         }));
-        for (segment, batch) in [("live", false)] {
-            let key = SegmentKey {
-                day: "20260812".into(),
-                stream: Some("default".into()),
-                segment: segment.into(),
-            };
-            state.lock().expect("state").segments.insert(
-                key.clone(),
-                SegmentState::new(SegmentContext {
-                    key: key.clone(),
-                    observer: None,
-                    batch,
-                    meta: None,
-                }),
-            );
-            complete(
-                &state,
-                &outbound,
-                temp.path(),
-                &key,
-                None,
-                None,
-                Some("no handlers"),
-            );
-        }
+        let key = SegmentKey {
+            day: "20260812".into(),
+            stream: Some("default".into()),
+            segment: "live".into(),
+        };
+        state.lock().expect("state").segments.insert(
+            key.clone(),
+            SegmentState::new(SegmentContext {
+                key: key.clone(),
+                observer: None,
+                batch: false,
+                meta: None,
+            }),
+        );
+        complete(
+            &state,
+            &outbound,
+            temp.path(),
+            &key,
+            None,
+            None,
+            Some("no handlers"),
+        );
         let marker = temp.path().join("chronicle/20260812/health/stream.updated");
         assert!(marker.is_file());
         std::fs::remove_file(&marker).expect("remove live marker");

@@ -1315,6 +1315,14 @@ fn w3c_poisoned_interpreters_positive_control_and_battery() {
     stage_speakers_analyze(&mut c, false);
     let poison = c.journal_path.parent().unwrap().join("poison");
     fs::create_dir_all(&poison).unwrap();
+    // Keep the fixture independent of real partial-migration backups in /tmp.
+    // A staged alias bypasses that production recovery scan; the unresolved
+    // fixture installation root still produces the expected Skip verdict.
+    let aliases = c.home_dir.join(".local/bin");
+    fs::create_dir_all(&aliases).unwrap();
+    for name in ["journal", "sol"] {
+        fs::write(aliases.join(name), "fixture alias").unwrap();
+    }
     let witness = poison.join("witness");
     let script = format!(
         "#!/bin/sh\necho 'forbidden interpreter invoked: $0' >&2\necho \"$0\" >> '{}'\nexit 97\n",
@@ -1359,7 +1367,7 @@ fn w3c_poisoned_interpreters_positive_control_and_battery() {
             ("retired_host_shim", Status::Skip),
             ("host_dependencies", Status::Skip),
             ("disk_space", Status::Skip),
-            ("config_dir_readable", Status::Fail),
+            ("config_dir_readable", Status::Ok),
             ("journal_dir_writable", Status::Ok),
             ("supervisor_conflict", Status::Skip),
             ("service_identity", Status::Skip),
