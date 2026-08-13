@@ -260,7 +260,7 @@ pub async fn remove(
 }
 
 fn slug(value: &str) -> String {
-    value
+    let slug = value
         .to_ascii_lowercase()
         .chars()
         .map(|value| {
@@ -271,8 +271,13 @@ fn slug(value: &str) -> String {
             }
         })
         .collect::<String>()
-        .trim_matches('-')
-        .to_owned()
+        .trim_matches('_')
+        .to_owned();
+    if slug.is_empty() {
+        "activity".to_owned()
+    } else {
+        slug
+    }
 }
 
 fn read_attached(journal_root: &std::path::Path, facet_name: &str) -> Vec<Value> {
@@ -340,8 +345,11 @@ fn public_record(mut record: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::to_bytes, http::Request};
-    use serde_json::Value;
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use serde_json::{Value, json};
     use tower::ServiceExt;
 
     use crate::test_support::{populated_root, shell_router};
@@ -381,6 +389,34 @@ mod tests {
         assert!(by_id("standup")["icon_svg"].is_null());
         for id in ["meeting", "email", "messaging"] {
             let _ = by_id(id);
+        }
+    }
+
+    #[tokio::test]
+    async fn custom_activity_slugs_match_python_boundaries() {
+        let root = crate::test_support::populated_root();
+        let router = shell_router(root.path());
+        for (name, expected_id) in [("  Deep Work  ", "deep_work"), ("!!!", "activity")] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::post("/app/settings/api/facet/work-life/activities")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::to_vec(&json!({"name": name})).expect("JSON"),
+                        ))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), 201);
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON");
+            assert_eq!(body["activity"]["id"], expected_id);
         }
     }
 }

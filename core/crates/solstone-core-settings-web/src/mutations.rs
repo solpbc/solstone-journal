@@ -296,10 +296,9 @@ fn normalized_log_bytes(text: &str) -> String {
     text.lines()
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let prefix = "\"timestamp\": \"";
-            let start = line.find(prefix).expect("timestamp") + prefix.len();
-            let end = start + line[start..].find('"').expect("timestamp end");
-            format!("{}<VOLATILE:log_timestamp>{}", &line[..start], &line[end..])
+            let mut row: Value = serde_json::from_str(line).expect("action log JSON");
+            row["timestamp"] = json!("<VOLATILE:log_timestamp>");
+            String::from_utf8(crate::corpus::python_json(&row)).expect("canonical action log")
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -558,7 +557,8 @@ async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(total, per_phase.expect("refusals") * phases.len());
+    assert_eq!(per_phase, Some(23));
+    assert_eq!(total, 23 * 5);
 }
 
 #[tokio::test]

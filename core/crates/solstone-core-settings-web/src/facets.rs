@@ -253,7 +253,14 @@ pub async fn update(
         {
             changed_fields.insert(
                 key.to_owned(),
-                json!({"old": current.get(key), "new": value}),
+                json!({
+                    "old": current.get(key),
+                    "new": if key == "icon" && value.as_str() == Some("") {
+                        Value::Null
+                    } else {
+                        value.clone()
+                    },
+                }),
             );
         }
     }
@@ -432,7 +439,12 @@ fn public_record(name: &str, config: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::to_bytes, http::Request};
+    use std::fs;
+
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
@@ -524,5 +536,32 @@ mod tests {
             .expect("JSON");
             assert_eq!(body["reason_code"], "facet_not_found");
         }
+    }
+
+    #[tokio::test]
+    async fn icon_clear_logs_a_null_new_value() {
+        let root = populated_root();
+        let response = shell_router(root.path())
+            .oneshot(
+                Request::put("/app/settings/api/facet/work-life")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"icon":""})).expect("JSON"),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), 200);
+        let day = chrono::Local::now().format("%Y%m%d").to_string();
+        let log = fs::read_to_string(
+            root.path()
+                .join("facets/work-life/logs")
+                .join(format!("{day}.jsonl")),
+        )
+        .expect("facet log");
+        let line = log.lines().last().expect("facet update log");
+        let action: Value = serde_json::from_str(line).expect("action JSON");
+        assert!(action["params"]["changed_fields"]["icon"]["new"].is_null());
     }
 }

@@ -131,17 +131,14 @@ fn valid_settings(updates: &Map<String, Value>) -> bool {
         let Some(caps) = value.as_object() else {
             return false;
         };
-        if caps.keys().any(|key| !categories().contains(key))
-            || caps.values().any(|value| !value.is_u64())
-        {
+        if caps.values().any(|value| !value.is_u64()) {
             return false;
         }
     }
     if let Some(value) = updates.get("category_self_mute_clear_markers")
-        && !value.as_object().is_some_and(|markers| {
-            markers.keys().all(|key| categories().contains(key))
-                && markers.values().all(Value::is_u64)
-        })
+        && !value
+            .as_object()
+            .is_some_and(|markers| markers.values().all(Value::is_u64))
     {
         return false;
     }
@@ -453,7 +450,10 @@ fn unsigned(settings: Option<&Map<String, Value>>, key: &str, default: u64) -> V
 mod tests {
     use std::fs;
 
-    use axum::{body::to_bytes, http::Request};
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
@@ -538,5 +538,35 @@ mod tests {
         .expect("JSON");
         assert_eq!(body["total"], 1);
         assert_eq!(body["items"][0]["ts"], 2);
+    }
+
+    #[tokio::test]
+    async fn sol_voice_accepts_custom_category_maps_with_nonnegative_values() {
+        let root = crate::test_support::established_root();
+        let response = crate::test_support::shell_router(root.path())
+            .oneshot(
+                Request::put("/app/settings/api/sol_voice")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "category_caps": {"future_category": 1},
+                            "category_self_mute_clear_markers": {"future_category": 0},
+                        }))
+                        .expect("JSON"),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), 200);
+        let config: Value = serde_json::from_slice(
+            &fs::read(root.path().join("config/journal.json")).expect("config"),
+        )
+        .expect("config JSON");
+        assert_eq!(config["sol_voice"]["category_caps"]["future_category"], 1);
+        assert_eq!(
+            config["sol_voice"]["category_self_mute_clear_markers"]["future_category"],
+            0
+        );
     }
 }

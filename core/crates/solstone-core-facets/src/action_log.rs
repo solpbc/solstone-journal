@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use chrono::{Local, Utc};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use solstone_core_journal_io::{AppendError, append_text};
 
 /// Append an action-log record to the journal-level or facet-scoped destination.
@@ -42,26 +42,7 @@ pub fn append_action_log(
     if let Some(facet) = facet {
         record.insert("facet".to_owned(), json!(facet));
     }
-    append_text(
-        destination,
-        &python_json(&sorted_json(&Value::Object(record))),
-    )
-}
-
-fn sorted_json(value: &Value) -> Value {
-    match value {
-        Value::Object(values) => {
-            let mut keys = values.keys().collect::<Vec<_>>();
-            keys.sort_unstable();
-            let mut sorted = Map::new();
-            for key in keys {
-                sorted.insert(key.clone(), sorted_json(&values[key]));
-            }
-            Value::Object(sorted)
-        }
-        Value::Array(values) => Value::Array(values.iter().map(sorted_json).collect()),
-        value => value.clone(),
-    }
+    append_text(destination, &python_json(&Value::Object(record)))
 }
 
 fn python_json(value: &Value) -> String {
@@ -70,11 +51,7 @@ fn python_json(value: &Value) -> String {
     let mut in_string = false;
     let mut escaped = false;
     for character in compact.chars() {
-        if character.is_ascii() {
-            output.push(character);
-        } else {
-            push_ascii_escape(&mut output, character);
-        }
+        output.push(character);
         if in_string {
             if escaped {
                 escaped = false;
@@ -92,14 +69,35 @@ fn python_json(value: &Value) -> String {
     output
 }
 
-fn push_ascii_escape(output: &mut String, character: char) {
-    let code_point = character as u32;
-    if code_point <= 0xffff {
-        output.push_str(&format!("\\u{code_point:04x}"));
-        return;
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde_json::json;
+
+    use super::append_action_log;
+
+    #[test]
+    fn action_logs_preserve_python_insertion_order_and_unicode() {
+        let root = crate::store_tests::TempDir::new();
+        append_action_log(
+            root.path(),
+            Some("work"),
+            "app",
+            "settings",
+            "activity_add",
+            json!({"emoji":"🧪"}),
+        )
+        .expect("action log");
+        let day = chrono::Local::now().format("%Y%m%d").to_string();
+        let line = fs::read_to_string(
+            root.path()
+                .join("facets/work/logs")
+                .join(format!("{day}.jsonl")),
+        )
+        .expect("action log file");
+        assert!(line.starts_with("{\"timestamp\": "));
+        assert!(line.contains("\"emoji\": \"🧪\""));
+        assert!(!line.contains("\\u"));
     }
-    let surrogate = code_point - 0x1_0000;
-    let high = 0xd800 + (surrogate >> 10);
-    let low = 0xdc00 + (surrogate & 0x3ff);
-    output.push_str(&format!("\\u{high:04x}\\u{low:04x}"));
 }
