@@ -267,7 +267,7 @@ fn main() {
     let speakers_copy = speakers_root.join("copy.py");
     let network_copy = root.join("solstone/apps/network/copy.py");
     let entities_workspace = manifest.join("assets/entities/workspace.html");
-    let body_workspace = root.join("solstone/apps/body/workspace.html");
+    let body_workspace = manifest.join("assets/body/workspace.html");
     let favicon = root.join("favicon.ico");
     let workspace = speakers_root.join("workspace.html");
     let speakers_static = speakers_root.join("who_is_this.js");

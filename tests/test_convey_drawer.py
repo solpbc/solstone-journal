@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 STATIC_ROOT = Path("solstone/convey/static")
-BODY_WORKSPACE = Path("solstone/apps/body/workspace.html")
+BODY_WORKSPACE = Path("core/crates/solstone-core-convey-shell/assets/body/workspace.html")
 GATE_HARNESS = STATIC_ROOT / "tests" / "gate-drawer.html"
 
 
