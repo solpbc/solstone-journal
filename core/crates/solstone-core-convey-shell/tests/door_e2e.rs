@@ -344,11 +344,10 @@ async fn live_certless_carrier(
 }
 
 fn pairing_now() -> i64 {
-    let now = SystemTime::now()
+    SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
-        .as_secs() as i64;
-    now
+        .as_secs() as i64
 }
 
 fn open_pairing_window(fixture: &Fixture, nonce: &str) {
@@ -2175,7 +2174,7 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     let link_before = tree_paths(&fixture.root.join("link"))
         .into_iter()
         .map(|path| {
-            path.strip_prefix(&fixture.root.join("link"))
+            path.strip_prefix(fixture.root.join("link"))
                 .expect("link relative")
                 .to_path_buf()
         })
@@ -2323,7 +2322,7 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     let link_after = tree_paths(&fixture.root.join("link"))
         .into_iter()
         .map(|path| {
-            path.strip_prefix(&fixture.root.join("link"))
+            path.strip_prefix(fixture.root.join("link"))
                 .expect("link relative")
                 .to_path_buf()
         })
