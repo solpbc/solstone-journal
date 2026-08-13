@@ -242,6 +242,7 @@ impl SenseDispatcher {
             );
             return;
         }
+        let mut admitted = Vec::new();
         for path in paths {
             let Some(spec) = match_handler(&self.journal, &path, &registry) else {
                 continue;
@@ -257,7 +258,9 @@ impl SenseDispatcher {
                 .expect("admitted segment")
                 .pending
                 .insert(path.clone());
-            drop(state);
+            admitted.push((path, spec));
+        }
+        for (path, spec) in admitted {
             let handler = spec.name;
             let item = WorkItem {
                 context: context.clone(),
@@ -324,6 +327,8 @@ impl SenseDispatcher {
             fields,
         });
     }
+    /// Stops workers after their active job is boundedly terminated. Queued
+    /// work is intentionally not completed during shutdown, matching sense.py.
     pub fn stop(&self) {
         self.state.lock().expect("sense state").stopping = true;
     }
@@ -483,13 +488,13 @@ fn run_job(
     let outcome = match exit {
         Some(PROVIDER_BLOCKED) => {
             complete(state, outbound, journal, &key, Some(&file), None, None);
-            process.cleanup();
+            cleanup_async(process);
             return;
         }
         Some(0) => {
             state.lock().expect("sense state").health.success();
             complete(state, outbound, journal, &key, Some(&file), None, None);
-            process.cleanup();
+            cleanup_async(process);
             return;
         }
         Some(code) => {
@@ -533,7 +538,6 @@ fn run_job(
             reason
         }
     };
-    process.cleanup();
     complete(
         state,
         outbound,
@@ -543,6 +547,13 @@ fn run_job(
         Some(outcome),
         None,
     );
+    cleanup_async(process);
+}
+
+fn cleanup_async(mut process: ManagedProcess) {
+    let _ = thread::Builder::new()
+        .name("sense-process-cleanup".into())
+        .spawn(move || process.cleanup());
 }
 
 fn termination_detail(handler: &str, error: TerminationError) -> Option<String> {
@@ -767,6 +778,65 @@ mod tests {
         let state = dispatcher.state.lock().expect("state");
         assert!(state.segments.is_empty());
         assert!(state.pending_files.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unavailable_pool_does_not_remove_a_multifile_segment_before_other_work_starts() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        std::fs::create_dir_all(temp.path().join("config")).expect("config");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"openai"}}}"#,
+        )
+        .expect("settings");
+        let segment = temp.path().join("chronicle/20260812/one/120000_1");
+        std::fs::create_dir_all(&segment).expect("segment");
+        std::fs::write(segment.join("audio.flac"), b"audio").expect("audio");
+        std::fs::write(segment.join("screen.webm"), b"screen").expect("screen");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_with_fixture_program(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            PathBuf::from("/bin/true"),
+        );
+        let (sender, failed_receiver) = mpsc::channel();
+        drop(failed_receiver);
+        dispatcher
+            .pools
+            .get("transcribe")
+            .expect("transcribe pool")
+            .lock()
+            .expect("pool")
+            .senders = vec![sender];
+        let mut message = observing("one", "120000_1");
+        message
+            .extra
+            .insert("files".into(), json!(["audio.flac", "screen.webm"]));
+        dispatcher.handle(&message);
+        let observed = loop {
+            let event = receiver
+                .recv_timeout(Duration::from_secs(2))
+                .expect("segment completes");
+            if event.event == "observed" {
+                break event;
+            }
+        };
+        assert_eq!(observed.fields["error"], true);
+        assert!(
+            observed.fields["errors"][0]
+                .as_str()
+                .expect("error")
+                .contains("transcribe pool unavailable")
+        );
+        assert!(
+            receiver
+                .recv_timeout(Duration::from_millis(200))
+                .map_or(true, |event| event.event != "observed"),
+            "segment emits observed exactly once"
+        );
     }
 
     #[test]
