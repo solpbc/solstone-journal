@@ -21,7 +21,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from check_channel_adapter_scrub import IPV4_RE
+from corpus_scrub import (
+    assert_egress_guard_can_see,
+    assert_guard_can_see,
+    assert_no_egress_attempted,
+    assert_publishable,
+    forbid_non_loopback_egress,
+)
+
+# The guard's positive control makes exactly these two attempted destinations.
+CONTROL_DESTINATIONS = ("example.invalid", "198.51.100.7")
+
+# Keep reference-route capture local before importing any Solstone application code.
+forbid_non_loopback_egress()
+assert_egress_guard_can_see(__file__)
 
 CORPUS_PATH = REPO_ROOT / "core" / "fixtures" / "convey_network_corpus.json"
 CA_FIXTURE_ROOT = REPO_ROOT / "core" / "fixtures" / "convey_network_corpus_ca_nonproduction"
@@ -60,12 +73,7 @@ NORMALIZED_FIELDS: dict[tuple[str, str], dict[str, str]] = {
     ("corrupt", "/app/network/local-endpoints"): {"body": "journal-root"},
 }
 
-STILL_DEFERRED_PATHS = (
-    "/app/network/api/status",
-    "/app/network/api/identity",
-    "/app/network/api/private-link",
-    "/app/network/local-endpoints",
-)
+STILL_DEFERRED_PATHS: tuple[str, ...] = ()
 
 ESTABLISHED_DEFERRED_NATIVE_RESPONSES = [
     {"phase": "established", "path": path}
@@ -214,17 +222,15 @@ def _record(client: Any, phase: str, probe: Probe, root: Path) -> dict[str, Any]
 
 
 def _assert_fixture_scrub_clean(rendered: str) -> None:
-    literals = sorted(
-        {
-            match.group(0)
-            for match in IPV4_RE.finditer(rendered)
-            if match.group(0) not in _ALLOWED_IPV4_LITERALS
-        }
+    assert_no_egress_attempted(
+        "convey network corpus", ignore=CONTROL_DESTINATIONS
     )
-    if literals:
-        raise RuntimeError(
-            "network corpus contains disallowed IPv4 literals: " + ", ".join(literals)
-        )
+    assert_guard_can_see("network corpus")
+    assert_publishable(
+        rendered,
+        label="convey network corpus",
+        allowed_ipv4=_ALLOWED_IPV4_LITERALS,
+    )
 
 
 def _assert_status_content_pinned(phases: dict[str, list[dict[str, Any]]]) -> None:
@@ -246,10 +252,14 @@ def _assert_status_content_pinned(phases: dict[str, list[dict[str, Any]]]) -> No
 
 
 def build_corpus() -> dict[str, Any]:
+    from solstone.apps.network import routes as network_routes
     from solstone.convey import create_app
 
     os.environ.pop("SOL_LINK_RELAY_URL", None)
     os.environ["SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES"] = "1"
+    # `_detect_lan_ip` uses a UDP route probe. The corpus needs no host route:
+    # host-dependent fields are normalized, and the egress guard must see no attempt.
+    network_routes._detect_lan_ip = lambda: None
     phases: dict[str, list[dict[str, Any]]] = {}
     for phase in PHASES:
         with tempfile.TemporaryDirectory(prefix=f"convey-network-{phase}-") as tmp:

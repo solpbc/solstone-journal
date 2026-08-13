@@ -3,24 +3,7 @@
     "machine": "x86_64",
     "platform": "linux"
   },
-  "established_deferred_native_responses": [
-    {
-      "path": "/app/network/api/status",
-      "phase": "established"
-    },
-    {
-      "path": "/app/network/api/identity",
-      "phase": "established"
-    },
-    {
-      "path": "/app/network/api/private-link",
-      "phase": "established"
-    },
-    {
-      "path": "/app/network/local-endpoints",
-      "phase": "established"
-    }
-  ],
+  "established_deferred_native_responses": [],
   "generator": "scripts/convey_network_corpus.py",
   "native_deviations": [],
   "phases": {
@@ -467,6 +450,6 @@
     "host": "<HOST_DEPENDENT>",
     "journal_root": "<JOURNAL_ROOT>"
   },
-  "rev": "e13300430a7172fde2a141781784a0965e21b0a1",
+  "rev": "c075fe1ade29df92711042c360026f5c52119cb4",
   "schema": "solstone-convey-network-corpus-v1"
 }
