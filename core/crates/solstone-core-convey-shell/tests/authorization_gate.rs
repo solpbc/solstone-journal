@@ -27,7 +27,7 @@ use solstone_core_convey_shell::{
 };
 use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
 use tower::ServiceExt;
 
