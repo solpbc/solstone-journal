@@ -18,7 +18,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod production_processes;
 
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
-use solstone_core_cli::{CHECK_HELP, CHECK_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE};
+use solstone_core_cli::{
+    CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE,
+};
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
 printf '%s:%s\n' "${POISON_ROUTE:-reached}" "${0##*/}" >> "$POISON_MARKER"
@@ -33,6 +35,7 @@ const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
 const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: journal convey [-h] --port PORT [-v] [-d]\n";
 const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
     b"usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n";
+const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
 
@@ -63,6 +66,12 @@ const PROBES: &[Probe] = &[
         stderr_anchor: Some(
             b"{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"",
         ),
+    },
+    Probe {
+        token: "describe",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(DESCRIBE_USAGE_ANCHOR),
     },
     Probe {
         token: "spl",
@@ -340,16 +349,23 @@ impl Harness {
         let dispatcher_source = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-journal"));
         let core_source = locate_workspace_binary("solstone-core", "solstone-core");
         let depict_source = locate_workspace_binary("solstone-core-depict", "solstone-core-depict");
+        let describe_source =
+            locate_workspace_binary("solstone-core-describe", "solstone-core-describe");
 
         let dispatcher_artifact = artifact(&dispatcher_source);
         let mut sibling_artifacts = BTreeMap::new();
         sibling_artifacts.insert("solstone-core", artifact(&core_source));
         sibling_artifacts.insert("solstone-core-depict", artifact(&depict_source));
+        sibling_artifacts.insert("solstone-core-describe", artifact(&describe_source));
 
         let dispatcher = sibling_dir.join("solstone-core-journal");
         copy_executable(&dispatcher_source, &dispatcher);
         copy_executable(&core_source, &sibling_dir.join("solstone-core"));
         copy_executable(&depict_source, &sibling_dir.join("solstone-core-depict"));
+        copy_executable(
+            &describe_source,
+            &sibling_dir.join("solstone-core-describe"),
+        );
         for interpreter in ["python", "python3", "pytest", "uv", "ruff"] {
             let path = sibling_dir.join(interpreter);
             fs::write(&path, POISON_INTERPRETER).expect("write poison interpreter");
@@ -1164,6 +1180,95 @@ fn missing_native_sibling_is_a_guard_verdict_without_a_spawn() {
         checked.is_empty(),
         "synthetic-missing-native: missing sibling must not spawn a dispatcher"
     );
+}
+
+#[test]
+fn mandatory_native_sibling_failures_are_operator_errors() {
+    for (token, binary) in [
+        ("check", "solstone-core"),
+        ("depict", "solstone-core-depict"),
+    ] {
+        let harness = Harness::new();
+        let context = harness.context();
+        let sibling = context.sibling_dir.join(binary);
+        fs::remove_file(&sibling).expect("remove mandatory sibling");
+        let output = run_dispatcher_with_output(&context, token, &["--nonsense"])
+            .expect("dispatch with missing sibling");
+        assert_eq!(output.status.code(), Some(70), "{token}: missing");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("native-helper-missing:"),
+            "{token}: missing stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    for (token, binary) in [
+        ("check", "solstone-core"),
+        ("depict", "solstone-core-depict"),
+    ] {
+        let harness = Harness::new();
+        let context = harness.context();
+        let sibling = context.sibling_dir.join(binary);
+        fs::set_permissions(&sibling, fs::Permissions::from_mode(0o644))
+            .expect("make mandatory sibling non-executable");
+        let output = run_dispatcher_with_output(&context, token, &["--nonsense"])
+            .expect("dispatch with non-executable sibling");
+        assert_eq!(output.status.code(), Some(70), "{token}: non-executable");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("native-helper-not-executable:"),
+            "{token}: non-executable stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn describe_dispatch_writes_the_native_thinking_artifact_without_python() {
+    let harness = Harness::new();
+    let context = harness.context();
+    let session_stub_source =
+        locate_workspace_binary("solstone-core-describe", "solstone-describe-session-stub");
+    let session_stub = context.sibling_dir.join("solstone-describe-session-stub");
+    copy_executable(&session_stub_source, &session_stub);
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/describe_corpus/single_frame_vp8_screen.webm");
+    fs::create_dir_all(context.journal).expect("create unique journal root");
+    let video = context.journal.join("screen.webm");
+    fs::copy(corpus, &video).expect("copy corpus screencast");
+
+    let output = Command::new(context.dispatcher)
+        .args(["describe"])
+        .arg(&video)
+        .args(["-j", "2", "-d", "-v"])
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        .env("SOLSTONE_DESCRIBE_GENERATE_WIRE", &session_stub)
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_MODE", "generated")
+        .env("PATH", context.sibling_dir)
+        .output()
+        .expect("run describe through native dispatcher");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "native describe reached a poisoned interpreter"
+    );
+
+    let artifact = video.with_extension("jsonl");
+    let header: serde_json::Value = fs::read_to_string(&artifact)
+        .expect("read native describe artifact")
+        .lines()
+        .next()
+        .expect("artifact header")
+        .parse()
+        .expect("artifact header JSON");
+    assert!(header["_solstone_thinking"]["model"].is_string());
+    assert!(header["_solstone_thinking"].get("provider").is_none());
 }
 
 #[test]

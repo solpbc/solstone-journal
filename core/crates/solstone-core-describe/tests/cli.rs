@@ -88,7 +88,6 @@ fn copied_video(root: &Path, file: &str) -> PathBuf {
 fn describe(root: &Path, video: &Path, mode: &str) -> Command {
     let mut command = Command::new(BINARY);
     command
-        .arg("--describe")
         .arg(video)
         .arg("--journal")
         .arg(root)
@@ -278,9 +277,9 @@ fn explicit_empty_journal_uses_defaults() {
 #[test]
 fn malformed_invocation_is_a_usage_error() {
     let output = Command::new(BINARY).output().expect("run describe binary");
-    assert_eq!(output.status.code(), Some(64));
+    assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
-    assert!(!output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("usage: journal describe"));
 }
 
 #[test]
@@ -417,7 +416,6 @@ fn launch_failure_is_blocked_not_empty() {
     let root = temporary_root("launch-failure");
     let video = copied_video(&root, "single_frame_vp8_screen.webm");
     let output = Command::new(BINARY)
-        .arg("--describe")
         .arg(&video)
         .arg("--journal")
         .arg(&root)

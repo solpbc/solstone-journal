@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
+use solstone_core_cli::DESCRIBE_USAGE;
 use solstone_core_describe::selection::{CategoryOverride, Importance};
 use solstone_core_describe::{
     ConveyFiducialMask, WinnowConfig, pipeline, process_video_with_transform,
@@ -16,7 +17,7 @@ use solstone_core_describe::{
 use solstone_core_journal_config::read_journal_config;
 
 const EXIT_DECODE_FAILURE: u8 = 2;
-const EXIT_USAGE: u8 = 64;
+const EXIT_USAGE: u8 = 2;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_PROVIDER_BLOCKED: u8 = 69;
 
@@ -53,6 +54,10 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 (version >> 8) & 0xff,
                 version & 0xff
             );
+            Ok(())
+        }
+        Command::Help => {
+            print!("{DESCRIBE_USAGE}");
             Ok(())
         }
         Command::FramesOnly(arguments) => {
@@ -121,16 +126,20 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum Command {
     Version,
+    Help,
     FramesOnly(FramesOnlyArguments),
     Describe(DescribeArguments),
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct FramesOnlyArguments {
     video_path: PathBuf,
     journal: Option<PathBuf>,
 }
+#[derive(Debug, PartialEq, Eq)]
 struct DescribeArguments {
     video_path: PathBuf,
     journal: Option<PathBuf>,
@@ -138,6 +147,7 @@ struct DescribeArguments {
     redo: bool,
 }
 
+#[derive(Debug)]
 enum CliError {
     Usage(String),
     Config(String),
@@ -149,7 +159,7 @@ enum CliError {
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, CliError> {
     let mut values = arguments.into_iter();
     let Some(first) = values.next() else {
-        return Err(usage("missing required --frames-only and video path"));
+        return Err(usage("the following arguments are required: FILE"));
     };
     if first == "--version" {
         if values.next().is_some() {
@@ -159,23 +169,27 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
     }
 
     let mut frames_only = false;
-    let mut describe = false;
     let mut redo = false;
     let mut jobs = None;
     let mut journal = None;
     let mut video_path = None;
     let mut pending = Some(first);
     while let Some(argument) = pending.take().or_else(|| values.next()) {
-        if argument == "--frames-only" {
+        if argument == "-h" || argument == "--help" {
+            if values.next().is_some() {
+                return Err(usage("--help does not accept other arguments"));
+            }
+            return Ok(Command::Help);
+        } else if argument == "--frames-only" {
             if frames_only {
                 return Err(usage("--frames-only was provided more than once"));
             }
             frames_only = true;
-        } else if argument == "--describe" {
-            if describe {
-                return Err(usage("--describe was provided more than once"));
-            }
-            describe = true;
+        } else if matches!(
+            argument.to_str(),
+            Some("-d" | "--debug" | "-v" | "--verbose")
+        ) {
+            // Owner-facing dispatcher flags are intentionally accepted as no-ops.
         } else if argument == "--redo" {
             if redo {
                 return Err(usage("--redo was provided more than once"));
@@ -211,17 +225,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
         }
     }
 
-    if frames_only == describe {
-        return Err(usage(
-            "exactly one of --frames-only or --describe is required",
-        ));
-    }
     let Some(video_path) = video_path else {
-        return Err(usage("missing video path"));
+        return Err(usage("the following arguments are required: FILE"));
     };
     if frames_only {
         if redo {
-            return Err(usage("--redo requires --describe"));
+            return Err(usage("--redo requires describe mode"));
         }
         Ok(Command::FramesOnly(FramesOnlyArguments {
             video_path,
@@ -349,6 +358,51 @@ fn read_config(journal_path: Option<&Path>) -> Result<DescribeConfig, CliError> 
 
 fn usage(message: &str) -> CliError {
     CliError::Usage(format!(
-        "{message}\nUsage: solstone-core-describe --frames-only <video-path> [--journal <path>]\n       solstone-core-describe --describe <video-path> [--redo] [-j N] [--journal <path>]\n       solstone-core-describe --version"
+        "{DESCRIBE_USAGE}journal describe: error: {message}"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    use super::{Command, DescribeArguments, parse_arguments};
+
+    #[test]
+    fn default_describe_argv_matches_prechange_explicit_describe_parse() {
+        let parsed = parse_arguments([
+            OsString::from("screen.webm"),
+            OsString::from("-j"),
+            OsString::from("2"),
+        ])
+        .expect("default describe arguments parse");
+
+        // Before `journal describe` became the default mode, the same values
+        // were obtained from `--describe screen.webm -j 2`. Keep this boundary
+        // assertion explicit so the dispatcher argv cannot drift from the
+        // positive-control invocation shape.
+        assert_eq!(
+            parsed,
+            Command::Describe(DescribeArguments {
+                video_path: PathBuf::from("screen.webm"),
+                journal: None,
+                jobs: 2,
+                redo: false,
+            })
+        );
+    }
+
+    #[test]
+    fn owner_debug_and_verbose_flags_are_noops() {
+        assert!(matches!(
+            parse_arguments(["screen.webm", "-d", "-v"].map(OsString::from)),
+            Ok(Command::Describe(_))
+        ));
+    }
+
+    #[test]
+    fn explicit_describe_flag_is_rejected() {
+        assert!(parse_arguments(["--describe", "screen.webm"].map(OsString::from)).is_err());
+    }
 }

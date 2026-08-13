@@ -220,7 +220,7 @@ fn dispatch_process(
             Err(error) => {
                 let exit = match error {
                     runner::NativeExecutableError::Missing { .. }
-                    | runner::NativeExecutableError::NonExecutable { .. } => 69,
+                    | runner::NativeExecutableError::NonExecutable { .. } => 70,
                     runner::NativeExecutableError::CurrentExe(_) => 70,
                 };
                 return Outcome::ProcessFailure {

@@ -42,6 +42,11 @@ pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
 pub const GRAB_USAGE: &str =
     "usage: journal grab [-h] [--out OUT] [--force] [--json] [-v] [-d] [args ...]\n";
 
+/// The usage line native `journal describe` prints for an argument error.
+/// It names the owner-facing verb because the native describe helper is
+/// dispatched directly from `journal describe`.
+pub const DESCRIBE_USAGE: &str = "usage: journal describe [-h] [--frames-only] [--redo] [-j N] [--journal PATH] [-v] [-d] FILE\n";
+
 /// The usage line native `journal navigate` prints for an argument error.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
 /// the command the owner typed.

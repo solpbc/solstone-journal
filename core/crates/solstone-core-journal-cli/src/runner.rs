@@ -52,16 +52,16 @@ impl std::fmt::Display for NativeExecutableError {
         match self {
             Self::CurrentExe(error) => write!(
                 formatter,
-                "could not inspect the native journal executable: {error}"
+                "native-helper-current-exe: could not inspect the native journal executable: {error}"
             ),
             Self::Missing { path } => write!(
                 formatter,
-                "native journal helper is missing: {}. Reinstall solstone-journal.",
+                "native-helper-missing: {}. Reinstall solstone-journal.",
                 path.display()
             ),
             Self::NonExecutable { path } => write!(
                 formatter,
-                "native journal helper is not executable: {}. Reinstall solstone-journal.",
+                "native-helper-not-executable: {}. Reinstall solstone-journal.",
                 path.display()
             ),
         }
@@ -258,13 +258,15 @@ mod tests {
         let temp = TempDir::new();
         let executable = temp.path.join("solstone-core-journal");
         fs::write(&executable, "native executable").expect("write executable fixture");
-        let helper = temp.path.join("solstone-core-depict");
-        make_executable(&helper);
-        assert_eq!(
-            sibling_native_for_executable(&executable, "solstone-core-depict")
-                .expect("named native helper should be selected"),
-            helper
-        );
+        for binary in ["solstone-core-depict", "solstone-core-describe"] {
+            let helper = temp.path.join(binary);
+            make_executable(&helper);
+            assert_eq!(
+                sibling_native_for_executable(&executable, binary)
+                    .expect("named native helper should be selected"),
+                helper
+            );
+        }
         assert!(matches!(
             sibling_native_for_executable(&executable, "missing-helper"),
             Err(NativeExecutableError::Missing { path }) if path == temp.path.join("missing-helper")
