@@ -1062,9 +1062,7 @@ async fn ac4_shutdown_aborts_every_listener_task() {
 fn ac5_posture_induction_helpers_change_inodes_and_postures() {
     let fixture = Fixture::established(1);
     let path = fixture.root.join("link/authorized_clients.json");
-    let mut inode = std::fs::metadata(&path)
-        .expect("authorization metadata")
-        .ino();
+    let mut previous = File::open(&path).expect("authorization file opens");
 
     fixture.warm_authorization_to_present();
     assert!(matches!(
@@ -1072,8 +1070,11 @@ fn ac5_posture_induction_helpers_change_inodes_and_postures() {
         AuthorizedClientsRead::Present(_)
     ));
     let warmed_inode = std::fs::metadata(&path).expect("warmed metadata").ino();
-    assert_ne!(warmed_inode, inode);
-    inode = warmed_inode;
+    assert_ne!(
+        warmed_inode,
+        previous.metadata().expect("original metadata").ino()
+    );
+    previous = File::open(&path).expect("warmed authorization opens");
 
     fixture.induce_unreadable_authorization();
     assert_eq!(
@@ -1081,7 +1082,11 @@ fn ac5_posture_induction_helpers_change_inodes_and_postures() {
         AuthorizedClientsRead::Unreadable
     );
     let unreadable_inode = std::fs::metadata(&path).expect("unreadable metadata").ino();
-    assert_ne!(unreadable_inode, inode);
+    assert_ne!(
+        unreadable_inode,
+        previous.metadata().expect("warmed metadata").ino()
+    );
+    previous = File::open(&path).expect("unreadable authorization directory opens");
 
     fixture.warm_authorization_to_present();
     assert!(matches!(
@@ -1089,7 +1094,11 @@ fn ac5_posture_induction_helpers_change_inodes_and_postures() {
         AuthorizedClientsRead::Present(_)
     ));
     let rewarmed_inode = std::fs::metadata(&path).expect("rewarmed metadata").ino();
-    assert_ne!(rewarmed_inode, unreadable_inode);
+    assert_ne!(
+        rewarmed_inode,
+        previous.metadata().expect("unreadable metadata").ino()
+    );
+    previous = File::open(&path).expect("rewarmed authorization opens");
 
     fixture.induce_malformed_authorization();
     assert_eq!(
@@ -1097,7 +1106,11 @@ fn ac5_posture_induction_helpers_change_inodes_and_postures() {
         AuthorizedClientsRead::Malformed
     );
     let malformed_inode = std::fs::metadata(&path).expect("malformed metadata").ino();
-    assert_ne!(malformed_inode, rewarmed_inode);
+    assert_ne!(
+        malformed_inode,
+        previous.metadata().expect("rewarmed metadata").ino()
+    );
+    previous = File::open(&path).expect("malformed authorization opens");
 
     fixture.warm_authorization_to_present();
     assert!(matches!(
@@ -1108,7 +1121,7 @@ fn ac5_posture_induction_helpers_change_inodes_and_postures() {
         std::fs::metadata(&path)
             .expect("final warmed metadata")
             .ino(),
-        malformed_inode
+        previous.metadata().expect("malformed metadata").ino()
     );
 }
 

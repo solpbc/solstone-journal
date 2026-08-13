@@ -221,10 +221,14 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     let mut socket_removed = None;
     let mut status = None;
     let mut tick = 0;
+    #[cfg(target_os = "macos")]
+    let (shutdown_interval, shutdown_iterations) = (Duration::from_millis(100), 300);
+    #[cfg(not(target_os = "macos"))]
+    let (shutdown_interval, shutdown_iterations) = (Duration::from_millis(5), 6_000);
     let outcome = await_outcome_async(
         WaitPolarity::Positive,
-        Duration::from_millis(5),
-        6_000,
+        shutdown_interval,
+        shutdown_iterations,
         Instant::now,
         || {
             let current_tick = tick;

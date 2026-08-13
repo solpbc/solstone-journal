@@ -525,6 +525,7 @@ pub(crate) async fn boot_and_tick(
     journal: PathBuf,
     options: SupervisorOptions,
 ) -> Result<SupervisorOutcome, String> {
+    let mut shutdown_signals = tick::ShutdownSignals::install()?;
     let server = Arc::new(
         CallosumSocketServer::bind(journal.join("health/callosum.sock"))
             .await
@@ -737,7 +738,7 @@ pub(crate) async fn boot_and_tick(
         },
         wedge: WedgeState::default(),
     };
-    let sync_conflict = tick::run(&mut state).await;
+    let sync_conflict = tick::run(&mut state, &mut shutdown_signals).await;
     Ok(SupervisorOutcome {
         lifecycle,
         state,

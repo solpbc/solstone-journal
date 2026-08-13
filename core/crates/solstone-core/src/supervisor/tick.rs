@@ -57,6 +57,40 @@ enum StatusEmissionPlan {
     Status(SupervisorStatusWireInput),
 }
 
+pub(crate) struct ShutdownSignals {
+    #[cfg(unix)]
+    terminate: tokio::signal::unix::Signal,
+    #[cfg(unix)]
+    interrupt: tokio::signal::unix::Signal,
+}
+
+impl ShutdownSignals {
+    pub(crate) fn install() -> Result<Self, String> {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            Ok(Self {
+                terminate: signal(SignalKind::terminate()).map_err(|error| error.to_string())?,
+                interrupt: signal(SignalKind::interrupt()).map_err(|error| error.to_string())?,
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(Self {})
+        }
+    }
+
+    async fn wait(&mut self) {
+        #[cfg(unix)]
+        tokio::select! {
+            _ = self.terminate.recv() => {},
+            _ = self.interrupt.recv() => {},
+        }
+        #[cfg(not(unix))]
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 struct StatusEmissionInputs<'a> {
     app_observations: Vec<(AppService, SystemProcessObservation)>,
     local_observation: SystemProcessObservation,
@@ -144,7 +178,7 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
     })
 }
 
-pub(crate) async fn run(state: &mut SupervisorState) -> bool {
+pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSignals) -> bool {
     let mut last_status = Instant::now() - STATUS_INTERVAL;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
@@ -255,7 +289,7 @@ pub(crate) async fn run(state: &mut SupervisorState) -> bool {
         }
         tokio::select! {
             _ = tokio::time::sleep(TICK_INTERVAL) => {},
-            _ = wait_for_shutdown() => return false,
+            _ = shutdown.wait() => return false,
         }
     }
 }
@@ -687,18 +721,6 @@ fn synthetic_nvidia_probe() -> NvidiaProbe {
         unified_memory_mib: None,
         probe_error: None,
     }
-}
-
-async fn wait_for_shutdown() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        if let Ok(mut stream) = signal(SignalKind::terminate()) {
-            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = stream.recv() => {} }
-            return;
-        }
-    }
-    let _ = tokio::signal::ctrl_c().await;
 }
 
 async fn drain_inbound(state: &mut SupervisorState) {
