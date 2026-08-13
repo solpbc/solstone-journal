@@ -775,7 +775,7 @@ the set-aside directory is finished.
 | `P-web-body` | `body` | ⛔ owner **body** data — never "health" |
 | `P-web-entities` | `entities` | |
 | `P-web-settings` | `settings` | |
-| `P-web-transcripts` | `transcripts` | |
+| `P-web-transcripts` | `transcripts` | Reference renders owner-local times; is_supervisor_up() is a seedable branch rather than an irreducible host artifact; chat-state reads synthesize sol_message_origins with stringified list-index keys and are not the persisted chat log. |
 | `P-web-import` | `import` | |
 
 ⏸ **Deferred, to be grouped rather than plated one-for-one** — decided when the work gets closer: `support` · `backup` · `timeline` · `sol` · `health` · `curation` · `chat` · `search` · `tokens` · `activities` · `news` · `reflections` · `stats` · `awareness` · `facets`. ⚠ Several are smaller than their own handoff would be.
