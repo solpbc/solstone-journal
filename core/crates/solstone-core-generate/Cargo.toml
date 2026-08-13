@@ -35,9 +35,18 @@ path = "tests/session_real.rs"
 name = "wire"
 path = "tests/wire.rs"
 
+[[test]]
+name = "one_shot_stub"
+path = "tests/one_shot_stub.rs"
+
 [[bin]]
 name = "solstone-generate-session-stub"
 path = "tests/bin/session_stub.rs"
+test = false
+
+[[bin]]
+name = "solstone-generate-one-shot-stub"
+path = "tests/bin/one_shot_stub.rs"
 test = false
 
 [lints]

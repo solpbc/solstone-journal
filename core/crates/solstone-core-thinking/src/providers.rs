@@ -8,11 +8,20 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
+use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::derive_active_brain_lane;
+use solstone_core_facets::append_action_log;
+use solstone_core_generate::{
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
+};
+use solstone_core_generate_wire::overrides::{
+    API_KEY_OVERRIDE_ENV, MODEL_OVERRIDE_ENV, PROVIDER_OVERRIDE_ENV,
+};
+use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 
-use crate::{brain, local};
+use crate::{MutationError, brain, local, read_config};
 
 const CLOUD: [(&str, &str); 3] = [
     ("google", "GOOGLE_API_KEY"),
@@ -78,11 +87,117 @@ pub trait ManagedKeyValidator {
     fn validate(&self, provider: &str, key: &str) -> Result<Value, String>;
 }
 
-struct UnavailableValidator;
+pub struct UnavailableValidator;
 
 impl ManagedKeyValidator for UnavailableValidator {
     fn validate(&self, _provider: &str, _key: &str) -> Result<Value, String> {
         Err("key validation is unavailable".to_owned())
+    }
+}
+
+/// Native one-shot validation whose candidate credentials are child-only
+/// environment overrides, never GenerateRequest data.
+pub struct OneShotKeyValidator {
+    client: OneShotClient,
+}
+
+impl OneShotKeyValidator {
+    pub fn sibling() -> Result<Self, ClientError> {
+        Ok(Self {
+            client: OneShotClient::sibling()?,
+        })
+    }
+
+    pub fn at_path(path: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            client: OneShotClient::at_path(path),
+        }
+    }
+
+    pub fn validate_model(&self, provider: &str, model: &str, key: &str) -> Result<Value, String> {
+        self.probe(provider, Some(model), key)
+    }
+
+    fn probe(&self, provider: &str, model: Option<&str>, key: &str) -> Result<Value, String> {
+        let mut client = self.client.clone().with_env(API_KEY_OVERRIDE_ENV, key);
+        if let Some(model) = model {
+            client = client
+                .with_env(PROVIDER_OVERRIDE_ENV, provider)
+                .with_env(MODEL_OVERRIDE_ENV, model);
+        }
+        Ok(classify_probe_result(client.execute(&validation_request())))
+    }
+}
+
+/// The three-way key/model validation classification (AC4): a successful
+/// generation, or a refusal whose reason code is an accepted probe outcome
+/// (the provider understood the credential but rejected the request for an
+/// unrelated reason), are both "valid"; every other refusal or transport
+/// failure is "invalid". Pulled out of `probe()` so it is testable without
+/// spawning a child process.
+fn classify_probe_result(result: Result<GenerateResponse, ClientError>) -> Value {
+    match result {
+        Ok(GenerateResponse::Generated(_)) => json!({"valid":true}),
+        Ok(GenerateResponse::Refused(refusal)) => {
+            let reason_code = refusal
+                .reason_code
+                .as_ref()
+                .map(|value| value.as_wire().to_owned())
+                .unwrap_or_else(|| "provider_response_invalid".to_owned());
+            if matches!(
+                reason_code.as_str(),
+                "model_not_found" | "provider_quota_exceeded"
+            ) {
+                json!({"valid":true,"probe_reason_code":reason_code})
+            } else {
+                json!({"valid":false,"reason_code":reason_code,"error":refusal.detail})
+            }
+        }
+        Err(error) => client_failure(error),
+    }
+}
+
+fn validation_request() -> GenerateRequest {
+    GenerateRequest {
+        id: None,
+        context: "settings.cloud.validate_key".to_owned(),
+        contents: vec![ContentPart::Text {
+            text: "Reply with exactly OK.".to_owned(),
+        }],
+        system_instruction: None,
+        temperature: 0.0,
+        max_output_tokens: 16,
+        thinking_budget: None,
+        timeout_s: Some(30.0),
+        json_output: false,
+        json_schema: None,
+        enforce_responsiveness: true,
+        attempt_index: 0,
+        exclusive_admission: false,
+        transport_retries: Some(0),
+    }
+}
+
+fn client_failure(error: ClientError) -> Value {
+    match error {
+        ClientError::Resolve(error) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        }
+        ClientError::Io(error) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        }
+        ClientError::Protocol(error) => {
+            json!({"valid":false,"reason_code":error.reason,"error":error.detail})
+        }
+        ClientError::Decode(error) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        }
+    }
+}
+
+impl ManagedKeyValidator for OneShotKeyValidator {
+    fn validate(&self, provider: &str, key: &str) -> Result<Value, String> {
+        self.probe(provider, None, key)
     }
 }
 
@@ -111,6 +226,342 @@ pub fn validate_keys_with(
         }
     }
     json!({"key_validation":validation})
+}
+
+pub fn save_key(
+    journal: &Path,
+    env_var: &str,
+    provider: &str,
+    value: &str,
+    validation: Option<Value>,
+) -> Result<Value, MutationError> {
+    let value = value.trim().to_owned();
+    let transaction = mutate_journal_config(journal, Default::default(), |config| {
+        let old_value = config
+            .get("env")
+            .and_then(Value::as_object)
+            .and_then(|env| env.get(env_var))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let prior_validation = config
+            .get("providers")
+            .and_then(Value::as_object)
+            .and_then(|providers| providers.get("key_validation"))
+            .and_then(Value::as_object)
+            .and_then(|validations| validations.get(provider))
+            .cloned();
+        if value.is_empty() {
+            object_at(config, "env").remove(env_var);
+            object_at(object_at(config, "providers"), "key_validation").remove(provider);
+            if let Some(byo_models) = config
+                .get_mut("providers")
+                .and_then(Value::as_object_mut)
+                .and_then(|providers| providers.get_mut("byo_models"))
+                .and_then(Value::as_object_mut)
+            {
+                byo_models.remove(provider);
+            }
+        } else {
+            object_at(config, "env").insert(env_var.to_owned(), Value::String(value.clone()));
+            object_at(object_at(config, "providers"), "key_validation").insert(
+                provider.to_owned(),
+                validation
+                    .clone()
+                    .expect("nonblank keys have a validation result"),
+            );
+        }
+        let next_validation = config
+            .get("providers")
+            .and_then(Value::as_object)
+            .and_then(|providers| providers.get("key_validation"))
+            .and_then(Value::as_object)
+            .and_then(|validations| validations.get(provider))
+            .cloned();
+        let changed = old_value.as_deref() != (!value.is_empty()).then_some(value.as_str())
+            || prior_validation != next_validation;
+        JournalConfigMutation {
+            changed,
+            value: (old_value, keys(config)),
+        }
+    })
+    .map_err(MutationError::config)?;
+    if transaction.value.0.as_deref() != (!value.is_empty()).then_some(value.as_str()) {
+        append_action_log(
+            journal,
+            None,
+            "app",
+            "thinking",
+            "env_update",
+            json!({"changed_fields": {env_var: {"old":"***", "new":"***"}}}),
+        )
+        .map_err(|error| MutationError::ActionLog(error.to_string()))?;
+    }
+    Ok(
+        json!({"success":true,"env_var":env_var,"set":!value.is_empty(),"validation":validation,"api_keys":transaction.value.1["api_keys"],"env":transaction.value.1["env"],"key_validation":transaction.value.1["key_validation"]}),
+    )
+}
+
+pub fn persist_key_validations(
+    journal: &Path,
+    validator: &dyn ManagedKeyValidator,
+) -> Result<Value, MutationError> {
+    let snapshot = read_config(journal).map_err(MutationError::Read)?;
+    let env = snapshot.get("env").and_then(Value::as_object);
+    let snapshots = CLOUD.map(|(provider, env_var)| {
+        (
+            provider,
+            env.and_then(|values| values.get(env_var))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_owned(),
+        )
+    });
+    let computed = Map::from_iter(snapshots.iter().filter(|(_, value)| !value.is_empty()).map(
+        |(provider, value)| {
+            let result = validator.validate(provider, value).unwrap_or_else(
+                |error| json!({"valid":false,"reason_code":"validation_unavailable","error":error}),
+            );
+            let mut result = result.as_object().cloned().unwrap_or_default();
+            result.insert(
+                "timestamp".to_owned(),
+                Value::String(Utc::now().to_rfc3339()),
+            );
+            (provider.to_string(), Value::Object(result))
+        },
+    ));
+    let transaction = mutate_journal_config(journal, Default::default(), |config| {
+        let current_env = config.get("env").and_then(Value::as_object).cloned();
+        let existing = object_at(object_at(config, "providers"), "key_validation");
+        let mut changed = false;
+        for ((provider, env_var), (_, snapshot_value)) in CLOUD.into_iter().zip(snapshots) {
+            let current = current_env
+                .as_ref()
+                .and_then(|env| env.get(env_var))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if current != snapshot_value {
+                continue;
+            }
+            match computed.get(provider) {
+                Some(result) if existing.get(provider) != Some(result) => {
+                    existing.insert(provider.to_owned(), result.clone());
+                    changed = true;
+                }
+                None if existing.remove(provider).is_some() => changed = true,
+                _ => {}
+            }
+        }
+        let persisted = Map::from_iter(CLOUD.into_iter().filter_map(|(provider, _)| {
+            existing
+                .get(provider)
+                .cloned()
+                .map(|value| (provider.to_owned(), value))
+        }));
+        JournalConfigMutation {
+            changed,
+            value: Value::Object(persisted),
+        }
+    })
+    .map_err(MutationError::config)?;
+    Ok(json!({"success":true,"key_validation":transaction.value}))
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderUpdate {
+    pub lane: String,
+    pub provider: String,
+    pub model: Option<String>,
+    pub resolution_targets: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum ProviderUpdateError {
+    Mutation(MutationError),
+    Confidential(String),
+}
+
+pub fn update_providers(
+    journal: &Path,
+    update: ProviderUpdate,
+) -> Result<Value, ProviderUpdateError> {
+    let transaction = mutate_journal_config(journal, Default::default(), |config| {
+        let confidential_active = is_confidential_active(config);
+        let restore_only = confidential_active
+            && update
+                .resolution_targets
+                .iter()
+                .any(|target| target == "confidential_prior");
+        if confidential_active && update.lane != "confidential" && !restore_only {
+            return JournalConfigMutation {
+                changed: false,
+                value: Err(
+                    "Turn off confidential thinking first, then switch your thinking provider."
+                        .to_owned(),
+                ),
+            };
+        }
+        let effective_targets = update
+            .resolution_targets
+            .iter()
+            .filter(|target| {
+                google_alias_slots(config)
+                    .iter()
+                    .any(|slot| slot == *target)
+            })
+            .collect::<Vec<_>>();
+        let providers = object_at(config, "providers");
+        let before = providers.clone();
+        let mut changes = Map::new();
+        if let Some(model) = &update.model {
+            let byo_models = object_at(providers, "byo_models");
+            let old = before
+                .get("byo_models")
+                .and_then(Value::as_object)
+                .and_then(|models| models.get(&update.provider))
+                .cloned()
+                .unwrap_or(Value::Null);
+            if old != Value::String(model.clone()) {
+                changes.insert(
+                    format!("byo_models.{}", update.provider),
+                    json!({"old":old,"new":model}),
+                );
+            }
+            byo_models.insert(update.provider.clone(), Value::String(model.clone()));
+        }
+        if !restore_only {
+            let active = object_at(providers, "active");
+            let old_active = before.get("active").and_then(Value::as_object);
+            let model = update.model.clone().unwrap_or_else(|| {
+                old_active
+                    .and_then(|active| {
+                        (active.get("provider").and_then(Value::as_str)
+                            == Some(update.provider.as_str()))
+                        .then(|| {
+                            active
+                                .get("model")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_owned()
+                        })
+                    })
+                    .filter(|model| !model.is_empty())
+                    .unwrap_or_else(|| default_model_for(&update.provider).to_owned())
+            });
+            for (field, next) in [
+                ("provider", Value::String(update.provider.clone())),
+                ("model", Value::String(model)),
+            ] {
+                let old = old_active
+                    .and_then(|active| active.get(field))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                if old != next {
+                    changes.insert(format!("active.{field}"), json!({"old":old,"new":next}));
+                }
+                active.insert(field.to_owned(), next);
+            }
+        }
+        if let Some(model) = &update.model
+            && effective_targets
+                .iter()
+                .any(|target| **target == "confidential_prior")
+            && let Some(prior) = config
+                .get_mut("services")
+                .and_then(Value::as_object_mut)
+                .and_then(|services| services.get_mut("confidential"))
+                .and_then(Value::as_object_mut)
+                .and_then(|confidential| confidential.get_mut("prior_active"))
+                .and_then(Value::as_object_mut)
+        {
+            let old = prior.get("model").cloned().unwrap_or(Value::Null);
+            if old != Value::String(model.clone()) {
+                changes.insert(
+                    "services.confidential.prior_active.model".to_owned(),
+                    json!({"old":old,"new":model}),
+                );
+            }
+            prior.insert("model".to_owned(), Value::String(model.clone()));
+        }
+        JournalConfigMutation {
+            changed: !changes.is_empty(),
+            value: Ok(changes),
+        }
+    })
+    .map_err(|error| ProviderUpdateError::Mutation(MutationError::config(error)))?;
+    let changes = transaction
+        .value
+        .map_err(ProviderUpdateError::Confidential)?;
+    if !changes.is_empty() {
+        append_action_log(
+            journal,
+            None,
+            "app",
+            "thinking",
+            "providers_update",
+            json!({"changed_fields":changes}),
+        )
+        .map_err(|error| {
+            ProviderUpdateError::Mutation(MutationError::ActionLog(error.to_string()))
+        })?;
+    }
+    let config = read_config(journal)
+        .map_err(|error| ProviderUpdateError::Mutation(MutationError::Read(error)))?;
+    Ok(payload(journal, &config, local::default_model()))
+}
+
+fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
+    if !parent.get(key).is_some_and(Value::is_object) {
+        parent.insert(key.to_owned(), Value::Object(Map::new()));
+    }
+    parent
+        .get_mut(key)
+        .and_then(Value::as_object_mut)
+        .expect("object inserted")
+}
+
+fn is_confidential_active(config: &Map<String, Value>) -> bool {
+    derive_active_brain_lane(config).lane.as_deref() == Some("spp")
+}
+
+fn google_alias_slots(config: &Map<String, Value>) -> Vec<&'static str> {
+    let mut slots = Vec::new();
+    let providers = config.get("providers").and_then(Value::as_object);
+    if providers
+        .and_then(|providers| providers.get("active"))
+        .and_then(Value::as_object)
+        .is_some_and(|active| {
+            active.get("provider").and_then(Value::as_str) == Some("google")
+                && active.get("model").and_then(Value::as_str) == Some("gemini-pro-latest")
+        })
+    {
+        slots.push("active");
+    }
+    if providers
+        .and_then(|providers| providers.get("byo_models"))
+        .and_then(Value::as_object)
+        .and_then(|models| models.get("google"))
+        .and_then(Value::as_str)
+        == Some("gemini-pro-latest")
+    {
+        slots.push("remembered");
+    }
+    if config
+        .get("services")
+        .and_then(Value::as_object)
+        .and_then(|services| services.get("confidential"))
+        .and_then(Value::as_object)
+        .and_then(|confidential| confidential.get("prior_active"))
+        .and_then(Value::as_object)
+        .is_some_and(|active| {
+            active.get("provider").and_then(Value::as_str) == Some("google")
+                && active.get("model").and_then(Value::as_str) == Some("gemini-pro-latest")
+        })
+    {
+        slots.push("confidential_prior");
+    }
+    slots
 }
 
 fn active(config: &Map<String, Value>) -> Value {
@@ -260,9 +711,20 @@ fn reachable(url: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use serde_json::{Map, Value, json};
 
-    use super::{ManagedKeyValidator, validate_keys_with};
+    use solstone_core_generate::{
+        ClientError, GenerateResponse, GeneratedResponse, ProtocolError, ReasonCode,
+        ReasonCodeValue, RefusalReason, RefusedResponse,
+    };
+
+    use super::{
+        ManagedKeyValidator, ProviderUpdate, classify_probe_result, save_key, update_providers,
+        validate_keys_with,
+    };
+    use crate::read_config;
 
     struct PanicValidator;
 
@@ -314,5 +776,144 @@ mod tests {
             json!({"OPENAI_API_KEY": "not-a-real-key"}),
         )]);
         let _ = validate_keys_with(&config, &PanicValidator);
+    }
+
+    #[test]
+    fn rejected_key_is_stored_with_its_validation_result() {
+        let journal = temporary_journal("rejected-key", json!({}));
+        let validation = json!({"valid":false,"reason_code":"invalid_key","error":"rejected"});
+        save_key(
+            &journal,
+            "OPENAI_API_KEY",
+            "openai",
+            " rejected ",
+            Some(validation.clone()),
+        )
+        .expect("rejected key is still persisted");
+        let config = read_config(&journal).expect("config reads");
+        assert_eq!(config["env"]["OPENAI_API_KEY"], "rejected");
+        assert_eq!(config["providers"]["key_validation"]["openai"], validation);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn confidential_prior_target_updates_only_the_remembered_prior_model() {
+        let journal = temporary_journal(
+            "restore-only",
+            json!({
+                "providers":{"active":{"provider":"local","model":"private"},"local":{"endpoint_url":"https://private.example/v1","served_model_id":"private","credential":"secret"},"byo_models":{"google":"gemini-pro-latest"}},
+                "services":{"confidential":{"endpoint_url":"https://private.example","served_model_id":"private","credential_fingerprint_sha256":"2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b" ,"prior_active":{"provider":"google","model":"gemini-pro-latest"}}}
+            }),
+        );
+        // The exact SHA-256 for "secret" is required for the active lane to
+        // resolve as confidential.
+        let result = update_providers(
+            &journal,
+            ProviderUpdate {
+                lane: "byo".to_owned(),
+                provider: "google".to_owned(),
+                model: Some("gemini-3.5-flash".to_owned()),
+                resolution_targets: vec!["confidential_prior".to_owned()],
+            },
+        );
+        assert!(
+            result.is_ok(),
+            "confidential prior update is allowed: {result:?}"
+        );
+        let config = read_config(&journal).expect("config reads");
+        assert_eq!(config["providers"]["active"]["provider"], "local");
+        assert_eq!(
+            config["services"]["confidential"]["prior_active"]["model"],
+            "gemini-3.5-flash"
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    fn generated() -> GenerateResponse {
+        GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: None,
+            text: "OK".to_owned(),
+            model: "test-model".to_owned(),
+            usage: json!({}),
+            finish_reason: "stop".to_owned(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        }))
+    }
+
+    fn refused(reason_code: &str) -> GenerateResponse {
+        GenerateResponse::Refused(RefusedResponse {
+            id: None,
+            reason: RefusalReason::ProviderResponseInvalid,
+            reason_code: Some(ReasonCodeValue::Known(
+                ReasonCode::new(reason_code).expect("known reason code"),
+            )),
+            retryable: false,
+            blocking: true,
+            reset_at_ms: None,
+            provider: Some("test".to_owned()),
+            detail: format!("refused: {reason_code}"),
+        })
+    }
+
+    #[test]
+    fn classify_generated_response_is_valid() {
+        let result = classify_probe_result(Ok(generated()));
+        assert_eq!(result, json!({"valid":true}));
+    }
+
+    #[test]
+    fn classify_model_not_found_refusal_is_valid_with_probe_reason_code() {
+        let result = classify_probe_result(Ok(refused("model_not_found")));
+        assert_eq!(
+            result,
+            json!({"valid":true,"probe_reason_code":"model_not_found"})
+        );
+    }
+
+    #[test]
+    fn classify_quota_refusal_is_valid_with_probe_reason_code() {
+        let result = classify_probe_result(Ok(refused("provider_quota_exceeded")));
+        assert_eq!(
+            result,
+            json!({"valid":true,"probe_reason_code":"provider_quota_exceeded"})
+        );
+    }
+
+    #[test]
+    fn classify_other_refusal_is_invalid() {
+        let result = classify_probe_result(Ok(refused("provider_key_invalid")));
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["reason_code"], "provider_key_invalid");
+        assert_eq!(result["error"], "refused: provider_key_invalid");
+    }
+
+    #[test]
+    fn classify_transport_failure_is_invalid() {
+        let result = classify_probe_result(Err(ClientError::Protocol(ProtocolError {
+            id: None,
+            reason: "stub_failure".to_owned(),
+            detail: "one-shot stub hard failure".to_owned(),
+        })));
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["reason_code"], "stub_failure");
+        assert_eq!(result["error"], "one-shot stub hard failure");
+    }
+
+    fn temporary_journal(name: &str, config: Value) -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("solstone-thinking-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(path.join("config")).expect("config directory creates");
+        fs::write(
+            path.join("config/journal.json"),
+            serde_json::to_vec(&config).expect("config serializes"),
+        )
+        .expect("config writes");
+        path
     }
 }

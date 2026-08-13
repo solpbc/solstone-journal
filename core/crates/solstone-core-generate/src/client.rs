@@ -20,6 +20,7 @@ pub enum ClientError {
     Decode(String),
 }
 
+#[derive(Clone)]
 pub struct OneShotClient {
     executable: PathBuf,
     prefix_arguments: Vec<std::ffi::OsString>,

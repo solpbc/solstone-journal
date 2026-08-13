@@ -11,7 +11,7 @@ mod endpoint;
 mod google;
 mod lane;
 mod openai;
-mod overrides;
+pub mod overrides;
 mod refusal;
 mod request;
 mod responsiveness;

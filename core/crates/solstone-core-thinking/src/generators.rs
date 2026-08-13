@@ -8,6 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
+use solstone_core_facets::append_action_log;
+use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+
+use crate::MutationError;
 
 /// Discover packaged prompt roots in the same production order as
 /// `solstone-core`'s `discover_package_roots`: executable layout first, then
@@ -196,9 +200,52 @@ fn stem(path: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("{}: non-UTF-8 file stem", path.display()))
 }
 
-fn context_key(key: &str) -> String {
+pub fn context_key(key: &str) -> String {
     match key.split_once(':') {
         Some((app, name)) => format!("talent.{app}.{name}"),
         None => format!("talent.system.{key}"),
     }
+}
+
+pub fn update_overrides(journal: &Path, updates: &Map<String, Value>) -> Result<(), MutationError> {
+    let transaction = mutate_journal_config(journal, Default::default(), |config| {
+        let contexts = object_at(config, "talent_overrides");
+        let before = contexts.clone();
+        let mut changes = Map::new();
+        for (key, update) in updates {
+            let Some(update) = update.as_object() else { continue };
+            let context = context_key(key);
+            let old = before.get(&context).and_then(Value::as_object).cloned().unwrap_or_default();
+            let current = object_at(contexts, &context);
+            for field in ["disabled", "extract"] {
+                if let Some(value) = update.get(field) { current.insert(field.to_owned(), value.clone()); }
+            }
+            if old != *current {
+                changes.insert(format!("contexts.{context}"), json!({"old":if old.is_empty() { Value::Null } else { Value::Object(old) },"new":current}));
+            }
+        }
+        JournalConfigMutation { changed: !changes.is_empty(), value: changes }
+    }).map_err(MutationError::config)?;
+    if !transaction.value.is_empty() {
+        append_action_log(
+            journal,
+            None,
+            "app",
+            "thinking",
+            "generators_update",
+            json!({"changed_fields":transaction.value}),
+        )
+        .map_err(|error| MutationError::ActionLog(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
+    if !parent.get(key).is_some_and(Value::is_object) {
+        parent.insert(key.to_owned(), Value::Object(Map::new()));
+    }
+    parent
+        .get_mut(key)
+        .and_then(Value::as_object_mut)
+        .expect("object inserted")
 }
