@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+#[cfg(target_os = "linux")]
 use std::path::Path;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
