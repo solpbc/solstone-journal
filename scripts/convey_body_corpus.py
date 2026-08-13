@@ -102,6 +102,66 @@ NATIVE_DEVIATION_KEYS = frozenset(
     {"routes", "store_state", "reference", "native", "why"}
 )
 EXPECTED_NATIVE_DEVIATION_COUNT = 2
+DAY_PAYLOAD_DARK_FIELD_KEYS = frozenset({"field", "classification"})
+DAY_PAYLOAD_NOT_IMPLEMENTED_FIELD_KEYS = DAY_PAYLOAD_DARK_FIELD_KEYS | frozenset(
+    {"reference_function", "reference_location", "native_location", "follow_up"}
+)
+EXPECTED_DAY_PAYLOAD_DARK_FIELD_COUNT = 12
+EXPECTED_DAY_PAYLOAD_DARK_FIELD_BUCKET_COUNTS = {
+    "not_implemented": 6,
+    "unexercised": 6,
+    "absent_by_contract": 0,
+}
+DAY_PAYLOAD_DARK_FIELD_CLASSIFICATIONS: dict[str, dict[str, str]] = {
+    "activity.running": {
+        "classification": "not_implemented",
+        "reference_function": "_running_dynamics",
+        "reference_location": "solstone/apps/body/routes.py:1833",
+        "native_location": "core/crates/solstone-core-convey-body/src/day.rs:764",
+        "follow_up": "body-day-null-fields-port",
+    },
+    "heart.blood_pressure": {
+        "classification": "not_implemented",
+        "reference_function": "_blood_pressure",
+        "reference_location": "solstone/apps/body/routes.py:2198",
+        "native_location": "core/crates/solstone-core-convey-body/src/day.rs:962",
+        "follow_up": "body-day-null-fields-port",
+    },
+    "heart.comparison_line": {
+        "classification": "not_implemented",
+        "reference_function": "_heart_comparison_line",
+        "reference_location": "solstone/apps/body/routes.py:2501",
+        "native_location": "core/crates/solstone-core-convey-body/src/day.rs:962",
+        "follow_up": "body-day-null-fields-port",
+    },
+    "heart.rhythm": {
+        "classification": "not_implemented",
+        "reference_function": "_rhythm_summary",
+        "reference_location": "solstone/apps/body/routes.py:2288",
+        "native_location": "core/crates/solstone-core-convey-body/src/day.rs:962",
+        "follow_up": "body-day-null-fields-port",
+    },
+    "heart.series.svg.dots": {
+        "classification": "not_implemented",
+        "reference_function": "_heart_rate_series",
+        "reference_location": "solstone/apps/body/routes.py:2398",
+        "native_location": "core/crates/solstone-core-convey-body/src/day.rs:1054",
+        "follow_up": "body-day-null-fields-port",
+    },
+    "sleep.comparison_line": {
+        "classification": "not_implemented",
+        "reference_function": "_sleep_comparison_line",
+        "reference_location": "solstone/apps/body/routes.py:1434",
+        "native_location": "core/crates/solstone-core-convey-body/src/day.rs:650",
+        "follow_up": "body-day-null-fields-port",
+    },
+    "activity.steps.others": {"classification": "unexercised"},
+    "activity.steps.others_label": {"classification": "unexercised"},
+    "audit.oura_appendix": {"classification": "unexercised"},
+    "sleep.naps": {"classification": "unexercised"},
+    "sleep.other_sources": {"classification": "unexercised"},
+    "sleep.score_contributors": {"classification": "unexercised"},
+}
 
 NATIVE_DEVIATIONS: list[dict[str, Any]] = [
     {
@@ -305,6 +365,81 @@ def _json_case(cases: list[dict[str, Any]], path: str) -> dict[str, Any]:
     return value
 
 
+def _empty_leaf_paths(value: Any, path: str) -> set[str]:
+    if value is None or value == [] or value == {}:
+        return {path}
+    if isinstance(value, dict):
+        return {
+            leaf
+            for key, child in value.items()
+            for leaf in _empty_leaf_paths(child, f"{path}.{key}")
+        }
+    if isinstance(value, list):
+        return {
+            leaf
+            for index, child in enumerate(value)
+            for leaf in _empty_leaf_paths(child, f"{path}[{index}]")
+        }
+    return set()
+
+
+def _day_payload_dark_fields(cases_by_phase: dict[str, list[dict[str, Any]]]) -> list[dict[str, str]]:
+    def paths(phase: str) -> list[str]:
+        day = _json_case(cases_by_phase[phase], f"/app/body/api/day/{ANCHOR_DAY}")
+        return sorted(
+            leaf
+            for section in ("sleep", "heart", "activity", "audit")
+            for leaf in _empty_leaf_paths(day[section], section)
+        )
+
+    fixed_paths = paths("fixed")
+    first_run_paths = paths("first_run")
+    assert fixed_paths == first_run_paths
+    assert set(fixed_paths) == set(DAY_PAYLOAD_DARK_FIELD_CLASSIFICATIONS)
+    return [
+        {"field": field, **DAY_PAYLOAD_DARK_FIELD_CLASSIFICATIONS[field]}
+        for field in fixed_paths
+    ]
+
+
+def _day_payload_dark_fields_match_contract(
+    fields: list[Any], cases_by_phase: dict[str, list[dict[str, Any]]]
+) -> bool:
+    bucket_counts = {
+        bucket: sum(
+            isinstance(field, dict) and field.get("classification") == bucket
+            for field in fields
+        )
+        for bucket in EXPECTED_DAY_PAYLOAD_DARK_FIELD_BUCKET_COUNTS
+    }
+    return (
+        fields == _day_payload_dark_fields(cases_by_phase)
+        and len(fields) == EXPECTED_DAY_PAYLOAD_DARK_FIELD_COUNT
+        and [field["field"] for field in fields] == sorted(field["field"] for field in fields)
+        and bucket_counts == EXPECTED_DAY_PAYLOAD_DARK_FIELD_BUCKET_COUNTS
+        and all(
+            isinstance(field, dict)
+            and isinstance(field.get("field"), str)
+            and bool(field["field"])
+            and field.get("classification") in EXPECTED_DAY_PAYLOAD_DARK_FIELD_BUCKET_COUNTS
+            and set(field)
+            == (
+                DAY_PAYLOAD_NOT_IMPLEMENTED_FIELD_KEYS
+                if field["classification"] == "not_implemented"
+                else DAY_PAYLOAD_DARK_FIELD_KEYS
+            )
+            and all(
+                isinstance(field[key], str) and bool(field[key])
+                for key in (
+                    DAY_PAYLOAD_NOT_IMPLEMENTED_FIELD_KEYS - DAY_PAYLOAD_DARK_FIELD_KEYS
+                )
+                if field["classification"] == "not_implemented"
+            )
+            for field in fields
+        )
+    )
+
+
 def _drain_trends_flight(routes: Any) -> None:
     if not routes._trends_warm_flight.acquire(timeout=10):
         raise AssertionError("Timed out waiting for Body trends warm")
@@ -387,6 +522,7 @@ def _assert_and_analyze(
     fixed_app: Any,
     routes: Any,
     native_deviations: list[Any],
+    day_payload_dark_fields: list[Any],
     clock_reads: list[dict[str, Any]],
     expected_rules: frozenset[str],
 ) -> tuple[dict[str, Any], dict[str, bool], dict[str, Any]]:
@@ -593,6 +729,10 @@ def _assert_and_analyze(
         )
     )
     assert native_deviations_match_contract
+    day_payload_dark_fields_match_contract = _day_payload_dark_fields_match_contract(
+        day_payload_dark_fields, cases_by_phase
+    )
+    assert day_payload_dark_fields_match_contract
 
     generator_source = Path(__file__).read_text(encoding="utf-8")
     assert not re.search(
@@ -716,6 +856,7 @@ def _assert_and_analyze(
             hash_basis_is_binary and native_deviations_match_contract
         ),
         "criterion_13_default_exception_propagation": testing_default,
+        "criterion_14_day_payload_dark_field_provenance": day_payload_dark_fields_match_contract,
     }
     assert all(assertions.values())
     route_coverage = {
@@ -788,12 +929,14 @@ def build_corpus() -> dict[str, Any]:
             cases_by_phase[phase] = phase_cases
             _drain_trends_flight(routes)
 
+        day_payload_dark_fields = _day_payload_dark_fields(cases_by_phase)
         analysis, assertions, route_coverage = _assert_and_analyze(
             seed_manifest,
             cases_by_phase,
             fixed_app=fixed_app,
             routes=routes,
             native_deviations=native_deviations,
+            day_payload_dark_fields=day_payload_dark_fields,
             clock_reads=clock_reads,
             expected_rules=expected_rules,
         )
@@ -805,6 +948,7 @@ def build_corpus() -> dict[str, Any]:
         "tz": "UTC",
         "placeholders": {"day": PLACEHOLDER_DAY, "journal_root": PLACEHOLDER_ROOT},
         "native_deviations": native_deviations,
+        "day_payload_dark_fields": day_payload_dark_fields,
         "journal": seed_manifest,
         "route_coverage": route_coverage,
         "freshness_contract": {

@@ -249,12 +249,9 @@ mod tests {
                 vec![staged("2024-01-01 22:00", "2024-01-02 06:00", None)],
             ),
         ]);
-        assert_eq!(
-            pick_day_sleep(&tied, target, SLEEP_SESSION_GAP_MINUTES)
-                .unwrap()
-                .source,
-            "Alpha"
-        );
+        let tied_sleep = pick_day_sleep(&tied, target, SLEEP_SESSION_GAP_MINUTES).unwrap();
+        assert_eq!(tied_sleep.source, "Alpha");
+        assert_eq!(tied_sleep.other_sources, vec!["Beta".to_owned()]);
     }
 
     #[test]

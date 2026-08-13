@@ -2173,6 +2173,75 @@ mod tests {
         }
 
         #[test]
+        fn seeded_naps_appear_in_the_sleep_list_and_bar_segments() {
+            let root = TempDir::new();
+            let main = health_row(
+                "HKCategoryTypeIdentifierSleepAnalysis",
+                "2026-01-01T22:00:00+00:00".to_owned(),
+                None,
+                None,
+                "Primary Watch",
+                Some("2026-01-02T06:00:00+00:00".to_owned()),
+                None,
+                None,
+            );
+            let nap = health_row(
+                "HKCategoryTypeIdentifierSleepAnalysis",
+                "2026-01-02T14:00:00+00:00".to_owned(),
+                None,
+                None,
+                "Primary Watch",
+                Some("2026-01-02T14:30:00+00:00".to_owned()),
+                None,
+                None,
+            );
+            seed_fixture(
+                root.path(),
+                vec![bundle("20260103_080000", APPLE, vec![main, nap])],
+            );
+            let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
+            assert_eq!(payload["sleep"]["naps"].as_array().unwrap().len(), 1);
+            assert!(payload["sleep"]["bar"]["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|segment| segment["kind"] == "nap"));
+        }
+
+        #[test]
+        fn seeded_secondary_sleep_source_is_named_without_summing_coverage() {
+            let root = TempDir::new();
+            let primary = health_row(
+                "HKCategoryTypeIdentifierSleepAnalysis",
+                "2026-01-01T21:00:00+00:00".to_owned(),
+                None,
+                None,
+                "Primary Watch",
+                Some("2026-01-02T07:00:00+00:00".to_owned()),
+                None,
+                None,
+            );
+            let secondary = health_row(
+                "HKCategoryTypeIdentifierSleepAnalysis",
+                "2026-01-01T22:00:00+00:00".to_owned(),
+                None,
+                None,
+                "Secondary Band",
+                Some("2026-01-02T06:00:00+00:00".to_owned()),
+                None,
+                None,
+            );
+            seed_fixture(
+                root.path(),
+                vec![bundle("20260103_080000", APPLE, vec![primary, secondary])],
+            );
+            let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
+            assert_eq!(payload["sleep"]["source"], "Primary Watch");
+            assert_eq!(payload["sleep"]["duration"], "10h 00m");
+            assert_eq!(payload["sleep"]["other_sources"], json!(["Secondary Band"]));
+        }
+
+        #[test]
         fn longest_source_wins_and_axis_end_naps_drop() {
             let target = parse_day("20260102").unwrap();
             let mut short = simple_row(
@@ -2378,7 +2447,43 @@ mod tests {
             a.source_name = FieldState::Present(json!("Alpha"));
             let mut z = a.clone();
             z.source_name = FieldState::Present(json!("Zulu"));
-            assert_eq!(primary_total(&[z, a]).unwrap().1, "Alpha");
+            let total = primary_total(&[z, a]).unwrap();
+            assert_eq!(total.1, "Alpha");
+            assert_eq!(total.3, vec!["Zulu".to_owned()]);
+        }
+
+        #[test]
+        fn secondary_step_source_is_named_without_contributing_to_the_total() {
+            let root = TempDir::new();
+            let primary = health_row(
+                "HKQuantityTypeIdentifierStepCount",
+                "2026-01-01T00:00:00+00:00".to_owned(),
+                Some(json!(1200)),
+                Some("count"),
+                "Primary Watch",
+                Some("2026-01-01T02:00:00+00:00".to_owned()),
+                None,
+                None,
+            );
+            let secondary = health_row(
+                "HKQuantityTypeIdentifierStepCount",
+                "2026-01-01T03:00:00+00:00".to_owned(),
+                Some(json!(800)),
+                Some("count"),
+                "Secondary Phone",
+                Some("2026-01-01T04:00:00+00:00".to_owned()),
+                None,
+                None,
+            );
+            seed_fixture(
+                root.path(),
+                vec![bundle("20260102_080000", APPLE, vec![primary, secondary])],
+            );
+            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let steps = payload["activity"]["steps"].clone();
+            assert_eq!(steps["total"], 1200);
+            assert_eq!(steps["others"], json!(["Secondary Phone"]));
+            assert_eq!(steps["others_label"], "Secondary Phone also contributed");
         }
 
         #[test]
@@ -2544,6 +2649,36 @@ mod tests {
             );
             row.source_family = FieldState::Present(json!(OURA_API));
             assert!(oura_appendix(&[row]).is_empty());
+        }
+
+        #[test]
+        fn seeded_audit_appendix_requires_a_parseable_pulse_wave_velocity() {
+            let root = TempDir::new();
+            let row = oura_row(
+                OURA_CARDIOVASCULAR_AGE,
+                "20260101",
+                None,
+                None,
+                Some(json!(42)),
+                None,
+                "daily_summary",
+                Some(json!({"pulse_wave_velocity":8.2})),
+                None,
+            );
+            seed_fixture(root.path(), vec![bundle("20260102_090000", OURA_API, vec![row])]);
+            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            assert_eq!(
+                payload["audit"]["oura_appendix"],
+                json!([{"label":"Pulse-wave velocity","detail":"8.2 m/s · Oura's measurement"}])
+            );
+            let mut unparseable = simple_row(
+                OURA_CARDIOVASCULAR_AGE,
+                "20260101",
+                "2026-01-01T04:00:00+00:00",
+                Some(json!(42)),
+            );
+            unparseable.metadata = FieldState::Present(json!({"pulse_wave_velocity":"unknown"}));
+            assert!(oura_appendix(&[unparseable]).is_empty());
         }
         #[test]
         fn glucose_stays_partitioned_by_unit() {
