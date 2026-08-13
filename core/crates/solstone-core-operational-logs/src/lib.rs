@@ -4,6 +4,7 @@
 //! Immutable readers for journal operational service logs.
 
 mod collect;
+mod count;
 mod error;
 mod follow;
 mod read;
@@ -13,6 +14,9 @@ mod render;
 mod fixture;
 
 pub use collect::{HealthLogsQuery, collect_health_logs};
+pub use count::{
+    CountParseError, ParsedCount, parse_health_log_count, python_int_whitespace_ranges,
+};
 pub use error::{CollectError, EnumerationError, HealthDirectoryProbeError, OrdinaryTailError};
 pub use follow::{
     FollowFatalError, FollowFs, FollowReadError, FollowReader, FollowState, FollowTickContext,
