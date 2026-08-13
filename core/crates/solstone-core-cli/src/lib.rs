@@ -4665,6 +4665,13 @@ mod tests {
                         "{} health projection",
                         case.id
                     );
+                    let argv = vec![OsString::from("--port"), OsString::from(input.as_str())];
+                    assert_eq!(
+                        parse_service_port_argv(&argv).unwrap().canonical_decimal(),
+                        value,
+                        "{} service projection",
+                        case.id
+                    );
                 }
                 (ResultCase::ValueError, Some(input)) => {
                     assert!(
@@ -4675,6 +4682,12 @@ mod tests {
                     assert!(
                         solstone_core_operational_logs::parse_health_log_count(&input).is_err(),
                         "{} health projection",
+                        case.id
+                    );
+                    let argv = vec![OsString::from("--port"), OsString::from(input.as_str())];
+                    assert!(
+                        parse_service_port_argv(&argv).is_err(),
+                        "{} service projection",
                         case.id
                     );
                 }
