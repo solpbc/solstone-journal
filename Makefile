@@ -765,11 +765,11 @@ check-differentials: check-rust-onnx-stage build
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
 	@status=0; \
-	echo "==> cargo clippy --features differential -p solstone-core --test native_sol_coverage"; \
+	echo "==> cargo clippy --features differential -p solstone-core --test core_differentials"; \
 	cargo clippy --manifest-path $(RUST_MANIFEST) --features differential --locked --no-deps \
-		-p solstone-core --test native_sol_coverage -- -D warnings || status=$$?; \
+		-p solstone-core --test core_differentials -- -D warnings || status=$$?; \
 	for leg in \
-		"-p solstone-core --test native_sol_coverage --test journal_config_client --test journal_config_corruption --test body_restore_client --test grab_differential" \
+		"-p solstone-core --test core_differentials" \
 		"-p solstone-core-journal-bin --test journal_process_bootstrap" \
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
@@ -779,7 +779,6 @@ check-differentials: check-rust-onnx-stage build
 		"-p solstone-core-system --test stt_backend_choice_differential --test partition_differential" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-transfer --test transfer_differential" \
-		"-p solstone-core --test transfer_send_differential --test export_differential" \
 		"-p solstone-core-system-health --test pipeline_health_oracle" \
 		"-p solstone-core-observe-audio --test audio_differential" \
 		"-p solstone-core-transcribe --test transcribe_differential" \

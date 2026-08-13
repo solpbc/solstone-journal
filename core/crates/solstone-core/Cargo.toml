@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
 
 [lints]
 workspace = true
@@ -17,39 +18,49 @@ workspace = true
 differential = []
 
 [[test]]
-name = "native_sol_coverage"
-path = "tests/native_sol_coverage.rs"
+name = "core_brain_contracts"
+path = "tests/core_brain_contracts.rs"
+
+[[test]]
+name = "core_cli_contracts"
+path = "tests/core_cli_contracts.rs"
+
+[[test]]
+name = "core_convey_contracts"
+path = "tests/core_convey_contracts.rs"
+
+[[test]]
+name = "core_differentials"
+path = "tests/core_differentials.rs"
 required-features = ["differential"]
 
 [[test]]
-name = "journal_config_client"
-path = "tests/journal_config_client.rs"
-required-features = ["differential"]
+name = "core_journal_contracts"
+path = "tests/core_journal_contracts.rs"
 
 [[test]]
-name = "journal_config_corruption"
-path = "tests/journal_config_corruption.rs"
-required-features = ["differential"]
+name = "core_repository_contracts"
+path = "tests/core_repository_contracts.rs"
 
 [[test]]
-name = "body_restore_client"
-path = "tests/body_restore_client.rs"
-required-features = ["differential"]
+name = "core_supervisor_contracts"
+path = "tests/core_supervisor_contracts.rs"
 
 [[test]]
-name = "grab_differential"
-path = "tests/grab_differential.rs"
-required-features = ["differential"]
+name = "identity_cli"
+path = "tests/identity_cli.rs"
 
 [[test]]
-name = "transfer_send_differential"
-path = "tests/transfer_send_differential.rs"
-required-features = ["differential"]
+name = "supervisor_app_stack"
+path = "tests/supervisor_app_stack.rs"
 
 [[test]]
-name = "export_differential"
-path = "tests/export_differential.rs"
-required-features = ["differential"]
+name = "supervisor_shutdown"
+path = "tests/supervisor_shutdown.rs"
+
+[[test]]
+name = "supervisor_tick"
+path = "tests/supervisor_tick.rs"
 
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"

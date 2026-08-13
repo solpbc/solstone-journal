@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[path = "support/stub_peer.rs"]
-mod stub_peer;
+use crate::stub_peer;
 
 use std::process::{Command, Output};
 

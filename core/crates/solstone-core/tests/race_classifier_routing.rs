@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[allow(dead_code)]
-#[path = "support/await_outcome.rs"]
-mod await_outcome;
-#[allow(dead_code)]
-#[path = "support/race_classification.rs"]
-mod race_classification;
-
-use race_classification::{RaceVerdict, classify};
+use crate::race_classification::{RaceVerdict, classify};
 
 const SIGKILL_FIXTURE: &str = include_str!("fixtures/cargo-test-sigkill-supervisor-tick.txt");
 const REAL_MARKED_FIXTURE: &str = include_str!("fixtures/cargo-test-real-marked-inconclusive.txt");

@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[allow(dead_code)]
-#[path = "support/await_outcome.rs"]
-mod await_outcome;
-
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use await_outcome::{
+use crate::await_outcome::{
     CargoTestEvidence, PollState, WaitMetrics, WaitOutcome, WaitPolarity, await_outcome,
     await_outcome_async, cargo_test_abort_discriminator,
 };

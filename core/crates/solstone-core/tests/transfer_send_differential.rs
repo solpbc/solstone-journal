@@ -2,8 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 #[allow(dead_code)]
-#[path = "support/stub_peer.rs"]
-mod stub_peer;
+use crate::stub_peer;
 
 use std::path::Path;
 use std::process::{Command, Output};
