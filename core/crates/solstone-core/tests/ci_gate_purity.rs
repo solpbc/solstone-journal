@@ -395,10 +395,8 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
     let venv_bin = venv_dir.join("bin");
     let sentinel = temp.path.join("sentinel.log");
     let cargo_log = temp.path.join("cargo.log");
-    let pdf_link_dir = temp.path.join("pdfium-link");
     fs::create_dir(&shim_dir).expect("create shim directory");
     fs::create_dir_all(&venv_bin).expect("create poison virtualenv bin directory");
-    fs::create_dir(&pdf_link_dir).expect("create fake PDFium link directory");
     let onnx_names = if cfg!(target_os = "macos") {
         ["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"].as_slice()
     } else {
@@ -421,7 +419,16 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
         onnx_names,
         &[],
     );
-    fs::write(pdf_link_dir.join("libpdfium.so"), []).expect("write fake PDFium runtime");
+    let (pdf_target, pdf_filename) = if cfg!(target_os = "macos") {
+        ("macos-arm64", "libpdfium.dylib")
+    } else if matches!(arch.as_str(), "aarch64" | "arm64") {
+        ("linux-aarch64", "libpdfium.so")
+    } else {
+        ("linux-x86_64", "libpdfium.so")
+    };
+    let pdf_link_dir = root.join("target/pdfium-runtime-link").join(pdf_target);
+    fs::create_dir_all(&pdf_link_dir).expect("create fake PDFium link directory");
+    fs::write(pdf_link_dir.join(pdf_filename), []).expect("write fake PDFium runtime");
     for name in ["python", "python3", "pytest", "ruff", "uv"] {
         write_forbidden_shim(&shim_dir.join(name));
         write_forbidden_shim(&venv_bin.join(name));
@@ -440,10 +447,6 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
         .arg(format!("VENV={}", venv_dir.display()))
         .arg(format!("VENV_BIN={}", venv_bin.display()))
         .arg(format!("PYTHON={}", venv_bin.join("python").display()))
-        .arg(format!(
-            "PDF_RUNTIME_HOST_LINK_DIR={}",
-            pdf_link_dir.display()
-        ))
         .current_dir(root)
         .env("PATH", path)
         .env("SOLSTONE_CI_SENTINEL", &sentinel)
@@ -1130,6 +1133,76 @@ fn native_macos_gate_ignores_make_control_plane_overrides() {
             .display()
     )));
     assert!(!recorded_env.contains("solstone-redirected"));
+}
+
+#[test]
+fn pdf_runtime_mapping_ignores_make_control_plane_overrides() {
+    for (system, arch, expected_target, expected_library) in [
+        ("Linux", "x86_64", "linux-x86_64", "libpdfium.so"),
+        ("Linux", "aarch64", "linux-aarch64", "libpdfium.so"),
+        ("Darwin", "arm64", "macos-arm64", "libpdfium.dylib"),
+    ] {
+        let temp = TempDir::new("pdf-runtime-immutable");
+        write_host_makefile(&temp.path, system, arch);
+        let makefile_path = temp.path.join("Makefile");
+        let mut makefile = fs::read_to_string(&makefile_path).expect("read fixture Makefile");
+        makefile.push_str(
+            "\nprint-pdf-runtime-contract:\n\t@printf '%s|%s|%s\\n' \"$(PDF_RUNTIME_HOST_TARGET)\" \"$(PDF_RUNTIME_HOST_LIBRARY)\" \"$(PDF_RUNTIME_HOST_LINK_DIR)\"\n",
+        );
+        fs::write(&makefile_path, makefile).expect("extend fixture Makefile");
+
+        let output = Command::new("make")
+            .arg("print-pdf-runtime-contract")
+            .args([
+                "HOST_SYSTEM=Plan9",
+                "HOST_ARCH=mips",
+                "REPO_ROOT=/tmp/solstone-redirected",
+                "PDF_RUNTIME_HOST_TARGET=forced",
+                "PDF_RUNTIME_HOST_LIBRARY=forced.bin",
+                "PDF_RUNTIME_HOST_LINK_DIR=/tmp/solstone-redirected",
+            ])
+            .current_dir(&temp.path)
+            .output()
+            .expect("print immutable PDF runtime mapping");
+        assert!(output.status.success());
+        let expected_dir = fs::canonicalize(&temp.path)
+            .expect("canonical fixture root")
+            .join("target/pdfium-runtime-link")
+            .join(expected_target);
+        assert_eq!(
+            String::from_utf8(output.stdout)
+                .expect("mapping output is UTF-8")
+                .trim(),
+            format!(
+                "{expected_target}|{expected_library}|{}",
+                expected_dir.display()
+            )
+        );
+    }
+}
+
+#[test]
+fn unsupported_pdf_host_fails_before_staging() {
+    let temp = TempDir::new("unsupported-pdf-host");
+    write_host_makefile(&temp.path, "Plan9", "mips");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create shims");
+    write_forbidden_shim(&shims.join("python3"));
+    let sentinel = temp.path.join("python-sentinel");
+
+    let output = Command::new("make")
+        .arg("check-rust-pdf-stage")
+        .current_dir(&temp.path)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_CI_SENTINEL", &sentinel)
+        .output()
+        .expect("run unsupported PDF host gate");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Plan9/mips"));
+    assert!(
+        !sentinel.exists(),
+        "unsupported PDF host invoked the staging interpreter"
+    );
 }
 
 #[test]

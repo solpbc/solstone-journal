@@ -638,9 +638,17 @@ fn run_in_column(column: SupervisorColumn, args: &[String], journal: &TempDir) -
 }
 
 fn pdfium_library() -> PathBuf {
+    let (target, filename) = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => ("linux-x86_64", "libpdfium.so"),
+        ("linux", "aarch64") => ("linux-aarch64", "libpdfium.so"),
+        ("macos", "aarch64") => ("macos-arm64", "libpdfium.dylib"),
+        (os, arch) => panic!("unsupported PDFium test host: {os}/{arch}"),
+    };
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
-        .join("target/pdfium-runtime-link/linux-x86_64/libpdfium.so");
+        .join("target/pdfium-runtime-link")
+        .join(target)
+        .join(filename);
     assert!(
         path.is_file(),
         "PDFium runtime is not staged; run make check-rust-pdf-stage"

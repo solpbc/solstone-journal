@@ -215,9 +215,25 @@ validate_onnx_runtime() { \
 endef
 
 REQUIRE_ONNX_HOST_RUNTIME = $(DEFINE_ONNX_RUNTIME_VALIDATOR); if validate_onnx_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
-PDF_RUNTIME_HOST_TARGET := linux-$(shell uname -m)
-PDF_RUNTIME_HOST_LINK_DIR := $(CURDIR)/target/pdfium-runtime-link/$(PDF_RUNTIME_HOST_TARGET)
-REQUIRE_PDF_HOST_RUNTIME = test -f "$(PDF_RUNTIME_HOST_LINK_DIR)/libpdfium.so" || { echo "the pinned host PDFium runtime is required to test solstone-core-pdf; run 'make check-rust-pdf-stage' once outside make ci, then retry" >&2; exit 1; }
+override PDF_RUNTIME_HOST_TARGET :=
+override PDF_RUNTIME_HOST_LIBRARY :=
+ifeq ($(HOST_SYSTEM),Linux)
+ifneq ($(filter x86_64 amd64,$(HOST_ARCH)),)
+override PDF_RUNTIME_HOST_TARGET := linux-x86_64
+override PDF_RUNTIME_HOST_LIBRARY := libpdfium.so
+else ifneq ($(filter aarch64 arm64,$(HOST_ARCH)),)
+override PDF_RUNTIME_HOST_TARGET := linux-aarch64
+override PDF_RUNTIME_HOST_LIBRARY := libpdfium.so
+endif
+else ifeq ($(HOST_SYSTEM),Darwin)
+ifneq ($(filter arm64 aarch64,$(HOST_ARCH)),)
+override PDF_RUNTIME_HOST_TARGET := macos-arm64
+override PDF_RUNTIME_HOST_LIBRARY := libpdfium.dylib
+endif
+endif
+override PDF_RUNTIME_HOST_LINK_DIR := $(REPO_ROOT)/target/pdfium-runtime-link/$(PDF_RUNTIME_HOST_TARGET)
+REQUIRE_SUPPORTED_PDF_HOST = test -n "$(PDF_RUNTIME_HOST_TARGET)" || { echo "unsupported host for the pinned PDFium runtime: observed $(HOST_SYSTEM)/$(HOST_ARCH); supported: Linux/x86_64, Linux/aarch64, Darwin/arm64" >&2; exit 1; }
+REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); test -f "$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" || { echo "the pinned host PDFium runtime is required to test solstone-core-pdf; run 'make check-rust-pdf-stage' once outside make ci, then retry" >&2; exit 1; }
 DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Derived, never written out: the helper's declared coverage lives in
@@ -465,7 +481,9 @@ check-rust-onnx-stage:
 $(PDF_RUNTIME_HOST_LINK_DIR):
 	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
 
-check-rust-pdf-stage: $(PDF_RUNTIME_HOST_LINK_DIR)
+check-rust-pdf-stage:
+	@$(REQUIRE_SUPPORTED_PDF_HOST)
+	@$(MAKE) --no-print-directory "$(PDF_RUNTIME_HOST_LINK_DIR)"
 	@echo "host PDFium runtime staged at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
 # The ONNX-linked crates' own #[test]s. This runs INSIDE ci: it requires the
@@ -491,7 +509,7 @@ check-rust-pdf-test:
 		exit 0; \
 	fi; \
 	$(REQUIRE_PDF_HOST_RUNTIME); \
-	SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/libpdfium.so" cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-pdf --locked -- --test-threads=1
+	SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-pdf --locked -- --test-threads=1
 
 # Retained name: check-rust-shipped-binaries' recovery message named it for
 # months and it is in muscle memory. It now stages AND runs all three crates.
