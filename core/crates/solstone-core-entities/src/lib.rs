@@ -10,7 +10,9 @@ mod deferred_delete;
 mod model;
 mod router;
 
-pub use router::{router, router_with_delete_window};
+pub use router::{api_router, api_router_with_delete_window};
+#[cfg(test)]
+pub(crate) use router::{router, router_with_delete_window};
 
 #[cfg(test)]
 mod router_tests;

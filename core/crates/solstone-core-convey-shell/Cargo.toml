@@ -38,6 +38,7 @@ socket2 = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 solstone-core-callosum = { workspace = true, optional = true }
 solstone-core-convey-http.workspace = true
+solstone-core-entities.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true

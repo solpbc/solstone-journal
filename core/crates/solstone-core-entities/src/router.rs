@@ -11,7 +11,7 @@ use axum::extract::{Extension, Path as RoutePath, Query, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
-use axum::{Json, Router, body::Body};
+use axum::{Json, Router};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -48,13 +48,13 @@ impl Deref for RouterState {
     }
 }
 
-/// Build the fully-prefixed entity and facet-curation route surface.
-pub fn router(journal_root: impl AsRef<Path>) -> Router {
-    router_with_delete_window(journal_root, Duration::from_secs_f64(10.0))
+/// Build the mergeable entity and facet-curation API route surface.
+pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
+    api_router_with_delete_window(journal_root, Duration::from_secs_f64(10.0))
 }
 
-/// Build the entity routes with an injectable deferred-delete cancellation window.
-pub fn router_with_delete_window(
+/// Build the mergeable entity routes with an injectable deferred-delete cancellation window.
+pub fn api_router_with_delete_window(
     journal_root: impl AsRef<Path>,
     delete_window: Duration,
 ) -> Router {
@@ -64,7 +64,6 @@ pub fn router_with_delete_window(
         delete_window,
     });
     Router::new()
-        .route("/app/entities/", get(index))
         .route("/app/entities/api/state", get(state_route))
         .route("/app/entities/api/network", get(index_plate_network))
         .route("/app/entities/api/history", get(index_plate_history))
@@ -195,7 +194,20 @@ pub fn router_with_delete_window(
             post(dismiss_facet_candidate_route),
         )
         .with_state(state)
-        .fallback(not_found_fallback)
+}
+
+// Kept for in-crate test use only (see router_tests.rs); deliberately excluded from the crate's public API — api_router()/api_router_with_delete_window() are the real external surface.
+#[allow(dead_code)]
+pub(crate) fn router(journal_root: impl AsRef<Path>) -> Router {
+    router_with_delete_window(journal_root, Duration::from_secs_f64(10.0))
+}
+
+#[allow(dead_code)]
+pub(crate) fn router_with_delete_window(
+    journal_root: impl AsRef<Path>,
+    delete_window: Duration,
+) -> Router {
+    api_router_with_delete_window(journal_root, delete_window).fallback(not_found_fallback)
 }
 
 #[derive(Deserialize)]
@@ -3316,17 +3328,6 @@ async fn history_route(
         Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "entity not found"),
         _ => refusal(ReasonCode::EntityOperationFailed, "history read failed"),
     }
-}
-
-async fn index(Extension(basis): Extension<AccessBasis>) -> Response {
-    if !require_access(&basis) {
-        return refusal(ReasonCode::AgentUnavailable, "access denied");
-    }
-    (
-        [("content-type", "text/html; charset=utf-8")],
-        Body::from("<!doctype html><title>Entities</title>"),
-    )
-        .into_response()
 }
 
 fn index_plate_integer(

@@ -154,6 +154,7 @@ fn main() {
     let static_root = root.join("solstone/convey/static");
     let speakers_root = manifest.join("assets/speakers");
     let speakers_copy = speakers_root.join("copy.py");
+    let entities_workspace = manifest.join("assets/entities/workspace.html");
     let favicon = root.join("favicon.ico");
     let workspace = speakers_root.join("workspace.html");
     let speakers_static = speakers_root.join("who_is_this.js");
@@ -167,6 +168,7 @@ fn main() {
         &speakers_static,
         &speakers_copy,
         &devices_workspace,
+        &entities_workspace,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -182,6 +184,7 @@ fn main() {
     }
     assets.push(("/favicon.ico".to_owned(), favicon));
     assets.push(("/app/devices/workspace".to_owned(), devices_workspace));
+    assets.push(("/app/entities/workspace".to_owned(), entities_workspace));
     assets.push(("/app/speakers/workspace".to_owned(), workspace));
     assets.push((
         "/app/speakers/static/who_is_this.js".to_owned(),

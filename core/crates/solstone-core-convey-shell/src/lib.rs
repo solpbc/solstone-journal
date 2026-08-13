@@ -93,6 +93,7 @@ pub mod authorization_gate;
 mod devices;
 #[cfg(feature = "host")]
 mod door;
+mod entities;
 #[cfg(feature = "host")]
 mod network;
 pub mod refusal;
@@ -661,6 +662,9 @@ pub fn router(journal_root: PathBuf) -> Router {
             "/app/speakers/api/link-import",
             post(speakers_cli_entities::link_import),
         )
+        .route("/app/entities/", get(entities::shell))
+        .route("/app/entities/workspace", get(entities::workspace))
+        .merge(solstone_core_entities::api_router(journal_root.clone()))
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))

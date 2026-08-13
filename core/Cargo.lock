@@ -2802,6 +2802,7 @@ dependencies = [
  "socket2",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-entities",
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
