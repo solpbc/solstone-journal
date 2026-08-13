@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Deterministic screencast corpus for the describe frame pipeline.
+"""Frozen native describe frame fixture; Python-reference oracle regeneration retired.
 
 Generates the videos the native frame pipeline is pinned against, in the two
 container/codec pairs the recorders actually produce:
@@ -15,10 +15,8 @@ container/codec pairs the recorders actually produce:
 Frame content is synthesised from a fixed seed so the same bytes come out on
 every host: no clock, no randomness beyond the seed, no host fonts.
 
-The encoded corpus is committed under ``core/fixtures/describe_corpus/`` (88 KB
-total) and the companion oracle is ``core/fixtures/describe_frames.json``, which
-records what the reference implementation decided for each case -- which frames
-qualified, at what timestamps, and the run's dHash bookends.
+The encoded corpus is committed under ``core/fixtures/describe_corpus/`` (88 KB)
+and the companion fixture is ``core/fixtures/describe_frames.json``.
 
 Both are a FROZEN record. This script is provenance and a way to extend the
 corpus; ⛔ **no gate runs it**, deliberately. Video encoding is not
@@ -27,18 +25,14 @@ hashes and redden a green tree for a reason that has nothing to do with the
 decoder under test. A consumer reads the committed bytes.
 
 Recorded provenance of the committed corpus: built 2026-08-06 on fedora with
-system ffmpeg 7.1.2 (libvpx VP8, libopenh264); the oracle was produced by the
-reference handler through PyAV 16.1.0 (libavcodec 62.11.100, i.e. FFmpeg 8.0),
-which is the version skew a real host already has.
+system ffmpeg 7.1.2 (libvpx VP8, libopenh264).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -266,49 +260,13 @@ def build(root: Path) -> list[Path]:
     return produced
 
 
-def observe(paths: list[Path]) -> dict:
-    """Run the reference frame pipeline over the corpus and record its verdicts."""
-    from solstone.observe.describe import VideoProcessor
-
-    cases = []
-    for path in sorted(paths):
-        processor = VideoProcessor(path)
-        qualified = processor.process()
-        cases.append(
-            {
-                "file": path.name,
-                "width": processor.width,
-                "height": processor.height,
-                "decode_failed": processor.decode_failed,
-                "qualified_count": processor.qualified_count,
-                "first_hash": VideoProcessor._format_dhash(processor.first_hash),
-                "last_hash": VideoProcessor._format_dhash(processor.last_hash),
-                "winnow": processor.winnow_metrics,
-                "frames": [
-                    {"frame_id": f["frame_id"], "timestamp": round(f["timestamp"], 6)}
-                    for f in qualified
-                ],
-            }
-        )
-    return {"fixture": "solstone-describe-frames", "fixture_version": 1, "cases": cases}
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="directory to build the corpus in")
-    parser.add_argument(
-        "--observe",
-        action="store_true",
-        help="also run the reference pipeline and print the oracle to stdout",
-    )
     args = parser.parse_args()
     produced = build(args.root)
-    if args.observe:
-        json.dump(observe(produced), sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n")
-    else:
-        for path in produced:
-            print(path)
+    for path in produced:
+        print(path)
 
 
 if __name__ == "__main__":

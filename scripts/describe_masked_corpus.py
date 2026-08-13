@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Screencasts carrying the Convey-UI fiducials, observed through the whole loop.
+"""Frozen native describe masking fixture; Python-reference oracle regeneration retired.
 
 The frame corpus (`describe_frames.json`) has no fiducials in it and the fiducial
 corpus (`describe_fiducials.json`) is still images with no hashes. Between them
@@ -12,10 +12,7 @@ see, because the mask runs *before* the perceptual hash and a corpus with no
 tags in it hashes identically whether the mask is applied before, after, or
 never.
 
-These are the missing oracle: real VP8/WebM screencasts with the shipped corner
-tags composited in, observed through the reference `VideoProcessor.process()`
-with masking live, recording the qualified frames, the dHash bookends and the
-winnow counters.
+These are real VP8/WebM screencasts with the shipped corner tags composited in.
 
 Three cases, chosen so each one fails for a *different* wrong implementation:
 
@@ -31,17 +28,14 @@ Three cases, chosen so each one fails for a *different* wrong implementation:
 ⛔ FROZEN. No gate re-encodes this; a re-encode moves the hashes.
 
 Recorded provenance: built 2026-08-06 on fedora with system ffmpeg 7.1.2
-(libvpx VP8); observed through PyAV 16.1.0 (libavcodec 62.11.100) and OpenCV
-4.13.0.
+(libvpx VP8).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -169,51 +163,13 @@ def build(root: Path) -> list[Path]:
     return produced
 
 
-def observe(paths: list[Path]) -> dict:
-    from solstone.observe.describe import VideoProcessor
-
-    cases = []
-    for path in sorted(paths):
-        processor = VideoProcessor(path)
-        qualified = processor.process()
-        cases.append(
-            {
-                "file": path.name,
-                "decode_failed": processor.decode_failed,
-                "qualified_count": processor.qualified_count,
-                "first_hash": VideoProcessor._format_dhash(processor.first_hash),
-                "last_hash": VideoProcessor._format_dhash(processor.last_hash),
-                "winnow": processor.winnow_metrics,
-                "frames": [
-                    {
-                        "frame_id": frame["frame_id"],
-                        "timestamp": round(frame["timestamp"], 6),
-                        "aruco": frame.get("aruco"),
-                    }
-                    for frame in qualified
-                ],
-            }
-        )
-    return {
-        "fixture": "solstone-describe-masked-frames",
-        "fixture_version": 1,
-        "frame_size": {"width": WIDTH, "height": HEIGHT},
-        "cases": cases,
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path)
-    parser.add_argument("--observe", action="store_true")
     args = parser.parse_args()
     produced = build(args.root)
-    if args.observe:
-        json.dump(observe(produced), sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n")
-    else:
-        for path in produced:
-            print(path)
+    for path in produced:
+        print(path)
 
 
 if __name__ == "__main__":

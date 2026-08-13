@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Deterministic fiducial corpus for the Convey-UI mask.
+"""Frozen native describe fiducial fixture; Python-reference oracle regeneration retired.
 
 The convey web interface renders four corner tags so a screencast of the
 journal's own interface can be recognised and blacked out before any frame is
@@ -10,10 +10,7 @@ described. This corpus is the detector's pinned surface: PNG screens carrying
 the **real** tags from ``solstone/convey/static/tags/`` at a range of sizes,
 placements and rotations, plus the cases that must NOT produce a polygon.
 
-The companion oracle ``core/fixtures/describe_fiducials.json`` records what the
-reference detector decided for each screen -- which ids it found, each marker's
-four corners, the derived bounding polygon, which corner was extrapolated when
-one tag is absent, the polygon's area, and that area as a fraction of the frame.
+The companion fixture is ``core/fixtures/describe_fiducials.json``.
 
 Both are a FROZEN record. ⛔ No gate runs this script: PNG encoding is
 deterministic, but the *detector* is OpenCV's and its sub-pixel corner
@@ -21,17 +18,12 @@ refinement moves between OpenCV releases, so re-observing on a check would
 redden a green tree for a reason unrelated to the port under test. A consumer
 reads the committed bytes.
 
-Recorded provenance: built 2026-08-06 on fedora against OpenCV 4.13.0 with the
-reference detector parameters (``minMarkerPerimeterRate=0.003``,
-``maxMarkerPerimeterRate=8.0``, adaptive-threshold window 3..23, sub-pixel
-corner refinement).
+Recorded provenance: built 2026-08-06 on fedora.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -158,68 +150,13 @@ def build(root: Path) -> list[Path]:
     return produced
 
 
-def observe(paths: list[Path]) -> dict:
-    from solstone.observe.aruco import detect_markers, polygon_area
-
-    cases = []
-    for path in sorted(paths):
-        with Image.open(path) as handle:
-            image = handle.convert("RGB")
-            result = detect_markers(image)
-        entry: dict = {"file": path.name, "detected": result is not None}
-        if result is not None:
-            entry["marker_ids"] = sorted(marker["id"] for marker in result["markers"])
-            entry["markers"] = [
-                {
-                    "id": marker["id"],
-                    "corners": [
-                        [round(x, 4), round(y, 4)] for x, y in marker["corners"]
-                    ],
-                }
-                for marker in sorted(result["markers"], key=lambda m: m["id"])
-            ]
-            polygon = result.get("polygon")
-            entry["polygon"] = (
-                [[round(x, 4), round(y, 4)] for x, y in polygon]
-                if polygon is not None
-                else None
-            )
-            entry["extrapolated"] = result.get("extrapolated")
-            if polygon is not None:
-                area = polygon_area([tuple(point) for point in polygon])
-                entry["polygon_area"] = round(area, 4)
-                entry["frame_fraction"] = round(area / (WIDTH * HEIGHT), 6)
-                entry["skips_frame"] = (area / (WIDTH * HEIGHT)) > 0.8
-            else:
-                entry["polygon_area"] = None
-                entry["frame_fraction"] = None
-                entry["skips_frame"] = False
-        cases.append(entry)
-    return {
-        "fixture": "solstone-describe-fiducials",
-        "fixture_version": 1,
-        "frame_size": {"width": WIDTH, "height": HEIGHT},
-        "mask_skip_threshold": 0.8,
-        "cases": cases,
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="directory to write the screens into")
-    parser.add_argument(
-        "--observe",
-        action="store_true",
-        help="also run the reference detector and print the oracle to stdout",
-    )
     args = parser.parse_args()
     produced = build(args.root)
-    if args.observe:
-        json.dump(observe(produced), sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n")
-    else:
-        for path in produced:
-            print(path)
+    for path in produced:
+        print(path)
 
 
 if __name__ == "__main__":
