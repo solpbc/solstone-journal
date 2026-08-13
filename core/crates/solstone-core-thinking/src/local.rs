@@ -6,9 +6,12 @@
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
-use solstone_core_brain::derive_active_brain_lane;
 pub use solstone_core_brain::RuntimeRetryError;
-use solstone_core_brain::{inspect_runtime_health, inspect_runtime_retry_token, request_runtime_retry as brain_request_runtime_retry};
+use solstone_core_brain::derive_active_brain_lane;
+use solstone_core_brain::{
+    inspect_runtime_health, inspect_runtime_retry_token,
+    request_runtime_retry as brain_request_runtime_retry,
+};
 use solstone_core_facets::append_action_log;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
@@ -198,8 +201,15 @@ pub enum BootstrapResponse {
     Unavailable(String),
 }
 
-pub fn start_bootstrap(journal: &Path, config: &Map<String, Value>, model: &str) -> BootstrapResponse {
-    if !matches!(resolve_local_endpoint(config), LocalEndpointResolution::Bundled) {
+pub fn start_bootstrap(
+    journal: &Path,
+    config: &Map<String, Value>,
+    model: &str,
+) -> BootstrapResponse {
+    if !matches!(
+        resolve_local_endpoint(config),
+        LocalEndpointResolution::Bundled
+    ) {
         return BootstrapResponse::ByoEndpointActive;
     }
     let mut input = Map::from_iter([
@@ -399,8 +409,10 @@ mod tests {
     use super::{BootstrapResponse, default_model, start_bootstrap};
 
     fn temporary_journal(name: &str) -> std::path::PathBuf {
-        let path =
-            std::env::temp_dir().join(format!("solstone-thinking-local-{name}-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "solstone-thinking-local-{name}-{}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("journal directory creates");
         path

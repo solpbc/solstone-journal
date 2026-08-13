@@ -207,7 +207,9 @@ fn is_generators_missing_body_deviation(phase: &str, case: &Value) -> bool {
         && case.get("request_json").is_none()
 }
 
-fn assert_generators_missing_body_deviation(response: &(StatusCode, String, Option<String>, Vec<u8>)) {
+fn assert_generators_missing_body_deviation(
+    response: &(StatusCode, String, Option<String>, Vec<u8>),
+) {
     assert_eq!(response.0, StatusCode::BAD_REQUEST);
     assert_eq!(response.1, "application/json");
     assert_eq!(response.2, None);
@@ -653,7 +655,13 @@ fn fixture_body_arms_are_361_55_32_across_all_448_cases() {
     assert_eq!(count, 448);
     assert_eq!(arms, [361, 55, 32]);
     assert_eq!(arms.iter().sum::<usize>(), 448);
-    assert_eq!(corpus["native_deviations"].as_array().expect("deviations").len(), 2);
+    assert_eq!(
+        corpus["native_deviations"]
+            .as_array()
+            .expect("deviations")
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]

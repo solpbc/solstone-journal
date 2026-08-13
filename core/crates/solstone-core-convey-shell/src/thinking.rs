@@ -241,9 +241,7 @@ async fn retry_local_runtime(
         Err(
             solstone_core_thinking::local::RuntimeRetryError::Malformed(_)
             | solstone_core_thinking::local::RuntimeRetryError::Unavailable(_),
-        ) => thinking_failure_with_detail(
-            "local status can't be changed right now; check again",
-        ),
+        ) => thinking_failure_with_detail("local status can't be changed right now; check again"),
         Err(
             solstone_core_thinking::local::RuntimeRetryError::InvalidProvider(_)
             | solstone_core_thinking::local::RuntimeRetryError::Random,
@@ -260,10 +258,7 @@ async fn start_local_bootstrap(
         solstone_core_thinking::local::accepted_model(query.get("model").map(String::as_str))
     else {
         return json_error(solstone_core_thinking::local::invalid_model(
-            query
-                .get("model")
-                .map(String::as_str)
-                .unwrap_or_default(),
+            query.get("model").map(String::as_str).unwrap_or_default(),
         ));
     };
     let config = match config(&journal.0) {
@@ -277,12 +272,10 @@ async fn start_local_bootstrap(
         solstone_core_thinking::local::BootstrapResponse::InFlight(state) => {
             json_response(json!({"install_state":state}))
         }
-        solstone_core_thinking::local::BootstrapResponse::Busy(state) => {
-            json_response_with_status(
-                StatusCode::CONFLICT,
-                json!({"install_state":state,"reason_code":"install_busy"}),
-            )
-        }
+        solstone_core_thinking::local::BootstrapResponse::Busy(state) => json_response_with_status(
+            StatusCode::CONFLICT,
+            json!({"install_state":state,"reason_code":"install_busy"}),
+        ),
         solstone_core_thinking::local::BootstrapResponse::ByoEndpointActive => {
             invalid_request("BYO local endpoint is active")
         }
@@ -318,10 +311,7 @@ fn send_brain_refresh_request(journal_root: &Path) -> bool {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut extra = Map::new();
-    extra.insert(
-        "cmd".to_owned(),
-        json!(["journal", "brain", "refresh"]),
-    );
+    extra.insert("cmd".to_owned(), json!(["journal", "brain", "refresh"]));
     extra.insert(
         "ref".to_owned(),
         json!(format!(

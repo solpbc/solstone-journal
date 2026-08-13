@@ -716,7 +716,7 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use solstone_core_generate::{
-        ClientError, GeneratedResponse, GenerateResponse, ProtocolError, ReasonCode,
+        ClientError, GenerateResponse, GeneratedResponse, ProtocolError, ReasonCode,
         ReasonCodeValue, RefusalReason, RefusedResponse,
     };
 
