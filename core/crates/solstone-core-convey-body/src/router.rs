@@ -22,6 +22,7 @@ pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
         .route("/app/body/api/index", get(index_route))
         .route("/app/body/api/stats/{month}", get(stats_route))
         .route("/app/body/api/trends", get(trends_route))
+        .route("/app/body/api/day/{day}", get(crate::day::day_route))
         .with_state(Arc::new(journal_root.as_ref().to_path_buf()))
 }
 
@@ -72,7 +73,9 @@ async fn stats_route(
 
 /// The health reader determines whether aggregate-derived serving is safe.
 /// Torn/rebuilding/error states use one 503 JSON shape on both routes.
-fn ready_stats(root: &Path) -> Result<Option<Arc<crate::HealthDedupeStats>>, StoreError> {
+pub(crate) fn ready_stats(
+    root: &Path,
+) -> Result<Option<Arc<crate::HealthDedupeStats>>, StoreError> {
     match read_body_store_health(root) {
         Ok(BodyStoreHealthVerdict::Healthy(_)) | Ok(BodyStoreHealthVerdict::FirstRun(_)) => {
             read_health_dedupe_stats(root).map_err(|error| StoreError::Read(error.to_string()))
@@ -83,18 +86,20 @@ fn ready_stats(root: &Path) -> Result<Option<Arc<crate::HealthDedupeStats>>, Sto
     }
 }
 
-enum StoreError {
+pub(crate) enum StoreError {
     Verdict(crate::BodyStoreHealthReason),
     Read(String),
+    ShardUnreadable(String),
 }
 
-fn unavailable_response(error: StoreError) -> Response {
+pub(crate) fn unavailable_response(error: StoreError) -> Response {
     let (reason_code, detail) = match error {
         StoreError::Verdict(reason) => (
             format!("body_store_{}", reason.as_str()),
             reason.as_str().to_owned(),
         ),
         StoreError::Read(detail) => ("body_store_unavailable".to_owned(), detail),
+        StoreError::ShardUnreadable(detail) => ("body_store_shard_unreadable".to_owned(), detail),
     };
     error_envelope(
         reason_code,

@@ -5,6 +5,7 @@
 
 mod aggregate;
 mod chronicle;
+mod day;
 mod health;
 mod inventory;
 mod month;
@@ -40,7 +41,7 @@ pub use seed::{
     BodySeedReport, seed_body_journal,
 };
 pub use shard::{NormalizedRow, NormalizedValue, ShardReadError, read_normalized_shard};
-pub use signature::{DatabaseSignatureError, TrendsSignature, trends_signature};
+pub use signature::{DatabaseSignatureError, TrendsSignature, trends_db_path, trends_signature};
 pub(crate) use signature::{health_dedupe_database_path, read_database_signature};
 pub use sleep::{
     DaySleep, SLEEP_SESSION_GAP_MINUTES, SleepInterval, SleepStagedInterval, merge_sleep_sessions,

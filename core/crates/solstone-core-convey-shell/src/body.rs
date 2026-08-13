@@ -39,10 +39,6 @@ pub async fn api_recent_stub() -> Response {
     not_converted()
 }
 
-pub async fn api_day_stub(Path(_day): Path<String>) -> Response {
-    not_converted()
-}
-
 pub async fn api_window_stub() -> Response {
     not_converted()
 }
@@ -200,7 +196,6 @@ mod tests {
         for path in [
             "/app/body/api/status",
             "/app/body/api/recent",
-            "/app/body/api/day/20260801",
             "/app/body/api/window",
         ] {
             let response = get(app.clone(), path).await;
@@ -246,7 +241,11 @@ mod tests {
             (br#"not json"#.as_slice(), StatusCode::INTERNAL_SERVER_ERROR),
         ] {
             let journal = EstablishedJournal::new(config);
-            for path in ["/app/body/", "/app/body/api/index"] {
+            for path in [
+                "/app/body/",
+                "/app/body/api/index",
+                "/app/body/api/day/20260801",
+            ] {
                 let response = get(crate::router(journal.0.clone()), path).await;
                 assert_eq!(response.0, expected_status, "{path}");
                 if expected_status == StatusCode::INTERNAL_SERVER_ERROR {

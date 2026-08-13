@@ -145,6 +145,16 @@ fn normalized_shard_paths(
             path: imports.clone(),
             source,
         })?;
+        if !entry
+            .file_type()
+            .map_err(|source| ShardReadError::Read {
+                path: entry.path(),
+                source,
+            })?
+            .is_dir()
+        {
+            continue;
+        }
         let normalized = entry.path().join("normalized");
         let shards = match fs::read_dir(&normalized) {
             Ok(shards) => shards,
