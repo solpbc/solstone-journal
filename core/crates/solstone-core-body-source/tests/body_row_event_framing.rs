@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     decode_body_ledger_event, validate_body_row_event,
 };
 
-mod support;
+use crate::support;
 
 use support::{
     build_ledger_event, ledger_events_fixture, native_bundle_fixture, sha256_body_digest,

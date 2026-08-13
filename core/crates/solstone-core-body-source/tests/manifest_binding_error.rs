@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     BundleId, ManifestBindingError, ManifestBindingErrorCode, ManifestBindingErrorField,
 };
 
-mod support;
+use crate::support;
 
 use support::{MAX_BUNDLE, MIN_BUNDLE};
 

@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 
 use solstone_core_body_source::{BodyDigest, BodyString};
 
-mod support;
+use crate::support;
 
 fn body_string(value: &str) -> BodyString {
     BodyString::from_code_points(value.bytes().map(u32::from).collect())

@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use solstone_core_body_source::{EnvelopeErrorCode, EnvelopeErrorField, decode_body_envelope};
 
-mod support;
+use crate::support;
 
 use support::native_bundle_fixture;
 

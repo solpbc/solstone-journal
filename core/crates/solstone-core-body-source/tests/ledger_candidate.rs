@@ -9,7 +9,7 @@ use solstone_core_body_source::{
     LedgerSchema, PresentationRow, ValueState, parse, project,
 };
 
-mod support;
+use crate::support;
 
 use support::assert_body_value_bitwise_eq;
 

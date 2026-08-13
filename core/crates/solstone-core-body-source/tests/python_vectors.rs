@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     BodyInteger, BodyString, BodyValue, ParseError, canonicalize, parse,
 };
 
-mod support;
+use crate::support;
 
 use support::{expand, vectors};
 

@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     decode_body_manifest,
 };
 
-mod support;
+use crate::support;
 
 use support::MAX_BUNDLE;
 

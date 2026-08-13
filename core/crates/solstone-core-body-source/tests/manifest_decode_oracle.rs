@@ -7,8 +7,6 @@ use solstone_core_body_source::{
     decode_body_manifest, scan_body_manifest,
 };
 
-mod support;
-
 const BUNDLE: &str = "body-00000000000000000000000000";
 const DIGEST: &str = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

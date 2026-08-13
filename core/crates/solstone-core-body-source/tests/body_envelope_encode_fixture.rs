@@ -10,7 +10,7 @@ use solstone_core_body_source::{
     BodySourceHash, BundleId, EnvelopeLedger, EnvelopeShard, encode_body_envelope,
 };
 
-mod support;
+use crate::support;
 
 use support::{envelope_multimonth_fixture, native_bundle_fixture};
 

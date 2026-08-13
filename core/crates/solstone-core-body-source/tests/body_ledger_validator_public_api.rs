@@ -6,7 +6,7 @@ use solstone_core_body_source::{
     LedgerEventErrorField, ValidatedBodyLedger, decode_body_envelope,
 };
 
-mod support;
+use crate::support;
 
 use support::native_bundle_fixture;
 

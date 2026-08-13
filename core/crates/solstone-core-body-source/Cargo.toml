@@ -8,6 +8,27 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
+
+[[test]]
+name = "body_source_allocation"
+path = "tests/body_source_allocation.rs"
+
+[[test]]
+name = "body_source_envelope"
+path = "tests/body_source_envelope.rs"
+
+[[test]]
+name = "body_source_ledger"
+path = "tests/body_source_ledger.rs"
+
+[[test]]
+name = "body_source_manifest"
+path = "tests/body_source_manifest.rs"
+
+[[test]]
+name = "body_source_sources"
+path = "tests/body_source_sources.rs"
 
 [lints]
 workspace = true

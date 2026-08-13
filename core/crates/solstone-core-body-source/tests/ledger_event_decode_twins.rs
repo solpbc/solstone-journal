@@ -8,7 +8,7 @@ use solstone_core_body_source::{
     decode_body_envelope, decode_body_ledger_event, encode_body_ledger_event,
 };
 
-mod support;
+use crate::support;
 
 use support::{build_ledger_event, native_bundle_fixture};
 
