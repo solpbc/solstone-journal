@@ -11,6 +11,7 @@ mod warn_capture;
 use std::fs::{self, File, OpenOptions};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -30,17 +31,20 @@ use solstone_core_convey_shell::{
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
 };
+use solstone_core_sol_link::pairing::addresses::{EndpointScope, LocalEndpoint, PairingSnapshot};
 use solstone_core_sol_link::{DeviceDoorAuthorization, authorization_publication_ticks};
 use spl_core::frame::{
     FLAG_CLOSE, FLAG_DATA, FLAG_OPEN, FLAG_RESET, Frame, FrameDecoder, FrameDialer,
 };
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
+use spl_transport::client::TransportClient;
 use spl_transport::connection::request_once;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 use tokio_rustls::TlsConnector;
 use x509_parser::extensions::ParsedExtension;
 use x509_parser::oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY};
+use x509_parser::pem::parse_x509_pem;
 
 use door_support::{
     EchoObservation, Fixture, body_echo_router, body_echo_router_with_observations,
@@ -583,6 +587,150 @@ async fn loopback_status(address: SocketAddr) -> std::io::Result<u16> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing status"))?
         .parse()
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+async fn loopback_json_request(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    body: &serde_json::Value,
+) -> (u16, Vec<u8>) {
+    let body = serde_json::to_vec(body).expect("loopback request JSON");
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    );
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("loopback connects");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("request head");
+    stream.write_all(&body).await.expect("request body");
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .expect("response reads");
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("HTTP response headers")
+        + 4;
+    let status = std::str::from_utf8(&response[..header_end])
+        .expect("response headers UTF-8")
+        .split_whitespace()
+        .nth(1)
+        .expect("response status")
+        .parse()
+        .expect("numeric response status");
+    (status, response[header_end..].to_vec())
+}
+
+fn configure_loopback_home(fixture: &Fixture) {
+    std::fs::write(
+        fixture.root.join("config/journal.json"),
+        br#"{"setup":{"completed_at":1},"pairing":{"home_address":"127.0.0.1:7657"}}"#,
+    )
+    .expect("loopback pairing configuration");
+}
+
+async fn mint_from_loopback(
+    handle: &solstone_core_convey_shell::ConveyServeHandle,
+    label: &str,
+) -> serde_json::Value {
+    let (status, body) = loopback_json_request(
+        handle.loopback_ipv4_addr(),
+        "POST",
+        "/app/network/pair-start",
+        &serde_json::json!({"device_label": label}),
+    )
+    .await;
+    assert_eq!(
+        status,
+        200,
+        "pair-start: {}",
+        String::from_utf8_lossy(&body)
+    );
+    serde_json::from_slice(&body).expect("pair-start JSON")
+}
+
+fn link_for_door(pair_link: &str, port: u16) -> String {
+    let (_, fragment) = pair_link.split_once('#').expect("pair-link fragment");
+    let mut blob = spl_core::crockford::decode(fragment).expect("pair-link bytes");
+    assert_eq!(blob[0], 0x04, "loopback configured-home link is v04");
+    blob[6..8].copy_from_slice(&port.to_be_bytes());
+    format!(
+        "https://go.solstone.app/p#{}",
+        spl_core::crockford::encode(&blob)
+    )
+}
+
+fn pairing_snapshot() -> PairingSnapshot {
+    PairingSnapshot {
+        endpoints: vec![LocalEndpoint {
+            ip: Ipv4Addr::new(10, 0, 0, 8).into(),
+            scope: EndpointScope::Lan,
+        }],
+        route_ipv4: Some(Ipv4Addr::new(10, 0, 0, 8)),
+    }
+}
+
+fn pairing_router(fixture: &Fixture, snapshot: PairingSnapshot) -> Router {
+    router(fixture.root.clone()).layer(Extension(snapshot))
+}
+
+fn tree_paths(root: &Path) -> Vec<PathBuf> {
+    let mut paths = std::fs::read_dir(root)
+        .expect("tree reads")
+        .map(|entry| entry.expect("tree entry").path())
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut output = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            output.extend(tree_paths(&path));
+        } else {
+            output.push(path);
+        }
+    }
+    output
+}
+
+fn csr_pem(_label: &str) -> String {
+    let key = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).expect("device key");
+    rcgen::CertificateParams::default()
+        .serialize_request(&key)
+        .expect("device CSR")
+        .pem()
+        .expect("device CSR PEM")
+}
+
+async fn post_pair_over_certless_carrier(
+    port: u16,
+    token: Option<&str>,
+    body: serde_json::Value,
+) -> spl_core::http::HttpResponse {
+    let mut carrier = live_certless_carrier(port)
+        .await
+        .expect("certless pairing carrier");
+    let mut decoder = FrameDecoder::new();
+    let path = token.map_or_else(
+        || spl_core::PAIR_PATH.to_owned(),
+        |token| format!("{}?token={token}", spl_core::PAIR_PATH),
+    );
+    exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        1,
+        "POST",
+        &path,
+        &[("content-type".into(), "application/json".into())],
+        &serde_json::to_vec(&body).expect("pair request JSON"),
+    )
+    .await
+    .expect("pair response")
 }
 
 async fn request_result(
@@ -1233,9 +1381,11 @@ async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
     let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
+    let door_base = pairing_router(&fixture, pairing_snapshot());
     let handle = bind_with_authorization(
-        options(&fixture, router(fixture.root.clone()), 0),
-        solstone_core_convey_shell::authorization_gate::authorized_router(
+        options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            door_base,
             fixture.root.clone(),
             authorization,
         ),
@@ -1409,9 +1559,13 @@ async fn corrupt_nonce_store_closes_certless_admission_but_a_real_open_window_ad
     closed.shutdown();
 
     open_pairing_window(&fixture, "opened-after-corruption");
-    let open = serve(options(&fixture, router(fixture.root.clone()), 0))
-        .await
-        .expect("serve open window");
+    let open = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve open window");
     let mut carrier = live_certless_carrier(door_port(open.door_outcome()))
         .await
         .expect("open window admits certless TLS");
@@ -1528,6 +1682,468 @@ async fn pairing_confinement_applies_to_real_certless_carriers_and_unmatched_pat
         "window body remains distinct from tunnel body"
     );
     handle.shutdown();
+}
+
+#[tokio::test]
+async fn pair_start_pins_the_committed_ca_across_a_real_door_restart() {
+    let fixture = Fixture::established(1);
+    configure_loopback_home(&fixture);
+    let first = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("first serve");
+    let first_mint = mint_from_loopback(&first, "first device").await;
+    let first_link =
+        spl_core::pairlink::parse(first_mint["pair_link"].as_str().expect("pair link"))
+            .expect("first pair link");
+    let spl_core::pairlink::ParsedPairLink::Direct(first_link) = first_link else {
+        panic!("configured home emits direct pair link");
+    };
+    first.shutdown();
+
+    let second = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("second serve");
+    let second_mint = mint_from_loopback(&second, "second device").await;
+    let second_link =
+        spl_core::pairlink::parse(second_mint["pair_link"].as_str().expect("pair link"))
+            .expect("second pair link");
+    let spl_core::pairlink::ParsedPairLink::Direct(second_link) = second_link else {
+        panic!("configured home emits direct pair link");
+    };
+    assert_eq!(first_link.ca_fp_prefix, second_link.ca_fp_prefix);
+    let committed_digest = spl_core::ca::sha256_hex(fixture.ca_der());
+    assert_eq!(first_mint["ca_fingerprint"], committed_digest);
+    assert_eq!(
+        first_link.ca_fp_prefix,
+        spl_core::ca::sha256(fixture.ca_der())[..16]
+    );
+    let identity = solstone_core_sol_link::committed::load_committed_identity(&fixture.root)
+        .expect("committed identity");
+    assert_ne!(
+        first_mint["ca_fingerprint"],
+        spl_core::ca::sha256_hex(identity.ca().spki_der()),
+        "the advertised pin is certificate DER, never CA SPKI DER"
+    );
+    second.shutdown();
+}
+
+#[tokio::test]
+async fn pair_link_prefix_matches_the_live_door_chain_but_not_its_leaf() {
+    let fixture = Fixture::established(1);
+    configure_loopback_home(&fixture);
+    let handle = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve");
+    let mint = mint_from_loopback(&handle, "phone").await;
+    let parsed = spl_core::pairlink::parse(mint["pair_link"].as_str().expect("pair link"))
+        .expect("pair link parses");
+    let spl_core::pairlink::ParsedPairLink::Direct(parsed) = parsed else {
+        panic!("mint emits direct pair link");
+    };
+    let chain = presented_chain(&fixture, door_port(handle.door_outcome())).await;
+    let chain = chain
+        .iter()
+        .map(|certificate| certificate.as_ref().to_vec())
+        .collect::<Vec<_>>();
+    assert!(spl_core::ca::chain_matches_prefix(
+        &chain,
+        &parsed.ca_fp_prefix
+    ));
+    assert!(
+        !spl_core::ca::cert_matches_prefix(&chain[0], &parsed.ca_fp_prefix),
+        "the pin matches the presented CA chain member, not the fresh leaf"
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json() {
+    let fixture = Fixture::established(0);
+    configure_loopback_home(&fixture);
+    let handle = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve populated snapshot");
+    let mint = mint_from_loopback(&handle, "response device").await;
+    let nonce = mint["nonce"].as_str().expect("nonce");
+    let response = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(nonce),
+        serde_json::json!({
+            "csr": csr_pem("response device"),
+            "device_label": "response device",
+            "ignored_by_canonical_request": true,
+        }),
+    )
+    .await;
+    assert_eq!(
+        response.status,
+        200,
+        "{}",
+        String::from_utf8_lossy(&response.body)
+    );
+    let raw: serde_json::Value = serde_json::from_slice(&response.body).expect("raw response JSON");
+    assert!(
+        raw["local_endpoints"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    let pair: spl_core::PairResponse =
+        serde_json::from_slice(&response.body).expect("canonical PairResponse");
+    let (_, certificate) = parse_x509_pem(pair.client_cert.as_bytes()).expect("client PEM");
+    assert_eq!(
+        pair.fingerprint,
+        format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents))
+    );
+    let identity = solstone_core_sol_link::committed::load_committed_identity(&fixture.root)
+        .expect("committed identity");
+    assert_eq!(
+        pair.instance_id,
+        solstone_core_sol_link::ca::jid_from_spki(identity.ca().spki_der()).expect("CA JID")
+    );
+    assert_eq!(pair.home_label, "test home");
+    assert_eq!(pair.ca_chain.len(), 1);
+    let (_, returned_ca) = parse_x509_pem(pair.ca_chain[0].as_bytes()).expect("returned CA PEM");
+    assert_eq!(returned_ca.contents, fixture.ca_der());
+    let attestation = pair.home_attestation.as_deref().expect("home attestation");
+    assert!(
+        solstone_core_sol_link::pairing::attestation::home_attestation_verifies(
+            fixture.ca_der(),
+            attestation
+        )
+    );
+    let (header, claims, signature_length) =
+        solstone_core_sol_link::pairing::attestation::inspect_home_attestation(attestation)
+            .expect("attestation parses");
+    assert_eq!(
+        header,
+        serde_json::json!({"alg":"ES256","typ":"home-attest"})
+    );
+    assert_eq!(claims["iss"], format!("home:{}", pair.instance_id));
+    assert_eq!(claims["aud"], "spl-relay");
+    assert_eq!(claims["scope"], "device.enroll");
+    assert_eq!(claims["instance_id"], pair.instance_id);
+    assert_eq!(claims["device_fp"], pair.fingerprint);
+    assert_eq!(
+        claims["exp"].as_i64().expect("exp") - claims["iat"].as_i64().expect("iat"),
+        240
+    );
+    assert!(claims["jti"].as_str().is_some_and(|jti| !jti.contains('=')));
+    assert_eq!(signature_length, 64);
+    handle.shutdown();
+
+    let empty = Fixture::established(0);
+    configure_loopback_home(&empty);
+    let empty_handle = serve(options(
+        &empty,
+        pairing_router(&empty, PairingSnapshot::default()),
+        0,
+    ))
+    .await
+    .expect("serve empty snapshot");
+    let empty_mint = mint_from_loopback(&empty_handle, "empty endpoints").await;
+    let empty_response = post_pair_over_certless_carrier(
+        door_port(empty_handle.door_outcome()),
+        Some(empty_mint["nonce"].as_str().expect("nonce")),
+        serde_json::json!({"csr": csr_pem("empty endpoints"), "device_label": "empty endpoints"}),
+    )
+    .await;
+    assert_eq!(empty_response.status, 200);
+    let empty_raw: serde_json::Value =
+        serde_json::from_slice(&empty_response.body).expect("empty raw response JSON");
+    assert!(
+        empty_raw.get("local_endpoints").is_none(),
+        "the canonical type would serialize None as null, so raw JSON must omit the key"
+    );
+    empty_handle.shutdown();
+}
+
+#[tokio::test]
+async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_fingerprint() {
+    let fixture = Fixture::established(0);
+    configure_loopback_home(&fixture);
+    let handle = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve");
+    let mint = mint_from_loopback(&handle, "paired phone").await;
+    let link = link_for_door(
+        mint["pair_link"].as_str().expect("minted pair link"),
+        door_port(handle.door_outcome()),
+    );
+    let credential =
+        spl_transport::pairing::pair_from_link(&link, "paired phone", &serde_json::Map::new())
+            .await
+            .expect("shipped pairing client completes ceremony");
+    let (_, certificate) =
+        parse_x509_pem(credential.client_cert_pem.as_bytes()).expect("credential cert");
+    let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));
+    let mut ledger = AuthorizationLedger::new(&fixture.root);
+    assert_eq!(
+        ledger
+            .get(&fingerprint)
+            .expect("paired fingerprint record")
+            .fingerprint,
+        fingerprint
+    );
+    TransportClient::new(credential, None)
+        .expect("credential has strict mTLS configuration")
+        .dial_carrier()
+        .await
+        .expect("credential reconnects as the linked device");
+    handle.shutdown();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
+    let fixture = Fixture::established(0);
+    configure_loopback_home(&fixture);
+    let health = fixture.root.join("health");
+    std::fs::create_dir(&health).expect("health directory");
+    let socket = health.join("callosum.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).expect("Callosum listener");
+    let notices = tokio::spawn(async move {
+        let mut notices = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await.expect("Callosum accepts");
+            let mut line = String::new();
+            stream
+                .read_to_string(&mut line)
+                .await
+                .expect("Callosum line");
+            notices.push(serde_json::from_str::<serde_json::Value>(&line).expect("notice JSON"));
+        }
+        notices
+    });
+    let handle = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve");
+    let ca_before = tree_paths(&fixture.root.join("link/ca"))
+        .into_iter()
+        .map(|path| {
+            (
+                path.strip_prefix(&fixture.root)
+                    .expect("relative")
+                    .to_path_buf(),
+                std::fs::read(path).expect("CA bytes"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let first_mint = mint_from_loopback(&handle, "collision").await;
+    // Keep another minted nonce live while exercising the consumed-nonce
+    // refusal through the door: confinement correctly closes a carrier only
+    // when this is the final nonce.
+    let second_mint = mint_from_loopback(&handle, "collision").await;
+    let link_before = tree_paths(&fixture.root.join("link"))
+        .into_iter()
+        .map(|path| {
+            path.strip_prefix(&fixture.root.join("link"))
+                .expect("link relative")
+                .to_path_buf()
+        })
+        .collect::<Vec<_>>();
+    let first_nonce = first_mint["nonce"].as_str().expect("first nonce");
+    let first = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        None,
+        serde_json::json!({
+            "nonce": first_nonce,
+            "csr": csr_pem("collision"),
+            "device_label": "collision",
+            "arbitrary_unknown_top_level_field": {"accepted": true},
+        }),
+    )
+    .await;
+    assert_eq!(first.status, 200, "unknown fields remain accepted");
+    let first_pair: spl_core::PairResponse =
+        serde_json::from_slice(&first.body).expect("first pair response");
+    let retry = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(first_nonce),
+        serde_json::json!({"csr": csr_pem("retry"), "device_label": "collision"}),
+    )
+    .await;
+    assert_eq!(retry.status, 410, "successful ceremony burns its nonce");
+
+    let second_nonce = second_mint["nonce"].as_str().expect("second nonce");
+    let malformed = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(second_nonce),
+        serde_json::json!({
+            "csr": csr_pem("collision"),
+            "device_label": "collision",
+            "sender_instance_id": "invalid id",
+        }),
+    )
+    .await;
+    assert_eq!(malformed.status, 400);
+    let malformed: serde_json::Value =
+        serde_json::from_slice(&malformed.body).expect("malformed refusal");
+    assert_eq!(malformed["reason_code"], "pairing_request_invalid");
+    assert_eq!(malformed["detail"], "sender_instance_id is invalid");
+    let peer_request = serde_json::json!({"device_label":"peer", "role":"peer"});
+    let (peer_status, peer_mint_body) = loopback_json_request(
+        handle.loopback_ipv4_addr(),
+        "POST",
+        "/app/network/pair-start",
+        &peer_request,
+    )
+    .await;
+    assert_eq!(peer_status, 200);
+    let peer_mint: serde_json::Value =
+        serde_json::from_slice(&peer_mint_body).expect("peer mint JSON");
+    let peer_nonce = peer_mint["nonce"].as_str().expect("peer nonce");
+    let second = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(second_nonce),
+        serde_json::json!({
+            "csr": csr_pem("collision"),
+            "device_label": "collision",
+            "sender_instance_id": "valid-sender_1",
+        }),
+    )
+    .await;
+    assert_eq!(second.status, 200, "malformed sender did not consume nonce");
+    // Keep a final phone nonce live while the peer refusal is retried; this
+    // reaches the ceremony's 410 instead of confinement's closed-window 403.
+    let (reserve_status, reserve_body) = loopback_json_request(
+        handle.loopback_ipv4_addr(),
+        "POST",
+        "/app/network/pair-start",
+        &serde_json::json!({"device_label":"reserve"}),
+    )
+    .await;
+    assert_eq!(reserve_status, 200);
+    assert!(
+        serde_json::from_slice::<serde_json::Value>(&reserve_body)
+            .expect("reserve mint JSON")["nonce"]
+            .is_string()
+    );
+    let peer = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(peer_nonce),
+        serde_json::json!({"csr": csr_pem("peer"), "device_label": "peer"}),
+    )
+    .await;
+    assert_eq!(peer.status, 400);
+    let peer: serde_json::Value = serde_json::from_slice(&peer.body).expect("peer refusal");
+    assert_eq!(peer["reason_code"], "pairing_request_invalid");
+    assert_eq!(
+        peer["detail"],
+        "peer pairing is not available on this build"
+    );
+    assert_ne!(peer["detail"], malformed["detail"]);
+    let peer_retry = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(peer_nonce),
+        serde_json::json!({"csr": csr_pem("peer retry"), "device_label": "peer"}),
+    )
+    .await;
+    assert_eq!(peer_retry.status, 410, "peer refusal also burns its nonce");
+
+    let ca_after = tree_paths(&fixture.root.join("link/ca"))
+        .into_iter()
+        .map(|path| {
+            (
+                path.strip_prefix(&fixture.root)
+                    .expect("relative")
+                    .to_path_buf(),
+                std::fs::read(path).expect("CA bytes"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ca_after, ca_before,
+        "ceremony never rewrites committed CA material"
+    );
+    let link_after = tree_paths(&fixture.root.join("link"))
+        .into_iter()
+        .map(|path| {
+            path.strip_prefix(&fixture.root.join("link"))
+                .expect("link relative")
+                .to_path_buf()
+        })
+        .collect::<Vec<_>>();
+    let new_paths = link_after
+        .into_iter()
+        .filter(|path| !link_before.contains(path))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        new_paths,
+        vec![PathBuf::from("authorized_clients.json.lock")]
+    );
+    let mut ledger = AuthorizationLedger::new(&fixture.root);
+    let entries = ledger.snapshot();
+    assert_eq!(entries.len(), 2, "peer refusal adds no ledger entry");
+    assert_eq!(entries[0].display_label(), "collision");
+    assert_eq!(entries[0].label_ordinal, 1);
+    assert_eq!(entries[1].display_label(), "collision (2)");
+    assert_eq!(entries[1].label_ordinal, 2);
+    assert_eq!(entries[0].fingerprint, first_pair.fingerprint);
+    let notices = notices.await.expect("notice task");
+    assert_eq!(notices.len(), 2);
+    assert_eq!(notices[0]["tract"], "link");
+    assert_eq!(notices[0]["event"], "pair_complete");
+    assert_eq!(notices[0]["device_label"], "collision");
+    assert_eq!(notices[1]["device_label"], "collision (2)");
+    handle.shutdown();
+}
+
+#[test]
+fn production_pairing_paths_do_not_create_ca_material() {
+    // Scope this check to the handlers and their direct pairing-domain callee,
+    // not a repo-wide grep: fixtures legitimately generate CAs elsewhere.
+    let handler = include_str!("../src/network.rs")
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production handler source");
+    let domain = include_str!("../../solstone-core-sol-link/src/pairing/mod.rs")
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production pairing source");
+    let committed = include_str!("../../solstone-core-sol-link/src/committed.rs")
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production committed identity source");
+    let attestation = include_str!("../../solstone-core-sol-link/src/pairing/attestation.rs")
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production attestation source");
+    let signing = include_str!("../../solstone-core-sol-link/src/ca.rs")
+        .split("pub fn sign_csr")
+        .nth(1)
+        .expect("signing direct callee")
+        .split("#[cfg(test)]")
+        .next()
+        .expect("production signing source");
+    assert!(!handler.contains("generate_ca"));
+    assert!(!domain.contains("generate_ca"));
+    assert!(!committed.contains("generate_ca"));
+    assert!(!attestation.contains("generate_ca"));
+    assert!(!signing.contains("generate_ca"));
 }
 
 #[tokio::test]

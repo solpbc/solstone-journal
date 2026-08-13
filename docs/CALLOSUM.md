@@ -113,7 +113,7 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 **Purpose:** Track media file import from upload through transcription to segment creation
 
 ### `link` - Secure listener and device-link events
-**Sources:** `solstone/apps/network/routes.py`, `solstone/convey/secure_listener/runtime.py`, `solstone/convey/secure_listener/accept.py`
+**Sources:** `solstone/apps/network/routes.py`, `core/crates/solstone-core-convey-shell/src/network.rs`, `solstone/convey/secure_listener/runtime.py`, `solstone/convey/secure_listener/accept.py`
 **Events:** `pair_complete`, `last_seen`, `stream_reset`
 **Purpose:** Report device pairing, secure-listener handshake activity, and stream-reset diagnostics. `pair_complete` is emitted directly by the network route. The secure-listener runtime supplies a `link`-tract callback that relays the `last_seen` and `stream_reset` events emitted by its accept loop.
 

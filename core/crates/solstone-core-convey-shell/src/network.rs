@@ -5,15 +5,20 @@
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::extract::{Extension, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
+use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_sol_link::ledger::AuthorizationLedger;
+use solstone_core_sol_link::pairing::addresses::{
+    PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source, snapshot_from_sources,
+};
 use solstone_core_sol_link::pairing::nonces::NonceStore;
 use solstone_core_sol_link::pairing::{
     CeremonyRequest, MintRequest, PairingError, complete_pairing, mint_pairing, pair_response_json,
@@ -28,7 +33,7 @@ pub(crate) struct NonceQuery {
 
 #[derive(Deserialize)]
 pub(crate) struct PairTokenQuery {
-    token: String,
+    token: Option<String>,
 }
 
 /// Pair-start accepts only the local owner; a linked device or pairing peer has
@@ -109,6 +114,7 @@ pub(crate) async fn nonce_status(
 pub(crate) async fn pair(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
+    snapshot: Option<Extension<PairingSnapshot>>,
     Query(query): Query<PairTokenQuery>,
     Json(request): Json<spl_core::PairRequest>,
 ) -> Response {
@@ -125,21 +131,100 @@ pub(crate) async fn pair(
         .additional_fields
         .get("sender_instance_id")
         .map(|value| value.as_str().unwrap_or_default());
+    let Some(nonce) = query.token.as_deref().or_else(|| {
+        request
+            .additional_fields
+            .get("nonce")
+            .and_then(Value::as_str)
+    }) else {
+        return refusal(
+            "missing_required_field",
+            "nonce is required",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    let snapshot = match snapshot {
+        Some(Extension(snapshot)) => snapshot,
+        None => match snapshot_from_sources(&SystemInterfaceSource, &SystemRouteIpv4Source) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return pairing_refusal(PairingError::Address(error)),
+        },
+    };
     match complete_pairing(
         &root.0,
         CeremonyRequest {
             request: &request,
-            nonce: &query.token,
+            nonce,
             sender_instance_id,
-            local_endpoints: None,
+            local_endpoints: response_local_endpoints(&snapshot),
         },
         now(),
     ) {
         Ok(response) => match pair_response_json(&response) {
-            Ok(value) => Json(value).into_response(),
+            Ok(value) => {
+                emit_pair_complete(&root.0, &response.fingerprint);
+                Json(value).into_response()
+            }
             Err(error) => pairing_refusal(error),
         },
         Err(error) => pairing_refusal(error),
+    }
+}
+
+fn response_local_endpoints(snapshot: &PairingSnapshot) -> Option<Value> {
+    (!snapshot.endpoints.is_empty()).then(|| {
+        Value::Array(
+            snapshot
+                .endpoints
+                .iter()
+                .map(|endpoint| {
+                    json!({
+                        "ip": endpoint.ip.to_string(),
+                        "port": spl_core::DEFAULT_DIRECT_PORT,
+                        "scope": endpoint.scope,
+                    })
+                })
+                .collect(),
+        )
+    })
+}
+
+/// Pair-complete is an owner-facing notification only: losing the local
+/// Callosum socket must never undo an already persisted ceremony.
+fn emit_pair_complete(journal_root: &std::path::Path, fingerprint: &str) {
+    let mut ledger = AuthorizationLedger::new(journal_root);
+    let Some(entry) = ledger.get(fingerprint) else {
+        log::debug!("paired-device entry was absent while emitting pair completion");
+        return;
+    };
+    let mut extra = Map::new();
+    extra.insert("device_label".to_owned(), json!(entry.display_label()));
+    extra.insert("fingerprint".to_owned(), json!(entry.fingerprint));
+    extra.insert(
+        "fingerprint_short".to_owned(),
+        json!(fingerprint.strip_prefix("sha256:").unwrap_or(fingerprint)[..16]),
+    );
+    extra.insert("paired_at".to_owned(), json!(entry.paired_at));
+    extra.insert(
+        "network".to_owned(),
+        json!(entry.network.as_deref().unwrap_or("network")),
+    );
+    let envelope = CallosumEnvelope {
+        tract: "link".to_owned(),
+        event: "pair_complete".to_owned(),
+        ts: None,
+        extra,
+    };
+    let Ok(mut line) = serde_json::to_string(&envelope) else {
+        return;
+    };
+    line.push('\n');
+    let sender = CallosumOneShotSender::new(
+        journal_root.join("health/callosum.sock"),
+        Duration::from_secs(1),
+    );
+    if sender.send_line(&line).is_err() {
+        log::debug!("paired-device Callosum pair-complete notification unavailable");
     }
 }
 

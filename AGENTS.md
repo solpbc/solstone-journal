@@ -393,7 +393,8 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the Lane B entity-merge flow through `remap_speaker_corrections_for_entity_merge` and `apply_entity_merge_segment_inverse`. |
 | Stream identity (`chronicle/**/<seg>/stream.json` marker + `streams/<name>.json` state) | `solstone/think/streams.py` |
 | Observer ingest manifest (`chronicle/**/<seg>/ingest.json`) | `solstone/apps/observer/utils.py` |
-| Link service state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/nonces.json`, `link/authorized_clients.json`, `link/state.json` including optional `locked_at`, `link/tokens/account.json`, `link/totp.json`) | `solstone/think/link/ca.py` + `solstone/think/link/establish.py` + `solstone/think/link/nonces.py` + `solstone/think/link/auth.py` + `solstone/think/link/paths.py` |
+| Link service state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/authorized_clients.json`, `link/state.json` including optional `locked_at`, `link/tokens/account.json`, `link/totp.json`) | `solstone/think/link/ca.py` + `solstone/think/link/establish.py` + `solstone/think/link/auth.py` + `solstone/think/link/paths.py` |
+| Native pairing nonces (`link/nonces.json`) | `core/crates/solstone-core-sol-link/` |
 | Chronicle day content (`chronicle/YYYYMMDD/**`) | The capturing module (observer, importer) per its declared outputs |
 | Index (SQLite, `indexer/*`) | `solstone/think/indexer/*` |
 | Observer registry and sync history (`apps/observer/observers/*.json`, `apps/observer/observers/*/hist/*.jsonl`) | `solstone/apps/observer/utils.py` |

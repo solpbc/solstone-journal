@@ -7,7 +7,9 @@ use std::fmt;
 
 use base64::Engine as _;
 use ring::rand::{SecureRandom, SystemRandom};
-use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
+use ring::signature::{
+    ECDSA_P256_SHA256_FIXED, ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, UnparsedPublicKey,
+};
 use serde::Serialize;
 
 use crate::ca::LocalCa;
@@ -116,6 +118,65 @@ pub fn mint_home_attestation(
         "{signing_input}.{}",
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.as_ref())
     ))
+}
+
+/// Verify a compact home attestation under the committed CA certificate.
+///
+/// This is intentionally narrow: callers that need claim policy still inspect
+/// the decoded claims themselves, while this proves the fixed ES256 signature.
+pub fn home_attestation_verifies(certificate_der: &[u8], token: &str) -> bool {
+    use x509_parser::prelude::FromDer as _;
+
+    let mut parts = token.split('.');
+    let Some(header) = parts.next() else {
+        return false;
+    };
+    let Some(claims) = parts.next() else {
+        return false;
+    };
+    let Some(signature) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    let Ok(signature) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(signature) else {
+        return false;
+    };
+    let Ok((_, certificate)) = x509_parser::certificate::X509Certificate::from_der(certificate_der)
+    else {
+        return false;
+    };
+    UnparsedPublicKey::new(
+        &ECDSA_P256_SHA256_FIXED,
+        certificate.public_key().subject_public_key.data.as_ref(),
+    )
+    .verify(format!("{header}.{claims}").as_bytes(), &signature)
+    .is_ok()
+}
+
+/// Decode the attestation's public header and claims while retaining the raw
+/// signature length for protocol checks. Signature verification remains the
+/// caller's separate, explicit step.
+pub fn inspect_home_attestation(
+    token: &str,
+) -> Option<(serde_json::Value, serde_json::Value, usize)> {
+    let mut parts = token.split('.');
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts.next()?)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())?;
+    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts.next()?)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())?;
+    let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(parts.next()?)
+        .ok()?;
+    parts
+        .next()
+        .is_none()
+        .then_some((header, claims, signature.len()))
 }
 
 #[cfg(test)]
