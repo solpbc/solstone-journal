@@ -60,3 +60,86 @@ pub fn render_launchd_plist(
         .expect("in-memory plist serializes");
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use plist::Value;
+
+    use super::render_launchd_plist;
+
+    #[test]
+    fn renders_the_complete_launchd_semantic_model() {
+        let environment = BTreeMap::from([
+            ("HOME".to_owned(), "/home/sol".to_owned()),
+            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+            ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
+        ]);
+        let bytes = render_launchd_plist(
+            &environment,
+            "/home/sol/.local/bin/journal",
+            "5015",
+            "/srv/journal",
+        )
+        .expect("valid journal path renders");
+        let plist = Value::from_reader_xml(bytes.as_slice()).expect("rendered plist parses");
+        let dictionary = plist.as_dictionary().expect("plist dictionary");
+
+        assert_eq!(
+            dictionary
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "EnvironmentVariables",
+                "KeepAlive",
+                "Label",
+                "ProgramArguments",
+                "RunAtLoad",
+                "SoftResourceLimits",
+                "StandardErrorPath",
+                "StandardOutPath",
+            ])
+        );
+        assert_eq!(dictionary["Label"].as_string(), Some("org.solpbc.solstone"));
+        assert_eq!(
+            dictionary["ProgramArguments"].as_array(),
+            Some(&vec![
+                Value::String("/home/sol/.local/bin/journal".to_owned()),
+                Value::String("start".to_owned()),
+                Value::String("5015".to_owned()),
+            ])
+        );
+        assert_eq!(
+            dictionary["EnvironmentVariables"].as_dictionary(),
+            Some(
+                &environment
+                    .iter()
+                    .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+                    .collect()
+            )
+        );
+        assert_eq!(
+            dictionary["StandardOutPath"].as_string(),
+            Some("/srv/journal/health/service.log")
+        );
+        assert_eq!(
+            dictionary["StandardErrorPath"].as_string(),
+            Some("/srv/journal/health/service.log")
+        );
+        assert_eq!(dictionary["RunAtLoad"].as_boolean(), Some(true));
+        assert_eq!(
+            dictionary["KeepAlive"]
+                .as_dictionary()
+                .expect("keep-alive dictionary")["SuccessfulExit"],
+            Value::Boolean(false)
+        );
+        assert_eq!(
+            dictionary["SoftResourceLimits"]
+                .as_dictionary()
+                .expect("resource-limit dictionary")["NumberOfFiles"],
+            Value::Integer(4096_i64.into())
+        );
+    }
+}

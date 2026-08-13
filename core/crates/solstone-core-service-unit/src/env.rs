@@ -11,9 +11,7 @@ pub fn build_service_environment(
     inherited_path: Option<&str>,
     runtime_executable_dir: &str,
 ) -> BTreeMap<String, String> {
-    let inherited_path = inherited_path
-        .filter(|path| !path.is_empty())
-        .unwrap_or(DEFAULT_PATH);
+    let inherited_path = inherited_path.unwrap_or(DEFAULT_PATH);
     let mut seen = BTreeSet::new();
     let mut parts = Vec::new();
     for part in std::iter::once(runtime_executable_dir).chain(inherited_path.split(':')) {
@@ -44,10 +42,14 @@ mod tests {
     }
 
     #[test]
-    fn empty_or_missing_path_uses_python_fallback() {
-        for inherited in [None, Some("")] {
-            let environment = build_service_environment("/home/sol", inherited, "/runtime");
-            assert_eq!(environment["PATH"], "/runtime:/usr/local/bin:/usr/bin:/bin");
-        }
+    fn missing_path_uses_python_fallback() {
+        let environment = build_service_environment("/home/sol", None, "/runtime");
+        assert_eq!(environment["PATH"], "/runtime:/usr/local/bin:/usr/bin:/bin");
+    }
+
+    #[test]
+    fn present_empty_path_retains_its_empty_component() {
+        let environment = build_service_environment("/home/sol", Some(""), "/runtime");
+        assert_eq!(environment["PATH"], "/runtime:");
     }
 }

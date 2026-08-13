@@ -75,6 +75,9 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
     assert_eq!(unit.exec_start[0], "/home/sol/a b/$journal");
     assert_eq!(unit.exec_start[1..], baseline_unit.exec_start[1..]);
     assert_eq!(environment(&plist), environment(&baseline_plist));
+    assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+    assert_eq!(unit.environment, baseline_unit.environment);
+    assert_eq!(unit.log_paths, baseline_unit.log_paths);
 
     let (plist, unit) = render(&baseline_env, LAUNCHER, "5 815${PORT}%", JOURNAL);
     assert_eq!(arguments(&plist)[0], arguments(&baseline_plist)[0]);
@@ -82,6 +85,9 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
     assert_eq!(arguments(&plist)[2], "5 815${PORT}%");
     assert_eq!(unit.exec_start[2], "5 815${PORT}%");
     assert_eq!(environment(&plist), environment(&baseline_plist));
+    assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+    assert_eq!(unit.environment, baseline_unit.environment);
+    assert_eq!(unit.log_paths, baseline_unit.log_paths);
 
     let home_env = build_service_environment("/home/sol $ café", Some(PATH), RUNTIME_DIR);
     let (plist, unit) = render(&home_env, LAUNCHER, PORT, JOURNAL);
@@ -92,6 +98,9 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
         environment(&plist)["PATH"],
         environment(&baseline_plist)["PATH"]
     );
+    assert_eq!(log_paths(&plist), log_paths(&baseline_plist));
+    assert_eq!(unit.exec_start, baseline_unit.exec_start);
+    assert_eq!(unit.log_paths, baseline_unit.log_paths);
 
     let (plist, unit) = render(&baseline_env, LAUNCHER, PORT, "/srv/journal space%");
     assert_eq!(arguments(&plist), arguments(&baseline_plist));
@@ -105,6 +114,13 @@ fn one_input_at_a_time_changes_only_its_derived_field() {
     );
     assert_eq!(unit.exec_start, baseline_unit.exec_start);
     assert_eq!(unit.environment, baseline_unit.environment);
+    assert_eq!(
+        unit.log_paths,
+        (
+            "/srv/journal space%/health/service.log".to_owned(),
+            "/srv/journal space%/health/service.log".to_owned(),
+        )
+    );
 }
 
 #[test]
@@ -137,5 +153,6 @@ fn path_inputs_change_only_path_construction() {
         assert_eq!(environment(&plist), environment_input);
         assert_eq!(unit.exec_start, baseline_unit.exec_start);
         assert_eq!(unit.environment, environment_input);
+        assert_eq!(unit.log_paths, baseline_unit.log_paths);
     }
 }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use base64::Engine;
 use serde_json::Value;
 use solstone_core_service_legacy_evidence::{embedded, manifest_bytes, sha256_hex};
-use solstone_core_service_unit::render_systemd_unit;
+use solstone_core_service_unit::{render_launchd_plist, render_systemd_unit};
 
 mod support;
 
@@ -20,6 +20,31 @@ fn fixture(path: &str) -> Value {
 
 fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value[key].as_str().expect("string fixture field")
+}
+
+fn environment_from_inputs(inputs: &Value) -> BTreeMap<String, String> {
+    inputs["env"]
+        .as_object()
+        .expect("environment object")
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                value.as_str().expect("environment string").to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn launcher_from_raw_plist(plist: &[u8]) -> String {
+    support::parse_plist(plist)
+        .as_dictionary()
+        .expect("plist dictionary")["ProgramArguments"]
+        .as_array()
+        .expect("arguments array")[0]
+        .as_string()
+        .expect("launcher string")
+        .to_owned()
 }
 
 #[test]
@@ -62,12 +87,36 @@ fn selected_evidence_cohort_is_exact_and_raw_captures_are_intact() {
                 inputs.keys().map(String::as_str).collect::<BTreeSet<_>>(),
                 BTreeSet::from(["env", "journal_path", "port"])
             );
-            assert!(raw["inputs"]["env"].is_object());
+            let environment = raw["inputs"]["env"].as_object().expect("env object");
+            assert_eq!(
+                environment
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<BTreeSet<_>>(),
+                BTreeSet::from(["HOME", "PATH", "PYTHONUNBUFFERED"])
+            );
+            assert!(environment.values().all(Value::is_string));
             assert!(raw["inputs"]["journal_path"].is_string());
             assert!(raw["inputs"]["port"].is_number());
             let plist = base64::engine::general_purpose::STANDARD
                 .decode(text(&raw["raw"], "plist_base64"))
                 .expect("plist base64 decodes");
+            let port = raw["inputs"]["port"]
+                .as_i64()
+                .expect("integer port")
+                .to_string();
+            let rendered = render_launchd_plist(
+                &environment_from_inputs(&raw["inputs"]),
+                &launcher_from_raw_plist(&plist),
+                &port,
+                text(&raw["inputs"], "journal_path"),
+            )
+            .expect("fixture journal path is valid");
+            assert_eq!(
+                support::parse_plist(&rendered),
+                support::parse_plist(&plist),
+                "plist semantics match {platform}/{profile}"
+            );
             let mut captured = plist;
             captured.push(0);
             captured.extend_from_slice(text(&raw["raw"], "systemd_unit").as_bytes());
@@ -81,23 +130,11 @@ fn default_linux_systemd_rendering_remains_byte_identical_to_history() {
     let path = format!("core/fixtures/service_legacy_evidence/raw/{BLOB}/linux/default.json");
     let raw = fixture(&path);
     let inputs = &raw["inputs"];
-    let env = inputs["env"].as_object().expect("environment object");
-    let expected = env
-        .iter()
-        .map(|(key, value)| (key.clone(), value.as_str().expect("env value").to_owned()))
-        .collect();
-    let launcher = support::parse_plist(
-        &base64::engine::general_purpose::STANDARD
-            .decode(text(&raw["raw"], "plist_base64"))
-            .expect("plist base64 decodes"),
-    )
-    .as_dictionary()
-    .expect("plist dictionary")["ProgramArguments"]
-        .as_array()
-        .expect("arguments array")[0]
-        .as_string()
-        .expect("launcher string")
-        .to_owned();
+    let expected = environment_from_inputs(inputs);
+    let raw_plist = base64::engine::general_purpose::STANDARD
+        .decode(text(&raw["raw"], "plist_base64"))
+        .expect("plist base64 decodes");
+    let launcher = launcher_from_raw_plist(&raw_plist);
     let rendered = render_systemd_unit(
         &expected,
         &launcher,

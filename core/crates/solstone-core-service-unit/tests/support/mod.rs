@@ -11,6 +11,7 @@ use plist::Value;
 pub struct ParsedUnit {
     pub exec_start: Vec<String>,
     pub environment: BTreeMap<String, String>,
+    pub log_paths: (String, String),
 }
 
 pub fn parse_plist(bytes: &[u8]) -> Value {
@@ -28,9 +29,20 @@ pub fn parse_unit(unit: &str) -> ParsedUnit {
         .filter_map(|line| line.strip_prefix("Environment="))
         .map(parse_environment)
         .collect();
+    let standard_output = unit
+        .lines()
+        .find_map(|line| line.strip_prefix("StandardOutput=append:"))
+        .map(parse_log_path)
+        .expect("unit has StandardOutput append path");
+    let standard_error = unit
+        .lines()
+        .find_map(|line| line.strip_prefix("StandardError=append:"))
+        .map(parse_log_path)
+        .expect("unit has StandardError append path");
     ParsedUnit {
         exec_start,
         environment,
+        log_paths: (standard_output, standard_error),
     }
 }
 
@@ -49,6 +61,13 @@ fn parse_environment(value: &str) -> (String, String) {
         .split_once('=')
         .expect("Environment assignment has equals");
     (key.to_owned(), collapse_percent_specifiers(value))
+}
+
+fn parse_log_path(value: &str) -> String {
+    let values =
+        lex(&format!("\"{value}\"")).expect("log path lexes through the unit quoting grammar");
+    assert_eq!(values.len(), 1, "one log path per directive");
+    values.into_iter().next().expect("log path value")
 }
 
 fn lex(value: &str) -> Result<Vec<String>, String> {

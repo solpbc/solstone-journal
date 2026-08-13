@@ -5,7 +5,7 @@ use std::fmt;
 
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-/// Why a journal path cannot safely be embedded in a managed wrapper target.
+/// Why a journal path cannot safely be embedded in rendered service log directives.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalPathRejection {
     /// A character forbidden by the retained wrapper format.
