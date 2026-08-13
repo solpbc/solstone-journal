@@ -19,6 +19,9 @@ pub use process::{
     ProcessBirth, ProcessIdentity, ProcessObserver, ProcessSample, ProcessUnavailableReason,
     platform_observer,
 };
+pub use production::{
+    TerminalOwner, TerminalOwnerError, TerminalSyscalls, run_top_with_outer_panic_cleanup,
+};
 pub use reduce::{
     ReductionDisposition, ReductionEffects, ReductionSample, STATUS_TIMEOUT_SECONDS, TopMalformed,
     TopMalformedKind, TopRoute, apply_receive_event, cleanup_processes, reduce_envelope,
@@ -33,7 +36,7 @@ pub use restart::{
     TopRestartTransport, acknowledge_restart, advance_restart_attempts,
     fail_discontinuous_restarts, request_restart,
 };
-pub use state::{DomainContinuity, DomainRecovery, TopState};
+pub use state::{BrainHealthState, DomainContinuity, DomainRecovery, TopState};
 
 /// Run the native interactive command with real terminal, journal, and
 /// Callosum adapters.

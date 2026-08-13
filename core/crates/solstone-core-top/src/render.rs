@@ -4,7 +4,7 @@
 use serde_json::Value;
 use solstone_core_system_health::sanitize_for_terminal;
 
-use crate::TopState;
+use crate::{BrainHealthState, TopState};
 
 pub const LOG_FIXED_WIDTH: usize = 63;
 pub const MAX_FRAME_WIDTH: usize = 512;
@@ -281,12 +281,14 @@ fn tasks_section(
 
 fn brain_section(out: &mut String, state: &TopState, width: usize, style: &dyn TopStyle) {
     rule(out, width);
-    match state
-        .brain_health
-        .as_ref()
-        .and_then(|value| value.get("lines"))
-    {
-        Some(Value::Array(lines)) if !lines.is_empty() => {
+    match (&state.brain_health_state, state.brain_health.as_ref()) {
+        (BrainHealthState::Available { .. }, Some(value))
+            if value
+                .get("lines")
+                .and_then(Value::as_array)
+                .is_some_and(|lines| !lines.is_empty()) =>
+        {
+            let lines = value["lines"].as_array().expect("checked nonempty lines");
             out.push_str("  ");
             out.push_str(style.bold());
             out.push_str(&value_text(&lines[0]));
@@ -294,6 +296,35 @@ fn brain_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
             out.push('\n');
             for line in lines.iter().skip(1) {
                 out.push_str(&value_text(line));
+                out.push('\n');
+            }
+        }
+        (BrainHealthState::Checking, _) => {
+            out.push_str("  ");
+            out.push_str(style.bold());
+            out.push_str("Brain Health");
+            out.push_str(style.normal());
+            out.push('\n');
+            out.push_str(style.dim());
+            out.push_str("  (checking)");
+            out.push_str(style.normal());
+            out.push('\n');
+        }
+        (BrainHealthState::Unavailable { message, .. }, _) => {
+            out.push_str("  ");
+            out.push_str(style.bold());
+            out.push_str("Brain Health");
+            out.push_str(style.normal());
+            out.push('\n');
+            out.push_str(style.dim());
+            out.push_str("  (status unavailable)");
+            out.push_str(style.normal());
+            out.push('\n');
+            if !message.is_empty() {
+                out.push_str(style.dim());
+                out.push_str("  ");
+                out.push_str(&sanitized_payload_sentinel(message));
+                out.push_str(style.normal());
                 out.push('\n');
             }
         }
@@ -381,6 +412,22 @@ fn transform_line(line: &str, width: usize) -> String {
             output.push_str(&atom);
             used += atom_width;
             remaining = &payload[end + '\u{e001}'.len_utf8()..];
+            continue;
+        }
+        if let Some(payload) = remaining.strip_prefix('\u{e002}')
+            && let Some(end) = payload.find('\u{e003}')
+        {
+            let atom = &payload[..end];
+            let atom_width = atom.chars().count();
+            if used.saturating_add(atom_width) > width {
+                if styles != 0 {
+                    output.push_str(TrustedToken::Normal.spelling());
+                }
+                break;
+            }
+            output.push_str(atom);
+            used += atom_width;
+            remaining = &payload[end + '\u{e003}'.len_utf8()..];
             continue;
         }
         let scalar = remaining.chars().next().expect("nonempty input has scalar");
@@ -1026,6 +1073,10 @@ fn payload_token_sentinel(value: &str) -> String {
                 &format!("\u{e000}{}\u{e001}", token.spelling()),
             )
         })
+}
+
+fn sanitized_payload_sentinel(value: &str) -> String {
+    format!("\u{e002}{value}\u{e003}")
 }
 
 fn status_icon(status: Option<&(String, f64)>, now: f64) -> (&'static str, &'static str) {

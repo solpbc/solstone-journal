@@ -20,6 +20,8 @@ solstone-core-system-health.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-journal.workspace = true
 getrandom.workspace = true
+nix.workspace = true
+rustix.workspace = true
 
 [dev-dependencies]
 sha2.workspace = true

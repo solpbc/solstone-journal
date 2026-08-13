@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
+use nix::sys::termios::{self, SetArg, Termios};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection, read_journal_config};
 use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
@@ -35,11 +36,11 @@ pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
     let shared = ProductionCallosum::new(journal.join("health/callosum.sock"))?;
     let mut receive = ProductionReceive::new(Arc::clone(&shared));
     let mut restart = ProductionRestart::new(shared);
-    let mut terminal = ProductionTerminal::new()?;
+    let mut terminal = ProductionTerminal::new();
     let mut clock = ProductionClock::new();
     let mut observer = platform_observer();
     let mut brain = ProductionBrain::new(journal);
-    run_top_with(
+    run_top_with_outer_panic_cleanup(
         &mut TopState::default(),
         &mut clock,
         &mut terminal,
@@ -49,6 +50,36 @@ pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
         &mut brain,
     )
     .map_err(|error| error.to_string())
+}
+
+/// The concrete composition owns the panic boundary outside the pure runner.
+/// On unwinding after acquisition it restores the terminal and stops receive
+/// transport exactly once, then resumes the original panic unchanged.
+pub fn run_top_with_outer_panic_cleanup(
+    state: &mut TopState,
+    clock: &mut dyn TopClock,
+    terminal: &mut dyn TopTerminal,
+    receive: &mut dyn TopReceiveTransport,
+    observer: &mut dyn crate::ProcessObserver,
+    restart: &mut dyn TopRestartTransport,
+    brain: &mut dyn TopBrainSource,
+) -> Result<(), crate::TopLoopError> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_top_with(state, clock, terminal, receive, observer, restart, brain)
+    })) {
+        Ok(result) => result,
+        Err(payload) => {
+            let restore = terminal.restore();
+            let stop = receive.stop();
+            if let Err(error) = restore {
+                eprintln!("top panic cleanup terminal: {error}");
+            }
+            if let Err(error) = stop {
+                eprintln!("top panic cleanup transport: {error}");
+            }
+            std::panic::resume_unwind(payload);
+        }
+    }
 }
 
 fn resolve_process_journal_path() -> Result<PathBuf, String> {
@@ -106,9 +137,11 @@ impl TopBrainSource for ProductionBrain {
             .unwrap_or_default();
         let inspection = inspect_brain_state(&self.journal, &config, Utc::now());
         let presentation = present_brain_inspection(&inspection, Utc::now());
-        Ok(
-            json!({"headline":presentation.headline,"reason":presentation.reason_text,"failing_component":presentation.failing_component,"evidence":presentation.evidence.age_text}),
-        )
+        let mut lines = vec![presentation.headline];
+        if !presentation.reason_text.is_empty() {
+            lines.push(format!("  {}", presentation.reason_text));
+        }
+        Ok(json!({"lines": lines}))
     }
 }
 
@@ -254,15 +287,186 @@ impl TopRestartTransport for ProductionRestart {
     }
 }
 
+pub trait TerminalSyscalls {
+    type Saved: Clone;
+
+    fn stdin_is_tty(&mut self) -> bool;
+    fn stdout_is_tty(&mut self) -> bool;
+    fn capture_stdin(&mut self) -> Result<Self::Saved, String>;
+    fn raw_mode(&mut self, saved: &Self::Saved) -> Self::Saved;
+    fn apply_stdin(&mut self, settings: &Self::Saved) -> Result<(), String>;
+    fn stdout_width(&mut self) -> Result<usize, String>;
+    fn write_stdout(&mut self, bytes: &str) -> Result<(), String>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TerminalOwnerError {
+    #[error("stdin is not a terminal")]
+    StdinNotTty,
+    #[error("stdout is not a terminal")]
+    StdoutNotTty,
+    #[error("terminal capture failed: {0}")]
+    Capture(String),
+    #[error("terminal apply failed: {0}")]
+    Apply(String),
+    #[error("terminal width failed: {0}")]
+    Width(String),
+    #[error("terminal screen entry failed: {0}")]
+    Screen(String),
+}
+
+/// Owns native terminal mutation after capturing stdin attributes. Cleanup is
+/// idempotent and is also attempted by Drop during unwinding.
+pub struct TerminalOwner<S: TerminalSyscalls> {
+    syscalls: S,
+    saved: Option<S::Saved>,
+    screen_entered: bool,
+    cleanup_diagnostics: Vec<String>,
+}
+
+impl<S: TerminalSyscalls> TerminalOwner<S> {
+    #[must_use]
+    pub fn new(syscalls: S) -> Self {
+        Self {
+            syscalls,
+            saved: None,
+            screen_entered: false,
+            cleanup_diagnostics: Vec::new(),
+        }
+    }
+
+    pub fn enter(&mut self) -> Result<(), TerminalOwnerError> {
+        if !self.syscalls.stdin_is_tty() {
+            return Err(TerminalOwnerError::StdinNotTty);
+        }
+        if !self.syscalls.stdout_is_tty() {
+            return Err(TerminalOwnerError::StdoutNotTty);
+        }
+        let saved = self
+            .syscalls
+            .capture_stdin()
+            .map_err(TerminalOwnerError::Capture)?;
+        self.saved = Some(saved.clone());
+        let raw = self.syscalls.raw_mode(&saved);
+        if let Err(error) = self.syscalls.apply_stdin(&raw) {
+            let cleanup = self.restore_once().err();
+            return Err(TerminalOwnerError::Apply(with_cleanup(error, cleanup)));
+        }
+        if let Err(error) = self.syscalls.stdout_width() {
+            let cleanup = self.restore_once().err();
+            return Err(TerminalOwnerError::Width(with_cleanup(error, cleanup)));
+        }
+        self.screen_entered = true;
+        if let Err(error) = self.syscalls.write_stdout("\x1b[?1049h\x1b[?25l") {
+            let cleanup = self.restore_once().err();
+            return Err(TerminalOwnerError::Screen(with_cleanup(error, cleanup)));
+        }
+        Ok(())
+    }
+
+    pub fn width(&mut self) -> Result<usize, String> {
+        self.syscalls.stdout_width()
+    }
+
+    pub fn write_frame(&mut self, frame: &str) -> Result<(), String> {
+        self.syscalls.write_stdout(frame)
+    }
+
+    pub fn restore_once(&mut self) -> Result<(), String> {
+        let mut diagnostics = Vec::new();
+        if let Some(saved) = self.saved.take()
+            && let Err(error) = self.syscalls.apply_stdin(&saved)
+        {
+            diagnostics.push(format!("restore stdin termios: {error}"));
+        }
+        if self.screen_entered {
+            self.screen_entered = false;
+            if let Err(error) = self.syscalls.write_stdout("\x1b[?25h\x1b[?1049l") {
+                diagnostics.push(format!("restore screen: {error}"));
+            }
+        }
+        self.cleanup_diagnostics.extend(diagnostics.clone());
+        (!diagnostics.is_empty())
+            .then(|| diagnostics.join("; "))
+            .map_or(Ok(()), Err)
+    }
+
+    #[must_use]
+    pub fn cleanup_diagnostics(&self) -> &[String] {
+        &self.cleanup_diagnostics
+    }
+
+    #[must_use]
+    pub fn syscalls(&self) -> &S {
+        &self.syscalls
+    }
+}
+
+impl<S: TerminalSyscalls> Drop for TerminalOwner<S> {
+    fn drop(&mut self) {
+        let _ = self.restore_once();
+    }
+}
+
+fn with_cleanup(primary: String, cleanup: Option<String>) -> String {
+    cleanup.map_or(primary.clone(), |cleanup| {
+        format!("{primary}; cleanup: {cleanup}")
+    })
+}
+
+pub(crate) struct SystemTerminalSyscalls;
+
+impl TerminalSyscalls for SystemTerminalSyscalls {
+    type Saved = Termios;
+
+    fn stdin_is_tty(&mut self) -> bool {
+        std::io::stdin().is_terminal()
+    }
+
+    fn stdout_is_tty(&mut self) -> bool {
+        std::io::stdout().is_terminal()
+    }
+
+    fn capture_stdin(&mut self) -> Result<Self::Saved, String> {
+        termios::tcgetattr(std::io::stdin()).map_err(|error| error.to_string())
+    }
+
+    fn raw_mode(&mut self, saved: &Self::Saved) -> Self::Saved {
+        let mut raw = saved.clone();
+        termios::cfmakeraw(&mut raw);
+        raw
+    }
+
+    fn apply_stdin(&mut self, settings: &Self::Saved) -> Result<(), String> {
+        termios::tcsetattr(std::io::stdin(), SetArg::TCSANOW, settings)
+            .map_err(|error| error.to_string())
+    }
+
+    fn stdout_width(&mut self) -> Result<usize, String> {
+        let width = rustix::termios::tcgetwinsize(std::io::stdout())
+            .map_err(|error| error.to_string())?
+            .ws_col;
+        let width = usize::from(width);
+        (width > 0)
+            .then_some(width)
+            .ok_or_else(|| "terminal width unavailable".to_owned())
+    }
+
+    fn write_stdout(&mut self, bytes: &str) -> Result<(), String> {
+        let mut output = std::io::stdout().lock();
+        output
+            .write_all(bytes.as_bytes())
+            .and_then(|_| output.flush())
+            .map_err(|error| error.to_string())
+    }
+}
+
 pub(crate) struct ProductionTerminal {
-    saved: Option<String>,
+    owner: TerminalOwner<SystemTerminalSyscalls>,
     keys: Receiver<u8>,
 }
 impl ProductionTerminal {
-    pub(crate) fn new() -> Result<Self, String> {
-        if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
-            return Err("top requires an interactive terminal".to_owned());
-        }
+    pub(crate) fn new() -> Self {
         let (sender, keys) = mpsc::channel();
         std::thread::spawn(move || {
             let mut input = std::io::stdin();
@@ -273,45 +477,24 @@ impl ProductionTerminal {
                 }
             }
         });
-        Ok(Self { saved: None, keys })
-    }
-    fn stty(args: &[&str]) -> Result<String, String> {
-        let output = std::process::Command::new("stty")
-            .args(args)
-            .output()
-            .map_err(|error| error.to_string())?;
-        output
-            .status
-            .success()
-            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-            .ok_or_else(|| String::from_utf8_lossy(&output.stderr).trim().to_owned())
+        Self {
+            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            keys,
+        }
     }
 }
 impl TopTerminal for ProductionTerminal {
     fn enter(&mut self) -> Result<(), String> {
-        self.saved = Some(Self::stty(&["-g"])?);
-        Self::stty(&["raw", "-echo"])?;
-        Ok(())
+        self.owner.enter().map_err(|error| error.to_string())
     }
     fn restore(&mut self) -> Result<(), String> {
-        if let Some(saved) = self.saved.take() {
-            Self::stty(&[&saved])?;
-        }
-        Ok(())
+        self.owner.restore_once()
     }
     fn width(&mut self) -> Result<usize, String> {
-        let size = Self::stty(&["size"])?;
-        size.split_whitespace()
-            .nth(1)
-            .and_then(|value| value.parse().ok())
-            .ok_or_else(|| "terminal width unavailable".to_owned())
+        self.owner.width()
     }
     fn render(&mut self, frame: &str) -> Result<(), String> {
-        let mut output = std::io::stdout().lock();
-        output
-            .write_all(frame.as_bytes())
-            .and_then(|_| output.flush())
-            .map_err(|error| error.to_string())
+        self.owner.write_frame(frame)
     }
     fn input(&mut self, timeout_seconds: f64) -> Result<TopInput, String> {
         match self
@@ -422,7 +605,10 @@ mod tests {
     #[test]
     fn terminal_decodes_only_complete_up_and_down_escape_sequences() {
         let (sender, keys) = mpsc::channel();
-        let mut terminal = ProductionTerminal { saved: None, keys };
+        let mut terminal = ProductionTerminal {
+            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            keys,
+        };
         sender.send(b'\x1b').unwrap();
         sender.send(b'[').unwrap();
         sender.send(b'A').unwrap();

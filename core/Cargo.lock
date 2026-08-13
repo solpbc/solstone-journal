@@ -3741,6 +3741,8 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
+ "nix",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

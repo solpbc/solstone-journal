@@ -2,11 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use solstone_core_callosum::CallosumReceiveEvent;
+use solstone_core_system_health::sanitize_for_terminal;
 
 use crate::{
-    FrameSample, PlainTopStyle, ProcessObserver, ReductionSample, TopRestartTransport, TopState,
-    advance_restart_attempts, apply_receive_event, cleanup_processes, render_frame,
-    request_restart,
+    BrainHealthState, FrameSample, PlainTopStyle, ProcessObserver, ReductionSample,
+    TopRestartTransport, TopState, advance_restart_attempts, apply_receive_event,
+    cleanup_processes, render_frame, request_restart,
 };
 
 /// Input accepted by the native top loop.
@@ -27,6 +28,21 @@ pub enum TopLoopError {
     Terminal(String),
     #[error("transport failure: {0}")]
     Transport(String),
+}
+
+impl TopLoopError {
+    fn with_cleanup(self, diagnostics: Vec<String>) -> Self {
+        if diagnostics.is_empty() {
+            return self;
+        }
+        let diagnostics = diagnostics.join("; ");
+        match self {
+            Self::Terminal(primary) => Self::Terminal(format!("{primary}; cleanup: {diagnostics}")),
+            Self::Transport(primary) => {
+                Self::Transport(format!("{primary}; cleanup: {diagnostics}"))
+            }
+        }
+    }
 }
 
 /// Fully injected terminal seam; no test needs a TTY.
@@ -70,8 +86,13 @@ pub fn run_top_with(
     let outcome: Result<(), TopLoopError> = (|| {
         terminal.enter().map_err(TopLoopError::Terminal)?;
         entered = true;
-        state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
-        state.brain_health_ts = clock.wall_seconds();
+        state.brain_health_state = BrainHealthState::Checking;
+        refresh_brain(
+            state,
+            brain,
+            clock.wall_seconds(),
+            clock.monotonic_seconds(),
+        );
         loop {
             let frame_wall = clock.wall_seconds();
             let frame_monotonic = clock.monotonic_seconds();
@@ -84,8 +105,7 @@ pub fn run_top_with(
                 };
                 let effects = apply_receive_event(state, &event, &sample, observer);
                 if effects.refresh_brain {
-                    state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
-                    state.brain_health_ts = sample.wall_seconds;
+                    refresh_brain(state, brain, sample.wall_seconds, sample.monotonic_seconds);
                 }
             }
             let _ = advance_restart_attempts(state, frame_monotonic);
@@ -132,9 +152,8 @@ pub fn run_top_with(
                 );
                 last_cleanup = now;
             }
-            if clock.wall_seconds() - state.brain_health_ts >= 30.0 {
-                state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
-                state.brain_health_ts = clock.wall_seconds();
+            if now - state.brain_health_state.observed_at_monotonic() >= 30.0 {
+                refresh_brain(state, brain, frame_wall, now);
             }
             clock.sleep(0.1).map_err(TopLoopError::Transport)?;
         }
@@ -143,16 +162,44 @@ pub fn run_top_with(
     let restore = entered
         .then(|| terminal.restore())
         .transpose()
-        .map_err(TopLoopError::Terminal)
-        .map(|_| ());
-    let stop = receive.stop().map_err(TopLoopError::Transport);
+        .err()
+        .map(|error| format!("terminal restore: {error}"));
+    let stop = receive
+        .stop()
+        .err()
+        .map(|error| format!("transport stop: {error}"));
+    let cleanup = [restore, stop].into_iter().flatten().collect::<Vec<_>>();
     match outcome {
-        Err(error) => {
-            let _ = restore;
-            let _ = stop;
-            Err(error)
+        Err(error) => Err(error.with_cleanup(cleanup)),
+        Ok(()) if cleanup.is_empty() => Ok(()),
+        Ok(()) => Err(TopLoopError::Terminal(format!(
+            "cleanup: {}",
+            cleanup.join("; ")
+        ))),
+    }
+}
+
+fn refresh_brain(
+    state: &mut TopState,
+    brain: &mut dyn TopBrainSource,
+    wall_seconds: f64,
+    monotonic_seconds: f64,
+) {
+    match brain.inspect() {
+        Ok(health) => {
+            state.brain_health = Some(health);
+            state.brain_health_ts = wall_seconds;
+            state.brain_health_state = BrainHealthState::Available {
+                observed_at_monotonic: monotonic_seconds,
+            };
         }
-        Ok(()) => restore.and(stop),
+        Err(error) => {
+            state.brain_health = None;
+            state.brain_health_state = BrainHealthState::Unavailable {
+                message: sanitize_for_terminal(&error),
+                observed_at_monotonic: monotonic_seconds,
+            };
+        }
     }
 }
 

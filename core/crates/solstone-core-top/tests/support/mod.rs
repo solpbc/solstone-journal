@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::json;
-use solstone_core_top::TopState;
+use solstone_core_top::{BrainHealthState, TopState};
 
 pub fn state_for_render_case(name: &str) -> TopState {
     let mut state = TopState::default();
@@ -117,6 +117,11 @@ pub fn state_for_render_case(name: &str) -> TopState {
             state.memory_cache = BTreeMap::from([(101, 10 * 1_048_576), (201, 6 * 1_048_576)]);
         }
         other => panic!("unrecognized retained render case: {other}"),
+    }
+    if state.brain_health.is_some() {
+        state.brain_health_state = BrainHealthState::Available {
+            observed_at_monotonic: 0.0,
+        };
     }
     state
 }

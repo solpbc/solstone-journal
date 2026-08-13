@@ -8,6 +8,45 @@ use solstone_core_callosum::CallosumConnectionPhase;
 
 use crate::{ProcessIdentity, RestartAttempt, TopMalformed};
 
+/// Native Brain inspection freshness, excluded from the retained fixture
+/// projection so a failed inspection cannot masquerade as fresh data.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BrainHealthState {
+    Checking,
+    Available {
+        observed_at_monotonic: f64,
+    },
+    Unavailable {
+        message: String,
+        observed_at_monotonic: f64,
+    },
+}
+
+impl Default for BrainHealthState {
+    fn default() -> Self {
+        Self::Unavailable {
+            message: String::new(),
+            observed_at_monotonic: 0.0,
+        }
+    }
+}
+
+impl BrainHealthState {
+    #[must_use]
+    pub fn observed_at_monotonic(&self) -> f64 {
+        match self {
+            Self::Checking => 0.0,
+            Self::Available {
+                observed_at_monotonic,
+            }
+            | Self::Unavailable {
+                observed_at_monotonic,
+                ..
+            } => *observed_at_monotonic,
+        }
+    }
+}
+
 /// Continuity metadata is native-only and deliberately excluded from the
 /// retained Python fixture projection.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -107,6 +146,7 @@ pub struct TopState {
     pub think_running: bool,
     pub brain_health: Option<Value>,
     pub brain_health_ts: f64,
+    pub brain_health_state: BrainHealthState,
     pub continuity: DomainContinuity,
     /// Native-only malformed-event evidence, excluded from the retained fixture projection.
     pub malformed_events: u64,
@@ -143,6 +183,7 @@ impl Default for TopState {
             think_running: false,
             brain_health: None,
             brain_health_ts: 0.0,
+            brain_health_state: BrainHealthState::default(),
             continuity: DomainContinuity::default(),
             malformed_events: 0,
             last_malformed: None,
