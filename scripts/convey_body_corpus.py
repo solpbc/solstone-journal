@@ -132,6 +132,12 @@ COVERAGE_LIMITATIONS: list[dict[str, str]] = [
         "subject": "cache warm path",
         "producers": "warm_dedupe_stats_cache, warm_trends_cache",
         "reached_by": "app startup (events.py), not by any HTTP route",
+        "also": (
+            "Read-named routes here are not side-effect free: serving a request "
+            "can populate in-process module-global caches. That is process "
+            "state, not owner data on disk -- but a port must not assume a GET "
+            "handler writes nothing."
+        ),
         "limitation": (
             "This corpus probes routes. The cache warm functions are invoked at "
             "app startup rather than through any probed route, so a green replay "
@@ -143,7 +149,7 @@ COVERAGE_LIMITATIONS: list[dict[str, str]] = [
         "subject": "mutation semantics",
         "producers": "none",
         "reached_by": "n/a",
-        "measured": "44 recorded cases; 44 GET; 0 mutating probes returned 2xx",
+        "see": "mutation_census (computed from the recorded cases)",
         "limitation": (
             "The number that bounds a corpus's authority over mutation is not how "
             "many write cases it records but how many actually mutated and "
@@ -388,6 +394,32 @@ def _empty_leaf_paths(value: Any, path: str) -> set[str]:
             for leaf in _empty_leaf_paths(child, f"{path}[{index}]")
         }
     return set()
+
+
+def _mutation_census(cases_by_phase: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Compute, from the recorded cases, how far this corpus's authority reaches.
+
+    Computed rather than written down: a hand-written zero stays right until
+    someone adds a probe, and then it is a false negative inside the artifact
+    everyone trusts.
+    """
+    by_method: dict[str, int] = {}
+    mutating_2xx: list[str] = []
+    total = 0
+    for phase, cases in sorted(cases_by_phase.items()):
+        for case in cases:
+            total += 1
+            method = str(case.get("method") or "GET").upper()
+            by_method[method] = by_method.get(method, 0) + 1
+            status = int(case.get("status") or 0)
+            if method not in {"GET", "HEAD", "OPTIONS"} and 200 <= status < 300:
+                mutating_2xx.append(f"{phase} {method} {case.get('path')}")
+    return {
+        "total_cases": total,
+        "cases_by_method": dict(sorted(by_method.items())),
+        "mutating_probes_that_returned_2xx": len(mutating_2xx),
+        "mutating_probes_detail": sorted(mutating_2xx),
+    }
 
 
 def _day_payload_dark_fields(cases_by_phase: dict[str, list[dict[str, Any]]]) -> list[dict[str, str]]:
@@ -955,6 +987,7 @@ def build_corpus() -> dict[str, Any]:
         "tz": "UTC",
         "placeholders": {"day": PLACEHOLDER_DAY, "journal_root": PLACEHOLDER_ROOT},
         "coverage_limitations": COVERAGE_LIMITATIONS,
+        "mutation_census": _mutation_census(cases_by_phase),
         "native_deviations": native_deviations,
         "day_payload_dark_fields": day_payload_dark_fields,
         "journal": seed_manifest,
