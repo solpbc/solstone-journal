@@ -20,6 +20,9 @@ use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use solstone_core_sol_link::ca::{generate_ca, jid_from_spki, sign_csr};
+use solstone_core_sol_link::ledger::{
+    AuthorizationLedger, AuthorizedClientsMutationError, RemoveOutcome,
+};
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -122,6 +125,7 @@ pub struct Fixture {
     pub root: PathBuf,
     ca_der: CertificateDer<'static>,
     clients: Vec<Client>,
+    established_authorized_clients: Vec<u8>,
 }
 pub struct Client {
     pub certificate: CertificateDer<'static>,
@@ -181,15 +185,17 @@ impl Fixture {
                 )),
             });
         }
+        let established_authorized_clients = serde_json::to_vec(&entries).expect("entries JSON");
         fs::write(
             root.join("link/authorized_clients.json"),
-            serde_json::to_vec(&entries).expect("entries JSON"),
+            &established_authorized_clients,
         )
         .expect("entries");
         Self {
             root,
             ca_der,
             clients,
+            established_authorized_clients,
         }
     }
     pub fn client_config(&self, index: usize) -> rustls::ClientConfig {
@@ -217,24 +223,54 @@ impl Fixture {
         self.ca_der.as_ref()
     }
 
-    pub fn remove_authorization(&self, index: usize) {
-        let entries: Vec<serde_json::Value> = serde_json::from_slice(
-            &fs::read(self.root.join("link/authorized_clients.json")).expect("authorization reads"),
-        )
-        .expect("authorization JSON");
+    fn authorized_clients_path(&self) -> PathBuf {
+        self.root.join("link/authorized_clients.json")
+    }
+
+    /// Restores `Present` posture with this fixture's originally-established clients.
+    pub fn warm_authorization_to_present(&self) {
+        let path = self.authorized_clients_path();
+        match fs::metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => {
+                fs::remove_dir(&path).expect("unreadable directory removes")
+            }
+            Ok(_) => fs::remove_file(&path).expect("authorization file removes"),
+            Err(_) => {}
+        }
+        fs::write(&path, &self.established_authorized_clients).expect("authorization warms");
+    }
+
+    /// Inode-changing induction: `EISDIR` on read, no privilege assumption needed.
+    pub fn induce_unreadable_authorization(&self) {
+        let path = self.authorized_clients_path();
+        fs::remove_file(&path).expect("authorization file removes");
+        fs::create_dir(&path).expect("authorization path becomes unreadable");
+    }
+
+    /// Inode-changing induction: a fresh, differently-inoded file with malformed JSON.
+    pub fn induce_malformed_authorization(&self) {
+        let path = self.authorized_clients_path();
+        fs::remove_file(&path).expect("authorization file removes");
+        fs::write(&path, b"{}").expect("malformed authorization writes");
+    }
+
+    pub fn remove_authorization(&self, index: usize) -> RemoveOutcome {
         let did = format!(
             "sha256:{}",
             spl_core::ca::sha256_hex(self.client_der(index))
         );
-        let retained = entries
-            .into_iter()
-            .filter(|entry| entry["fingerprint"] != did)
-            .collect::<Vec<_>>();
-        fs::write(
-            self.root.join("link/authorized_clients.json"),
-            serde_json::to_vec(&retained).expect("authorization JSON"),
-        )
-        .expect("authorization writes");
+        let mut attempts = 0;
+        loop {
+            let mut ledger = AuthorizationLedger::new(&self.root);
+            match ledger.remove(&did) {
+                Ok(outcome) => return outcome,
+                Err(AuthorizedClientsMutationError::Lock(_)) if attempts < 5 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => panic!("authorization removal failed: {error}"),
+            }
+        }
     }
 }
 impl Drop for Fixture {

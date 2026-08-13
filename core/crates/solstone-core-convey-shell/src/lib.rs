@@ -159,6 +159,7 @@ pub struct ConveyServeOptions {
     pub handshake_timeout: Duration,
     pub stream_stall_timeout: Duration,
     pub router: Router,
+    pub carrier_loop_iterations: Arc<AtomicU64>,
 }
 
 /// Live host listener set. Call [`Self::shutdown`] in test and embedded lifecycles.
@@ -167,7 +168,9 @@ pub struct ConveyServeHandle {
     loopback_ipv4: SocketAddr,
     loopback_ipv6: SocketAddr,
     door_outcome: DoorOutcome,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
+    loopback_task: tokio::task::JoinHandle<()>,
+    refresh_task: Option<tokio::task::JoinHandle<()>>,
+    accept_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[cfg(feature = "host")]
@@ -182,8 +185,21 @@ impl ConveyServeHandle {
         &self.door_outcome
     }
     pub fn shutdown(&self) {
-        for task in &self.tasks {
+        self.loopback_task.abort();
+        if let Some(task) = &self.refresh_task {
             task.abort();
+        }
+        if let Some(task) = &self.accept_task {
+            task.abort();
+        }
+    }
+    pub async fn stop_authorization_refresh(&mut self) {
+        let Some(task) = self.refresh_task.take() else {
+            return;
+        };
+        task.abort();
+        match task.await {
+            Ok(()) | Err(_) => {}
         }
     }
     pub async fn await_forever(self) -> ! {
@@ -261,16 +277,17 @@ pub async fn bind_with_authorization(
         handshake_timeout: options.handshake_timeout,
         stream_stall_timeout: options.stream_stall_timeout,
         router: door_router,
+        carrier_loop_iterations: options.carrier_loop_iterations,
         authorization_sender,
     })
     .await;
-    let mut tasks = vec![loopback_task];
-    tasks.extend(door_start.tasks);
     Ok(ConveyServeHandle {
         loopback_ipv4,
         loopback_ipv6,
         door_outcome: door_start.outcome,
-        tasks,
+        loopback_task,
+        refresh_task: door_start.refresh_task,
+        accept_task: door_start.accept_task,
     })
 }
 
@@ -327,6 +344,7 @@ pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
                 handshake_timeout: Duration::from_secs(10),
                 stream_stall_timeout: Duration::from_secs(60),
                 router: loopback_router,
+                carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
             },
             door_router,
             authorization_sender,

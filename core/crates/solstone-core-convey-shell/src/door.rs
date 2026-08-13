@@ -6,6 +6,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -46,12 +47,14 @@ pub(super) struct DoorStartOptions {
     pub handshake_timeout: Duration,
     pub stream_stall_timeout: Duration,
     pub router: Router,
+    pub carrier_loop_iterations: Arc<AtomicU64>,
     pub authorization_sender: watch::Sender<DeviceDoorAuthorization>,
 }
 
 pub(super) struct DoorStart {
     pub outcome: DoorOutcome,
-    pub tasks: Vec<tokio::task::JoinHandle<()>>,
+    pub refresh_task: Option<tokio::task::JoinHandle<()>>,
+    pub accept_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Identity observed from the accepted leaf. Keeping this as a struct leaves one
@@ -156,7 +159,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
     if let Some(reason) = withheld {
         return DoorStart {
             outcome: DoorOutcome::Withheld(reason),
-            tasks: Vec::new(),
+            refresh_task: None,
+            accept_task: None,
         };
     }
     let identity = match load_committed_identity(&options.journal_root) {
@@ -165,7 +169,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             log::warn!("paired-device door withheld: committed identity unavailable: {error}");
             return DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
-                tasks: Vec::new(),
+                refresh_task: None,
+                accept_task: None,
             };
         }
     };
@@ -185,7 +190,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                         port: options.port,
                         source,
                     },
-                    tasks: Vec::new(),
+                    refresh_task: None,
+                    accept_task: None,
                 };
             }
         };
@@ -201,7 +207,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
                     port: options.port,
                     source,
                 },
-                tasks: Vec::new(),
+                refresh_task: None,
+                accept_task: None,
             };
         }
     };
@@ -211,7 +218,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             log::error!("paired-device door could not mint server certificate: {error}");
             return DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
-                tasks: Vec::new(),
+                refresh_task: None,
+                accept_task: None,
             };
         }
     };
@@ -225,7 +233,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
     {
         return DoorStart {
             outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
-            tasks: Vec::new(),
+            refresh_task: None,
+            accept_task: None,
         };
     }
     let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -240,7 +249,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             log::error!("paired-device door could not build client verifier: {error}");
             return DoorStart {
                 outcome: DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable),
-                tasks: Vec::new(),
+                refresh_task: None,
+                accept_task: None,
             };
         }
     };
@@ -263,6 +273,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         authorization,
         handshake_timeout: options.handshake_timeout,
         journal_root: options.journal_root,
+        carrier_loop_iterations: options.carrier_loop_iterations,
     });
     let accept_task = tokio::spawn(accept_loop(
         listener,
@@ -272,7 +283,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
     ));
     DoorStart {
         outcome: DoorOutcome::Bound(bound),
-        tasks: vec![refresh_task, accept_task],
+        refresh_task: Some(refresh_task),
+        accept_task: Some(accept_task),
     }
 }
 
@@ -283,6 +295,7 @@ struct DoorConnectionConfig {
     authorization: watch::Receiver<DeviceDoorAuthorization>,
     handshake_timeout: Duration,
     journal_root: PathBuf,
+    carrier_loop_iterations: Arc<AtomicU64>,
 }
 
 async fn accept_loop(
@@ -367,6 +380,10 @@ async fn serve_carrier(
     record_completed_handshake(&config.journal_root, &did);
     let mut authorization = config.authorization.clone();
     loop {
+        #[cfg(debug_assertions)]
+        config
+            .carrier_loop_iterations
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         tokio::select! {
             stream = connection.accept_stream() => {
                 let Ok(stream) = stream else { break; };
