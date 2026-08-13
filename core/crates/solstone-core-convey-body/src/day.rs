@@ -1218,11 +1218,7 @@ fn blood_pressure(rows: &[NormalizedRow]) -> Option<Value> {
         let span = |values: &[f64]| {
             let low = values.iter().copied().fold(f64::INFINITY, f64::min);
             let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-            if low == high {
-                number(low)
-            } else {
-                format!("{}–{}", number(low), number(high))
-            }
+            format!("{}–{}", number(low), number(high))
         };
         let suffix = card_unit
             .as_deref()
@@ -1315,7 +1311,7 @@ fn rhythm_summary(rows: &[NormalizedRow]) -> Option<Value> {
             .iter()
             .filter_map(|row| value_number(row).map(|value| (*row, value)))
             .max_by_key(|(row, _)| record_time(row))
-            .map(|(row, value)| display_value(string_field(&row.record_type).unwrap_or_default(), value, unit(row)));
+            .map(|(row, value)| display_value(record_type, value, unit(row)));
         let attribution = format!("reported by {}", sources.join(", "));
         let detail = match &value_label {
             None => format!("{count} {} · {attribution}", if count == 1 { "entry" } else { "entries" }),
@@ -3302,7 +3298,31 @@ pub(crate) mod tests {
             let ranges = heart_analysis(&rows, &BTreeMap::new()).unwrap()["blood_pressure"].clone();
             assert_eq!(ranges["mode"], "range");
             assert!(ranges["readings"].as_array().unwrap().is_empty());
-            assert!(ranges["range_label"].is_string());
+            assert_eq!(
+                ranges["range_label"],
+                "systolic 118–124 mmHg · diastolic 78–84 mmHg"
+            );
+            let mut identical_systolic = Vec::new();
+            for hour in 8..15 {
+                let start = format!("2026-01-01T{hour:02}:00:00+00:00");
+                identical_systolic.push(bp(
+                    "HKQuantityTypeIdentifierBloodPressureSystolic",
+                    start.clone(),
+                    120,
+                ));
+                identical_systolic.push(bp(
+                    "HKQuantityTypeIdentifierBloodPressureDiastolic",
+                    start,
+                    70 + hour,
+                ));
+            }
+            let identical =
+                heart_analysis(&identical_systolic, &BTreeMap::new()).unwrap()["blood_pressure"]
+                    .clone();
+            assert_eq!(
+                identical["range_label"],
+                "systolic 120–120 mmHg · diastolic 78–84 mmHg"
+            );
         }
 
         #[test]
@@ -3324,33 +3344,49 @@ pub(crate) mod tests {
             );
             plain_hr.unit = FieldState::Present(json!("count/min"));
             assert!(heart_analysis(&[plain_hr], &BTreeMap::new()).unwrap()["rhythm"].is_null());
-            let burden = |time: &str, value: Option<Value>| {
-                let mut row = simple_row(
-                    "HKQuantityTypeIdentifierAtrialFibrillationBurden",
-                    "20260101",
-                    time,
-                    value,
-                );
-                row.unit = FieldState::Present(json!("%"));
+            let burden = |record_type: &str, time: &str, value: Option<Value>, unit_name: &str| {
+                let mut row = simple_row(record_type, "20260101", time, value);
+                row.unit = FieldState::Present(json!(unit_name));
                 row.source_name = FieldState::Present(json!("Watch"));
                 row
             };
             let valued = heart_analysis(
                 &[
-                    burden("2026-01-01T08:00:00+00:00", Some(json!(0.01))),
-                    burden("2026-01-01T09:00:00+00:00", Some(json!(0.02))),
+                    burden(
+                        "HKQuantityTypeIdentifierAtrialFibrillationBurden",
+                        "2026-01-01T08:00:00+00:00",
+                        Some(json!(1)),
+                        "count/min",
+                    ),
+                    burden(
+                        "oura.AtrialFibrillationBurdenHeartRateEstimate",
+                        "2026-01-01T09:00:00+00:00",
+                        Some(json!(2)),
+                        "count/min",
+                    ),
                 ],
                 &BTreeMap::new(),
             )
             .unwrap();
+            assert_eq!(valued["rhythm"]["burden"]["label"], "AFib burden");
             assert_eq!(
                 valued["rhythm"]["burden"]["detail"],
-                "latest 2% · 2 entries · reported by Watch"
+                "latest 2 count/min · 2 entries · reported by Watch"
             );
             let empty = heart_analysis(
                 &[
-                    burden("2026-01-01T08:00:00+00:00", Some(json!("unknown"))),
-                    burden("2026-01-01T09:00:00+00:00", None),
+                    burden(
+                        "HKQuantityTypeIdentifierAtrialFibrillationBurden",
+                        "2026-01-01T08:00:00+00:00",
+                        Some(json!("unknown")),
+                        "%",
+                    ),
+                    burden(
+                        "HKQuantityTypeIdentifierAtrialFibrillationBurden",
+                        "2026-01-01T09:00:00+00:00",
+                        None,
+                        "%",
+                    ),
                 ],
                 &BTreeMap::new(),
             )
