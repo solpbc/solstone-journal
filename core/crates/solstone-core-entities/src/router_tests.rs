@@ -49,6 +49,11 @@ fn write(root: &Path, relative: &str, value: Value) {
     fs::create_dir_all(p.parent().unwrap()).unwrap();
     fs::write(p, serde_json::to_vec(&value).unwrap()).unwrap();
 }
+fn write_raw(root: &Path, relative: &str, value: &[u8]) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, value).unwrap();
+}
 fn seed_entity(root: &Path, id: &str, name: &str) {
     write(
         root,
@@ -502,7 +507,7 @@ async fn journal_entity_reads_identity() {
     let j = Journal::new();
     seed_entity(j.path(), "a", "Alice");
     let (_, v) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert_eq!(v["name"], "Alice");
+    assert_eq!(v["entity"]["name"], "Alice");
 }
 #[tokio::test]
 async fn journal_entity_missing_refuses() {
@@ -526,7 +531,7 @@ async fn update_journal_entity_persists_name_change() {
     assert_eq!(response["success"], true);
     assert_eq!(response["entity"]["name"], "Alicia");
     let (_, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert_eq!(entity["name"], "Alicia");
+    assert_eq!(entity["entity"]["name"], "Alicia");
 }
 
 #[tokio::test]
@@ -565,7 +570,7 @@ async fn update_journal_entity_parses_comma_delimited_akas() {
     .await;
     assert_eq!(response["entity"]["aka"], json!(["Al", "Ally", "A."]));
     let (_, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert_eq!(entity["aka"], json!(["Al", "Ally", "A."]));
+    assert_eq!(entity["entity"]["aka"], json!(["Al", "Ally", "A."]));
 }
 
 #[tokio::test]
@@ -624,7 +629,7 @@ async fn restore_journal_entity_version_restores_a_history_snapshot() {
     assert_eq!(response["entity"]["name"], "Before");
     assert_eq!(response["event"]["kind"], "restore");
     let (_, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert_eq!(entity["name"], "Before");
+    assert_eq!(entity["entity"]["name"], "Before");
 }
 
 #[tokio::test]
@@ -680,7 +685,7 @@ async fn block_journal_entity_blocks_and_detaches_facet_links() {
     assert_eq!(status, 200);
     assert_eq!(response["facets_detached"], json!(["work"]));
     let (_, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert_eq!(entity["blocked"], true);
+    assert_eq!(entity["entity"]["blocked"], true);
     let links =
         solstone_core_facets::list_scoped_facet_entities(j.path(), "work", true, true).unwrap();
     assert_eq!(links.len(), 1);
@@ -726,7 +731,7 @@ async fn unblock_journal_entity_clears_blocked_state() {
     assert_eq!(status, 200);
     assert_eq!(event["kind"], "update");
     let (_, entity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert!(entity.get("blocked").is_none());
+    assert_eq!(entity["entity"]["blocked"], false);
 }
 
 #[tokio::test]
@@ -749,7 +754,474 @@ async fn journal_lists_entities() {
     seed_entity(j.path(), "a", "Alice");
     seed_entity(j.path(), "b", "Bob");
     let (_, v) = call(j.path(), "/app/entities/api/journal").await;
-    assert_eq!(v["entities"].as_object().unwrap().len(), 2);
+    assert_eq!(v["entities"].as_array().unwrap().len(), 2);
+}
+
+fn journal_assembly_fixture() -> Journal {
+    let journal = Journal::new();
+    let root = journal.path();
+    write(
+        root,
+        "config/journal.json",
+        json!({"setup":{"completed_at":1750000000}}),
+    );
+    for (facet, declaration) in [
+        ("work", json!({"description":"Work context"})),
+        (
+            "personal",
+            json!({"title":"Personal Life","color":"#ff0000","emoji":"🏠"}),
+        ),
+        ("empty_title", json!({"title":"","color":""})),
+    ] {
+        write(root, &format!("facets/{facet}/facet.json"), declaration);
+    }
+    write_raw(root, "facets/broken_facet/facet.json", b"not json");
+    for (entity_dir, identity) in [
+        (
+            "ada_lovelace",
+            json!({"id":"ada_lovelace","name":"Ada Lovelace","type":"Person","aka":["Ada"]}),
+        ),
+        (
+            "grace_hopper",
+            json!({"id":"grace_hopper","name":"Grace Hopper"}),
+        ),
+        (
+            "principal_one",
+            json!({"id":"principal_one","name":"Principal One","is_principal":true}),
+        ),
+        (
+            "blocked_one",
+            json!({"id":"blocked_one","name":"Blocked One","blocked":true}),
+        ),
+        (
+            "margaret_hamilton",
+            json!({"id":"margaret_hamilton","name":"Margaret Hamilton"}),
+        ),
+        (
+            "control_kathryn",
+            json!({"id":"control_kathryn","name":"Control Kathryn"}),
+        ),
+        (
+            "dir_alpha",
+            json!({"id":"ident_beta","name":"Kathryn Johnson","type":"Person"}),
+        ),
+        ("dup_a", json!({"id":"shared_ident","name":"Dup A"})),
+        ("dup_b", json!({"id":"shared_ident","name":"Dup B"})),
+        ("line_probe", json!({"id":"line_probe","name":"Line Probe"})),
+    ] {
+        write(
+            root,
+            &format!("entities/{entity_dir}/entity.json"),
+            identity,
+        );
+    }
+    write_raw(root, "entities/broken_entity/entity.json", b"not json");
+    for (facet, relationship_dir, relationship) in [
+        (
+            "work",
+            "ada_lovelace",
+            json!({"entity_id":"ada_lovelace","last_seen":"20260115","attached_at":"2026-07-01","updated_at":1769000000000i64}),
+        ),
+        (
+            "personal",
+            "ada_lovelace",
+            json!({"entity_id":"ada_lovelace","detached":true,"last_seen":"20260820"}),
+        ),
+        (
+            "empty_title",
+            "ada_lovelace",
+            json!({"entity_id":"ada_lovelace"}),
+        ),
+        (
+            "broken_facet",
+            "ada_lovelace",
+            json!({"entity_id":"ada_lovelace"}),
+        ),
+        ("work", "margaret_hamilton", json!({"last_seen":"20260601"})),
+        (
+            "work",
+            "control_kathryn",
+            json!({"entity_id":"control_kathryn"}),
+        ),
+        (
+            "work",
+            "katherine_johnson",
+            json!({"entity_id":"ident_beta"}),
+        ),
+        ("work", "line_probe", json!({"entity_id":"line_probe"})),
+        (
+            "nofacetjson",
+            "grace_hopper",
+            json!({"entity_id":"grace_hopper"}),
+        ),
+    ] {
+        write(
+            root,
+            &format!("facets/{facet}/entities/{relationship_dir}/entity.json"),
+            relationship,
+        );
+    }
+    write_raw(
+        root,
+        "facets/work/entities/broken_rel/entity.json",
+        b"not json",
+    );
+    for (facet, relationship_dir, observations) in [
+        ("work", "ada_lovelace", b"{}\n{}\n".as_slice()),
+        (
+            "personal",
+            "ada_lovelace",
+            b"{}\n{}\n{}\n{}\n{}\n".as_slice(),
+        ),
+        (
+            "broken_facet",
+            "ada_lovelace",
+            b"{}\n{}\n{}\n{}\n{}\n{}\n{}\n".as_slice(),
+        ),
+        ("work", "margaret_hamilton", b"{}\n{}\n{}\n{}\n".as_slice()),
+        ("work", "control_kathryn", b"{}\n{}\n{}\n".as_slice()),
+        ("work", "katherine_johnson", b"{}\n{}\n{}\n".as_slice()),
+        ("work", "line_probe", b"{}\nnot json\n{}\n".as_slice()),
+        (
+            "nofacetjson",
+            "grace_hopper",
+            b"{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n".as_slice(),
+        ),
+    ] {
+        write_raw(
+            root,
+            &format!("facets/{facet}/entities/{relationship_dir}/observations.jsonl"),
+            observations,
+        );
+    }
+    write_raw(root, "entities/ada_lovelace/voiceprints.npz", b"native");
+    write_raw(
+        root,
+        "facets/work/entities/margaret_hamilton/voiceprints.npz",
+        b"reference",
+    );
+    journal
+}
+
+fn journal_record<'a>(records: &'a [Value], id: &str) -> &'a Value {
+    records
+        .iter()
+        .find(|record| record["id"] == id)
+        .unwrap_or_else(|| panic!("missing journal record {id}"))
+}
+
+fn journal_facet<'a>(record: &'a Value, name: &str) -> &'a Value {
+    record["facets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|facet| facet["name"] == name)
+        .unwrap_or_else(|| panic!("missing facet {name}"))
+}
+
+fn value_keys(value: &Value) -> BTreeSet<String> {
+    value.as_object().unwrap().keys().cloned().collect()
+}
+
+#[tokio::test]
+async fn journal_entity_assembly_matches_the_recorded_oracle() {
+    let journal = journal_assembly_fixture();
+    let (status, response) = call(journal.path(), "/app/entities/api/journal").await;
+    assert_eq!(status, 200);
+    let records = response["entities"]
+        .as_array()
+        .expect("entities is an array");
+    assert_eq!(records.len(), 10);
+    assert!(records.iter().all(|record| record["id"] != "broken_entity"));
+
+    let entity_keys: BTreeSet<_> = [
+        "id",
+        "name",
+        "type",
+        "aka",
+        "is_principal",
+        "blocked",
+        "facets",
+        "total_observation_count",
+        "last_active_ts",
+        "last_active_day",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    let facet_keys: BTreeSet<_> = [
+        "name",
+        "title",
+        "color",
+        "emoji",
+        "description",
+        "last_seen",
+        "attached_at",
+        "updated_at",
+        "observation_count",
+        "has_voiceprint",
+        "last_active_ts",
+        "last_active_day",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    for record in records {
+        assert_eq!(value_keys(record), entity_keys);
+        for facet in record["facets"].as_array().unwrap() {
+            let mut expected = facet_keys.clone();
+            if facet["detached"] == true {
+                expected.insert("detached".to_owned());
+            }
+            assert_eq!(value_keys(facet), expected);
+        }
+    }
+
+    for (
+        id,
+        name,
+        entity_type,
+        aka,
+        principal,
+        blocked,
+        observation_count,
+        activity_ts,
+        activity_day,
+        facet_count,
+    ) in [
+        (
+            "ada_lovelace",
+            "Ada Lovelace",
+            "Person",
+            json!(["Ada"]),
+            false,
+            false,
+            2,
+            None,
+            Some("20260115"),
+            3,
+        ),
+        (
+            "control_kathryn",
+            "Control Kathryn",
+            "",
+            json!([]),
+            false,
+            false,
+            3,
+            Some(1_767_225_600_000i64),
+            None,
+            1,
+        ),
+        (
+            "margaret_hamilton",
+            "Margaret Hamilton",
+            "",
+            json!([]),
+            false,
+            false,
+            4,
+            None,
+            Some("20260601"),
+            1,
+        ),
+        (
+            "line_probe",
+            "Line Probe",
+            "",
+            json!([]),
+            false,
+            false,
+            2,
+            Some(1_767_225_600_000i64),
+            None,
+            1,
+        ),
+        (
+            "grace_hopper",
+            "Grace Hopper",
+            "",
+            json!([]),
+            false,
+            false,
+            0,
+            Some(0),
+            None,
+            0,
+        ),
+        (
+            "principal_one",
+            "Principal One",
+            "",
+            json!([]),
+            true,
+            false,
+            0,
+            Some(0),
+            None,
+            0,
+        ),
+        (
+            "blocked_one",
+            "Blocked One",
+            "",
+            json!([]),
+            false,
+            true,
+            0,
+            Some(0),
+            None,
+            0,
+        ),
+        (
+            "dup_a",
+            "Dup A",
+            "",
+            json!([]),
+            false,
+            false,
+            0,
+            Some(0),
+            None,
+            0,
+        ),
+        (
+            "dup_b",
+            "Dup B",
+            "",
+            json!([]),
+            false,
+            false,
+            0,
+            Some(0),
+            None,
+            0,
+        ),
+        (
+            "dir_alpha",
+            "Kathryn Johnson",
+            "Person",
+            json!([]),
+            false,
+            false,
+            3,
+            Some(1_767_225_600_000i64),
+            None,
+            1,
+        ),
+    ] {
+        let record = journal_record(records, id);
+        assert_eq!(record["id"], id);
+        assert_eq!(record["name"], name);
+        assert_eq!(record["type"], entity_type);
+        assert_eq!(record["aka"], aka);
+        assert_eq!(record["is_principal"], principal);
+        assert_eq!(record["blocked"], blocked);
+        assert_eq!(record["total_observation_count"], observation_count);
+        assert_eq!(record["facets"].as_array().unwrap().len(), facet_count);
+        if let Some(activity_ts) = activity_ts {
+            assert_eq!(record["last_active_ts"], activity_ts);
+        }
+        if let Some(activity_day) = activity_day {
+            assert_eq!(record["last_active_day"], activity_day);
+        } else if activity_ts == Some(0) {
+            assert!(record["last_active_day"].is_null());
+        }
+    }
+
+    let ada = journal_record(records, "ada_lovelace");
+    assert_eq!(
+        ada["facets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|facet| facet["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["personal", "work", "empty_title"],
+    );
+    let personal = journal_facet(ada, "personal");
+    assert_eq!(personal["title"], "Personal Life");
+    assert_eq!(personal["color"], "#ff0000");
+    assert_eq!(personal["emoji"], "🏠");
+    assert_eq!(personal["description"], "");
+    assert_eq!(personal["last_seen"], "20260820");
+    assert_eq!(personal["last_active_day"], "20260820");
+    assert!(personal["attached_at"].is_null());
+    assert!(personal["updated_at"].is_null());
+    assert_eq!(personal["observation_count"], 5);
+    assert_eq!(personal["detached"], true);
+    let work = journal_facet(ada, "work");
+    assert_eq!(work["title"], "work");
+    assert_eq!(work["color"], "");
+    assert_eq!(work["emoji"], "");
+    assert_eq!(work["description"], "");
+    assert_eq!(work["last_seen"], "20260115");
+    assert_eq!(work["last_active_day"], "20260115");
+    assert_eq!(work["attached_at"], "2026-07-01");
+    assert_eq!(work["updated_at"], 1_769_000_000_000i64);
+    assert_eq!(work["observation_count"], 2);
+    let empty_title = journal_facet(ada, "empty_title");
+    assert_eq!(empty_title["title"], "");
+    assert_eq!(empty_title["color"], "");
+    assert_eq!(empty_title["emoji"], "");
+    assert_eq!(empty_title["description"], "");
+    assert!(empty_title["last_seen"].is_null());
+    assert!(empty_title["attached_at"].is_null());
+    assert!(empty_title["updated_at"].is_null());
+    assert_eq!(empty_title["observation_count"], 0);
+    assert_eq!(empty_title["last_active_ts"], 1_767_225_600_000i64);
+    for facet in ada["facets"].as_array().unwrap() {
+        assert_eq!(facet["has_voiceprint"], true);
+    }
+    let margaret = journal_facet(journal_record(records, "margaret_hamilton"), "work");
+    assert_eq!(margaret["has_voiceprint"], false);
+    assert_eq!(margaret["last_seen"], "20260601");
+    assert_eq!(margaret["last_active_day"], "20260601");
+    assert_eq!(margaret["observation_count"], 4);
+    let control = journal_facet(journal_record(records, "control_kathryn"), "work");
+    assert_eq!(control["last_active_ts"], 1_767_225_600_000i64);
+    let line_probe = journal_facet(journal_record(records, "line_probe"), "work");
+    assert_eq!(line_probe["observation_count"], 2);
+    assert_eq!(line_probe["last_active_ts"], 1_767_225_600_000i64);
+    assert_eq!(
+        journal_facet(journal_record(records, "dir_alpha"), "work"),
+        journal_facet(journal_record(records, "control_kathryn"), "work"),
+    );
+}
+
+#[tokio::test]
+async fn journal_entity_detail_uses_the_shared_assembled_record() {
+    let journal = journal_assembly_fixture();
+    let (_, list) = call(journal.path(), "/app/entities/api/journal").await;
+    let records = list["entities"].as_array().unwrap();
+    let (status, detail) = call(
+        journal.path(),
+        "/app/entities/api/journal/entity/ada_lovelace",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(detail.get("entity").is_some());
+    assert_eq!(detail["entity"], *journal_record(records, "ada_lovelace"));
+    for entity_dir in ["dir_alpha", "dup_a", "dup_b"] {
+        assert_eq!(
+            call(
+                journal.path(),
+                &format!("/app/entities/api/journal/entity/{entity_dir}")
+            )
+            .await
+            .0,
+            200
+        );
+    }
+    for entity_id in ["ident_beta", "shared_ident"] {
+        let (status, response) = call(
+            journal.path(),
+            &format!("/app/entities/api/journal/entity/{entity_id}"),
+        )
+        .await;
+        assert_eq!(status, 404);
+        assert_eq!(response["reason_code"], "entity_not_found");
+    }
 }
 #[tokio::test]
 async fn corrupt_ambiguities_refuse_as_operation_failed() {
@@ -1163,7 +1635,7 @@ async fn detach_hides_facet_entity_but_preserves_journal_identity() {
     assert_eq!(facet["attached"], json!([]));
     let (journal_status, identity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
     assert_eq!(journal_status, 200);
-    assert_eq!(identity["name"], "Alice");
+    assert_eq!(identity["entity"]["name"], "Alice");
 }
 
 #[tokio::test]
@@ -1511,8 +1983,8 @@ async fn update_entity_renames_and_adds_comma_delimited_aliases() {
     assert_eq!(response["entity"]["type"], "Company");
     assert_eq!(response["entity"]["aka"], json!(["A", "Ally"]));
     let (_, identity) = call(j.path(), "/app/entities/api/journal/entity/a").await;
-    assert_eq!(identity["name"], "Alicia");
-    assert_eq!(identity["aka"], json!(["A", "Ally"]));
+    assert_eq!(identity["entity"]["name"], "Alicia");
+    assert_eq!(identity["entity"]["aka"], json!(["A", "Ally"]));
 }
 
 #[tokio::test]
@@ -2444,7 +2916,7 @@ async fn deferred_delete_cancel_preserves_entity_and_logs_cancellation() {
     tokio::time::sleep(Duration::from_millis(120)).await;
     let (entity_status, entity) = call(j.path(), "/app/entities/api/journal/entity/target").await;
     assert_eq!(entity_status, 200);
-    assert_eq!(entity["id"], "target");
+    assert_eq!(entity["entity"]["id"], "target");
     let records = deferred_delete_action_records(j.path());
     assert!(records.iter().any(|record| {
         record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "cancelled"
@@ -3227,9 +3699,6 @@ async fn refusal_sites_batch_2_read_routes_are_exact() {
         "not json",
     )
     .unwrap();
-    // `read_identity_map` intentionally records malformed identities as
-    // losers, so this route has no simple malformed-file trigger for its
-    // catch-all refusal branch.
     assert_oracle_refusal(
         "get_journal_entity:1892",
         call(

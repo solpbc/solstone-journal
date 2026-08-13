@@ -81,6 +81,50 @@ pub fn list_scoped_facet_entities(
     Ok(entities)
 }
 
+/// List facet links joined through their stored effective journal identity IDs,
+/// skipping malformed individual relationship or identity records.
+pub fn list_scoped_facet_entities_tolerant(
+    journal_root: &Path,
+    facet_dir: &str,
+    include_detached: bool,
+    include_blocked: bool,
+) -> Result<Vec<ScopedFacetEntity>, FacetEntityWriteError> {
+    let map = read_identity_map(journal_root)?;
+    let mut entities = Vec::new();
+    for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {
+        let link = match read_facet_entity_link(journal_root, facet_dir, &relationship_dir) {
+            Ok(Some(link)) => link,
+            Ok(None) | Err(_) => continue,
+        };
+        let detached = link.value().get("detached") == Some(&Value::Bool(true));
+        if detached && !include_detached {
+            continue;
+        }
+        let entity_id = link.entity_id().to_owned();
+        let Some(entity_dir) = map.resolved.get(&entity_id) else {
+            continue;
+        };
+        let identity = match read_entity_identity(journal_root, entity_dir) {
+            Ok(Some(identity)) => identity,
+            Ok(None) | Err(_) => continue,
+        };
+        let blocked = identity.value().get("blocked") == Some(&Value::Bool(true));
+        if blocked && !include_blocked {
+            continue;
+        }
+        entities.push(ScopedFacetEntity {
+            entity_id,
+            entity_dir: entity_dir.clone(),
+            relationship_dir,
+            relationship: link.value().clone(),
+            identity: identity.value().clone(),
+            detached,
+            blocked,
+        });
+    }
+    Ok(entities)
+}
+
 /// Attach a journal entity by normalized written name, or create a fresh identity.
 pub fn attach_or_reactivate_entity(
     journal_root: &Path,

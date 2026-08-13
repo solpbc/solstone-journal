@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1707,6 +1707,135 @@ async fn dismiss_facet_candidate_route(
     }
 }
 
+fn assemble_journal_entity_records(
+    root: &Path,
+    only: Option<&str>,
+) -> Result<Vec<Value>, solstone_core_facets::FacetEntityWriteError> {
+    let groups = solstone_core_entity::read_identity_group_map(root)?;
+    let mut records = Vec::new();
+    for entity_dir in groups.groups.into_values().flatten() {
+        if only.is_some_and(|requested| requested != entity_dir.as_str()) {
+            continue;
+        }
+        let identity = match solstone_core_entity::read_entity_identity(root, &entity_dir) {
+            Ok(Some(identity)) => identity,
+            Ok(None) | Err(_) => continue,
+        };
+        let value = identity.value();
+        records.push(json!({
+            "id": entity_dir,
+            "name": value.get("name").cloned().unwrap_or_else(|| json!("")),
+            "type": value.get("type").cloned().unwrap_or_else(|| json!("")),
+            "aka": value.get("aka").cloned().unwrap_or_else(|| json!([])),
+            "is_principal": value.get("is_principal").cloned().unwrap_or_else(|| json!(false)),
+            "blocked": value.get("blocked").cloned().unwrap_or_else(|| json!(false)),
+            "facets": [],
+            "total_observation_count": 0,
+            "last_active_ts": 0,
+            "last_active_day": Value::Null,
+        }));
+    }
+
+    let record_indexes: HashMap<_, _> = records
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| {
+            record
+                .get("id")
+                .and_then(Value::as_str)
+                .map(|entity_dir| (entity_dir.to_owned(), index))
+        })
+        .collect();
+    let mut aggregates = HashMap::<String, (usize, i64)>::new();
+    for facet_dir in solstone_core_facets::list_facet_directories(root)? {
+        let declaration = match solstone_core_facets::read_facet_declaration(root, &facet_dir) {
+            Ok(Some(declaration)) => declaration,
+            Ok(None) | Err(_) => continue,
+        };
+        let declaration = declaration.value();
+        let title = declaration
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or(&facet_dir);
+        let color = declaration
+            .get("color")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let emoji = declaration
+            .get("emoji")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        for scoped in
+            solstone_core_facets::list_scoped_facet_entities_tolerant(root, &facet_dir, true, true)?
+        {
+            let Some(&record_index) = record_indexes.get(&scoped.entity_dir) else {
+                continue;
+            };
+            let observation_count = solstone_core_facets::count_observations(
+                root,
+                &facet_dir,
+                &scoped.relationship_dir,
+            )?;
+            let relationship = &scoped.relationship;
+            let activity_ts = solstone_core_entity::entity_last_active_ts(relationship);
+            let mut facet = json!({
+                "name": facet_dir,
+                "title": title,
+                "color": color,
+                "emoji": emoji,
+                "description": relationship.get("description").cloned().unwrap_or_else(|| json!("")),
+                "last_seen": relationship.get("last_seen").cloned().unwrap_or(Value::Null),
+                "attached_at": relationship.get("attached_at").cloned().unwrap_or(Value::Null),
+                "updated_at": relationship.get("updated_at").cloned().unwrap_or(Value::Null),
+                "observation_count": observation_count,
+                "has_voiceprint": root.join("entities").join(&scoped.entity_dir).join("voiceprints.npz").exists(),
+                "last_active_ts": activity_ts,
+                "last_active_day": solstone_core_entity::entity_last_active_day(relationship),
+            });
+            if scoped.detached {
+                facet
+                    .as_object_mut()
+                    .expect("facet record is an object")
+                    .insert("detached".to_owned(), Value::Bool(true));
+            } else {
+                let aggregate = aggregates.entry(scoped.entity_dir.clone()).or_default();
+                aggregate.0 += observation_count;
+                aggregate.1 = aggregate.1.max(activity_ts);
+            }
+            records[record_index]
+                .get_mut("facets")
+                .and_then(Value::as_array_mut)
+                .expect("entity record has facets")
+                .push(facet);
+        }
+    }
+    for record in &mut records {
+        let entity_dir = record["id"].as_str().expect("entity record has id");
+        let (observation_count, activity_ts) =
+            aggregates.get(entity_dir).copied().unwrap_or_default();
+        let facets = record["facets"]
+            .as_array_mut()
+            .expect("entity record has facets");
+        facets
+            .sort_by_key(|facet| std::cmp::Reverse(facet["last_active_ts"].as_i64().unwrap_or(0)));
+        let object = record.as_object_mut().expect("entity record is an object");
+        object.insert(
+            "total_observation_count".to_owned(),
+            json!(observation_count),
+        );
+        object.insert("last_active_ts".to_owned(), json!(activity_ts));
+        object.insert(
+            "last_active_day".to_owned(),
+            if activity_ts == 0 {
+                Value::Null
+            } else {
+                json!(solstone_core_entity::last_active_day_for_ts(activity_ts))
+            },
+        );
+    }
+    Ok(records)
+}
+
 async fn journal_entity_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
@@ -1716,12 +1845,20 @@ async fn journal_entity_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::read_entity_identity(&root, &id)
+        match solstone_core_entity::read_entity_identity(&root, &id) {
+            Err(error) => Err(error.into()),
+            Ok(None) => Ok(None),
+            Ok(Some(_)) => {
+                assemble_journal_entity_records(&root, Some(&id)).map(|mut records| records.pop())
+            }
+        }
     })
     .await
     {
-        Ok(Ok(Some(v))) => Json(v.value().clone()).into_response(),
-        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "entity not found"),
+        Ok(Ok(entity)) => match entity {
+            Some(entity) => Json(json!({"entity":entity})).into_response(),
+            None => refusal(ReasonCode::EntityNotFound, "entity not found"),
+        },
         _ => refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
     }
 }
@@ -2173,11 +2310,11 @@ async fn journal_route(
         return r;
     }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::read_identity_map(&root)
+        assemble_journal_entity_records(&root, None)
     })
     .await
     {
-        Ok(Ok(v)) => Json(json!({"entities":v.resolved})).into_response(),
+        Ok(Ok(records)) => Json(json!({"entities":records})).into_response(),
         _ => refusal(ReasonCode::EntityOperationFailed, "journal read failed"),
     }
 }
