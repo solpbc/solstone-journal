@@ -425,6 +425,97 @@ def snapshot_tree(root: Path) -> dict:
     return tree
 
 
+
+# Successful mutations. The refusal cases above pin what the surface REFUSES;
+# these pin what it WRITES -- which is the half that decides whether an owner's
+# existing configuration survives. Each records the response AND the resulting
+# on-disk config, because "write new, read old" is a claim about the file, not
+# about the response body.
+MUTATION_CASES = [
+    ("identity.partial", "POST", "/app/settings/api/config",
+     {"section": "identity", "data": {"preferred": "Countess", "bio": "revised"}}),
+    ("identity.legacy-key-value", "POST", "/app/settings/api/config",
+     {"section": "identity", "key": "preferred", "value": "Legacy"}),
+    ("identity.bare-backcompat", "POST", "/app/settings/api/config",
+     {"identity": {"preferred": "BareForm"}}),
+    ("journal.rename", "POST", "/app/settings/api/config",
+     {"section": "journal", "data": {"name": "Difference Engine"}}),
+    ("transcribe.backend", "POST", "/app/settings/api/config",
+     {"section": "transcribe", "data": {"backend": "parakeet", "preserve_all": False}}),
+    ("transcribe.nested", "POST", "/app/settings/api/config",
+     {"section": "transcribe", "data": {"parakeet": {"device": "cpu"}}}),
+    ("agent.rename", "POST", "/app/settings/api/config",
+     {"section": "agent", "data": {"name": "aria", "name_status": "named"}}),
+    ("support.toggle", "POST", "/app/settings/api/config",
+     {"section": "support", "data": {"enabled": False, "proactive": True}}),
+    ("observe.tmux", "POST", "/app/settings/api/observe",
+     {"tmux": {"enabled": True, "capture_interval": 9}}),
+    ("vision.max-extractions", "PUT", "/app/settings/api/vision",
+     {"max_extractions": 33}),
+    ("vision.redact-trims-blanks", "PUT", "/app/settings/api/vision",
+     {"redact": ["alpha", "   ", "beta"]}),
+    ("storage.retention", "PUT", "/app/settings/api/storage",
+     {"raw_media": "processed", "raw_media_days": 45}),
+    ("storage.journal-logs", "PUT", "/app/settings/api/storage",
+     {"journal_logs": {"enabled": False, "days": 7}}),
+    ("storage.per-stream", "PUT", "/app/settings/api/storage",
+     {"per_stream": {"screen": {"raw_media": "keep"}}}),
+    ("sync.plaud-enable", "PUT", "/app/settings/api/sync", {"plaud": {"enabled": True}}),
+    ("chat.thinking-surfaces", "PUT", "/app/settings/api/chat",
+     {"thinking_surfaces": "on_tap"}),
+    # ⚠ ENVIRONMENT-DEPENDENT, and recorded because the dependency is the fact.
+    # The reference already delegates every removal of the owner's media to a
+    # native `solstone-retention` binary and refuses when it is absent -- so
+    # captured without it on PATH this records a 500, which is a statement about
+    # this machine, not about the contract. A port must reproduce the refusal
+    # when the binary is missing; the success path needs a capture taken with it
+    # installed.
+    ("prune-logs.dry-run", "POST", "/app/settings/api/storage/prune-logs",
+     {"dry_run": True}),
+]
+
+
+def run_mutations(config: dict) -> dict:
+    """Apply each mutation to a FRESH journal and record response + resulting config.
+
+    ⛔ Fresh per case, deliberately. Chaining them would make every case after the
+    first depend on the ones before it, and a port could then satisfy the sequence
+    while getting any individual write wrong.
+    """
+    from solstone.convey import create_app
+
+    cases = {}
+    for name, method, url, payload in MUTATION_CASES:
+        root = Path(tempfile.mkdtemp(prefix="oracle-mut-"))
+        (root / "config").mkdir(parents=True)
+        (root / "config" / "journal.json").write_text(
+            json.dumps(config, indent=2) + "\n", encoding="utf-8"
+        )
+        os.environ["SOLSTONE_JOURNAL"] = str(root)
+        app = create_app(str(root))
+        app.config["TESTING"] = True
+        response = app.test_client().open(method=method, path=url, json=payload)
+        body = response.get_json(silent=True)
+        normalized, hits = normalize(body) if body is not None else (None, [])
+        after = json.loads(
+            (root / "config" / "journal.json").read_text(encoding="utf-8")
+        )
+        before = json.loads(json.dumps(config))
+        cases[f"{method} {name}"] = {
+            "sent": payload,
+            "status": response.status_code,
+            "normalized": normalized,
+            "normalized_paths": sorted(set(hits)),
+            "digest": digest(normalized),
+            # The whole file after the write, plus an explicit delta, so a port
+            # that writes the right response and the wrong file is caught.
+            "config_after": after,
+            "config_keys_added": sorted(set(after) - set(before)),
+            "config_keys_removed": sorted(set(before) - set(after)),
+        }
+    return cases
+
+
 def run_phase(name: str, config: dict, *, seed: bool = False,
               corrupt: bool = False) -> dict:
     root = Path(tempfile.mkdtemp(prefix=f"oracle-{name}-"))
@@ -543,6 +634,7 @@ def main() -> int:
     tokened = json.loads(json.dumps(RICH))
     tokened["env"]["PLAUD_ACCESS_TOKEN"] = "plaud-token-MUST-NOT-LEAK"
     out["phases"]["tokened"] = run_phase("tokened", tokened)
+    out["mutations"] = run_mutations(RICH)
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUTPUT
     target.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     total = sum(len(phase) for phase in out["phases"].values())
