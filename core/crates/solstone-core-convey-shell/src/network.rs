@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native handlers for the direct device-pairing surface.
+//! Native network read routes and direct device-pairing handlers.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -835,6 +835,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn network_state_reports_spl_posture_from_established_journal() {
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1},"link":{"posture":"spl"}}"#,
+        )
+        .expect("SPL established config");
+
+        let response = get_response(
+            crate::router(temporary.path().to_path_buf()),
+            "/app/network/api/state",
+        )
+        .await;
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("state body reads"),
+        )
+        .expect("state is JSON");
+
+        assert_eq!(body["posture"], "spl");
     }
 
     #[tokio::test]
