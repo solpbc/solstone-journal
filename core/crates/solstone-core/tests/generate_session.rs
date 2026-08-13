@@ -142,6 +142,9 @@ impl LocalStub {
             while !worker_state.stopping.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .expect("set local stub stream blocking");
                         let state = Arc::clone(&worker_state);
                         thread::spawn(move || handle_local_request(stream, state));
                     }
