@@ -2556,6 +2556,7 @@ dependencies = [
  "solstone-core-streams-cli",
  "solstone-core-system",
  "solstone-core-system-health",
+ "solstone-core-top",
  "solstone-core-transcribe",
  "solstone-core-transfer",
  "spl-core",
@@ -3650,6 +3651,22 @@ dependencies = [
  "unicode-general-category",
  "unicode-xid",
  "unicode_names2",
+]
+
+[[package]]
+name = "solstone-core-top"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-brain",
+ "solstone-core-callosum",
+ "solstone-core-journal",
+ "solstone-core-system-health",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
