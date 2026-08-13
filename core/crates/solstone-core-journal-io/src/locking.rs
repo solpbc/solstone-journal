@@ -119,7 +119,7 @@ pub fn acquire_existing_parent_lock(
                 &parent_fd,
                 name.as_os_str(),
                 ENTRY_CREATE_FLAGS,
-                Mode::from_bits_truncate(0o600 as nix::libc::mode_t),
+                Mode::from_bits_truncate(nix::libc::mode_t::from(0o600u16)),
             ) {
                 Ok(fd) => File::from(fd),
                 Err(Errno::EEXIST) => {
@@ -374,7 +374,7 @@ fn validate_lock_entry(status: &FileStat, path: &Path) -> Result<(), ExistingPar
             kind: file_kind(status),
         });
     }
-    if permission_mode(status) != 0o600 {
+    if permission_mode(status) != mode_to_u32(nix::libc::mode_t::from(0o600u16)) {
         return Err(ExistingParentLockError::WrongMode {
             path: path.to_path_buf(),
             observed: permission_mode(status),
@@ -405,9 +405,19 @@ fn file_kind(status: &FileStat) -> &'static str {
     }
 }
 
-#[allow(clippy::unnecessary_cast)]
 fn permission_mode(status: &FileStat) -> u32 {
-    (status.st_mode & (0o7777 as nix::libc::mode_t)) as u32
+    // `mode_t` is u32 on Linux and u16 on Apple targets.
+    mode_to_u32(status.st_mode & nix::libc::mode_t::from(0o7777u16))
+}
+
+#[cfg(target_vendor = "apple")]
+fn mode_to_u32(mode: nix::libc::mode_t) -> u32 {
+    u32::from(mode)
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn mode_to_u32(mode: nix::libc::mode_t) -> u32 {
+    mode
 }
 
 fn is_contention(error: Errno) -> bool {
@@ -865,7 +875,44 @@ mod tests {
     }
 
     #[test]
-    fn existing_parent_lock_first_time_contenders_and_raw_fds_contend() {
+    fn existing_parent_lock_namespace_race_beats_coincident_timeout() {
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("locks");
+        fs::create_dir(&parent).unwrap();
+        let entry = parent.join("lock");
+        let staged = parent.join("staged");
+        fs::write(&entry, b"old").unwrap();
+        fs::write(&staged, b"new").unwrap();
+        fs::set_permissions(&entry, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::set_permissions(&staged, fs::Permissions::from_mode(0o600)).unwrap();
+        ENTRY_REPLACEMENT.with(|state| state.replace(Some((entry, staged))));
+        let _hook = RaceHook::install(AFTER_LOCK_FLOCK, replace_entry_hook);
+        let error = acquire(&parent, OsStr::new("lock"), Duration::ZERO).unwrap_err();
+        assert!(matches!(
+            &error,
+            ExistingParentLockError::NamespaceChanged { .. }
+        ));
+        assert!(!matches!(&error, ExistingParentLockError::Timeout(_)));
+    }
+
+    #[test]
+    fn existing_parent_lock_matching_identity_yields_timeout_at_expiry() {
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("locks");
+        fs::create_dir(&parent).unwrap();
+        let entry = parent.join("lock");
+        fs::write(&entry, b"lock").unwrap();
+        fs::set_permissions(&entry, fs::Permissions::from_mode(0o600)).unwrap();
+        let error = acquire(&parent, OsStr::new("lock"), Duration::ZERO).unwrap_err();
+        assert!(matches!(
+            error,
+            ExistingParentLockError::Timeout(LockTimeout { timeout, .. })
+                if timeout == Duration::ZERO
+        ));
+    }
+
+    #[test]
+    fn existing_parent_lock_first_time_contenders_produce_one_winner() {
         let temporary = TempDir::new();
         let parent = temporary.path().join("locks");
         fs::create_dir(&parent).unwrap();
@@ -895,6 +942,15 @@ mod tests {
         finish.wait();
         let entry = parent.join("fresh");
         assert_eq!(snapshot(&entry).mode, 0o600);
+    }
+
+    #[test]
+    fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("locks");
+        fs::create_dir(&parent).unwrap();
+        let entry = parent.join("fresh");
+        drop(acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap());
         let api_guard = acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap();
         let raw = File::open(&entry).unwrap();
         assert!(matches!(
