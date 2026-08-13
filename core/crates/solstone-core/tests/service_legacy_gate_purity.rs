@@ -128,7 +128,7 @@ fn service_legacy_evidence_is_standalone_and_has_one_named_gate() {
     )
     .expect("temporary Make fragment writes");
     let resolved = Command::new("make")
-        .args(["-s", "-f", "Makefile", "-f"])
+        .args(["-s", "--no-print-directory", "-f", "Makefile", "-f"])
         .arg(make_fragment.path())
         .args(["print-service-evidence-root", "UV=/bin/true"])
         .env("SERVICE_LEGACY_EVIDENCE_ROOT", staged)
