@@ -4,9 +4,9 @@
 use std::collections::BTreeMap;
 
 use serde_json::json;
-use solstone_core_top::{FrameSample, PlainTopStyle, TopState, render_frame};
+use solstone_core_top::TopState;
 
-fn state_for_render_case(name: &str) -> TopState {
+pub fn state_for_render_case(name: &str) -> TopState {
     let mut state = TopState::default();
     match name {
         "empty" => {}
@@ -21,7 +21,8 @@ fn state_for_render_case(name: &str) -> TopState {
                 "svc-a".into(),
                 json!([{"seconds":0}, "stdout", "service α line"]),
             );
-            state.last_log_at.insert("svc-a".into(), 40.0);
+            state.memory_cache.insert(101, 10 * 1_048_576);
+            state.last_log_at.insert("svc-a".into(), 100.0);
             if matches!(name, "full" | "wide") {
                 state.services.push(json!({
                     "name":"local-service-name", "pid":102, "ref":"svc-b", "uptime_seconds":86460
@@ -43,28 +44,41 @@ fn state_for_render_case(name: &str) -> TopState {
                     "task-a".into(),
                     json!([{"seconds":0}, "stderr", "task error zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"]),
                 );
-                state.last_log_at.insert("task-a".into(), 40.0);
+                state.last_log_at.insert("task-a".into(), 100.0);
                 state.task_started_at.insert("task-a".into(), 39.0);
-                state.memory_cache.insert(101, 12 * 1_048_576);
-                state.memory_cache.insert(201, 8 * 1_048_576);
+                state.memory_cache.insert(101, 10 * 1_048_576);
+                state.memory_cache.insert(201, 6 * 1_048_576);
                 state.finished_tasks = BTreeMap::from([
-                    ("ghost-ok".into(), json!({"name":"done", "exit_code":0})),
-                    ("ghost-bad".into(), json!({"name":"bad", "exit_code":4})),
-                    (
-                        "ghost-unknown".into(),
-                        json!({"name":"lost", "exit_code":null}),
-                    ),
+                    ("a-lost".into(), json!({"name":"lost", "exit_code":null})),
+                    ("b-bad".into(), json!({"name":"bad", "exit_code":4})),
+                    ("c-ok".into(), json!({"name":"done", "exit_code":0})),
                 ]);
                 state.command_queues =
                     BTreeMap::from([("backup".into(), json!(2)), ("health".into(), json!(3))]);
                 state.observe_status = BTreeMap::from([
                     ("mode".into(), json!("screencast")),
                     ("stream".into(), json!("display")),
+                    ("screencast".into(), json!({"window_elapsed_seconds":60})),
+                    ("audio".into(), json!({"threshold_hits":2,"will_save":true})),
+                    ("describe".into(), json!({"running":["x"],"queued":["y"]})),
+                    ("transcribe".into(), json!({"queued":["z","w"]})),
                 ]);
                 state.displayed_mode = "screencast".into();
                 state.last_active_ts = 99.0;
+                state.observe_last_ts = if name == "wide" { 1.0 } else { 99.0 };
+                state.recent_segments =
+                    vec![json!(["260810", "003", 60]), json!(["260810", "002", 120])];
                 state.think_running = true;
-                state.think_status = BTreeMap::from([("mode".into(), json!("batch"))]);
+                state.think_status = BTreeMap::from([
+                    ("mode".into(), json!("batch")),
+                    ("day".into(), json!("260810")),
+                    ("segment".into(), json!("003")),
+                    ("segments_completed".into(), json!(2)),
+                    ("segments_total".into(), json!(4)),
+                    ("agents_completed".into(), json!(1)),
+                    ("agents_total".into(), json!(3)),
+                    ("current_agents".into(), json!(["b", "a"])),
+                ]);
                 state.brain_health = Some(json!({"lines":["Brain Health — OK", "  memory good"]}));
             }
         }
@@ -100,69 +114,9 @@ fn state_for_render_case(name: &str) -> TopState {
                 json!({"name":"last", "pid":201, "ref":"last", "uptime_seconds":2}),
             ];
             state.selected = 1;
+            state.memory_cache = BTreeMap::from([(101, 10 * 1_048_576), (201, 6 * 1_048_576)]);
         }
         other => panic!("unrecognized retained render case: {other}"),
     }
     state
-}
-
-#[test]
-fn retained_render_recipes_use_each_captured_state_shape() {
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../../fixtures/top_reference.json")).unwrap();
-    for case in fixture["renders"].as_array().unwrap() {
-        let name = case["name"].as_str().unwrap();
-        let width = case["width"].as_u64().unwrap() as usize;
-        let state = state_for_render_case(name);
-        let rendered = render_frame(
-            &state,
-            FrameSample {
-                wall_seconds: 100.0,
-                monotonic_seconds: 100.0,
-            },
-            width,
-            &PlainTopStyle,
-        );
-        assert!(rendered.contains("solstone activity manager"), "{name}");
-        assert!(
-            rendered
-                .lines()
-                .filter(|line| !line.is_empty() && line.chars().all(|ch| ch == '─'))
-                .all(|line| line.chars().count() == width),
-            "{name}"
-        );
-        match name {
-            "empty" => assert!(rendered.contains("(waiting for services)"), "{name}"),
-            "one" => {
-                assert!(rendered.contains("supervisor"), "{name}");
-                assert!(!rendered.contains("(waiting for services)"), "{name}");
-                assert!(rendered.contains("1m"), "{name}");
-            }
-            "full" | "wide" => {
-                assert!(rendered.contains("local-servi"), "{name}");
-                assert!(rendered.contains("backup"), "{name}");
-                assert!(rendered.contains("Crashed"), "{name}");
-                assert!(rendered.contains("crash"), "{name}");
-                assert!(rendered.contains("queued: backup ×2, health ×3"), "{name}");
-                assert!(rendered.contains("8"), "{name}");
-                assert!(rendered.contains("1m 1s"), "{name}");
-            }
-            "think-failed" => assert!(rendered.contains("agent-x"), "{name}"),
-            "brain-supplied" => assert!(rendered.contains("DEGRADED"), "{name}"),
-            "observe-idle" => {
-                assert!(rendered.contains("[IDLE] locked"), "{name}");
-            }
-            "observe-tmux-yellow" | "observe-tmux-yellow-upper" => {
-                assert!(rendered.contains("[TMUX] 2 captures"), "{name}");
-                assert!(rendered.contains("captures"), "{name}");
-            }
-            "last-selected" => {
-                assert!(rendered.contains("first"), "{name}");
-                assert!(rendered.contains("last"), "{name}");
-                assert_eq!(state.selected, 1, "{name}");
-                assert!(rendered.contains("\x1b[7m"), "{name}");
-            }
-            other => panic!("unrecognized retained render case: {other}"),
-        }
-    }
 }
