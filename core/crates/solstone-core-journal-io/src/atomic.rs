@@ -3,8 +3,10 @@
 
 //! Crash-safe whole-file writers.
 
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
+use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -13,9 +15,63 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use nix::errno::Errno;
+use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, openat, renameat};
+use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+use nix::unistd::{UnlinkatFlags, unlinkat};
+
 use crate::errors::AtomicWriteError;
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Successful publication states returned by [`atomic_replace_detailed`].
+#[derive(Debug)]
+pub enum DetailedAtomicOutcome {
+    /// The caller-visible path was reverified and its directory was synced.
+    Published,
+    /// Bytes were published, but syncing the bound directory failed.
+    PublishedDurabilityUncertain { source: io::Error },
+    /// Bytes were published in the inspected directory, but its pathname changed.
+    PublishedParentPathRaced { sync_error: Option<io::Error> },
+    /// Bytes were published, but the final pathname observation itself failed.
+    PublishedParentPathUnverified {
+        observation: io::Error,
+        sync_error: Option<io::Error>,
+    },
+}
+
+/// A failure before publication. The prior destination is preserved.
+#[derive(Debug)]
+pub struct DetailedAtomicError {
+    pub path: PathBuf,
+    pub operation: &'static str,
+    pub source: io::Error,
+    /// A stage is named only when cleanup also failed.
+    pub orphan_stage: Option<OsString>,
+    pub cleanup_error: Option<io::Error>,
+}
+
+impl std::fmt::Display for DetailedAtomicError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{}: {}: {}",
+            self.path.display(),
+            self.operation,
+            self.source
+        )?;
+        if let (Some(stage), Some(cleanup)) = (&self.orphan_stage, &self.cleanup_error) {
+            write!(formatter, "; could not remove stage {stage:?}: {cleanup}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for DetailedAtomicError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
 
 /// Options shared by the byte-oriented whole-file writers.
 #[derive(Debug, Clone, Copy, Default)]
@@ -43,6 +99,143 @@ impl Default for JsonWriteOptions {
             sort_keys: false,
         }
     }
+}
+
+/// Atomically replace a regular destination beneath an existing real parent.
+///
+/// The entire operation is bound to the inspected directory descriptor. This
+/// function never creates a parent and never follows a parent or destination
+/// symlink. Callers must serialize all writers for `path` with the stable lock.
+#[cfg(unix)]
+pub fn atomic_replace_detailed(
+    path: &Path,
+    contents: &[u8],
+    mode: u32,
+) -> Result<DetailedAtomicOutcome, DetailedAtomicError> {
+    if mode > 0o777 {
+        return Err(detailed_error(
+            path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let parent = path
+        .parent()
+        .filter(|item| !item.as_os_str().is_empty())
+        .ok_or_else(|| {
+            detailed_error(
+                path,
+                "validate destination",
+                io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"),
+            )
+        })?;
+    let name = normal_name(path.file_name()).ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        )
+    })?;
+    let inspected =
+        stat_parent(parent).map_err(|source| detailed_error(path, "inspect parent", source))?;
+    let directory = openat(
+        AT_FDCWD,
+        parent,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|source| detailed_errno(path, "open parent", source))?;
+    let opened = fstat(&directory)
+        .map_err(|source| detailed_errno(path, "inspect opened parent", source))?;
+    if !same_identity(inspected, opened) {
+        return Err(detailed_error(
+            path,
+            "bind parent",
+            io::Error::other("parent pathname changed"),
+        ));
+    }
+    inspect_destination(&directory, name, path)?;
+
+    let stage = allocate_bound_stage(&directory, name, path)?;
+    let stage_name = stage.0;
+    let mut stage_file = stage.1;
+    let operation = (|| -> io::Result<()> {
+        stage_file.write_all(contents)?;
+        stage_file.set_permissions(fs::Permissions::from_mode(mode))?;
+        sync_file(&stage_file)?;
+        Ok(())
+    })();
+    drop(stage_file);
+    if let Err(source) = operation {
+        return Err(cleanup_stage_error(
+            &directory,
+            path,
+            stage_name,
+            "prepare stage",
+            source,
+        ));
+    }
+
+    let before_rename = match stat_parent(parent) {
+        Ok(status) if same_identity(inspected, status) => Ok(()),
+        Ok(_) => Err(io::Error::other(
+            "parent pathname changed before publication",
+        )),
+        Err(source) => Err(source),
+    };
+    if let Err(source) = before_rename {
+        return Err(cleanup_stage_error(
+            &directory,
+            path,
+            stage_name,
+            "reverify parent before publication",
+            source,
+        ));
+    }
+
+    renameat(&directory, stage_name.as_os_str(), &directory, name).map_err(|source| {
+        cleanup_stage_error(
+            &directory,
+            path,
+            stage_name.clone(),
+            "publish stage",
+            errno_io(source),
+        )
+    })?;
+
+    let final_observation = stat_parent(parent);
+    let sync_error = directory.sync_all().err();
+    match final_observation {
+        Ok(status) if same_identity(inspected, status) => match sync_error {
+            None => Ok(DetailedAtomicOutcome::Published),
+            Some(source) => Ok(DetailedAtomicOutcome::PublishedDurabilityUncertain { source }),
+        },
+        Ok(_) => Ok(DetailedAtomicOutcome::PublishedParentPathRaced { sync_error }),
+        Err(observation) => Ok(DetailedAtomicOutcome::PublishedParentPathUnverified {
+            observation,
+            sync_error,
+        }),
+    }
+}
+
+#[cfg(not(unix))]
+pub fn atomic_replace_detailed(
+    path: &Path,
+    _contents: &[u8],
+    _mode: u32,
+) -> Result<DetailedAtomicOutcome, DetailedAtomicError> {
+    Err(detailed_error(
+        path,
+        "publish",
+        io::Error::new(
+            io::ErrorKind::Unsupported,
+            "detailed publication requires Unix",
+        ),
+    ))
 }
 
 /// Atomically replace `path` with durably prepared `contents`.
@@ -263,6 +456,125 @@ fn parent_dir(path: &Path) -> &Path {
         .unwrap_or_else(|| Path::new("."))
 }
 
+#[cfg(unix)]
+fn normal_name(value: Option<&OsStr>) -> Option<&OsStr> {
+    let value = value?;
+    let mut components = Path::new(value).components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(component)), None) if component == value => Some(value),
+        _ => None,
+    }
+}
+
+#[cfg(unix)]
+fn stat_parent(parent: &Path) -> io::Result<nix::sys::stat::FileStat> {
+    let status = fstatat(AT_FDCWD, parent, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(errno_io)?;
+    if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT == SFlag::S_IFDIR {
+        Ok(status)
+    } else {
+        Err(io::Error::other("parent is not a real directory"))
+    }
+}
+
+#[cfg(unix)]
+fn same_identity(left: nix::sys::stat::FileStat, right: nix::sys::stat::FileStat) -> bool {
+    left.st_dev == right.st_dev && left.st_ino == right.st_ino
+}
+
+#[cfg(unix)]
+fn inspect_destination(
+    directory: &impl AsFd,
+    name: &OsStr,
+    path: &Path,
+) -> Result<(), DetailedAtomicError> {
+    match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(status)
+            if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT == SFlag::S_IFREG =>
+        {
+            Ok(())
+        }
+        Ok(_) => Err(detailed_error(
+            path,
+            "inspect destination",
+            io::Error::other("destination is not a regular file"),
+        )),
+        Err(Errno::ENOENT) => Ok(()),
+        Err(source) => Err(detailed_errno(path, "inspect destination", source)),
+    }
+}
+
+#[cfg(unix)]
+fn allocate_bound_stage(
+    directory: &impl AsFd,
+    destination: &OsStr,
+    path: &Path,
+) -> Result<(OsString, File), DetailedAtomicError> {
+    let stem = destination.to_string_lossy();
+    for _ in 0..100 {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let candidate = OsString::from(format!(
+            ".tmp_{stem}_{}_{}.tmp",
+            std::process::id(),
+            sequence
+        ));
+        match openat(
+            directory,
+            candidate.as_os_str(),
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+            Mode::from_bits_truncate(0o600),
+        ) {
+            Ok(fd) => return Ok((candidate, File::from(fd))),
+            Err(Errno::EEXIST) => continue,
+            Err(source) => return Err(detailed_errno(path, "create stage", source)),
+        }
+    }
+    Err(detailed_error(
+        path,
+        "create stage",
+        io::Error::new(io::ErrorKind::AlreadyExists, "could not allocate stage"),
+    ))
+}
+
+#[cfg(unix)]
+fn cleanup_stage_error(
+    directory: &impl AsFd,
+    path: &Path,
+    stage: OsString,
+    operation: &'static str,
+    source: io::Error,
+) -> DetailedAtomicError {
+    let cleanup = unlinkat(directory, stage.as_os_str(), UnlinkatFlags::NoRemoveDir)
+        .err()
+        .map(errno_io);
+    DetailedAtomicError {
+        path: path.to_path_buf(),
+        operation,
+        source,
+        orphan_stage: cleanup.as_ref().map(|_| stage),
+        cleanup_error: cleanup,
+    }
+}
+
+fn detailed_error(path: &Path, operation: &'static str, source: io::Error) -> DetailedAtomicError {
+    DetailedAtomicError {
+        path: path.to_path_buf(),
+        operation,
+        source,
+        orphan_stage: None,
+        cleanup_error: None,
+    }
+}
+
+#[cfg(unix)]
+fn detailed_errno(path: &Path, operation: &'static str, source: Errno) -> DetailedAtomicError {
+    detailed_error(path, operation, errno_io(source))
+}
+
+#[cfg(unix)]
+fn errno_io(source: Errno) -> io::Error {
+    io::Error::from_raw_os_error(source as i32)
+}
+
 fn create_temporary(
     parent: &Path,
     destination: &Path,
@@ -387,6 +699,45 @@ mod tests {
     use nix::unistd::Pid;
 
     use super::*;
+
+    #[test]
+    fn detailed_replace_publishes_with_exact_mode_without_creating_parent() {
+        let temporary = TempDir::new();
+        let missing_parent = temporary.path().join("missing");
+        let missing = missing_parent.join("unit.service");
+        assert!(atomic_replace_detailed(&missing, b"new", 0o644).is_err());
+        assert!(!missing_parent.exists());
+
+        let target = temporary.path().join("unit.service");
+        fs::write(&target, b"old").unwrap();
+        let result = atomic_replace_detailed(&target, b"new", 0o640).unwrap();
+        assert!(matches!(result, DetailedAtomicOutcome::Published));
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert!(fs::read_dir(temporary.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".tmp_")
+        }));
+    }
+
+    #[test]
+    fn detailed_replace_refuses_unsafe_destination_and_mode() {
+        let temporary = TempDir::new();
+        let target = temporary.path().join("unit.service");
+        let outside = temporary.path().join("outside");
+        fs::write(&outside, b"outside").unwrap();
+        std::os::unix::fs::symlink(&outside, &target).unwrap();
+        assert!(atomic_replace_detailed(&target, b"new", 0o644).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+        assert!(atomic_replace_detailed(&target, b"new", 0o1000).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+    }
 
     #[test]
     fn reader_exclusive_is_create_only_and_copies_the_full_stream() {

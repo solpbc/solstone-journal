@@ -25,8 +25,9 @@ pub(crate) mod test_support;
 
 pub use append::{append_jsonl, append_text};
 pub use atomic::{
-    AtomicWriteOptions, JsonWriteOptions, atomic_replace, install_file, write_bytes_exclusive,
-    write_json, write_jsonl, write_reader_exclusive, write_text,
+    AtomicWriteOptions, DetailedAtomicError, DetailedAtomicOutcome, JsonWriteOptions,
+    atomic_replace, atomic_replace_detailed, install_file, write_bytes_exclusive, write_json,
+    write_jsonl, write_reader_exclusive, write_text,
 };
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,

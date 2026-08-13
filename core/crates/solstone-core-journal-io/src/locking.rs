@@ -541,7 +541,7 @@ mod tests {
     use std::os::unix::ffi::OsStringExt;
     use std::os::unix::fs::{PermissionsExt, symlink};
     use std::process::Command;
-    use std::sync::{Arc, Barrier, Mutex, mpsc};
+    use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -551,8 +551,6 @@ mod tests {
 
     use super::*;
     use crate::test_support::TempDir;
-
-    static UMASK_LOCK: Mutex<()> = Mutex::new(());
 
     thread_local! {
         static PARENT_SWAP: RefCell<Option<(PathBuf, PathBuf)>> = const { RefCell::new(None) };
@@ -815,12 +813,11 @@ mod tests {
     }
 
     #[test]
-    fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
-        // umask is process-global; the mandated --test-threads=1 and this mutex serialize it.
-        let _serialized = UMASK_LOCK.lock().unwrap();
-        let temporary = TempDir::new();
-        let parent = temporary.path().join("locks");
-        fs::create_dir(&parent).unwrap();
+    fn existing_parent_lock_umask_helper() {
+        let Some(parent) = std::env::var_os("JOURNAL_IO_UMASK_PARENT") else {
+            return;
+        };
+        let parent = PathBuf::from(parent);
         let _restore = UmaskRestore::set(0o200);
         let error = acquire(&parent, OsStr::new("lock"), Duration::from_secs(1)).unwrap_err();
         assert!(matches!(
@@ -830,6 +827,25 @@ mod tests {
                 ..
             }
         ));
+        assert_eq!(snapshot(&parent.join("lock")).mode, 0o400);
+    }
+
+    #[test]
+    fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
+        // umask is process-global, so exercise it in an isolated test process.
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("locks");
+        fs::create_dir(&parent).unwrap();
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "locking::tests::existing_parent_lock_umask_helper",
+                "--nocapture",
+            ])
+            .env("JOURNAL_IO_UMASK_PARENT", &parent)
+            .status()
+            .unwrap();
+        assert!(status.success());
         assert_eq!(snapshot(&parent.join("lock")).mode, 0o400);
     }
 
