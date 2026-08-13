@@ -2295,7 +2295,7 @@ mod tests {
                             (parse_day("20260120").unwrap() - Duration::days(offset))
                                 .format("%Y%m%d")
                                 .to_string(),
-                            75.0,
+                            crate::TrendValue::Real(75.0),
                         )
                     })
                     .collect(),
@@ -2746,7 +2746,7 @@ mod tests {
                         .map(|pair| {
                             (
                                 pair[0].as_str().expect("day").to_owned(),
-                                pair[1].as_f64().expect("value"),
+                                crate::TrendValue::Real(pair[1].as_f64().expect("value")),
                             )
                         })
                         .collect(),
