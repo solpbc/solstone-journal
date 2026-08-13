@@ -184,6 +184,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
     }
 
     let mut frames_only = false;
+    let mut describe = false;
     let mut redo = false;
     let mut jobs = None;
     let mut journal = None;
@@ -200,6 +201,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
                 return Err(usage("--frames-only was provided more than once"));
             }
             frames_only = true;
+        } else if argument == "--describe" {
+            if describe {
+                return Err(usage("--describe was provided more than once"));
+            }
+            describe = true;
         } else if matches!(
             argument.to_str(),
             Some("-d" | "--debug" | "-v" | "--verbose")
@@ -240,12 +246,17 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
         }
     }
 
+    if frames_only == describe {
+        return Err(usage(
+            "exactly one of --frames-only or --describe is required",
+        ));
+    }
     let Some(video_path) = video_path else {
         return Err(usage("the following arguments are required: FILE"));
     };
     if frames_only {
         if redo {
-            return Err(usage("--redo requires describe mode"));
+            return Err(usage("--redo requires --describe"));
         }
         Ok(Command::FramesOnly(FramesOnlyArguments {
             video_path,
@@ -382,21 +393,18 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use super::{Command, DescribeArguments, parse_arguments};
+    use super::{CliError, Command, DescribeArguments, parse_arguments};
 
     #[test]
-    fn default_describe_argv_matches_prechange_explicit_describe_parse() {
+    fn explicit_describe_mode_is_required_and_parses_arguments() {
         let parsed = parse_arguments([
+            OsString::from("--describe"),
             OsString::from("screen.webm"),
             OsString::from("-j"),
             OsString::from("2"),
         ])
-        .expect("default describe arguments parse");
+        .expect("explicit describe arguments parse");
 
-        // Before `journal describe` became the default mode, the same values
-        // were obtained from `--describe screen.webm -j 2`. Keep this boundary
-        // assertion explicit so the dispatcher argv cannot drift from the
-        // positive-control invocation shape.
         assert_eq!(
             parsed,
             Command::Describe(DescribeArguments {
@@ -406,18 +414,29 @@ mod tests {
                 redo: false,
             })
         );
+        assert!(parse_arguments(["screen.webm"].map(OsString::from)).is_err());
     }
 
     #[test]
     fn owner_debug_and_verbose_flags_are_noops() {
         assert!(matches!(
-            parse_arguments(["screen.webm", "-d", "-v"].map(OsString::from)),
+            parse_arguments(["--describe", "screen.webm", "-d", "-v"].map(OsString::from)),
             Ok(Command::Describe(_))
         ));
     }
 
     #[test]
-    fn explicit_describe_flag_is_rejected() {
-        assert!(parse_arguments(["--describe", "screen.webm"].map(OsString::from)).is_err());
+    fn describe_mode_rejects_duplicates_and_frames_only_rejects_redo() {
+        let duplicate =
+            parse_arguments(["--describe", "--describe", "screen.webm"].map(OsString::from));
+        assert!(matches!(
+            duplicate,
+            Err(CliError::Usage(message)) if message.contains("--describe was provided more than once")
+        ));
+        let redo = parse_arguments(["--frames-only", "--redo", "screen.webm"].map(OsString::from));
+        assert!(matches!(
+            redo,
+            Err(CliError::Usage(message)) if message.contains("--redo requires --describe")
+        ));
     }
 }

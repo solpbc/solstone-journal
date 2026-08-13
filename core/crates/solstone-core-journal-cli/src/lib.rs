@@ -541,6 +541,16 @@ mod tests {
     }
 
     #[test]
+    fn describe_native_preset_argv_composes_dispatcher_argv() {
+        let spec = native_process_spec_for("describe").expect("describe native spec");
+        let owner_argv = args(&["screen.webm", "-j", "2", "-d", "-v"]);
+        assert_eq!(
+            crate::runner::native_process_args(spec, &owner_argv),
+            args(&["--describe", "screen.webm", "-j", "2", "-d", "-v"])
+        );
+    }
+
+    #[test]
     fn native_process_specs_are_unique_explicit_census_cutovers() {
         let tokens = NATIVE_PROCESS_SPECS
             .iter()

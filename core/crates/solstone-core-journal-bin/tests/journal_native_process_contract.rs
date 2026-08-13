@@ -426,10 +426,16 @@ fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
         .parent()
         .expect("core dir")
         .join("Cargo.toml");
-    let output = Command::new(env!("CARGO"))
+    let mut command = Command::new(env!("CARGO"));
+    command
         .args(["build", "--manifest-path"])
         .arg(&workspace_manifest)
-        .args(["-p", package, "--bin", binary, "--message-format=json"])
+        .args(["-p", package, "--bin", binary]);
+    if package == "solstone-core-describe" && binary.starts_with("solstone-describe-") {
+        command.args(["--features", "test-stubs"]);
+    }
+    let output = command
+        .arg("--message-format=json")
         .output()
         .expect("cargo build native sibling should execute");
     assert!(

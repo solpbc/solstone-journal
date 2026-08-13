@@ -50,6 +50,7 @@ const UP: &[&str] = &["up"];
 const DOWN: &[&str] = &["down"];
 const SPL_SERVICE: &[&str] = &["spl", "service"];
 const SUPERVISOR_SERVICE: &[&str] = &["supervisor"];
+const DESCRIBE_MODE: &[&str] = &["--describe"];
 
 /// Process verbs whose landed implementation can replace Python at the
 /// journal boundary. Keep this mapping explicit: a native crate alone is not
@@ -68,7 +69,7 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
     NativeProcessSpec {
         token: "describe",
         binary: "solstone-core-describe",
-        preset_argv: EMPTY,
+        preset_argv: DESCRIBE_MODE,
     },
     NativeProcessSpec {
         token: "spl",
