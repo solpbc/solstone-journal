@@ -88,7 +88,7 @@ def test_clean_leaf_install_without_sklearn_runs_discovery_cluster(
         pytest.skip("host is not covered by solstone-core-speakers-analyze wheels")
 
     dist_dir = tmp_path / "dist"
-    for package in ("solstone", "solstone-journal"):
+    for package in ("solstone", "solstone-journal", "solstone-core-describe"):
         build = subprocess.run(
             [
                 "uv",
@@ -113,10 +113,15 @@ def test_clean_leaf_install_without_sklearn_runs_discovery_cluster(
         if not path.name.startswith("solstone_journal")
     )
     leaf_wheels = sorted(dist_dir.glob("solstone_journal-*.whl"))
+    describe_wheels = sorted(dist_dir.glob("solstone_core_describe-*.whl"))
     assert len(root_wheels) == 1
     assert len(leaf_wheels) == 1
+    assert len(describe_wheels) == 1
     root_requirement = f"solstone[journal-host] @ {root_wheels[0].resolve().as_uri()}"
     leaf_requirement = f"solstone-journal @ {leaf_wheels[0].resolve().as_uri()}"
+    describe_requirement = (
+        f"solstone-core-describe @ {describe_wheels[0].resolve().as_uri()}"
+    )
 
     env_root = tmp_path / "venv"
     venv.EnvBuilder(with_pip=True, symlinks=False).create(env_root)
@@ -131,6 +136,7 @@ def test_clean_leaf_install_without_sklearn_runs_discovery_cluster(
             str(dist_dir),
             root_requirement,
             leaf_requirement,
+            describe_requirement,
         ],
         capture_output=True,
         text=True,
@@ -173,6 +179,9 @@ def test_clean_leaf_install_without_sklearn_runs_discovery_cluster(
                     "raise_code = warm.warm()",
                     "if raise_code != 0:",
                     "    raise SystemExit(f'warm failed: {raise_code}')",
+                    "describe = os.path.join(os.path.dirname(sys.executable), 'solstone-core-describe')",
+                    "if not os.access(describe, os.X_OK):",
+                    "    raise SystemExit(f'describe helper is not executable: {describe}')",
                     "helper = speakers_analyze_path_for_executable()",
                     "if not os.access(helper, os.X_OK):",
                     "    raise SystemExit(f'helper is not executable: {helper}')",

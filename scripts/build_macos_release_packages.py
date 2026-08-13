@@ -109,6 +109,13 @@ def _members_to_sign(package: NativePackage, unpacked: Path) -> dict[str, Path]:
             f"{package.distribution}: expected one {package.binary} wheel member, "
             f"found {len(binary_matches)}"
         )
+    script_members = sorted(unpacked.glob("*.data/scripts/*"))
+    if script_members != binary_matches:
+        found = ", ".join(member.name for member in script_members) or "none"
+        raise SystemExit(
+            f"{package.distribution}: wheel scripts must contain only "
+            f"{package.binary}; found {found}"
+        )
     members = {package.binary: binary_matches[0]}
     if package.target_family in ONNX_LINKED_FAMILIES:
         dylib_name = SPEAKERS_TARGETS["macos-arm64"].runtime_staged_name

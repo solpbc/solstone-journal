@@ -24,6 +24,11 @@ dependencies = [
     "solstone-core-depict==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "solstone-core-depict==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
     "solstone-core-depict==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # Native describe helper: every journal install must provide the sibling
+    # dispatched by `journal describe`.
+    "solstone-core-describe==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "solstone-core-describe==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "solstone-core-describe==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # Native retention executor: every owner-data removal routes through this
     # binary, so the journal leaf owns making it available on PATH.
     "solstone-core-retention==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
@@ -63,5 +68,6 @@ solstone = {workspace = true}
 solstone-core = {workspace = true}
 solstone-core-journal = {workspace = true}
 solstone-core-depict = {workspace = true}
+solstone-core-describe = {workspace = true}
 solstone-core-retention = {workspace = true}
 solstone-core-vulkan-probe = {workspace = true}

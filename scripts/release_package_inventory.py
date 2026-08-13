@@ -69,7 +69,8 @@ class ReleasePackageInventory:
         return tuple(
             package
             for package in self.native_packages
-            if package.target_family in {"core", "speakers-analyze", "vad-analyze"}
+            if package.target_family
+            in {"core", "describe", "speakers-analyze", "vad-analyze"}
         )
 
 

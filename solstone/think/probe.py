@@ -218,6 +218,13 @@ def solstone_core_speakers_analyze_marker_pins(version: str) -> tuple[str, ...]:
     )
 
 
+def solstone_core_describe_marker_pins(version: str) -> tuple[str, ...]:
+    return tuple(
+        f"solstone-core-describe=={version}; {marker}"
+        for marker in SOLSTONE_CORE_PLATFORM_MARKERS
+    )
+
+
 def solstone_core_vulkan_probe_marker_pins(version: str) -> tuple[str, ...]:
     return tuple(
         f"solstone-core-vulkan-probe=={version}; {marker}"

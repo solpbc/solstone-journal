@@ -50,6 +50,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from check_wheel_contents import ROOT_LAUNCHER_NAMES  # type: ignore[no-redef]
 from solstone.think.features import FEATURES
 from solstone.think.probe import (
+    solstone_core_describe_marker_pins,
     solstone_core_marker_pins,
     solstone_core_speakers_analyze_marker_pins,
     solstone_core_unsupported_platform_pin,
@@ -218,6 +219,19 @@ def _check_speakers_analyze_pins(
     return []
 
 
+def _check_describe_pins(
+    *, label: str, deps: list[str], root_version: str | None
+) -> list[str]:
+    pins = sorted(dep for dep in deps if dep.startswith("solstone-core-describe=="))
+    expected = sorted(solstone_core_describe_marker_pins(root_version or ""))
+    if pins != expected:
+        return [
+            f"{label} solstone-core-describe marker pins must be exactly "
+            f"{expected}; found {pins}"
+        ]
+    return []
+
+
 def _check_native_leaf_pins(
     *, distribution: str, label: str, deps: list[str], root_version: str | None
 ) -> list[str]:
@@ -296,6 +310,7 @@ def _leaf_dependencies(
         "solstone-core",
         "solstone-core-journal",
         "solstone-core-depict",
+        "solstone-core-describe",
         "solstone-core-vulkan-probe",
     ):
         expected = sorted(_native_marker_pins(native_name, root_version or ""))
@@ -707,6 +722,16 @@ def main(root: Path | None = None) -> int:
     )
     errors.extend(
         _check_speakers_analyze_pins(
+            label="CUDA leaf", deps=cuda_deps, root_version=root_version
+        )
+    )
+    errors.extend(
+        _check_describe_pins(
+            label="CPU leaf", deps=cpu_deps, root_version=root_version
+        )
+    )
+    errors.extend(
+        _check_describe_pins(
             label="CUDA leaf", deps=cuda_deps, root_version=root_version
         )
     )

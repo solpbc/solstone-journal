@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 from solstone.think.probe import (  # noqa: E402
     SOLSTONE_CORE_UNSUPPORTED_PLATFORM_MARKER,
+    solstone_core_describe_marker_pins,
     solstone_core_marker_pins,
     solstone_core_speakers_analyze_marker_pins,
     solstone_core_unsupported_platform_pin,
@@ -119,6 +120,9 @@ def _rewrite_leaf(text: str, version: str) -> str:
         text, version, "solstone-core-depict", "journal leaf pyproject"
     )
     text = _rewrite_native_pins(
+        text, version, "solstone-core-describe", "journal leaf pyproject"
+    )
+    text = _rewrite_native_pins(
         text, version, "solstone-core-retention", "journal leaf pyproject"
     )
     text = _rewrite_native_pins(
@@ -162,7 +166,9 @@ def _rewrite_native_pins(
         rf'(?P<quote>"){re.escape(distribution)}==[^";]+; '
         r'(?P<marker>[^"]+)(?P=quote)'
     )
-    if distribution == "solstone-core-vulkan-probe":
+    if distribution == "solstone-core-describe":
+        expected = set(solstone_core_describe_marker_pins(version))
+    elif distribution == "solstone-core-vulkan-probe":
         expected = set(solstone_core_vulkan_probe_marker_pins(version))
     else:
         expected = {
