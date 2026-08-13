@@ -34,13 +34,15 @@
 //! ## D5: generated, dependency-free asset embedding
 //!
 //! `build.rs` emits auditable `include_bytes!` entries for the full top-level
-//! static tree plus the Body, speakers, devices, and entities workspace assets. This avoids a proc-macro asset crate
-//! while retaining byte-identical source assets in the binary.
+//! static tree plus selected app workspace assets. This avoids a proc-macro asset crate
+//! while retaining byte-identical source assets where appropriate; Thinking and Network use
+//! intentionally shrunken crate-local copies.
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Body, Speakers, Devices, and entities are converted workspaces in this wave. Every other known
-//! app receives a 501 `app_not_converted` JSON payload carrying its app name;
+//! Body, Speakers, Devices, and entities are converted workspaces in this wave. Network's shell,
+//! workspace, static, and state routes are natively served while its other routes remain unconverted.
+//! Every other known app receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
 //!
 //! ## D7: host transport has one indispensable listener and one capability
@@ -693,14 +695,12 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/body/{day}", get(body::shell_for_day))
         .route("/app/body/workspace", get(body::workspace))
         .route("/app/body/background", get(body::background))
-        .route("/app/body/api/status", get(body::api_status_stub))
-        .route("/app/body/api/recent", get(body::api_recent_stub))
-        .route("/app/body/api/window", get(body::api_window_stub))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
         .merge(thinking::router(route_journal_root.clone()))
+        .merge(network::router(route_journal_root.clone()))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root));
     session_gate::apply_layer(routes, journal_root).fallback(not_found)

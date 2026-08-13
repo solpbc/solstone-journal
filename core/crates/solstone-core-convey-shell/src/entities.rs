@@ -298,9 +298,10 @@ mod tests {
         assert_eq!(entities.status, 200);
         assert!(
             entities.json()["entities"]
-                .as_object()
-                .expect("entities is object")
-                .contains_key("alice")
+                .as_array()
+                .expect("entities is array")
+                .iter()
+                .any(|entity| entity["id"] == "alice")
         );
 
         let missing =

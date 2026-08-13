@@ -21,7 +21,6 @@ pub fn speaker_copy_json() -> &'static str {
     SPEAKER_COPY_JSON
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn network_copy_json() -> &'static str {
     NETWORK_COPY_JSON
 }

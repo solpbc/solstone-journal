@@ -275,6 +275,9 @@ fn main() {
     let thinking_root = manifest.join("assets/thinking");
     let thinking_workspace = thinking_root.join("workspace.html");
     let thinking_static = thinking_root.join("thinking.js");
+    let network_root = manifest.join("assets/network");
+    let network_workspace = network_root.join("workspace.html");
+    let network_static = network_root.join("network.js");
 
     let mut files = Vec::new();
     collect_files(&static_root, &mut files);
@@ -289,6 +292,8 @@ fn main() {
         &entities_workspace,
         &thinking_workspace,
         &thinking_static,
+        &network_workspace,
+        &network_static,
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -316,6 +321,8 @@ fn main() {
         "/app/thinking/static/thinking.js".to_owned(),
         thinking_static,
     ));
+    assets.push(("/app/network/workspace".to_owned(), network_workspace));
+    assets.push(("/app/network/static/network.js".to_owned(), network_static));
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
     let copy_source = fs::read_to_string(&speakers_copy).expect("copy source is readable");
@@ -349,7 +356,7 @@ fn main() {
         "pub(super) const SPEAKER_COPY_JSON: &str = {speaker_copy:?};\n"
     ));
     generated.push_str(&format!(
-        "#[cfg_attr(not(test), allow(dead_code))]\npub(super) const NETWORK_COPY_JSON: &str = {network_copy_json:?};\n"
+        "pub(super) const NETWORK_COPY_JSON: &str = {network_copy_json:?};\n"
     ));
     generated.push_str(&format!(
         "pub(super) const NOT_IN_NEW_VOICES_COPY: &str = {not_in_new_voices};\n"

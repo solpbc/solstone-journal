@@ -23,6 +23,9 @@ pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
         .route("/app/body/api/stats/{month}", get(stats_route))
         .route("/app/body/api/trends", get(trends_route))
         .route("/app/body/api/day/{day}", get(crate::day::day_route))
+        .route("/app/body/api/status", get(crate::archive::status_route))
+        .route("/app/body/api/recent", get(crate::archive::recent_route))
+        .route("/app/body/api/window", get(crate::window::window_route))
         .with_state(Arc::new(journal_root.as_ref().to_path_buf()))
 }
 
@@ -86,6 +89,7 @@ pub(crate) fn ready_stats(
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum StoreError {
     Verdict(crate::BodyStoreHealthReason),
     Read(String),
@@ -214,6 +218,7 @@ mod tests {
                     shards,
                 }],
                 aggregate: BodyAggregateSeed::Direct,
+                journal_config: None,
             },
         )
         .expect("journal seeds");

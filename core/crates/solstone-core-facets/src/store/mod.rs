@@ -43,8 +43,8 @@ pub use error::{
 };
 pub use facet_entities::{
     FacetEntityAttachResult, ScopedFacetEntity, add_entity_aka, attach_or_reactivate_entity,
-    detach_facet_entity, list_scoped_facet_entities, update_facet_entity_description,
-    update_facet_entity_identity,
+    detach_facet_entity, list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
+    update_facet_entity_description, update_facet_entity_identity,
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
@@ -56,7 +56,7 @@ pub use lifecycle::{
     delete_journal_entity,
 };
 pub use logs::{read_log_file, write_log_file};
-pub use map::list_facet_entity_directories;
+pub use map::{list_facet_directories, list_facet_entity_directories};
 pub use news::{read_news_file, write_news_file};
 pub use observations::{
     ObservationEntityResolution, ObservationLookup, ObservationOperationCounts, add_observation,

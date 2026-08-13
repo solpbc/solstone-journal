@@ -19,8 +19,8 @@ use crate::router::{StoreError, ready_stats, unavailable_response};
 use crate::{
     MonthReader, NormalizedRow, SLEEP_SESSION_GAP_MINUTES, SleepStagedInterval, display_number,
     display_value, find_day_summary, friendly_contributor_name, friendly_type_name,
-    friendly_unit_label, has_chronicle_day, pick_day_sleep, read_trends_cache, trends_db_path,
-    trends_signature, typical_by_signal,
+    friendly_unit_label, has_chronicle_day, merge_sleep_sessions, pick_day_sleep,
+    pick_main_session, read_trends_cache, trends_db_path, trends_signature, typical_by_signal,
 };
 
 const APPLE: &str = "apple_health";
@@ -37,6 +37,19 @@ const OURA_CARDIOVASCULAR_AGE: &str = "oura.daily_cardiovascular_age";
 const OURA_SESSION: &str = "oura.session";
 const OURA_TAG: &str = "oura.enhanced_tag";
 const HEART_CURVE_MIN_READINGS: usize = 12;
+const BP_SYSTOLIC: &str = "BloodPressureSystolic";
+const BP_DIASTOLIC: &str = "BloodPressureDiastolic";
+const BP_READING_LIMIT: usize = 6;
+const RHYTHM_IRREGULAR: &str = "IrregularHeartRhythmEvent";
+const RHYTHM_HIGH: &str = "HighHeartRateEvent";
+const RHYTHM_LOW: &str = "LowHeartRateEvent";
+const AFIB_BURDEN: &str = "AtrialFibrillationBurden";
+const RUNNING_POWER: &str = "RunningPower";
+const RUNNING_SPEED: &str = "RunningSpeed";
+const RUNNING_STRIDE_LENGTH: &str = "RunningStrideLength";
+const RUNNING_GROUND_CONTACT_TIME: &str = "RunningGroundContactTime";
+const RUNNING_VERTICAL_OSCILLATION: &str = "RunningVerticalOscillation";
+const CURVE_SEGMENT_GAP_MINUTES: f64 = 45.0;
 const SVG_HEIGHT: f64 = 260.0;
 const SVG_WIDTH: f64 = 1440.0;
 const SLEEP_AXIS_START_HOUR: i64 = 18;
@@ -54,7 +67,8 @@ pub(crate) async fn day_route(
         Ok(stats) => stats,
         Err(error) => return unavailable_response(error),
     };
-    match build_day(&root, target, stats.as_deref()) {
+    let mut reader = MonthReader::new(root.as_ref());
+    match build_day(&root, target, stats.as_deref(), &mut reader) {
         Ok(payload) => Json(payload).into_response(),
         Err(DayError::Shard(error)) => unavailable_response(StoreError::ShardUnreadable(error)),
         Err(DayError::Store(error)) => unavailable_response(StoreError::Read(error)),
@@ -69,7 +83,7 @@ pub(crate) async fn day_route(
 }
 
 #[derive(Debug)]
-enum DayError {
+pub(crate) enum DayError {
     Shard(String),
     Store(String),
     Chronicle(String),
@@ -91,14 +105,14 @@ fn parse_day(day: &str) -> Option<NaiveDate> {
         .flatten()
 }
 
-fn build_day(
+pub(crate) fn build_day(
     root: &Path,
     target: NaiveDate,
     stats: Option<&crate::HealthDedupeStats>,
+    reader: &mut MonthReader,
 ) -> Result<Value, DayError> {
     let day = day_key(target);
     let months = day_months(target);
-    let mut reader = MonthReader::new(root);
     let mut rows = Vec::new();
     for month in months {
         rows.extend(
@@ -292,7 +306,7 @@ fn merged_import_ids(left: &NormalizedRow, right: &NormalizedRow) -> Vec<String>
         .collect()
 }
 
-fn resolve_canonical_rows(rows: Vec<NormalizedRow>) -> Vec<NormalizedRow> {
+pub(crate) fn resolve_canonical_rows(rows: Vec<NormalizedRow>) -> Vec<NormalizedRow> {
     let mut fragments = BTreeSet::new();
     for row in &rows {
         if string_field(&row.source_family) != Some(OURA_API) {
@@ -357,13 +371,13 @@ fn warmed_typical(root: &Path, day: &str) -> Result<BTreeMap<String, f64>, DayEr
     Ok(typical_by_signal(payload.as_deref(), day))
 }
 
-fn string_field(field: &FieldState<Value>) -> Option<&str> {
+pub(crate) fn string_field(field: &FieldState<Value>) -> Option<&str> {
     match field {
         FieldState::Present(Value::String(value)) => Some(value),
         _ => None,
     }
 }
-fn json_field(field: &FieldState<Value>) -> Option<&Value> {
+pub(crate) fn json_field(field: &FieldState<Value>) -> Option<&Value> {
     match field {
         FieldState::Present(value) => Some(value),
         _ => None,
@@ -397,16 +411,16 @@ fn number_value(value: &BodyValue) -> Option<f64> {
         _ => None,
     }
 }
-fn value_number(row: &NormalizedRow) -> Option<f64> {
+pub(crate) fn value_number(row: &NormalizedRow) -> Option<f64> {
     match &row.value {
         ValueState::Present(value) => number_value(value),
         ValueState::Absent => None,
     }
 }
-fn metadata(row: &NormalizedRow) -> Option<&Map<String, Value>> {
+pub(crate) fn metadata(row: &NormalizedRow) -> Option<&Map<String, Value>> {
     json_field(&row.metadata).and_then(Value::as_object)
 }
-fn record_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
+pub(crate) fn record_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     [
         string_field(&row.start_date),
         string_field(&row.start_time),
@@ -416,16 +430,16 @@ fn record_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     .flatten()
     .find_map(parse_time)
 }
-fn end_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
+pub(crate) fn end_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     string_field(&row.end_date).and_then(parse_time)
 }
-fn parse_time(value: &str) -> Option<NaiveDateTime> {
+pub(crate) fn parse_time(value: &str) -> Option<NaiveDateTime> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|value| value.naive_local())
         .ok()
         .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").ok())
 }
-fn source_label(row: &NormalizedRow) -> String {
+pub(crate) fn source_label(row: &NormalizedRow) -> String {
     string_field(&row.source_name)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| {
@@ -436,6 +450,9 @@ fn source_label(row: &NormalizedRow) -> String {
             }
         })
         .to_owned()
+}
+fn is_ring_source_label(label: &str) -> bool {
+    label.to_lowercase().contains("oura")
 }
 fn source_via(row: &NormalizedRow) -> String {
     match string_field(&row.source_family) {
@@ -458,7 +475,58 @@ fn source_via(row: &NormalizedRow) -> String {
 fn unit(row: &NormalizedRow) -> Option<&str> {
     string_field(&row.unit).filter(|value| !value.is_empty())
 }
-fn family(record_type: &str) -> &'static str {
+fn group_by_type<'a>(rows: &[&'a NormalizedRow]) -> BTreeMap<&'a str, Vec<&'a NormalizedRow>> {
+    let mut grouped = BTreeMap::new();
+    for row in rows {
+        if let Some(record_type) = string_field(&row.record_type) {
+            grouped
+                .entry(record_type)
+                .or_insert_with(Vec::new)
+                .push(*row);
+        }
+    }
+    grouped
+}
+fn single_unit(rows: &[&NormalizedRow]) -> (Option<String>, bool) {
+    let units = rows
+        .iter()
+        .filter_map(|row| unit(row))
+        .collect::<BTreeSet<_>>();
+    if units.len() > 1 {
+        return (None, false);
+    }
+    (units.iter().next().map(|unit| (*unit).to_owned()), true)
+}
+fn display_range_line(record_type: &str, low: f64, high: f64, unit: Option<&str>) -> String {
+    let low_label = display_number(record_type, low, unit);
+    let high_label = display_number(record_type, high, unit);
+    let span = if low_label == high_label {
+        low_label
+    } else {
+        format!("{low_label}–{high_label}")
+    };
+    match friendly_unit_label(record_type, unit).as_deref() {
+        None | Some("") => span,
+        Some("%") => format!("{span}%"),
+        Some(label) => format!("{span} {label}"),
+    }
+}
+fn pace_seconds_per_km(unit: &str) -> Option<f64> {
+    match unit {
+        "m/s" => Some(1000.0),
+        "km/h" | "km/hr" => Some(3600.0),
+        _ => None,
+    }
+}
+fn pace_label(speed: f64, unit: &str) -> Option<String> {
+    let scale = pace_seconds_per_km(unit)?;
+    if speed <= 0.0 {
+        return None;
+    }
+    let total = (scale / speed).round() as i64;
+    Some(format!("{}:{:02}", total / 60, total % 60))
+}
+pub(crate) fn family(record_type: &str) -> &'static str {
     if record_type.contains("BloodGlucose") || record_type.ends_with("Glucose") {
         "Glucose"
     } else if record_type.contains("HeartRate")
@@ -477,6 +545,7 @@ fn family(record_type: &str) -> &'static str {
         || record_type.contains("Energy")
         || record_type.contains("Distance")
         || record_type.contains("Exercise")
+        || record_type.contains("Running")
         || record_type.contains("Workout")
         || record_type == OURA_ACTIVITY
         || record_type == OURA_WORKOUT
@@ -507,7 +576,7 @@ fn family(record_type: &str) -> &'static str {
         "Other"
     }
 }
-fn is_sleep_type(record_type: &str) -> bool {
+pub(crate) fn is_sleep_type(record_type: &str) -> bool {
     record_type.contains("SleepAnalysis") || record_type == OURA_SLEEP
 }
 fn family_rows(rows: &[NormalizedRow]) -> BTreeMap<&'static str, Vec<NormalizedRow>> {
@@ -521,10 +590,10 @@ fn family_rows(rows: &[NormalizedRow]) -> BTreeMap<&'static str, Vec<NormalizedR
     values
 }
 
-fn number(value: f64) -> String {
+pub(crate) fn number(value: f64) -> String {
     display_number("", value, None)
 }
-fn duration(minutes: f64) -> String {
+pub(crate) fn duration(minutes: f64) -> String {
     let total = minutes.round().max(0.0) as i64;
     let (hours, minutes) = (total / 60, total % 60);
     if hours > 0 {
@@ -533,7 +602,7 @@ fn duration(minutes: f64) -> String {
         format!("{minutes}m")
     }
 }
-fn clock(time: NaiveDateTime) -> String {
+pub(crate) fn clock(time: NaiveDateTime) -> String {
     let hour = time.hour() % 12;
     format!(
         "{}:{:02} {}",
@@ -542,7 +611,26 @@ fn clock(time: NaiveDateTime) -> String {
         if time.hour() < 12 { "AM" } else { "PM" }
     )
 }
-fn long_day(day: NaiveDate) -> String {
+pub(crate) fn long_day(day: NaiveDate) -> String {
+    format!(
+        "{} {}, {}",
+        month_full_name(day.month()),
+        day.day(),
+        day.year()
+    )
+}
+pub(crate) fn short_day(day: &str) -> Option<String> {
+    parse_day(day).map(|day| format!("{} {}", month_abbr(day.month()), day.day()))
+}
+
+pub(crate) fn month_abbr(month: u32) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    MONTHS[month as usize - 1]
+}
+
+pub(crate) fn month_full_name(month: u32) -> &'static str {
     const MONTHS: [&str; 12] = [
         "January",
         "February",
@@ -557,20 +645,13 @@ fn long_day(day: NaiveDate) -> String {
         "November",
         "December",
     ];
-    format!(
-        "{} {}, {}",
-        MONTHS[day.month0() as usize],
-        day.day(),
-        day.year()
-    )
+    MONTHS[month as usize - 1]
 }
-fn short_day(day: &str) -> Option<String> {
-    parse_day(day).map(|day| {
-        const MONTHS: [&str; 12] = [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        ];
-        format!("{} {}", MONTHS[day.month0() as usize], day.day())
-    })
+
+pub(crate) fn valid_day(value: &str) -> bool {
+    value.len() == 8
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && NaiveDate::parse_from_str(value, "%Y%m%d").is_ok()
 }
 
 fn sleep_analysis(
@@ -647,7 +728,7 @@ fn sleep_analysis(
         "duration":sleep.main.map(|main| view(main)["duration"].clone()),
         "asleep_duration": if sleep.has_stage_detail { sleep.asleep_minutes.map(duration) } else { None },
         "in_bed_duration":sleep.in_bed_minutes.map(duration), "has_stage_detail":sleep.has_stage_detail,
-        "naps":naps.iter().map(|nap|view(*nap)).collect::<Vec<_>>(), "comparison_line": Value::Null,
+        "naps":naps.iter().map(|nap|view(*nap)).collect::<Vec<_>>(), "comparison_line":sleep_comparison_line(&by_source, target),
         "bar":{"segments":segments,"ticks":[{"x":360,"label":"12 AM"},{"x":720,"label":"6 AM"},{"x":1080,"label":"12 PM"}]},
         "score_line":score.map(|value|format!("Sleep score {} · Oura's score",number(value))),
         "score_contributors":contributors(rows.iter().find(|row| string_field(&row.record_type)==Some(OURA_SLEEP_SCORE))),
@@ -667,11 +748,48 @@ fn sleep_analysis(
     Some(payload)
 }
 
+fn sleep_comparison_line(
+    by_source: &BTreeMap<String, Vec<SleepStagedInterval>>,
+    target: NaiveDate,
+) -> Option<String> {
+    let mut spans = BTreeMap::new();
+    for (source, intervals) in by_source {
+        let sessions = merge_sleep_sessions(
+            intervals.iter().map(|(start, end, _)| (*start, *end)),
+            SLEEP_SESSION_GAP_MINUTES,
+        );
+        if let Some((start, end)) = pick_main_session(sessions, target).0 {
+            spans.insert(source.as_str(), (end - start).num_seconds() as f64 / 60.0);
+        }
+    }
+    let ring = spans
+        .keys()
+        .filter(|source| is_ring_source_label(source))
+        .copied()
+        .collect::<Vec<_>>();
+    let others = spans
+        .keys()
+        .filter(|source| !is_ring_source_label(source))
+        .copied()
+        .collect::<Vec<_>>();
+    if ring.is_empty() || others.is_empty() {
+        return None;
+    }
+    Some(
+        others
+            .into_iter()
+            .chain(ring)
+            .map(|source| format!("{source} saw {}", duration(spans[source])))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
 fn glucose_rows(rows: &[NormalizedRow]) -> impl Iterator<Item = &NormalizedRow> {
     rows.iter()
         .filter(|row| family(string_field(&row.record_type).unwrap_or_default()) == "Glucose")
 }
-fn glucose_stats(rows: &[NormalizedRow]) -> Option<Value> {
+pub(crate) fn glucose_stats(rows: &[NormalizedRow]) -> Option<Value> {
     let values = glucose_rows(rows)
         .filter_map(value_number)
         .collect::<Vec<_>>();
@@ -759,10 +877,69 @@ fn activity_analysis(rows: &[NormalizedRow]) -> Option<Value> {
             .collect::<Vec<_>>()
             .join(" · ")
     });
-    let counters=activity.iter().filter(|row|string_field(&row.record_type)!=Some("HKQuantityTypeIdentifierStepCount")).filter(|row|string_field(&row.record_type)!=Some(OURA_WORKOUT)).filter_map(|row|{let kind=string_field(&row.record_type).unwrap_or_default();(kind==OURA_ACTIVITY).then(||value_number(row).map(|value|json!({"label":"Daily activity","count":1,"count_label":"1","value":format!("{} · Oura's score",number(value))}))).flatten()}).collect::<Vec<_>>();
+    let running_rows = activity
+        .iter()
+        .filter(|row| is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default()))
+        .copied()
+        .collect::<Vec<_>>();
+    let counters=activity.iter().filter(|row|string_field(&row.record_type)!=Some("HKQuantityTypeIdentifierStepCount")).filter(|row|string_field(&row.record_type)!=Some(OURA_WORKOUT)).filter(|row|!is_running_dynamics_type(string_field(&row.record_type).unwrap_or_default())).filter_map(|row|{let kind=string_field(&row.record_type).unwrap_or_default();(kind==OURA_ACTIVITY).then(||value_number(row).map(|value|json!({"label":"Daily activity","count":1,"count_label":"1","value":format!("{} · Oura's score",number(value))}))).flatten()}).collect::<Vec<_>>();
     Some(
-        json!({"workouts":workout_items,"workout_summary":workout_summary,"steps":steps,"running":Value::Null,"counters":counters}),
+        json!({"workouts":workout_items,"workout_summary":workout_summary,"steps":steps,"running":if running_rows.is_empty(){None}else{Some(running_dynamics(&running_rows))},"counters":counters}),
     )
+}
+
+fn is_running_dynamics_type(record_type: &str) -> bool {
+    [
+        RUNNING_POWER,
+        RUNNING_SPEED,
+        RUNNING_STRIDE_LENGTH,
+        RUNNING_GROUND_CONTACT_TIME,
+        RUNNING_VERTICAL_OSCILLATION,
+    ]
+    .iter()
+    .any(|fragment| record_type.contains(fragment))
+}
+
+fn running_dynamics(rows: &[&NormalizedRow]) -> Vec<Value> {
+    let grouped = group_by_type(rows);
+    let mut types = grouped.into_iter().collect::<Vec<_>>();
+    types.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    types
+        .into_iter()
+        .map(|(record_type, rows)| {
+            let values = rows.iter().filter_map(|row| value_number(row)).collect::<Vec<_>>();
+            let (unit, consistent) = single_unit(&rows);
+            let summary = if values.is_empty() || !consistent {
+                None
+            } else {
+                let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+                let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let average = mean(&values);
+                let pace = record_type.contains(RUNNING_SPEED)
+                    .then(|| unit.as_deref().and_then(|unit| {
+                        Some((
+                            pace_label(high, unit)?,
+                            pace_label(low, unit)?,
+                            pace_label(average, unit)?,
+                        ))
+                    }))
+                    .flatten();
+                if let Some((fast, slow, middle)) = pace {
+                    let span = if fast == slow { fast } else { format!("{fast}–{slow}") };
+                    Some(format!("{span} /km · avg {middle} /km"))
+                } else {
+                    let span = display_range_line(record_type, low, high, unit.as_deref());
+                    (low == high).then_some(span.clone()).or_else(|| {
+                        Some(format!(
+                            "{span} · avg {}",
+                            display_number(record_type, average, unit.as_deref())
+                        ))
+                    })
+                }
+            };
+            json!({"label":friendly_type_name(record_type),"count":rows.len(),"count_label":rows.len().to_string(),"summary":summary})
+        })
+        .collect()
 }
 
 fn primary_total(rows: &[NormalizedRow]) -> Option<(f64, String, usize, Vec<String>)> {
@@ -802,7 +979,7 @@ fn primary_total(rows: &[NormalizedRow]) -> Option<(f64, String, usize, Vec<Stri
             .collect(),
     ))
 }
-fn workout_item(row: &NormalizedRow) -> Value {
+pub(crate) fn workout_item(row: &NormalizedRow) -> Value {
     let data = metadata(row);
     let name = data
         .and_then(|data| data.get("activity"))
@@ -909,15 +1086,6 @@ fn heart_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) -> Op
                 .filter(|value| *value > 0.0)
         })
         .min_by(f64::total_cmp);
-    if samples.is_empty()
-        && resting_row.is_none()
-        && ring_resting.is_none()
-        && !rows
-            .iter()
-            .any(|row| string_field(&row.record_type) == Some(OURA_CARDIOVASCULAR_AGE))
-    {
-        return None;
-    };
     let mut facts = Vec::new();
     if let Some(row) = rows
         .iter()
@@ -941,7 +1109,7 @@ fn heart_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) -> Op
                 number(value),
                 number(ring)
             );
-            return Some(heart_payload(&samples, facts, Some(line)));
+            return finalize_heart(&samples, facts, rows, Some(line));
         }
     } else if let Some(ring) = ring_resting {
         let mut item = json!({"label":"Resting heart rate","count":1,"count_label":"1","value":format!("{} bpm · Oura's measurement",number(ring))});
@@ -951,16 +1119,246 @@ fn heart_analysis(rows: &[NormalizedRow], typical: &BTreeMap<String, f64>) -> Op
         }
         facts.push(item);
     }
-    Some(heart_payload(&samples, facts, None))
+    finalize_heart(&samples, facts, rows, None)
 }
+
+fn finalize_heart(
+    samples: &[(&NormalizedRow, f64)],
+    mut facts: Vec<Value>,
+    rows: &[NormalizedRow],
+    resting_comparison: Option<String>,
+) -> Option<Value> {
+    let blood_pressure = blood_pressure(rows);
+    let rhythm = rhythm_summary(rows);
+    if blood_pressure.is_none() {
+        facts.extend(blood_pressure_facts(rows));
+    }
+    heart_payload(
+        samples,
+        facts,
+        blood_pressure,
+        rhythm,
+        heart_comparison_line(samples),
+        resting_comparison,
+    )
+}
+
 fn heart_payload(
     samples: &[(&NormalizedRow, f64)],
     facts: Vec<Value>,
+    blood_pressure: Option<Value>,
+    rhythm: Option<Value>,
+    comparison_line: Option<String>,
     resting_comparison: Option<String>,
-) -> Value {
+) -> Option<Value> {
+    if samples.is_empty() && blood_pressure.is_none() && rhythm.is_none() && facts.is_empty() {
+        return None;
+    }
     let values = samples.iter().map(|(_, value)| *value).collect::<Vec<_>>();
-    json!({"heart_rate":if values.is_empty(){None}else{Some(json!({"min":values.iter().copied().fold(f64::INFINITY,f64::min),"max":values.iter().copied().fold(f64::NEG_INFINITY,f64::max),"count":values.len(),"count_label":values.len().to_string(),"unit":samples.first().and_then(|(row,_)|unit(row)),"label":format!("{}–{} bpm",number(values.iter().copied().fold(f64::INFINITY,f64::min)),number(values.iter().copied().fold(f64::NEG_INFINITY,f64::max))),"summary":format!("{}–{} bpm · {} readings",number(values.iter().copied().fold(f64::INFINITY,f64::min)),number(values.iter().copied().fold(f64::NEG_INFINITY,f64::max)),values.len())}))},"series":heart_series(samples),"facts":facts,"blood_pressure":Value::Null,"rhythm":Value::Null,"comparison_line":Value::Null,"resting_comparison_line":resting_comparison})
+    Some(
+        json!({"heart_rate":if values.is_empty(){None}else{Some(json!({"min":values.iter().copied().fold(f64::INFINITY,f64::min),"max":values.iter().copied().fold(f64::NEG_INFINITY,f64::max),"count":values.len(),"count_label":values.len().to_string(),"unit":samples.first().and_then(|(row,_)|unit(row)),"label":format!("{}–{} bpm",number(values.iter().copied().fold(f64::INFINITY,f64::min)),number(values.iter().copied().fold(f64::NEG_INFINITY,f64::max))),"summary":format!("{}–{} bpm · {} readings",number(values.iter().copied().fold(f64::INFINITY,f64::min)),number(values.iter().copied().fold(f64::NEG_INFINITY,f64::max)),values.len())}))},"series":heart_series(samples),"facts":facts,"blood_pressure":blood_pressure,"rhythm":rhythm,"comparison_line":comparison_line,"resting_comparison_line":resting_comparison}),
+    )
 }
+
+fn blood_pressure(rows: &[NormalizedRow]) -> Option<Value> {
+    let mut by_start = BTreeMap::<String, BTreeMap<&str, (&NormalizedRow, f64)>>::new();
+    for row in rows {
+        let record_type = string_field(&row.record_type).unwrap_or_default();
+        let component = if record_type.contains(BP_SYSTOLIC) {
+            "systolic"
+        } else if record_type.contains(BP_DIASTOLIC) {
+            "diastolic"
+        } else {
+            continue;
+        };
+        let Some(start) = string_field(&row.start_date).filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        let Some(value) = value_number(row) else {
+            continue;
+        };
+        by_start
+            .entry(start.to_owned())
+            .or_default()
+            .entry(component)
+            .or_insert((row, value));
+    }
+    let mut pairs = by_start
+        .into_values()
+        .filter_map(|components| {
+            Some((*components.get("systolic")?, *components.get("diastolic")?))
+        })
+        .filter(|((row, _), _)| record_time(row).is_some())
+        .collect::<Vec<_>>();
+    pairs.sort_by_key(|((row, _), _)| record_time(row));
+    let mut readings = Vec::new();
+    let mut systolic_values = Vec::new();
+    let mut diastolic_values = Vec::new();
+    let mut card_unit = None;
+    for ((systolic_row, systolic), (_, diastolic)) in pairs {
+        let moment = record_time(systolic_row).expect("filtered parseable start");
+        let pair_unit = unit(systolic_row);
+        if card_unit.is_none() {
+            card_unit = pair_unit.map(str::to_owned);
+        }
+        let mut label = format!("{}/{}", number(systolic), number(diastolic));
+        if let Some(pair_unit) = pair_unit {
+            label.push(' ');
+            label.push_str(pair_unit);
+        }
+        readings.push(json!({"time":clock(moment),"label":label}));
+        systolic_values.push(systolic);
+        diastolic_values.push(diastolic);
+    }
+    if readings.is_empty() {
+        return None;
+    }
+    let count = readings.len();
+    let range_label = (count > BP_READING_LIMIT).then(|| {
+        let span = |values: &[f64]| {
+            let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            format!("{}–{}", number(low), number(high))
+        };
+        let suffix = card_unit
+            .as_deref()
+            .map(|unit| format!(" {unit}"))
+            .unwrap_or_default();
+        format!(
+            "systolic {}{suffix} · diastolic {}{suffix}",
+            span(&systolic_values),
+            span(&diastolic_values)
+        )
+    });
+    Some(
+        json!({"count":count,"count_label":count.to_string(),"unit":card_unit,"mode":if count<=BP_READING_LIMIT {"readings"} else {"range"},"readings":if count<=BP_READING_LIMIT {readings} else {Vec::new()},"range_label":range_label}),
+    )
+}
+
+fn blood_pressure_facts(rows: &[NormalizedRow]) -> Vec<Value> {
+    let blood_pressure_rows = rows
+        .iter()
+        .filter(|row| {
+            let record_type = string_field(&row.record_type).unwrap_or_default();
+            record_type.contains(BP_SYSTOLIC) || record_type.contains(BP_DIASTOLIC)
+        })
+        .collect::<Vec<_>>();
+    let mut groups = group_by_type(&blood_pressure_rows)
+        .into_iter()
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    groups
+        .into_iter()
+        .map(|(record_type, rows)| {
+            let values = rows.iter().filter_map(|row| value_number(row)).collect::<Vec<_>>();
+            let (unit, consistent) = single_unit(&rows);
+            let value = if values.is_empty() || !consistent {
+                None
+            } else if values.len() == 1 {
+                Some(display_value(record_type, values[0], unit.as_deref()))
+            } else {
+                Some(display_range_line(
+                    record_type,
+                    values.iter().copied().fold(f64::INFINITY, f64::min),
+                    values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                    unit.as_deref(),
+                ))
+            };
+            json!({"label":friendly_type_name(record_type),"count":rows.len(),"count_label":rows.len().to_string(),"value":value})
+        })
+        .collect()
+}
+
+fn is_rhythm_event_type(record_type: &str) -> bool {
+    [RHYTHM_IRREGULAR, RHYTHM_HIGH, RHYTHM_LOW]
+        .iter()
+        .any(|fragment| record_type.contains(fragment))
+}
+
+fn rhythm_summary(rows: &[NormalizedRow]) -> Option<Value> {
+    let mut event_rows = Vec::new();
+    let mut burden_rows = Vec::new();
+    for row in rows {
+        let record_type = string_field(&row.record_type).unwrap_or_default();
+        if is_rhythm_event_type(record_type) {
+            event_rows.push(row);
+        } else if record_type.contains(AFIB_BURDEN) {
+            burden_rows.push(row);
+        }
+    }
+    if event_rows.is_empty() && burden_rows.is_empty() {
+        return None;
+    }
+    let mut event_groups = group_by_type(&event_rows).into_iter().collect::<Vec<_>>();
+    event_groups.sort_by_key(|(record_type, _)| friendly_type_name(record_type));
+    let events = event_groups
+        .into_iter()
+        .map(|(record_type, rows)| {
+            let label = friendly_type_name(record_type);
+            let count = rows.len();
+            let sources = rows.iter().map(|row| source_label(row)).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+            let word = if count == 1 { "event" } else { "events" };
+            let detail = format!("{count} {word} · reported by {}", sources.join(", "));
+            json!({"label":label,"count":count,"count_label":count.to_string(),"sources":sources,"detail":detail,"line":format!("{label} · {detail}")})
+        })
+        .collect::<Vec<_>>();
+    let burden = (!burden_rows.is_empty()).then(|| {
+        let record_type = string_field(&burden_rows[0].record_type).unwrap_or_default();
+        let label = friendly_type_name(record_type);
+        let count = burden_rows.len();
+        let sources = burden_rows.iter().map(|row| source_label(row)).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+        let value_label = burden_rows
+            .iter()
+            .filter_map(|row| value_number(row).map(|value| (*row, value)))
+            .max_by_key(|(row, _)| record_time(row))
+            .map(|(row, value)| display_value(record_type, value, unit(row)));
+        let attribution = format!("reported by {}", sources.join(", "));
+        let detail = match &value_label {
+            None => format!("{count} {} · {attribution}", if count == 1 { "entry" } else { "entries" }),
+            Some(value) if count > 1 => format!("latest {value} · {count} entries · {attribution}"),
+            Some(value) => format!("{value} · {attribution}"),
+        };
+        json!({"label":label,"count":count,"count_label":count.to_string(),"sources":sources,"value":value_label,"detail":detail,"line":format!("{label} · {detail}")})
+    });
+    Some(json!({"events":events,"burden":burden}))
+}
+
+fn heart_comparison_line(samples: &[(&NormalizedRow, f64)]) -> Option<String> {
+    let mut by_source = BTreeMap::<String, Vec<f64>>::new();
+    for (row, value) in samples {
+        by_source.entry(source_label(row)).or_default().push(*value);
+    }
+    let ring = by_source
+        .keys()
+        .filter(|source| is_ring_source_label(source))
+        .collect::<Vec<_>>();
+    let others = by_source
+        .keys()
+        .filter(|source| !is_ring_source_label(source))
+        .collect::<Vec<_>>();
+    if ring.is_empty() || others.is_empty() {
+        return None;
+    }
+    Some(
+        others
+            .into_iter()
+            .chain(ring)
+            .map(|source| {
+                let values = &by_source[source];
+                let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+                let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let span = if low == high {
+                    number(low)
+                } else {
+                    format!("{}–{}", number(low), number(high))
+                };
+                format!("{source} {span} bpm")
+            })
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
 fn heart_series(samples: &[(&NormalizedRow, f64)]) -> Option<Value> {
     if samples.len() < HEART_CURVE_MIN_READINGS {
         return None;
@@ -1023,35 +1421,46 @@ fn heart_series(samples: &[(&NormalizedRow, f64)]) -> Option<Value> {
             )
         })
         .collect::<Vec<_>>();
-    let paths = if stats.len() > 1 {
-        vec![format!(
+    let mut segments = Vec::<Vec<(f64, f64, f64, f64)>>::new();
+    for stat in stats.iter().copied() {
+        let new_segment = segments.last().is_none_or(|segment| {
+            stat.0 - segment.last().expect("segment has stat").0 > CURVE_SEGMENT_GAP_MINUTES
+        });
+        if new_segment {
+            segments.push(Vec::new());
+        }
+        segments.last_mut().expect("segment exists").push(stat);
+    }
+    let mut paths = Vec::new();
+    let mut band_paths = Vec::new();
+    let mut dots = Vec::new();
+    for segment in segments {
+        if segment.len() == 1 {
+            dots.push(json!([segment[0].0, y(segment[0].1)]));
+            continue;
+        }
+        paths.push(format!(
             "M{}",
-            stats
+            segment
                 .iter()
                 .map(|(x, mid, _, _)| format!("{x} {}", y(*mid)))
                 .collect::<Vec<_>>()
                 .join(" L")
-        )]
-    } else {
-        Vec::new()
-    };
-    let band_paths = if stats.len() > 1 {
-        let upper = stats
+        ));
+        let upper = segment
             .iter()
             .map(|(x, _, _, high)| format!("{x} {}", y(*high)));
-        let lower = stats
+        let lower = segment
             .iter()
             .rev()
             .map(|(x, _, low, _)| format!("{x} {}", y(*low)));
-        vec![format!(
+        band_paths.push(format!(
             "M{} Z",
             upper.chain(lower).collect::<Vec<_>>().join(" L")
-        )]
-    } else {
-        Vec::new()
-    };
+        ));
+    }
     Some(
-        json!({"unit":unit,"unit_label":friendly_unit_label(HEART_RATE,unit.as_deref()),"count":values.len(),"count_label":values.len().to_string(),"min":low,"max":high,"bucket_minutes":5,"points":stats.iter().map(|(x,mid,_,_)|json!([x,mid])).collect::<Vec<_>>(),"bands":stats.iter().map(|(x,_,low,high)|json!([x,low,high])).collect::<Vec<_>>(),"svg":{"width":SVG_WIDTH,"height":SVG_HEIGHT,"paths":paths,"band_paths":band_paths,"dots":[],"y_min_label":number(lo),"y_max_label":number(hi)}}),
+        json!({"unit":unit,"unit_label":friendly_unit_label(HEART_RATE,unit.as_deref()),"count":values.len(),"count_label":values.len().to_string(),"min":low,"max":high,"bucket_minutes":5,"points":stats.iter().map(|(x,mid,_,_)|json!([x,mid])).collect::<Vec<_>>(),"bands":stats.iter().map(|(x,_,low,high)|json!([x,low,high])).collect::<Vec<_>>(),"svg":{"width":SVG_WIDTH,"height":SVG_HEIGHT,"paths":paths,"band_paths":band_paths,"dots":dots,"y_min_label":number(lo),"y_max_label":number(hi)}}),
     )
 }
 
@@ -1316,13 +1725,13 @@ fn title(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-fn mean(values: &[f64]) -> f64 {
+pub(crate) fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
-fn round1(value: f64) -> f64 {
+pub(crate) fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
-fn grouped_decimal(value: f64, places: usize) -> String {
+pub(crate) fn grouped_decimal(value: f64, places: usize) -> String {
     let raw = format!("{value:.places$}");
     let (whole, fraction) = raw.split_once('.').unwrap_or((&raw, ""));
     let sign = whole.strip_prefix('-').map_or("", |_| "-");
@@ -1342,8 +1751,20 @@ fn grouped_decimal(value: f64, places: usize) -> String {
     format!("{sign}{grouped}.{fraction}")
 }
 
+pub(crate) fn grouped_unsigned(value: u64) -> String {
+    grouped_decimal(value as f64, 0)
+        .trim_end_matches('.')
+        .to_owned()
+}
+
+pub(crate) fn grouped_signed(value: i64) -> String {
+    grouped_decimal(value as f64, 0)
+        .trim_end_matches('.')
+        .to_owned()
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1354,8 +1775,8 @@ mod tests {
     use super::*;
     use crate::{
         BodyAggregateSeed, BodyJournalSeed, BodySeedBundle, BodySeedManifest, TrendAnnotation,
-        TrendCoverage, TrendSignal, TrendsPayload, read_health_dedupe_stats, replace_trends_cache,
-        seed_body_journal, trends_db_path, trends_signature,
+        TrendCoverage, TrendSignal, TrendValue, TrendsPayload, read_health_dedupe_stats,
+        replace_trends_cache, seed_body_journal, trends_db_path, trends_signature,
     };
 
     struct TempDir(PathBuf);
@@ -1471,6 +1892,34 @@ mod tests {
         row
     }
     fn bundle(import_id: &str, source: &str, rows: Vec<Map<String, Value>>) -> BodySeedBundle {
+        let days_affected = rows
+            .iter()
+            .filter_map(|row| row.get("day").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|day| Value::String(day.to_owned()))
+            .collect::<Vec<_>>();
+        let mut extra = Map::new();
+        if let Some(imported_at) = match import_id {
+            "20260810_080000" => Some("2026-08-10T08:00:00Z"),
+            "20260810_090000" => Some("2026-08-10T09:00:00Z"),
+            "20260810_100000" => Some("2026-08-10T10:00:00Z"),
+            _ => None,
+        } {
+            extra.insert("days_affected".to_owned(), Value::Array(days_affected));
+            extra.insert(
+                "imported_at".to_owned(),
+                Value::String(imported_at.to_owned()),
+            );
+            extra.insert(
+                "imported_via".to_owned(),
+                Value::String("body-corpus".to_owned()),
+            );
+            extra.insert(
+                "source_hash".to_owned(),
+                Value::String(format!("sha256:body-corpus-{import_id}")),
+            );
+        }
         let mut shards = BTreeMap::<String, Vec<Map<String, Value>>>::new();
         for row in rows {
             let month = row["month"].as_str().expect("month").to_owned();
@@ -1482,14 +1931,14 @@ mod tests {
             manifest: BodySeedManifest::Present {
                 source_type: Some(source.to_owned()),
                 entry_count: Some(shards.values().map(Vec::len).sum::<usize>() as u64),
-                extra: Map::new(),
+                extra,
             },
             shards,
         }
     }
 
     /// Rust transcription of the deterministic Python corpus seed.
-    fn seed_populated_body_journal(root: &Path) -> crate::BodySeedReport {
+    pub(crate) fn seed_populated_body_journal(root: &Path) -> crate::BodySeedReport {
         let anchor = NaiveDate::from_ymd_opt(2026, 8, 1).expect("anchor");
         let mut apple = Vec::new();
         let mut oura = Vec::new();
@@ -1764,6 +2213,7 @@ mod tests {
                 },
             ],
             aggregate: BodyAggregateSeed::Direct,
+            journal_config: None,
         };
         let report = seed_body_journal(root, &seed).expect("corpus journal seeds");
         // The Python aggregate skips the one intentionally keyless row; the
@@ -1830,6 +2280,7 @@ mod tests {
                 day_summaries: BTreeMap::new(),
                 bundles,
                 aggregate: BodyAggregateSeed::Direct,
+                journal_config: None,
             },
         )
         .expect("fixture seeds");
@@ -1934,7 +2385,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260102_080000", APPLE, vec![heart, hrv])],
             );
-            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260101").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             let audit_total = payload["audit"]["types"]
                 .as_object()
                 .unwrap()
@@ -2072,7 +2530,14 @@ mod tests {
                     bundle("20260301_110000", APPLE, vec![off_day]),
                 ],
             );
-            let payload = build_day(root.path(), parse_day("20260302").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260302").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(payload["other_signals"]["facts"][0]["value"], "36.9 °C");
             assert_eq!(
                 payload["audit"]["import_ids"],
@@ -2199,7 +2664,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260103_080000", APPLE, vec![main, nap])],
             );
-            let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260102").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(payload["sleep"]["naps"].as_array().unwrap().len(), 1);
             assert!(
                 payload["sleep"]["bar"]["segments"]
@@ -2237,7 +2709,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260103_080000", APPLE, vec![primary, secondary])],
             );
-            let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260102").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(payload["sleep"]["source"], "Primary Watch");
             assert_eq!(payload["sleep"]["duration"], "10h 00m");
             assert_eq!(payload["sleep"]["other_sources"], json!(["Secondary Band"]));
@@ -2366,7 +2845,7 @@ mod tests {
                             (parse_day("20260120").unwrap() - Duration::days(offset))
                                 .format("%Y%m%d")
                                 .to_string(),
-                            crate::TrendValue::Real(75.0),
+                            TrendValue::Real(75.0),
                         )
                     })
                     .collect(),
@@ -2433,6 +2912,38 @@ mod tests {
                 1
             );
         }
+
+        #[test]
+        fn sleep_comparison_requires_ring_and_cross_device_main_sessions() {
+            let target = parse_day("20260102").unwrap();
+            let session = |source: &str| {
+                let mut row = simple_row(
+                    "HKCategoryTypeIdentifierSleepAnalysis",
+                    "20260101",
+                    "2026-01-01T22:00:00+00:00",
+                    Some(json!(1)),
+                );
+                row.source_name = FieldState::Present(json!(source));
+                row.end_date = FieldState::Present(json!("2026-01-02T06:00:00+00:00"));
+                row
+            };
+            let dual = sleep_analysis(
+                &[],
+                &[session("Watch"), session("Oura Ring")],
+                &[],
+                target,
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert_eq!(
+                dual["comparison_line"],
+                "Watch saw 8h 00m · Oura Ring saw 8h 00m"
+            );
+            let ring_only =
+                sleep_analysis(&[], &[session("Oura Ring")], &[], target, &BTreeMap::new())
+                    .unwrap();
+            assert!(ring_only["comparison_line"].is_null());
+        }
     }
 
     mod activity_and_sources {
@@ -2481,7 +2992,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260102_080000", APPLE, vec![primary, secondary])],
             );
-            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260101").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             let steps = payload["activity"]["steps"].clone();
             assert_eq!(steps["total"], 1200);
             assert_eq!(steps["others"], json!(["Secondary Phone"]));
@@ -2525,6 +3043,68 @@ mod tests {
                     .len(),
                 1
             );
+        }
+
+        #[test]
+        fn running_dynamics_formats_pace_and_keeps_nonrunning_days_empty() {
+            let mut speed = simple_row(
+                RUNNING_SPEED,
+                "20260101",
+                "2026-01-01T06:00:00+00:00",
+                Some(json!(2.5)),
+            );
+            speed.unit = FieldState::Present(json!("m/s"));
+            let mut speed_later = speed.clone();
+            speed_later.start_date = FieldState::Present(json!("2026-01-01T06:01:00+00:00"));
+            speed_later.value =
+                ValueState::Present(solstone_core_body_source::parse(b"3.125").unwrap());
+            let mut power = simple_row(
+                RUNNING_POWER,
+                "20260101",
+                "2026-01-01T06:00:00+00:00",
+                Some(json!(240)),
+            );
+            power.unit = FieldState::Present(json!("W"));
+            let mut power_later = power.clone();
+            power_later.value =
+                ValueState::Present(solstone_core_body_source::parse(b"260").unwrap());
+            let activity = activity_analysis(&[speed, speed_later, power, power_later]).unwrap();
+            assert_eq!(activity["running"][0]["count"], 2);
+            assert_eq!(activity["running"][0]["summary"], "240–260 W · avg 250");
+            assert_eq!(
+                activity["running"][1]["summary"],
+                "5:20–6:40 /km · avg 5:56 /km"
+            );
+            let empty = activity_analysis(&[simple_row(
+                "HKQuantityTypeIdentifierStepCount",
+                "20260101",
+                "2026-01-01T00:00:00+00:00",
+                Some(json!(1)),
+            )])
+            .unwrap();
+            assert!(empty["running"].is_null());
+        }
+
+        #[test]
+        fn running_speed_unsupported_and_inconsistent_units_are_distinct() {
+            // This is the consistent-unit, unsupported pace-table case.
+            let mut mph = simple_row(
+                RUNNING_SPEED,
+                "20260101",
+                "2026-01-01T06:00:00+00:00",
+                Some(json!(5)),
+            );
+            mph.unit = FieldState::Present(json!("mph"));
+            let mut mph_later = mph.clone();
+            mph_later.value = ValueState::Present(solstone_core_body_source::parse(b"6").unwrap());
+            assert_eq!(
+                running_dynamics(&[&mph, &mph_later])[0]["summary"],
+                "5–6 mph · avg 5.5"
+            );
+            // This is the inconsistent-unit case, distinct from unsupported pace units.
+            let mut metric = mph.clone();
+            metric.unit = FieldState::Present(json!("m/s"));
+            assert!(running_dynamics(&[&mph, &metric])[0]["summary"].is_null());
         }
     }
 
@@ -2624,6 +3204,262 @@ mod tests {
             assert_eq!(card["facts"][0]["value"], "56 bpm · Oura's measurement");
             assert!(card["resting_comparison_line"].is_null());
         }
+
+        #[test]
+        fn blood_pressure_pairs_and_unpaired_rows_follow_the_narrow_fallback() {
+            let systolic = |start: &str, value: i64| {
+                let mut row = simple_row(
+                    "HKQuantityTypeIdentifierBloodPressureSystolic",
+                    "20260101",
+                    start,
+                    Some(json!(value)),
+                );
+                row.unit = FieldState::Present(json!("mmHg"));
+                row
+            };
+            let diastolic = |start: &str, value: i64| {
+                let mut row = simple_row(
+                    "HKQuantityTypeIdentifierBloodPressureDiastolic",
+                    "20260101",
+                    start,
+                    Some(json!(value)),
+                );
+                row.unit = FieldState::Present(json!("mmHg"));
+                row
+            };
+            let unpaired = heart_analysis(
+                &[systolic("2026-01-01T08:00:00+00:00", 122)],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert!(unpaired["blood_pressure"].is_null());
+            assert_eq!(unpaired["facts"][0]["label"], "Blood pressure (systolic)");
+            let paired = heart_analysis(
+                &[
+                    systolic("2026-01-01T08:30:00+00:00", 122),
+                    diastolic("2026-01-01T08:30:00+00:00", 78),
+                ],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert_eq!(paired["blood_pressure"]["mode"], "readings");
+            assert_eq!(paired["blood_pressure"]["unit"], "mmHg");
+            assert_eq!(
+                paired["blood_pressure"]["readings"][0]["label"],
+                "122/78 mmHg"
+            );
+            assert!(paired["facts"].as_array().unwrap().is_empty());
+        }
+
+        #[test]
+        fn paired_blood_pressure_hides_leftover_and_many_pairs_use_ranges() {
+            let bp = |kind: &str, start: String, value: i64| {
+                let mut row = simple_row(kind, "20260101", &start, Some(json!(value)));
+                row.unit = FieldState::Present(json!("mmHg"));
+                row
+            };
+            let leftover = heart_analysis(
+                &[
+                    bp(
+                        "HKQuantityTypeIdentifierBloodPressureSystolic",
+                        "2026-01-01T08:00:00+00:00".to_owned(),
+                        120,
+                    ),
+                    bp(
+                        "HKQuantityTypeIdentifierBloodPressureDiastolic",
+                        "2026-01-01T08:00:00+00:00".to_owned(),
+                        80,
+                    ),
+                    bp(
+                        "HKQuantityTypeIdentifierBloodPressureSystolic",
+                        "2026-01-01T09:00:00+00:00".to_owned(),
+                        130,
+                    ),
+                ],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert_eq!(leftover["blood_pressure"]["count"], 1);
+            assert!(leftover["facts"].as_array().unwrap().is_empty());
+            let mut rows = Vec::new();
+            for hour in 8..15 {
+                let start = format!("2026-01-01T{hour:02}:00:00+00:00");
+                rows.push(bp(
+                    "HKQuantityTypeIdentifierBloodPressureSystolic",
+                    start.clone(),
+                    110 + hour,
+                ));
+                rows.push(bp(
+                    "HKQuantityTypeIdentifierBloodPressureDiastolic",
+                    start,
+                    70 + hour,
+                ));
+            }
+            let ranges = heart_analysis(&rows, &BTreeMap::new()).unwrap()["blood_pressure"].clone();
+            assert_eq!(ranges["mode"], "range");
+            assert!(ranges["readings"].as_array().unwrap().is_empty());
+            assert_eq!(
+                ranges["range_label"],
+                "systolic 118–124 mmHg · diastolic 78–84 mmHg"
+            );
+            let mut identical_systolic = Vec::new();
+            for hour in 8..15 {
+                let start = format!("2026-01-01T{hour:02}:00:00+00:00");
+                identical_systolic.push(bp(
+                    "HKQuantityTypeIdentifierBloodPressureSystolic",
+                    start.clone(),
+                    120,
+                ));
+                identical_systolic.push(bp(
+                    "HKQuantityTypeIdentifierBloodPressureDiastolic",
+                    start,
+                    70 + hour,
+                ));
+            }
+            let identical =
+                heart_analysis(&identical_systolic, &BTreeMap::new()).unwrap()["blood_pressure"]
+                    .clone();
+            assert_eq!(
+                identical["range_label"],
+                "systolic 120–120 mmHg · diastolic 78–84 mmHg"
+            );
+        }
+
+        #[test]
+        fn rhythm_events_and_burdens_preserve_empty_and_valued_cases() {
+            let mut event = simple_row(
+                "HKCategoryTypeIdentifierIrregularHeartRhythmEvent",
+                "20260101",
+                "2026-01-01T08:00:00+00:00",
+                None,
+            );
+            event.source_name = FieldState::Present(json!("Watch"));
+            let rhythm = heart_analysis(&[event], &BTreeMap::new()).unwrap()["rhythm"].clone();
+            assert_eq!(rhythm["events"][0]["detail"], "1 event · reported by Watch");
+            let mut plain_hr = simple_row(
+                HEART_RATE,
+                "20260101",
+                "2026-01-01T08:00:00+00:00",
+                Some(json!(60)),
+            );
+            plain_hr.unit = FieldState::Present(json!("count/min"));
+            assert!(heart_analysis(&[plain_hr], &BTreeMap::new()).unwrap()["rhythm"].is_null());
+            let burden = |record_type: &str, time: &str, value: Option<Value>, unit_name: &str| {
+                let mut row = simple_row(record_type, "20260101", time, value);
+                row.unit = FieldState::Present(json!(unit_name));
+                row.source_name = FieldState::Present(json!("Watch"));
+                row
+            };
+            let valued = heart_analysis(
+                &[
+                    burden(
+                        "HKQuantityTypeIdentifierAtrialFibrillationBurden",
+                        "2026-01-01T08:00:00+00:00",
+                        Some(json!(1)),
+                        "count/min",
+                    ),
+                    burden(
+                        "oura.AtrialFibrillationBurdenHeartRateEstimate",
+                        "2026-01-01T09:00:00+00:00",
+                        Some(json!(2)),
+                        "count/min",
+                    ),
+                ],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert_eq!(valued["rhythm"]["burden"]["label"], "AFib burden");
+            assert_eq!(
+                valued["rhythm"]["burden"]["detail"],
+                "latest 2 count/min · 2 entries · reported by Watch"
+            );
+            let empty = heart_analysis(
+                &[
+                    burden(
+                        "HKQuantityTypeIdentifierAtrialFibrillationBurden",
+                        "2026-01-01T08:00:00+00:00",
+                        Some(json!("unknown")),
+                        "%",
+                    ),
+                    burden(
+                        "HKQuantityTypeIdentifierAtrialFibrillationBurden",
+                        "2026-01-01T09:00:00+00:00",
+                        None,
+                        "%",
+                    ),
+                ],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert!(empty["rhythm"]["burden"]["value"].is_null());
+            assert_eq!(
+                empty["rhythm"]["burden"]["detail"],
+                "2 entries · reported by Watch"
+            );
+        }
+
+        #[test]
+        fn raw_heart_comparison_requires_ring_and_cross_device() {
+            let sample = |source: &str, value: i64| {
+                let mut row = simple_row(
+                    HEART_RATE,
+                    "20260101",
+                    "2026-01-01T08:00:00+00:00",
+                    Some(json!(value)),
+                );
+                row.source_name = FieldState::Present(json!(source));
+                row
+            };
+            let both = heart_analysis(
+                &[sample("Watch", 60), sample("Oura Ring", 51)],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+            assert_eq!(both["comparison_line"], "Watch 60 bpm · Oura Ring 51 bpm");
+            let one = heart_analysis(&[sample("Oura Ring", 51)], &BTreeMap::new()).unwrap();
+            assert!(one["comparison_line"].is_null());
+        }
+
+        #[test]
+        fn heart_series_segments_by_bucket_center_and_refuses_mixed_units() {
+            let sample = |minute: usize, value: i64, unit_name: &str| {
+                let mut row = simple_row(
+                    HEART_RATE,
+                    "20260101",
+                    &format!("2026-01-01T{:02}:{:02}:00+00:00", minute / 60, minute % 60),
+                    Some(json!(value)),
+                );
+                row.unit = FieldState::Present(json!(unit_name));
+                row
+            };
+            let mut clustered = (0..6)
+                .map(|index| sample(360 + index, 60 + index as i64, "count/min"))
+                .collect::<Vec<_>>();
+            clustered
+                .extend((0..6).map(|index| sample(480 + index, 70 + index as i64, "count/min")));
+            let series = heart_analysis(&clustered, &BTreeMap::new()).unwrap()["series"].clone();
+            assert_eq!(series["svg"]["paths"].as_array().unwrap().len(), 2);
+            assert_eq!(series["svg"]["band_paths"].as_array().unwrap().len(), 2);
+            assert!(series["svg"]["dots"].as_array().unwrap().is_empty());
+            let mut dot_rows = (0..11)
+                .map(|index| sample(360 + index, 60 + index as i64, "count/min"))
+                .collect::<Vec<_>>();
+            dot_rows.push(sample(600, 80, "count/min"));
+            let dots =
+                heart_analysis(&dot_rows, &BTreeMap::new()).unwrap()["series"]["svg"]["dots"]
+                    .clone();
+            assert_eq!(dots.as_array().unwrap().len(), 1);
+            let mixed = (0..12)
+                .map(|index| {
+                    sample(
+                        360 + index,
+                        60,
+                        if index == 0 { "mph" } else { "count/min" },
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert!(heart_analysis(&mixed, &BTreeMap::new()).unwrap()["series"].is_null());
+        }
         #[test]
         fn cardiovascular_age_is_in_card_and_audit_appendix() {
             let mut row = simple_row(
@@ -2671,7 +3507,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260102_090000", OURA_API, vec![row])],
             );
-            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260101").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(
                 payload["audit"]["oura_appendix"],
                 json!([{"label":"Pulse-wave velocity","detail":"8.2 m/s · Oura's measurement"}])
@@ -2817,19 +3660,7 @@ mod tests {
 
     mod corpus_replay {
         use super::*;
-
-        fn recorded(phase: &str, rule: &str) -> Value {
-            let corpus: Value =
-                serde_json::from_str(include_str!("../../../fixtures/convey_body_corpus.json"))
-                    .expect("corpus parses");
-            corpus["cases"][phase]
-                .as_array()
-                .expect("phase is cases")
-                .iter()
-                .find(|case| case["rule"] == rule)
-                .expect("recorded rule exists")["json"]
-                .clone()
-        }
+        use crate::corpus_test::{assert_recorded_payload, recorded};
 
         fn baseline_fields_are(payload: &Value, present: bool) {
             for (container, key) in [
@@ -2855,15 +3686,16 @@ mod tests {
             let root = TempDir::new();
             seed_populated_body_journal(root.path());
             let stats = read_health_dedupe_stats(root.path()).expect("aggregate stats");
+            let mut reader = MonthReader::new(root.path());
             let actual = build_day(
                 root.path(),
                 parse_day("20260801").expect("valid anchor"),
                 stats.as_deref(),
+                &mut reader,
             )
             .expect("day builds");
-            let expected = recorded("first_run", "/app/body/api/day/<day>");
             baseline_fields_are(&actual, false);
-            assert_eq!(first_difference(&actual, &expected, "$"), None);
+            assert_recorded_payload("first_run", "/app/body/api/day/<day>", root.path(), &actual);
         }
 
         #[test]
@@ -2886,7 +3718,11 @@ mod tests {
                         .map(|pair| {
                             (
                                 pair[0].as_str().expect("day").to_owned(),
-                                crate::TrendValue::Real(pair[1].as_f64().expect("value")),
+                                if let Some(value) = pair[1].as_i64() {
+                                    TrendValue::Integer(value)
+                                } else {
+                                    TrendValue::Real(pair[1].as_f64().expect("value"))
+                                },
                             )
                         })
                         .collect(),
@@ -2926,17 +3762,16 @@ mod tests {
             )
             .expect("cache warms");
             let stats = read_health_dedupe_stats(root.path()).expect("stats");
+            let mut reader = MonthReader::new(root.path());
             let actual = build_day(
                 root.path(),
                 parse_day("20260801").expect("day"),
                 stats.as_deref(),
+                &mut reader,
             )
             .expect("day builds");
             baseline_fields_are(&actual, true);
-            assert_eq!(
-                first_difference(&actual, &recorded("fixed", "/app/body/api/day/<day>"), "$"),
-                None
-            );
+            assert_recorded_payload("fixed", "/app/body/api/day/<day>", root.path(), &actual);
         }
 
         #[test]
@@ -3060,32 +3895,6 @@ mod tests {
                 .flat_map(|path| crate::read_normalized_shard(path).unwrap())
                 .filter_map(|row| string_field(&row.day).map(str::to_owned))
                 .collect()
-        }
-
-        fn first_difference(left: &Value, right: &Value, path: &str) -> Option<String> {
-            match (left, right) {
-                (Value::Object(left), Value::Object(right)) => {
-                    let keys = left.keys().chain(right.keys()).collect::<BTreeSet<_>>();
-                    keys.into_iter()
-                        .find_map(|key| match (left.get(key), right.get(key)) {
-                            (Some(left), Some(right)) => {
-                                first_difference(left, right, &format!("{path}.{key}"))
-                            }
-                            (Some(_), None) => Some(format!("{path}.{key}: key missing on right")),
-                            (None, Some(_)) => Some(format!("{path}.{key}: key missing on left")),
-                            (None, None) => None,
-                        })
-                }
-                (Value::Array(left), Value::Array(right)) if left.len() == right.len() => left
-                    .iter()
-                    .zip(right)
-                    .enumerate()
-                    .find_map(|(index, (left, right))| {
-                        first_difference(left, right, &format!("{path}[{index}]"))
-                    }),
-                _ if left == right => None,
-                _ => Some(format!("{path}: left={left}; right={right}")),
-            }
         }
     }
 }

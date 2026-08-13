@@ -11005,12 +11005,8 @@
   },
   "day_payload_dark_fields": [
     {
-      "classification": "not_implemented",
-      "field": "activity.running",
-      "follow_up": "body-day-null-fields-port",
-      "native_location": "core/crates/solstone-core-convey-body/src/day.rs:764",
-      "reference_function": "_running_dynamics",
-      "reference_location": "solstone/apps/body/routes.py:1833"
+      "classification": "unexercised",
+      "field": "activity.running"
     },
     {
       "classification": "unexercised",
@@ -11025,44 +11021,24 @@
       "field": "audit.oura_appendix"
     },
     {
-      "classification": "not_implemented",
-      "field": "heart.blood_pressure",
-      "follow_up": "body-day-null-fields-port",
-      "native_location": "core/crates/solstone-core-convey-body/src/day.rs:962",
-      "reference_function": "_blood_pressure",
-      "reference_location": "solstone/apps/body/routes.py:2198"
+      "classification": "unexercised",
+      "field": "heart.blood_pressure"
     },
     {
-      "classification": "not_implemented",
-      "field": "heart.comparison_line",
-      "follow_up": "body-day-null-fields-port",
-      "native_location": "core/crates/solstone-core-convey-body/src/day.rs:962",
-      "reference_function": "_heart_comparison_line",
-      "reference_location": "solstone/apps/body/routes.py:2501"
+      "classification": "unexercised",
+      "field": "heart.comparison_line"
     },
     {
-      "classification": "not_implemented",
-      "field": "heart.rhythm",
-      "follow_up": "body-day-null-fields-port",
-      "native_location": "core/crates/solstone-core-convey-body/src/day.rs:962",
-      "reference_function": "_rhythm_summary",
-      "reference_location": "solstone/apps/body/routes.py:2288"
+      "classification": "unexercised",
+      "field": "heart.rhythm"
     },
     {
-      "classification": "not_implemented",
-      "field": "heart.series.svg.dots",
-      "follow_up": "body-day-null-fields-port",
-      "native_location": "core/crates/solstone-core-convey-body/src/day.rs:1054",
-      "reference_function": "_heart_rate_series",
-      "reference_location": "solstone/apps/body/routes.py:2398"
+      "classification": "unexercised",
+      "field": "heart.series.svg.dots"
     },
     {
-      "classification": "not_implemented",
-      "field": "sleep.comparison_line",
-      "follow_up": "body-day-null-fields-port",
-      "native_location": "core/crates/solstone-core-convey-body/src/day.rs:650",
-      "reference_function": "_sleep_comparison_line",
-      "reference_location": "solstone/apps/body/routes.py:1434"
+      "classification": "unexercised",
+      "field": "sleep.comparison_line"
     },
     {
       "classification": "unexercised",

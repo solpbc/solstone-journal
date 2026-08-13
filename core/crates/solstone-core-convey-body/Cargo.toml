@@ -21,6 +21,7 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-body-source = { path = "../solstone-core-body-source" }
 solstone-core-convey-http.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]

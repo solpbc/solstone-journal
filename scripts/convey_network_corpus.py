@@ -60,8 +60,17 @@ NORMALIZED_FIELDS: dict[tuple[str, str], dict[str, str]] = {
     ("corrupt", "/app/network/local-endpoints"): {"body": "journal-root"},
 }
 
+STILL_DEFERRED_PATHS = (
+    "/app/network/api/status",
+    "/app/network/api/identity",
+    "/app/network/api/private-link",
+    "/app/network/local-endpoints",
+)
+
 ESTABLISHED_DEFERRED_NATIVE_RESPONSES = [
-    {"phase": "established", "path": path} for _method, path in PROBES
+    {"phase": "established", "path": path}
+    for _method, path in PROBES
+    if path in STILL_DEFERRED_PATHS
 ]
 
 

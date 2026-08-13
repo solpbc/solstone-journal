@@ -1205,6 +1205,7 @@ mod tests {
                         shards,
                     }],
                     aggregate: crate::BodyAggregateSeed::Absent,
+                    journal_config: None,
                 },
             )
             .unwrap();
@@ -1235,6 +1236,7 @@ mod tests {
                     shards,
                 }],
                 aggregate: crate::BodyAggregateSeed::Direct,
+                journal_config: None,
             },
         )
         .unwrap();

@@ -285,7 +285,12 @@ mod tests {
         let changed = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
         assert_eq!(changed.total, 2);
         assert!(!Arc::ptr_eq(&first, &changed));
-        let cache = HEALTH_DEDUPE_STATS_CACHE.get().unwrap().lock().unwrap();
-        assert_eq!(cache.len(), 1);
+        let cache_len = HEALTH_DEDUPE_STATS_CACHE
+            .get()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .len();
+        assert_eq!(cache_len, 1);
     }
 }
