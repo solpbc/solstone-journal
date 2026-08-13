@@ -16,11 +16,26 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::{sleep, timeout};
 
-use super::connection::CallosumSocketConnection;
+use super::connection::{CallosumDiscontinuity, CallosumReceiveEvent, CallosumSocketConnection};
 use super::framing::{ReadFrame, read_frame, reader};
 use super::server::{CallosumSocketServer, ServerTestHooks};
 
 static NEXT_SOCKET: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn continuity_markers_are_explicit_and_cloneable() {
+    let event = CallosumReceiveEvent::Discontinuity {
+        generation: 7,
+        reason: CallosumDiscontinuity::InboundSaturated,
+    };
+    assert!(matches!(
+        event.clone(),
+        CallosumReceiveEvent::Discontinuity {
+            generation: 7,
+            reason: CallosumDiscontinuity::InboundSaturated,
+        }
+    ));
+}
 
 struct TempSocket {
     root: PathBuf,
@@ -84,6 +99,194 @@ async fn next(connection: &mut CallosumSocketConnection) -> super::super::Callos
         .await
         .expect("message should arrive")
         .expect("connection receiver should remain open")
+}
+
+async fn next_event(connection: &mut CallosumSocketConnection) -> CallosumReceiveEvent {
+    timeout(Duration::from_secs(2), connection.next_event())
+        .await
+        .expect("receive event should arrive")
+        .expect("connection receiver should remain open")
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn continuity_generation_connected_precedes_envelopes_and_next_message_skips_markers() {
+    let socket = TempSocket::new("continuity-generation");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let mut first = connection(&socket.path, Map::new());
+    wait_for_clients(&server, 1).await;
+    assert!(matches!(
+        next_event(&mut first).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::Connected
+        }
+    ));
+    assert!(first.emit("top", "one", Map::new()));
+    assert!(
+        matches!(next_event(&mut first).await, CallosumReceiveEvent::Envelope { generation: 1, envelope } if envelope.tract == "top" && envelope.event == "one")
+    );
+    assert!(first.emit("top", "two", Map::new()));
+    let message = next(&mut first).await;
+    assert_eq!(
+        (message.tract.as_str(), message.event.as_str()),
+        ("top", "two")
+    );
+    first.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn continuity_reconnect_increments_generation_and_connects_before_the_new_envelope() {
+    let socket = TempSocket::new("continuity-reconnect");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let mut client = connection(&socket.path, Map::new());
+    wait_for_clients(&server, 1).await;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::Connected
+        }
+    ));
+    server.stop().await;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::Disconnected
+        }
+    ));
+
+    let replacement = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    wait_for_clients(&replacement, 1).await;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 2,
+            reason: CallosumDiscontinuity::Connected
+        }
+    ));
+    assert!(client.emit("continuity", "after-reconnect", Map::new()));
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Envelope { generation: 2, envelope }
+            if envelope.tract == "continuity" && envelope.event == "after-reconnect"
+    ));
+    client.stop().await;
+    replacement.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn continuity_lost_connection_emits_one_disconnected_marker() {
+    let socket = TempSocket::new("continuity-single-disconnect");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let mut client = connection(&socket.path, Map::new());
+    wait_for_clients(&server, 1).await;
+    let _ = next_event(&mut client).await;
+    server.stop().await;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::Disconnected
+        }
+    ));
+    assert!(
+        timeout(Duration::from_millis(150), client.next_event())
+            .await
+            .is_err()
+    );
+    client.stop().await;
+}
+
+async fn connected_raw_peer(
+    socket: &TempSocket,
+) -> (
+    tokio::net::UnixListener,
+    CallosumSocketConnection,
+    UnixStream,
+) {
+    let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
+    let mut client = connection(&socket.path, Map::new());
+    let peer = accept_connected_raw_peer(&listener, &mut client).await;
+    (listener, client, peer)
+}
+
+async fn accept_connected_raw_peer(
+    listener: &tokio::net::UnixListener,
+    client: &mut CallosumSocketConnection,
+) -> UnixStream {
+    let peer = timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("connection should arrive")
+        .expect("listener should accept")
+        .0;
+    assert!(matches!(
+        next_event(client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::Connected
+        }
+    ));
+    peer
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn continuity_malformed_frame_marks_current_generation_and_connection_survives() {
+    let socket = TempSocket::new("continuity-malformed");
+    let (_listener, mut client, mut peer) = connected_raw_peer(&socket).await;
+    peer.write_all(b"{malformed}\n").await.unwrap();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::MalformedFrameDropped
+        }
+    ));
+    peer.write_all(b"{\"tract\":\"valid\",\"event\":\"after\"}\n")
+        .await
+        .unwrap();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Envelope { generation: 1, envelope }
+            if envelope.tract == "valid" && envelope.event == "after"
+    ));
+    client.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn continuity_inbound_saturation_marks_current_generation() {
+    let socket = TempSocket::new("continuity-saturation");
+    let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
+    let mut client =
+        CallosumSocketConnection::with_test_inbound_capacity(&socket.path, Map::new(), 1);
+    client.start();
+    let mut peer = accept_connected_raw_peer(&listener, &mut client).await;
+    peer.write_all(b"{\"tract\":\"burst\",\"event\":\"0\"}\n")
+        .await
+        .unwrap();
+    sleep(Duration::from_millis(50)).await;
+    peer.write_all(b"{\"tract\":\"burst\",\"event\":\"1\"}\n")
+        .await
+        .unwrap();
+    sleep(Duration::from_millis(50)).await;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Envelope { generation: 1, .. }
+    ));
+    peer.write_all(b"\n").await.unwrap();
+    let saturation = next_event(&mut client).await;
+    assert!(
+        matches!(
+            saturation,
+            CallosumReceiveEvent::Discontinuity {
+                generation: 1,
+                reason: CallosumDiscontinuity::InboundSaturated
+            }
+        ),
+        "{saturation:?}"
+    );
+    client.stop().await;
 }
 
 async fn raw(path: &PathBuf) -> UnixStream {

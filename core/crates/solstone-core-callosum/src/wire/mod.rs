@@ -6,7 +6,7 @@ mod frame;
 mod framing;
 mod server;
 
-pub use connection::CallosumSocketConnection;
+pub use connection::{CallosumDiscontinuity, CallosumReceiveEvent, CallosumSocketConnection};
 pub use server::{CallosumSocketServer, CallosumSocketServerError};
 
 pub(crate) const CLIENT_RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
