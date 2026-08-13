@@ -33,8 +33,8 @@ pub use deconflict::{
 };
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
-    AppendError, AtomicWriteError, LeaseError, LockError, LockTimeout, MalformedDataError,
-    PathError, PathEscapeError, ReadError, SnapshotError,
+    AppendError, AtomicWriteError, ExistingParentLockError, LeaseError, LockError, LockTimeout,
+    MalformedDataError, PathError, PathEscapeError, ReadError, SnapshotError,
 };
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
@@ -42,7 +42,8 @@ pub use lease::{
 };
 pub use locking::lock_is_held;
 pub use locking::{
-    DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock,
+    DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock, FileLock, LockOptions,
+    acquire_existing_parent_lock, hold_lock,
 };
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path,
