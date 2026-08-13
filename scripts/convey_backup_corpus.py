@@ -73,6 +73,15 @@ CONTROL_DESTINATIONS = ("example.invalid", "198.51.100.7")
 # about which routes reach out; loopback stays open for callosum and friends.
 forbid_non_loopback_egress()
 assert_egress_guard_can_see(__file__)
+# ⚠ **The unit of analysis is the BLUEPRINT, not the route.** A drain registered
+# on `before_request`/`after_request` runs for every request to that blueprint,
+# including refusals, so auditing the routes you intend to probe does not bound
+# what probing them reaches. Audited on 2026-08-13 with a positive control:
+# `app:support` registers `_drain_pending_acknowledgements_{before,after}_request`
+# and the query found both, while `app:import` and `app:backup` register **no**
+# blueprint-scoped hooks at all. The four app-wide hooks are convey core —
+# identity stamp, request id, the access gate, the loopback-origin guard.
+
 
 PLACEHOLDER_ROOT = "<JOURNAL_ROOT>"
 
@@ -129,17 +138,23 @@ PROBES: tuple[Probe, ...] = (
         {"recovery_key": "wrong-key-entirely"},
         "recovery-key mismatch: the refusal an owner can actually trigger",
     ),
+    # 🔴 THE RESTORE PROBES MUST NEVER CARRY A VALID RECOVERY KEY, and the reason
+    # is not tidiness. A well-formed key passes the guard and reaches
+    # `think/backup/restore.py::restore_journal`, which runs restic against the
+    # configured repository and writes over the journal it was pointed at. These
+    # two probes are shaped to refuse *before* that call, and they exist to pin
+    # the refusals — ⛔ do not "improve coverage" by supplying a real key.
     (
         "POST",
         "/app/backup/restore",
         None,
-        "restore with no body: the missing-field refusal on the destructive route",
+        "restore with no body: refuses before reaching the restore engine",
     ),
     (
         "POST",
         "/app/backup/restore",
         {"recovery_key": "   "},
-        "restore with a blank recovery key: whitespace is not a key",
+        "restore with a blank key: whitespace refuses before reaching the restore engine",
     ),
     (
         "POST",
