@@ -2191,6 +2191,75 @@
         },
         "status": 400,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 404,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 404,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 404,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 119,
+        "body_sha256": "7b791facf71577b128a1e1dd366b2c5e8838e78233efe3d3c842dd3f62fb013d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No data provided",
+          "error": "I couldn't find any data in that request.",
+          "reason_code": "missing_request_body"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 400,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 121,
+        "body_sha256": "a5c601cdf45ec0cc7a4384f9c49721e6c2ddaf2ac6868dbe6b546786cc8e824d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "local_endpoint": {
+            "credential_configured": false,
+            "enabled": false,
+            "endpoint_url": "",
+            "served_model_id": ""
+          },
+          "success": true
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 200,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "byo_cloud": [
@@ -4359,6 +4428,75 @@
         },
         "status": 400,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 404,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 404,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 404,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 119,
+        "body_sha256": "7b791facf71577b128a1e1dd366b2c5e8838e78233efe3d3c842dd3f62fb013d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No data provided",
+          "error": "I couldn't find any data in that request.",
+          "reason_code": "missing_request_body"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 400,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 121,
+        "body_sha256": "a5c601cdf45ec0cc7a4384f9c49721e6c2ddaf2ac6868dbe6b546786cc8e824d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "local_endpoint": {
+            "credential_configured": false,
+            "enabled": false,
+            "endpoint_url": "",
+            "served_model_id": ""
+          },
+          "success": true
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 200,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "byo_endpoint": [
@@ -6507,6 +6645,75 @@
         },
         "status": 400,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 404,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 404,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 404,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 119,
+        "body_sha256": "7b791facf71577b128a1e1dd366b2c5e8838e78233efe3d3c842dd3f62fb013d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No data provided",
+          "error": "I couldn't find any data in that request.",
+          "reason_code": "missing_request_body"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 400,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 121,
+        "body_sha256": "a5c601cdf45ec0cc7a4384f9c49721e6c2ddaf2ac6868dbe6b546786cc8e824d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "local_endpoint": {
+            "credential_configured": false,
+            "enabled": false,
+            "endpoint_url": "",
+            "served_model_id": ""
+          },
+          "success": true
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 200,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "confidential": [
@@ -8843,6 +9050,71 @@
         },
         "status": 400,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 404,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 404,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 404,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 119,
+        "body_sha256": "7b791facf71577b128a1e1dd366b2c5e8838e78233efe3d3c842dd3f62fb013d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No data provided",
+          "error": "I couldn't find any data in that request.",
+          "reason_code": "missing_request_body"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 400,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 187,
+        "body_sha256": "cca86146662fc059b2326c517bb1657aee702cef1d4ca85cadad9e37f5c39c06",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Turn off confidential thinking first, then clear your local endpoint.",
+          "error": "I couldn't take that action in the current state.",
+          "reason_code": "invalid_operation_for_state"
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 400,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "confidential_inactive": [
@@ -11184,6 +11456,71 @@
         },
         "status": 400,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 404,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 404,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 404,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 119,
+        "body_sha256": "7b791facf71577b128a1e1dd366b2c5e8838e78233efe3d3c842dd3f62fb013d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No data provided",
+          "error": "I couldn't find any data in that request.",
+          "reason_code": "missing_request_body"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 400,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 187,
+        "body_sha256": "cca86146662fc059b2326c517bb1657aee702cef1d4ca85cadad9e37f5c39c06",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Turn off confidential thinking first, then clear your local endpoint.",
+          "error": "I couldn't take that action in the current state.",
+          "reason_code": "invalid_operation_for_state"
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 400,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "corrupt": [
@@ -12242,6 +12579,86 @@
         },
         "status": 500,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 500,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 500,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 500,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 500,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 269,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "edbbe65467a0b58ba3cc66c7e66b36678dec99eaf879203c56a52d837562b875",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 500,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "none": [
@@ -14392,6 +14809,75 @@
         },
         "status": 400,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 404,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 404,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 404,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 119,
+        "body_sha256": "7b791facf71577b128a1e1dd366b2c5e8838e78233efe3d3c842dd3f62fb013d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No data provided",
+          "error": "I couldn't find any data in that request.",
+          "reason_code": "missing_request_body"
+        },
+        "method": "PUT",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/providers",
+        "status": 400,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 121,
+        "body_sha256": "a5c601cdf45ec0cc7a4384f9c49721e6c2ddaf2ac6868dbe6b546786cc8e824d",
+        "body_sha256_basis": "raw-body",
+        "content_type": "application/json",
+        "json": {
+          "local_endpoint": {
+            "credential_configured": false,
+            "enabled": false,
+            "endpoint_url": "",
+            "served_model_id": ""
+          },
+          "success": true
+        },
+        "method": "DELETE",
+        "normalized_fields": {},
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 200,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ],
     "unestablished": [
@@ -15065,6 +15551,61 @@
         },
         "status": 302,
         "why": "extract must be boolean"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/thinking/background",
+        "status": 302,
+        "why": "\ud83d\udd34 injected fragment route; no decorator declares it"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/thinking/static/nope.js",
+        "status": 302,
+        "why": "the per-app static 404 shape"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/thinking/static/../../../etc/passwd",
+        "status": 302,
+        "why": "per-app static traversal refusal"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "PUT",
+        "path": "/app/thinking/api/providers",
+        "status": 302,
+        "why": "\u26a0 PUT shares POST's handler and was never probed"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "DELETE",
+        "path": "/app/thinking/api/local/endpoint",
+        "status": 302,
+        "why": "\ud83d\udd34 the only DELETE the reference registers -- and the confidential-clear refusal"
       }
     ]
   },
