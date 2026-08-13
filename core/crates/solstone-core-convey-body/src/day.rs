@@ -2201,11 +2201,13 @@ mod tests {
             );
             let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
             assert_eq!(payload["sleep"]["naps"].as_array().unwrap().len(), 1);
-            assert!(payload["sleep"]["bar"]["segments"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|segment| segment["kind"] == "nap"));
+            assert!(
+                payload["sleep"]["bar"]["segments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|segment| segment["kind"] == "nap")
+            );
         }
 
         #[test]
@@ -2665,7 +2667,10 @@ mod tests {
                 Some(json!({"pulse_wave_velocity":8.2})),
                 None,
             );
-            seed_fixture(root.path(), vec![bundle("20260102_090000", OURA_API, vec![row])]);
+            seed_fixture(
+                root.path(),
+                vec![bundle("20260102_090000", OURA_API, vec![row])],
+            );
             let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
             assert_eq!(
                 payload["audit"]["oura_appendix"],
