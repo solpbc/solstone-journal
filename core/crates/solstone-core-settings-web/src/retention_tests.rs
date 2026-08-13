@@ -38,8 +38,39 @@ fi
 
 static EXECUTOR_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-pub(crate) async fn executor_env_lock() -> MutexGuard<'static, ()> {
-    EXECUTOR_ENV_LOCK.lock().await
+pub(crate) fn executor_env_guard() -> MutexGuard<'static, ()> {
+    EXECUTOR_ENV_LOCK.blocking_lock()
+}
+
+/// Pin the environment so `solstone-retention` is provably unresolvable.
+///
+/// AC 15 generalized: any test that replays a recorded case whose expected
+/// value depends on executor availability must establish that availability
+/// itself, rather than inheriting whatever the host happens to have installed.
+///
+/// The caller must already hold [`executor_env_guard`]. This deliberately does
+/// not take the lock itself so it can nest inside a test that has staged a
+/// hostile ambient environment.
+pub(crate) fn without_executor<T>(work: impl FnOnce() -> T) -> T {
+    let empty = tempfile::Builder::new()
+        .prefix("w3-no-executor-")
+        .tempdir()
+        .expect("executor-free PATH directory");
+    let binary = crate::retention_executor::BINARY;
+    assert!(
+        !empty.path().join(binary).exists(),
+        "the pinned PATH directory must not contain {binary}"
+    );
+    let path = empty.path().display().to_string();
+    temp_env::with_vars(
+        [
+            ("SOLSTONE_RETENTION_BIN", None),
+            ("PATH", Some(path.as_str())),
+            ("ORACLE_STUB_LOG", None),
+            ("ORACLE_STUB_EXIT", None),
+        ],
+        work,
+    )
 }
 
 // These variables are process-global. This lock keeps focused runs honest even
@@ -209,7 +240,7 @@ fn normalize_argv(argv: Vec<String>) -> Vec<String> {
     output
 }
 
-fn run_async<T>(work: impl std::future::Future<Output = T>) -> T {
+pub(crate) fn run_async<T>(work: impl std::future::Future<Output = T>) -> T {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

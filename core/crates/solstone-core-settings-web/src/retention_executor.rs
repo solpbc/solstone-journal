@@ -15,7 +15,7 @@ use std::{
 
 use serde_json::Value;
 
-const BINARY: &str = "solstone-retention";
+pub(crate) const BINARY: &str = "solstone-retention";
 const OVERRIDE: &str = "SOLSTONE_RETENTION_BIN";
 const TIMEOUT: Duration = Duration::from_secs(60);
 const STDOUT_LIMIT: usize = 1024 * 1024;
@@ -147,7 +147,7 @@ fn executable(path: &Path) -> bool {
     }
 }
 
-fn binary() -> Result<PathBuf, ExecutorError> {
+pub(crate) fn binary() -> Result<PathBuf, ExecutorError> {
     if let Ok(override_path) = env::var(OVERRIDE)
         && !override_path.is_empty()
     {

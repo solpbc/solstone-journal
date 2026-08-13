@@ -222,24 +222,34 @@ fn assert_config_result(case_name: &str, case: &Value, root: &std::path::Path) {
     );
 }
 
-#[tokio::test]
-async fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
-    let _executor_env = crate::retention_tests::executor_env_lock().await;
+// This replay contains `POST prune-logs.dry-run`, whose recorded 500 is the
+// contract on a host *without* the retention executor. `retention_executor.rs`
+// resolves `solstone-retention` off ambient PATH, and `make install` puts one at
+// `.venv/bin/solstone-retention` — so without the pin below the outcome is the
+// host's, not the corpus's: the suite passes 48/48 on a bare box and fails
+// 46/48 on any developer machine with the venv active. The pin, not the host,
+// establishes absence. Nothing else in this crate launches a process — AC 15
+// holds `retention_executor.rs` as the sole exemption and forbids every launch
+// API elsewhere — so narrowing PATH cannot perturb any other replayed route.
+#[test]
+fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
+    let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations");
     assert_eq!(cases.len(), 21);
-    for (name, case) in cases {
-        let root = root_from(&case["config_before"]);
-        let (status, body) = request(
-            crate::test_support::shell_router(root.path()),
-            case["method"].as_str().expect("method"),
-            case["path"].as_str().expect("path"),
-            Some(&case["sent"]),
-        )
-        .await;
-        assert_response(name, case, root.path(), status, body);
-        assert_config_result(name, case, root.path());
-    }
+    crate::retention_tests::without_executor(|| {
+        for (name, case) in cases {
+            let root = root_from(&case["config_before"]);
+            let (status, body) = crate::retention_tests::run_async(request(
+                crate::test_support::shell_router(root.path()),
+                case["method"].as_str().expect("method"),
+                case["path"].as_str().expect("path"),
+                Some(&case["sent"]),
+            ));
+            assert_response(name, case, root.path(), status, body);
+            assert_config_result(name, case, root.path());
+        }
+    });
 }
 
 #[tokio::test]
@@ -408,44 +418,122 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
     assert!(!lifecycle.path().join("facets/renamed").exists());
 }
 
-#[tokio::test]
-async fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
-    let _executor_env = crate::retention_tests::executor_env_lock().await;
+// Same executor-absence pin as `ac1`, for the same reason: this collection
+// replays `POST prune-logs.dry-run` too.
+#[test]
+fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
+    let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations_malformed");
     assert_eq!(cases.len(), 21);
-    for (name, case) in cases {
-        let root = root_from(&case["config_before"]);
-        let before_bytes = fs::read(root.path().join("config/journal.json")).expect("before bytes");
-        let before = case["config_before"].as_object().expect("before object");
-        let malformed_before = ["retention", "observe", "describe", "identity"]
-            .iter()
-            .filter_map(|key| {
-                before
-                    .get(*key)
-                    .map(|_| ((*key).to_owned(), raw_top_level_field(&before_bytes, key)))
-            })
-            .collect::<Vec<_>>();
-        let (status, body) = request(
-            crate::test_support::shell_router(root.path()),
-            case["method"].as_str().expect("method"),
-            case["path"].as_str().expect("path"),
-            Some(&case["sent"]),
-        )
-        .await;
-        assert_response(name, case, root.path(), status, body);
-        assert_config_result(name, case, root.path());
-        let after_bytes = fs::read(root.path().join("config/journal.json")).expect("config after");
-        for (section, bytes) in malformed_before {
-            if case["config_before"][&section] == case["config_after"][&section] {
-                assert_eq!(
-                    raw_top_level_field(&after_bytes, &section),
-                    bytes,
-                    "{name} malformed {section} bytes"
-                );
+    crate::retention_tests::without_executor(|| {
+        for (name, case) in cases {
+            let root = root_from(&case["config_before"]);
+            let before_bytes =
+                fs::read(root.path().join("config/journal.json")).expect("before bytes");
+            let before = case["config_before"].as_object().expect("before object");
+            let malformed_before = ["retention", "observe", "describe", "identity"]
+                .iter()
+                .filter_map(|key| {
+                    before
+                        .get(*key)
+                        .map(|_| ((*key).to_owned(), raw_top_level_field(&before_bytes, key)))
+                })
+                .collect::<Vec<_>>();
+            let (status, body) = crate::retention_tests::run_async(request(
+                crate::test_support::shell_router(root.path()),
+                case["method"].as_str().expect("method"),
+                case["path"].as_str().expect("path"),
+                Some(&case["sent"]),
+            ));
+            assert_response(name, case, root.path(), status, body);
+            assert_config_result(name, case, root.path());
+            let after_bytes =
+                fs::read(root.path().join("config/journal.json")).expect("config after");
+            for (section, bytes) in malformed_before {
+                if case["config_before"][&section] == case["config_after"][&section] {
+                    assert_eq!(
+                        raw_top_level_field(&after_bytes, &section),
+                        bytes,
+                        "{name} malformed {section} bytes"
+                    );
+                }
             }
         }
+    });
+}
+
+// Negative twin for the two pins above. It stages the exact host state that
+// broke the replay — a resolvable `solstone-retention` on PATH *and* in
+// SOLSTONE_RETENTION_BIN, i.e. any machine that has run `make install` — and
+// asserts the pinned replay still reproduces the recorded 500 without ever
+// spawning it. Without this, a future change that drops the pin stays green on
+// a bare CI box and only turns red on a developer's machine.
+#[test]
+fn prune_logs_replay_refuses_even_when_a_host_executor_is_resolvable() {
+    let _serialized = crate::retention_tests::executor_env_guard();
+    let host = tempfile::Builder::new()
+        .prefix("w3-host-executor-")
+        .tempdir()
+        .expect("space-free host directory");
+    assert!(!host.path().display().to_string().contains(' '));
+    let planted = host.path().join(crate::retention_executor::BINARY);
+    let marker = host.path().join("spawned.marker");
+    fs::write(
+        &planted,
+        format!(
+            "#!/bin/sh\nprintf 'spawned\\n' >> {}\nprintf '%s' '{{\"marks\":{{}}}}'\n",
+            marker.display()
+        ),
+    )
+    .expect("planted executor bytes");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&planted, fs::Permissions::from_mode(0o755)).expect("planted mode");
     }
+
+    let corpus = crate::test_support::corpus();
+    let name = "POST prune-logs.dry-run";
+    let case = &corpus["mutations"][name];
+    assert_eq!(case["status"].as_u64(), Some(500), "recorded contract");
+    let root = root_from(&case["config_before"]);
+
+    let host_path = host.path().display().to_string();
+    let planted_path = planted.display().to_string();
+    let (status, body) = temp_env::with_vars(
+        [
+            ("PATH", Some(host_path.as_str())),
+            ("SOLSTONE_RETENTION_BIN", Some(planted_path.as_str())),
+        ],
+        || {
+            // The staged host is genuinely hostile: the production resolver
+            // finds the planted executor before the pin is applied.
+            assert!(
+                crate::retention_executor::binary().is_ok(),
+                "staged host must resolve an executor, or this twin proves nothing"
+            );
+            crate::retention_tests::without_executor(|| {
+                assert!(
+                    crate::retention_executor::binary().is_err(),
+                    "the pin must make the executor unresolvable"
+                );
+                crate::retention_tests::run_async(request(
+                    crate::test_support::shell_router(root.path()),
+                    case["method"].as_str().expect("method"),
+                    case["path"].as_str().expect("path"),
+                    Some(&case["sent"]),
+                ))
+            })
+        },
+    );
+
+    assert_response(name, case, root.path(), status, body);
+    assert_config_result(name, case, root.path());
+    assert!(
+        !marker.exists(),
+        "the pinned replay must never spawn the host executor"
+    );
 }
 
 fn refusal_route(name: &str) -> (&'static str, &'static str) {
