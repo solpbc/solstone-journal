@@ -340,7 +340,6 @@ fn python_surrogateescape_sort_key(name: &OsStr) -> Vec<u32> {
     key
 }
 
-#[cfg(test)]
 pub(crate) fn sort_os_strings_like_python(names: &mut [OsString]) {
     names.sort_by(|left, right| {
         let ordering =

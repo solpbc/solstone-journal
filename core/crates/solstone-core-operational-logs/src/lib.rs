@@ -5,6 +5,7 @@
 
 mod collect;
 mod error;
+mod follow;
 mod read;
 mod render;
 
@@ -13,6 +14,10 @@ mod fixture;
 
 pub use collect::{HealthLogsQuery, collect_health_logs};
 pub use error::{CollectError, EnumerationError, HealthDirectoryProbeError, OrdinaryTailError};
+pub use follow::{
+    FollowFatalError, FollowFs, FollowReadError, FollowReader, FollowState, FollowTickContext,
+    InitialDiscovery, StdFollowFs, TickOutcome, discover_initial, run_follow, tick,
+};
 pub use read::{
     DayLogDirectoryOps, DayLogEntry, HealthDirectoryState, ProbeKind, ProbeOps,
     StdDayLogDirectoryOps, StdProbeOps, StdTailFileOpener, TailFile, TailFileOpener,

@@ -22,22 +22,43 @@ pub fn render_collected(
         return Ok(());
     }
 
-    let mut last_service: Option<&str> = None;
+    let mut last_service = None;
     for row in rows {
-        if Some(row.service.as_str()) != last_service {
-            if last_service.is_some() {
-                writeln!(output)?;
-            }
-            writeln!(
-                output,
-                "{DIM}── {} ──{RESET}",
-                sanitize_for_terminal(&row.service)
-            )?;
-            last_service = Some(&row.service);
-        }
-        writeln!(output, "{}", sanitize_for_terminal(&row.raw))?;
+        render_stream_row(
+            output,
+            &row.raw,
+            Some(&row.service),
+            true,
+            &mut last_service,
+        )?;
     }
     Ok(())
+}
+
+pub(crate) fn render_stream_row(
+    output: &mut dyn Write,
+    raw: &str,
+    service: Option<&str>,
+    is_tty: bool,
+    last_service: &mut Option<String>,
+) -> io::Result<()> {
+    if !is_tty {
+        return writeln!(output, "{raw}");
+    }
+    if let Some(service) = service
+        && last_service.as_deref() != Some(service)
+    {
+        if last_service.is_some() {
+            writeln!(output)?;
+        }
+        writeln!(
+            output,
+            "{DIM}── {} ──{RESET}",
+            sanitize_for_terminal(service)
+        )?;
+        *last_service = Some(service.to_owned());
+    }
+    writeln!(output, "{}", sanitize_for_terminal(raw))
 }
 
 #[cfg(test)]
