@@ -6,13 +6,18 @@
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
+use solstone_core_brain::derive_active_brain_lane;
 use solstone_core_brain::inspect_runtime_health;
+use solstone_core_facets::append_action_log;
+use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_local::install::{
     lease::is_held,
     readiness::{inspect_local, inspect_mlx},
     status::{is_in_flight, read_status},
 };
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
+
+use crate::MutationError;
 
 pub const DEFAULT_MODEL: &str = "local/qwen3.5-4b";
 const MLX_MODEL: &str = "qwen3.5:9b";
@@ -144,6 +149,146 @@ pub fn runtime(journal: &Path) -> Value {
             | "stopping"
     );
     json!({"status":"ok","phase":phase,"reason_code":record["reason_code"],"health_revision":record["revision"],"desired_fingerprint_sha256":record["desired_fingerprint_sha256"],"retry_revision":0,"retry_pending":false,"can_retry":phase=="failed" && !record["desired_fingerprint_sha256"].is_null(),"poll":poll,"updated_at":record["updated_at"]})
+}
+
+#[derive(Debug)]
+pub enum EndpointMutationError {
+    Mutation(MutationError),
+    Confidential(&'static str),
+}
+
+pub fn endpoint_payload(config: &Map<String, Value>) -> Value {
+    let local = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("local"))
+        .and_then(Value::as_object);
+    let endpoint_url = local
+        .and_then(|local| local.get("endpoint_url"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let served_model_id = local
+        .and_then(|local| local.get("served_model_id"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let credential = local
+        .and_then(|local| local.get("credential"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty());
+    json!({"enabled":!endpoint_url.is_empty() && !served_model_id.is_empty(),"endpoint_url":endpoint_url,"served_model_id":served_model_id,"credential_configured":credential})
+}
+
+pub fn update_endpoint(
+    journal: &Path,
+    endpoint_url: String,
+    served_model_id: String,
+    credential: Option<Option<String>>,
+) -> Result<Value, EndpointMutationError> {
+    mutate_endpoint(
+        journal,
+        "local_endpoint_update",
+        credential.is_some(),
+        |local| {
+            local.insert(
+                "endpoint_url".to_owned(),
+                Value::String(endpoint_url.clone()),
+            );
+            local.insert(
+                "served_model_id".to_owned(),
+                Value::String(served_model_id.clone()),
+            );
+            if let Some(credential) = &credential {
+                match credential
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    Some(value) => {
+                        local.insert(
+                            "credential".to_owned(),
+                            Value::String(value.trim().to_owned()),
+                        );
+                    }
+                    None => {
+                        local.remove("credential");
+                    }
+                }
+            }
+        },
+        "Turn off confidential thinking first, then change your local endpoint.",
+    )
+}
+
+pub fn clear_endpoint(journal: &Path) -> Result<Value, EndpointMutationError> {
+    mutate_endpoint(
+        journal,
+        "local_endpoint_clear",
+        true,
+        |local| {
+            for key in ["endpoint_url", "served_model_id", "credential"] {
+                local.remove(key);
+            }
+        },
+        "Turn off confidential thinking first, then clear your local endpoint.",
+    )
+}
+
+fn mutate_endpoint(
+    journal: &Path,
+    action: &str,
+    credential_touched: bool,
+    change: impl FnOnce(&mut Map<String, Value>),
+    confidential_detail: &'static str,
+) -> Result<Value, EndpointMutationError> {
+    let transaction = mutate_journal_config(journal, Default::default(), |config| {
+        if derive_active_brain_lane(config).lane.as_deref() == Some("spp") {
+            return JournalConfigMutation { changed: false, value: Err(confidential_detail) };
+        }
+        let providers = object_at(config, "providers");
+        let local = object_at(providers, "local");
+        let before = local.clone();
+        change(local);
+        let mut changes = Map::new();
+        for key in ["endpoint_url", "served_model_id"] {
+            let old = before.get(key).and_then(Value::as_str).unwrap_or("");
+            let new = local.get(key).and_then(Value::as_str).unwrap_or("");
+            if old != new { changes.insert(key.to_owned(), json!({"old":old,"new":new})); }
+        }
+        if credential_touched {
+            let old = before.get("credential").and_then(Value::as_str).unwrap_or("");
+            let new = local.get("credential").and_then(Value::as_str).unwrap_or("");
+            if old != new { changes.insert("credential".to_owned(), json!({"old":if old.is_empty() { "" } else { "***" },"new":if new.is_empty() { "" } else { "***" }})); }
+        }
+        JournalConfigMutation { changed: !changes.is_empty(), value: Ok((changes, endpoint_payload(config))) }
+    }).map_err(|error| EndpointMutationError::Mutation(MutationError::config(error)))?;
+    let (changes, payload) = transaction
+        .value
+        .map_err(EndpointMutationError::Confidential)?;
+    if !changes.is_empty() {
+        append_action_log(
+            journal,
+            None,
+            "app",
+            "thinking",
+            action,
+            json!({"changed_fields":changes}),
+        )
+        .map_err(|error| {
+            EndpointMutationError::Mutation(MutationError::ActionLog(error.to_string()))
+        })?;
+    }
+    Ok(json!({"success":true,"local_endpoint":payload}))
+}
+
+fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
+    if !parent.get(key).is_some_and(Value::is_object) {
+        parent.insert(key.to_owned(), Value::Object(Map::new()));
+    }
+    parent
+        .get_mut(key)
+        .and_then(Value::as_object_mut)
+        .expect("object inserted")
 }
 
 fn bytes_to_gb(bytes: u64) -> f64 {

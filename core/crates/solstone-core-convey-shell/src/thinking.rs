@@ -8,13 +8,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{Extension, Query};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
-use serde_json::{Value, json};
+use axum::routing::{get, post};
+use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_thinking::providers::ManagedKeyValidator;
 
 use crate::{JournalRoot, asset_response};
 
@@ -26,7 +27,11 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         .route("/app/thinking/static/thinking.js", get(script))
         .route("/app/thinking/api/state", get(state))
         .route("/app/thinking/api/providers", get(providers))
-        .route("/app/thinking/api/keys", get(keys))
+        .route(
+            "/app/thinking/api/providers",
+            post(update_providers).put(update_providers),
+        )
+        .route("/app/thinking/api/keys", get(keys).put(save_key))
         .route(
             "/app/thinking/api/providers/local/status",
             get(local_status),
@@ -38,8 +43,21 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         )
         .route("/app/thinking/api/local/models", get(models))
         .route("/app/thinking/api/local/runtime", get(runtime))
-        .route("/app/thinking/api/generators", get(generators))
-        .route("/app/thinking/api/validate-keys", get(validate_keys))
+        .route(
+            "/app/thinking/api/local/endpoint",
+            get(endpoint_get_not_allowed)
+                .post(update_endpoint)
+                .delete(clear_endpoint)
+                .options(endpoint_options),
+        )
+        .route(
+            "/app/thinking/api/generators",
+            get(generators).put(update_generators),
+        )
+        .route(
+            "/app/thinking/api/validate-keys",
+            get(validate_keys).post(persist_key_validations),
+        )
         .layer(Extension(journal))
 }
 
@@ -157,6 +175,316 @@ async fn validate_keys(Extension(journal): Extension<Arc<JournalRoot>>) -> Respo
     }
 }
 
+async fn save_key(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+    let Some(request) = request_object(&body) else {
+        return missing_request_body();
+    };
+    let env_var = request
+        .get("env_var")
+        .or_else(|| request.get("key"))
+        .and_then(Value::as_str);
+    let Some(env_var) = env_var.filter(|value| key_provider(value).is_some()) else {
+        return invalid_config(format!(
+            "Invalid env var: {}. Must be one of: GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY",
+            request
+                .get("env_var")
+                .or_else(|| request.get("key"))
+                .map(json_display)
+                .unwrap_or_else(|| "None".to_owned())
+        ));
+    };
+    let value = match request.get("value") {
+        None => "",
+        Some(Value::String(value)) => value.as_str(),
+        Some(_) => return invalid_request("value must be a string"),
+    };
+    let value = value.trim();
+    let provider = key_provider(env_var).expect("checked provider");
+    let validation = (!value.is_empty()).then(|| {
+        let result = solstone_core_thinking::providers::UnavailableValidator
+            .validate(provider, value)
+            .unwrap_or_else(
+                |error| json!({"valid":false,"reason_code":"validation_unavailable","error":error}),
+            );
+        let mut result = result.as_object().cloned().unwrap_or_default();
+        result.insert(
+            "timestamp".to_owned(),
+            Value::String(chrono::Utc::now().to_rfc3339()),
+        );
+        Value::Object(result)
+    });
+    match solstone_core_thinking::providers::save_key(
+        &journal.0, env_var, provider, value, validation,
+    ) {
+        Ok(value) => json_response(value),
+        Err(error) => mutation_error(error),
+    }
+}
+
+async fn persist_key_validations(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    match solstone_core_thinking::providers::persist_key_validations(
+        &journal.0,
+        &solstone_core_thinking::providers::UnavailableValidator,
+    ) {
+        Ok(value) => json_response(value),
+        Err(error) => mutation_error(error),
+    }
+}
+
+async fn update_providers(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    body: Bytes,
+) -> Response {
+    let Some(request) = request_object(&body).filter(|request| !request.is_empty()) else {
+        return missing_request_body();
+    };
+    let unknown: Vec<_> = request
+        .keys()
+        .filter(|key| {
+            !matches!(
+                key.as_str(),
+                "lane" | "provider" | "model" | "google_model_resolution_targets"
+            )
+        })
+        .cloned()
+        .collect();
+    if !unknown.is_empty() {
+        return invalid_config(format!("Unknown provider fields: {}", unknown.join(", ")));
+    }
+    let Some(lane_value) = request.get("lane") else {
+        return missing_field("lane");
+    };
+    let Some(lane) = lane_value.as_str() else {
+        return invalid_config(format!(
+            "Invalid lane: {}. Must be one of: byo, confidential, local",
+            json_display(lane_value)
+        ));
+    };
+    if !matches!(lane, "byo" | "confidential" | "local") {
+        return invalid_config(format!(
+            "Invalid lane: {}. Must be one of: byo, confidential, local",
+            json_display(lane_value)
+        ));
+    }
+    let config = match solstone_core_thinking::read_config(&journal.0) {
+        Ok(config) => config,
+        Err(_error) => return thinking_failure(),
+    };
+    let endpoint_configured = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("local"))
+        .and_then(Value::as_object)
+        .is_some_and(|local| {
+            local
+                .get("endpoint_url")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+                && local
+                    .get("served_model_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())
+        });
+    let provider = match lane {
+        "confidential" => {
+            return invalid_state(
+                "confidential lane activation must use the confidential enable flow.",
+            );
+        }
+        "local" if endpoint_configured => {
+            return invalid_state("clear your endpoint URL first to run the bundled local model.");
+        }
+        "local" => "local".to_owned(),
+        "byo" => match request.get("provider").and_then(Value::as_str) {
+            None | Some("") => {
+                return invalid_config(
+                    "No BYO provider selected. Must be one of: anthropic, google, local, openai",
+                );
+            }
+            Some(value @ ("anthropic" | "google" | "local" | "openai"))
+                if value != "local" || endpoint_configured =>
+            {
+                value.to_owned()
+            }
+            Some("local") => {
+                return invalid_state("save your endpoint URL first to use your own endpoint.");
+            }
+            Some(_) => {
+                return invalid_config(
+                    "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
+                );
+            }
+        },
+        _ => unreachable!(),
+    };
+    let model = match request.get("model") {
+        None => None,
+        Some(_value)
+            if lane != "byo" || !matches!(provider.as_str(), "anthropic" | "google" | "openai") =>
+        {
+            return invalid_config(
+                "model is only valid with cloud BYO providers: anthropic, google, openai.",
+            );
+        }
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.trim().to_owned()),
+        Some(_) => return invalid_config("model must be a non-empty string."),
+    };
+    let targets = match request.get("google_model_resolution_targets") {
+        None => Vec::new(),
+        Some(Value::Array(values)) => {
+            let mut targets = Vec::new();
+            let mut unknown = Vec::new();
+            for value in values {
+                let Some(value) = value.as_str() else {
+                    unknown.push(json_display(value));
+                    continue;
+                };
+                if !matches!(value, "active" | "remembered" | "confidential_prior") {
+                    unknown.push(value.to_owned());
+                } else if !targets.iter().any(|target: &String| target == value) {
+                    targets.push(value.to_owned());
+                }
+            }
+            if !unknown.is_empty() {
+                unknown.sort();
+                return invalid_config(format!(
+                    "Invalid Google model resolution targets: {}. Must be one of: active, confidential_prior, remembered",
+                    unknown.join(", ")
+                ));
+            }
+            targets
+        }
+        Some(_) => {
+            return invalid_config(
+                "google_model_resolution_targets must be a list of: active, confidential_prior, remembered",
+            );
+        }
+    };
+    if request.contains_key("google_model_resolution_targets")
+        && (lane != "byo" || provider != "google" || model.is_none())
+    {
+        return invalid_config(
+            "google_model_resolution_targets is only valid with Google BYO model saves.",
+        );
+    }
+    match solstone_core_thinking::providers::update_providers(
+        &journal.0,
+        solstone_core_thinking::providers::ProviderUpdate {
+            lane: lane.to_owned(),
+            provider,
+            model,
+            resolution_targets: targets,
+        },
+    ) {
+        Ok(value) => json_response(value),
+        Err(solstone_core_thinking::providers::ProviderUpdateError::Mutation(error)) => {
+            mutation_error(error)
+        }
+        Err(solstone_core_thinking::providers::ProviderUpdateError::Confidential(detail)) => {
+            invalid_state(detail)
+        }
+    }
+}
+
+async fn update_endpoint(Extension(journal): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+    let Some(request) = request_object(&body) else {
+        return missing_request_body();
+    };
+    let Some(endpoint_url) = request
+        .get("endpoint_url")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return missing_field("endpoint_url");
+    };
+    let Some(normalized) = normalize_endpoint(endpoint_url) else {
+        return invalid_config("endpoint_url must be an http or https URL with a host");
+    };
+    let Some(served_model_id) = request
+        .get("served_model_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return missing_field("served_model_id");
+    };
+    let credential = match request.get("credential") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(value)) => Some(Some(value.clone())),
+        Some(_) => return invalid_request("credential"),
+    };
+    endpoint_result(solstone_core_thinking::local::update_endpoint(
+        &journal.0,
+        normalized,
+        served_model_id.to_owned(),
+        credential,
+    ))
+}
+
+async fn clear_endpoint(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    endpoint_result(solstone_core_thinking::local::clear_endpoint(&journal.0))
+}
+
+fn endpoint_result(
+    result: Result<Value, solstone_core_thinking::local::EndpointMutationError>,
+) -> Response {
+    match result {
+        Ok(value) => json_response(value),
+        Err(solstone_core_thinking::local::EndpointMutationError::Mutation(error)) => {
+            mutation_error(error)
+        }
+        Err(solstone_core_thinking::local::EndpointMutationError::Confidential(detail)) => {
+            invalid_state(detail)
+        }
+    }
+}
+
+async fn endpoint_options() -> Response {
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn endpoint_get_not_allowed() -> Response {
+    Response::builder()
+        .status(StatusCode::METHOD_NOT_ALLOWED)
+        .header(header::ALLOW, "POST, DELETE, OPTIONS")
+        .body(Body::empty())
+        .expect("method refusal builds")
+}
+
+async fn update_generators(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    body: Bytes,
+) -> Response {
+    if body.is_empty() {
+        return missing_request_body();
+    }
+    let Some(request) = request_object(&body).filter(|request| !request.is_empty()) else {
+        return missing_request_body();
+    };
+    for (key, update) in &request {
+        let Some(update) = update.as_object() else {
+            continue;
+        };
+        for field in ["disabled", "extract"] {
+            if update.contains_key(field) && !update[field].is_boolean() {
+                return invalid_config(format!("{field} must be boolean for {key}"));
+            }
+        }
+    }
+    match solstone_core_thinking::generators::update_overrides(&journal.0, &request) {
+        Ok(()) => match solstone_core_thinking::read_config(&journal.0) {
+            Ok(config) => match solstone_core_thinking::generators::generators(&config) {
+                Ok(value) => json_response(value),
+                Err(_error) => thinking_failure(),
+            },
+            Err(_error) => thinking_failure(),
+        },
+        Err(error) => mutation_error(error),
+    }
+}
+
 fn model_response(
     _journal: &Path,
     requested: Option<&str>,
@@ -249,6 +577,117 @@ fn server_error(detail: String) -> Response {
         .into_response()
 }
 
+fn request_object(body: &Bytes) -> Option<Map<String, Value>> {
+    serde_json::from_slice::<Value>(body)
+        .ok()?
+        .as_object()
+        .cloned()
+}
+
+fn key_provider(env_var: &str) -> Option<&'static str> {
+    match env_var {
+        "GOOGLE_API_KEY" => Some("google"),
+        "ANTHROPIC_API_KEY" => Some("anthropic"),
+        "OPENAI_API_KEY" => Some("openai"),
+        _ => None,
+    }
+}
+
+fn json_display(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Null => "None".to_owned(),
+        value => value.to_string(),
+    }
+}
+
+fn normalize_endpoint(value: &str) -> Option<String> {
+    let value = value.trim();
+    let valid = ["http://", "https://"].iter().any(|prefix| {
+        value
+            .strip_prefix(prefix)
+            .is_some_and(|rest| !rest.split('/').next().unwrap_or("").is_empty())
+    });
+    if !valid {
+        return None;
+    }
+    let value = value.trim_end_matches('/');
+    Some(
+        value
+            .strip_suffix("/v1")
+            .unwrap_or(value)
+            .trim_end_matches('/')
+            .to_owned(),
+    )
+}
+
+fn envelope(
+    reason: &str,
+    message: &str,
+    detail: impl Into<String>,
+    status: StatusCode,
+) -> Response {
+    error_envelope(reason, message, detail, status).into_response()
+}
+
+fn missing_request_body() -> Response {
+    envelope(
+        "missing_request_body",
+        "I couldn't find any data in that request.",
+        "No data provided",
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn missing_field(detail: impl Into<String>) -> Response {
+    envelope(
+        "missing_required_field",
+        "I couldn't find a required field.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn invalid_config(detail: impl Into<String>) -> Response {
+    envelope(
+        "invalid_config_value",
+        "I couldn't save that setting because one value was invalid.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn invalid_request(detail: impl Into<String>) -> Response {
+    envelope(
+        "invalid_request_value",
+        "I couldn't use one of those values.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn invalid_state(detail: impl Into<String>) -> Response {
+    envelope(
+        "invalid_operation_for_state",
+        "I couldn't take that action in the current state.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn thinking_failure() -> Response {
+    envelope(
+        "settings_operation_failed",
+        "I couldn't save those settings.",
+        "something went wrong - try again, and if it persists, check the health dashboard",
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+}
+fn mutation_error(error: solstone_core_thinking::MutationError) -> Response {
+    match error {
+        solstone_core_thinking::MutationError::ConfigLock(_) => thinking_config_busy_response(),
+        solstone_core_thinking::MutationError::ConfigLoad(_error) => thinking_failure(),
+        solstone_core_thinking::MutationError::ConfigWrite(_error) => thinking_failure(),
+        solstone_core_thinking::MutationError::Read(_error) => thinking_failure(),
+        solstone_core_thinking::MutationError::ActionLog(_error) => thinking_failure(),
+    }
+}
+
 #[allow(dead_code)] // Wired by Thinking write routes in W2 chunks 2–3.
 fn thinking_config_busy_response() -> Response {
     error_envelope(
@@ -296,19 +735,12 @@ mod tests {
         }
     }
 
-    /// W2 removes this characterization pin when Thinking writes are converted.
     #[tokio::test]
-    async fn providers_post_is_the_get_only_fallback_405_with_an_empty_body() {
-        let root =
-            std::env::temp_dir().join(format!("solstone-thinking-post-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("config")).expect("config directory creates");
-        fs::write(
-            root.join("config/journal.json"),
-            br#"{"setup":{"completed_at":1767225600}}"#,
-        )
-        .expect("config writes");
-        let response = crate::router(root.clone())
+    async fn write_routes_register_the_reference_methods() {
+        let root = temporary_journal("write-methods");
+        let router = crate::router(root.clone());
+        let response = router
+            .clone()
             .oneshot(
                 Request::post("/app/thinking/api/providers")
                     .body(Body::empty())
@@ -316,13 +748,17 @@ mod tests {
             )
             .await
             .expect("router responds");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = router
+            .oneshot(
+                Request::get("/app/thinking/api/local/endpoint")
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
-        assert!(
-            to_bytes(response.into_body(), usize::MAX)
-                .await
-                .expect("body reads")
-                .is_empty()
-        );
+        assert_eq!(response.headers()["allow"], "POST, DELETE, OPTIONS");
         let _ = fs::remove_dir_all(root);
     }
 
