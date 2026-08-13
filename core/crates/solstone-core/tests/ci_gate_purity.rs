@@ -474,7 +474,10 @@ fn make_ci_never_executes_forbidden_interpreters() {
         .lines()
         .filter_map(|invocation| invocation.split_whitespace().next())
         .collect::<Vec<_>>();
-    let mut expected = vec!["fmt", "check", "clippy", "test"];
+    // The trailing "test" is check-rust-describe-cli-stubs, which runs the gated
+    // stub-driven describe CLI suite immediately after the workspace test leg. It
+    // carries no host guard, so it shells to cargo on every platform.
+    let mut expected = vec!["fmt", "check", "clippy", "test", "test"];
     // check-rust-onnx-test runs the crates RUST_HOST_EXCLUDES removes from the
     // workspace selection. It shells to cargo only on Linux; elsewhere the
     // target prints why it did not run and exits 0.

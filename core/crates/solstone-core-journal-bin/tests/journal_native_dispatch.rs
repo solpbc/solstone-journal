@@ -174,10 +174,10 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         harness.run("identity"),
         "solstone-core\nidentity\n--opaque\nhas space\n"
     );
-    let describe = harness.run_process("describe");
-    assert_eq!(describe.status.code(), Some(97));
+    let backup = harness.run_process("backup");
+    assert_eq!(backup.status.code(), Some(97));
     assert!(
         harness.poison_marker.exists(),
-        "describe did not invoke poison"
+        "backup did not invoke poison"
     );
 }

@@ -206,14 +206,14 @@ fn observer_list_and_prune_run_natively_without_touching_the_poisoned_interprete
 #[test]
 fn the_poison_is_live_a_still_python_token_actually_reaches_it() {
     let harness = Harness::new();
-    let describe = harness.run(&["describe"]);
+    let backup = harness.run(&["backup"]);
     assert_eq!(
-        describe.status.code(),
+        backup.status.code(),
         Some(97),
-        "describe is still Python-execed; if this isn't 97 the poison isn't live and the cutover proof above is meaningless"
+        "backup is still Python-execed; if this isn't 97 the poison isn't live and the cutover proof above is meaningless"
     );
     assert!(
         harness.poison_marker.exists(),
-        "describe did not invoke the poisoned interpreter"
+        "backup did not invoke the poisoned interpreter"
     );
 }

@@ -539,6 +539,10 @@ check-rust-describe-cli-stubs:
 	@set -eu; \
 		output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --test cli --locked -- --test-threads=1 2>&1)"; \
 		printf '%s\n' "$$output"; \
+		if [ -n "$${SOLSTONE_CI_CARGO_LOG:-}" ]; then \
+			echo "check-rust-describe-cli-stubs: recording Cargo shim active (SOLSTONE_CI_CARGO_LOG is set); the leg ran but emits no test output, so the stub census is skipped for this traversal only"; \
+			exit 0; \
+		fi; \
 		printf '%s\n' "$$output" | grep -F '0 filtered out' >/dev/null; \
 		for test_name in \
 			blocked_reentry_does_not_touch_the_existing_artifact \

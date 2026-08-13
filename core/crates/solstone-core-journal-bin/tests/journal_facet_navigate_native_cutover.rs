@@ -264,11 +264,11 @@ fn navigate_happy_path_runs_natively() {
 #[test]
 fn poison_remains_live_for_a_python_token() {
     let harness = Harness::new();
-    let output = harness.run(&["describe"], false);
+    let output = harness.run(&["backup"], false);
 
     assert_eq!(output.status.code(), Some(97));
     assert!(
         harness.poison_marker.exists(),
-        "describe did not invoke the poisoned interpreter"
+        "backup did not invoke the poisoned interpreter"
     );
 }

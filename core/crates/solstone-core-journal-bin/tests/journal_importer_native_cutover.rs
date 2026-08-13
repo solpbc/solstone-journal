@@ -633,6 +633,6 @@ fn contains_named_file(root: &Path, name: &str) -> bool {
 #[test]
 fn poison_remains_live_for_an_unmigrated_python_process_token() {
     let harness = Harness::new();
-    assert_eq!(harness.run_python_token("describe").status.code(), Some(97));
+    assert_eq!(harness.run_python_token("backup").status.code(), Some(97));
     assert!(harness.poison.exists());
 }
