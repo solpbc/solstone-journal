@@ -3,10 +3,11 @@
 
 //! Injected state machine for following top-level operational service logs.
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use solstone_core_system::operational_log_parse::parse_health_log_row;
@@ -42,7 +43,7 @@ pub trait FollowFs {
     /// Observe the current final-path type. `Ok(false)` covers a proven
     /// missing path and a proven non-symlink.
     fn is_symlink(&self, path: &Path) -> io::Result<bool>;
-    /// Fully canonicalize a source path, matching `Path.resolve()`.
+    /// Resolve a source path with `Path.resolve(strict=False)` semantics.
     fn resolve(&self, path: &Path) -> io::Result<PathBuf>;
     /// Open a source at offset zero. Initial discovery separately seeks to
     /// EOF; rotation deliberately does not.
@@ -83,12 +84,90 @@ impl FollowFs for StdFollowFs {
     }
 
     fn resolve(&self, path: &Path) -> io::Result<PathBuf> {
-        fs::canonicalize(path)
+        resolve_non_strict(&StdResolveFs, path)
     }
 
     fn open(&self, resolved: &Path) -> io::Result<Box<dyn FollowReader>> {
         Ok(Box::new(FileFollowReader::open(resolved)?))
     }
+}
+
+trait ResolveFs {
+    fn current_dir(&self) -> io::Result<PathBuf>;
+    fn is_symlink(&self, path: &Path) -> io::Result<bool>;
+    fn read_link(&self, path: &Path) -> io::Result<PathBuf>;
+}
+
+struct StdResolveFs;
+
+impl ResolveFs for StdResolveFs {
+    fn current_dir(&self) -> io::Result<PathBuf> {
+        std::env::current_dir()
+    }
+
+    fn is_symlink(&self, path: &Path) -> io::Result<bool> {
+        fs::symlink_metadata(path).map(|metadata| metadata.file_type().is_symlink())
+    }
+
+    fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+        fs::read_link(path)
+    }
+}
+
+fn resolve_non_strict(fs: &dyn ResolveFs, path: &Path) -> io::Result<PathBuf> {
+    let base = if path.is_absolute() {
+        PathBuf::new()
+    } else {
+        fs.current_dir()?
+    };
+    resolve_components(fs, base, path, &mut HashMap::new())
+}
+
+fn resolve_components(
+    fs: &dyn ResolveFs,
+    mut resolved: PathBuf,
+    path: &Path,
+    seen: &mut HashMap<PathBuf, Option<PathBuf>>,
+) -> io::Result<PathBuf> {
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => resolved = PathBuf::from(prefix.as_os_str()),
+            Component::RootDir => resolved = PathBuf::from(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::Normal(name) => {
+                let candidate = resolved.join(name);
+                let is_symlink = fs.is_symlink(&candidate).unwrap_or(false);
+                if !is_symlink {
+                    resolved = candidate;
+                    continue;
+                }
+                if let Some(previous) = seen.get(&candidate) {
+                    resolved = previous.clone().unwrap_or(candidate);
+                    continue;
+                }
+                let target = match fs.read_link(&candidate) {
+                    Ok(target) => target,
+                    Err(_) => {
+                        resolved = candidate;
+                        continue;
+                    }
+                };
+                seen.insert(candidate.clone(), None);
+                let target_base = if target.is_absolute() {
+                    PathBuf::new()
+                } else {
+                    resolved.clone()
+                };
+                let target = resolve_components(fs, target_base, &target, seen)?;
+                seen.insert(candidate, Some(target.clone()));
+                resolved = target;
+            }
+        }
+    }
+    Ok(resolved)
 }
 
 struct FileFollowReader {
@@ -904,6 +983,228 @@ mod tests {
         assert!(
             names.iter().position(|name| name == &valid).unwrap()
                 < names.iter().position(|name| name == &invalid).unwrap()
+        );
+    }
+
+    #[derive(Default)]
+    struct RecordingResolveFs {
+        cwd: PathBuf,
+        cwd_error: bool,
+        links: HashMap<PathBuf, Result<PathBuf, io::ErrorKind>>,
+        metadata_errors: Vec<PathBuf>,
+        events: RefCell<Vec<String>>,
+    }
+
+    impl ResolveFs for RecordingResolveFs {
+        fn current_dir(&self) -> io::Result<PathBuf> {
+            self.events.borrow_mut().push("cwd".into());
+            if self.cwd_error {
+                Err(io::Error::from(io::ErrorKind::PermissionDenied))
+            } else {
+                Ok(self.cwd.clone())
+            }
+        }
+
+        fn is_symlink(&self, path: &Path) -> io::Result<bool> {
+            self.events
+                .borrow_mut()
+                .push(format!("lstat:{}", path.display()));
+            if self.metadata_errors.iter().any(|error| error == path) {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            Ok(self.links.contains_key(path))
+        }
+
+        fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+            self.events
+                .borrow_mut()
+                .push(format!("readlink:{}", path.display()));
+            match self.links.get(path).expect("recorded symlink") {
+                Ok(target) => Ok(target.clone()),
+                Err(kind) => Err(io::Error::from(*kind)),
+            }
+        }
+    }
+
+    #[test]
+    fn non_strict_resolver_suppresses_lstat_and_readlink_errors() {
+        let mut fs = RecordingResolveFs {
+            cwd: PathBuf::from("/work"),
+            ..RecordingResolveFs::default()
+        };
+        fs.metadata_errors.push(PathBuf::from("/work/missing"));
+        fs.links.insert(
+            PathBuf::from("/work/link"),
+            Ok(PathBuf::from("missing/../leaf")),
+        );
+        assert_eq!(
+            resolve_non_strict(&fs, Path::new("link/tail")).unwrap(),
+            PathBuf::from("/work/leaf/tail")
+        );
+        assert!(
+            fs.events
+                .borrow()
+                .iter()
+                .any(|event| event == "lstat:/work/missing")
+        );
+
+        let mut failing = RecordingResolveFs {
+            cwd: PathBuf::from("/work"),
+            ..RecordingResolveFs::default()
+        };
+        failing.links.insert(
+            PathBuf::from("/work/link"),
+            Err(io::ErrorKind::PermissionDenied),
+        );
+        assert_eq!(
+            resolve_non_strict(&failing, Path::new("link")).unwrap(),
+            PathBuf::from("/work/link")
+        );
+        assert_eq!(
+            failing.events.borrow().as_slice(),
+            ["cwd", "lstat:/work/link", "readlink:/work/link"]
+        );
+
+        let cwd_failure = RecordingResolveFs {
+            cwd_error: true,
+            ..RecordingResolveFs::default()
+        };
+        assert_eq!(
+            resolve_non_strict(&cwd_failure, Path::new("relative"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+    }
+
+    struct TransientReadlinkFs {
+        calls: Cell<usize>,
+    }
+
+    impl ResolveFs for TransientReadlinkFs {
+        fn current_dir(&self) -> io::Result<PathBuf> {
+            Ok(PathBuf::from("/work"))
+        }
+
+        fn is_symlink(&self, path: &Path) -> io::Result<bool> {
+            Ok(path == Path::new("/work/link"))
+        }
+
+        fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+            assert_eq!(path, Path::new("/work/link"));
+            let call = self.calls.get();
+            self.calls.set(call + 1);
+            if call == 0 {
+                Err(io::Error::from(io::ErrorKind::PermissionDenied))
+            } else {
+                Ok(PathBuf::from("target"))
+            }
+        }
+    }
+
+    #[test]
+    fn failed_readlink_is_not_cached_and_retries_same_candidate() {
+        let fs = TransientReadlinkFs {
+            calls: Cell::new(0),
+        };
+        assert_eq!(
+            resolve_non_strict(&fs, Path::new("link/../link")).unwrap(),
+            PathBuf::from("/work/target")
+        );
+        assert_eq!(fs.calls.get(), 2);
+    }
+
+    #[test]
+    fn non_strict_resolver_preserves_missing_and_loop_paths_for_open() {
+        let directory = TempDir::new().unwrap();
+        std::fs::create_dir(directory.path().join("target-dir")).unwrap();
+        std::fs::write(directory.path().join("target-dir/file"), b"").unwrap();
+        symlink(
+            directory.path().join("target-dir"),
+            directory.path().join("absolute"),
+        )
+        .unwrap();
+        assert_eq!(
+            StdFollowFs
+                .resolve(&directory.path().join("absolute/./file"))
+                .unwrap(),
+            directory.path().join("target-dir/file")
+        );
+
+        symlink("missing/leaf", directory.path().join("broken")).unwrap();
+        let broken = StdFollowFs
+            .resolve(&directory.path().join("broken"))
+            .unwrap();
+        assert_eq!(broken, directory.path().join("missing/leaf"));
+
+        symlink("b", directory.path().join("a")).unwrap();
+        symlink("a", directory.path().join("b")).unwrap();
+        let loop_path = StdFollowFs.resolve(&directory.path().join("a")).unwrap();
+        assert_eq!(loop_path, directory.path().join("a"));
+        assert!(
+            std::fs::File::open(loop_path)
+                .unwrap_err()
+                .raw_os_error()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn loop_open_failures_warn_without_stopping_other_sources() {
+        let directory = TempDir::new().unwrap();
+        std::fs::write(directory.path().join("target"), b"").unwrap();
+        std::fs::write(directory.path().join("survivor.log"), b"").unwrap();
+        symlink("target", directory.path().join("rot.log")).unwrap();
+        symlink("loop-b", directory.path().join("loop-a")).unwrap();
+        symlink("loop-a", directory.path().join("loop-b")).unwrap();
+        symlink("loop-a", directory.path().join("initial-loop.log")).unwrap();
+
+        let mut warnings = Vec::new();
+        let mut initial = discover_initial(
+            &StdFollowFs,
+            directory.path(),
+            Duration::ZERO,
+            &mut |warning| warnings.push(warning),
+        )
+        .unwrap();
+        assert!(initial.has_tracked_sources);
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("initial-open failed"))
+        );
+
+        std::fs::remove_file(directory.path().join("rot.log")).unwrap();
+        symlink("loop-a", directory.path().join("rot.log")).unwrap();
+        std::fs::write(
+            directory.path().join("survivor.log"),
+            b"2026-01-01 12:00:00 [survivor:out] alive\n",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        let mut last_service = None;
+        let mut context = FollowTickContext {
+            fs: &StdFollowFs,
+            health_dir: directory.path(),
+            stop: &|| false,
+            output: &mut output,
+            is_tty: false,
+            last_service: &mut last_service,
+            warn: &mut |warning| warnings.push(warning),
+        };
+        tick(&mut initial.state, Duration::from_secs(2), &mut context).unwrap();
+        assert_eq!(output, b"2026-01-01 12:00:00 [survivor:out] alive\n");
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("rotation-open failed"))
+        );
+        assert!(
+            initial
+                .state
+                .tracked
+                .iter()
+                .all(|source| source.source_path != directory.path().join("rot.log"))
         );
     }
 

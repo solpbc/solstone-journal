@@ -2701,6 +2701,7 @@ version = "1.0.22"
 dependencies = [
  "solstone-core-doctor",
  "solstone-core-observer",
+ "unicode-general-category",
 ]
 
 [[package]]

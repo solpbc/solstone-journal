@@ -25,15 +25,15 @@ use solstone_core_cli::{
     CONVEY_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, EXPORT_HELP,
     EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP,
     GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP,
-    HEALTH_LOGS_HELP, HEALTH_LOGS_USAGE, HEALTH_USAGE, IDENTITY_BRIEFING_HELP,
-    IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
-    IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand,
-    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
-    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
-    InstallCommand, JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    HEALTH_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP,
+    IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE,
+    IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP,
+    INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
+    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE,
     SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, ServiceOptions,
@@ -249,15 +249,8 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::HealthLogs(args)) => health_logs::run(args),
-        Ok(Command::HealthLogsUsage) => {
-            eprint!("{HEALTH_LOGS_USAGE}");
-            eprintln!("journal health logs: error: invalid arguments");
-            ExitCode::from(2)
-        }
-        Ok(Command::HealthLogsHelp) => {
-            print!("{HEALTH_LOGS_HELP}");
-            ExitCode::SUCCESS
-        }
+        Ok(Command::HealthLogsUsage(args)) => health_logs::usage(args),
+        Ok(Command::HealthLogsHelp(args)) => health_logs::help(args),
         Ok(Command::Observer(command)) => run_observer(command),
         Ok(Command::Navigate { path, facet }) => navigate::run(path, facet),
         Ok(Command::NavigateHelp) => {

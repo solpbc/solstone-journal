@@ -651,8 +651,8 @@ pub enum Command {
     HealthUsage,
     HealthHelp,
     HealthLogs(HealthLogsArgs),
-    HealthLogsUsage,
-    HealthLogsHelp,
+    HealthLogsUsage(HealthLogsArgs),
+    HealthLogsHelp(HealthLogsArgs),
     Observer(ObserverCommand),
     Navigate {
         path: Option<String>,
@@ -704,6 +704,14 @@ pub struct HealthLogsArgs {
     pub grep: Option<String>,
     pub verbose: bool,
     pub debug: bool,
+    pub value_checks: Vec<HealthLogsValueCheck>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HealthLogsValueCheck {
+    Count(String),
+    Since(String),
+    Grep(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1424,8 +1432,8 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             {
                 return Ok(match parse_health_logs(logs) {
                     Ok(HealthLogsParse::Run(args)) => Command::HealthLogs(args),
-                    Ok(HealthLogsParse::Help) => Command::HealthLogsHelp,
-                    Err(()) => Command::HealthLogsUsage,
+                    Ok(HealthLogsParse::Help(args)) => Command::HealthLogsHelp(args),
+                    Err(args) => Command::HealthLogsUsage(*args),
                 });
             }
             let help = |argument: &OsString| {
@@ -3428,10 +3436,10 @@ fn parse_health(args: &[OsString]) -> Result<(bool, bool), ()> {
 
 enum HealthLogsParse {
     Run(HealthLogsArgs),
-    Help,
+    Help(HealthLogsArgs),
 }
 
-fn parse_health_logs(args: &[OsString]) -> Result<HealthLogsParse, ()> {
+fn parse_health_logs(args: &[OsString]) -> Result<HealthLogsParse, Box<HealthLogsArgs>> {
     let mut result = HealthLogsArgs {
         count: "5".to_owned(),
         follow: false,
@@ -3440,81 +3448,225 @@ fn parse_health_logs(args: &[OsString]) -> Result<HealthLogsParse, ()> {
         grep: None,
         verbose: false,
         debug: false,
+        value_checks: Vec::new(),
     };
     let mut index = 0;
+    let mut saw_unknown = false;
     while index < args.len() {
-        let argument = args[index].to_str().ok_or(())?;
-        if matches!(argument, "-h" | "--help") {
-            return Ok(HealthLogsParse::Help);
+        let argument = args[index]
+            .to_str()
+            .ok_or_else(|| Box::new(result.clone()))?;
+        if argument == "-h" {
+            return Ok(HealthLogsParse::Help(result));
+        }
+        if argument == "--" {
+            return Err(Box::new(result));
+        }
+        if argument.starts_with("--") {
+            match health_logs_long_option(argument).map_err(|_| Box::new(result.clone()))? {
+                Some((HealthLogsLongOption::Help, None)) => {
+                    return Ok(HealthLogsParse::Help(result));
+                }
+                Some((HealthLogsLongOption::Verbose, None)) => {
+                    result.verbose = true;
+                    index += 1;
+                    continue;
+                }
+                Some((HealthLogsLongOption::Debug, None)) => {
+                    result.debug = true;
+                    index += 1;
+                    continue;
+                }
+                Some((option, attached)) => {
+                    let value = attached
+                        .map(str::to_owned)
+                        .map_or_else(|| detached_health_logs_value(args, index + 1), Ok)
+                        .map_err(|_| Box::new(result.clone()))?;
+                    match option {
+                        HealthLogsLongOption::Since => {
+                            result.since = Some(value.clone());
+                            result.value_checks.push(HealthLogsValueCheck::Since(value));
+                        }
+                        HealthLogsLongOption::Service => result.service = Some(value),
+                        HealthLogsLongOption::Grep => {
+                            result.grep = Some(value.clone());
+                            result.value_checks.push(HealthLogsValueCheck::Grep(value));
+                        }
+                        HealthLogsLongOption::Help
+                        | HealthLogsLongOption::Verbose
+                        | HealthLogsLongOption::Debug => return Err(Box::new(result)),
+                    }
+                    index += if attached.is_some() { 1 } else { 2 };
+                    continue;
+                }
+                None => {}
+            }
+        }
+        if argument.starts_with('-') && argument.len() > 2 {
+            match parse_health_logs_short_cluster(argument, args, index, &mut result) {
+                Err(()) => return Err(Box::new(result)),
+                Ok(Some(HealthLogsShortCluster::Help)) => {
+                    return Ok(HealthLogsParse::Help(result));
+                }
+                Ok(Some(HealthLogsShortCluster::Consumed(arguments))) => {
+                    index += arguments;
+                    continue;
+                }
+                Ok(None) => {}
+            }
         }
         if matches!(argument, "-f") {
             result.follow = true;
             index += 1;
             continue;
         }
-        if matches!(argument, "-v" | "--verbose") {
+        if argument == "-v" {
             result.verbose = true;
             index += 1;
             continue;
         }
-        if matches!(argument, "-d" | "--debug") {
+        if argument == "-d" {
             result.debug = true;
             index += 1;
             continue;
         }
         if argument == "-c" {
-            result.count = args
-                .get(index + 1)
-                .and_then(|value| value.to_str())
-                .ok_or(())?
-                .to_owned();
+            result.count = detached_health_logs_value(args, index + 1)
+                .map_err(|_| Box::new(result.clone()))?;
+            result
+                .value_checks
+                .push(HealthLogsValueCheck::Count(result.count.clone()));
             index += 2;
             continue;
         }
-        if let Some(value) = argument.strip_prefix("-c=").or_else(|| {
-            argument
-                .strip_prefix("-c")
-                .filter(|value| !value.is_empty())
-        }) {
-            result.count = value.to_owned();
-            index += 1;
-            continue;
-        }
-        let target = match argument {
-            "--since" => Some(&mut result.since),
-            "--service" => Some(&mut result.service),
-            "--grep" => Some(&mut result.grep),
-            _ => None,
-        };
-        if let Some(target) = target {
-            *target = Some(
-                args.get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or(())?
-                    .to_owned(),
-            );
-            index += 2;
-            continue;
-        }
-        let mut matched_attached_value = false;
-        for (prefix, target) in [
-            ("--since=", &mut result.since),
-            ("--service=", &mut result.service),
-            ("--grep=", &mut result.grep),
-        ] {
-            if let Some(value) = argument.strip_prefix(prefix) {
-                *target = Some(value.to_owned());
-                index += 1;
-                matched_attached_value = true;
-                break;
+        saw_unknown = true;
+        index += 1;
+    }
+    if saw_unknown {
+        Err(Box::new(result))
+    } else {
+        Ok(HealthLogsParse::Run(result))
+    }
+}
+
+enum HealthLogsShortCluster {
+    Help,
+    Consumed(usize),
+}
+
+fn parse_health_logs_short_cluster(
+    argument: &str,
+    args: &[OsString],
+    index: usize,
+    result: &mut HealthLogsArgs,
+) -> Result<Option<HealthLogsShortCluster>, ()> {
+    let bytes = argument.as_bytes();
+    let mut offset = 1;
+    let mut follow = result.follow;
+    let mut verbose = result.verbose;
+    let mut debug = result.debug;
+    while offset < bytes.len() {
+        match bytes[offset] {
+            b'h' => {
+                result.follow = follow;
+                result.verbose = verbose;
+                result.debug = debug;
+                return Ok(Some(HealthLogsShortCluster::Help));
             }
+            b'f' => follow = true,
+            b'v' => verbose = true,
+            b'd' => debug = true,
+            b'c' => {
+                let attached = &argument[offset + 1..];
+                let (value, arguments) = if attached.is_empty() {
+                    (detached_health_logs_value(args, index + 1)?, 2)
+                } else {
+                    (attached.strip_prefix('=').unwrap_or(attached).to_owned(), 1)
+                };
+                result.count = value.clone();
+                result.follow = follow;
+                result.verbose = verbose;
+                result.debug = debug;
+                result.value_checks.push(HealthLogsValueCheck::Count(value));
+                return Ok(Some(HealthLogsShortCluster::Consumed(arguments)));
+            }
+            _ => return Ok(None),
         }
-        if matched_attached_value {
-            continue;
-        }
+        offset += 1;
+    }
+    result.follow = follow;
+    result.verbose = verbose;
+    result.debug = debug;
+    Ok(Some(HealthLogsShortCluster::Consumed(1)))
+}
+
+#[derive(Clone, Copy)]
+enum HealthLogsLongOption {
+    Help,
+    Since,
+    Service,
+    Grep,
+    Verbose,
+    Debug,
+}
+
+fn health_logs_long_option(
+    argument: &str,
+) -> Result<Option<(HealthLogsLongOption, Option<&str>)>, ()> {
+    let (option, attached) = argument
+        .split_once('=')
+        .map_or((argument, None), |(option, value)| (option, Some(value)));
+    let options = [
+        ("--help", HealthLogsLongOption::Help),
+        ("--since", HealthLogsLongOption::Since),
+        ("--service", HealthLogsLongOption::Service),
+        ("--grep", HealthLogsLongOption::Grep),
+        ("--verbose", HealthLogsLongOption::Verbose),
+        ("--debug", HealthLogsLongOption::Debug),
+    ];
+    if let Some((_, exact)) = options.iter().find(|(name, _)| *name == option) {
+        return Ok(Some((*exact, attached)));
+    }
+    let mut matches = options
+        .iter()
+        .filter(|(name, _)| name.starts_with(option))
+        .map(|(_, option)| *option);
+    let Some(found) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
         return Err(());
     }
-    Ok(HealthLogsParse::Run(result))
+    Ok(Some((found, attached)))
+}
+
+fn detached_health_logs_value(args: &[OsString], index: usize) -> Result<String, ()> {
+    let value = args.get(index).and_then(|value| value.to_str()).ok_or(())?;
+    if health_logs_detached_value(value) {
+        Ok(value.to_owned())
+    } else {
+        Err(())
+    }
+}
+
+fn health_logs_detached_value(value: &str) -> bool {
+    !value.starts_with('-')
+        || value == "-"
+        || value.contains(' ')
+        || health_logs_negative_number(value)
+}
+
+fn health_logs_negative_number(value: &str) -> bool {
+    use unicode_general_category::{GeneralCategory, get_general_category};
+
+    let Some(unsigned) = value.strip_prefix('-') else {
+        return false;
+    };
+    let candidate = unsigned.strip_prefix('.').unwrap_or(unsigned);
+    candidate
+        .chars()
+        .next()
+        .is_some_and(|character| get_general_category(character) == GeneralCategory::DecimalNumber)
 }
 
 fn parse_journal_path(args: &[OsString]) -> Result<JournalPathOptions, UsageError> {
@@ -5968,7 +6120,8 @@ mod tests {
                 service: None,
                 grep: None,
                 verbose: false,
-                debug: false
+                debug: false,
+                value_checks: Vec::new(),
             }))
         );
         assert_eq!(
@@ -5992,7 +6145,12 @@ mod tests {
                 service: Some("observer".into()),
                 grep: Some("error".into()),
                 verbose: true,
-                debug: true
+                debug: true,
+                value_checks: vec![
+                    HealthLogsValueCheck::Count("10".into()),
+                    HealthLogsValueCheck::Since("30m".into()),
+                    HealthLogsValueCheck::Grep("error".into()),
+                ],
             }))
         );
         for values in [
@@ -6008,13 +6166,19 @@ mod tests {
             ["health", "logs", "--"].as_slice(),
             ["health", "logs", "--service"].as_slice(),
         ] {
-            assert_eq!(evaluate_args(&args(values)), Ok(Command::HealthLogsUsage));
+            assert!(matches!(
+                evaluate_args(&args(values)),
+                Ok(Command::HealthLogsUsage(_))
+            ));
         }
         for values in [
             ["health", "logs", "--help"].as_slice(),
             ["health", "logs", "-h"].as_slice(),
         ] {
-            assert_eq!(evaluate_args(&args(values)), Ok(Command::HealthLogsHelp));
+            assert!(matches!(
+                evaluate_args(&args(values)),
+                Ok(Command::HealthLogsHelp(_))
+            ));
         }
         assert!(
             matches!(evaluate_args(&args(&["health", "logs", "-c", "5", "-c", "10"])), Ok(Command::HealthLogs(HealthLogsArgs { count, .. })) if count == "10")
@@ -6024,19 +6188,227 @@ mod tests {
         );
     }
 
+    #[test]
+    fn health_logs_preserves_value_order_and_argparse_help_precedence() {
+        let command = evaluate_args(&args(&[
+            "health", "logs", "-c", "bad", "-c", "5", "--since", "bad", "--grep", "(", "--help",
+        ]))
+        .unwrap();
+        let Command::HealthLogsHelp(parsed) = command else {
+            panic!("expected ordered health logs help carrier");
+        };
+        assert_eq!(
+            parsed.value_checks,
+            [
+                HealthLogsValueCheck::Count("bad".into()),
+                HealthLogsValueCheck::Count("5".into()),
+                HealthLogsValueCheck::Since("bad".into()),
+                HealthLogsValueCheck::Grep("(".into()),
+            ]
+        );
+
+        let Command::HealthLogsHelp(parsed) =
+            evaluate_args(&args(&["health", "logs", "--help", "-c", "bad"])).unwrap()
+        else {
+            panic!("help must stop parsing");
+        };
+        assert!(parsed.value_checks.is_empty());
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--bogus", "--help"])),
+            Ok(Command::HealthLogsHelp(_))
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--bogus"])),
+            Ok(Command::HealthLogsUsage(_))
+        ));
+
+        for values in [
+            ["health", "logs", "-c", "bad", "--bogus"].as_slice(),
+            ["health", "logs", "--bogus", "-c", "bad"].as_slice(),
+            ["health", "logs", "-c", "bad", "--service"].as_slice(),
+            ["health", "logs", "-c", "bad", "--s", "x"].as_slice(),
+        ] {
+            assert!(
+                matches!(
+                    evaluate_args(&args(values)),
+                    Ok(Command::HealthLogsUsage(HealthLogsArgs { value_checks, .. }))
+                        if value_checks == [HealthLogsValueCheck::Count("bad".into())]
+                ),
+                "{values:?}"
+            );
+        }
+        assert!(matches!(
+            evaluate_args(&args(&[
+                "health", "logs", "--service", "-f", "-c", "bad"
+            ])),
+            Ok(Command::HealthLogsUsage(HealthLogsArgs { value_checks, .. }))
+                if value_checks.is_empty()
+        ));
+    }
+
+    #[test]
+    fn health_logs_detached_values_match_argparse_optional_classification() {
+        for value in [
+            "plain", "-", "-1", "-.5", "-١", "- name", "-1e2", "-1.", "-0x1", "-.5x", "-.١x",
+        ] {
+            assert!(
+                matches!(
+                    evaluate_args(&args(&["health", "logs", "--service", value])),
+                    Ok(Command::HealthLogs(HealthLogsArgs { service: Some(actual), .. })) if actual == value
+                ),
+                "{value:?}"
+            );
+        }
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--service=-f"])),
+            Ok(Command::HealthLogs(HealthLogsArgs { service: Some(value), .. })) if value == "-f"
+        ));
+        for value in ["-f", "--bogus", "-name", "-.x", "--", "--help"] {
+            assert!(
+                matches!(
+                    evaluate_args(&args(&["health", "logs", "--service", value])),
+                    Ok(Command::HealthLogsUsage(_))
+                ),
+                "{value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn health_logs_end_of_options_cannot_activate_later_help() {
+        for values in [
+            ["health", "logs", "--"].as_slice(),
+            ["health", "logs", "--", "--help"].as_slice(),
+            ["health", "logs", "--service", "--"].as_slice(),
+        ] {
+            assert!(
+                matches!(
+                    evaluate_args(&args(values)),
+                    Ok(Command::HealthLogsUsage(_))
+                ),
+                "{values:?}"
+            );
+        }
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--help", "--"])),
+            Ok(Command::HealthLogsHelp(_))
+        ));
+    }
+
+    #[test]
+    fn health_logs_long_options_use_argparse_unique_prefixes() {
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--serv=x"])),
+            Ok(Command::HealthLogs(HealthLogsArgs { service: Some(value), .. })) if value == "x"
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--gre=x"])),
+            Ok(Command::HealthLogs(HealthLogsArgs { grep: Some(value), .. })) if value == "x"
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--ver", "--deb"])),
+            Ok(Command::HealthLogs(HealthLogsArgs {
+                verbose: true,
+                debug: true,
+                ..
+            }))
+        ));
+        for values in [
+            ["health", "logs", "--s", "x", "--help"].as_slice(),
+            ["health", "logs", "--s=x", "--help"].as_slice(),
+            ["health", "logs", "--ver=x"].as_slice(),
+        ] {
+            assert!(
+                matches!(
+                    evaluate_args(&args(values)),
+                    Ok(Command::HealthLogsUsage(_))
+                ),
+                "{values:?}"
+            );
+        }
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--help", "--s", "x"])),
+            Ok(Command::HealthLogsHelp(_))
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "--fo", "--help"])),
+            Ok(Command::HealthLogsHelp(_))
+        ));
+    }
+
+    #[test]
+    fn health_logs_short_clusters_match_argparse_consumption() {
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "-vf", "-df"])),
+            Ok(Command::HealthLogs(HealthLogsArgs {
+                follow: true,
+                verbose: true,
+                debug: true,
+                ..
+            }))
+        ));
+        for value in ["-fc5", "-vc5"] {
+            assert!(matches!(
+                evaluate_args(&args(&["health", "logs", value])),
+                Ok(Command::HealthLogs(HealthLogsArgs { count, .. })) if count == "5"
+            ));
+        }
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "-vh"])),
+            Ok(Command::HealthLogsHelp(HealthLogsArgs {
+                verbose: true,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["health", "logs", "-x", "--help"])),
+            Ok(Command::HealthLogsHelp(_))
+        ));
+        for values in [
+            ["health", "logs", "-vx"].as_slice(),
+            ["health", "logs", "-cv"].as_slice(),
+        ] {
+            let command = evaluate_args(&args(values)).unwrap();
+            if values[2] == "-vx" {
+                assert!(matches!(command, Command::HealthLogsUsage(_)));
+            } else {
+                assert!(matches!(
+                    command,
+                    Command::HealthLogs(HealthLogsArgs {
+                        value_checks,
+                        ..
+                    }) if value_checks == [HealthLogsValueCheck::Count("v".into())]
+                ));
+            }
+        }
+        let Command::HealthLogsHelp(parsed) =
+            evaluate_args(&args(&["health", "logs", "-vx", "--help"])).unwrap()
+        else {
+            panic!("unknown short cluster must defer to later help");
+        };
+        assert!(!parsed.verbose, "unknown cluster must be transactional");
+        assert!(matches!(
+            evaluate_args(&args(&[
+                "health", "logs", "-vx", "-c", "bad", "--help"
+            ])),
+            Ok(Command::HealthLogsHelp(HealthLogsArgs { value_checks, .. }))
+                if value_checks == [HealthLogsValueCheck::Count("bad".into())]
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn health_logs_non_utf8_arguments_are_usage_carriers() {
         use std::os::unix::ffi::OsStringExt;
 
-        assert_eq!(
+        assert!(matches!(
             evaluate_args(&[
                 OsString::from("health"),
                 OsString::from("logs"),
                 OsString::from_vec(vec![0xff]),
             ]),
-            Ok(Command::HealthLogsUsage)
-        );
+            Ok(Command::HealthLogsUsage(_))
+        ));
     }
 
     #[test]
