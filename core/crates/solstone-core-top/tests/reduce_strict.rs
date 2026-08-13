@@ -5,8 +5,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
     FrameSample, PlainTopStyle, ProcessObserver, ProcessSample, ReductionDisposition,
-    ReductionSample, RestartAttempt, RestartPhase, TopState, apply_receive_event, reduce_envelope,
-    render_frame,
+    ReductionSample, RestartAttempt, RestartPhase, TopMalformed, TopMalformedKind, TopRoute,
+    TopState, apply_receive_event, reduce_envelope, render_frame,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/top_reference.json");
@@ -44,6 +44,21 @@ fn assert_malformed(envelope: CallosumEnvelope) {
         reduce_envelope(&mut state, &envelope, &sample(), &mut observer),
         ReductionDisposition::Malformed(_)
     ));
+    assert_eq!(state.fixture_value(), before);
+    assert_eq!(state.malformed_events, 1);
+    assert_eq!(observer.calls, 0);
+}
+
+fn assert_malformed_kind(envelope: CallosumEnvelope, route: TopRoute, kind: TopMalformedKind) {
+    let mut state = TopState::default();
+    let before = state.fixture_value();
+    let mut observer = RecordingObserver::default();
+    let expected = TopMalformed { route, kind };
+    assert_eq!(
+        reduce_envelope(&mut state, &envelope, &sample(), &mut observer),
+        ReductionDisposition::Malformed(expected.clone())
+    );
+    assert_eq!(state.last_malformed, Some(expected));
     assert_eq!(state.fixture_value(), before);
     assert_eq!(state.malformed_events, 1);
     assert_eq!(observer.calls, 0);
@@ -183,6 +198,213 @@ fn recognized_routes_reject_atomically_with_typed_evidence() {
         ),
     ] {
         assert_malformed(envelope);
+    }
+}
+
+#[test]
+fn fixture_malformed_rows_keep_their_typed_route_and_kind() {
+    let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+    let expected = [
+        (
+            "supervisor-status-defaults",
+            TopRoute::SupervisorStatus,
+            TopMalformedKind::MissingField("services"),
+        ),
+        (
+            "supervisor-service-missing-pid",
+            TopRoute::SupervisorStatus,
+            TopMalformedKind::MissingField("pid"),
+        ),
+        (
+            "supervisor-services-wrong-type",
+            TopRoute::SupervisorStatus,
+            TopMalformedKind::WrongType("services"),
+        ),
+        (
+            "supervisor-queues-wrong-type",
+            TopRoute::SupervisorStatus,
+            TopMalformedKind::MissingField("services"),
+        ),
+        (
+            "queue-missing-command",
+            TopRoute::SupervisorQueue,
+            TopMalformedKind::MissingField("command"),
+        ),
+        (
+            "queue-wrong-count",
+            TopRoute::SupervisorQueue,
+            TopMalformedKind::WrongType("queued"),
+        ),
+        (
+            "logs-exec-missing-pid",
+            TopRoute::LogsExec,
+            TopMalformedKind::MissingField("pid"),
+        ),
+        (
+            "logs-line-missing-ref",
+            TopRoute::LogsLine,
+            TopMalformedKind::MissingField("ref"),
+        ),
+        (
+            "logs-line-wrong-stream",
+            TopRoute::LogsLine,
+            TopMalformedKind::WrongType("line"),
+        ),
+        (
+            "observe-missing-day",
+            TopRoute::ObserveObserved,
+            TopMalformedKind::MissingField("day"),
+        ),
+        (
+            "observe-duration-wrong-type",
+            TopRoute::ObserveObserved,
+            TopMalformedKind::WrongType("duration"),
+        ),
+        (
+            "think-completed-defaults",
+            TopRoute::ThinkCompleted,
+            TopMalformedKind::MissingField("success"),
+        ),
+    ];
+    for (name, route, kind) in expected {
+        let event = fixture["malformed_events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap()["event"]
+            .clone();
+        assert_malformed_kind(serde_json::from_value(event).unwrap(), route, kind);
+    }
+}
+
+#[test]
+fn undercovered_consumed_fields_reject_wrong_types() {
+    assert_malformed_kind(
+        event(
+            "supervisor",
+            "restarting",
+            Map::from_iter([("service".into(), json!(1))]),
+        ),
+        TopRoute::SupervisorLifecycle,
+        TopMalformedKind::WrongType("service"),
+    );
+    assert_malformed_kind(
+        event(
+            "supervisor",
+            "queue",
+            Map::from_iter([
+                ("command".into(), json!(false)),
+                ("queued".into(), json!(1)),
+            ]),
+        ),
+        TopRoute::SupervisorQueue,
+        TopMalformedKind::WrongType("command"),
+    );
+    for (field, value) in [
+        ("name", json!(1)),
+        ("ref", json!(1)),
+        ("pid", json!("1")),
+        ("uptime_seconds", json!("0")),
+    ] {
+        let mut service = json!({"name":"svc","ref":"ref","pid":1,"uptime_seconds":0});
+        service[field] = value;
+        assert_malformed_kind(
+            event(
+                "supervisor",
+                "status",
+                Map::from_iter([
+                    ("services".into(), json!([service])),
+                    ("crashed".into(), json!([])),
+                    ("queues".into(), json!({})),
+                ]),
+            ),
+            TopRoute::SupervisorStatus,
+            TopMalformedKind::WrongType(field),
+        );
+    }
+    assert_malformed_kind(
+        event(
+            "supervisor",
+            "status",
+            Map::from_iter([
+                ("services".into(), json!([])),
+                (
+                    "crashed".into(),
+                    json!([{"name":"svc","restart_attempts":"one"}]),
+                ),
+                ("queues".into(), json!({})),
+            ]),
+        ),
+        TopRoute::SupervisorStatus,
+        TopMalformedKind::WrongType("restart_attempts"),
+    );
+    assert_malformed_kind(
+        event(
+            "supervisor",
+            "status",
+            Map::from_iter([
+                ("services".into(), json!([])),
+                ("crashed".into(), json!([])),
+                ("queues".into(), json!({"queue":"one"})),
+            ]),
+        ),
+        TopRoute::SupervisorStatus,
+        TopMalformedKind::WrongType("queues[]"),
+    );
+    assert_malformed_kind(
+        event(
+            "logs",
+            "line",
+            Map::from_iter([
+                ("ref".into(), json!("r")),
+                ("line".into(), json!(false)),
+                ("stream".into(), json!("stdout")),
+            ]),
+        ),
+        TopRoute::LogsLine,
+        TopMalformedKind::WrongType("line"),
+    );
+    for (field, value) in [("name", json!(false)), ("pid", json!("3"))] {
+        let mut extra = Map::from_iter([
+            ("ref".into(), json!("r")),
+            ("line".into(), json!("line")),
+            ("stream".into(), json!("stdout")),
+            ("name".into(), json!("task")),
+            ("pid".into(), json!(3)),
+        ]);
+        extra.insert(field.to_owned(), value);
+        assert_malformed_kind(
+            event("logs", "line", extra),
+            TopRoute::LogsLine,
+            TopMalformedKind::WrongType(field),
+        );
+    }
+    for (field, value) in [("mode", json!(1)), ("stream", json!(false))] {
+        assert_malformed_kind(
+            event("observe", "status", Map::from_iter([(field.into(), value)])),
+            TopRoute::ObserveStatus,
+            TopMalformedKind::WrongType(field),
+        );
+    }
+    for field in [
+        "mode",
+        "day",
+        "segment",
+        "agents_total",
+        "agents_completed",
+        "segments_total",
+        "segments_completed",
+    ] {
+        assert_malformed_kind(
+            event(
+                "think",
+                "status",
+                Map::from_iter([(field.into(), json!(false))]),
+            ),
+            TopRoute::ThinkStatus,
+            TopMalformedKind::WrongType(field),
+        );
     }
 }
 

@@ -183,5 +183,16 @@ fn brain_failures_are_nonfatal_and_later_success_recovers_only_brain() {
             .iter()
             .any(|frame| frame.contains("\\x1b[31mhostile"))
     );
-    assert!(terminal.frames.iter().all(|frame| !frame.contains('\x1b')));
+    assert!(
+        terminal
+            .frames
+            .iter()
+            .all(|frame| !frame.contains("\x1b[31mhostile"))
+    );
+    assert!(
+        terminal
+            .frames
+            .iter()
+            .all(|frame| frame.starts_with("\x1b[H\x1b[2J"))
+    );
 }

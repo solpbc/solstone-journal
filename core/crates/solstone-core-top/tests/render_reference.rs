@@ -88,3 +88,35 @@ fn payload_token_spellings_are_not_trusted_framing() {
         "<BOLD>ab<RED>c<NORMAL>"
     );
 }
+
+#[test]
+fn untrusted_state_payloads_remain_inert_tokens() {
+    let mut state = support::state_for_render_case("empty");
+    state
+        .command_queues
+        .insert("<RED>abcdef".into(), serde_json::json!(1));
+    state.think_running = true;
+    state.think_status = [
+        ("mode".into(), serde_json::json!("<RED>")),
+        ("day".into(), serde_json::json!("<GREEN>")),
+        ("segment".into(), serde_json::json!("<YELLOW>")),
+        ("agents_total".into(), serde_json::json!(1)),
+        ("agents_completed".into(), serde_json::json!(0)),
+    ]
+    .into();
+    let rendered = render_frame(
+        &state,
+        FrameSample {
+            wall_seconds: 100.0,
+            monotonic_seconds: 100.0,
+        },
+        40,
+        &PlainTopStyle,
+    );
+    assert!(rendered.contains("<RED>abcdef ×1"));
+    assert!(rendered.contains("[<RED>] <GREEN>/<YELLOW>"));
+    assert_eq!(
+        transform_trusted_render("<BOLD>\u{e000}<RED>\u{e001}abc", 6),
+        "<BOLD><RED>a<NORMAL>"
+    );
+}

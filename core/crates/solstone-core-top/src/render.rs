@@ -53,9 +53,12 @@ pub trait TopStyle {
     fn normal(&self) -> &str {
         "\x1b[0m"
     }
+    fn end_select(&self) -> &str {
+        "\x1b[27m"
+    }
 }
 
-/// ANSI style used by a real terminal adapter.
+/// Retained fixture/test style whose control sequences are token spellings.
 pub struct PlainTopStyle;
 impl TopStyle for PlainTopStyle {
     fn home(&self) -> &str {
@@ -91,16 +94,15 @@ impl TopStyle for PlainTopStyle {
     fn normal(&self) -> &str {
         "<NORMAL>"
     }
+
+    fn end_select(&self) -> &str {
+        "</SELECT>"
+    }
 }
 
-/// Renderer-owned framing is distinct from untrusted application text until
-/// final serialization. `LineBreak` is structural and never sanitized.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum FrameSegment {
-    Trusted(TrustedToken),
-    Untrusted(String),
-    LineBreak,
-}
+/// ANSI control style used by the live terminal loop.
+pub struct AnsiTopStyle;
+impl TopStyle for AnsiTopStyle {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrustedToken {
@@ -133,6 +135,23 @@ impl TrustedToken {
             Self::EndSelect => "</SELECT>",
             Self::Yellow => "<YELLOW>",
             Self::Normal => "<NORMAL>",
+        }
+    }
+
+    fn ansi(self) -> &'static str {
+        match self {
+            Self::Home => "\x1b[H",
+            Self::Clear => "\x1b[2J",
+            Self::Bold => "\x1b[1m",
+            Self::Dim => "\x1b[2m",
+            Self::Cyan => "\x1b[36m",
+            Self::Green => "\x1b[32m",
+            Self::Magenta => "\x1b[35m",
+            Self::Red => "\x1b[31m",
+            Self::Select => "\x1b[7m",
+            Self::EndSelect => "\x1b[27m",
+            Self::Yellow => "\x1b[33m",
+            Self::Normal => "\x1b[0m",
         }
     }
 }
@@ -374,14 +393,12 @@ fn transform_line(line: &str, width: usize) -> String {
     let mut remaining = line;
     let mut used = 0usize;
     let mut styles = 0u16;
+    let mut normal = TrustedToken::Normal.spelling();
     while !remaining.is_empty() {
-        if let Some(token) = TRUSTED_TOKENS
-            .iter()
-            .copied()
-            .find(|token| remaining.starts_with(token.spelling()))
-        {
-            output.push_str(token.spelling());
-            remaining = &remaining[token.spelling().len()..];
+        if let Some((token, length, reset)) = trusted_prefix(remaining) {
+            output.push_str(&remaining[..length]);
+            remaining = &remaining[length..];
+            normal = reset;
             match token {
                 TrustedToken::Normal => styles = 0,
                 TrustedToken::EndSelect => styles &= !1,
@@ -405,7 +422,7 @@ fn transform_line(line: &str, width: usize) -> String {
             let atom_width = atom.chars().count();
             if used.saturating_add(atom_width) > width {
                 if styles != 0 {
-                    output.push_str(TrustedToken::Normal.spelling());
+                    output.push_str(normal);
                 }
                 break;
             }
@@ -421,7 +438,7 @@ fn transform_line(line: &str, width: usize) -> String {
             let atom_width = atom.chars().count();
             if used.saturating_add(atom_width) > width {
                 if styles != 0 {
-                    output.push_str(TrustedToken::Normal.spelling());
+                    output.push_str(normal);
                 }
                 break;
             }
@@ -436,7 +453,7 @@ fn transform_line(line: &str, width: usize) -> String {
         let atom_width = atom.chars().count();
         if used.saturating_add(atom_width) > width {
             if styles != 0 {
-                output.push_str(TrustedToken::Normal.spelling());
+                output.push_str(normal);
             }
             break;
         }
@@ -444,6 +461,28 @@ fn transform_line(line: &str, width: usize) -> String {
         used += atom_width;
     }
     output
+}
+
+fn trusted_prefix(value: &str) -> Option<(TrustedToken, usize, &'static str)> {
+    TRUSTED_TOKENS
+        .iter()
+        .copied()
+        .find_map(|token| {
+            value.starts_with(token.spelling()).then_some((
+                token,
+                token.spelling().len(),
+                TrustedToken::Normal.spelling(),
+            ))
+        })
+        .or_else(|| {
+            TRUSTED_TOKENS.iter().copied().find_map(|token| {
+                value.starts_with(token.ansi()).then_some((
+                    token,
+                    token.ansi().len(),
+                    TrustedToken::Normal.ansi(),
+                ))
+            })
+        })
 }
 
 pub fn format_uptime(seconds: u64) -> String {
@@ -523,7 +562,7 @@ fn service_line(
     }
     out.push_str(&line);
     if selected {
-        out.push_str("</SELECT>");
+        out.push_str(style.end_select());
     } else {
         out.push_str(style.normal());
     }
@@ -783,7 +822,7 @@ fn queued_commands(state: &TopState, visible: &std::collections::BTreeSet<String
             count
                 .as_u64()
                 .filter(|count| *count > 0 && !visible.contains(command))
-                .map(|count| format!("{command} ×{count}"))
+                .map(|count| format!("{} ×{count}", payload_token_sentinel(command)))
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -850,13 +889,17 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
     if state.think_running {
         if !state.think_status.is_empty() {
             let status = &state.think_status;
-            let mode = status
-                .get("mode")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_uppercase();
-            let day = status.get("day").and_then(Value::as_str).unwrap_or("");
-            let segment = status.get("segment").and_then(Value::as_str).unwrap_or("");
+            let mode = payload_token_sentinel(
+                &status
+                    .get("mode")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_uppercase(),
+            );
+            let day =
+                payload_token_sentinel(status.get("day").and_then(Value::as_str).unwrap_or(""));
+            let segment =
+                payload_token_sentinel(status.get("segment").and_then(Value::as_str).unwrap_or(""));
             let completed = status
                 .get("agents_completed")
                 .and_then(Value::as_u64)
@@ -1104,6 +1147,19 @@ mod tests {
         assert_eq!(memory_mb(Some(&(12 * megabyte + megabyte / 2))), "12");
         assert_eq!(memory_mb(Some(&(13 * megabyte + megabyte / 2))), "14");
         assert_eq!(queue_status(None), "─       ");
+    }
+    #[test]
+    fn ansi_style_keeps_renderer_owned_controls_out_of_payload_sanitization() {
+        let rendered = render_frame(
+            &TopState::default(),
+            FrameSample::default(),
+            80,
+            &AnsiTopStyle,
+        );
+        assert!(rendered.starts_with("\x1b[H\x1b[2J"));
+        assert!(rendered.contains("\x1b[1m"));
+        assert!(!rendered.contains("<HOME>"));
+        assert!(!rendered.contains("\\x1b[H"));
     }
     #[test]
     fn hostile_input_is_bounded() {

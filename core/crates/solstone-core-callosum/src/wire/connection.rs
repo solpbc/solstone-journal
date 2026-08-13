@@ -229,6 +229,8 @@ pub struct CallosumSocketConnection {
     outbound_saturation_drops: Arc<AtomicU64>,
     delivered_generation: u64,
     delivered_epoch: u64,
+    initial_counters: ConnectionCounters,
+    initial_first_attempt: bool,
 }
 
 impl CallosumSocketConnection {
@@ -301,7 +303,25 @@ impl CallosumSocketConnection {
             outbound_saturation_drops: Arc::new(AtomicU64::new(0)),
             delivered_generation: 0,
             delivered_epoch: 0,
+            initial_counters: ConnectionCounters::initial(),
+            initial_first_attempt: true,
         }
+    }
+
+    #[cfg(test)]
+    fn with_retry_source_and_initial_counters(
+        socket_path: impl AsRef<Path>,
+        mut defaults: Map<String, Value>,
+        inbound_capacity: usize,
+        retry_source: Box<dyn CallosumRetrySource>,
+        initial_counters: ConnectionCounters,
+        initial_first_attempt: bool,
+    ) -> Self {
+        let mut connection =
+            Self::with_parts(socket_path, &mut defaults, inbound_capacity, retry_source);
+        connection.initial_counters = initial_counters;
+        connection.initial_first_attempt = initial_first_attempt;
+        connection
     }
 
     /// Start background connect, send, and receive processing.
@@ -319,15 +339,19 @@ impl CallosumSocketConnection {
         self.queues
             .continuity(0, 0, CallosumConnectionPhase::Connecting { attempt: 1 });
         self.running.store(true, Ordering::Release);
-        self.task = Some(tokio::spawn(run_connection(
-            self.socket_path.clone(),
+        let counters = std::mem::replace(&mut self.initial_counters, ConnectionCounters::initial());
+        let first_attempt = self.initial_first_attempt;
+        self.task = Some(tokio::spawn(run_connection(ConnectionRun {
+            socket_path: self.socket_path.clone(),
             outbound,
-            Arc::clone(&self.queues),
+            queues: Arc::clone(&self.queues),
             retry_source,
-            self.shutdown.subscribe(),
-            Arc::clone(&self.running),
-            Arc::clone(&self.malformed_frame_drops),
-        )));
+            shutdown: self.shutdown.subscribe(),
+            running: Arc::clone(&self.running),
+            malformed_frame_drops: Arc::clone(&self.malformed_frame_drops),
+            counters,
+            first_attempt,
+        })));
     }
 
     /// Queue an outbound message with Python-compatible field precedence.
@@ -453,6 +477,7 @@ struct ConnectedStream {
     writer: tokio::net::unix::OwnedWriteHalf,
 }
 
+#[derive(Clone)]
 struct ConnectionCounters {
     generation: u64,
     epoch: u64,
@@ -461,6 +486,15 @@ struct ConnectionCounters {
 }
 
 impl ConnectionCounters {
+    fn initial() -> Self {
+        Self {
+            generation: 0,
+            epoch: 0,
+            attempt: 1,
+            failures_since_success: 0,
+        }
+    }
+
     fn checked_increment(value: &mut u64) -> bool {
         let Some(next) = value.checked_add(1) else {
             return false;
@@ -470,26 +504,34 @@ impl ConnectionCounters {
     }
 }
 
-async fn run_connection(
+struct ConnectionRun {
     socket_path: PathBuf,
-    mut outbound: mpsc::Receiver<CallosumEnvelope>,
+    outbound: mpsc::Receiver<CallosumEnvelope>,
     queues: Arc<InboundQueues>,
-    mut retry_source: Box<dyn CallosumRetrySource>,
-    mut shutdown: watch::Receiver<bool>,
+    retry_source: Box<dyn CallosumRetrySource>,
+    shutdown: watch::Receiver<bool>,
     running: Arc<AtomicBool>,
     malformed_frame_drops: Arc<AtomicU64>,
-) {
+    counters: ConnectionCounters,
+    first_attempt: bool,
+}
+
+async fn run_connection(run: ConnectionRun) {
+    let ConnectionRun {
+        socket_path,
+        mut outbound,
+        queues,
+        mut retry_source,
+        mut shutdown,
+        running,
+        malformed_frame_drops,
+        mut counters,
+        mut first_attempt,
+    } = run;
     let mut stream: Option<ConnectedStream> = None;
     let mut buffer = Vec::new();
-    let mut counters = ConnectionCounters {
-        generation: 0,
-        epoch: 0,
-        attempt: 1,
-        failures_since_success: 0,
-    };
     let mut gapped = false;
     let mut resume_current = false;
-    let mut first_attempt = true;
 
     loop {
         if *shutdown.borrow() {
@@ -702,7 +744,28 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod counter_tests {
-    use super::{CallosumConnectionPhase, CallosumStoppedReason, ConnectionCounters};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use serde_json::Map;
+    use tokio::time::timeout;
+
+    use super::{
+        CallosumConnectionPhase, CallosumRetrySource, CallosumSocketConnection,
+        CallosumStoppedReason, ConnectionCounters,
+    };
+
+    static NEXT_SOCKET: AtomicUsize = AtomicUsize::new(0);
+
+    struct ImmediateRetry;
+
+    impl CallosumRetrySource for ImmediateRetry {
+        fn next_attempt(&mut self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
+            Box::pin(async { true })
+        }
+    }
 
     #[test]
     fn generation_and_attempt_overflow_stop_without_reuse() {
@@ -720,5 +783,69 @@ mod counter_tests {
                 reason: CallosumStoppedReason::CounterOverflow,
             }
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn counter_overflow_is_delivered_as_a_stopped_continuity_event() {
+        let ordinal = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("solstone-counter-overflow-{ordinal}"));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let mut attempt = CallosumSocketConnection::with_retry_source_and_initial_counters(
+            root.join("missing.sock"),
+            Map::new(),
+            1,
+            Box::new(ImmediateRetry),
+            ConnectionCounters {
+                generation: 0,
+                epoch: 0,
+                attempt: u64::MAX,
+                failures_since_success: 0,
+            },
+            false,
+        );
+        attempt.start();
+        let _ = attempt.next_event().await;
+        assert!(matches!(
+            timeout(Duration::from_secs(1), attempt.next_event())
+                .await
+                .unwrap(),
+            Some(super::CallosumReceiveEvent::Continuity {
+                phase: CallosumConnectionPhase::Stopped {
+                    reason: CallosumStoppedReason::CounterOverflow
+                },
+                ..
+            })
+        ));
+
+        let socket = root.join("connected.sock");
+        let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let mut generation = CallosumSocketConnection::with_retry_source_and_initial_counters(
+            &socket,
+            Map::new(),
+            1,
+            Box::new(ImmediateRetry),
+            ConnectionCounters {
+                generation: u64::MAX,
+                epoch: 0,
+                attempt: 1,
+                failures_since_success: 0,
+            },
+            true,
+        );
+        generation.start();
+        let _ = generation.next_event().await;
+        assert!(matches!(
+            timeout(Duration::from_secs(1), generation.next_event())
+                .await
+                .unwrap(),
+            Some(super::CallosumReceiveEvent::Continuity {
+                phase: CallosumConnectionPhase::Stopped {
+                    reason: CallosumStoppedReason::CounterOverflow
+                },
+                ..
+            })
+        ));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

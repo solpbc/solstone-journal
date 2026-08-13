@@ -5,7 +5,7 @@ use solstone_core_callosum::CallosumReceiveEvent;
 use solstone_core_system_health::sanitize_for_terminal;
 
 use crate::{
-    BrainHealthState, FrameSample, PlainTopStyle, ProcessObserver, ReductionSample,
+    AnsiTopStyle, BrainHealthState, FrameSample, ProcessObserver, ReductionSample,
     TopRestartTransport, TopState, advance_restart_attempts, apply_receive_event,
     cleanup_processes, render_frame, request_restart,
 };
@@ -116,7 +116,7 @@ pub fn run_top_with(
                     monotonic_seconds: frame_monotonic,
                 },
                 terminal.width().map_err(TopLoopError::Terminal)?,
-                &PlainTopStyle,
+                &AnsiTopStyle,
             );
             terminal.render(&frame).map_err(TopLoopError::Terminal)?;
             match terminal.input(0.2).map_err(TopLoopError::Terminal)? {

@@ -4,10 +4,12 @@
 use std::collections::VecDeque;
 
 use serde_json::json;
+use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
     RestartEnqueueResult, RestartIdError, RestartIdSource, RestartPhase, RestartRequestError,
-    RestartRequestOutcome, SessionRestartIds, TopRestartTransport, TopState, acknowledge_restart,
-    advance_restart_attempts, request_restart,
+    RestartRequestOutcome, SessionRestartIds, TopBrainSource, TopClock, TopInput,
+    TopReceiveTransport, TopRestartTransport, TopState, TopTerminal, acknowledge_restart,
+    advance_restart_attempts, request_restart, run_top_with,
 };
 
 struct Transport {
@@ -266,5 +268,158 @@ fn drain_before_deadline_accepts_boundary_ack_and_rejects_late_ack() {
     assert_eq!(
         request_restart(&mut state, "convey", 5.2, &mut transport),
         RestartRequestOutcome::Rejected
+    );
+}
+
+struct BoundaryClock(f64);
+
+impl TopClock for BoundaryClock {
+    fn wall_seconds(&self) -> f64 {
+        self.0
+    }
+
+    fn monotonic_seconds(&self) -> f64 {
+        self.0
+    }
+
+    fn datetime(&self) -> serde_json::Value {
+        json!({"datetime":"fixture"})
+    }
+
+    fn sleep(&mut self, _: f64) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+struct BoundaryTerminal;
+
+impl TopTerminal for BoundaryTerminal {
+    fn enter(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn restore(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn width(&mut self) -> Result<usize, String> {
+        Ok(120)
+    }
+
+    fn render(&mut self, _: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn input(&mut self, _: f64) -> Result<TopInput, String> {
+        Ok(TopInput::Quit)
+    }
+}
+
+struct BoundaryReceive(VecDeque<CallosumReceiveEvent>);
+
+impl TopReceiveTransport for BoundaryReceive {
+    fn start(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn next(&mut self) -> Result<Option<CallosumReceiveEvent>, String> {
+        Ok(self.0.pop_front())
+    }
+
+    fn stop(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+struct BoundaryObserver;
+
+impl solstone_core_top::ProcessObserver for BoundaryObserver {
+    fn sample(&mut self, _: u32, _: f64) -> solstone_core_top::ProcessSample {
+        solstone_core_top::ProcessSample::Missing
+    }
+}
+
+struct BoundaryBrain;
+
+impl TopBrainSource for BoundaryBrain {
+    fn inspect(&mut self) -> Result<serde_json::Value, String> {
+        Ok(json!({"lines":["ready"]}))
+    }
+}
+
+fn lifecycle(event: &str, restart_id: &str) -> CallosumReceiveEvent {
+    CallosumReceiveEvent::Envelope {
+        generation: 7,
+        epoch: 9,
+        envelope: CallosumEnvelope {
+            tract: "supervisor".to_owned(),
+            event: event.to_owned(),
+            ts: None,
+            extra: serde_json::Map::from_iter([
+                ("service".to_owned(), json!("convey")),
+                ("restart_id".to_owned(), json!(restart_id)),
+            ]),
+        },
+    }
+}
+
+#[test]
+fn owner_loop_drains_boundary_lifecycle_before_restart_deadline() {
+    let mut state = app_state();
+    let mut transport = Transport::fixed(0x79);
+    let id = emitted(&mut state, &mut transport, 0.0);
+    let mut receive = BoundaryReceive(VecDeque::from([
+        CallosumReceiveEvent::Continuity {
+            generation: 7,
+            epoch: 9,
+            phase: CallosumConnectionPhase::Connected,
+        },
+        lifecycle("restarting", &id),
+    ]));
+    run_top_with(
+        &mut state,
+        &mut BoundaryClock(5.0),
+        &mut BoundaryTerminal,
+        &mut receive,
+        &mut BoundaryObserver,
+        &mut transport,
+        &mut BoundaryBrain,
+    )
+    .unwrap();
+    assert_eq!(
+        state.restart_attempts["convey"].phase,
+        RestartPhase::Restarting
+    );
+
+    let mut state = app_state();
+    let mut transport = Transport::fixed(0x7a);
+    let id = emitted(&mut state, &mut transport, 0.0);
+    state.restart_attempts.get_mut("convey").unwrap().phase = RestartPhase::Restarting;
+    state
+        .restart_attempts
+        .get_mut("convey")
+        .unwrap()
+        .started_deadline = Some(10.0);
+    let mut receive = BoundaryReceive(VecDeque::from([
+        CallosumReceiveEvent::Continuity {
+            generation: 7,
+            epoch: 9,
+            phase: CallosumConnectionPhase::Connected,
+        },
+        lifecycle("started", &id),
+    ]));
+    run_top_with(
+        &mut state,
+        &mut BoundaryClock(10.0),
+        &mut BoundaryTerminal,
+        &mut receive,
+        &mut BoundaryObserver,
+        &mut transport,
+        &mut BoundaryBrain,
+    )
+    .unwrap();
+    assert_eq!(
+        state.restart_attempts["convey"].phase,
+        RestartPhase::Started
     );
 }

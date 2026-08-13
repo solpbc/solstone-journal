@@ -27,7 +27,7 @@ pub use reduce::{
     TopMalformedKind, TopRoute, apply_receive_event, cleanup_processes, reduce_envelope,
 };
 pub use render::{
-    FrameSample, FrameSegment, PlainTopStyle, TopStyle, TrustedToken, format_log_age,
+    AnsiTopStyle, FrameSample, PlainTopStyle, TopStyle, TrustedToken, format_log_age,
     format_runtime, format_uptime, render_frame, transform_trusted_render,
 };
 pub use restart::{

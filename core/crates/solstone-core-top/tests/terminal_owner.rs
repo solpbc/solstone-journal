@@ -15,6 +15,7 @@ struct RecordingSyscalls {
     stdout_tty: bool,
     fail_apply_raw: bool,
     fail_width: bool,
+    fail_screen_entry: bool,
 }
 
 impl RecordingSyscalls {
@@ -64,9 +65,16 @@ impl TerminalSyscalls for RecordingSyscalls {
             .ok_or_else(|| "width".to_owned())
     }
 
-    fn write_stdout(&mut self, _: &str) -> Result<(), String> {
-        self.calls.push("screen");
-        Ok(())
+    fn write_stdout(&mut self, bytes: &str) -> Result<(), String> {
+        let entering = bytes == "\x1b[?1049h\x1b[?25l";
+        self.calls.push(if entering {
+            "enter-screen"
+        } else {
+            "leave-screen"
+        });
+        (!entering || !self.fail_screen_entry)
+            .then_some(())
+            .ok_or_else(|| "screen".to_owned())
     }
 }
 
@@ -84,9 +92,31 @@ fn terminal_owner_orders_descriptor_operations_and_restores_once() {
             "capture",
             "apply",
             "width",
-            "screen",
+            "enter-screen",
             "restore",
-            "screen",
+            "leave-screen",
+        ]
+    );
+}
+
+#[test]
+fn terminal_owner_conservatively_restores_after_screen_write_failure() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_screen_entry: true,
+        ..RecordingSyscalls::ready()
+    });
+    assert!(matches!(owner.enter(), Err(TerminalOwnerError::Screen(_))));
+    assert_eq!(
+        owner.syscalls().calls,
+        [
+            "stdin-tty",
+            "stdout-tty",
+            "capture",
+            "apply",
+            "width",
+            "enter-screen",
+            "restore",
+            "leave-screen",
         ]
     );
 }
