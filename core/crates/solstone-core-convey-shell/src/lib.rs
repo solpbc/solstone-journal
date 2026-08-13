@@ -113,6 +113,8 @@ mod door;
 mod entities;
 #[cfg(feature = "host")]
 mod network;
+#[cfg(feature = "host")]
+mod network_status;
 pub mod refusal;
 pub mod registry;
 #[cfg(feature = "host")]

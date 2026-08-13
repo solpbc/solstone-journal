@@ -29,6 +29,8 @@ use solstone_core_sol_link::pairing::{
     CeremonyRequest, MintRequest, PairingError, complete_pairing, mint_pairing, pair_response_json,
 };
 
+use crate::network_status::{identity, local_endpoints, private_link, status};
+
 use crate::{JournalRoot, asset_response, assets};
 
 /// Exact network-device response vocabulary mirrored from
@@ -63,6 +65,10 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         .route("/app/network/workspace", get(workspace))
         .route("/app/network/static/network.js", get(script))
         .route("/app/network/api/state", get(state))
+        .route("/app/network/api/status", get(status))
+        .route("/app/network/api/identity", get(identity))
+        .route("/app/network/api/private-link", get(private_link))
+        .route("/app/network/local-endpoints", get(local_endpoints))
         .layer(Extension(journal))
 }
 
@@ -88,7 +94,7 @@ async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     .into_response()
 }
 
-fn read_posture(journal_root: &std::path::Path) -> &'static str {
+pub(crate) fn read_posture(journal_root: &std::path::Path) -> &'static str {
     let posture = std::fs::read(journal_root.join("config/journal.json"))
         .ok()
         .and_then(|contents| serde_json::from_slice::<Value>(&contents).ok())
@@ -368,7 +374,7 @@ fn require_local_owner(basis: &AccessBasis) -> bool {
     matches!(basis, AccessBasis::Localhost)
 }
 
-fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> bool {
+pub(crate) fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> bool {
     matches!(basis, AccessBasis::Localhost)
         && ["x-forwarded-for", "x-real-ip", "x-forwarded-host"]
             .iter()
