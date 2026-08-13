@@ -4,8 +4,12 @@
 //! Read-only body-store inventory, shard, aggregate, and health primitives.
 
 mod aggregate;
+mod archive;
 mod chronicle;
+#[cfg(test)]
+mod corpus_test;
 mod day;
+mod freshness;
 mod health;
 mod inventory;
 mod month;
@@ -16,6 +20,7 @@ mod shard;
 mod signature;
 mod sleep;
 mod trends;
+mod window;
 
 pub use aggregate::{
     HealthDedupeStats, HealthDedupeStatsError, HealthDedupeTimeRange, read_health_dedupe_stats,

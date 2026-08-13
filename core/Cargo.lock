@@ -2775,6 +2775,7 @@ dependencies = [
  "solstone-core-body-rebuild",
  "solstone-core-body-source",
  "solstone-core-convey-http",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "tokio",
  "tower",

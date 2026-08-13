@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -31,18 +30,6 @@ pub async fn background() -> Response {
     crate::not_found_response()
 }
 
-pub async fn api_status_stub() -> Response {
-    not_converted()
-}
-
-pub async fn api_recent_stub() -> Response {
-    not_converted()
-}
-
-pub async fn api_window_stub() -> Response {
-    not_converted()
-}
-
 fn day_refusal() -> Response {
     solstone_core_convey_http::envelope::error_envelope(
         "invalid_day",
@@ -51,14 +38,6 @@ fn day_refusal() -> Response {
         StatusCode::BAD_REQUEST,
     )
     .into_response()
-}
-
-fn not_converted() -> Response {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(crate::refusal::AppNotConverted::new("body")),
-    )
-        .into_response()
 }
 
 #[cfg(test)]
@@ -188,7 +167,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn body_stubs_match_shared_unconverted_refusal_exactly() {
+    async fn all_body_api_routes_are_native() {
         let journal = EstablishedJournal::established();
         let app = crate::router(journal.0.clone());
         let expected = serde_json::to_value(crate::refusal::AppNotConverted::new("body"))
@@ -196,11 +175,11 @@ mod tests {
         for path in [
             "/app/body/api/status",
             "/app/body/api/recent",
-            "/app/body/api/window",
+            "/app/body/api/window?from=2026-08-01T00%3A00%3A00%2B00%3A00&to=2026-08-02T00%3A00%3A00%2B00%3A00",
         ] {
             let response = get(app.clone(), path).await;
-            assert_eq!(response.0, StatusCode::NOT_IMPLEMENTED, "{path}");
-            assert_eq!(json_body(&response.2), expected, "{path}");
+            assert_ne!(response.0, StatusCode::NOT_IMPLEMENTED, "{path}");
+            assert_ne!(json_body(&response.2), expected, "{path}");
         }
     }
 
@@ -221,6 +200,9 @@ mod tests {
             "/app/body/background",
             "/app/body/api/index",
             "/app/body/api/stats/202608",
+            "/app/body/api/status",
+            "/app/body/api/recent",
+            "/app/body/api/window?from=2026-08-01T00%3A00%3A00%2B00%3A00&to=2026-08-02T00%3A00%3A00%2B00%3A00",
         ] {
             let response = get(app.clone(), path).await;
             assert_ne!(
@@ -245,12 +227,20 @@ mod tests {
                 "/app/body/",
                 "/app/body/api/index",
                 "/app/body/api/day/20260801",
+                "/app/body/api/status",
+                "/app/body/api/recent",
+                "/app/body/api/window?from=2026-08-01T00%3A00%3A00%2B00%3A00&to=2026-08-02T00%3A00%3A00%2B00%3A00",
             ] {
                 let response = get(crate::router(journal.0.clone()), path).await;
                 assert_eq!(response.0, expected_status, "{path}");
                 if expected_status == StatusCode::INTERNAL_SERVER_ERROR {
                     if path.contains("/api/") {
                         assert_eq!(json_body(&response.2)["reason_code"], "corrupt_config");
+                        assert_eq!(
+                            json_body(&response.2)["detail"],
+                            crate::session::corrupt_config_detail(&journal.0),
+                            "{path} preserves the session gate detail byte-for-byte"
+                        );
                     } else {
                         assert_eq!(response.1, "text/plain; charset=utf-8");
                     }

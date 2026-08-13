@@ -46,6 +46,8 @@ pub struct BodyJournalSeed {
     pub bundles: Vec<BodySeedBundle>,
     /// Whether the health aggregate is directly written.
     pub aggregate: BodyAggregateSeed,
+    /// Optional verbatim contents for `config/journal.json`.
+    pub journal_config: Option<Map<String, Value>>,
 }
 
 /// One synthetic import bundle and its per-shard JSON rows.
@@ -84,6 +86,8 @@ pub enum BodyAggregateSeed {
     Absent,
     /// Create the aggregate from seeded normalized rows.
     Direct,
+    /// Create a present aggregate database with no rows.
+    Empty,
 }
 
 /// Description of the synthetic journal state written by the seeder.
@@ -215,8 +219,18 @@ pub fn seed_body_journal(
     for bundle in &seed.bundles {
         write_bundle(&imports, bundle)?;
     }
-    if seed.aggregate == BodyAggregateSeed::Direct {
-        write_aggregate(root, &seed.bundles)?;
+    match seed.aggregate {
+        BodyAggregateSeed::Absent => {}
+        BodyAggregateSeed::Direct => write_aggregate(root, &seed.bundles)?,
+        BodyAggregateSeed::Empty => write_aggregate(root, &[])?,
+    }
+    if let Some(config) = &seed.journal_config {
+        let config_dir = root.join("config");
+        create_dir(config_dir.clone())?;
+        write_json(
+            config_dir.join("journal.json"),
+            &Value::Object(config.clone()),
+        )?;
     }
     let mut dates = seed.dates.clone();
     dates.extend(seed.day_summaries.keys().cloned());
@@ -278,7 +292,7 @@ fn prevalidate_seed(
             }
         }
     }
-    if seed.aggregate == BodyAggregateSeed::Direct {
+    if seed.aggregate != BodyAggregateSeed::Absent {
         let aggregate = root.join("imports/health-dedupe.sqlite");
         match fs::symlink_metadata(&aggregate) {
             Ok(_) => return Err(BodySeedError::AggregateAlreadyExists { path: aggregate }),
@@ -515,6 +529,7 @@ mod tests {
                 )]),
             }],
             aggregate,
+            journal_config: None,
         }
     }
 
@@ -614,6 +629,44 @@ mod tests {
                 .path()
                 .join("imports/health-dedupe.sqlite")
                 .exists()
+        );
+    }
+
+    #[test]
+    fn empty_aggregate_is_present_without_seeded_rows() {
+        let temporary = TempDir::new();
+        seed_body_journal(
+            temporary.path(),
+            &seed(&["20240103"], BodyAggregateSeed::Empty),
+        )
+        .unwrap();
+        let stats = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
+        assert_eq!(stats.total, 0);
+    }
+
+    #[test]
+    fn journal_config_is_written_only_when_seeded() {
+        let absent = TempDir::new();
+        seed_body_journal(
+            absent.path(),
+            &seed(&["20240103"], BodyAggregateSeed::Absent),
+        )
+        .unwrap();
+        assert!(!absent.path().join("config/journal.json").exists());
+
+        let present = TempDir::new();
+        let mut fixture = seed(&["20240103"], BodyAggregateSeed::Absent);
+        fixture.journal_config = Some(Map::from_iter([(
+            "body".to_owned(),
+            json!({"freshness": {}}),
+        )]));
+        seed_body_journal(present.path(), &fixture).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(
+                &fs::read_to_string(present.path().join("config/journal.json")).unwrap()
+            )
+            .unwrap(),
+            json!({"body": {"freshness": {}}})
         );
     }
 

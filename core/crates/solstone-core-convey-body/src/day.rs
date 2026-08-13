@@ -54,7 +54,8 @@ pub(crate) async fn day_route(
         Ok(stats) => stats,
         Err(error) => return unavailable_response(error),
     };
-    match build_day(&root, target, stats.as_deref()) {
+    let mut reader = MonthReader::new(root.as_ref());
+    match build_day(&root, target, stats.as_deref(), &mut reader) {
         Ok(payload) => Json(payload).into_response(),
         Err(DayError::Shard(error)) => unavailable_response(StoreError::ShardUnreadable(error)),
         Err(DayError::Store(error)) => unavailable_response(StoreError::Read(error)),
@@ -69,7 +70,7 @@ pub(crate) async fn day_route(
 }
 
 #[derive(Debug)]
-enum DayError {
+pub(crate) enum DayError {
     Shard(String),
     Store(String),
     Chronicle(String),
@@ -91,14 +92,14 @@ fn parse_day(day: &str) -> Option<NaiveDate> {
         .flatten()
 }
 
-fn build_day(
+pub(crate) fn build_day(
     root: &Path,
     target: NaiveDate,
     stats: Option<&crate::HealthDedupeStats>,
+    reader: &mut MonthReader,
 ) -> Result<Value, DayError> {
     let day = day_key(target);
     let months = day_months(target);
-    let mut reader = MonthReader::new(root);
     let mut rows = Vec::new();
     for month in months {
         rows.extend(
@@ -292,7 +293,7 @@ fn merged_import_ids(left: &NormalizedRow, right: &NormalizedRow) -> Vec<String>
         .collect()
 }
 
-fn resolve_canonical_rows(rows: Vec<NormalizedRow>) -> Vec<NormalizedRow> {
+pub(crate) fn resolve_canonical_rows(rows: Vec<NormalizedRow>) -> Vec<NormalizedRow> {
     let mut fragments = BTreeSet::new();
     for row in &rows {
         if string_field(&row.source_family) != Some(OURA_API) {
@@ -357,13 +358,13 @@ fn warmed_typical(root: &Path, day: &str) -> Result<BTreeMap<String, f64>, DayEr
     Ok(typical_by_signal(payload.as_deref(), day))
 }
 
-fn string_field(field: &FieldState<Value>) -> Option<&str> {
+pub(crate) fn string_field(field: &FieldState<Value>) -> Option<&str> {
     match field {
         FieldState::Present(Value::String(value)) => Some(value),
         _ => None,
     }
 }
-fn json_field(field: &FieldState<Value>) -> Option<&Value> {
+pub(crate) fn json_field(field: &FieldState<Value>) -> Option<&Value> {
     match field {
         FieldState::Present(value) => Some(value),
         _ => None,
@@ -397,16 +398,16 @@ fn number_value(value: &BodyValue) -> Option<f64> {
         _ => None,
     }
 }
-fn value_number(row: &NormalizedRow) -> Option<f64> {
+pub(crate) fn value_number(row: &NormalizedRow) -> Option<f64> {
     match &row.value {
         ValueState::Present(value) => number_value(value),
         ValueState::Absent => None,
     }
 }
-fn metadata(row: &NormalizedRow) -> Option<&Map<String, Value>> {
+pub(crate) fn metadata(row: &NormalizedRow) -> Option<&Map<String, Value>> {
     json_field(&row.metadata).and_then(Value::as_object)
 }
-fn record_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
+pub(crate) fn record_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     [
         string_field(&row.start_date),
         string_field(&row.start_time),
@@ -416,16 +417,16 @@ fn record_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     .flatten()
     .find_map(parse_time)
 }
-fn end_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
+pub(crate) fn end_time(row: &NormalizedRow) -> Option<NaiveDateTime> {
     string_field(&row.end_date).and_then(parse_time)
 }
-fn parse_time(value: &str) -> Option<NaiveDateTime> {
+pub(crate) fn parse_time(value: &str) -> Option<NaiveDateTime> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|value| value.naive_local())
         .ok()
         .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").ok())
 }
-fn source_label(row: &NormalizedRow) -> String {
+pub(crate) fn source_label(row: &NormalizedRow) -> String {
     string_field(&row.source_name)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| {
@@ -458,7 +459,7 @@ fn source_via(row: &NormalizedRow) -> String {
 fn unit(row: &NormalizedRow) -> Option<&str> {
     string_field(&row.unit).filter(|value| !value.is_empty())
 }
-fn family(record_type: &str) -> &'static str {
+pub(crate) fn family(record_type: &str) -> &'static str {
     if record_type.contains("BloodGlucose") || record_type.ends_with("Glucose") {
         "Glucose"
     } else if record_type.contains("HeartRate")
@@ -507,7 +508,7 @@ fn family(record_type: &str) -> &'static str {
         "Other"
     }
 }
-fn is_sleep_type(record_type: &str) -> bool {
+pub(crate) fn is_sleep_type(record_type: &str) -> bool {
     record_type.contains("SleepAnalysis") || record_type == OURA_SLEEP
 }
 fn family_rows(rows: &[NormalizedRow]) -> BTreeMap<&'static str, Vec<NormalizedRow>> {
@@ -521,10 +522,10 @@ fn family_rows(rows: &[NormalizedRow]) -> BTreeMap<&'static str, Vec<NormalizedR
     values
 }
 
-fn number(value: f64) -> String {
+pub(crate) fn number(value: f64) -> String {
     display_number("", value, None)
 }
-fn duration(minutes: f64) -> String {
+pub(crate) fn duration(minutes: f64) -> String {
     let total = minutes.round().max(0.0) as i64;
     let (hours, minutes) = (total / 60, total % 60);
     if hours > 0 {
@@ -533,7 +534,7 @@ fn duration(minutes: f64) -> String {
         format!("{minutes}m")
     }
 }
-fn clock(time: NaiveDateTime) -> String {
+pub(crate) fn clock(time: NaiveDateTime) -> String {
     let hour = time.hour() % 12;
     format!(
         "{}:{:02} {}",
@@ -542,7 +543,7 @@ fn clock(time: NaiveDateTime) -> String {
         if time.hour() < 12 { "AM" } else { "PM" }
     )
 }
-fn long_day(day: NaiveDate) -> String {
+pub(crate) fn long_day(day: NaiveDate) -> String {
     const MONTHS: [&str; 12] = [
         "January",
         "February",
@@ -564,7 +565,7 @@ fn long_day(day: NaiveDate) -> String {
         day.year()
     )
 }
-fn short_day(day: &str) -> Option<String> {
+pub(crate) fn short_day(day: &str) -> Option<String> {
     parse_day(day).map(|day| {
         const MONTHS: [&str; 12] = [
             "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -671,7 +672,7 @@ fn glucose_rows(rows: &[NormalizedRow]) -> impl Iterator<Item = &NormalizedRow> 
     rows.iter()
         .filter(|row| family(string_field(&row.record_type).unwrap_or_default()) == "Glucose")
 }
-fn glucose_stats(rows: &[NormalizedRow]) -> Option<Value> {
+pub(crate) fn glucose_stats(rows: &[NormalizedRow]) -> Option<Value> {
     let values = glucose_rows(rows)
         .filter_map(value_number)
         .collect::<Vec<_>>();
@@ -802,7 +803,7 @@ fn primary_total(rows: &[NormalizedRow]) -> Option<(f64, String, usize, Vec<Stri
             .collect(),
     ))
 }
-fn workout_item(row: &NormalizedRow) -> Value {
+pub(crate) fn workout_item(row: &NormalizedRow) -> Value {
     let data = metadata(row);
     let name = data
         .and_then(|data| data.get("activity"))
@@ -1316,13 +1317,13 @@ fn title(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-fn mean(values: &[f64]) -> f64 {
+pub(crate) fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
-fn round1(value: f64) -> f64 {
+pub(crate) fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
-fn grouped_decimal(value: f64, places: usize) -> String {
+pub(crate) fn grouped_decimal(value: f64, places: usize) -> String {
     let raw = format!("{value:.places$}");
     let (whole, fraction) = raw.split_once('.').unwrap_or((&raw, ""));
     let sign = whole.strip_prefix('-').map_or("", |_| "-");
@@ -1343,7 +1344,7 @@ fn grouped_decimal(value: f64, places: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1471,6 +1472,34 @@ mod tests {
         row
     }
     fn bundle(import_id: &str, source: &str, rows: Vec<Map<String, Value>>) -> BodySeedBundle {
+        let days_affected = rows
+            .iter()
+            .filter_map(|row| row.get("day").and_then(Value::as_str))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|day| Value::String(day.to_owned()))
+            .collect::<Vec<_>>();
+        let mut extra = Map::new();
+        if let Some(imported_at) = match import_id {
+            "20260810_080000" => Some("2026-08-10T08:00:00Z"),
+            "20260810_090000" => Some("2026-08-10T09:00:00Z"),
+            "20260810_100000" => Some("2026-08-10T10:00:00Z"),
+            _ => None,
+        } {
+            extra.insert("days_affected".to_owned(), Value::Array(days_affected));
+            extra.insert(
+                "imported_at".to_owned(),
+                Value::String(imported_at.to_owned()),
+            );
+            extra.insert(
+                "imported_via".to_owned(),
+                Value::String("body-corpus".to_owned()),
+            );
+            extra.insert(
+                "source_hash".to_owned(),
+                Value::String(format!("sha256:body-corpus-{import_id}")),
+            );
+        }
         let mut shards = BTreeMap::<String, Vec<Map<String, Value>>>::new();
         for row in rows {
             let month = row["month"].as_str().expect("month").to_owned();
@@ -1482,14 +1511,14 @@ mod tests {
             manifest: BodySeedManifest::Present {
                 source_type: Some(source.to_owned()),
                 entry_count: Some(shards.values().map(Vec::len).sum::<usize>() as u64),
-                extra: Map::new(),
+                extra,
             },
             shards,
         }
     }
 
     /// Rust transcription of the deterministic Python corpus seed.
-    fn seed_populated_body_journal(root: &Path) -> crate::BodySeedReport {
+    pub(crate) fn seed_populated_body_journal(root: &Path) -> crate::BodySeedReport {
         let anchor = NaiveDate::from_ymd_opt(2026, 8, 1).expect("anchor");
         let mut apple = Vec::new();
         let mut oura = Vec::new();
@@ -1764,6 +1793,7 @@ mod tests {
                 },
             ],
             aggregate: BodyAggregateSeed::Direct,
+            journal_config: None,
         };
         let report = seed_body_journal(root, &seed).expect("corpus journal seeds");
         // The Python aggregate skips the one intentionally keyless row; the
@@ -1830,6 +1860,7 @@ mod tests {
                 day_summaries: BTreeMap::new(),
                 bundles,
                 aggregate: BodyAggregateSeed::Direct,
+                journal_config: None,
             },
         )
         .expect("fixture seeds");
@@ -1934,7 +1965,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260102_080000", APPLE, vec![heart, hrv])],
             );
-            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260101").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             let audit_total = payload["audit"]["types"]
                 .as_object()
                 .unwrap()
@@ -2072,7 +2110,14 @@ mod tests {
                     bundle("20260301_110000", APPLE, vec![off_day]),
                 ],
             );
-            let payload = build_day(root.path(), parse_day("20260302").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260302").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(payload["other_signals"]["facts"][0]["value"], "36.9 °C");
             assert_eq!(
                 payload["audit"]["import_ids"],
@@ -2199,7 +2244,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260103_080000", APPLE, vec![main, nap])],
             );
-            let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260102").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(payload["sleep"]["naps"].as_array().unwrap().len(), 1);
             assert!(
                 payload["sleep"]["bar"]["segments"]
@@ -2237,7 +2289,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260103_080000", APPLE, vec![primary, secondary])],
             );
-            let payload = build_day(root.path(), parse_day("20260102").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260102").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(payload["sleep"]["source"], "Primary Watch");
             assert_eq!(payload["sleep"]["duration"], "10h 00m");
             assert_eq!(payload["sleep"]["other_sources"], json!(["Secondary Band"]));
@@ -2481,7 +2540,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260102_080000", APPLE, vec![primary, secondary])],
             );
-            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260101").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             let steps = payload["activity"]["steps"].clone();
             assert_eq!(steps["total"], 1200);
             assert_eq!(steps["others"], json!(["Secondary Phone"]));
@@ -2671,7 +2737,14 @@ mod tests {
                 root.path(),
                 vec![bundle("20260102_090000", OURA_API, vec![row])],
             );
-            let payload = build_day(root.path(), parse_day("20260101").unwrap(), None).unwrap();
+            let mut reader = MonthReader::new(root.path());
+            let payload = build_day(
+                root.path(),
+                parse_day("20260101").unwrap(),
+                None,
+                &mut reader,
+            )
+            .unwrap();
             assert_eq!(
                 payload["audit"]["oura_appendix"],
                 json!([{"label":"Pulse-wave velocity","detail":"8.2 m/s · Oura's measurement"}])
@@ -2817,19 +2890,7 @@ mod tests {
 
     mod corpus_replay {
         use super::*;
-
-        fn recorded(phase: &str, rule: &str) -> Value {
-            let corpus: Value =
-                serde_json::from_str(include_str!("../../../fixtures/convey_body_corpus.json"))
-                    .expect("corpus parses");
-            corpus["cases"][phase]
-                .as_array()
-                .expect("phase is cases")
-                .iter()
-                .find(|case| case["rule"] == rule)
-                .expect("recorded rule exists")["json"]
-                .clone()
-        }
+        use crate::corpus_test::{assert_recorded_payload, recorded};
 
         fn baseline_fields_are(payload: &Value, present: bool) {
             for (container, key) in [
@@ -2855,15 +2916,16 @@ mod tests {
             let root = TempDir::new();
             seed_populated_body_journal(root.path());
             let stats = read_health_dedupe_stats(root.path()).expect("aggregate stats");
+            let mut reader = MonthReader::new(root.path());
             let actual = build_day(
                 root.path(),
                 parse_day("20260801").expect("valid anchor"),
                 stats.as_deref(),
+                &mut reader,
             )
             .expect("day builds");
-            let expected = recorded("first_run", "/app/body/api/day/<day>");
             baseline_fields_are(&actual, false);
-            assert_eq!(first_difference(&actual, &expected, "$"), None);
+            assert_recorded_payload("first_run", "/app/body/api/day/<day>", root.path(), &actual);
         }
 
         #[test]
@@ -2930,17 +2992,16 @@ mod tests {
             )
             .expect("cache warms");
             let stats = read_health_dedupe_stats(root.path()).expect("stats");
+            let mut reader = MonthReader::new(root.path());
             let actual = build_day(
                 root.path(),
                 parse_day("20260801").expect("day"),
                 stats.as_deref(),
+                &mut reader,
             )
             .expect("day builds");
             baseline_fields_are(&actual, true);
-            assert_eq!(
-                first_difference(&actual, &recorded("fixed", "/app/body/api/day/<day>"), "$"),
-                None
-            );
+            assert_recorded_payload("fixed", "/app/body/api/day/<day>", root.path(), &actual);
         }
 
         #[test]
@@ -3064,32 +3125,6 @@ mod tests {
                 .flat_map(|path| crate::read_normalized_shard(path).unwrap())
                 .filter_map(|row| string_field(&row.day).map(str::to_owned))
                 .collect()
-        }
-
-        fn first_difference(left: &Value, right: &Value, path: &str) -> Option<String> {
-            match (left, right) {
-                (Value::Object(left), Value::Object(right)) => {
-                    let keys = left.keys().chain(right.keys()).collect::<BTreeSet<_>>();
-                    keys.into_iter()
-                        .find_map(|key| match (left.get(key), right.get(key)) {
-                            (Some(left), Some(right)) => {
-                                first_difference(left, right, &format!("{path}.{key}"))
-                            }
-                            (Some(_), None) => Some(format!("{path}.{key}: key missing on right")),
-                            (None, Some(_)) => Some(format!("{path}.{key}: key missing on left")),
-                            (None, None) => None,
-                        })
-                }
-                (Value::Array(left), Value::Array(right)) if left.len() == right.len() => left
-                    .iter()
-                    .zip(right)
-                    .enumerate()
-                    .find_map(|(index, (left, right))| {
-                        first_difference(left, right, &format!("{path}[{index}]"))
-                    }),
-                _ if left == right => None,
-                _ => Some(format!("{path}: left={left}; right={right}")),
-            }
         }
     }
 }

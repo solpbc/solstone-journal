@@ -198,6 +198,7 @@ mod tests {
                 shards: BTreeMap::from([("2024-01".to_owned(), vec![row()])]),
             }],
             aggregate,
+            journal_config: None,
         }
     }
 
