@@ -34,12 +34,12 @@
 //! ## D5: generated, dependency-free asset embedding
 //!
 //! `build.rs` emits auditable `include_bytes!` entries for the full top-level
-//! static tree plus the speakers, devices, and entities workspace assets. This avoids a proc-macro asset crate
+//! static tree plus the Body, speakers, devices, and entities workspace assets. This avoids a proc-macro asset crate
 //! while retaining byte-identical source assets in the binary.
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Speakers, Devices, and entities are converted workspaces in this wave. Every other known
+//! Body, Speakers, Devices, and entities are converted workspaces in this wave. Every other known
 //! app receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
 //!
@@ -62,6 +62,20 @@
 //! transient unreadable ledger cannot discard otherwise unrecoverable material.
 //! Server leaves are fresh with a 30-day residual lifetime; the pinned mTLS
 //! client validates the CA fingerprint but not certificate validity.
+//!
+//! ## D9: Body store health and canonical entry paths
+//!
+//! The native Body store-health reader classifies a positive import claim
+//! paired with an absent, unreadable, or empty aggregate as `Torn`; the
+//! Python reference instead treats a missing aggregate as empty data and
+//! answers 2xx. This diagnostic divergence is intentional during the
+//! migration and is not owner-visible yet: the client is unchanged and the
+//! five stub data routes still answer with a refusal.
+//!
+//! `/app/body` without its trailing slash reaches the generic converted-app
+//! catch-all and answers the shared HTML 404 — the same pre-existing
+//! behavior every converted app has today; `/app/body/` with the trailing
+//! slash is the explicit native shell entry point.
 
 #[cfg(feature = "host")]
 use std::path::Path as FsPath;
@@ -90,6 +104,7 @@ use solstone_core_sol_link::DeviceDoorAuthorization;
 mod assets;
 #[cfg(feature = "host")]
 pub mod authorization_gate;
+mod body;
 mod devices;
 #[cfg(feature = "host")]
 mod door;
@@ -666,6 +681,17 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/entities/workspace", get(entities::workspace))
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
+        .route("/app/body/", get(body::shell))
+        .route("/app/body/trends", get(body::trends))
+        .route("/app/body/{day}", get(body::shell_for_day))
+        .route("/app/body/workspace", get(body::workspace))
+        .route("/app/body/background", get(body::background))
+        .route("/app/body/api/status", get(body::api_status_stub))
+        .route("/app/body/api/recent", get(body::api_recent_stub))
+        .route("/app/body/api/day/{day}", get(body::api_day_stub))
+        .route("/app/body/api/window", get(body::api_window_stub))
+        .route("/app/body/api/trends", get(body::api_trends_stub))
+        .merge(solstone_core_convey_body::api_router(journal_root.clone()))
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))

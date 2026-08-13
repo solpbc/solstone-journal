@@ -84,7 +84,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: Some(content_date_nav("reading", "readings", "no readings")),
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "chat",

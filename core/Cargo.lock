@@ -2761,13 +2761,17 @@ dependencies = [
 name = "solstone-core-convey-body"
 version = "1.0.22"
 dependencies = [
+ "axum",
  "log",
  "rusqlite",
  "serde_json",
  "sha2",
  "solstone-core-body-rebuild",
  "solstone-core-body-source",
+ "solstone-core-convey-http",
  "solstone-core-journal-io",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -2801,6 +2805,7 @@ dependencies = [
  "sha2",
  "socket2",
  "solstone-core-callosum",
+ "solstone-core-convey-body",
  "solstone-core-convey-http",
  "solstone-core-entities",
  "solstone-core-entity",
