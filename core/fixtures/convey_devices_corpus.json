@@ -4,6 +4,15 @@
     "solstone.apps.observer.routes._serialize_observer",
     "solstone.apps.observer.routes.api_list (sort comparator)"
   ],
+  "comparator": {
+    "group_order": {
+      "active": 0,
+      "inactive": 2,
+      "stale": 1
+    },
+    "key": "(group_order[group], last_seen is None, -(last_seen or 0), prefix)",
+    "note": "Implement THIS, not the observed list_order."
+  },
   "constants": {
     "ACTIVE_THRESHOLD_MS": 30000,
     "FUTURE_CLOCK_DRIFT_TOLERANCE_MS": 300000,
@@ -14,6 +23,29 @@
       "stale": "not reporting"
     },
     "STALE_THRESHOLD_MS": 120000
+  },
+  "field_classes": {
+    "contract": [
+      "clock_skew",
+      "created_at",
+      "elapsed_ms",
+      "enabled",
+      "failing",
+      "group",
+      "label",
+      "last_seen",
+      "last_segment",
+      "name",
+      "prefix",
+      "revoked",
+      "revoked_at",
+      "state",
+      "stats"
+    ],
+    "environment": [
+      "live",
+      "last_chat_request_at"
+    ]
   },
   "freshness": [
     {
@@ -383,6 +415,7 @@
     "bbbbbbbb",
     "eeeeeeee",
     "dddddddd",
+    "99999999",
     "ffffffff"
   ],
   "now_ms": 1760000000000,
@@ -585,7 +618,7 @@
         "key": "eeeeeeee555",
         "last_seen": 1759999995000,
         "last_segment": null,
-        "name": "revoked-one",
+        "name": "revoked-recent",
         "revoked": true,
         "revoked_at": 1759999940000,
         "stats": {
@@ -605,10 +638,48 @@
         "last_seen": 1759999995000,
         "last_segment": null,
         "live": false,
-        "name": "revoked-one",
+        "name": "revoked-recent",
         "prefix": "eeeeeeee",
         "revoked": true,
         "revoked_at": 1759999940000,
+        "state": "revoked",
+        "stats": {
+          "bytes_received": 1024,
+          "segments_received": 2
+        }
+      }
+    },
+    {
+      "input": {
+        "created_at": 1759996400000,
+        "enabled": true,
+        "key": "99999999777",
+        "last_seen": 1759999760000,
+        "last_segment": null,
+        "name": "revoked-stale",
+        "revoked": true,
+        "revoked_at": 1759999970000,
+        "stats": {
+          "bytes_received": 1024,
+          "segments_received": 2
+        }
+      },
+      "output": {
+        "clock_skew": false,
+        "created_at": 1759996400000,
+        "elapsed_ms": null,
+        "enabled": true,
+        "failing": false,
+        "group": "inactive",
+        "label": "removed",
+        "last_chat_request_at": null,
+        "last_seen": 1759999760000,
+        "last_segment": null,
+        "live": false,
+        "name": "revoked-stale",
+        "prefix": "99999999",
+        "revoked": true,
+        "revoked_at": 1759999970000,
         "state": "revoked",
         "stats": {
           "bytes_received": 1024,

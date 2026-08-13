@@ -22,6 +22,18 @@ reading -- `elapsed == ACTIVE_THRESHOLD_MS` classifies as **stale**, not connect
 `last_seen` at exactly the drift tolerance is **not** clock skew. A table written
 from the prose would have got all three wrong and the tests would have defended it.
 
+⛔ CORRECTION, and it is the reason `list_order` alone is not a specification.
+An earlier reading of this capture concluded "a revoked device sorts above an
+offline one." **That is not a rule, and encoding it produces a wrong
+implementation.** `revoked` and `disconnected` share `group == "inactive"`; in the
+captured order the revoked row preceded the offline one purely because its
+`last_seen` was more recent. The comparator is
+`(group_order[group], last_seen is None, -(last_seen or 0), prefix)` and nothing
+in it mentions revocation. **Implement the comparator, not the observed order.**
+The first version of this corpus held a single revoked row, so it could not have
+caught that mistake; it now carries a second revoked row whose `last_seen` is
+older than the offline row's, which fails any "revoked first" implementation.
+
 ⚠ Same clock as its siblings: regenerating requires a runnable reference tree, and
 the conversion removes that tree. It is a frozen record.
 
@@ -127,10 +139,20 @@ SORT_RECORDS = [
     record("cccccccc333", "connected-two-same-last-seen", 1_000),
     record(
         "eeeeeeee555",
-        "revoked-one",
+        "revoked-recent",
         5_000,
         revoked=True,
         revoked_at=NOW - 60_000,
+    ),
+    # The discriminating row: revoked, but seen LONGER ago than "disconnected-old"
+    # above. It shares group "inactive" with that row, so the comparator must place
+    # it BELOW -- which any "revoked sorts first" implementation gets backwards.
+    record(
+        "99999999777",
+        "revoked-stale",
+        STALE_THRESHOLD_MS + 120_000,
+        revoked=True,
+        revoked_at=NOW - 30_000,
     ),
 ]
 
@@ -172,6 +194,29 @@ def build() -> dict:
             "STALE_THRESHOLD_MS": STALE_THRESHOLD_MS,
             "FUTURE_CLOCK_DRIFT_TOLERANCE_MS": FUTURE_CLOCK_DRIFT_TOLERANCE_MS,
             "OBSERVER_STATE_LABELS": dict(OBSERVER_STATE_LABELS),
+        },
+        # 🔴 Not every recorded field is a contract. Two describe the ENVIRONMENT
+        # this capture ran in, and a port that copies them through asserts
+        # something false.
+        #
+        # `live` and `last_chat_request_at` are read from the reference's SSE
+        # bridge (`convey_bridge.subscription_count`, `.last_chat_request_at`).
+        # The captured `false` / `null` mean "a bridge answered and nothing was
+        # subscribed" -- NOT "there is no bridge". A native surface with no bridge
+        # at all is in a third state the reference cannot express, and `false`
+        # renders in the page identically to a device that is genuinely not live.
+        "field_classes": {
+            "contract": [
+                "clock_skew", "created_at", "elapsed_ms", "enabled", "failing",
+                "group", "label", "last_seen", "last_segment", "name", "prefix",
+                "revoked", "revoked_at", "state", "stats",
+            ],
+            "environment": ["live", "last_chat_request_at"],
+        },
+        "comparator": {
+            "note": "Implement THIS, not the observed list_order.",
+            "key": "(group_order[group], last_seen is None, -(last_seen or 0), prefix)",
+            "group_order": GROUP_ORDER,
         },
         "freshness": freshness_cases(),
         "serialized": serialized,
