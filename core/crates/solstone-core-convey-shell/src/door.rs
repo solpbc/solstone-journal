@@ -409,7 +409,12 @@ async fn serve_carrier(
     };
     let did = did.clone();
     record_completed_handshake(&config.journal_root, &did);
+    // The publisher feeds the door's carrier loop. Neither the gate nor the verifier consumes it for decisions.
     let mut authorization = config.authorization.clone();
+    // `subscribe()` precedes `refresh_once()`, so this clone can inherit a
+    // successful change that predates this carrier's fresh ledger handshake.
+    authorization.mark_unchanged();
+    let mut authorization_watch_open = true;
     loop {
         #[cfg(debug_assertions)]
         config
@@ -431,10 +436,20 @@ async fn serve_carrier(
                     }
                 });
             }
-            changed = authorization.changed() => {
-                if changed.is_err() || close_for_revocation(authorization.borrow().as_read(), &did) {
-                    let _ = connection.close();
-                    break;
+            changed = authorization.changed(), if authorization_watch_open => {
+                match changed {
+                    Ok(()) => {
+                        if close_for_revocation(authorization.borrow().as_read(), &did) {
+                            let _ = connection.close();
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        // The authorization publisher is closed (the refresh task stopped
+                        // or panicked). Disable this arm rather than closing or spinning:
+                        // the handshake and request gate resolve the ledger directly.
+                        authorization_watch_open = false;
+                    }
                 }
             }
         }
@@ -559,10 +574,7 @@ fn capture_to_basis(identity: &IdentityCell, peer: Option<SocketAddr>) -> Option
 }
 
 fn close_for_revocation(posture: &AuthorizedClientsRead, did: &LinkedDeviceDid) -> bool {
-    // The handshake fails closed for every non-Present ledger posture. Once a
-    // device is authenticated, however, only a definite Present removal ends
-    // its carrier: a transient malformed/unreadable read must not discard
-    // captured material that exists nowhere else.
+    // The handshake fails closed on every non-`Present` posture it reads from the ledger itself. Once a device is authenticated, only a definite `Present` removal observed on this arm ends its carrier: a transient malformed/unreadable read must not discard captured material that exists nowhere else, and a dead publication now ends no carrier at all.
     matches!(posture, AuthorizedClientsRead::Present(entries) if !entries.iter().any(|entry| entry.fingerprint == did.as_str()))
 }
 

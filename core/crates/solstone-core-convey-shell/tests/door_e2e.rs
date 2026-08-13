@@ -1399,6 +1399,245 @@ async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
     handle.shutdown();
 }
 
+#[tokio::test]
+async fn ac7b_stale_publication_does_not_close_a_freshly_admitted_carrier() {
+    let fixture = Fixture::established(1);
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let publication = receiver.clone();
+    let door_router = authorized_router(fixture.root.clone(), receiver);
+    let mut handle = bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        door_router,
+        sender,
+    )
+    .await
+    .expect("serve");
+    assert_eq!(
+        publication.borrow().as_read(),
+        &AuthorizedClientsRead::Present(Vec::new()),
+        "the stopped publisher retains the pre-restore revocation"
+    );
+    handle.stop_authorization_refresh().await;
+    fixture.restore_authorization(0);
+
+    // On origin/main this stale `Present([])` publication rejects the TLS
+    // handshake. Without D6, the fresh handshake succeeds but this first
+    // ready watch notification can close the carrier before request two.
+    let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+    let mut decoder = FrameDecoder::new();
+    let mut dialer = FrameDialer::default();
+    let first = get_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        &mut dialer,
+        "/api/system/status",
+    )
+    .await;
+    assert_eq!(first.status, 200);
+    // The first response is fully assembled before this second request wakes
+    // `accept_stream`, making the stale watch arm deterministically ready.
+    let second = get_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        &mut dialer,
+        "/api/system/status",
+    )
+    .await;
+    assert_eq!(second.status, 200);
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac8_dead_publisher_keeps_existing_and_fresh_carriers_usable() {
+    let fixture = Fixture::established(1);
+    let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_router = authorized_router(fixture.root.clone(), receiver);
+    let mut handle = bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        door_router,
+        sender,
+    )
+    .await
+    .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let mut existing = live_carrier(&fixture, port).await;
+    let ticks_before_stop = authorization_publication_ticks();
+    handle.stop_authorization_refresh().await;
+    let stopped_at = authorization_publication_ticks();
+    assert!(stopped_at >= ticks_before_stop);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(authorization_publication_ticks(), stopped_at);
+
+    let mut existing_decoder = FrameDecoder::new();
+    let mut existing_dialer = FrameDialer::default();
+    assert_eq!(
+        get_over_carrier(
+            &mut existing,
+            &mut existing_decoder,
+            &mut existing_dialer,
+            "/api/system/status",
+        )
+        .await
+        .status,
+        200
+    );
+
+    let mut fresh = live_carrier(&fixture, port).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let mut fresh_decoder = FrameDecoder::new();
+    let mut fresh_dialer = FrameDialer::default();
+    assert_eq!(
+        get_over_carrier(
+            &mut fresh,
+            &mut fresh_decoder,
+            &mut fresh_dialer,
+            "/api/system/status",
+        )
+        .await
+        .status,
+        200
+    );
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac9_dead_publisher_leaves_gate_and_boot_asset_behavior_intact() {
+    let fixture = Fixture::established(1);
+    let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_router = authorized_router(fixture.root.clone(), receiver);
+    let mut handle = bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        door_router,
+        sender,
+    )
+    .await
+    .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let mut carrier = live_carrier(&fixture, port).await;
+    let mut decoder = FrameDecoder::new();
+    let mut dialer = FrameDialer::default();
+    assert_eq!(
+        get_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            &mut dialer,
+            "/api/system/status",
+        )
+        .await
+        .status,
+        200
+    );
+
+    handle.stop_authorization_refresh().await;
+    assert!(fixture.remove_authorization(0).authorized_removed);
+    assert_eq!(
+        get_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            &mut dialer,
+            "/api/system/status",
+        )
+        .await
+        .status,
+        403
+    );
+    assert!(fresh_door_connection_is_refused(&fixture, port).await);
+    for path in ["/favicon.ico", "/static/shell.html"] {
+        assert_eq!(
+            get_over_carrier(&mut carrier, &mut decoder, &mut dialer, path)
+                .await
+                .status,
+            200,
+            "{path} remains a boot-asset exemption"
+        );
+    }
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn ac10_closed_publisher_does_not_spin_the_carrier_loop() {
+    let fixture = Fixture::established(1);
+    let carrier_loop_iterations = Arc::new(AtomicU64::new(0));
+    let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let door_router = authorized_router(fixture.root.clone(), receiver);
+    let mut handle = bind_with_authorization(
+        ConveyServeOptions {
+            journal_root: fixture.root.clone(),
+            loopback_port: 0,
+            door_port: 0,
+            handshake_timeout: Duration::from_secs(2),
+            stream_stall_timeout: Duration::from_secs(2),
+            router: router(fixture.root.clone()),
+            carrier_loop_iterations: carrier_loop_iterations.clone(),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+        },
+        door_router,
+        sender,
+    )
+    .await
+    .expect("serve");
+    let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+    handle.stop_authorization_refresh().await;
+
+    // Exactly one carrier is open for this entire measurement window; no
+    // other dial may contribute to this per-door-start counter.
+    let t0 = tokio::time::timeout(Duration::from_secs(2), async {
+        for _ in 0..10 {
+            let before = carrier_loop_iterations.load(Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if carrier_loop_iterations.load(Ordering::Relaxed) == before {
+                return before;
+            }
+        }
+        panic!("carrier loop did not become idle after publisher closure");
+    })
+    .await
+    .expect("carrier loop stabilization is bounded");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(carrier_loop_iterations.load(Ordering::Relaxed), t0);
+
+    let mut decoder = FrameDecoder::new();
+    let mut dialer = FrameDialer::default();
+    assert_eq!(
+        get_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            &mut dialer,
+            "/api/system/status",
+        )
+        .await
+        .status,
+        200
+    );
+    let before_requests = carrier_loop_iterations.load(Ordering::Relaxed);
+    for _ in 0..5 {
+        assert_eq!(
+            get_over_carrier(
+                &mut carrier,
+                &mut decoder,
+                &mut dialer,
+                "/api/system/status",
+            )
+            .await
+            .status,
+            200
+        );
+    }
+    assert!(
+        carrier_loop_iterations.load(Ordering::Relaxed) - before_requests >= 5,
+        "request work advances the same counter"
+    );
+    handle.shutdown();
+}
 
 #[tokio::test]
 async fn ac13_python_shaped_state_with_and_without_locked_at_opens_the_door() {
