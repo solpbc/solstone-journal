@@ -36,6 +36,11 @@ pub(crate) fn health_dedupe_database_path(journal_root: &Path) -> PathBuf {
     journal_root.join("imports/health-dedupe.sqlite")
 }
 
+/// Returns the aggregate database whose changes invalidate the trends cache.
+pub fn trends_db_path(journal_root: impl AsRef<Path>) -> PathBuf {
+    health_dedupe_database_path(journal_root.as_ref())
+}
+
 pub(crate) fn read_database_signature(
     path: &Path,
 ) -> Result<Option<TrendsSignature>, DatabaseSignatureError> {

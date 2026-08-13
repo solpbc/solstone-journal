@@ -695,7 +695,6 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/body/background", get(body::background))
         .route("/app/body/api/status", get(body::api_status_stub))
         .route("/app/body/api/recent", get(body::api_recent_stub))
-        .route("/app/body/api/day/{day}", get(body::api_day_stub))
         .route("/app/body/api/window", get(body::api_window_stub))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
         .route("/app/{app}", get(app_root))
