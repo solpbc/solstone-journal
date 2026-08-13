@@ -218,8 +218,11 @@ pub fn seed_body_journal(
     if seed.aggregate == BodyAggregateSeed::Direct {
         write_aggregate(root, &seed.bundles)?;
     }
+    let mut dates = seed.dates.clone();
+    dates.extend(seed.day_summaries.keys().cloned());
+
     Ok(BodySeedReport {
-        dates: seed.dates.clone(),
+        dates,
         bundles: seed
             .bundles
             .iter()
