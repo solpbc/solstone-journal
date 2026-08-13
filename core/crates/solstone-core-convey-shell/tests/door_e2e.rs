@@ -4,10 +4,6 @@
 //! Focused host-door coverage. The body-echo route is deliberately in this
 //! integration-test crate, stronger than a feature-gated library test surface.
 
-mod door_support;
-#[path = "support/warn_capture.rs"]
-mod warn_capture;
-
 use std::fs::{self, File, OpenOptions};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::MetadataExt;
@@ -46,10 +42,11 @@ use x509_parser::extensions::ParsedExtension;
 use x509_parser::oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY};
 use x509_parser::pem::parse_x509_pem;
 
-use door_support::{
+use crate::door_support::{
     EchoObservation, Fixture, body_echo_router, body_echo_router_with_observations,
     get_over_carrier, multiplexed_requests, tree,
 };
+use crate::warn_capture;
 
 #[derive(Debug)]
 struct AcceptAnyServerCertificate;

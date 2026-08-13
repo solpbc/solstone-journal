@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-mod door_support;
-#[path = "support/warn_capture.rs"]
-mod warn_capture;
-
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::net::Ipv4Addr;
@@ -31,7 +27,8 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
 use tower::ServiceExt;
 
-use door_support::{Fixture, get_over_carrier};
+use crate::door_support::{Fixture, get_over_carrier};
+use crate::warn_capture;
 
 fn linked_device(fixture: &Fixture, index: usize) -> AccessBasis {
     let did = format!(

@@ -2,8 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 #[allow(dead_code)]
-#[path = "support/mod.rs"]
-mod support;
+use crate::support;
 
 use std::fs;
 use std::path::PathBuf;
