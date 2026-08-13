@@ -38,10 +38,7 @@ pub use model_assets::{
     resolve_model_asset,
 };
 pub use speakers::SpeakerAnalyzeError;
-pub use speakers_installation::{
-    SpeakersAnalyzeGeneration, check_speakers_analyze_installation_for_journal,
-    enter_speakers_analyze_generation,
-};
+pub use speakers_installation::{SpeakersAnalyzeGeneration, enter_speakers_analyze_generation};
 
 use std::path::{Path, PathBuf};
 

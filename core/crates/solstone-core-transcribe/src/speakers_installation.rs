@@ -123,12 +123,6 @@ pub fn enter_speakers_analyze_generation(
     })
 }
 
-/// Validate the native speakers-analyze installation for a journal root.
-pub fn check_speakers_analyze_installation_for_journal(journal: &Path) -> Result<(), CliError> {
-    let _generation = enter_speakers_analyze_generation(journal)?;
-    Ok(())
-}
-
 /// Fully validate the helper and both pinned model assets for an invocation.
 pub(crate) fn validate_speakers_analyze_runtime() -> Result<ValidatedInstallation, CliError> {
     let proof = installation_proof()?;

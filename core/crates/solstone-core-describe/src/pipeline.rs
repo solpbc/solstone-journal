@@ -10,7 +10,9 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion};
 use solstone_core_journal_io::{AtomicWriteOptions, install_file};
-use solstone_core_processing_record::{record_attempts, vocab};
+use solstone_core_processing_record::{
+    read_processing_record_header, record_attempts, should_reenter_analysis_output, vocab,
+};
 
 use crate::decode::{QualifiedFrame, process_video_with_transform, resize_for_vlm_png};
 use crate::detect;
@@ -21,9 +23,6 @@ use crate::request;
 use crate::selection::{self, CategorizedFrame, CategoryOverride, SelectionError};
 use crate::session::{DescribeSession, DescribeSessionFactory, SystemSessionFactory};
 use crate::{ConveyFiducialMask, WinnowConfig};
-use solstone_core_processing_record::{
-    read_processing_record_header, should_reenter_analysis_output, vocab,
-};
 
 pub const EXIT_PROVIDER_BLOCKED: i32 = 69;
 const MAX_ATTEMPTS: u64 = 5;

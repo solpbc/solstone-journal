@@ -44,6 +44,23 @@ struct State {
     stopping: bool,
 }
 
+/// Batch-only settings shared by dispatcher construction and native children.
+#[derive(Clone, Default)]
+struct BatchContext {
+    describe_workers: Option<usize>,
+    child_environment: BTreeMap<OsString, OsString>,
+}
+
+/// Per-worker state that remains fixed for its lifetime.
+#[derive(Clone)]
+struct WorkerContext {
+    journal: PathBuf,
+    admission: Admission,
+    verbose: bool,
+    debug: bool,
+    batch: BatchContext,
+}
+
 pub struct SenseDispatcher {
     journal: PathBuf,
     state: Arc<Mutex<State>>,
@@ -52,7 +69,7 @@ pub struct SenseDispatcher {
     workers: Mutex<Vec<thread::JoinHandle<()>>>,
     admission: Admission,
     handler_program: Option<PathBuf>,
-    batch_describe_workers: Option<usize>,
+    batch: BatchContext,
 }
 
 impl SenseDispatcher {
@@ -85,8 +102,7 @@ impl SenseDispatcher {
             outbound,
             admission,
             None,
-            None,
-            BTreeMap::new(),
+            BatchContext::default(),
         )
     }
 
@@ -107,8 +123,7 @@ impl SenseDispatcher {
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
             Some(program),
-            None,
-            BTreeMap::new(),
+            BatchContext::default(),
         )
     }
 
@@ -127,8 +142,10 @@ impl SenseDispatcher {
             verbose,
             debug,
             outbound,
-            describe_workers,
-            child_environment,
+            BatchContext {
+                describe_workers: Some(describe_workers),
+                child_environment,
+            },
             None,
         )
     }
@@ -148,8 +165,10 @@ impl SenseDispatcher {
             verbose,
             debug,
             outbound,
-            describe_workers,
-            BTreeMap::new(),
+            BatchContext {
+                describe_workers: Some(describe_workers),
+                child_environment: BTreeMap::new(),
+            },
             Some(program),
         )
     }
@@ -159,8 +178,7 @@ impl SenseDispatcher {
         verbose: bool,
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
-        describe_workers: usize,
-        child_environment: BTreeMap<OsString, OsString>,
+        batch: BatchContext,
         handler_program: Option<PathBuf>,
     ) -> Self {
         Self::new_inner(
@@ -170,8 +188,7 @@ impl SenseDispatcher {
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
             handler_program,
-            Some(describe_workers),
-            child_environment,
+            batch,
         )
     }
 
@@ -182,8 +199,7 @@ impl SenseDispatcher {
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
         handler_program: Option<PathBuf>,
-        batch_describe_workers: Option<usize>,
-        child_environment: BTreeMap<OsString, OsString>,
+        batch: BatchContext,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
             segments: HashMap::new(),
@@ -195,7 +211,8 @@ impl SenseDispatcher {
         let mut worker_handles = Vec::new();
         for handler in HANDLERS {
             let workers = if handler == "describe" {
-                batch_describe_workers
+                batch
+                    .describe_workers
                     .unwrap_or_else(|| resolve_concurrency(&read_config(&journal), handler))
             } else {
                 resolve_concurrency(&read_config(&journal), handler)
@@ -206,23 +223,16 @@ impl SenseDispatcher {
                 senders.push(sender);
                 let state = Arc::clone(&state);
                 let outbound = outbound.clone();
-                let journal = journal.clone();
-                let admission = admission.clone();
-                let child_environment = child_environment.clone();
+                let context = WorkerContext {
+                    journal: journal.clone(),
+                    admission: admission.clone(),
+                    verbose,
+                    debug,
+                    batch: batch.clone(),
+                };
                 let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
-                    .spawn(move || {
-                        worker(
-                            receiver,
-                            state,
-                            outbound,
-                            journal,
-                            admission,
-                            verbose,
-                            debug,
-                            child_environment,
-                        )
-                    })
+                    .spawn(move || worker(receiver, state, outbound, context))
                     .expect("sense worker thread");
                 worker_handles.push(worker);
             }
@@ -236,7 +246,7 @@ impl SenseDispatcher {
             workers: Mutex::new(worker_handles),
             admission,
             handler_program,
-            batch_describe_workers,
+            batch,
         }
     }
 
@@ -300,7 +310,8 @@ impl SenseDispatcher {
         let config = read_config(&self.journal);
         let deferred = !batch && (processing_deferred(&config) || no_thinking_engine(&config));
         let describe_workers = self
-            .batch_describe_workers
+            .batch
+            .describe_workers
             .unwrap_or_else(|| resolve_concurrency(&config, "describe"));
         let mut registry = default_registry(crate::config::describe_per_proc_jobs(
             &config,
@@ -468,11 +479,7 @@ fn worker(
     receiver: mpsc::Receiver<Job>,
     state: Arc<Mutex<State>>,
     outbound: mpsc::Sender<Outbound>,
-    journal: PathBuf,
-    admission: Admission,
-    verbose: bool,
-    debug: bool,
-    child_environment: BTreeMap<OsString, OsString>,
+    context: WorkerContext,
 ) {
     loop {
         let stopping = {
@@ -483,16 +490,7 @@ fn worker(
             return;
         }
         match receiver.recv_timeout(Duration::from_millis(50)) {
-            Ok(job) => run_job(
-                job,
-                &state,
-                &outbound,
-                &journal,
-                &admission,
-                verbose,
-                debug,
-                &child_environment,
-            ),
+            Ok(job) => run_job(job, &state, &outbound, &context),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         }
@@ -503,21 +501,17 @@ fn run_job(
     job: Job,
     state: &Arc<Mutex<State>>,
     outbound: &mpsc::Sender<Outbound>,
-    journal: &Path,
-    admission: &Admission,
-    verbose: bool,
-    debug: bool,
-    child_environment: &BTreeMap<OsString, OsString>,
+    worker_context: &WorkerContext,
 ) {
     let admission_stopping = || {
         let state = state.lock().expect("sense state");
         state.stopping
     };
     let stage = job.item.handler.clone();
-    let context = job.item.context.clone();
-    let key = context.key.clone();
+    let segment_context = job.item.context.clone();
+    let key = segment_context.key.clone();
     let file = job.item.file_path.clone();
-    let admitted = admission.wait(
+    let admitted = worker_context.admission.wait(
         &stage,
         &job.config,
         admission_stopping,
@@ -543,19 +537,33 @@ fn run_job(
     if !admitted {
         return;
     }
-    let command = command_for(&job.spec, &file, verbose, debug);
+    let command = command_for(
+        &job.spec,
+        &file,
+        worker_context.verbose,
+        worker_context.debug,
+    );
     let reference = chrono::Utc::now().timestamp_millis().to_string();
     let _ = outbound.send(Outbound {
         tract: "observe",
         event: "detected",
-        fields: events::detected(journal, &file, &command, &reference, &context),
+        fields: events::detected(
+            &worker_context.journal,
+            &file,
+            &command,
+            &reference,
+            &segment_context,
+        ),
     });
     let mut environment = BTreeMap::<OsString, OsString>::new();
-    environment.insert("SOL_SEGMENT".into(), context.key.segment.clone().into());
-    if let Some(observer) = &context.observer {
+    environment.insert(
+        "SOL_SEGMENT".into(),
+        segment_context.key.segment.clone().into(),
+    );
+    if let Some(observer) = &segment_context.observer {
         environment.insert("OBSERVER_NAME".into(), observer.into());
     }
-    if let Some(meta) = &context.meta {
+    if let Some(meta) = &segment_context.meta {
         environment.insert(
             "SEGMENT_META".into(),
             serde_json::to_string(meta).unwrap_or_default().into(),
@@ -565,11 +573,11 @@ fn run_job(
         "SOL_QUEUE_WAIT_MS".into(),
         events::queue_wait_ms(job.item.queued_at).to_string().into(),
     );
-    environment.extend(child_environment.clone());
+    environment.extend(worker_context.batch.child_environment.clone());
     let options = SpawnOptions {
-        journal_root: journal.to_path_buf(),
+        journal_root: worker_context.journal.clone(),
         reference,
-        day: Some(context.key.day.clone()),
+        day: Some(segment_context.key.day.clone()),
         sink: None,
         environment,
     };
@@ -577,7 +585,7 @@ fn run_job(
         complete(
             state,
             outbound,
-            journal,
+            &worker_context.journal,
             &key,
             Some(&file),
             Some(format!("{} spawn failed", job.item.handler)),
@@ -606,13 +614,29 @@ fn run_job(
     };
     let outcome = match exit {
         Some(PROVIDER_BLOCKED) => {
-            complete(state, outbound, journal, &key, Some(&file), None, None);
+            complete(
+                state,
+                outbound,
+                &worker_context.journal,
+                &key,
+                Some(&file),
+                None,
+                None,
+            );
             cleanup_async(process);
             return;
         }
         Some(0) => {
             state.lock().expect("sense state").health.success();
-            complete(state, outbound, journal, &key, Some(&file), None, None);
+            complete(
+                state,
+                outbound,
+                &worker_context.journal,
+                &key,
+                Some(&file),
+                None,
+                None,
+            );
             cleanup_async(process);
             return;
         }
@@ -660,7 +684,7 @@ fn run_job(
     complete(
         state,
         outbound,
-        journal,
+        &worker_context.journal,
         &key,
         Some(&file),
         Some(outcome),
