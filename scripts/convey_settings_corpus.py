@@ -526,12 +526,163 @@ def run_mutations(config: dict) -> dict:
     return cases
 
 
+# A recording stand-in for the retention executor. `executor_path()` honours
+# SOLSTONE_RETENTION_BIN *before* PATH, so this drives the branches a
+# binary-less host cannot reach -- including the one that MARKS an owner's media
+# -- hermetically, with no real binary and no network.
+#
+# ⛔ It does not invent behaviour. It records exactly what the reference INVOKES
+# and returns a fixed receipt, so what gets captured is the reference's own
+# argv contract and its reshaping of a receipt into an HTTP body. Both are
+# contract a port must reproduce; neither is the stub's opinion.
+STUB_EXECUTOR = """#!/usr/bin/env python3
+import json, os, sys
+argv = sys.argv[1:]
+with open(os.environ["ORACLE_STUB_LOG"], "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(argv) + "\\n")
+VERB = argv[0] if argv else ""
+MARK_REGISTER = {
+    "marks": {
+        "m-0001": {
+            "class": "policy_raw_release",
+            "target": {"day": "20260810", "stream": "tmux",
+                       "dir": "090000_300", "name": "audio.flac"},
+        },
+        "m-0002": {
+            "class": "policy_raw_release",
+            "target": {"day": "20260811", "stream": "screen",
+                       "dir": "090000_120", "name": "video.webm"},
+        },
+        "m-0003": {
+            "class": "operator_request",
+            "target": {"day": "20260811", "stream": "screen",
+                       "dir": "090000_120", "name": "other.webm"},
+        },
+    }
+}
+if VERB == "marks":
+    json.dump({"marks": MARK_REGISTER}, sys.stdout)
+else:
+    json.dump({
+        "marks": MARK_REGISTER,
+        "plan": {
+            "skipped_segments": [
+                {"stream": "tmux", "day": "20260810", "dir": "090000_300",
+                 "reason": "held_by_operator"},
+                {"stream": "screen", "day": "20260811", "dir": "090000_120",
+                 "reason": "no_media"},
+            ],
+            "unreadable_days": [],
+        },
+    }, sys.stdout)
+"""
+
 PURGE_CASES = [
     ("keep-policy.no-filter", {}),
     ("keep-policy.stream-filter", {"stream_filter": "tmux"}),
     ("keep-policy.no-body", None),
     ("keep-policy.non-object-body", ["nope"]),
 ]
+
+# Driven with the stub installed, so the branches that need the executor are
+# reachable. `keep` must NOT mark; `days` and `processed` both release.
+STUBBED_PURGE_CASES = [
+    ("stub.keep-policy", {"raw_media": "keep", "raw_media_days": None,
+                          "per_stream": {}}, {}),
+    ("stub.keep-policy.stream-filter", {"raw_media": "keep", "raw_media_days": None,
+                                        "per_stream": {}}, {"stream_filter": "tmux"}),
+    ("stub.days-policy", {"raw_media": "days", "raw_media_days": 30,
+                          "per_stream": {}}, {}),
+    ("stub.processed-policy", {"raw_media": "processed", "raw_media_days": None,
+                               "per_stream": {}}, {}),
+    # 🔴 The zero-polarity trap: under `days`, a non-positive or unparseable day
+    # count KEEPS (period -> None), while `processed` RELEASES with period 0.
+    # Two opposite meanings for zero, ten lines apart in the reference.
+    ("stub.days-policy.unparseable", {"raw_media": "days", "raw_media_days": "ninety",
+                                      "per_stream": {}}, {}),
+    ("stub.days-policy.zero", {"raw_media": "days", "raw_media_days": 0,
+                               "per_stream": {}}, {}),
+]
+
+
+def run_stubbed_purge(base: dict) -> dict:
+    """Drive purge with a recording stand-in installed as the executor."""
+    import stat as stat_module
+
+    from solstone.convey import create_app
+
+    cases = {}
+    for name, retention, payload in STUBBED_PURGE_CASES:
+        root = Path(tempfile.mkdtemp(prefix="oracle-stub-"))
+        (root / "config").mkdir(parents=True)
+        config = json.loads(json.dumps(base))
+        config["retention"] = retention
+        (root / "config" / "journal.json").write_text(
+            json.dumps(config, indent=2) + "\n", encoding="utf-8"
+        )
+        seed_chronicle(root)
+        stub = root / "stub-retention"
+        stub.write_text(STUB_EXECUTOR, encoding="utf-8")
+        stub.chmod(stub.stat().st_mode | stat_module.S_IEXEC)
+        log = root / "invocations.jsonl"
+        os.environ["SOLSTONE_JOURNAL"] = str(root)
+        os.environ["SOLSTONE_RETENTION_BIN"] = str(stub)
+        os.environ["ORACLE_STUB_LOG"] = str(log)
+        app = create_app(str(root))
+        app.config["TESTING"] = True
+        response = app.test_client().post(
+            "/app/settings/api/storage/purge", json=payload
+        )
+        body = response.get_json(silent=True)
+        normalized, hits = normalize(body) if body is not None else (None, [])
+        invocations = [
+            json.loads(line)
+            for line in log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ] if log.exists() else []
+        # Two enumerated argv normalizations, BY FLAG NAME -- not by matching the
+        # shape of a value, which is the rule that ate another corpus's coverage
+        # window. `--journal` carries a per-run temp dir; `--now` and `--today`
+        # carry wall-clock stamps the reference generates at request time.
+        def normalize_argv(argv):
+            out, skip = [], None
+            for index, arg in enumerate(argv):
+                if skip == index:
+                    continue
+                out.append(arg)
+                if arg in ("--journal", "--now", "--today") and index + 1 < len(argv):
+                    out.append({"--journal": "<JOURNAL_ROOT>",
+                                "--now": "<VOLATILE:now>",
+                                "--today": "<VOLATILE:today>"}[arg])
+                    skip = index + 1
+            return out
+
+        invocations = [normalize_argv(argv) for argv in invocations]
+        media = {}
+        for path in sorted((root / "chronicle").rglob("*")):
+            if path.is_file():
+                media[str(path.relative_to(root))] = hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest()[:16]
+        cases[f"POST {name}"] = {
+            "method": "POST",
+            "path": "/app/settings/api/storage/purge",
+            "sent": payload,
+            "retention_config": retention,
+            "status": response.status_code,
+            "normalized": normalized,
+            "normalized_paths": sorted(set(hits)),
+            "digest": digest(normalized),
+            # 🔴 The decisive record: which executor verbs the reference invoked.
+            # `keep` must show ONLY `marks`. Anything showing `mark` has written
+            # to the owner's journal on a policy that releases nothing.
+            "executor_verbs": [argv[0] for argv in invocations if argv],
+            "executor_invocations": invocations,
+            "media_digests_after": media,
+        }
+        os.environ.pop("SOLSTONE_RETENTION_BIN", None)
+        os.environ.pop("ORACLE_STUB_LOG", None)
+    return cases
 
 
 def run_purge_cases(config: dict) -> dict:
@@ -784,6 +935,7 @@ def main() -> int:
     keeps["retention"] = {"raw_media": "keep", "raw_media_days": None,
                           "per_stream": {}, "journal_logs": {"enabled": True, "days": 14}}
     out["purge"] = run_purge_cases(keeps)
+    out["purge_stubbed"] = run_stubbed_purge(RICH)
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUTPUT
     target.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     total = sum(len(phase) for phase in out["phases"].values())
