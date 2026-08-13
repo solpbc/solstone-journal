@@ -3,6 +3,12 @@
   "capture_clock_day": "20260515",
   "capture_clock_epoch": 1778846400.0,
   "capture_clock_serialized": "2026-05-15T12:00:00",
+  "coverage_limitations": [
+    "The mutation replay drives every write route ONCE, in the FRESH direction only. It pins that a first call succeeds and says NOTHING about a second call with the same input. Two helpers under these routes are fill-only-when-absent: think/facets.create_facet raises on collision (six lines above a tolerant mkdir(exist_ok=True)), and think/activities.append_activity_record appends unless the id exists (guard in a nested closure). A port that overwrites, rotates or duplicates on a second call REPLAYS GREEN against this fixture. Assert both directions in unit tests.",
+    "Captured with SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES=1, so any field a live side runtime populates is pinned in its ABSENT state. These four surfaces are filesystem projections and none reads a side runtime -- checked, not assumed -- but do not widen that claim to a route added later.",
+    "The PDF case pins status, content type, disposition and pdf_text. reference_body_sha256 is a RECORD of what weasyprint emitted and must NOT be asserted by a port; no native renderer will reproduce those bytes.",
+    "Routes this lane DELETES are deliberately absent: the activities web UI (/, /{day}, /api/index, /api/stats/{month}, /api/day/{day}/activities, /api/activity_output/{path}) and every /app/reflections/* route. Their absence here is a decision, not an oversight."
+  ],
   "generator": "scripts/convey_facets_corpus.py",
   "mutations": [
     {
