@@ -547,46 +547,40 @@ def run_mutations(config: dict) -> dict:
 # and returns a fixed receipt, so what gets captured is the reference's own
 # argv contract and its reshaping of a receipt into an HTTP body. Both are
 # contract a port must reproduce; neither is the stub's opinion.
-STUB_EXECUTOR = """#!/usr/bin/env python3
-import json, os, sys
-argv = sys.argv[1:]
-with open(os.environ["ORACLE_STUB_LOG"], "a", encoding="utf-8") as handle:
-    handle.write(json.dumps(argv) + "\\n")
-VERB = argv[0] if argv else ""
-MARK_REGISTER = {
-    "marks": {
-        "m-0001": {
-            "class": "policy_raw_release",
-            "target": {"day": "20260810", "stream": "tmux",
-                       "dir": "090000_300", "name": "audio.flac"},
-        },
-        "m-0002": {
-            "class": "policy_raw_release",
-            "target": {"day": "20260811", "stream": "screen",
-                       "dir": "090000_120", "name": "video.webm"},
-        },
-        "m-0003": {
-            "class": "operator_request",
-            "target": {"day": "20260811", "stream": "screen",
-                       "dir": "090000_120", "name": "other.webm"},
-        },
-    }
-}
-if VERB == "marks":
-    json.dump({"marks": MARK_REGISTER}, sys.stdout)
-else:
-    json.dump({
-        "marks": MARK_REGISTER,
-        "plan": {
-            "skipped_segments": [
-                {"stream": "tmux", "day": "20260810", "dir": "090000_300",
-                 "reason": "held_by_operator"},
-                {"stream": "screen", "day": "20260811", "dir": "090000_120",
-                 "reason": "no_media"},
-            ],
-            "unreadable_days": [],
-        },
-    }, sys.stdout)
+# 🔴 POSIX sh, deliberately, and not a style choice. `make ci` runs the Rust gate
+# under an interpreter poison that shims `python`, `python3`, `pytest`, `ruff`
+# and `uv` to exit 97 -- and the unit tests that consume this stand-in execute
+# INSIDE that gate. A Python stand-in dies there, reporting a forbidden
+# interpreter, which reads as a harness fault rather than a test defect.
+# ⚠ The first version of this was `#!/usr/bin/env python3`: a capture whose
+# whole argument is "no Python in a shipped path" had put a Python spawn in its
+# own decisive criterion.
+_M = (
+    '{"m-0001":{"class":"policy_raw_release","target":{"day":"20260810",'
+    '"stream":"tmux","dir":"090000_300","name":"audio.flac"}},'
+    '"m-0002":{"class":"policy_raw_release","target":{"day":"20260811",'
+    '"stream":"screen","dir":"090000_120","name":"video.webm"}},'
+    '"m-0003":{"class":"operator_request","target":{"day":"20260811",'
+    '"stream":"screen","dir":"090000_120","name":"other.webm"}}}'
+)
+_PLAN = (
+    '{"skipped_segments":[{"stream":"tmux","day":"20260810","dir":"090000_300",'
+    '"reason":"held_by_operator"},{"stream":"screen","day":"20260811",'
+    '"dir":"090000_120","reason":"no_media"}],"unreadable_days":[]}'
+)
+STUB_EXECUTOR = f"""#!/bin/sh
+printf '%s\\n' "$*" >> "$ORACLE_STUB_LOG"
+REG='{{"marks":{_M}}}'
+PLAN='{_PLAN}'
+if [ -n "$ORACLE_STUB_EXIT" ] && [ "$ORACLE_STUB_EXIT" != "0" ]; then
+  printf '%s' "{{\\"marks\\":$REG}}"
+  exit "$ORACLE_STUB_EXIT"
+fi
+if [ "$1" = "marks" ]; then
+  printf '%s' "{{\\"marks\\":$REG}}"
+else
+  printf '%s' "{{\\"marks\\":$REG,\\"plan\\":$PLAN}}"
+fi
 """
 
 PURGE_CASES = [
@@ -614,7 +608,21 @@ STUBBED_PURGE_CASES = [
                                       "per_stream": {}}, {}),
     ("stub.days-policy.zero", {"raw_media": "days", "raw_media_days": 0,
                                "per_stream": {}}, {}),
+    # 🔴 `policy_would_release` reads `[default_rule] + per_stream rules`. Every
+    # case above is default-rule-only, so a port implementing the predicate as
+    # "default rule only" -- a very natural simplification -- passes all of them
+    # and then never releases on a keep-default journal with a releasing
+    # per-stream override. This case is the one that catches it. It also gives
+    # the policy JSON a NON-EMPTY `per_stream`, which is a LIST OF PAIRS and not
+    # a map: with every record empty, a port that serializes a map matched.
+    ("stub.keep-default.releasing-per-stream",
+     {"raw_media": "keep", "raw_media_days": None,
+      "per_stream": {"tmux": {"raw_media": "days", "raw_media_days": 7}}}, {}),
 ]
+
+# The executor REFUSING or HALTING is the safety path on this route, and it was
+# uncaptured: the stand-in always exited 0. Exit 3 is refused, 4 is halted.
+STUB_EXIT_CASES = [("stub.executor-refused", "3"), ("stub.executor-halted", "4")]
 
 
 def run_stubbed_purge(base: dict) -> dict:
@@ -624,7 +632,11 @@ def run_stubbed_purge(base: dict) -> dict:
     from solstone.convey import create_app
 
     cases = {}
-    for name, retention, payload in STUBBED_PURGE_CASES:
+    for name, retention, payload, exit_code in (
+        [(n, r, p, None) for n, r, p in STUBBED_PURGE_CASES]
+        + [(n, {"raw_media": "days", "raw_media_days": 30, "per_stream": {}}, {}, c)
+           for n, c in STUB_EXIT_CASES]
+    ):
         root = Path(tempfile.mkdtemp(prefix="oracle-stub-"))
         (root / "config").mkdir(parents=True)
         config = json.loads(json.dumps(base))
@@ -640,6 +652,10 @@ def run_stubbed_purge(base: dict) -> dict:
         os.environ["SOLSTONE_JOURNAL"] = str(root)
         os.environ["SOLSTONE_RETENTION_BIN"] = str(stub)
         os.environ["ORACLE_STUB_LOG"] = str(log)
+        if exit_code:
+            os.environ["ORACLE_STUB_EXIT"] = exit_code
+        else:
+            os.environ.pop("ORACLE_STUB_EXIT", None)
         app = create_app(str(root))
         app.config["TESTING"] = True
         response = app.test_client().post(
@@ -648,7 +664,7 @@ def run_stubbed_purge(base: dict) -> dict:
         body = response.get_json(silent=True)
         normalized, hits = normalize(body) if body is not None else (None, [])
         invocations = [
-            json.loads(line)
+            line.split(" ")
             for line in log.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ] if log.exists() else []
@@ -681,6 +697,7 @@ def run_stubbed_purge(base: dict) -> dict:
             "path": "/app/settings/api/storage/purge",
             "sent": payload,
             "retention_config": retention,
+            "stub_exit_code": exit_code,
             "status": response.status_code,
             "normalized": normalized,
             "normalized_paths": sorted(set(hits)),
@@ -694,6 +711,7 @@ def run_stubbed_purge(base: dict) -> dict:
         }
         os.environ.pop("SOLSTONE_RETENTION_BIN", None)
         os.environ.pop("ORACLE_STUB_LOG", None)
+        os.environ.pop("ORACLE_STUB_EXIT", None)
     return cases
 
 
