@@ -11,7 +11,7 @@ use crate::http::{
     config_busy, json_response, plaud_validation_unavailable, settings_operation_failed,
 };
 
-/// W2 owns live third-party validation. W1 exposes only the empty-token shape.
+/// Expose the stored validation projection; live Plaud validation is unavailable natively.
 pub async fn get() -> Response {
     json_response(json!({"key_validation": {}}))
 }

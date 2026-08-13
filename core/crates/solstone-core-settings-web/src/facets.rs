@@ -8,9 +8,10 @@ use std::path::PathBuf;
 use axum::{
     body::Bytes,
     extract::{Path, Query},
+    http::StatusCode,
     response::Response,
 };
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::{
     http::{
@@ -126,6 +127,15 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
         .unwrap_or("")
         .trim();
     let icon = data.get("icon").and_then(Value::as_str).map(str::trim);
+    if data.get("icon").is_some()
+        && (icon.is_none()
+            || icon.is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon), "").is_none()))
+    {
+        return invalid_request_value("unknown Lucide icon");
+    }
+    let consent = data
+        .get("consent")
+        .is_some_and(|value| value.as_bool() == Some(true));
     match solstone_core_facets::create_facet(
         &journal_root,
         &slug,
@@ -135,9 +145,48 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
         emoji,
         icon,
     ) {
-        Ok(()) => json_response(
-            json!({"success":true,"facet":slug,"config":{"title":title,"description":description,"color":color,"emoji":emoji,"icon":icon.unwrap_or("")}}),
-        ),
+        Ok(()) => {
+            let mut params = [
+                ("title".to_owned(), json!(title)),
+                ("emoji".to_owned(), json!(emoji)),
+                ("color".to_owned(), json!(color)),
+                ("description".to_owned(), json!(description)),
+            ]
+            .into_iter()
+            .collect::<Map<_, _>>();
+            if let Some(icon) = icon.filter(|icon| !icon.is_empty()) {
+                params.insert("icon".to_owned(), json!(icon));
+            }
+            if consent {
+                params.insert("consent".to_owned(), Value::Bool(true));
+            }
+            if solstone_core_facets::append_action_log(
+                &journal_root,
+                Some(&slug),
+                "call",
+                "agent",
+                "facet_create",
+                Value::Object(params),
+            )
+            .is_err()
+            {
+                return settings_operation_failed();
+            }
+            let mut config = [
+                ("title".to_owned(), json!(title)),
+                ("description".to_owned(), json!(description)),
+                ("color".to_owned(), json!(color)),
+                ("emoji".to_owned(), json!(emoji)),
+            ]
+            .into_iter()
+            .collect::<Map<_, _>>();
+            if let Some(icon) = icon.filter(|icon| !icon.is_empty()) {
+                config.insert("icon".to_owned(), json!(icon));
+            }
+            let mut response = json_response(json!({"success":true,"facet":slug,"config":config}));
+            *response.status_mut() = StatusCode::CREATED;
+            response
+        }
         Err(_) => settings_operation_failed(),
     }
 }
@@ -150,6 +199,9 @@ pub async fn update(
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
         return missing_request_body();
     };
+    if data.is_empty() {
+        return missing_request_body();
+    }
     let Some(current) =
         facet(&journal_root, &facet_name).and_then(|value| value.as_object().cloned())
     else {
@@ -179,6 +231,32 @@ pub async fn update(
         .get("icon")
         .and_then(Value::as_str)
         .or_else(|| current.get("icon").and_then(Value::as_str));
+    if data.get("icon").is_some()
+        && (data.get("icon").and_then(Value::as_str).is_none()
+            || data
+                .get("icon")
+                .and_then(Value::as_str)
+                .is_some_and(|icon| !icon.is_empty() && icons::svg(Some(icon), "").is_none()))
+    {
+        return invalid_request_value("unknown Lucide icon");
+    }
+    let mut changed_fields = Map::new();
+    for (key, value) in [
+        ("title", data.get("title")),
+        ("description", data.get("description")),
+        ("color", data.get("color")),
+        ("emoji", data.get("emoji")),
+        ("icon", data.get("icon")),
+    ] {
+        if let Some(value) = value
+            && current.get(key) != Some(value)
+        {
+            changed_fields.insert(
+                key.to_owned(),
+                json!({"old": current.get(key), "new": value}),
+            );
+        }
+    }
     if solstone_core_facets::update_facet(
         &journal_root,
         &facet_name,
@@ -192,8 +270,39 @@ pub async fn update(
     {
         return settings_operation_failed();
     }
+    if !changed_fields.is_empty()
+        && solstone_core_facets::append_action_log(
+            &journal_root,
+            Some(&facet_name),
+            "call",
+            "agent",
+            "facet_update",
+            json!({"changed_fields": changed_fields}),
+        )
+        .is_err()
+    {
+        return settings_operation_failed();
+    }
     if let Some(muted) = data.get("muted").and_then(Value::as_bool)
         && solstone_core_facets::set_facet_muted(&journal_root, &facet_name, muted).is_err()
+    {
+        return settings_operation_failed();
+    }
+    if let Some(muted) = data.get("muted").and_then(Value::as_bool)
+        && current
+            .get("muted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            != muted
+        && solstone_core_facets::append_action_log(
+            &journal_root,
+            Some(&facet_name),
+            "call",
+            "agent",
+            if muted { "facet_mute" } else { "facet_unmute" },
+            json!({"muted": muted}),
+        )
+        .is_err()
     {
         return settings_operation_failed();
     }
@@ -214,6 +323,21 @@ pub async fn delete(
     };
     if consent != &Value::Bool(true) {
         return invalid_request_value("consent must be true");
+    }
+    if facet(&journal_root, &facet_name).is_none() {
+        return facet_not_found();
+    }
+    if solstone_core_facets::append_action_log(
+        &journal_root,
+        None,
+        "call",
+        "agent",
+        "facet_delete",
+        json!({"name": facet_name, "consent": true}),
+    )
+    .is_err()
+    {
+        return settings_operation_failed();
     }
     match solstone_core_facets::delete_facet(&journal_root, &facet_name) {
         Ok(true) => json_response(json!({"success":true,"facet":facet_name})),
@@ -242,7 +366,33 @@ pub async fn rename(
         return invalid_config_value("consent must be boolean");
     }
     match solstone_core_facets::rename_facet(&journal_root, &facet_name, new_name) {
-        Ok(_) => json_response(json!({"success":true,"facet":new_name})),
+        Ok(_) => {
+            let mut params = [
+                ("old_name".to_owned(), json!(facet_name)),
+                ("new_name".to_owned(), json!(new_name)),
+            ]
+            .into_iter()
+            .collect::<Map<_, _>>();
+            if data
+                .get("consent")
+                .is_some_and(|value| value.as_bool() == Some(true))
+            {
+                params.insert("consent".to_owned(), Value::Bool(true));
+            }
+            if solstone_core_facets::append_action_log(
+                &journal_root,
+                Some(new_name),
+                "call",
+                "agent",
+                "facet_rename",
+                Value::Object(params),
+            )
+            .is_err()
+            {
+                return settings_operation_failed();
+            }
+            json_response(json!({"success":true,"facet":new_name}))
+        }
         Err(_) => settings_operation_failed(),
     }
 }

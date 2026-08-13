@@ -4,14 +4,14 @@
 use std::fs;
 use std::path::PathBuf;
 
-use axum::{body::Bytes, extract::Path, response::Response};
+use axum::{body::Bytes, extract::Path, http::StatusCode, response::Response};
 use serde_json::{Map, Value, json};
 
 use crate::{
     facets,
     http::{
-        facet_not_found, invalid_config_value, json_response, missing_request_body,
-        missing_required_field, settings_operation_failed,
+        activity_not_found, facet_not_found, invalid_config_value, json_response,
+        missing_request_body, missing_required_field, settings_operation_failed,
     },
     icons,
     request_body::{JsonBody, json_body},
@@ -60,6 +60,9 @@ pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: By
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
         return missing_request_body();
     };
+    if data.is_empty() {
+        return missing_request_body();
+    }
     let id = data
         .get("id")
         .and_then(Value::as_str)
@@ -81,27 +84,78 @@ pub async fn add(journal_root: PathBuf, Path(facet_name): Path<String>, body: By
     {
         return invalid_config_value("invalid priority");
     }
+    if let Some(icon) = data.get("icon")
+        && (!icon.is_string()
+            || (!icon.as_str().is_some_and(str::is_empty)
+                && icons::svg(icon.as_str(), "").is_none()))
+    {
+        return invalid_config_value("icon must be a Lucide name; send emoji in emoji");
+    }
     let mut row = Map::new();
     row.insert("id".to_owned(), Value::String(id.clone()));
     if known {
-        row.insert("custom".to_owned(), Value::Bool(false));
+        for key in ["description", "instructions"] {
+            if let Some(value) = data
+                .get(key)
+                .filter(|value| !value.as_str().is_some_and(str::is_empty))
+            {
+                row.insert(key.to_owned(), value.clone());
+            }
+        }
+        if let Some(value) = data
+            .get("priority")
+            .filter(|value| value.as_str() != Some("normal"))
+        {
+            row.insert("priority".to_owned(), value.clone());
+        }
     } else {
         row.insert("custom".to_owned(), Value::Bool(true));
-        for key in [
-            "name",
-            "description",
-            "instructions",
-            "priority",
-            "emoji",
-            "icon",
-        ] {
-            if let Some(value) = data.get(key) {
+        row.insert(
+            "name".to_owned(),
+            data.get("name")
+                .cloned()
+                .unwrap_or_else(|| Value::String(id.replace('_', " "))),
+        );
+        row.insert(
+            "description".to_owned(),
+            data.get("description")
+                .cloned()
+                .unwrap_or_else(|| json!("")),
+        );
+        if let Some(value) = data
+            .get("priority")
+            .filter(|value| value.as_str() != Some("normal"))
+        {
+            row.insert("priority".to_owned(), value.clone());
+        }
+        for key in ["instructions", "emoji", "icon"] {
+            if let Some(value) = data
+                .get(key)
+                .filter(|value| !value.as_str().is_some_and(str::is_empty))
+            {
                 row.insert(key.to_owned(), value.clone());
             }
         }
     }
     match solstone_core_facets::add_activity(&journal_root, &facet_name, Value::Object(row)) {
-        Ok(activity) => json_response(json!({"success":true,"activity":public_record(activity)})),
+        Ok(activity) => {
+            if solstone_core_facets::append_action_log(
+                &journal_root,
+                Some(&facet_name),
+                "app",
+                "settings",
+                "activity_add",
+                json!({"activity_id": id}),
+            )
+            .is_err()
+            {
+                return settings_operation_failed();
+            }
+            let mut response =
+                json_response(json!({"success":true,"activity":public_record(activity)}));
+            *response.status_mut() = StatusCode::CREATED;
+            response
+        }
         Err(_) => settings_operation_failed(),
     }
 }
@@ -117,17 +171,55 @@ pub async fn update(
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
         return missing_request_body();
     };
+    if data.is_empty() {
+        return missing_request_body();
+    }
     if data
         .get("priority")
         .is_some_and(|value| !matches!(value.as_str(), Some("high" | "normal" | "low")))
     {
         return invalid_config_value("invalid priority");
     }
-    match solstone_core_facets::update_activity(&journal_root, &facet_name, &activity_id, &data) {
+    if let Some(icon) = data.get("icon")
+        && (!icon.is_string()
+            || (!icon.as_str().is_some_and(str::is_empty)
+                && icons::svg(icon.as_str(), "").is_none()))
+    {
+        return invalid_config_value("icon must be a Lucide name; send emoji in emoji");
+    }
+    let updates = data
+        .iter()
+        .filter(|(key, _)| {
+            [
+                "description",
+                "instructions",
+                "priority",
+                "name",
+                "emoji",
+                "icon",
+            ]
+            .contains(&key.as_str())
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Map<_, _>>();
+    match solstone_core_facets::update_activity(&journal_root, &facet_name, &activity_id, &updates)
+    {
         Ok(Some(activity)) => {
+            if solstone_core_facets::append_action_log(
+                &journal_root,
+                Some(&facet_name),
+                "app",
+                "settings",
+                "activity_update",
+                json!({"activity_id": activity_id, "updates": data}),
+            )
+            .is_err()
+            {
+                return settings_operation_failed();
+            }
             json_response(json!({"success":true,"activity":public_record(activity)}))
         }
-        Ok(None) => invalid_config_value("Activity not found in facet"),
+        Ok(None) => activity_not_found(),
         Err(_) => settings_operation_failed(),
     }
 }
@@ -147,8 +239,22 @@ pub async fn remove(
         return crate::http::activity_protected();
     }
     match solstone_core_facets::remove_activity(&journal_root, &facet_name, &activity_id) {
-        Ok(true) => json_response(json!({"success":true})),
-        Ok(false) => invalid_config_value("Activity not found in facet"),
+        Ok(true) => {
+            if solstone_core_facets::append_action_log(
+                &journal_root,
+                Some(&facet_name),
+                "app",
+                "settings",
+                "activity_remove",
+                json!({"activity_id": activity_id}),
+            )
+            .is_err()
+            {
+                return settings_operation_failed();
+            }
+            json_response(json!({"success":true}))
+        }
+        Ok(false) => activity_not_found(),
         Err(_) => settings_operation_failed(),
     }
 }
@@ -161,7 +267,7 @@ fn slug(value: &str) -> String {
             if value.is_ascii_alphanumeric() {
                 value
             } else {
-                '-'
+                '_'
             }
         })
         .collect::<String>()

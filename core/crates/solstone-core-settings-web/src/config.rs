@@ -35,6 +35,9 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     let Some(request) = request.as_object() else {
         return invalid_config_value("request must be an object");
     };
+    if request.is_empty() {
+        return missing_request_body();
+    }
     let mut section = request
         .get("section")
         .and_then(Value::as_str)
@@ -107,10 +110,6 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     let data_for_write = data.clone();
     let section_for_write = section.clone();
     let result = mutate_journal_config(&journal_root, lock_options, move |config| {
-        let old = config
-            .get(&section_for_write)
-            .cloned()
-            .unwrap_or_else(|| Value::Object(Map::new()));
         let target = config
             .entry(section_for_write.clone())
             .or_insert_with(|| Value::Object(Map::new()));
@@ -121,31 +120,39 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             };
         };
         let mut changed = false;
+        let mut changed_fields = Map::new();
         if section_for_write == "processing" {
-            let mut next = Map::new();
-            next.insert(
-                "mode".to_owned(),
-                data_for_write
-                    .get("mode")
-                    .cloned()
-                    .or_else(|| old.get("mode").cloned())
-                    .unwrap_or_else(|| json!("realtime")),
-            );
-            let gate = old
-                .get("gate")
+            let before = Value::Object(target.clone());
+            let mode = data_for_write
+                .get("mode")
                 .cloned()
-                .unwrap_or_else(|| {
-                    json!({"time_window":{"enabled":true,"start":"02:00","end":"06:00"},"display_powersave":{"enabled":false}})
-                });
-            next.insert("gate".to_owned(), gate);
-            if old != Value::Object(next.clone()) {
-                *target = next;
+                .or_else(|| target.get("mode").cloned())
+                .unwrap_or_else(|| json!("realtime"));
+            if target.get("mode") != Some(&mode) {
+                target.insert("mode".to_owned(), mode);
                 changed = true;
+            }
+            if !target.contains_key("gate") {
+                target.insert(
+                    "gate".to_owned(),
+                    json!({"time_window":{"enabled":true,"start":"02:00","end":"06:00"},"display_powersave":{"enabled":false}}),
+                );
+                changed = true;
+            }
+            if changed {
+                changed_fields.insert(
+                    "processing".to_owned(),
+                    json!({"old": before, "new": Value::Object(target.clone())}),
+                );
             }
         } else {
             for key in allowed {
                 if let Some(value) = data_for_write.get(*key) {
-                    changed |= target.get(*key) != Some(value);
+                    let old = target.get(*key).cloned();
+                    if old.as_ref() != Some(value) {
+                        changed_fields.insert((*key).to_owned(), json!({"old": old, "new": value}));
+                        changed = true;
+                    }
                     target.insert((*key).to_owned(), value.clone());
                 }
             }
@@ -159,7 +166,14 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                             .expect("created object");
                         for (key, value) in nested {
                             if ["model_version", "device", "timeout_sec"].contains(&key.as_str()) {
-                                changed |= inner.get(key) != Some(value);
+                                let old = inner.get(key).cloned();
+                                if old.as_ref() != Some(value) {
+                                    changed_fields.insert(
+                                        format!("{backend}.{key}"),
+                                        json!({"old": old, "new": value}),
+                                    );
+                                    changed = true;
+                                }
                                 inner.insert(key.clone(), value.clone());
                             }
                         }
@@ -173,14 +187,14 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 .get_mut("service_key_validation")
                 .and_then(Value::as_object_mut)
         {
-            validation.remove("plaud");
+            changed |= validation.remove("plaud").is_some();
         }
         JournalConfigMutation {
             changed,
-            value: Ok(config.clone()),
+            value: Ok((config.clone(), changed_fields)),
         }
     });
-    let config = match result {
+    let (config, changed_fields) = match result {
         Ok(value) => match value.value {
             Ok(config) => config,
             Err(()) => return invalid_config_value("section must be an object"),
@@ -194,15 +208,27 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             };
         }
     };
-    if section == "env" && data.contains_key("PLAUD_ACCESS_TOKEN") {
-        let _ = solstone_core_facets::append_action_log(
+    if !changed_fields.is_empty() {
+        let log_fields = if section == "env" {
+            changed_fields
+                .keys()
+                .map(|key| (key.clone(), json!({"old":"***","new":"***"})))
+                .collect::<Map<_, _>>()
+        } else {
+            changed_fields
+        };
+        if solstone_core_facets::append_action_log(
             &journal_root,
             None,
             "app",
             "settings",
-            "env_update",
-            json!({"changed_fields":{"PLAUD_ACCESS_TOKEN":{"old":"***","new":"***"}}}),
-        );
+            &format!("{section}_update"),
+            json!({"changed_fields": log_fields}),
+        )
+        .is_err()
+        {
+            return settings_operation_failed();
+        }
     }
     let key_validation = config
         .get("service_key_validation")

@@ -365,9 +365,10 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Speaker candidate-pair review candidates (`speakers/candidate-pair-review-candidates.jsonl`) | `solstone/think/speaker_candidate_pair_review_candidates.py` |
 | Speaker discovery cluster dismissals (`speakers/cluster-dismissals.jsonl`) | `solstone/think/speaker_cluster_dismissals.py` |
 | Speaker keep-separate assertions (`speakers/keep-separate.jsonl`) | `solstone/think/speaker_keep_separate.py` |
-| Facets (`facets/*/facet.json`, `facets/*/relationships/`) | `solstone/think/facets.py` + `solstone/apps/facets/*` (if/when created) |
+| Facets (`facets/*/facet.json`, `facets/*/relationships/`) | `solstone/think/facets.py` + `core/crates/solstone-core-facets/` for native Settings writes + `solstone/apps/facets/*` (if/when created) |
 | Observations (`observations.jsonl`) | `solstone/think/entities/observations.py` |
-| Activities (`facets/*/activities/*.jsonl`) | `solstone/think/activities.py` |
+| Activities (`facets/*/activities/*.jsonl`) | `solstone/think/activities.py` + `core/crates/solstone-core-facets/` for native Settings writes |
+| Action logs (`config/actions/*.jsonl`, `facets/*/logs/*.jsonl`) | `solstone/apps/utils.py` + `core/crates/solstone-core-facets/` for native Settings writes |
 | Timeline (`chronicle/<day>/timeline.json`, `chronicle/**/<seg>/timeline.json`, root `timeline.json`) | `solstone/apps/timeline/maintenance.py` + `solstone/apps/timeline/talent/segment_summary.py` |
 | Per-segment sense outputs (`chronicle/**/<seg>/talents/{sense.json,facets.json,speakers.json,density.json,change.json,activity.md,sense.md}`) | `solstone/think/sense_splitter.py` |
 | `_solstone_processing` records on header-only native describe/transcribe outputs (`chronicle/**/<seg>/{screen,*_screen,audio,*_audio}.jsonl`) | Primary, automatic: sense re-entry via `should_reenter_analysis_output` in `solstone/observe/processing_record.py` — a record-less screen output is re-attempted and the handler *determines* the verdict. Operator bulk tool: `solstone/think/backfill_processing_records.py`, which *stamps a guessed* `state=empty` and is CLI-only, for marker-less, chunk-less legacy fleets; it declines anything carrying a marker or an existing record (`SKIP_MARKER` / `SKIP_HAS_RECORD`, unchanged). |

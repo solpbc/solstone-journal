@@ -39,6 +39,9 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     let JsonBody::Value(Value::Object(request)) = json_body(body) else {
         return missing_request_body();
     };
+    if request.is_empty() {
+        return missing_request_body();
+    }
     if let Some(tmux) = request.get("tmux") {
         let Some(tmux) = tmux.as_object() else {
             return invalid_config_value("tmux must be an object");
@@ -65,10 +68,11 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         let Some(observe) = observe else {
             return JournalConfigMutation {
                 changed: false,
-                value: false,
+                value: Map::new(),
             };
         };
         let mut changed = false;
+        let mut changed_fields = Map::new();
         if let Some(tmux) = request.get("tmux").and_then(Value::as_object) {
             let target = observe
                 .entry("tmux".to_owned())
@@ -77,17 +81,35 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 .expect("object");
             for key in ["enabled", "capture_interval"] {
                 if let Some(value) = tmux.get(key) {
-                    changed |= target.get(key) != Some(value);
+                    if target.get(key) != Some(value) {
+                        changed_fields.insert(format!("tmux.{key}"), value.clone());
+                        changed = true;
+                    }
                     target.insert(key.to_owned(), value.clone());
                 }
             }
         }
         JournalConfigMutation {
             changed,
-            value: true,
+            value: changed_fields,
         }
     }) {
-        Ok(_) => get(journal_root).await,
+        Ok(transaction) => {
+            if !transaction.value.is_empty()
+                && solstone_core_facets::append_action_log(
+                    &journal_root,
+                    None,
+                    "app",
+                    "settings",
+                    "observe_update",
+                    json!({"changed_fields": transaction.value}),
+                )
+                .is_err()
+            {
+                return settings_operation_failed();
+            }
+            get(journal_root).await
+        }
         Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
             _,
         ))) => config_busy(),

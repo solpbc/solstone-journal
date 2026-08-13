@@ -27,6 +27,31 @@ const W3_STORAGE_REFUSAL_CASES: [&str; 4] = [
     "PUT storage.logs-bad-days",
 ]; // W3 owns the storage/prune routes and they are deliberately unregistered in W2.
 
+const W2_MUTATION_PAIRS: [(&str, &str); 16] = [
+    ("PUT", "/app/settings/api/config"),
+    ("POST", "/app/settings/api/config"),
+    ("PUT", "/app/settings/api/sol_voice"),
+    ("PUT", "/app/settings/api/chat"),
+    ("POST", "/app/settings/api/validate-keys"),
+    ("PUT", "/app/settings/api/vision"),
+    ("PUT", "/app/settings/api/observe"),
+    ("POST", "/app/settings/api/observe"),
+    ("POST", "/app/settings/api/facet"),
+    ("PUT", "/app/settings/api/facet/work-life"),
+    ("DELETE", "/app/settings/api/facet/work-life"),
+    ("POST", "/app/settings/api/facet/work-life/rename"),
+    ("POST", "/app/settings/api/facet/work-life/activities"),
+    (
+        "PUT",
+        "/app/settings/api/facet/work-life/activities/meeting",
+    ),
+    (
+        "DELETE",
+        "/app/settings/api/facet/work-life/activities/meeting",
+    ),
+    ("PUT", "/app/settings/api/sync"),
+];
+
 fn write_config(root: &std::path::Path, config: &Value) {
     let path = root.join("config/journal.json");
     fs::create_dir_all(path.parent().expect("config parent")).expect("config directory");
@@ -41,6 +66,38 @@ fn root_from(config: &Value) -> tempfile::TempDir {
     let root = tempfile::TempDir::new().expect("temporary journal");
     write_config(root.path(), config);
     root
+}
+
+fn raw_top_level_field(source: &[u8], key: &str) -> Vec<u8> {
+    let marker = format!("  \"{key}\": ");
+    let start = source
+        .windows(marker.len())
+        .position(|window| window == marker.as_bytes())
+        .expect("top-level field")
+        + marker.len();
+    let mut depth = 0_u32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, byte) in source[start..].iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if *byte == b'\\' {
+                escaped = true;
+            } else if *byte == b'\"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match *byte {
+            b'\"' => in_string = true,
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => depth -= 1,
+            b',' | b'\n' if depth == 0 => return source[start..start + offset].to_vec(),
+            _ => {}
+        }
+    }
+    source[start..].to_vec()
 }
 
 fn body_request(method: &str, path: &str, body: Option<&Value>) -> Request<Body> {
@@ -117,9 +174,9 @@ fn assert_response(
 }
 
 fn assert_config_result(case_name: &str, case: &Value, root: &std::path::Path) {
-    let after: Value =
-        serde_json::from_slice(&fs::read(root.join("config/journal.json")).expect("config after"))
-            .expect("config JSON");
+    let path = root.join("config/journal.json");
+    let after_bytes = fs::read(&path).expect("config after");
+    let after: Value = serde_json::from_slice(&after_bytes).expect("config JSON");
     assert_eq!(after, case["config_after"], "{case_name} config_after");
     let before_keys = case["config_before"]
         .as_object()
@@ -166,9 +223,14 @@ fn assert_config_result(case_name: &str, case: &Value, root: &std::path::Path) {
             "{case_name} full root key preservation"
         );
     }
+    let before_bytes = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&case["config_before"]).expect("before JSON")
+    );
     assert_eq!(
-        after["some_future_section"], case["config_before"]["some_future_section"],
-        "{case_name} future section preservation"
+        raw_top_level_field(&after_bytes, "some_future_section"),
+        raw_top_level_field(before_bytes.as_bytes(), "some_future_section"),
+        "{case_name} future section byte preservation"
     );
 }
 
@@ -192,19 +254,187 @@ async fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
 }
 
 #[tokio::test]
+async fn ac2_partial_processing_write_preserves_unknown_nested_bytes() {
+    let root = crate::test_support::phase_root("rich");
+    let config_path = root.path().join("config/journal.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&config_path).expect("config")).expect("config JSON");
+    config["processing"] = json!({
+        "mode": "batch",
+        "gate": {"min_text_chars": 25, "max_line_density": 0.3},
+        "some_future_key": {"preserve": ["these", "bytes"]},
+    });
+    write_config(root.path(), &config);
+    let before = fs::read(&config_path).expect("before");
+    let (status, _) = request(
+        crate::test_support::shell_router(root.path()),
+        "POST",
+        "/app/settings/api/config",
+        Some(&json!({"section":"processing","data":{"mode":"realtime"}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let after = fs::read(&config_path).expect("after");
+    let after_config: Value = serde_json::from_slice(&after).expect("after JSON");
+    assert_eq!(
+        after_config["processing"]["some_future_key"],
+        config["processing"]["some_future_key"]
+    );
+    assert_eq!(
+        raw_top_level_field(&after, "some_future_section"),
+        raw_top_level_field(&before, "some_future_section")
+    );
+}
+
+fn fixture_tree_file<'a>(corpus: &'a Value, path: &str) -> &'a str {
+    corpus["phases"]["populated"]["_journal_tree"]["files"][path]
+        .as_str()
+        .expect("fixture tree file")
+}
+
+fn normalized_log_bytes(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let prefix = "\"timestamp\": \"";
+            let start = line.find(prefix).expect("timestamp") + prefix.len();
+            let end = start + line[start..].find('"').expect("timestamp end");
+            format!("{}<VOLATILE:log_timestamp>{}", &line[..start], &line[end..])
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if text.ends_with('\n') { "\n" } else { "" }
+}
+
+#[tokio::test]
+async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
+    let corpus = crate::test_support::corpus();
+    let root = crate::test_support::phase_root("rich");
+    let router = crate::test_support::shell_router(root.path());
+    let calls = [
+        (
+            "POST",
+            "/app/settings/api/config",
+            json!({"section":"identity","data":{"preferred":"Countess"}}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet",
+            json!({"title":"Muted Thing","description":"Muted Thing desc","color":"#334455","emoji":"🔇","consent":true}),
+        ),
+        (
+            "PUT",
+            "/app/settings/api/facet/muted-thing",
+            json!({"muted":true}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet",
+            json!({"title":"Work Life","description":"Work Life desc","color":"#334455","emoji":"💼","icon":"briefcase","consent":true}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet/work-life/activities",
+            json!({"name":"Deep Work","description":"focus block","priority":"high","icon":"target"}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet/work-life/activities",
+            json!({"name":"Standup","description":"","priority":"low","emoji":"🗣"}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet",
+            json!({"title":"Zeta Project","description":"Zeta Project desc","color":"#334455","emoji":"🧪","icon":"flask-conical","consent":true}),
+        ),
+    ];
+    for (method, path, body) in calls {
+        let (status, _) = request(router.clone(), method, path, Some(&body)).await;
+        assert!(status.is_success(), "{method} {path}: {status}");
+    }
+    for path in [
+        "facets/muted-thing/facet.json",
+        "facets/work-life/facet.json",
+        "facets/work-life/activities/activities.jsonl",
+        "facets/zeta-project/facet.json",
+    ] {
+        assert_eq!(
+            fs::read_to_string(root.path().join(path)).expect("produced tree file"),
+            fixture_tree_file(&corpus, path),
+            "{path} fixture bytes"
+        );
+    }
+    let day = chrono::Local::now().format("%Y%m%d").to_string();
+    for path in [
+        "config/actions/20260813.jsonl",
+        "facets/muted-thing/logs/20260813.jsonl",
+        "facets/work-life/logs/20260813.jsonl",
+        "facets/zeta-project/logs/20260813.jsonl",
+    ] {
+        let runtime_path = path.replace("20260813", &day);
+        assert_eq!(
+            normalized_log_bytes(
+                &fs::read_to_string(root.path().join(runtime_path)).expect("runtime log")
+            ),
+            normalized_log_bytes(fixture_tree_file(&corpus, path)),
+            "{path} log records"
+        );
+    }
+    let lifecycle = crate::test_support::phase_root("rich");
+    let lifecycle_router = crate::test_support::shell_router(lifecycle.path());
+    for (method, path, body) in [
+        (
+            "POST",
+            "/app/settings/api/facet",
+            json!({"title":"Temporary","consent":true}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet/temporary/activities",
+            json!({"name":"Temporary Activity"}),
+        ),
+        (
+            "PUT",
+            "/app/settings/api/facet/temporary/activities/temporary_activity",
+            json!({"description":"updated"}),
+        ),
+        (
+            "DELETE",
+            "/app/settings/api/facet/temporary/activities/temporary_activity",
+            json!({}),
+        ),
+        (
+            "POST",
+            "/app/settings/api/facet/temporary/rename",
+            json!({"new_name":"renamed"}),
+        ),
+        (
+            "DELETE",
+            "/app/settings/api/facet/renamed",
+            json!({"consent":true}),
+        ),
+    ] {
+        let (status, _) = request(lifecycle_router.clone(), method, path, Some(&body)).await;
+        assert!(status.is_success(), "{method} {path}: {status}");
+    }
+    assert!(!lifecycle.path().join("facets/renamed").exists());
+}
+
+#[tokio::test]
 async fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
     let corpus = crate::test_support::corpus();
     let cases = w2_mutations(&corpus, "mutations_malformed");
     assert_eq!(cases.len(), 16);
     for (name, case) in cases {
         let root = root_from(&case["config_before"]);
+        let before_bytes = fs::read(root.path().join("config/journal.json")).expect("before bytes");
         let before = case["config_before"].as_object().expect("before object");
         let malformed_before = ["retention", "observe", "describe", "identity"]
             .iter()
             .filter_map(|key| {
                 before
                     .get(*key)
-                    .map(|value| ((*key).to_owned(), crate::corpus::python_json(value)))
+                    .map(|_| ((*key).to_owned(), raw_top_level_field(&before_bytes, key)))
             })
             .collect::<Vec<_>>();
         let (status, body) = request(
@@ -216,14 +446,11 @@ async fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal()
         .await;
         assert_response(name, case, root.path(), status, body);
         assert_config_result(name, case, root.path());
-        let after: Value = serde_json::from_slice(
-            &fs::read(root.path().join("config/journal.json")).expect("config after"),
-        )
-        .expect("config JSON");
+        let after_bytes = fs::read(root.path().join("config/journal.json")).expect("config after");
         for (section, bytes) in malformed_before {
             if case["config_before"][&section] == case["config_after"][&section] {
                 assert_eq!(
-                    crate::corpus::python_json(&after[&section]),
+                    raw_top_level_field(&after_bytes, &section),
                     bytes,
                     "{name} malformed {section} bytes"
                 );
@@ -260,20 +487,40 @@ fn refusal_route(name: &str) -> (&'static str, &'static str) {
     }
 }
 
+fn inventory_path(path: &str) -> &str {
+    match path {
+        "/app/settings/api/facet/no-such" => "/app/settings/api/facet/work-life",
+        "/app/settings/api/facet/no-such/rename" => "/app/settings/api/facet/work-life/rename",
+        other => other,
+    }
+}
+
 #[tokio::test]
 async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
     let corpus = crate::test_support::corpus();
     let phases = ["established", "rich", "populated", "tokened", "malformed"];
     let mut total = 0;
+    let mut per_phase = None;
     for phase in phases {
         let cases = corpus["phases"][phase].as_object().expect("phase");
-        for (name, case) in cases.iter().filter(|(name, _)| {
-            (name.starts_with("POST ") || name.starts_with("PUT ") || name.starts_with("DELETE "))
-                && !W3_STORAGE_REFUSAL_CASES.contains(&name.as_str())
-        }) {
+        let w2_cases = cases
+            .iter()
+            .filter(|(name, _)| {
+                (name.starts_with("POST ")
+                    || name.starts_with("PUT ")
+                    || name.starts_with("DELETE "))
+                    && !W3_STORAGE_REFUSAL_CASES.contains(&name.as_str())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(per_phase.get_or_insert(w2_cases.len()), &w2_cases.len());
+        for (name, case) in w2_cases {
             let root = crate::test_support::phase_root(phase);
             let before = fs::read(root.path().join("config/journal.json")).expect("config before");
             let (method, path) = refusal_route(name);
+            assert!(
+                W2_MUTATION_PAIRS.contains(&(method, inventory_path(path))),
+                "{phase} {name} maps to a W2 route"
+            );
             let sent = if matches!(
                 name.as_str(),
                 "POST config.no-body" | "POST observe.no-body"
@@ -311,7 +558,7 @@ async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(total, 23 * 5);
+    assert_eq!(total, per_phase.expect("refusals") * phases.len());
 }
 
 #[tokio::test]
@@ -517,33 +764,9 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
 
 #[tokio::test]
 async fn ac12_explicit_sixteen_pair_inventory() {
-    let pairs = [
-        ("PUT", "/app/settings/api/config"),
-        ("POST", "/app/settings/api/config"),
-        ("PUT", "/app/settings/api/sol_voice"),
-        ("PUT", "/app/settings/api/chat"),
-        ("POST", "/app/settings/api/validate-keys"),
-        ("PUT", "/app/settings/api/vision"),
-        ("PUT", "/app/settings/api/observe"),
-        ("POST", "/app/settings/api/observe"),
-        ("POST", "/app/settings/api/facet"),
-        ("PUT", "/app/settings/api/facet/work-life"),
-        ("DELETE", "/app/settings/api/facet/work-life"),
-        ("POST", "/app/settings/api/facet/work-life/rename"),
-        ("POST", "/app/settings/api/facet/work-life/activities"),
-        (
-            "PUT",
-            "/app/settings/api/facet/work-life/activities/meeting",
-        ),
-        (
-            "DELETE",
-            "/app/settings/api/facet/work-life/activities/meeting",
-        ),
-        ("PUT", "/app/settings/api/sync"),
-    ];
-    assert_eq!(pairs.len(), 16);
+    assert_eq!(W2_MUTATION_PAIRS.len(), 16);
     let root = crate::test_support::populated_root();
-    for (method, path) in pairs {
+    for (method, path) in W2_MUTATION_PAIRS {
         let response = crate::test_support::shell_router(root.path())
             .oneshot(body_request(method, path, Some(&json!({}))))
             .await

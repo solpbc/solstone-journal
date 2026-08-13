@@ -45,6 +45,9 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     let JsonBody::Value(Value::Object(request)) = json_body(body) else {
         return missing_request_body();
     };
+    if request.is_empty() {
+        return missing_request_body();
+    }
     if let Some(value) = request.get("max_extractions")
         && (!value.is_i64()
             || value
@@ -118,17 +121,30 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         let Some(describe) = describe.as_object_mut() else {
             return JournalConfigMutation {
                 changed: false,
-                value: false,
+                value: Map::new(),
             };
         };
         let mut changed = false;
+        let mut changed_fields = Map::new();
         if let Some(value) = request.get("max_extractions") {
-            changed |= describe.get("max_extractions") != Some(value);
+            if describe.get("max_extractions") != Some(value) {
+                changed_fields.insert(
+                    "max_extractions".to_owned(),
+                    json!({"old": describe.get("max_extractions"), "new": value}),
+                );
+                changed = true;
+            }
             describe.insert("max_extractions".to_owned(), value.clone());
         }
         if let Some(redact) = &redact {
             let value = Value::Array(redact.clone());
-            changed |= describe.get("redact") != Some(&value);
+            if describe.get("redact") != Some(&value) {
+                changed_fields.insert(
+                    "redact".to_owned(),
+                    json!({"old": describe.get("redact"), "new": value}),
+                );
+                changed = true;
+            }
             describe.insert("redact".to_owned(), value);
         }
         if let Some(categories) = request.get("categories").and_then(Value::as_object) {
@@ -140,10 +156,22 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             for (name, value) in categories {
                 match value {
                     Value::Null => {
-                        changed |= categories_target.remove(name).is_some();
+                        if let Some(old) = categories_target.remove(name) {
+                            changed_fields.insert(
+                                format!("categories.{name}"),
+                                json!({"old": old, "new": Value::Null}),
+                            );
+                            changed = true;
+                        }
                     }
                     Value::Object(values) if !values.is_empty() => {
-                        changed |= categories_target.get(name) != Some(value);
+                        if categories_target.get(name) != Some(value) {
+                            changed_fields.insert(
+                                format!("categories.{name}"),
+                                json!({"old": categories_target.get(name), "new": value}),
+                            );
+                            changed = true;
+                        }
                         categories_target.insert(name.clone(), value.clone());
                     }
                     _ => {}
@@ -152,11 +180,26 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         }
         JournalConfigMutation {
             changed,
-            value: true,
+            value: changed_fields,
         }
     });
     match result {
-        Ok(_) => get(journal_root).await,
+        Ok(transaction) => {
+            if !transaction.value.is_empty()
+                && solstone_core_facets::append_action_log(
+                    &journal_root,
+                    None,
+                    "app",
+                    "settings",
+                    "vision_update",
+                    json!({"changed_fields": transaction.value}),
+                )
+                .is_err()
+            {
+                return settings_operation_failed();
+            }
+            get(journal_root).await
+        }
         Err(solstone_core_journal_config_write::ConfigMutationError::Lock(LockError::Timeout(
             _,
         ))) => config_busy(),

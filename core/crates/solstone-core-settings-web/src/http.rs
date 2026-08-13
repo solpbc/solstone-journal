@@ -104,3 +104,15 @@ pub fn activity_protected() -> Response {
     )
     .into_response()
 }
+
+pub fn activity_not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "error": "I couldn't find that activity in the facet.",
+            "reason_code": "activity_not_found",
+            "detail": "Activity not found in facet",
+        })),
+    )
+        .into_response()
+}

@@ -33,15 +33,13 @@ pub async fn update(
     {
         return invalid_config_value("invalid thinking_surfaces");
     }
-    let mut config = load_chat_config(&journal_root);
-    for (key, value) in updates {
-        config.insert(key, value);
-    }
     let path = journal_root.join("config/chat.json");
     let _lock = match hold_lock(&path, lock_options) {
         Ok(lock) => lock,
         Err(_) => return settings_operation_failed(),
     };
+    let mut config = load_chat_config(&journal_root);
+    merge(&mut config, &updates);
     match solstone_core_journal_io::write_json(
         &path,
         &Value::Object(config.clone()),
@@ -52,6 +50,19 @@ pub async fn update(
     ) {
         Ok(()) => json_response(Value::Object(config)),
         Err(_) => settings_operation_failed(),
+    }
+}
+
+fn merge(target: &mut Map<String, Value>, updates: &Map<String, Value>) {
+    for (key, value) in updates {
+        if let (Some(existing), Some(nested)) = (
+            target.get_mut(key).and_then(Value::as_object_mut),
+            value.as_object(),
+        ) {
+            merge(existing, nested);
+        } else {
+            target.insert(key.clone(), value.clone());
+        }
     }
 }
 

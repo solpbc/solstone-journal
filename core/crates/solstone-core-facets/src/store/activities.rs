@@ -70,14 +70,19 @@ pub fn update_activity(
         return Ok(None);
     };
     let object = row.as_object_mut().expect("activity rows are objects");
+    let custom = object.get("custom").and_then(Value::as_bool) == Some(true);
     for (key, value) in updates {
-        match (key.as_str(), value) {
-            ("description" | "instructions", Value::String(value)) if value.is_empty() => {
+        match (key.as_str(), value, custom) {
+            ("description" | "instructions", Value::String(value), false) if value.is_empty() => {
                 object.remove(key);
             }
-            ("priority", Value::String(value)) if value == "normal" => {
+            ("priority", Value::String(value), false) if value == "normal" => {
                 object.remove(key);
             }
+            ("emoji" | "icon", Value::String(value), true) if value.is_empty() => {
+                object.remove(key);
+            }
+            ("name" | "emoji" | "icon", _, false) => {}
             _ => {
                 object.insert(key.clone(), value.clone());
             }
@@ -117,7 +122,7 @@ fn activity_rows(journal_root: &Path, facet_dir: &str) -> Result<Vec<Value>, Fac
 fn write_rows(journal_root: &Path, facet_dir: &str, rows: &[Value]) -> Result<(), FacetWriteError> {
     let text = rows
         .iter()
-        .map(|row| serde_json::to_string(row).expect("JSON row"))
+        .map(python_json_line)
         .collect::<Vec<_>>()
         .join("\n");
     write_activity_file(
@@ -130,6 +135,30 @@ fn write_rows(journal_root: &Path, facet_dir: &str, rows: &[Value]) -> Result<()
             format!("{text}\n")
         }),
     )
+}
+
+fn python_json_line(value: &Value) -> String {
+    let compact = serde_json::to_string(value).expect("JSON row");
+    let mut output = String::with_capacity(compact.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for character in compact.chars() {
+        output.push(character);
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+        } else if character == '"' {
+            in_string = true;
+        } else if matches!(character, ',' | ':') {
+            output.push(' ');
+        }
+    }
+    output
 }
 
 fn read_content_file(

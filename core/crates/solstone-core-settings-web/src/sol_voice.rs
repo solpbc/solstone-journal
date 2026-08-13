@@ -49,16 +49,7 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     if let Some(key) = updates.keys().find(|key| !allowed.contains(&key.as_str())) {
         return invalid_config_value(format!("sol_voice.{key} is not a recognized setting"));
     }
-    if updates
-        .get("daily_cap")
-        .is_some_and(|value| !value.is_u64())
-        || updates
-            .get("rate_floor_minutes")
-            .is_some_and(|value| !value.is_u64())
-        || updates
-            .get("mute_window")
-            .is_some_and(|value| !value.is_object())
-    {
+    if !valid_settings(&updates) {
         return invalid_config_value("invalid sol_voice settings");
     }
     match mutate_journal_config(&journal_root, lock_options, |config| {
@@ -109,6 +100,84 @@ fn default_settings() -> Map<String, Value> {
         "debug_show_throttled": false,
     }))
     .expect("sol voice defaults")
+}
+
+fn valid_settings(updates: &Map<String, Value>) -> bool {
+    let natural = |key: &str| updates.get(key).is_none_or(Value::is_u64);
+    if !natural("daily_cap")
+        || !natural("rate_floor_minutes")
+        || !natural("category_self_mute_hours")
+        || !updates
+            .get("debug_show_throttled")
+            .is_none_or(Value::is_boolean)
+        || !updates
+            .get("default_dedupe_window")
+            .is_none_or(|value| value.as_str().is_some_and(valid_dedupe_window))
+    {
+        return false;
+    }
+    let valid_bool_object = |key: &str, allowed: &[&str]| {
+        updates.get(key).is_none_or(|value| {
+            value.as_object().is_some_and(|object| {
+                object.keys().all(|key| allowed.contains(&key.as_str()))
+                    && object.values().all(Value::is_boolean)
+            })
+        })
+    };
+    if !valid_bool_object("system_notifications", &["macos", "linux"]) {
+        return false;
+    }
+    if let Some(value) = updates.get("category_caps") {
+        let Some(caps) = value.as_object() else {
+            return false;
+        };
+        if caps.keys().any(|key| !categories().contains(key))
+            || caps.values().any(|value| !value.is_u64())
+        {
+            return false;
+        }
+    }
+    if let Some(value) = updates.get("category_self_mute_clear_markers")
+        && !value.as_object().is_some_and(|markers| {
+            markers.keys().all(|key| categories().contains(key))
+                && markers.values().all(Value::is_u64)
+        })
+    {
+        return false;
+    }
+    if let Some(value) = updates.get("mute_window") {
+        let Some(window) = value.as_object() else {
+            return false;
+        };
+        if window
+            .keys()
+            .any(|key| !["enabled", "start_hour_local", "end_hour_local"].contains(&key.as_str()))
+            || window
+                .get("enabled")
+                .is_some_and(|value| !value.is_boolean())
+            || window
+                .get("start_hour_local")
+                .is_some_and(|value| value.as_u64().is_none_or(|hour| hour > 23))
+            || window
+                .get("end_hour_local")
+                .is_some_and(|value| value.as_u64().is_none_or(|hour| hour > 23))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn valid_dedupe_window(value: &str) -> bool {
+    let Some(unit) = value.as_bytes().last() else {
+        return false;
+    };
+    if !matches!(unit, b's' | b'm' | b'h' | b'd') || value.len() == 1 {
+        return false;
+    }
+    value[..value.len() - 1]
+        .parse::<u64>()
+        .is_ok_and(|amount| amount > 0)
 }
 
 fn merge_object(target: &mut Map<String, Value>, updates: &Map<String, Value>) -> bool {

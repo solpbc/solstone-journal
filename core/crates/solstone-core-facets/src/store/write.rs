@@ -25,7 +25,7 @@ pub struct FacetRenameResult {
     pub reindex_required: bool,
 }
 
-/// Create a declaration with a durable identity equal to its initial directory.
+/// Create a facet declaration in its requested directory.
 pub fn create_facet(
     journal_root: &Path,
     facet_dir: &str,
