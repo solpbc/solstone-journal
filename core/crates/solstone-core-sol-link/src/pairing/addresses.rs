@@ -137,7 +137,9 @@ pub fn resolve_pair_link_candidates(
     let filtered = endpoints
         .iter()
         .filter_map(|endpoint| match endpoint.ip {
-            IpAddr::V4(address) if is_usable_ipv4(address) => Some((address, endpoint.scope)),
+            IpAddr::V4(address) if is_usable_ipv4(address) && is_allowed_direct_ipv4(address) => {
+                Some((address, endpoint.scope))
+            }
             IpAddr::V4(_) | IpAddr::V6(_) => None,
         })
         .collect::<Vec<_>>();
@@ -303,7 +305,10 @@ fn encode_unchecked_pair_link(
     )
 }
 
+// This narrow FFI boundary is the only unsafe code needed to enumerate
+// interfaces through libc's `getifaddrs` API.
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressError> {
     let mut head = std::ptr::null_mut::<libc::ifaddrs>();
     // SAFETY: libc initializes `head` on success; the guard below frees exactly
@@ -436,6 +441,16 @@ mod tests {
                 Some(Ipv4Addr::new(100, 64, 0, 2))
             ),
             vec![Ipv4Addr::new(100, 64, 0, 2)]
+        );
+        assert_eq!(
+            resolve_pair_link_candidates(&endpoints, Some(Ipv4Addr::new(10, 9, 0, 1))),
+            vec![
+                Ipv4Addr::new(192, 168, 1, 2),
+                Ipv4Addr::new(192, 168, 1, 3),
+                Ipv4Addr::new(10, 0, 0, 2),
+                Ipv4Addr::new(10, 0, 0, 3),
+            ],
+            "a route absent from a non-empty snapshot is never injected"
         );
     }
 

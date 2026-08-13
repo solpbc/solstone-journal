@@ -32,10 +32,11 @@
 //! ## D3: identity injection — accept-time `Extension<AccessBasis>`
 //!
 //! `identity.rs` defines `AccessBasis::{Localhost, LinkedDevice { carrier, did
-//! }}` and `Carrier::{Direct, ViaSpl}`. `AccessBasis` derives `Debug`, `Clone`,
-//! `PartialEq`, and `Eq`. The acceptor constructs this value from connection
-//! provenance and passes it to `serve_connection`; no request header, path,
-//! query, or body can construct or replace it. For each connection,
+//! }, PairingPeer { carrier }}` and `Carrier::{Direct, ViaSpl}`. `AccessBasis`
+//! derives `Debug`, `Clone`, `PartialEq`, and `Eq`. The acceptor constructs this
+//! value from connection provenance and passes it to `serve_connection`; no
+//! request header, path, query, or body can construct or replace it. For each
+//! connection,
 //! `serve_connection` clones the supplied `Router` and layers
 //! `axum::Extension(identity)` before adapting it with
 //! `TowerToHyperService`. Axum 0.8.9's `Extension<T>` layer inserts a cloned
@@ -43,11 +44,11 @@
 //! handlers place `Extension<AccessBasis>` before any body-consuming
 //! extractor. `Router::layer` covers normal routes and fallbacks alike.
 //!
-//! `gate.rs` will admit both `Localhost` and `LinkedDevice` and no other
-//! authorization basis. `Carrier` is observability-only: `Direct` and
-//! `ViaSpl` have identical authorization behavior and may only affect
-//! logging/metrics supplied by a future caller. This is structural rather than
-//! convention: the only accepted identity type is an enum supplied by the
+//! `gate.rs` admits `Localhost` and `LinkedDevice`; `PairingPeer` is confined
+//! to the pairing ceremony by the door. `Carrier` is observability-only:
+//! `Direct` and `ViaSpl` have identical authorization behavior and may only
+//! affect logging/metrics supplied by a future caller. This is structural rather
+//! than convention: the only accepted identity type is an enum supplied by the
 //! connection caller, never parsed from an HTTP request.
 //!
 //! ## D4: shared HTTP/1 serving — caller-configured builders
@@ -98,8 +99,8 @@
 //! - `lib.rs`: module exports and this design contract.
 //! - `identity.rs`: the closed `AccessBasis` and observability-only `Carrier`
 //!   enums.
-//! - `gate.rs`: the request-side access gate that accepts precisely the two
-//!   `AccessBasis` variants.
+//! - `gate.rs`: the request-side access gate that accepts the owner and linked
+//!   device `AccessBasis` variants.
 //! - `serve.rs`: HTTP/1 builder factories and shared generic
 //!   `serve_connection` implementation.
 //! - `listener.rs`: loopback-only TCP listener validation and accept helper.

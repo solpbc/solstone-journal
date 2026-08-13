@@ -63,11 +63,26 @@ struct AuthorizationRefusal {
     detail: &'static str,
 }
 
+/// A router deliberately prepared for the paired-device door.
+pub struct DoorRouter(Router);
+
+impl DoorRouter {
+    /// Keep the non-confining library test surface explicit at the type boundary.
+    pub fn unconfined(router: Router) -> Self {
+        Self(router)
+    }
+
+    /// Deliberately unwrap a door router for a non-door surface or direct router test.
+    pub fn into_inner(self) -> Router {
+        self.0
+    }
+}
+
 /// Build the production router whose paired-device requests are rechecked per request.
 pub fn authorized_router(
     journal_root: PathBuf,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
-) -> Router {
+) -> DoorRouter {
     authorized_router_with_router(
         crate::router(journal_root.clone()),
         journal_root,
@@ -76,12 +91,13 @@ pub fn authorized_router(
 }
 
 /// Apply the door-only production layers to a prebuilt router. Loopback is
-/// structurally excluded because only `authorized_router*` invokes this helper.
+/// structurally excluded because the wrapper cannot become a plain router
+/// without an explicit `into_inner` call.
 pub fn authorized_router_with_router(
     router: Router,
     journal_root: PathBuf,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
-) -> Router {
+) -> DoorRouter {
     let authorized_clients_path = AuthorizationLedger::new(&journal_root)
         .authorized_clients_path()
         .to_path_buf();
@@ -91,18 +107,20 @@ pub fn authorized_router_with_router(
     // `route_layer`, not `layer`, preserves strict-slash and unknown-path 404s.
     // Applying it after router() has composed every route wraps the full
     // surface, including routes from merged sub-routers.
-    router
-        .route_layer(middleware::from_fn_with_state(
-            AuthorizationGateState {
-                authorization,
-                authorized_clients_path,
-            },
-            require_authorization,
-        ))
-        .layer(middleware::from_fn_with_state(
-            PairingConfinementState { journal_root },
-            require_pairing_confinement,
-        ))
+    DoorRouter(
+        router
+            .route_layer(middleware::from_fn_with_state(
+                AuthorizationGateState {
+                    authorization,
+                    authorized_clients_path,
+                },
+                require_authorization,
+            ))
+            .layer(middleware::from_fn_with_state(
+                PairingConfinementState { journal_root },
+                require_pairing_confinement,
+            )),
+    )
 }
 
 async fn require_pairing_confinement(
@@ -183,7 +201,7 @@ async fn require_authorization(
     let Some(basis) = request.extensions().get::<AccessBasis>() else {
         return pl_revoked_response();
     };
-    // `PairingPeer` intentionally falls through here: the forthcoming door
+    // `PairingPeer` intentionally falls through here: the door-only
     // confinement layer refuses it before this authorization gate is reached.
     let AccessBasis::LinkedDevice { did, .. } = basis else {
         return next.run(request).await;
@@ -230,7 +248,7 @@ mod tests {
     use axum::{Router, middleware};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier};
     use solstone_core_sol_link::DeviceDoorAuthorization;
-    use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+    use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
     use tokio::sync::watch;
     use tower::ServiceExt;
 
@@ -276,13 +294,19 @@ mod tests {
 
     #[tokio::test]
     async fn pairing_peer_falls_through_the_authorization_gate() {
+        let temporary = TempDir::new();
         let (_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
         let app = Router::new()
             .route("/probe", get(|| async { StatusCode::OK }))
             .route_layer(middleware::from_fn_with_state(
-                AuthorizationGateState { authorization },
+                AuthorizationGateState {
+                    authorization,
+                    authorized_clients_path: AuthorizationLedger::new(&temporary.0)
+                        .authorized_clients_path()
+                        .to_path_buf(),
+                },
                 require_authorization,
             ));
         let mut request = Request::get("/probe").body(Body::empty()).unwrap();
@@ -303,7 +327,8 @@ mod tests {
             Router::new().route(spl_core::PAIR_PATH, post(|| async { StatusCode::OK })),
             temporary.0.clone(),
             authorization,
-        );
+        )
+        .into_inner();
         async fn response(app: Router, method: Method, path: &str) -> (StatusCode, Vec<u8>) {
             let mut request = Request::builder()
                 .method(method)

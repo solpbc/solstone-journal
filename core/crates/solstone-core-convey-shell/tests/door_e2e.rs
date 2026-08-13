@@ -628,14 +628,6 @@ async fn loopback_json_request(
     (status, response[header_end..].to_vec())
 }
 
-fn configure_loopback_home(fixture: &Fixture) {
-    std::fs::write(
-        fixture.root.join("config/journal.json"),
-        br#"{"setup":{"completed_at":1},"pairing":{"home_address":"127.0.0.1:7657"}}"#,
-    )
-    .expect("loopback pairing configuration");
-}
-
 async fn mint_from_loopback(
     handle: &solstone_core_convey_shell::ConveyServeHandle,
     label: &str,
@@ -644,7 +636,7 @@ async fn mint_from_loopback(
         handle.loopback_ipv4_addr(),
         "POST",
         "/app/network/pair-start",
-        &serde_json::json!({"device_label": label}),
+        &serde_json::json!({"device_label": label, "same_machine": true}),
     )
     .await;
     assert_eq!(
@@ -659,7 +651,7 @@ async fn mint_from_loopback(
 fn link_for_door(pair_link: &str, port: u16) -> String {
     let (_, fragment) = pair_link.split_once('#').expect("pair-link fragment");
     let mut blob = spl_core::crockford::decode(fragment).expect("pair-link bytes");
-    assert_eq!(blob[0], 0x04, "loopback configured-home link is v04");
+    assert_eq!(blob[0], 0x04, "same-machine loopback link is v04");
     blob[6..8].copy_from_slice(&port.to_be_bytes());
     format!(
         "https://go.solstone.app/p#{}",
@@ -975,7 +967,9 @@ async fn ac2_stop_authorization_refresh_stops_only_the_publisher() {
             carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
             handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
         },
-        router(fixture.root.clone()),
+        solstone_core_convey_shell::authorization_gate::DoorRouter::unconfined(router(
+            fixture.root.clone(),
+        )),
         authorization_sender,
     )
     .await
@@ -1857,7 +1851,6 @@ async fn fifth_certless_pairing_carrier_closes_after_tls_without_a_response() {
 #[tokio::test]
 async fn concurrent_pair_requests_on_one_carrier_leave_one_ledger_entry_and_one_burned_nonce() {
     let fixture = Fixture::established(0);
-    configure_loopback_home(&fixture);
     let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
@@ -1875,10 +1868,6 @@ async fn concurrent_pair_requests_on_one_carrier_leave_one_ledger_entry_and_one_
     .expect("serve");
     let mint = mint_from_loopback(&handle, "concurrent").await;
     let nonce = mint["nonce"].as_str().expect("mint nonce");
-    // Keep the request-level pairing window open after the shared nonce burns,
-    // so the second concurrently dispatched stream reaches the pair lock and
-    // observes the ceremony's 410 rather than later confinement's 403.
-    open_pairing_window(&fixture, "concurrent-reserve");
     let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
         .await
         .expect("certless carrier");
@@ -1890,7 +1879,10 @@ async fn concurrent_pair_requests_on_one_carrier_leave_one_ledger_entry_and_one_
     assert!(statuses.contains(&200), "statuses: {statuses:?}");
     assert!(statuses.contains(&410), "statuses: {statuses:?}");
     let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root);
-    assert!(store.peek(nonce).expect("nonce remains observable").used);
+    assert!(
+        store.peek(nonce).is_none(),
+        "the losing consume collects the burned nonce"
+    );
     let mut ledger = AuthorizationLedger::new(&fixture.root);
     assert_eq!(
         ledger.snapshot().len(),
@@ -1903,7 +1895,6 @@ async fn concurrent_pair_requests_on_one_carrier_leave_one_ledger_entry_and_one_
 #[tokio::test]
 async fn pair_start_pins_the_committed_ca_across_a_real_door_restart() {
     let fixture = Fixture::established(1);
-    configure_loopback_home(&fixture);
     let first = serve(options(
         &fixture,
         pairing_router(&fixture, pairing_snapshot()),
@@ -1916,7 +1907,7 @@ async fn pair_start_pins_the_committed_ca_across_a_real_door_restart() {
         spl_core::pairlink::parse(first_mint["pair_link"].as_str().expect("pair link"))
             .expect("first pair link");
     let spl_core::pairlink::ParsedPairLink::Direct(first_link) = first_link else {
-        panic!("configured home emits direct pair link");
+        panic!("same-machine mint emits a direct pair link");
     };
     first.shutdown();
 
@@ -1932,7 +1923,7 @@ async fn pair_start_pins_the_committed_ca_across_a_real_door_restart() {
         spl_core::pairlink::parse(second_mint["pair_link"].as_str().expect("pair link"))
             .expect("second pair link");
     let spl_core::pairlink::ParsedPairLink::Direct(second_link) = second_link else {
-        panic!("configured home emits direct pair link");
+        panic!("same-machine mint emits a direct pair link");
     };
     assert_eq!(first_link.ca_fp_prefix, second_link.ca_fp_prefix);
     let committed_digest = spl_core::ca::sha256_hex(fixture.ca_der());
@@ -1954,7 +1945,6 @@ async fn pair_start_pins_the_committed_ca_across_a_real_door_restart() {
 #[tokio::test]
 async fn pair_link_prefix_matches_the_live_door_chain_but_not_its_leaf() {
     let fixture = Fixture::established(1);
-    configure_loopback_home(&fixture);
     let handle = serve(options(
         &fixture,
         pairing_router(&fixture, pairing_snapshot()),
@@ -1987,7 +1977,6 @@ async fn pair_link_prefix_matches_the_live_door_chain_but_not_its_leaf() {
 #[tokio::test]
 async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json() {
     let fixture = Fixture::established(0);
-    configure_loopback_home(&fixture);
     let handle = serve(options(
         &fixture,
         pairing_router(&fixture, pairing_snapshot()),
@@ -2064,7 +2053,6 @@ async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json(
     handle.shutdown();
 
     let empty = Fixture::established(0);
-    configure_loopback_home(&empty);
     let empty_handle = serve(options(
         &empty,
         pairing_router(&empty, PairingSnapshot::default()),
@@ -2092,7 +2080,6 @@ async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json(
 #[tokio::test]
 async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_fingerprint() {
     let fixture = Fixture::established(0);
-    configure_loopback_home(&fixture);
     let handle = serve(options(
         &fixture,
         pairing_router(&fixture, pairing_snapshot()),
@@ -2132,7 +2119,6 @@ async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_finger
 #[tokio::test]
 async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     let fixture = Fixture::established(0);
-    configure_loopback_home(&fixture);
     let health = fixture.root.join("health");
     std::fs::create_dir(&health).expect("health directory");
     let socket = health.join("callosum.sock");
@@ -2203,6 +2189,32 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     )
     .await;
     assert_eq!(retry.status, 410, "successful ceremony burns its nonce");
+
+    let failed_mint = mint_from_loopback(&handle, "failed phone").await;
+    let failed_nonce = failed_mint["nonce"].as_str().expect("failed nonce");
+    let ledger_before_failed_phone = AuthorizationLedger::new(&fixture.root).snapshot();
+    let failed_phone = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(failed_nonce),
+        serde_json::json!({"csr":"not a CSR","device_label":"failed phone"}),
+    )
+    .await;
+    assert_eq!(failed_phone.status, 400, "invalid phone CSR refuses");
+    assert_eq!(
+        AuthorizationLedger::new(&fixture.root).snapshot(),
+        ledger_before_failed_phone,
+        "failed phone ceremony adds no ledger artifact"
+    );
+    let failed_retry = post_pair_over_certless_carrier(
+        door_port(handle.door_outcome()),
+        Some(failed_nonce),
+        serde_json::json!({"csr":csr_pem("failed retry"),"device_label":"failed phone"}),
+    )
+    .await;
+    assert_eq!(
+        failed_retry.status, 410,
+        "failed phone ceremony also burns its nonce"
+    );
 
     let second_nonce = second_mint["nonce"].as_str().expect("second nonce");
     let malformed = post_pair_over_certless_carrier(
@@ -2464,7 +2476,9 @@ async fn ac3_handshake_uses_the_ledger_while_publication_is_stale() {
     ));
     let mut handle = solstone_core_convey_shell::bind_with_authorization(
         options(&fixture, router(fixture.root.clone()), 0),
-        router(fixture.root.clone()),
+        solstone_core_convey_shell::authorization_gate::DoorRouter::unconfined(router(
+            fixture.root.clone(),
+        )),
         sender,
     )
     .await
@@ -2522,7 +2536,9 @@ async fn ac4_each_carrier_snapshots_a_fresh_ledger_read() {
             carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
             handshake_authorization_read_ticks: handshake_authorization_read_ticks.clone(),
         },
-        router(fixture.root.clone()),
+        solstone_core_convey_shell::authorization_gate::DoorRouter::unconfined(router(
+            fixture.root.clone(),
+        )),
         sender,
     )
     .await
@@ -2557,7 +2573,9 @@ async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
     ));
     let mut handle = solstone_core_convey_shell::bind_with_authorization(
         options(&fixture, router(fixture.root.clone()), 0),
-        router(fixture.root.clone()),
+        solstone_core_convey_shell::authorization_gate::DoorRouter::unconfined(router(
+            fixture.root.clone(),
+        )),
         sender,
     )
     .await

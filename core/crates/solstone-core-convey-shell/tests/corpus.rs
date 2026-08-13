@@ -158,6 +158,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
             AuthorizedClientsRead::Missing,
         ));
         let app = authorized_router(journal.0.clone(), authorization)
+            .into_inner()
             .layer(Extension(AccessBasis::Localhost));
         for case in cases.as_array().expect("phase cases are array") {
             let path = case["path"].as_str().expect("case path");

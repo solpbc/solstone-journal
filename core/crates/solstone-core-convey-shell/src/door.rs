@@ -12,12 +12,12 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Method, Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
+use axum::{Extension, Router};
 use rustls::pki_types::{CertificateDer, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{
@@ -53,9 +53,9 @@ const PAIRING_REAPER_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_PAIRING_CARRIERS: usize = 4;
 const MAX_PAIRING_FAILURES: usize = 3;
 
-/// A pair request observed an open window before waiting for the per-carrier
-/// lock. The outer confinement layer preserves that admission while retaining
-/// its authoritative closed-window check for later requests.
+/// A stream accepted during an open pairing window. The outer confinement
+/// layer preserves that queued admission while retaining its authoritative
+/// closed-window check for streams accepted later.
 #[derive(Clone, Copy)]
 pub(crate) struct PairingWindowAdmission;
 
@@ -97,14 +97,10 @@ struct PairingCarrierState {
     close_after_response: AtomicBool,
     close_sender: watch::Sender<bool>,
     delay: Arc<dyn PairingDelay>,
-    journal_root: PathBuf,
 }
 
 impl PairingCarrierState {
-    fn new(
-        delay: Arc<dyn PairingDelay>,
-        journal_root: PathBuf,
-    ) -> (Arc<Self>, watch::Receiver<bool>) {
+    fn new(delay: Arc<dyn PairingDelay>) -> (Arc<Self>, watch::Receiver<bool>) {
         let (close_sender, close_receiver) = watch::channel(false);
         (
             Arc::new(Self {
@@ -114,7 +110,6 @@ impl PairingCarrierState {
                 close_after_response: AtomicBool::new(false),
                 close_sender,
                 delay,
-                journal_root,
             }),
             close_receiver,
         )
@@ -122,6 +117,20 @@ impl PairingCarrierState {
 
     fn close(&self) {
         let _ = self.close_sender.send(true);
+    }
+
+    async fn dispatch_pair<F>(&self, dispatch: F) -> Response
+    where
+        F: Future<Output = Response>,
+    {
+        // Count from queue admission, not lock acquisition: the reaper must
+        // preserve a request waiting behind another ceremony.
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
+        let _in_flight = InFlightPair(&self.in_flight);
+        let _lock = self.pair_lock.lock().await;
+        let response = dispatch.await;
+        record_pair_dispatch(self, response.status()).await;
+        response
     }
 }
 
@@ -131,18 +140,16 @@ struct PairingCarrierRegistry {
     next_id: AtomicU64,
     carriers: Mutex<std::collections::HashMap<u64, std::sync::Weak<PairingCarrierState>>>,
     delay: Arc<dyn PairingDelay>,
-    journal_root: PathBuf,
 }
 
 impl PairingCarrierRegistry {
-    fn new(delay: Arc<dyn PairingDelay>, journal_root: PathBuf) -> Self {
+    fn new(delay: Arc<dyn PairingDelay>) -> Self {
         Self {
             active: AtomicUsize::new(0),
             refusals: Arc::new(AtomicU64::new(0)),
             next_id: AtomicU64::new(0),
             carriers: Mutex::new(std::collections::HashMap::new()),
             delay,
-            journal_root,
         }
     }
 
@@ -157,8 +164,7 @@ impl PairingCarrierRegistry {
             return None;
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let (state, receiver) =
-            PairingCarrierState::new(self.delay.clone(), self.journal_root.clone());
+        let (state, receiver) = PairingCarrierState::new(self.delay.clone());
         self.carriers
             .lock()
             .expect("pairing carrier registry lock")
@@ -424,10 +430,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         options.authorization_sender,
         AUTHORIZATION_REFRESH_INTERVAL,
     );
-    let pairing_registry = Arc::new(PairingCarrierRegistry::new(
-        Arc::new(TokioPairingDelay),
-        options.journal_root.clone(),
-    ));
+    let pairing_registry = Arc::new(PairingCarrierRegistry::new(Arc::new(TokioPairingDelay)));
     let pairing_reaper_task = tokio::spawn(pairing_reaper(
         options.journal_root.clone(),
         pairing_registry.clone(),
@@ -494,21 +497,13 @@ impl Drop for InFlightPair<'_> {
 
 async fn constrain_pair_dispatch(
     State(state): State<Arc<PairingCarrierState>>,
-    mut request: Request<Body>,
+    request: Request<Body>,
     next: Next,
 ) -> Response {
     if request.uri().path() != spl_core::PAIR_PATH || request.method() != Method::POST {
         return next.run(request).await;
     }
-    if pairing_window_open(&NonceStore::new(&state.journal_root), unix_seconds()) {
-        request.extensions_mut().insert(PairingWindowAdmission);
-    }
-    let _lock = state.pair_lock.lock().await;
-    state.in_flight.fetch_add(1, Ordering::AcqRel);
-    let _in_flight = InFlightPair(&state.in_flight);
-    let response = next.run(request).await;
-    record_pair_dispatch(&state, response.status()).await;
-    response
+    state.dispatch_pair(next.run(request)).await
 }
 
 async fn record_pair_dispatch(state: &PairingCarrierState, status: StatusCode) {
@@ -670,6 +665,13 @@ async fn serve_carrier(
                 let router = router.clone();
                 let basis = basis.clone();
                 let pairing_state = pairing_control.as_ref().map(|(_, state, _)| state.clone());
+                let stream_has_pairing_window_admission = matches!(
+                    &basis,
+                    AccessBasis::PairingPeer { .. }
+                ) && solstone_core_sol_link::pairing::nonces::pairing_window_open(
+                    &NonceStore::new(&config.journal_root),
+                    unix_seconds(),
+                );
                 tokio::spawn(async move {
                     let builder = mux_builder();
                     // A 60 s production bound is injected through `serve` for tests.
@@ -682,6 +684,11 @@ async fn serve_carrier(
                             constrain_pair_dispatch,
                         ))
                     });
+                    let router = if stream_has_pairing_window_admission {
+                        router.layer(Extension(PairingWindowAdmission))
+                    } else {
+                        router
+                    };
                     if let Err(error) = serve_connection(stream, router, basis, &builder).await {
                         log::debug!("paired-device door stream failed: {error}");
                     }
@@ -954,11 +961,17 @@ mod access_tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use axum::http::StatusCode;
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::middleware;
+    use axum::response::IntoResponse;
+    use axum::routing::get;
+    use tower::ServiceExt;
 
     use super::{
-        PairingCarrierRegistry, PairingCarrierState, PairingDelay, linked_device_did,
-        record_pair_dispatch,
+        PairingCarrierRegistry, PairingCarrierState, PairingDelay, constrain_pair_dispatch,
+        linked_device_did, record_pair_dispatch,
     };
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 
@@ -994,7 +1007,7 @@ mod access_tests {
     #[tokio::test]
     async fn pair_dispatch_cap_counts_pair_failures_and_records_only_410_backoff() {
         let delay = Arc::new(RecordingDelay::default());
-        let (state, _) = PairingCarrierState::new(delay.clone(), std::env::temp_dir());
+        let (state, _) = PairingCarrierState::new(delay.clone());
         // Non-pair failures never reach record_pair_dispatch; this direct
         // helper assertion models the guarded middleware's early return.
         assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
@@ -1026,10 +1039,33 @@ mod access_tests {
         );
     }
 
+    #[tokio::test]
+    async fn non_pair_endpoint_failure_does_not_increment_the_pair_dispatch_cap() {
+        let (state, _) = PairingCarrierState::new(Arc::new(RecordingDelay::default()));
+        let app = Router::new()
+            .route(
+                "/ordinary-failure",
+                get(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+            )
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                constrain_pair_dispatch,
+            ));
+        let response = app
+            .oneshot(
+                Request::get("/ordinary-failure")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+
     #[test]
     fn reaper_skips_an_in_flight_pair_then_closes_when_it_finishes() {
-        let registry =
-            PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()), std::env::temp_dir());
+        let registry = PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()));
         let (_, state, close) = registry.admit().expect("carrier admission");
         state
             .in_flight
@@ -1041,5 +1077,35 @@ mod access_tests {
             .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         registry.reap_closed_windows();
         assert!(*close.borrow(), "idle pairing carrier is reaped");
+    }
+
+    #[tokio::test]
+    async fn queued_pair_request_is_in_flight_before_it_acquires_the_carrier_lock() {
+        let registry = PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()));
+        let (_, state, close) = registry.admit().expect("carrier admission");
+        let held_lock = state.pair_lock.lock().await;
+        let queued = state.clone();
+        let dispatch = tokio::spawn(async move {
+            queued
+                .dispatch_pair(async { StatusCode::OK.into_response() })
+                .await
+        });
+
+        tokio::task::yield_now().await;
+        assert_eq!(
+            state.in_flight.load(std::sync::atomic::Ordering::Acquire),
+            1,
+            "a request waiting for the pair lock is already in flight"
+        );
+        registry.reap_closed_windows();
+        assert!(!*close.borrow(), "the reaper preserves the queued request");
+
+        drop(held_lock);
+        let _ = dispatch.await.expect("queued dispatch completes");
+        registry.reap_closed_windows();
+        assert!(
+            *close.borrow(),
+            "the carrier reaps after its queued request finishes"
+        );
     }
 }

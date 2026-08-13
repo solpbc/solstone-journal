@@ -153,7 +153,7 @@ pub fn mint_pairing(
     request: &MintRequest,
     now: i64,
 ) -> Result<MintResponse, PairingError> {
-    if request.configured_home.is_some() {
+    if request.same_machine == Some(true) || request.configured_home.is_some() {
         return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
     }
     mint_pairing_from_sources(
@@ -174,6 +174,9 @@ pub fn mint_pairing_from_sources(
     interfaces: &impl RawInterfaceSource,
     route: &impl RouteIpv4Source,
 ) -> Result<MintResponse, PairingError> {
+    if request.same_machine == Some(true) {
+        return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
+    }
     let snapshot = snapshot_from_sources(interfaces, route).map_err(PairingError::Address)?;
     mint_pairing_from_snapshot(journal_root, request, now, &snapshot)
 }
@@ -207,20 +210,27 @@ pub fn mint_pairing_from_snapshot(
     ca_fp_prefix.copy_from_slice(&digest[..16]);
     let nonce = random_nonce()?;
     let nonce_bytes = nonce_bytes(&nonce)?;
-    let pair_link = match request.configured_home {
-        Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix),
-        None => {
-            let candidates = resolve_pair_link_candidates(&snapshot.endpoints, snapshot.route_ipv4);
-            encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix).map_err(
-                |error| match error {
-                    PairLinkEncodeError::CandidateCount(_)
-                    | PairLinkEncodeError::DisallowedAddress => {
-                        PairingError::PairingRequestInvalid(
-                            "no usable local address is available for pairing",
-                        )
+    let pair_link = if same_machine {
+        // Same-host pairing bypasses configured-home and all discovery, exactly
+        // as the reference's loopback branch does.
+        encode_configured_home_pair_link(Ipv4Addr::LOCALHOST, nonce_bytes, ca_fp_prefix)
+    } else {
+        match request.configured_home {
+            Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix),
+            None => {
+                let candidates =
+                    resolve_pair_link_candidates(&snapshot.endpoints, snapshot.route_ipv4);
+                encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix).map_err(|error| {
+                    match error {
+                        PairLinkEncodeError::CandidateCount(_)
+                        | PairLinkEncodeError::DisallowedAddress => {
+                            PairingError::PairingRequestInvalid(
+                                "no usable local address is available for pairing",
+                            )
+                        }
                     }
-                },
-            )?
+                })?
+            }
         }
     };
     // The nonce is persisted last: every refusal above writes nothing.
@@ -434,6 +444,31 @@ mod tests {
         }
     }
 
+    fn link_tree(root: &Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+        fn walk(root: &Path, directory: &Path, output: &mut Vec<(std::path::PathBuf, Vec<u8>)>) {
+            let Ok(entries) = fs::read_dir(directory) else {
+                return;
+            };
+            for entry in entries {
+                let path = entry.expect("link entry").path();
+                if path.is_dir() {
+                    walk(root, &path, output);
+                } else {
+                    output.push((
+                        path.strip_prefix(root)
+                            .expect("relative link path")
+                            .to_path_buf(),
+                        fs::read(&path).expect("link bytes"),
+                    ));
+                }
+            }
+        }
+        let mut output = Vec::new();
+        walk(root, &root.join("link"), &mut output);
+        output.sort_by(|left, right| left.0.cmp(&right.0));
+        output
+    }
+
     fn request() -> MintRequest {
         MintRequest {
             device_label: "phone".into(),
@@ -484,6 +519,13 @@ mod tests {
             Err(PairingError::PairingRequestInvalid(_))
         ));
         assert!(!temporary.path().join("link/nonces.json").exists());
+        assert!(
+            !fs::read_dir(temporary.path().join("link"))
+                .expect("link directory")
+                .filter_map(Result::ok)
+                .any(|entry| entry.file_name().to_string_lossy().starts_with(".tmp_")),
+            "failed mint leaves no temporary artifact"
+        );
         let snapshot = PairingSnapshot {
             endpoints: vec![LocalEndpoint {
                 ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
@@ -503,6 +545,121 @@ mod tests {
             minted.ca_fingerprint,
             spl_core::ca::sha256_hex(&pem.contents)
         );
+        assert_eq!(minted.device_label, "phone");
+    }
+
+    #[test]
+    fn committed_identity_refusals_preserve_link_bytes_and_present_identity_does_too() {
+        let absent = TempDir::new();
+        let absent_before = link_tree(absent.path());
+        assert!(matches!(
+            mint_pairing_from_snapshot(
+                absent.path(),
+                &request(),
+                1,
+                &PairingSnapshot {
+                    endpoints: vec![LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+                        scope: EndpointScope::Lan
+                    }],
+                    route_ipv4: None
+                },
+            ),
+            Err(PairingError::CommittedIdentityUnavailable(_))
+        ));
+        assert_eq!(
+            link_tree(absent.path()),
+            absent_before,
+            "absent identity writes nothing"
+        );
+
+        let unreadable = TempDir::new();
+        identity(unreadable.path());
+        fs::remove_file(unreadable.path().join("link/ca/private.pem")).expect("remove key");
+        let unreadable_before = link_tree(unreadable.path());
+        assert!(matches!(
+            mint_pairing_from_snapshot(
+                unreadable.path(),
+                &request(),
+                1,
+                &PairingSnapshot {
+                    endpoints: vec![LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+                        scope: EndpointScope::Lan
+                    }],
+                    route_ipv4: None
+                },
+            ),
+            Err(PairingError::CommittedIdentityUnavailable(_))
+        ));
+        assert_eq!(
+            link_tree(unreadable.path()),
+            unreadable_before,
+            "unreadable identity writes nothing"
+        );
+
+        let present = TempDir::new();
+        identity(present.path());
+        let present_before = link_tree(present.path())
+            .into_iter()
+            .filter(|(path, _)| path.starts_with("link/ca"))
+            .collect::<Vec<_>>();
+        assert!(
+            mint_pairing_from_snapshot(
+                present.path(),
+                &request(),
+                1,
+                &PairingSnapshot {
+                    endpoints: vec![LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+                        scope: EndpointScope::Lan
+                    }],
+                    route_ipv4: None
+                },
+            )
+            .is_ok()
+        );
+        let present_after = link_tree(present.path())
+            .into_iter()
+            .filter(|(path, _)| path.starts_with("link/ca"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            present_after, present_before,
+            "present identity's CA is byte-identical"
+        );
+    }
+
+    #[test]
+    fn same_machine_mint_bypasses_configured_home_with_a_loopback_v04_link() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let request = MintRequest {
+            same_machine: Some(true),
+            hardened_loopback: true,
+            configured_home: Some(Ipv4Addr::new(192, 168, 1, 7)),
+            ..request()
+        };
+
+        let minted =
+            mint_pairing_from_snapshot(temporary.path(), &request, 1, &PairingSnapshot::default())
+                .expect("same-machine mint");
+        let blob = spl_core::crockford::decode(
+            minted
+                .pair_link
+                .split('#')
+                .nth(1)
+                .expect("pair-link fragment"),
+        )
+        .expect("pair-link bytes");
+        assert_eq!(blob[0], 0x04);
+        let spl_core::pairlink::ParsedPairLink::Direct(link) =
+            spl_core::pairlink::parse(&minted.pair_link).expect("pair-link parses")
+        else {
+            panic!("same-machine mint emits a direct link");
+        };
+        assert_eq!(link.candidates.len(), 1);
+        assert_eq!(link.candidates[0].host, Ipv4Addr::LOCALHOST.to_string());
+        assert_eq!(link.candidates[0].port, spl_core::DEFAULT_DIRECT_PORT);
     }
 
     #[test]
@@ -515,15 +672,16 @@ mod tests {
             r#"{"link":{"posture":"spl"}}"#,
         )
         .expect("posture");
-        assert!(matches!(
-            mint_pairing_from_snapshot(
-                temporary.path(),
-                &request(),
-                1,
-                &PairingSnapshot::default()
-            ),
-            Err(PairingError::InvalidOperationForState(_))
-        ));
+        let refusal = mint_pairing_from_snapshot(
+            temporary.path(),
+            &request(),
+            1,
+            &PairingSnapshot::default(),
+        )
+        .expect_err("SPL posture refuses direct pairing");
+        assert!(matches!(refusal, PairingError::InvalidOperationForState(_)));
+        assert_eq!(refusal.status(), 400);
+        assert_eq!(refusal.reason(), "invalid_operation_for_state");
         fs::write(
             temporary.path().join("config/journal.json"),
             r#"{"link":{"posture":"direct"}}"#,
@@ -553,10 +711,7 @@ mod tests {
     fn production_source_path_uses_the_real_classifier_and_route_probe_seam() {
         let temporary = TempDir::new();
         identity(temporary.path());
-        let raw = Raw(vec![RawInterfaceAddress {
-            interface: "eth0".into(),
-            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
-        }]);
+        let raw = Raw(vec![]);
         let response = mint_pairing_from_sources(
             temporary.path(),
             &request(),
@@ -566,10 +721,59 @@ mod tests {
         )
         .expect("mint");
         let link = spl_core::pairlink::parse(&response.pair_link).expect("link parses");
-        assert!(matches!(
-            link,
-            spl_core::pairlink::ParsedPairLink::Direct(_)
-        ));
+        let spl_core::pairlink::ParsedPairLink::Direct(link) = link else {
+            panic!("production path emits direct link");
+        };
+        let blob =
+            spl_core::crockford::decode(response.pair_link.split('#').nth(1).expect("fragment"))
+                .expect("blob");
+        assert_eq!(blob[0], 0x04);
+        assert_eq!(link.candidates[0].host, "10.0.0.2");
+    }
+
+    #[test]
+    fn snapshot_mint_filters_invalid_addresses_and_keeps_only_allowed_ipv4_candidates() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let response = mint_pairing_from_snapshot(
+            temporary.path(),
+            &request(),
+            1,
+            &PairingSnapshot {
+                endpoints: vec![
+                    LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+                        scope: EndpointScope::Lan,
+                    },
+                    LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1)),
+                        scope: EndpointScope::Lan,
+                    },
+                    LocalEndpoint {
+                        ip: "fd00::2".parse().expect("ULA"),
+                        scope: EndpointScope::Ula,
+                    },
+                    LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+                        scope: EndpointScope::Lan,
+                    },
+                ],
+                route_ipv4: Some(Ipv4Addr::new(192, 168, 1, 9)),
+            },
+        )
+        .expect("allowed candidate mints");
+        let spl_core::pairlink::ParsedPairLink::Direct(link) =
+            spl_core::pairlink::parse(&response.pair_link).expect("public parser")
+        else {
+            panic!("direct link")
+        };
+        assert_eq!(
+            link.candidates
+                .iter()
+                .map(|candidate| candidate.host.as_str())
+                .collect::<Vec<_>>(),
+            ["10.0.0.2"]
+        );
     }
 
     #[test]

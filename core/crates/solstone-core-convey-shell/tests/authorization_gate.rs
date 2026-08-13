@@ -204,7 +204,7 @@ async fn ac1_disk_revocation_wins_over_stale_present_channel_and_ac2_disk_presen
     let fixture = Fixture::established(1);
     let listed = linked_device(&fixture, 0);
     let (sender, receiver) = watch::channel(posture(&fixture));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
 
     assert!(fixture.remove_authorization(0).authorized_removed);
     let (status, body) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
@@ -226,7 +226,7 @@ async fn ac3_authorization_postures_refuse_except_for_a_listed_device() {
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
 
     for posture in [
         DiskPosture::Missing,
@@ -248,7 +248,7 @@ async fn ac3_authorization_postures_refuse_except_for_a_listed_device() {
 async fn ac4_localhost_passes_and_unlisted_linked_device_refuses() {
     let fixture = Fixture::established(1);
     let (_, receiver) = watch::channel(posture(&fixture));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
 
     let (localhost_status, _) = request(
         app.clone(),
@@ -269,7 +269,7 @@ async fn ac5_missing_access_basis_refuses_before_the_route() {
     let fixture = Fixture::established(1);
     let (_, receiver) = watch::channel(posture(&fixture));
     let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
+        authorized_router(fixture.root.clone(), receiver).into_inner(),
         "/api/system/status",
         None,
     )
@@ -286,7 +286,7 @@ async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
     let path = authorization_path(&fixture);
 
     warn_capture::install_and_clear();
@@ -350,7 +350,7 @@ async fn ac7_gate_reads_every_matched_request_without_posture_memoization() {
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
 
     for (posture, expected) in [
         (DiskPosture::Present, StatusCode::OK),
@@ -374,7 +374,7 @@ async fn ac7_only_boot_assets_are_exempt() {
     let fixture = Fixture::established(1);
     induce_posture(&fixture, DiskPosture::Missing);
     let (_, receiver) = watch::channel(posture(&fixture));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
 
     for path in ["/favicon.ico", "/static/shell.html"] {
         let (status, _) = request(app.clone(), path, Some(linked_device(&fixture, 0))).await;
@@ -391,7 +391,7 @@ async fn ac8_unmatched_path_keeps_the_shell_fallback() {
     induce_posture(&fixture, DiskPosture::Missing);
     let (_, receiver) = watch::channel(posture(&fixture));
     let (status, _) = request(
-        authorized_router(fixture.root.clone(), receiver),
+        authorized_router(fixture.root.clone(), receiver).into_inner(),
         "/no-such-route",
         Some(linked_device(&fixture, 0)),
     )
@@ -406,7 +406,7 @@ async fn ac9_refusal_body_has_the_reference_shape() {
     induce_posture(&fixture, DiskPosture::Malformed);
     let (_, receiver) = watch::channel(posture(&fixture));
     let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
+        authorized_router(fixture.root.clone(), receiver).into_inner(),
         "/api/system/status",
         Some(linked_device(&fixture, 0)),
     )
@@ -423,7 +423,7 @@ async fn ac12_every_composed_shell_route_is_gated() {
     induce_posture(&fixture, DiskPosture::Unreadable);
     let (_, receiver) = watch::channel(posture(&fixture));
     let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
+        authorized_router(fixture.root.clone(), receiver).into_inner(),
         "/app/speakers/api/state",
         Some(linked_device(&fixture, 0)),
     )
@@ -440,7 +440,7 @@ async fn ac14_authorization_refusal_precedes_a_corrupt_session_response() {
     induce_posture(&fixture, DiskPosture::Missing);
     let (_, receiver) = watch::channel(posture(&fixture));
     let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver),
+        authorized_router(fixture.root.clone(), receiver).into_inner(),
         "/api/system/status",
         Some(linked_device(&fixture, 0)),
     )
@@ -455,7 +455,7 @@ async fn ac17_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
     let fixture = Fixture::established(1);
     induce_posture(&fixture, DiskPosture::Missing);
     let (_, receiver) = watch::channel(posture(&fixture));
-    let app = authorized_router(fixture.root.clone(), receiver);
+    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
     let mut method_mismatch = Request::post("/api/system/status")
         .body(Body::empty())
         .expect("request builds");
@@ -479,8 +479,11 @@ async fn ac17_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
 async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it() {
     let fixture = Fixture::established(1);
     let (authorization_sender, authorization_receiver) = watch::channel(posture(&fixture));
+    // The gate reads the ledger per request, so a separately built router is an
+    // equivalent in-process view of the same on-disk authorization state.
+    let app =
+        authorized_router(fixture.root.clone(), authorization_sender.subscribe()).into_inner();
     let door_router = authorized_router(fixture.root.clone(), authorization_receiver);
-    let app = door_router.clone();
     let mut handle = bind_with_authorization(
         ConveyServeOptions {
             journal_root: fixture.root.clone(),

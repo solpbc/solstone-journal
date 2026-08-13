@@ -78,5 +78,7 @@ required-features = ["host"]
 name = "device_door_tls"
 required-features = ["host"]
 
+# `getifaddrs` requires one audited unsafe syscall boundary; keep the exception
+# local to that function instead of relaxing the workspace-wide hard forbid.
 [lints.rust]
-unsafe_code = "allow"
+unsafe_code = "deny"

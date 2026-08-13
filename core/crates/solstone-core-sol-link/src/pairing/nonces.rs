@@ -99,7 +99,11 @@ impl NonceStore {
     pub fn consume(&self, value: &str, now: i64) -> Result<Option<Nonce>, NonceStoreError> {
         let _lock = hold_lock(&self.path, LockOptions::default()).map_err(NonceStoreError::Lock)?;
         let mut entries = self.read_entries();
+        let before = entries.len();
         gc_entries(&mut entries, now);
+        if entries.len() != before {
+            self.write_entries(&entries)?;
+        }
         let Some(entry) = entries.get_mut(value) else {
             return Ok(None);
         };
@@ -279,7 +283,7 @@ mod tests {
         assert!(raw.is_array());
         assert_eq!(raw[0]["value"], "nonce");
         assert_eq!(raw[0]["same_machine"], false);
-        let names = fs::read_dir(temporary.path().join("link"))
+        let mut names = fs::read_dir(temporary.path().join("link"))
             .expect("link directory")
             .map(|entry| {
                 entry
@@ -289,8 +293,8 @@ mod tests {
                     .expect("utf8")
             })
             .collect::<Vec<_>>();
-        assert!(names.contains(&"nonces.json".to_string()));
-        assert!(names.contains(&"nonces.json.lock".to_string()));
+        names.sort();
+        assert_eq!(names, ["nonces.json", "nonces.json.lock"]);
         assert!(!names.iter().any(|name| name.starts_with(".tmp_")));
     }
 
@@ -308,6 +312,10 @@ mod tests {
         assert!(store.peek("live").expect("used nonce").used);
         assert!(!pairing_window_open(&store, 11));
         assert!(store.consume("live", 11).expect("repeat").is_none());
+        assert!(
+            store.peek("live").is_none(),
+            "the next mutation collects a consumed nonce before lookup"
+        );
         assert!(store.peek("old").is_none());
     }
 

@@ -263,14 +263,14 @@ pub async fn serve(options: ConveyServeOptions) -> Result<ConveyServeHandle, Con
     let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    let door_router = options.router.clone();
+    let door_router = authorization_gate::DoorRouter::unconfined(options.router.clone());
     bind_with_authorization(options, door_router, authorization_sender).await
 }
 
 #[cfg(feature = "host")]
 pub async fn bind_with_authorization(
     options: ConveyServeOptions,
-    door_router: Router,
+    door_router: authorization_gate::DoorRouter,
     authorization_sender: tokio::sync::watch::Sender<DeviceDoorAuthorization>,
 ) -> Result<ConveyServeHandle, ConveyServeError> {
     use solstone_core_convey_http::listener::bind_loopback;
@@ -301,7 +301,7 @@ pub async fn bind_with_authorization(
         port: options.door_port,
         handshake_timeout: options.handshake_timeout,
         stream_stall_timeout: options.stream_stall_timeout,
-        router: door_router,
+        router: door_router.into_inner(),
         carrier_loop_iterations: options.carrier_loop_iterations,
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         authorization_sender,

@@ -425,6 +425,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn no_usable_pairing_address_uses_the_declared_wire_reason_code() {
+        let response = pairing_refusal(PairingError::PairingRequestInvalid(
+            "no usable local address is available for pairing",
+        ));
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("refusal body");
+        let value: Value = serde_json::from_slice(&body).expect("refusal JSON");
+        assert_eq!(value["reason_code"], "pairing_request_invalid");
+    }
+
+    #[tokio::test]
     async fn same_machine_mint_rejects_each_forwarded_header_without_persisting_then_succeeds() {
         let temporary = TempDir::new();
         committed_identity(temporary.path());
@@ -434,6 +447,25 @@ mod tests {
             .layer(Extension(AccessBasis::Localhost))
             .layer(Extension(root));
         let payload = br#"{"device_label":"phone","same_machine":true}"#;
+        let non_loopback = Router::new()
+            .route("/start", axum::routing::post(pair_start))
+            .layer(Extension(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            }))
+            .layer(Extension(Arc::new(JournalRoot(
+                temporary.path().to_path_buf(),
+            ))));
+        let response = non_loopback
+            .oneshot(
+                Request::post("/start")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.as_slice()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(!temporary.path().join("link/nonces.json").exists());
         for invalid in [
             br#"{"device_label":"phone","role":"unknown"}"#.as_slice(),
             br#"{"device_label":"phone","same_machine":"true"}"#.as_slice(),
@@ -469,6 +501,13 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let refusal: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("posture refusal body"),
+        )
+        .expect("posture refusal JSON");
+        assert_eq!(refusal["reason_code"], "invalid_operation_for_state");
         assert!(!temporary.path().join("link/nonces.json").exists());
         fs::write(
             temporary.path().join("config/journal.json"),
@@ -524,6 +563,7 @@ mod tests {
             ]
         );
         assert_eq!(value["expires_in"], 300);
+        assert_eq!(value["device_label"], "phone");
         assert!(
             NonceStore::new(temporary.path())
                 .peek(value["nonce"].as_str().expect("nonce"))
