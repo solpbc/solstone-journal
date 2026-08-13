@@ -105,6 +105,7 @@ solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-operational-logs.workspace = true
 solstone-core-transfer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-streams-cli.workspace = true

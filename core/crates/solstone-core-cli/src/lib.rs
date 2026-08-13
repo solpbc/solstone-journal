@@ -16,7 +16,7 @@ pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
-    "  journal health [-h] [-v | --verbose] [-d | --debug]\n",
+    "  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
@@ -422,6 +422,21 @@ pub const HEALTH_HELP: &str = concat!(
     "  -d, --debug    enable debug output\n",
 );
 
+pub const HEALTH_LOGS_USAGE: &str = "usage: journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]\n";
+
+pub const HEALTH_LOGS_HELP: &str = concat!(
+    "usage: journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v] [-d]\n",
+    "\nView operational service logs.\n\noptions:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -c N                  number of lines to show (default: 5)\n",
+    "  -f                    follow log output\n",
+    "  --since TIME          show rows at or after TIME\n",
+    "  --service NAME        show rows for one service\n",
+    "  --grep PATTERN        show rows matching PATTERN\n",
+    "  -v, --verbose         enable verbose output\n",
+    "  -d, --debug           enable debug output\n",
+);
+
 pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
 
 pub const CHECK_HELP: &str = concat!(
@@ -635,6 +650,9 @@ pub enum Command {
     },
     HealthUsage,
     HealthHelp,
+    HealthLogs(HealthLogsArgs),
+    HealthLogsUsage,
+    HealthLogsHelp,
     Observer(ObserverCommand),
     Navigate {
         path: Option<String>,
@@ -675,6 +693,17 @@ pub enum Command {
     FacetCandidatesHelp,
     FacetCandidatesUsage,
     TransferHelp(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HealthLogsArgs {
+    pub count: String,
+    pub follow: bool,
+    pub since: Option<String>,
+    pub service: Option<String>,
+    pub grep: Option<String>,
+    pub verbose: bool,
+    pub debug: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1390,6 +1419,15 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             })
         }
         [command, rest @ ..] if command == OsStr::new("health") => {
+            if let [first, logs @ ..] = rest
+                && first == OsStr::new("logs")
+            {
+                return Ok(match parse_health_logs(logs) {
+                    Ok(HealthLogsParse::Run(args)) => Command::HealthLogs(args),
+                    Ok(HealthLogsParse::Help) => Command::HealthLogsHelp,
+                    Err(()) => Command::HealthLogsUsage,
+                });
+            }
             let help = |argument: &OsString| {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")
             };
@@ -3386,6 +3424,97 @@ fn parse_health(args: &[OsString]) -> Result<(bool, bool), ()> {
         return Err(());
     }
     Ok((verbose, debug))
+}
+
+enum HealthLogsParse {
+    Run(HealthLogsArgs),
+    Help,
+}
+
+fn parse_health_logs(args: &[OsString]) -> Result<HealthLogsParse, ()> {
+    let mut result = HealthLogsArgs {
+        count: "5".to_owned(),
+        follow: false,
+        since: None,
+        service: None,
+        grep: None,
+        verbose: false,
+        debug: false,
+    };
+    let mut index = 0;
+    while index < args.len() {
+        let argument = args[index].to_str().ok_or(())?;
+        if matches!(argument, "-h" | "--help") {
+            return Ok(HealthLogsParse::Help);
+        }
+        if matches!(argument, "-f") {
+            result.follow = true;
+            index += 1;
+            continue;
+        }
+        if matches!(argument, "-v" | "--verbose") {
+            result.verbose = true;
+            index += 1;
+            continue;
+        }
+        if matches!(argument, "-d" | "--debug") {
+            result.debug = true;
+            index += 1;
+            continue;
+        }
+        if argument == "-c" {
+            result.count = args
+                .get(index + 1)
+                .and_then(|value| value.to_str())
+                .ok_or(())?
+                .to_owned();
+            index += 2;
+            continue;
+        }
+        if let Some(value) = argument.strip_prefix("-c=").or_else(|| {
+            argument
+                .strip_prefix("-c")
+                .filter(|value| !value.is_empty())
+        }) {
+            result.count = value.to_owned();
+            index += 1;
+            continue;
+        }
+        let target = match argument {
+            "--since" => Some(&mut result.since),
+            "--service" => Some(&mut result.service),
+            "--grep" => Some(&mut result.grep),
+            _ => None,
+        };
+        if let Some(target) = target {
+            *target = Some(
+                args.get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or(())?
+                    .to_owned(),
+            );
+            index += 2;
+            continue;
+        }
+        let mut matched_attached_value = false;
+        for (prefix, target) in [
+            ("--since=", &mut result.since),
+            ("--service=", &mut result.service),
+            ("--grep=", &mut result.grep),
+        ] {
+            if let Some(value) = argument.strip_prefix(prefix) {
+                *target = Some(value.to_owned());
+                index += 1;
+                matched_attached_value = true;
+                break;
+            }
+        }
+        if matched_attached_value {
+            continue;
+        }
+        return Err(());
+    }
+    Ok(HealthLogsParse::Run(result))
 }
 
 fn parse_journal_path(args: &[OsString]) -> Result<JournalPathOptions, UsageError> {
@@ -5811,7 +5940,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_health_flags_and_rejects_logs() {
+    fn parses_bare_health_flags_and_health_logs_grammar() {
         assert_eq!(
             evaluate_args(&args(&["health", "-v", "--debug"])),
             Ok(Command::Health {
@@ -5819,11 +5948,7 @@ mod tests {
                 debug: true,
             })
         );
-        for values in [
-            &["health", "logs"][..],
-            &["health", "--wat"][..],
-            &["health", "-v", "--verbose"][..],
-        ] {
+        for values in [&["health", "--wat"][..], &["health", "-v", "--verbose"][..]] {
             assert_eq!(
                 evaluate_args(&args(values)),
                 Ok(Command::HealthUsage),
@@ -5833,6 +5958,84 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["health", "--help"])),
             Ok(Command::HealthHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["health", "logs"])),
+            Ok(Command::HealthLogs(HealthLogsArgs {
+                count: "5".into(),
+                follow: false,
+                since: None,
+                service: None,
+                grep: None,
+                verbose: false,
+                debug: false
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "health",
+                "logs",
+                "-c",
+                "10",
+                "-f",
+                "--since=30m",
+                "--service",
+                "observer",
+                "--grep=error",
+                "-v",
+                "-d"
+            ])),
+            Ok(Command::HealthLogs(HealthLogsArgs {
+                count: "10".into(),
+                follow: true,
+                since: Some("30m".into()),
+                service: Some("observer".into()),
+                grep: Some("error".into()),
+                verbose: true,
+                debug: true
+            }))
+        );
+        for values in [
+            ["health", "logs", "-c5"].as_slice(),
+            ["health", "logs", "-c=5"].as_slice(),
+        ] {
+            assert!(
+                matches!(evaluate_args(&args(values)), Ok(Command::HealthLogs(HealthLogsArgs { count, .. })) if count == "5")
+            );
+        }
+        for values in [
+            ["health", "logs", "--nonsense"].as_slice(),
+            ["health", "logs", "--"].as_slice(),
+            ["health", "logs", "--service"].as_slice(),
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Ok(Command::HealthLogsUsage));
+        }
+        for values in [
+            ["health", "logs", "--help"].as_slice(),
+            ["health", "logs", "-h"].as_slice(),
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Ok(Command::HealthLogsHelp));
+        }
+        assert!(
+            matches!(evaluate_args(&args(&["health", "logs", "-c", "5", "-c", "10"])), Ok(Command::HealthLogs(HealthLogsArgs { count, .. })) if count == "10")
+        );
+        assert!(
+            matches!(evaluate_args(&args(&["health", "logs", "--service=first", "--service", "last", "-f", "-f", "-v", "-v", "-d", "-d"])), Ok(Command::HealthLogs(HealthLogsArgs { service: Some(service), follow: true, verbose: true, debug: true, .. })) if service == "last")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn health_logs_non_utf8_arguments_are_usage_carriers() {
+        use std::os::unix::ffi::OsStringExt;
+
+        assert_eq!(
+            evaluate_args(&[
+                OsString::from("health"),
+                OsString::from("logs"),
+                OsString::from_vec(vec![0xff]),
+            ]),
+            Ok(Command::HealthLogsUsage)
         );
     }
 

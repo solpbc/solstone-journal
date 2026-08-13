@@ -16,8 +16,9 @@
 use std::process::Command;
 
 use solstone_core_cli::{
-    CHECK_HELP, CHECK_USAGE, HEALTH_HELP, HEALTH_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE,
-    INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE,
+    CHECK_HELP, CHECK_USAGE, HEALTH_HELP, HEALTH_LOGS_USAGE, INSTALL_MODELS_HELP,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE,
 };
 use tempfile::tempdir;
 
@@ -163,13 +164,13 @@ fn supervisor_help_is_byte_identical_for_both_spellings() {
 }
 
 #[test]
-fn health_rejects_logs_with_its_own_usage() {
-    let output = run_core(&["health", "logs"]);
+fn health_logs_rejects_unknown_flags_with_its_own_usage() {
+    let output = run_core(&["health", "logs", "--nonsense"]);
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(output.stdout, b"");
     assert_eq!(
         String::from_utf8(output.stderr).expect("UTF-8 stderr"),
-        expected_usage_error(HEALTH_USAGE, "journal health")
+        expected_usage_error(HEALTH_LOGS_USAGE, "journal health logs")
     );
 }
 

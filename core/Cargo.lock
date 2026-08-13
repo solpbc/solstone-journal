@@ -2545,6 +2545,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-npy",
  "solstone-core-observer",
+ "solstone-core-operational-logs",
  "solstone-core-reprocess-cli",
  "solstone-core-segment",
  "solstone-core-segment-cli",
