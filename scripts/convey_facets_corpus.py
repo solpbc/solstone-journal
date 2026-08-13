@@ -1446,6 +1446,43 @@ def build_corpus() -> dict[str, Any]:
             "activity_id": PLACEHOLDER_ACTIVITY_ID,
         },
         "side_runtimes_disabled": True,
+        # 🔴 WHAT A GREEN REPLAY OF THIS CORPUS IS NOT EVIDENCE ABOUT.
+        # Written into the fixture rather than only into a scope, because a
+        # future reader has the fixture in front of them and not the scope.
+        "coverage_limitations": [
+            "MEASURED, because the aggregate misleads: of 26 mutation-phase "
+            "cases, 19 are POSTs, and only 10 of those returned 2xx and "
+            "therefore ACTUALLY MUTATED -- 9 are refusals grading envelopes "
+            "and 7 are post-state GETs. Those 10 span 8 routes, and EVERY "
+            "route mutated exactly ONCE (the 3 on /api/imports are three "
+            "different actions, not one call repeated). So the number of "
+            "routes successfully called TWICE WITH THE SAME INPUT is ZERO. "
+            "Quote that, never '26 mutation cases', which is true and reads "
+            "as coverage it does not have. "
+            "The replay therefore pins that a first call succeeds and says "
+            "NOTHING about a second call with the same input. Two helpers "
+            "under these routes are fill-only-when-absent: "
+            "think/facets.create_facet raises on collision (six lines above a "
+            "tolerant mkdir(exist_ok=True)), and "
+            "think/activities.append_activity_record appends unless the id "
+            "exists (guard in a nested closure). A port that overwrites, "
+            "rotates or duplicates on a second call REPLAYS GREEN against "
+            "this fixture. Assert both directions in unit tests.",
+            "Captured with SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES=1, so any "
+            "field a live side runtime populates is pinned in its ABSENT "
+            "state. These four surfaces are filesystem projections and none "
+            "reads a side runtime -- checked, not assumed -- but do not widen "
+            "that claim to a route added later.",
+            "The PDF case pins status, content type, disposition and "
+            "pdf_text. reference_body_sha256 is a RECORD of what weasyprint "
+            "emitted and must NOT be asserted by a port; no native renderer "
+            "will reproduce those bytes.",
+            "Routes this lane DELETES are deliberately absent: the activities "
+            "web UI (/, /{day}, /api/index, /api/stats/{month}, "
+            "/api/day/{day}/activities, /api/activity_output/{path}) and every "
+            "/app/reflections/* route. Their absence here is a decision, not "
+            "an oversight.",
+        ],
         "phases": phases,
         "mutations": _mutation_cases(),
     }
