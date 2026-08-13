@@ -2,9 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::Value;
-use solstone_core_callosum::CallosumEnvelope;
+use solstone_core_callosum::{CallosumDiscontinuity, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
-    ProcessObserver, ProcessSample, ReductionSample, TopReduceError, TopState, reduce_envelope,
+    ProcessObserver, ProcessSample, ReductionSample, TopReduceError, TopState, apply_receive_event,
+    reduce_envelope,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/top_reference.json");
@@ -143,4 +144,28 @@ fn identity_and_order_twins_preserve_distinct_refs_and_service_order() {
     assert_eq!(state.services[0]["name"], "svc-10");
     assert_eq!(state.services[1]["name"], "svc-2");
     assert!(state.running_tasks.contains_key("a") && state.running_tasks.contains_key("b"));
+}
+
+#[test]
+fn new_connection_generation_invalidates_stale_supervisor_state_until_status() {
+    let mut state = TopState {
+        services: vec![serde_json::json!({"name":"stale", "pid":1})],
+        continuity: solstone_core_top::DomainContinuity {
+            generation: 1,
+            ..solstone_core_top::DomainContinuity::default()
+        },
+        ..TopState::default()
+    };
+    apply_receive_event(
+        &mut state,
+        &CallosumReceiveEvent::Discontinuity {
+            generation: 2,
+            reason: CallosumDiscontinuity::Connected,
+        },
+        &ReductionSample::fixture(0.0, "x"),
+        &mut Observer,
+    )
+    .unwrap();
+    assert!(state.services.is_empty());
+    assert!(state.continuity.supervisor_gap);
 }

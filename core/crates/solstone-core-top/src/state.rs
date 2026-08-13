@@ -28,7 +28,13 @@ pub struct TopState {
     pub service_status: BTreeMap<String, (String, f64)>,
     pub last_log_lines: BTreeMap<String, Value>,
     pub cpu_cache: BTreeMap<u32, f64>,
+    /// Native-only RSS cache; intentionally omitted from the Python fixture projection.
+    pub memory_cache: BTreeMap<u32, u64>,
     pub cpu_pids: BTreeSet<u32>,
+    /// Native monotonic timestamps for task runtime rendering.
+    pub task_started_at: BTreeMap<String, f64>,
+    /// Native wall timestamps for log age rendering.
+    pub last_log_at: BTreeMap<String, f64>,
     pub running_tasks: BTreeMap<String, Value>,
     pub finished_tasks: BTreeMap<String, Value>,
     pub command_queues: BTreeMap<String, Value>,
@@ -55,7 +61,10 @@ impl Default for TopState {
             service_status: BTreeMap::new(),
             last_log_lines: BTreeMap::new(),
             cpu_cache: BTreeMap::new(),
+            memory_cache: BTreeMap::new(),
             cpu_pids: BTreeSet::new(),
+            task_started_at: BTreeMap::new(),
+            last_log_at: BTreeMap::new(),
             running_tasks: BTreeMap::new(),
             finished_tasks: BTreeMap::new(),
             command_queues: BTreeMap::new(),

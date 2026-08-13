@@ -5,7 +5,8 @@ use solstone_core_callosum::CallosumReceiveEvent;
 
 use crate::{
     FrameSample, PlainTopStyle, ProcessObserver, ReductionSample, TopRestartTransport, TopState,
-    advance_restart_attempts, apply_receive_event, render_frame, request_restart,
+    advance_restart_attempts, apply_receive_event, cleanup_processes, render_frame,
+    request_restart,
 };
 
 /// Input accepted by the native top loop.
@@ -67,6 +68,7 @@ pub fn run_top_with(
 ) -> Result<(), TopLoopError> {
     receive.start().map_err(TopLoopError::Transport)?;
     let mut entered = false;
+    let mut last_cleanup = clock.monotonic_seconds();
     let outcome: Result<(), TopLoopError> = (|| {
         terminal.enter().map_err(TopLoopError::Terminal)?;
         entered = true;
@@ -119,6 +121,19 @@ pub fn run_top_with(
                 TopInput::None => {}
             }
             let _ = advance_restart_attempts(state, clock.monotonic_seconds());
+            let now = clock.monotonic_seconds();
+            if now - last_cleanup >= 5.0 {
+                cleanup_processes(
+                    state,
+                    &ReductionSample {
+                        wall_seconds: clock.wall_seconds(),
+                        monotonic_seconds: now,
+                        wall_datetime: clock.datetime(),
+                    },
+                    observer,
+                );
+                last_cleanup = now;
+            }
             if clock.wall_seconds() - state.brain_health_ts >= 30.0 {
                 state.brain_health = Some(brain.inspect().map_err(TopLoopError::Transport)?);
                 state.brain_health_ts = clock.wall_seconds();
@@ -271,7 +286,8 @@ mod tests {
     #[derive(Default)]
     struct FailTerminal {
         enter: bool,
-        fail_render: bool,
+        fail_render_at: Option<usize>,
+        render_calls: usize,
         fail_input: bool,
         fail_restore: bool,
         input_none: bool,
@@ -298,7 +314,8 @@ mod tests {
             Ok(80)
         }
         fn render(&mut self, _: &str) -> Result<(), String> {
-            if self.fail_render {
+            self.render_calls += 1;
+            if self.fail_render_at == Some(self.render_calls) {
                 Err("render".into())
             } else {
                 Ok(())
@@ -322,6 +339,7 @@ mod tests {
         fail_next: bool,
         fail_stop: bool,
         stopped: bool,
+        events: VecDeque<CallosumReceiveEvent>,
     }
     impl TopReceiveTransport for FailReceive {
         fn start(&mut self) -> Result<(), String> {
@@ -330,9 +348,11 @@ mod tests {
                 .ok_or_else(|| "start".into())
         }
         fn next(&mut self) -> Result<Option<CallosumReceiveEvent>, String> {
-            (!self.fail_next)
-                .then_some(None)
-                .ok_or_else(|| "next".into())
+            if self.fail_next {
+                Err("next".into())
+            } else {
+                Ok(self.events.pop_front())
+            }
         }
         fn stop(&mut self) -> Result<(), String> {
             self.stopped = true;
@@ -341,21 +361,27 @@ mod tests {
     }
     struct FailClock {
         fail_sleep: bool,
+        now: f64,
+        sleep_calls: usize,
     }
     impl TopClock for FailClock {
         fn wall_seconds(&self) -> f64 {
-            0.
+            self.now
         }
         fn monotonic_seconds(&self) -> f64 {
-            0.
+            self.now
         }
         fn datetime(&self) -> serde_json::Value {
             serde_json::json!({})
         }
         fn sleep(&mut self, _: f64) -> Result<(), String> {
-            (!self.fail_sleep)
-                .then_some(())
-                .ok_or_else(|| "sleep".into())
+            if self.fail_sleep {
+                Err("sleep".into())
+            } else {
+                self.sleep_calls += 1;
+                self.now += 5.0;
+                Ok(())
+            }
         }
     }
     struct FailBrain {
@@ -390,6 +416,12 @@ mod tests {
             "stop-error",
         ] {
             let mut state = TopState::default();
+            if name == "normal-periodic" {
+                state.running_tasks.insert(
+                    "periodic".into(),
+                    serde_json::json!({"name":"periodic", "pid":99}),
+                );
+            }
             if matches!(name, "key-up" | "key-down") {
                 state.services = vec![
                     serde_json::json!({"name":"one", "pid":101, "ref":"one", "uptime_seconds":1}),
@@ -403,13 +435,23 @@ mod tests {
             }
             let mut clock = FailClock {
                 fail_sleep: name == "sleep-error",
+                now: 0.0,
+                sleep_calls: 0,
             };
             let mut terminal = FailTerminal {
-                fail_render: matches!(name, "initial-render-error" | "later-render-error"),
+                fail_render_at: match name {
+                    "initial-render-error" => Some(1),
+                    "later-render-error" => Some(2),
+                    _ => None,
+                },
                 fail_input: name == "input-error",
                 fail_restore: name == "cleanup-error",
                 input_none: name == "sleep-error",
                 inputs: match name {
+                    "normal-periodic" => {
+                        VecDeque::from([TopInput::None, TopInput::None, TopInput::Quit])
+                    }
+                    "later-render-error" => VecDeque::from([TopInput::None, TopInput::Quit]),
                     "key-up" => VecDeque::from([TopInput::Up, TopInput::Quit]),
                     "key-down" => VecDeque::from([TopInput::Down, TopInput::Quit]),
                     "key-restart" => VecDeque::from([TopInput::Restart, TopInput::Quit]),
@@ -421,6 +463,22 @@ mod tests {
                 fail_start: name == "context-error",
                 fail_next: name == "event-error",
                 fail_stop: name == "stop-error",
+                events: if name == "event-success" {
+                    VecDeque::from([CallosumReceiveEvent::Envelope {
+                        generation: 1,
+                        envelope: solstone_core_callosum::CallosumEnvelope {
+                            tract: "supervisor".into(),
+                            event: "queue".into(),
+                            ts: None,
+                            extra: serde_json::Map::from_iter([
+                                ("command".into(), serde_json::json!("health")),
+                                ("queued".into(), serde_json::json!(2)),
+                            ]),
+                        },
+                    }])
+                } else {
+                    VecDeque::new()
+                },
                 ..FailReceive::default()
             };
             let mut brain = FailBrain { fail: false };
@@ -462,6 +520,14 @@ mod tests {
                 "key-restart" => {
                     assert_eq!(restart.emissions.len(), 1, "{name}");
                     assert_eq!(restart.emissions[0].0, "convey", "{name}");
+                }
+                "event-success" => assert_eq!(
+                    state.command_queues.get("health"),
+                    Some(&serde_json::json!(2))
+                ),
+                "normal-periodic" => {
+                    assert!(clock.sleep_calls >= 2, "{name}");
+                    assert!(state.finished_tasks.contains_key("periodic"), "{name}");
                 }
                 _ => assert!(restart.emissions.is_empty(), "{name}"),
             }

@@ -148,7 +148,9 @@ pub fn apply_receive_event(
             if *generation != previous_generation {
                 let _ = fail_discontinuous_restarts(state, *generation, sample.monotonic_seconds);
             }
-            if !matches!(reason, CallosumDiscontinuity::Connected) {
+            if *generation != previous_generation
+                || !matches!(reason, CallosumDiscontinuity::Connected)
+            {
                 state.continuity.supervisor_gap = true;
                 state.continuity.task_gap = true;
                 state.continuity.observe_gap = true;
@@ -157,9 +159,12 @@ pub fn apply_receive_event(
                 state.crashed.clear();
                 state.command_queues.clear();
                 state.cpu_cache.clear();
+                state.memory_cache.clear();
                 state.cpu_pids.clear();
                 state.running_tasks.clear();
+                state.task_started_at.clear();
                 state.last_log_lines.clear();
+                state.last_log_at.clear();
                 state.observe_status.clear();
                 state.observe_last_ts = 0.0;
                 state.think_running = false;
@@ -224,6 +229,9 @@ pub fn cleanup_processes(
         state.running_tasks.remove(&reference);
         state.cpu_pids.remove(&pid);
         state.cpu_cache.remove(&pid);
+        state.memory_cache.remove(&pid);
+        state.task_started_at.remove(&reference);
+        state.last_log_at.remove(&reference);
         state.finished_tasks.insert(reference, json!({"name":name,"exit_code":Value::Null,"last_log":last_log,"finished_at":sample.wall_seconds}));
     }
 }
@@ -261,16 +269,14 @@ fn reduce_status(
     state.crashed = crashed;
     state.selected = state.selected.min(state.services.len().saturating_sub(1));
     state.cpu_pids.clear();
-    for service in &state.services {
-        let pid = service["pid"].as_u64().expect("pid checked") as u32;
-        if let ProcessSample::Live { cpu_percent, .. } =
-            observer.sample(pid, sample.monotonic_seconds)
-        {
-            state.cpu_pids.insert(pid);
-            state.cpu_cache.insert(pid, cpu_percent);
-        } else {
-            state.cpu_cache.remove(&pid);
-        }
+    state.memory_cache.clear();
+    let service_pids = state
+        .services
+        .iter()
+        .map(|service| service["pid"].as_u64().expect("pid checked") as u32)
+        .collect::<Vec<_>>();
+    for pid in service_pids {
+        record_process_sample(state, pid, observer.sample(pid, sample.monotonic_seconds));
     }
     Ok(ReductionEffects::default())
 }
@@ -308,12 +314,11 @@ fn reduce_exec(
         return;
     };
     state.running_tasks.insert(reference.to_owned(), json!({"ref": reference, "name": name, "pid": pid, "cmd": extra.get("cmd").cloned().unwrap_or_else(|| json!([])), "start_time": sample.wall_datetime}));
+    state
+        .task_started_at
+        .insert(reference.to_owned(), sample.monotonic_seconds);
     let pid = pid as u32;
-    state.cpu_pids.insert(pid);
-    if let ProcessSample::Live { cpu_percent, .. } = observer.sample(pid, sample.monotonic_seconds)
-    {
-        state.cpu_cache.insert(pid, cpu_percent);
-    }
+    record_process_sample(state, pid, observer.sample(pid, sample.monotonic_seconds));
 }
 
 fn reduce_line(
@@ -332,12 +337,14 @@ fn reduce_line(
         )
     {
         state.running_tasks.insert(reference.to_owned(), json!({"ref": reference, "name": name, "pid": pid, "cmd": [], "start_time": sample.wall_datetime}));
-        state.cpu_pids.insert(pid as u32);
-        if let ProcessSample::Live { cpu_percent, .. } =
-            observer.sample(pid as u32, sample.monotonic_seconds)
-        {
-            state.cpu_cache.insert(pid as u32, cpu_percent);
-        }
+        state
+            .task_started_at
+            .insert(reference.to_owned(), sample.monotonic_seconds);
+        record_process_sample(
+            state,
+            pid as u32,
+            observer.sample(pid as u32, sample.monotonic_seconds),
+        );
     }
     state.last_log_lines.insert(
         reference.to_owned(),
@@ -350,6 +357,9 @@ fn reduce_line(
             extra.get("line").cloned().unwrap_or_else(|| json!(""))
         ]),
     );
+    state
+        .last_log_at
+        .insert(reference.to_owned(), sample.wall_seconds);
 }
 
 fn reduce_exit(state: &mut TopState, extra: &Map<String, Value>, sample: &ReductionSample) {
@@ -377,9 +387,30 @@ fn reduce_exit(state: &mut TopState, extra: &Map<String, Value>, sample: &Reduct
         .unwrap_or_else(|| json!(""));
     state.finished_tasks.insert(reference.to_owned(), json!({"name": name, "exit_code": extra.get("exit_code").cloned().unwrap_or(Value::Null), "last_log": last_log, "finished_at": sample.wall_seconds}));
     state.last_log_lines.remove(reference);
+    state.last_log_at.remove(reference);
+    state.task_started_at.remove(reference);
     if let Some(pid) = pid {
         state.cpu_pids.remove(&pid);
         state.cpu_cache.remove(&pid);
+        state.memory_cache.remove(&pid);
+    }
+}
+
+fn record_process_sample(state: &mut TopState, pid: u32, sample: ProcessSample) {
+    match sample {
+        ProcessSample::Live {
+            rss_bytes,
+            cpu_percent,
+        } => {
+            state.cpu_pids.insert(pid);
+            state.cpu_cache.insert(pid, cpu_percent);
+            state.memory_cache.insert(pid, rss_bytes);
+        }
+        _ => {
+            state.cpu_pids.remove(&pid);
+            state.cpu_cache.remove(&pid);
+            state.memory_cache.remove(&pid);
+        }
     }
 }
 

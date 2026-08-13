@@ -83,7 +83,10 @@ pub fn request_restart(
     }) {
         return Ok(RestartRequestOutcome::Rejected);
     }
-    let restart_id = format!("top-{}", NEXT_RESTART_ID.fetch_add(1, Ordering::Relaxed));
+    let restart_id = restart_id(
+        std::process::id(),
+        NEXT_RESTART_ID.fetch_add(1, Ordering::Relaxed),
+    );
     transport.emit_restart(service, &restart_id)?;
     state.restart_attempts.insert(
         service.to_owned(),
@@ -190,6 +193,10 @@ fn is_supported(service: &str) -> bool {
     matches!(service, "convey" | "sense" | "cortex" | "spl")
 }
 
+fn restart_id(process_id: u32, sequence: u64) -> String {
+    format!("top-{process_id}-{sequence}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +284,11 @@ mod tests {
             .is_some()
         );
         assert_eq!(advance_restart_attempts(&mut state, 11.0).len(), 1);
+    }
+
+    #[test]
+    fn restart_ids_do_not_collide_between_processes() {
+        assert_ne!(restart_id(101, 1), restart_id(202, 1));
+        assert_ne!(restart_id(101, 1), restart_id(101, 2));
     }
 }

@@ -289,6 +289,35 @@ async fn continuity_inbound_saturation_marks_current_generation() {
     client.stop().await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn dropped_discontinuity_is_reported_as_inbound_saturation() {
+    let socket = TempSocket::new("continuity-dropped-marker");
+    let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
+    let mut client =
+        CallosumSocketConnection::with_test_inbound_capacity(&socket.path, Map::new(), 1);
+    client.start();
+    let mut peer = accept_connected_raw_peer(&listener, &mut client).await;
+    peer.write_all(b"{\"tract\":\"burst\",\"event\":\"one\"}\n")
+        .await
+        .unwrap();
+    sleep(Duration::from_millis(25)).await;
+    peer.write_all(b"{malformed}\n").await.unwrap();
+    sleep(Duration::from_millis(25)).await;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Envelope { generation: 1, .. }
+    ));
+    peer.write_all(b"\n").await.unwrap();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Discontinuity {
+            generation: 1,
+            reason: CallosumDiscontinuity::InboundSaturated
+        }
+    ));
+    client.stop().await;
+}
+
 async fn raw(path: &PathBuf) -> UnixStream {
     timeout(Duration::from_secs(2), UnixStream::connect(path))
         .await

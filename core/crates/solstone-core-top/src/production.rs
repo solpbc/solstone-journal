@@ -16,6 +16,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection, read_journal_config};
 use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
 use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_path};
+use solstone_core_system_health::sanitize_os_bytes_for_terminal;
 
 use crate::{
     TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRestartError, TopRestartTransport,
@@ -25,7 +26,10 @@ use crate::{
 pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
     let journal = resolve_process_journal_path()?;
     if verbose || debug {
-        eprintln!("solstone-core top: journal={}", journal.display());
+        eprintln!(
+            "solstone-core top: journal={}",
+            sanitize_os_bytes_for_terminal(journal.as_os_str().as_encoded_bytes())
+        );
     }
     let shared = ProductionCallosum::new(journal.join("health/callosum.sock"))?;
     let mut receive = ProductionReceive::new(Arc::clone(&shared));
@@ -117,7 +121,8 @@ pub(crate) struct ProductionCallosum {
 }
 impl ProductionCallosum {
     pub(crate) fn new(path: impl AsRef<Path>) -> Result<Arc<Self>, String> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
             .enable_all()
             .build()
             .map_err(|error| error.to_string())?;
@@ -294,9 +299,25 @@ impl TopTerminal for ProductionTerminal {
             Ok(3) => Ok(TopInput::Interrupt),
             Ok(4) => Ok(TopInput::EndOfFile),
             Ok(b'r') => Ok(TopInput::Restart),
-            Ok(b'\x1b') => Ok(TopInput::None),
+            Ok(b'\x1b') => self.decode_escape(),
             Ok(_) => Ok(TopInput::None),
             Err(mpsc::RecvTimeoutError::Timeout) => Ok(TopInput::None),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Ok(TopInput::EndOfFile),
+        }
+    }
+}
+
+impl ProductionTerminal {
+    fn decode_escape(&self) -> Result<TopInput, String> {
+        let wait = Duration::from_millis(10);
+        match self.keys.recv_timeout(wait) {
+            Ok(b'[') => match self.keys.recv_timeout(wait) {
+                Ok(b'A') => Ok(TopInput::Up),
+                Ok(b'B') => Ok(TopInput::Down),
+                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => Ok(TopInput::None),
+                Err(mpsc::RecvTimeoutError::Disconnected) => Ok(TopInput::EndOfFile),
+            },
+            Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => Ok(TopInput::None),
             Err(mpsc::RecvTimeoutError::Disconnected) => Ok(TopInput::EndOfFile),
         }
     }
@@ -306,6 +327,10 @@ impl TopTerminal for ProductionTerminal {
 mod tests {
     use super::*;
     use crate::{TopReceiveTransport, TopRestartTransport};
+    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_SOCKET: AtomicUsize = AtomicUsize::new(0);
     #[test]
     fn production_callosum_start_stop_and_restart_adapter_are_safe_without_server() {
         let path = std::env::temp_dir().join("solstone-top-no-server.sock");
@@ -317,5 +342,63 @@ mod tests {
         assert_eq!(restart.current_generation(), 0);
         assert!(restart.emit_restart("convey", "id").is_ok());
         receive.stop().unwrap();
+    }
+
+    #[tokio::test]
+    async fn production_receive_is_driven_while_the_sync_consumer_polls() {
+        let ordinal = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("solstone-top-production-{ordinal}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let socket = root.join("callosum.sock");
+        let server = CallosumSocketServer::bind(&socket).await.unwrap();
+        let shared = ProductionCallosum::new(&socket).unwrap();
+        let mut receive = ProductionReceive::new(shared);
+        receive.start().unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while server.client_count() != 1 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(server.broadcast(CallosumEnvelope {
+            tract: "supervisor".to_owned(),
+            event: "status".to_owned(),
+            ts: None,
+            extra: Map::new(),
+        }));
+        let event = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(event @ CallosumReceiveEvent::Envelope { .. }) = receive.next().unwrap()
+                {
+                    return event;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(matches!(event, CallosumReceiveEvent::Envelope { .. }));
+        std::thread::spawn(move || receive.stop().unwrap())
+            .join()
+            .unwrap();
+        server.stop().await;
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn terminal_decodes_only_complete_up_and_down_escape_sequences() {
+        let (sender, keys) = mpsc::channel();
+        let mut terminal = ProductionTerminal { saved: None, keys };
+        sender.send(b'\x1b').unwrap();
+        sender.send(b'[').unwrap();
+        sender.send(b'A').unwrap();
+        assert_eq!(terminal.input(0.0).unwrap(), TopInput::Up);
+        sender.send(b'\x1b').unwrap();
+        sender.send(b'[').unwrap();
+        sender.send(b'B').unwrap();
+        assert_eq!(terminal.input(0.0).unwrap(), TopInput::Down);
+        sender.send(b'\x1b').unwrap();
+        assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
     }
 }

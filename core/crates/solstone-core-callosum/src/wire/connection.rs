@@ -305,25 +305,29 @@ async fn run_connection(
                     let sent = match encode_envelope(&message) {
                         Ok(line) => timeout(CLIENT_SEND_TIMEOUT, connected.writer.write_all(&line)).await,
                         Err(_) => {
-                            let _ = try_send_event(
+                            if !try_send_event(
                                 &inbound,
                                 CallosumReceiveEvent::Discontinuity {
                                     generation,
                                     reason: CallosumDiscontinuity::Disconnected,
                                 },
-                            );
+                            ) {
+                                pending_saturation = true;
+                            }
                             stream = None;
                             continue;
                         }
                     };
                     if !matches!(sent, Ok(Ok(()))) {
-                        let _ = try_send_event(
+                        if !try_send_event(
                             &inbound,
                             CallosumReceiveEvent::Discontinuity {
                                 generation,
                                 reason: CallosumDiscontinuity::Disconnected,
                             },
-                        );
+                        ) {
+                            pending_saturation = true;
+                        }
                         stream = None;
                     }
                 }
@@ -342,22 +346,26 @@ async fn run_connection(
                 Ok(ReadFrame::Whitespace) => {}
                 Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) => {
                     let _ = malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
-                    let _ = try_send_event(
+                    if !try_send_event(
                         &inbound,
                         CallosumReceiveEvent::Discontinuity {
                             generation,
                             reason: CallosumDiscontinuity::MalformedFrameDropped,
                         },
-                    );
+                    ) {
+                        pending_saturation = true;
+                    }
                 }
                 Ok(ReadFrame::Eof) | Err(_) => {
-                    let _ = try_send_event(
+                    if !try_send_event(
                         &inbound,
                         CallosumReceiveEvent::Discontinuity {
                             generation,
                             reason: CallosumDiscontinuity::Disconnected,
                         },
-                    );
+                    ) {
+                        pending_saturation = true;
+                    }
                     stream = None;
                 }
             },

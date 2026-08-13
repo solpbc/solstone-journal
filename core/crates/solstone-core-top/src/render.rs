@@ -35,8 +35,17 @@ pub trait TopStyle {
     fn red(&self) -> &str {
         "\x1b[31m"
     }
+    fn green(&self) -> &str {
+        "\x1b[32m"
+    }
+    fn yellow(&self) -> &str {
+        "\x1b[33m"
+    }
     fn cyan(&self) -> &str {
         "\x1b[36m"
+    }
+    fn inverse(&self) -> &str {
+        "\x1b[7m"
     }
     fn normal(&self) -> &str {
         "\x1b[0m"
@@ -76,8 +85,16 @@ pub fn render_frame(
         output.push_str(style.normal());
         output.push('\n');
     }
-    for service in state.services.iter().take(256) {
-        service_line(&mut output, service, state, frame, width, style);
+    for (index, service) in state.services.iter().take(256).enumerate() {
+        service_line(
+            &mut output,
+            service,
+            index == state.selected,
+            state,
+            frame,
+            width,
+            style,
+        );
     }
     rule(&mut output, width);
     observe_section(&mut output, state, frame, style);
@@ -93,12 +110,28 @@ pub fn render_frame(
         output.push_str(style.normal());
         output.push('\n');
     }
-    for task in state.running_tasks.values().take(256) {
+    let service_pids = state
+        .services
+        .iter()
+        .filter_map(|service| service.get("pid").and_then(Value::as_u64))
+        .collect::<std::collections::BTreeSet<_>>();
+    for task in state
+        .running_tasks
+        .values()
+        .filter(|task| {
+            !task
+                .get("pid")
+                .and_then(Value::as_u64)
+                .is_some_and(|pid| service_pids.contains(&pid))
+        })
+        .take(256)
+    {
         task_line(&mut output, task, state, frame, width, style);
     }
     for task in state.finished_tasks.values().take(256) {
         task_line(&mut output, task, state, frame, width, style);
     }
+    queued_commands(&mut output, state, style);
     rule(&mut output, width);
     output.push_str("  ");
     output.push_str(style.bold());
@@ -119,7 +152,7 @@ pub fn render_frame(
     output.push_str(style.dim());
     output.push_str("q: Quit");
     output.push_str(style.normal());
-    output.truncate(MAX_FRAME_BYTES);
+    truncate_to_boundary(&mut output, MAX_FRAME_BYTES);
     output
 }
 
@@ -159,6 +192,7 @@ pub fn format_log_age(seconds: u64) -> String {
 fn service_line(
     out: &mut String,
     service: &Value,
+    selected: bool,
     state: &TopState,
     frame: FrameSample,
     width: usize,
@@ -168,11 +202,14 @@ fn service_line(
     let pid = service.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32;
     let status = state.service_status.get(&name);
     let icon = status_icon(status, frame.wall_seconds);
+    if selected {
+        out.push_str(style.inverse());
+    }
     out.push_str("  ");
     out.push_str(icon.0);
     out.push_str(&pad(&name, 14));
     out.push_str(&format!(
-        " {:>6}  {:>8}  {:>12} {:>6}  ",
+        " {:>6}  {:>8}  {:>7}  {:>5}",
         pid,
         format_uptime(
             service
@@ -180,13 +217,13 @@ fn service_line(
                 .and_then(Value::as_u64)
                 .unwrap_or(0)
         ),
-        "-",
+        memory_mb(state.memory_cache.get(&pid)),
         state
             .cpu_cache
             .get(&pid)
             .map_or("-".to_owned(), |cpu| format!("{cpu:.0}"))
     ));
-    append_log(
+    let age = append_log(
         out,
         service.get("ref").and_then(Value::as_str),
         state,
@@ -194,6 +231,12 @@ fn service_line(
         width,
         style,
     );
+    if selected {
+        let _ = out.pop();
+        out.push_str(style.normal());
+        out.push('\n');
+    }
+    let _ = age;
 }
 
 fn task_line(
@@ -206,19 +249,26 @@ fn task_line(
 ) {
     let name = task.get("name").map(value_text).unwrap_or_default();
     let pid = task.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let started = task
+        .get("ref")
+        .and_then(Value::as_str)
+        .and_then(|reference| state.task_started_at.get(reference))
+        .copied()
+        .unwrap_or(frame.monotonic_seconds);
+    let runtime = (frame.monotonic_seconds - started).max(0.0) as u64;
     out.push_str("  ");
     out.push_str(&pad(&name, 14));
     out.push_str(&format!(
-        " {:>6}  {:>8}  {:>12} {:>6}  ",
+        " {:>6}  {:>8}  {:>7}  {:>5}",
         pid,
-        format_runtime(0),
-        "-",
+        format_runtime(runtime),
+        memory_mb(state.memory_cache.get(&pid)),
         state
             .cpu_cache
             .get(&pid)
             .map_or("-".to_owned(), |cpu| format!("{cpu:.0}"))
     ));
-    append_log(
+    let _ = append_log(
         out,
         task.get("ref").and_then(Value::as_str),
         state,
@@ -235,25 +285,24 @@ fn append_log(
     frame: FrameSample,
     width: usize,
     style: &dyn TopStyle,
-) {
+) -> String {
     let Some(log) = reference
         .and_then(|reference| state.last_log_lines.get(reference))
         .and_then(Value::as_array)
     else {
         out.push('\n');
-        return;
+        return String::new();
     };
-    let age = log
-        .first()
-        .and_then(Value::as_object)
-        .and_then(|value| value.get("seconds"))
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+    let age = reference
+        .and_then(|reference| state.last_log_at.get(reference))
+        .map(|at| format_log_age((frame.wall_seconds - *at).max(0.0) as u64))
+        .unwrap_or_default();
     let stream = log.get(1).map(value_text).unwrap_or_default();
     let line = log.get(2).map(value_text).unwrap_or_default();
     if stream == "stderr" {
         out.push_str(style.red());
     }
+    out.push_str(&format!(" {:>5} ", age));
     out.push_str(&truncate_scalars(
         &line,
         width.saturating_sub(LOG_FIXED_WIDTH),
@@ -261,9 +310,8 @@ fn append_log(
     if stream == "stderr" {
         out.push_str(style.normal());
     }
-    let _ = frame;
-    let _ = age;
     out.push('\n');
+    age
 }
 
 fn observe_section(out: &mut String, state: &TopState, frame: FrameSample, style: &dyn TopStyle) {
@@ -272,8 +320,23 @@ fn observe_section(out: &mut String, state: &TopState, frame: FrameSample, style
     out.push_str("Observe");
     out.push_str(style.normal());
     out.push(' ');
-    let active = state.displayed_mode != "idle" && frame.wall_seconds - state.last_active_ts < 10.0;
-    out.push_str(if active { "●" } else { "○" });
+    if state.observe_last_ts > 0.0 {
+        let age = (frame.wall_seconds - state.observe_last_ts).max(0.0);
+        let color = if age < 30.0 {
+            style.green()
+        } else if age < 60.0 {
+            style.yellow()
+        } else {
+            style.red()
+        };
+        out.push_str(color);
+        out.push('●');
+        out.push_str(style.normal());
+    } else {
+        out.push_str(style.dim());
+        out.push('○');
+        out.push_str(style.normal());
+    }
     out.push('\n');
     if state.observe_status.is_empty() {
         out.push_str(style.dim());
@@ -281,17 +344,121 @@ fn observe_section(out: &mut String, state: &TopState, frame: FrameSample, style
         out.push_str(style.normal());
         out.push('\n');
     } else {
+        let mode = state.displayed_mode.as_str();
+        let captures = state
+            .observe_status
+            .get("tmux")
+            .and_then(|value| value.get("captures"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let describe = queue_status(state.observe_status.get("describe"));
+        let transcribe = queue_status(state.observe_status.get("transcribe"));
+        let locked = state
+            .observe_status
+            .get("activity")
+            .and_then(|value| value.get("screen_locked"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let mode_status = match mode {
+            "screencast" => {
+                let elapsed = state
+                    .observe_status
+                    .get("screencast")
+                    .and_then(|value| value.get("window_elapsed_seconds"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                format!("[LIVE] screencast {}", format_uptime(elapsed))
+            }
+            "tmux" => format!("[TMUX] {captures} captures"),
+            _ if locked => "[IDLE] locked".to_owned(),
+            _ => "[IDLE]".to_owned(),
+        };
         dynamic_line(
             out,
-            &format!(
-                "  {}",
-                value_text(&Value::Object(
-                    state.observe_status.clone().into_iter().collect()
-                ))
-            ),
+            &format!("  {mode_status} │ describe {describe} │ transcribe {transcribe}"),
             style,
         );
+        if !state.recent_segments.is_empty() {
+            let recent = state
+                .recent_segments
+                .iter()
+                .take(3)
+                .map(|entry| {
+                    let segment = entry.get(1).map(value_text).unwrap_or_default();
+                    let seconds = entry.get(2).and_then(Value::as_u64).unwrap_or(0);
+                    format!("{segment} ({}m)", (seconds / 60).max(1))
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            dynamic_line(out, &format!("  Recent: {recent}"), style);
+        }
     }
+}
+
+fn queued_commands(out: &mut String, state: &TopState, style: &dyn TopStyle) {
+    let queued = state
+        .command_queues
+        .iter()
+        .filter_map(|(command, count)| {
+            count
+                .as_f64()
+                .filter(|count| *count > 0.0)
+                .map(|count| format!("{command} ×{count}"))
+        })
+        .collect::<Vec<_>>();
+    if !queued.is_empty() {
+        dynamic_line(out, &format!("  queued: {}", queued.join(", ")), style);
+    }
+}
+
+fn queue_status(value: Option<&Value>) -> String {
+    let Some(value) = value else {
+        return pad("─", 8);
+    };
+    let running = value
+        .get("running")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let queued = value
+        .get("queued")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let status = match (running, queued) {
+        (0, 0) => "─".to_owned(),
+        (0, queued) => format!("+{queued}"),
+        (running, 0) => format!("▸{running}"),
+        (running, queued) => format!("▸{running} +{queued}"),
+    };
+    pad(&status, 8)
+}
+
+fn memory_mb(bytes: Option<&u64>) -> String {
+    bytes.map_or_else(
+        || "-".to_owned(),
+        |bytes| {
+            let megabyte = 1_048_576;
+            let whole = bytes / megabyte;
+            let remainder = bytes % megabyte;
+            let rounded =
+                if remainder > megabyte / 2 || (remainder == megabyte / 2 && whole % 2 == 1) {
+                    whole + 1
+                } else {
+                    whole
+                };
+            rounded.to_string()
+        },
+    )
+}
+
+fn truncate_to_boundary(value: &mut String, limit: usize) {
+    if value.len() <= limit {
+        return;
+    }
+    let mut boundary = limit;
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value.truncate(boundary);
 }
 
 fn think_section(out: &mut String, state: &TopState, style: &dyn TopStyle) {
@@ -433,6 +600,10 @@ mod tests {
         assert_eq!(format_uptime(86_400), "1d 0m");
         assert_eq!(format_log_age(3_600), "1h");
         assert_eq!(format_runtime(60), "1m 0s");
+        let megabyte = 1_048_576;
+        assert_eq!(memory_mb(Some(&(12 * megabyte + megabyte / 2))), "12");
+        assert_eq!(memory_mb(Some(&(13 * megabyte + megabyte / 2))), "14");
+        assert_eq!(queue_status(None), "─       ");
     }
     #[test]
     fn hostile_input_is_bounded() {
@@ -461,5 +632,26 @@ mod tests {
         assert_eq!(one, sixteen);
         assert_eq!(sixteen, sixty_four);
         assert!(one.len() <= MAX_FRAME_BYTES);
+    }
+
+    #[test]
+    fn frame_cap_preserves_utf8_boundaries_for_hostile_unicode() {
+        let state = TopState {
+            crashed: (0..256)
+                .map(|_| serde_json::json!({"name":"界".repeat(1024), "restart_attempts":1}))
+                .collect(),
+            ..TopState::default()
+        };
+        let rendered = std::panic::catch_unwind(|| {
+            render_frame(
+                &state,
+                FrameSample::default(),
+                MAX_FRAME_WIDTH,
+                &PlainTopStyle,
+            )
+        })
+        .expect("renderer must not truncate inside a UTF-8 scalar");
+        assert!(rendered.len() <= MAX_FRAME_BYTES);
+        assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
     }
 }
