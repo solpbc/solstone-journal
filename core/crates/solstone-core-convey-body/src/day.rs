@@ -1354,8 +1354,8 @@ mod tests {
     use super::*;
     use crate::{
         BodyAggregateSeed, BodyJournalSeed, BodySeedBundle, BodySeedManifest, TrendAnnotation,
-        TrendCoverage, TrendSignal, TrendsPayload, read_health_dedupe_stats, replace_trends_cache,
-        seed_body_journal, trends_db_path, trends_signature,
+        TrendCoverage, TrendSignal, TrendValue, TrendsPayload, read_health_dedupe_stats,
+        replace_trends_cache, seed_body_journal, trends_db_path, trends_signature,
     };
 
     struct TempDir(PathBuf);
@@ -2366,7 +2366,7 @@ mod tests {
                             (parse_day("20260120").unwrap() - Duration::days(offset))
                                 .format("%Y%m%d")
                                 .to_string(),
-                            crate::TrendValue::Real(75.0),
+                            TrendValue::Real(75.0),
                         )
                     })
                     .collect(),
@@ -2886,7 +2886,11 @@ mod tests {
                         .map(|pair| {
                             (
                                 pair[0].as_str().expect("day").to_owned(),
-                                crate::TrendValue::Real(pair[1].as_f64().expect("value")),
+                                if let Some(value) = pair[1].as_i64() {
+                                    TrendValue::Integer(value)
+                                } else {
+                                    TrendValue::Real(pair[1].as_f64().expect("value"))
+                                },
                             )
                         })
                         .collect(),
