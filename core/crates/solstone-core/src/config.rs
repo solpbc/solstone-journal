@@ -119,7 +119,7 @@ fn existing_target(c: &JournalChange) -> String {
 }
 fn cross_filesystem(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: cannot move across filesystems (current device={:?}, target parent device={:?}); archive merge is temporarily unavailable, so keep both journal copies",
+        "journal config: refused: cannot move across filesystems (current device={}, target parent device={}); archive merge is temporarily unavailable, so keep both journal copies",
         c.current_device
             .map_or_else(|| "None".to_owned(), |v| v.to_string()),
         c.target_parent_device
@@ -256,6 +256,7 @@ fn plan(c: &JournalChange, d: &Decision) -> String {
         });
     }
     if d.action == Action::Switch {
+        lines.push(String::new());
         lines.push(
             "current journal is left intact. to re-adopt it later: journal config journal "
                 .to_string()
@@ -263,6 +264,7 @@ fn plan(c: &JournalChange, d: &Decision) -> String {
                 + " --switch --yes",
         );
     }
+    lines.push(String::new());
     lines.push(if c.dry_run {
         "dry-run: yes; nothing will be changed".into()
     } else {
@@ -396,6 +398,42 @@ fn install_wrappers(
     let (sol, jrnl) = wrapper_paths();
     install_wrappers_at(journal, bins, &sol, &jrnl, committer)
 }
+enum WrapperSnapshot {
+    Absent,
+    File { bytes: Vec<u8>, mode: u32 },
+    Symlink(PathBuf),
+}
+fn snapshot_wrapper(path: &Path) -> io::Result<WrapperSnapshot> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(WrapperSnapshot::Absent);
+        }
+        Err(error) => return Err(error),
+    };
+    if metadata.file_type().is_symlink() {
+        return fs::read_link(path).map(WrapperSnapshot::Symlink);
+    }
+    Ok(WrapperSnapshot::File {
+        bytes: fs::read(path)?,
+        mode: metadata.permissions().mode(),
+    })
+}
+fn restore_wrapper(path: &Path, snapshot: &WrapperSnapshot) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => fs::remove_file(path)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    match snapshot {
+        WrapperSnapshot::Absent => Ok(()),
+        WrapperSnapshot::File { bytes, mode } => {
+            fs::write(path, bytes)?;
+            fs::set_permissions(path, fs::Permissions::from_mode(*mode))
+        }
+        WrapperSnapshot::Symlink(target) => std::os::unix::fs::symlink(target, path),
+    }
+}
 fn install_wrappers_at(
     journal: &Path,
     bins: &WrapperBins,
@@ -421,31 +459,37 @@ fn install_wrappers_at(
     ];
     let snapshots: Vec<_> = items
         .iter()
-        .map(|(p, _)| (p.clone(), fs::read(p).ok()))
-        .collect();
+        .map(|(path, _)| snapshot_wrapper(path).map(|snapshot| (path.clone(), snapshot)))
+        .collect::<io::Result<_>>()?;
     let mut staged = Vec::new();
     for (i, (path, content)) in items.iter().enumerate() {
-        fs::create_dir_all(path.parent().unwrap())?;
         let tmp = path.with_file_name(format!(
             ".{}.tmp-{}",
             path.file_name().unwrap().to_string_lossy(),
             i
         ));
-        fs::write(&tmp, content)?;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
-        staged.push((path, tmp));
+        staged.push((path, tmp.clone()));
+        let result = (|| {
+            fs::create_dir_all(path.parent().unwrap())?;
+            match fs::remove_file(&tmp) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+            fs::write(&tmp, content)?;
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))
+        })();
+        if let Err(error) = result {
+            for (_, staged_path) in &staged {
+                let _ = fs::remove_file(staged_path);
+            }
+            return Err(error);
+        }
     }
     for (path, tmp) in &staged {
         if let Err(e) = committer.replace(tmp, path) {
-            for (p, old) in &snapshots {
-                match old {
-                    Some(bytes) => {
-                        let _ = fs::write(p, bytes);
-                    }
-                    None => {
-                        let _ = fs::remove_file(p);
-                    }
-                }
+            for (path, snapshot) in &snapshots {
+                let _ = restore_wrapper(path, snapshot);
             }
             for (_, staged_path) in &staged {
                 let _ = fs::remove_file(staged_path);
@@ -580,50 +624,53 @@ fn project_root() -> Option<PathBuf> {
 fn is_source_checkout() -> bool {
     project_root().is_some_and(|root| root.join(".git").exists())
 }
+enum RewriteError {
+    Refusal(String),
+    Install(io::Error),
+}
 fn rewrite(
     change: &JournalChange,
     installer: &dyn WrapperInstaller,
-) -> Result<Option<PathBuf>, String> {
+) -> Result<PathBuf, RewriteError> {
     let sol_alias = change.alias.clone();
     let journal_alias = sol_alias.with_file_name("journal");
     let sol_content = fs::read_to_string(&sol_alias).map_err(|e| {
-        format!(
+        RewriteError::Refusal(format!(
             "journal config: refused: cannot read {}: {e}",
             sol_alias.display()
-        )
+        ))
     })?;
     let Some((_, sol_bin)) = parse_wrapper(&sol_content) else {
-        return Ok(None);
+        return Err(RewriteError::Refusal(wrapper_refusal(&sol_alias)));
     };
     let journal_bin = if !journal_alias.exists() && !journal_alias.is_symlink() {
-        change.sol_bin.with_file_name("journal")
+        sol_bin.with_file_name("journal")
     } else if journal_alias.is_symlink() {
-        return Ok(None);
+        return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias)));
     } else {
         let content = fs::read_to_string(&journal_alias).map_err(|e| {
-            format!(
+            RewriteError::Refusal(format!(
                 "journal config: refused: cannot read {}: {e}",
                 journal_alias.display()
-            )
+            ))
         })?;
         match parse_wrapper(&content) {
             Some((_, p)) => p,
-            None => return Ok(None),
+            None => return Err(RewriteError::Refusal(wrapper_refusal(&journal_alias))),
         }
     };
-    let _ = sol_bin;
     installer
         .install(
             &change.target_path,
             &WrapperBins {
-                sol: change.sol_bin.clone(),
+                sol: sol_bin,
                 journal: journal_bin.clone(),
             },
         )
         .map_err(|e| match e {
-            WrapperInstallError::Io(e) => e.to_string(),
+            WrapperInstallError::Io(e) => RewriteError::Install(e),
         })?;
-    Ok(Some(journal_bin))
+    Ok(journal_bin)
 }
 fn execute(
     c: &JournalChange,
@@ -673,12 +720,12 @@ fn run_switch(
         return 1;
     }
     let restart = match rewrite(c, wrappers) {
-        Ok(Some(v)) => v,
-        Ok(None) => {
-            eprintln!("{}", wrapper_refusal(&c.alias));
+        Ok(v) => v,
+        Err(RewriteError::Refusal(message)) => {
+            eprintln!("{message}");
             return 1;
         }
-        Err(e) => {
+        Err(RewriteError::Install(e)) => {
             eprintln!(
                 "journal config: refused: cannot rewrite {}: {e}",
                 c.alias.display()
@@ -722,6 +769,16 @@ fn run_switch(
         }
     }
 }
+fn maybe_restart_current_service(c: &JournalChange, service: &dyn ServiceCommandRunner) {
+    if !c.service_running {
+        return;
+    }
+    if let ServiceCommandResult::ExecutableMissing { error } =
+        service.run(&c.service_bin, ServiceCommand::Start)
+    {
+        eprintln!("journal config: rollback warning: could not restart service ({error})");
+    }
+}
 fn run_move(
     c: &JournalChange,
     service: &dyn ServiceCommandRunner,
@@ -758,18 +815,21 @@ fn run_move(
         }
     }
     if let Err(e) = fs::rename(&c.current_path, &c.target_path) {
+        maybe_restart_current_service(c, service);
         eprintln!("journal config: move failed: {e}");
         return 1;
     }
     let restart = match rewrite(c, wrappers) {
-        Ok(Some(v)) => v,
-        Ok(None) => {
+        Ok(v) => v,
+        Err(RewriteError::Refusal(message)) => {
+            eprintln!("{message}");
             let _ = fs::rename(&c.target_path, &c.current_path);
-            eprintln!("{}", wrapper_refusal(&c.alias));
+            maybe_restart_current_service(c, service);
             return 1;
         }
-        Err(e) => {
+        Err(RewriteError::Install(e)) => {
             let restored = fs::rename(&c.target_path, &c.current_path).is_ok();
+            maybe_restart_current_service(c, service);
             let suffix = if restored {
                 "; restored original journal"
             } else {
@@ -1128,7 +1188,12 @@ mod tests {
         );
         c.target_active = false;
         c.same_filesystem = Some(false);
-        assert_eq!(decide(&c).message, Some(cross_filesystem(&c)));
+        c.current_device = Some(1);
+        c.target_parent_device = Some(2);
+        assert_eq!(
+            decide(&c).message,
+            Some("journal config: refused: cannot move across filesystems (current device=1, target parent device=2); archive merge is temporarily unavailable, so keep both journal copies".to_owned())
+        );
         c.same_filesystem = Some(true);
         c.dry_run = true;
         assert_eq!(
@@ -1293,6 +1358,86 @@ mod tests {
     }
 
     #[test]
+    fn move_failures_restart_a_service_stopped_before_the_move() {
+        let root = test_root("move-restart-rename");
+        let mut c = move_change(&root);
+        c.service_running = true;
+        let blocked_parent = root.join("not-a-directory");
+        fs::write(&blocked_parent, "file").unwrap();
+        c.target_path = blocked_parent.join("target");
+        let service = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::Exited { code: 0 },
+        ]);
+        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: false }), 1);
+        assert_eq!(
+            *service.calls.lock().unwrap(),
+            vec![
+                (PathBuf::from("/service/journal"), ServiceCommand::Stop),
+                (PathBuf::from("/service/journal"), ServiceCommand::Start),
+            ]
+        );
+
+        let root = test_root("move-restart-refusal");
+        let mut c = move_change(&root);
+        c.service_running = true;
+        fs::write(c.alias.with_file_name("journal"), "foreign wrapper").unwrap();
+        let service = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::Exited { code: 0 },
+        ]);
+        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: false }), 1);
+        assert_eq!(service.calls.lock().unwrap().len(), 2);
+        assert_eq!(service.calls.lock().unwrap()[1].1, ServiceCommand::Start);
+
+        let root = test_root("move-restart-install");
+        let mut c = move_change(&root);
+        c.service_running = true;
+        let service = FakeServiceRunner::new([
+            ServiceCommandResult::Exited { code: 0 },
+            ServiceCommandResult::Exited { code: 0 },
+        ]);
+        assert_eq!(run_move(&c, &service, &FakeInstaller { fail: true }), 2);
+        assert_eq!(service.calls.lock().unwrap().len(), 2);
+        assert_eq!(service.calls.lock().unwrap()[1].1, ServiceCommand::Start);
+    }
+
+    #[test]
+    fn rewrite_reports_the_failing_journal_alias() {
+        let root = test_root("rewrite-journal-alias");
+        let c = move_change(&root);
+        let journal_alias = c.alias.with_file_name("journal");
+        for kind in ["foreign", "symlink", "unreadable"] {
+            let _ = fs::remove_file(&journal_alias);
+            let _ = fs::remove_dir(&journal_alias);
+            match kind {
+                "foreign" => fs::write(&journal_alias, "foreign wrapper").unwrap(),
+                "symlink" => std::os::unix::fs::symlink("old-journal", &journal_alias).unwrap(),
+                "unreadable" => fs::create_dir(&journal_alias).unwrap(),
+                _ => unreachable!(),
+            }
+            let error = rewrite(&c, &FakeInstaller { fail: false }).unwrap_err();
+            let message = match error {
+                RewriteError::Refusal(message) => message,
+                RewriteError::Install(_) => panic!("journal alias must be rejected before install"),
+            };
+            assert!(
+                message.contains(&journal_alias.display().to_string()),
+                "{kind}: {message}"
+            );
+            assert!(
+                !message.contains(&c.alias.display().to_string()),
+                "{kind}: {message}"
+            );
+            if kind == "unreadable" {
+                assert!(message.starts_with("journal config: refused: cannot read"));
+            } else {
+                assert!(message.contains("is not a managed wrapper"));
+            }
+        }
+    }
+
+    #[test]
     fn move_wrapper_install_failure_rolls_back_and_success_twin_invokes_the_seam() {
         let root = test_root("move-wrapper-installer");
         let c = move_change(&root);
@@ -1332,6 +1477,8 @@ mod tests {
         fs::create_dir_all(sol.parent().unwrap()).unwrap();
         fs::write(&sol, b"old sol bytes").unwrap();
         fs::write(&journal_alias, b"old journal bytes").unwrap();
+        fs::set_permissions(&sol, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(&journal_alias, fs::Permissions::from_mode(0o740)).unwrap();
         let bins = WrapperBins {
             sol: PathBuf::from("/new/sol"),
             journal: PathBuf::from("/new/journal"),
@@ -1351,6 +1498,14 @@ mod tests {
         );
         assert_eq!(fs::read(&sol).unwrap(), b"old sol bytes");
         assert_eq!(fs::read(&journal_alias).unwrap(), b"old journal bytes");
+        assert_eq!(
+            fs::metadata(&sol).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&journal_alias).unwrap().permissions().mode() & 0o777,
+            0o740
+        );
         assert!(!root.join("bin/.sol.tmp-0").exists());
         assert!(!root.join("bin/.journal.tmp-1").exists());
     }
@@ -1385,6 +1540,62 @@ mod tests {
         );
         assert!(!root.join("bin/.sol.tmp-0").exists());
         assert!(!root.join("bin/.journal.tmp-1").exists());
+    }
+
+    #[test]
+    fn wrapper_staging_does_not_follow_existing_symlinks() {
+        let root = test_root("wrapper-stage-symlink");
+        let sol = root.join("bin/sol");
+        let journal_alias = root.join("bin/journal");
+        let canary = root.join("canary");
+        fs::create_dir_all(sol.parent().unwrap()).unwrap();
+        fs::write(&sol, "old sol").unwrap();
+        fs::write(&journal_alias, "old journal").unwrap();
+        fs::write(&canary, "do not overwrite").unwrap();
+        std::os::unix::fs::symlink(&canary, root.join("bin/.sol.tmp-0")).unwrap();
+        let bins = WrapperBins {
+            sol: PathBuf::from("/new/sol"),
+            journal: PathBuf::from("/new/journal"),
+        };
+        install_wrappers_at(
+            &root.join("target"),
+            &bins,
+            &sol,
+            &journal_alias,
+            &RealCommitter,
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&canary).unwrap(), "do not overwrite");
+        assert_eq!(
+            fs::read_to_string(&sol).unwrap(),
+            render_wrapper("sol", &root.join("target"), &bins.sol)
+        );
+    }
+
+    #[test]
+    fn wrapper_staging_failure_cleans_previously_staged_files() {
+        let root = test_root("wrapper-stage-cleanup");
+        let sol = root.join("bin/sol");
+        let journal_alias = root.join("bin/journal");
+        fs::create_dir_all(sol.parent().unwrap()).unwrap();
+        fs::write(&sol, "old sol").unwrap();
+        fs::write(&journal_alias, "old journal").unwrap();
+        fs::create_dir(root.join("bin/.journal.tmp-1")).unwrap();
+        let bins = WrapperBins {
+            sol: PathBuf::from("/new/sol"),
+            journal: PathBuf::from("/new/journal"),
+        };
+        assert!(
+            install_wrappers_at(
+                &root.join("target"),
+                &bins,
+                &sol,
+                &journal_alias,
+                &RealCommitter
+            )
+            .is_err()
+        );
+        assert!(!root.join("bin/.sol.tmp-0").exists());
     }
 
     #[test]
@@ -1477,6 +1688,20 @@ mod tests {
             let d = decision(action, 0);
             assert_eq!(service_summary(&c, &d), expected);
         }
+
+        let c = change(Some(RequestedAction::Switch));
+        let d = decision(Action::Switch, 1);
+        assert_eq!(
+            plan(&c, &d),
+            "journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  switch\nservice: not installed; will rewrite wrapper\n\ncurrent journal is left intact. to re-adopt it later: journal config journal /current --switch --yes\n\nre-run with --yes to proceed"
+        );
+
+        let c = change(Some(RequestedAction::Move));
+        let d = decision(Action::Move, 0);
+        assert_eq!(
+            plan(&c, &d),
+            "journal config journal - plan summary\n\ncurrent: /current (not active)\ntarget:  /target (not active)\naction:  move\nservice: not installed; will move and rewrite wrapper\nfilesystem: same device\n\nre-run with --yes to proceed"
+        );
     }
 
     #[test]
