@@ -60,6 +60,14 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             print!("{DESCRIBE_USAGE}");
             Ok(())
         }
+        Command::CategoryRegistry => {
+            let rendered = serde_json::to_string_pretty(
+                &solstone_core_describe::categories::category_registry(),
+            )
+            .map_err(|error| CliError::Internal(error.to_string()))?;
+            println!("{rendered}");
+            Ok(())
+        }
         Command::FramesOnly(arguments) => {
             let config = read_config(arguments.journal.as_deref())?;
             let mut transform = ConveyFiducialMask;
@@ -130,6 +138,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
 enum Command {
     Version,
     Help,
+    CategoryRegistry,
     FramesOnly(FramesOnlyArguments),
     Describe(DescribeArguments),
 }
@@ -166,6 +175,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Comm
             return Err(usage("--version does not accept other arguments"));
         }
         return Ok(Command::Version);
+    }
+    if first == "--category-registry" {
+        if values.next().is_some() {
+            return Err(usage("--category-registry does not accept other arguments"));
+        }
+        return Ok(Command::CategoryRegistry);
     }
 
     let mut frames_only = false;

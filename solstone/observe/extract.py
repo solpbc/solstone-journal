@@ -16,6 +16,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from solstone.observe.category_registry import DEFAULT_MAX_EXTRACTIONS
+
 if TYPE_CHECKING:
     from typing import Any
 
@@ -24,10 +26,6 @@ logger = logging.getLogger(__name__)
 _SCHEMA = json.loads(
     (Path(__file__).parent / "extract.schema.json").read_text(encoding="utf-8")
 )
-
-# Default maximum frames to extract content from
-DEFAULT_MAX_EXTRACTIONS = 20
-
 
 def select_frames_for_extraction(
     categorized_frames: list[dict[str, Any]],
@@ -55,7 +53,7 @@ def select_frames_for_extraction(
         Maximum number of frames to extract (default: 20).
         First frame may cause this to be exceeded by 1.
     categories : dict, optional
-        Category metadata dict (from solstone.observe.describe.CATEGORIES).
+        Category metadata dict (from solstone.observe.category_registry.CATEGORIES).
         If provided, enables AI-based selection. If None, uses fallback.
 
     Returns

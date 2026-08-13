@@ -6,6 +6,7 @@
 use std::sync::LazyLock;
 
 use serde::Deserialize;
+use serde_json::{Map, Value, json};
 
 const DEFAULT_MAX_OUTPUT_TOKENS: u64 = 4096;
 
@@ -21,6 +22,9 @@ pub struct CategoryMeta {
     pub description: String,
     pub output: OutputKind,
     pub max_output_tokens: u64,
+    pub label: String,
+    pub group: String,
+    pub importance: Option<String>,
     pub context: String,
     pub extraction: Option<String>,
     pub extractable: bool,
@@ -40,6 +44,9 @@ struct Frontmatter {
     output: Option<String>,
     max_output_tokens: Option<u64>,
     extraction: Option<String>,
+    label: Option<String>,
+    group: Option<String>,
+    importance: Option<String>,
 }
 
 const SOURCES: [CategorySource; 11] = [
@@ -126,12 +133,59 @@ fn parse(source: &CategorySource) -> CategoryMeta {
         max_output_tokens: frontmatter
             .max_output_tokens
             .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS),
+        label: frontmatter
+            .label
+            .unwrap_or_else(|| default_label(source.name)),
+        group: frontmatter
+            .group
+            .unwrap_or_else(|| "Screen Analysis".to_owned()),
+        importance: frontmatter.importance,
         context: format!("observe.describe.{}", source.name),
         extraction: frontmatter.extraction,
         extractable: !instruction.is_empty(),
         instruction,
         schema: source.schema,
     }
+}
+
+/// Render the complete Python-facing category mapping from native definitions.
+pub fn category_registry() -> Value {
+    let mut registry = Map::new();
+    for category in CATEGORIES_META.iter() {
+        let mut metadata = Map::new();
+        metadata.insert("description".to_owned(), json!(category.description));
+        metadata.insert(
+            "output".to_owned(),
+            json!(match category.output {
+                OutputKind::Json => "json",
+                OutputKind::Markdown => "markdown",
+            }),
+        );
+        metadata.insert(
+            "max_output_tokens".to_owned(),
+            json!(category.max_output_tokens),
+        );
+        metadata.insert("label".to_owned(), json!(category.label));
+        metadata.insert("group".to_owned(), json!(category.group));
+        metadata.insert("context".to_owned(), json!(category.context));
+        if let Some(extraction) = &category.extraction {
+            metadata.insert("extraction".to_owned(), json!(extraction));
+        }
+        if let Some(importance) = &category.importance {
+            metadata.insert("importance".to_owned(), json!(importance));
+        }
+        if category.extractable {
+            metadata.insert("prompt".to_owned(), json!(category.instruction));
+        }
+        if let Some(schema) = category.schema {
+            metadata.insert(
+                "json_schema".to_owned(),
+                serde_json::from_str(schema).expect("category schema is valid JSON"),
+            );
+        }
+        registry.insert(category.name.to_owned(), Value::Object(metadata));
+    }
+    Value::Object(registry)
 }
 
 fn split_frontmatter(source: &str) -> (&str, &str) {
@@ -142,9 +196,22 @@ fn split_frontmatter(source: &str) -> (&str, &str) {
     (&source[..end], &source[end..])
 }
 
+fn default_label(name: &str) -> String {
+    name.split('_')
+        .map(|word| {
+            let mut characters = word.chars();
+            let Some(first) = characters.next() else {
+                return String::new();
+            };
+            format!("{}{}", first.to_ascii_uppercase(), characters.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CATEGORIES_META, OutputKind};
+    use super::{CATEGORIES_META, OutputKind, category_registry};
 
     #[test]
     fn embedded_categories_have_expected_metadata() {
@@ -157,5 +224,20 @@ mod tests {
         assert_eq!(gaming.max_output_tokens, 4096);
         assert!(gaming.instruction.starts_with("# Game Text Extraction"));
         assert!(gaming.extraction.is_none());
+    }
+
+    #[test]
+    fn registry_preserves_each_category_context() {
+        let registry = category_registry();
+        let categories = registry.as_object().expect("category registry object");
+        assert_eq!(categories.len(), CATEGORIES_META.len());
+        for category in CATEGORIES_META.iter() {
+            assert_eq!(
+                categories[category.name]["context"],
+                format!("observe.describe.{}", category.name),
+                "{} context",
+                category.name
+            );
+        }
     }
 }

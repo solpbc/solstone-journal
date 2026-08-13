@@ -1514,9 +1514,11 @@ check-contract-parity: .installed
 	cmp "$$scratch/python.json" "$$scratch/solstone/talent/journal/contract/bundle.json"
 
 core-fixtures:
+	$(VENV_BIN)/python scripts/generate_observe_category_registry.py
 	$(VENV_BIN)/python scripts/build_core_fixtures.py
 
 check-core-fixtures: .installed
+	$(VENV_BIN)/python scripts/generate_observe_category_registry.py --check
 	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
 
 check-release-advisory-liveness: .installed

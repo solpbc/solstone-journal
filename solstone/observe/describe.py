@@ -33,12 +33,10 @@ from typing import List, Optional
 
 from PIL import Image
 
+from solstone.observe.category_registry import CATEGORIES, DEFAULT_MAX_EXTRACTIONS
 from solstone.observe.detect import detect_objects, detections_block, screen_gate
 from solstone.observe.exit_codes import EXIT_PROVIDER_BLOCKED
-from solstone.observe.extract import (
-    DEFAULT_MAX_EXTRACTIONS,
-    select_frames_for_extraction,
-)
+from solstone.observe.extract import select_frames_for_extraction
 from solstone.observe.processing_record import (
     HANDLER_DESCRIBE,
     REASON_ANALYSIS_FAILED,
@@ -191,74 +189,6 @@ def _read_existing_describe_artifact(path: Path) -> ExistingDescribeArtifact | N
     return ExistingDescribeArtifact(header=header, record=record, rows=rows)
 
 
-def _discover_categories() -> dict[str, dict]:
-    """
-    Discover all categories from categories/ directory.
-
-    Each category is a .md file with JSON frontmatter containing:
-    - description (required): Single-line description for categorization prompt
-    - output (optional, default: "markdown"): Response format for extraction
-    - label (optional): Human-readable name for settings UI
-    - group (optional, default: "Screen Analysis"): Category for grouping in settings UI
-
-    Categories with content in the .md file (after frontmatter) get detailed
-    extraction analysis using that content as the extraction prompt template.
-
-    Returns
-    -------
-    dict[str, dict]
-        Mapping of category name to metadata (including 'prompt' if extractable)
-    """
-    categories_dir = Path(__file__).parent / "categories"
-    if not categories_dir.exists():
-        logger.warning(f"Categories directory not found: {categories_dir}")
-        return {}
-
-    categories = {}
-    for md_path in categories_dir.glob("*.md"):
-        category = md_path.stem
-
-        try:
-            prompt_content = load_prompt(category, base_dir=categories_dir)
-            metadata = dict(prompt_content.metadata)
-
-            # Validate required field
-            if "description" not in metadata:
-                logger.warning(f"Category {category} missing 'description' field")
-                continue
-
-            # Apply defaults for observation settings
-            metadata.setdefault("output", "markdown")
-
-            metadata.setdefault("max_output_tokens", 4096)
-            # label: Human-readable name (default: title-cased category name)
-            metadata.setdefault("label", category.replace("_", " ").title())
-            # group: Settings UI grouping (default: Screen Analysis)
-            metadata.setdefault("group", "Screen Analysis")
-
-            # Store the category context for later resolution
-            # The model will be resolved at runtime via generate()
-            metadata["context"] = f"observe.describe.{category}"
-
-            # Use content as extraction prompt if non-empty
-            if prompt_content.text.strip():
-                metadata["prompt"] = prompt_content.text
-
-            # Per-category output contract from <category>.schema.json; e.g. meeting.schema.json: Source of truth for the shape is observe/categories/meeting.md
-            schema_path = md_path.with_suffix(".schema.json")
-            if schema_path.exists():
-                metadata["json_schema"] = json.loads(schema_path.read_text("utf-8"))
-
-            categories[category] = metadata
-            extractable = "prompt" in metadata
-            logger.debug(f"Loaded category: {category} (extractable={extractable})")
-
-        except Exception as e:
-            logger.warning(f"Failed to load category {category}: {e}")
-
-    return categories
-
-
 def _build_categorization_prompt() -> str:
     """
     Build the categorization prompt from template and discovered categories.
@@ -306,9 +236,6 @@ def _build_redact_instruction(rules: List[str]) -> str:
         + items
     )
 
-
-# Discover categories at module level
-CATEGORIES = _discover_categories()
 
 FRAME_CONTEXT = "observe.describe.frame"
 

@@ -907,8 +907,7 @@ def get_vision() -> Any:
         - category_defaults: Discovered categories with their defaults
     """
     try:
-        from solstone.observe.describe import CATEGORIES
-        from solstone.observe.extract import DEFAULT_MAX_EXTRACTIONS
+        from solstone.observe.category_registry import CATEGORIES, DEFAULT_MAX_EXTRACTIONS
 
         config = get_journal_config()
         describe_config = config.get("describe", {})
@@ -950,7 +949,7 @@ def update_vision() -> Any:
     Setting a category to null removes its overrides.
     """
     try:
-        from solstone.observe.describe import CATEGORIES
+        from solstone.observe.category_registry import CATEGORIES
 
         request_data = request.get_json()
         if not request_data:

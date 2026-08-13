@@ -323,7 +323,7 @@ def _confidential_attestation_verifier() -> Callable[[dict[str, Any]], None]:
 #
 # DISCOVERY SOURCES:
 #   1. Prompt files listed in PROMPT_PATHS (with context in frontmatter)
-#   2. Categories from observe/categories/*.md (label/group in frontmatter)
+#   2. Checked-in category registry generated from native describe definitions
 #   3. Talent configs from talent/*.md and apps/*/talent/*.md
 #
 # When adding new contexts:
@@ -431,7 +431,7 @@ def _build_context_registry() -> Dict[str, Dict[str, Any]]:
 
     Merges:
     1. Prompt contexts from _discover_prompt_contexts()
-    2. Category contexts from observe/describe.py CATEGORIES
+    2. Category contexts from the native-generated observe category registry
     3. Talent contexts from _discover_talent_contexts()
 
     Returns
@@ -442,18 +442,16 @@ def _build_context_registry() -> Dict[str, Dict[str, Any]]:
     # Start with prompt contexts (from PROMPT_PATHS)
     registry = _discover_prompt_contexts()
 
-    # Merge category contexts (lazy import to avoid circular dependency)
-    try:
-        from solstone.observe.describe import CATEGORIES
+    # This registry is checked in and generated from native definitions. A load
+    # failure is a packaging/configuration error, not an optional enhancement.
+    from solstone.observe.category_registry import CATEGORIES
 
-        for category, metadata in CATEGORIES.items():
-            context = metadata.get("context", f"observe.describe.{category}")
-            registry[context] = {
-                "label": metadata.get("label", category.replace("_", " ").title()),
-                "group": metadata.get("group", "Screen Analysis"),
-            }
-    except ImportError:
-        pass  # observe module not available
+    for category, metadata in CATEGORIES.items():
+        context = metadata.get("context", f"observe.describe.{category}")
+        registry[context] = {
+            "label": metadata.get("label", category.replace("_", " ").title()),
+            "group": metadata.get("group", "Screen Analysis"),
+        }
 
     # Merge talent contexts (agents + generators)
     talent_contexts = _discover_talent_contexts()
