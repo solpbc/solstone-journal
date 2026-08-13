@@ -69,6 +69,12 @@ pub struct PlatformProcessObserver {
 impl ProcessObserver for PlatformProcessObserver {
     #[cfg(target_os = "linux")]
     fn sample(&mut self, pid: u32, monotonic_seconds: f64) -> ProcessSample {
+        if !native_pid_is_representable(pid) {
+            self.forget(pid);
+            return ProcessSample::Unavailable {
+                reason: ProcessUnavailableReason::Parse,
+            };
+        }
         let sample = linux_sample(pid, monotonic_seconds, &mut self.baselines);
         if !matches!(sample, ProcessSample::Live { .. }) {
             self.forget(pid);
@@ -82,6 +88,12 @@ impl ProcessObserver for PlatformProcessObserver {
 
     #[cfg(target_os = "macos")]
     fn sample(&mut self, pid: u32, monotonic_seconds: f64) -> ProcessSample {
+        if !native_pid_is_representable(pid) {
+            self.forget(pid);
+            return ProcessSample::Unavailable {
+                reason: ProcessUnavailableReason::Parse,
+            };
+        }
         let sample = macos_sample(pid, monotonic_seconds, &mut self.baselines);
         if !matches!(sample, ProcessSample::Live { .. }) {
             self.forget(pid);
@@ -95,6 +107,11 @@ impl ProcessObserver for PlatformProcessObserver {
             reason: ProcessUnavailableReason::UnsupportedPlatform,
         }
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn native_pid_is_representable(pid: u32) -> bool {
+    i32::try_from(pid).is_ok()
 }
 
 #[cfg(target_os = "linux")]
@@ -225,12 +242,23 @@ fn macos_sample(
     if !output.status.success() {
         return ProcessSample::Missing;
     }
-    macos_parse_ps(
-        pid,
-        std::str::from_utf8(&output.stdout).unwrap_or(""),
-        monotonic_seconds,
-        baselines,
-    )
+    macos_parse_ps_bytes(pid, &output.stdout, monotonic_seconds, baselines)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn macos_parse_ps_bytes(
+    pid: u32,
+    output: &[u8],
+    monotonic_seconds: f64,
+    baselines: &mut BTreeMap<ProcessIdentity, CpuBaseline>,
+) -> ProcessSample {
+    let Ok(output) = std::str::from_utf8(output) else {
+        baselines.retain(|identity, _| identity.pid != pid);
+        return ProcessSample::Unavailable {
+            reason: ProcessUnavailableReason::Parse,
+        };
+    };
+    macos_parse_ps(pid, output, monotonic_seconds, baselines)
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -335,12 +363,52 @@ mod tests {
         );
     }
     #[test]
-    fn platform_observer_never_panics_for_a_missing_pid() {
-        let result = std::panic::catch_unwind(|| {
-            let mut observer = platform_observer();
-            observer.sample(u32::MAX, 0.0)
-        });
-        assert!(result.is_ok());
+    fn platform_observer_rejects_unrepresentable_native_pid() {
+        let mut observer = platform_observer();
+        observer.baselines.insert(
+            ProcessIdentity {
+                pid: u32::MAX,
+                birth: ProcessBirth::LinuxStartTicks(1),
+            },
+            CpuBaseline {
+                ticks: 1,
+                sampled_at: 1.0,
+            },
+        );
+        assert_eq!(
+            observer.sample(u32::MAX, 0.0),
+            ProcessSample::Unavailable {
+                reason: ProcessUnavailableReason::Parse,
+            }
+        );
+        assert!(observer.baselines.is_empty());
+        assert!(native_pid_is_representable(i32::MAX as u32));
+        assert!(!native_pid_is_representable(i32::MAX as u32 + 1));
+    }
+    #[test]
+    fn darwin_invalid_utf8_is_unavailable_not_missing() {
+        let mut baselines = BTreeMap::new();
+        baselines.insert(
+            ProcessIdentity {
+                pid: 9,
+                birth: ProcessBirth::DarwinStart("old".to_owned()),
+            },
+            CpuBaseline {
+                ticks: 1,
+                sampled_at: 1.0,
+            },
+        );
+        assert_eq!(
+            macos_parse_ps_bytes(9, b"\xff", 2.0, &mut baselines),
+            ProcessSample::Unavailable {
+                reason: ProcessUnavailableReason::Parse,
+            }
+        );
+        assert!(baselines.is_empty());
+        assert_eq!(
+            macos_parse_ps_bytes(9, b"", 2.0, &mut baselines),
+            ProcessSample::Missing
+        );
     }
     #[test]
     fn process_matrix_pins_missing_zombie_cleanup_and_five_second_ghost_boundary() {

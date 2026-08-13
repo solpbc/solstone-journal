@@ -130,6 +130,161 @@ impl CallosumRetrySource for SuppliedRetries {
     }
 }
 
+struct ObservedRetries {
+    permissions: UnboundedReceiver<bool>,
+    polled: tokio::sync::mpsc::UnboundedSender<()>,
+}
+
+impl CallosumRetrySource for ObservedRetries {
+    fn next_attempt(
+        &mut self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        let _ = self.polled.send(());
+        Box::pin(async move { self.permissions.recv().await.unwrap_or(false) })
+    }
+}
+
+async fn wait_for_pending_priority(client: &CallosumSocketConnection) {
+    timeout(Duration::from_secs(2), async {
+        while !client.has_pending_priority() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("priority event should become pending");
+}
+
+async fn observed_connected_client(
+    socket: &TempSocket,
+) -> (
+    tokio::net::UnixListener,
+    CallosumSocketConnection,
+    UnixStream,
+    tokio::sync::mpsc::UnboundedSender<bool>,
+    UnboundedReceiver<()>,
+) {
+    let listener = tokio::net::UnixListener::bind(&socket.path).unwrap();
+    let (permissions, permission_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (polled_tx, mut polled) = tokio::sync::mpsc::unbounded_channel();
+    let mut client = CallosumSocketConnection::with_retry_source(
+        &socket.path,
+        Map::new(),
+        1,
+        Box::new(ObservedRetries {
+            permissions: permission_rx,
+            polled: polled_tx,
+        }),
+    );
+    client.start();
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            phase: CallosumConnectionPhase::Connecting { attempt: 1 },
+            ..
+        }
+    ));
+    polled.recv().await.expect("initial retry poll");
+    permissions.send(true).unwrap();
+    let peer = timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("initial connection")
+        .unwrap()
+        .0;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            generation: 1,
+            epoch: 1,
+            phase: CallosumConnectionPhase::Connected,
+        }
+    ));
+    (listener, client, peer, permissions, polled)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unconsumed_disconnect_gap_blocks_retry_until_delivery() {
+    let socket = TempSocket::new("gap-before-retry");
+    let (listener, mut client, peer, permissions, mut polled) =
+        observed_connected_client(&socket).await;
+    drop(peer);
+    wait_for_pending_priority(&client).await;
+    tokio::task::yield_now().await;
+    assert!(
+        polled.try_recv().is_err(),
+        "retry polled before gap delivery"
+    );
+    assert!(matches!(
+        client.try_next_event(),
+        Some(CallosumReceiveEvent::Continuity {
+            generation: 1,
+            epoch: 2,
+            phase: CallosumConnectionPhase::Gapped {
+                reason: CallosumGapReason::Disconnected,
+                dropped_count: 1,
+            },
+        })
+    ));
+    polled.recv().await.expect("retry poll after gap delivery");
+    permissions.send(true).unwrap();
+    let _replacement = timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("reconnection")
+        .unwrap()
+        .0;
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            phase: CallosumConnectionPhase::Connecting { attempt: 2 },
+            ..
+        }
+    ));
+    assert!(matches!(
+        next_event(&mut client).await,
+        CallosumReceiveEvent::Continuity {
+            generation: 2,
+            epoch: 3,
+            phase: CallosumConnectionPhase::Connected,
+        }
+    ));
+    client.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stop_joins_while_disconnect_gap_is_unconsumed() {
+    let socket = TempSocket::new("stop-with-pending-gap");
+    let (_listener, mut client, peer, _permissions, mut polled) =
+        observed_connected_client(&socket).await;
+    drop(peer);
+    wait_for_pending_priority(&client).await;
+    tokio::task::yield_now().await;
+    assert!(polled.try_recv().is_err(), "retry polled before stop");
+    timeout(Duration::from_millis(100), client.stop())
+        .await
+        .expect("stop should join without consuming the gap");
+    assert!(!client.is_running());
+    assert!(
+        polled.try_recv().is_err(),
+        "stop created a retry opportunity"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn drop_shuts_down_while_disconnect_gap_is_unconsumed() {
+    let socket = TempSocket::new("drop-with-pending-gap");
+    let (_listener, client, peer, _permissions, mut polled) =
+        observed_connected_client(&socket).await;
+    drop(peer);
+    wait_for_pending_priority(&client).await;
+    drop(client);
+    assert!(
+        timeout(Duration::from_millis(100), polled.recv())
+            .await
+            .expect("drop should stop the background task promptly")
+            .is_none(),
+        "drop created a retry opportunity"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn priority_latch_starts_connecting_and_coalesces_unavailable() {
     let socket = TempSocket::new("priority-unavailable");

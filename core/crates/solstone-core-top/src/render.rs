@@ -233,9 +233,12 @@ pub fn render_frame(
     crashed_section(&mut output, state, style);
     rule(&mut output, width);
     footer(&mut output, state, style);
-    let mut output = transform_trusted_render(&output, width);
-    truncate_to_boundary(&mut output, MAX_FRAME_BYTES);
-    output
+    let rendered = transform_trusted_render(&output, width);
+    if rendered.len() <= MAX_FRAME_BYTES {
+        rendered
+    } else {
+        transform_trusted_render_capped(&output, width, MAX_FRAME_BYTES, style.normal())
+    }
 }
 
 fn tasks_section(
@@ -281,9 +284,9 @@ fn tasks_section(
         out.push('\n');
     }
     for task in tasks {
-        let name = task.get("name").map(value_text).unwrap_or_default();
-        visible_commands.insert(name.clone());
-        task_line(out, task, &name, state, frame, width, style);
+        let name = task.get("name").and_then(Value::as_str).unwrap_or_default();
+        visible_commands.insert(name.to_owned());
+        task_line(out, task, name, state, frame, width, style);
     }
     for task in state.finished_tasks.values().take(256) {
         ghost_line(out, task, style);
@@ -385,6 +388,34 @@ pub fn transform_trusted_render(input: &str, width: usize) -> String {
             output.push('\n');
         }
     }
+    output
+}
+
+fn transform_trusted_render_capped(
+    input: &str,
+    width: usize,
+    byte_cap: usize,
+    normal: &str,
+) -> String {
+    let terminator_len = normal.len().saturating_add(1);
+    let content_cap = byte_cap.saturating_sub(terminator_len);
+    let mut output = String::with_capacity(byte_cap);
+    for line in input.split_inclusive('\n') {
+        let (body, newline) = line
+            .strip_suffix('\n')
+            .map_or((line, false), |body| (body, true));
+        let transformed = transform_line(body, width);
+        let line_len = transformed.len().saturating_add(usize::from(newline));
+        if output.len().saturating_add(line_len) > content_cap {
+            break;
+        }
+        output.push_str(&transformed);
+        if newline {
+            output.push('\n');
+        }
+    }
+    output.push_str(normal);
+    output.push('\n');
     output
 }
 
@@ -527,9 +558,12 @@ fn service_line(
     width: usize,
     style: &dyn TopStyle,
 ) {
-    let name = service.get("name").map(value_text).unwrap_or_default();
+    let name = service
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let pid = service.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32;
-    let (icon, color) = status_icon(state.service_status.get(&name), frame.wall_seconds);
+    let (icon, color) = status_icon(state.service_status.get(name), frame.wall_seconds);
     if selected {
         out.push_str(style.inverse());
     } else {
@@ -541,7 +575,7 @@ fn service_line(
     }
     out.push_str(&format!(
         " {} {:<8} {:<12} {:>7}  {:>5} {:>5} ",
-        pad(&truncate_scalars(&name, 14), 15),
+        pad_clipped(name, 14, 15),
         pid,
         format_uptime(
             service
@@ -593,7 +627,7 @@ fn task_line(
     let reference = task.get("ref").and_then(Value::as_str);
     out.push_str(&format!(
         "  {:<15} {:<8} {:<12} {:>7}  {:>5} {:>5} ",
-        pad(&command, 14),
+        pad_clipped(&command, 14, 15),
         pid,
         format_runtime(runtime),
         memory_mb(state.memory_cache.get(&pid)),
@@ -613,7 +647,7 @@ fn task_line(
 }
 
 fn ghost_line(out: &mut String, task: &Value, style: &dyn TopStyle) {
-    let name = task.get("name").map(value_text).unwrap_or_default();
+    let name = task.get("name").and_then(Value::as_str).unwrap_or_default();
     let exit = task.get("exit_code");
     let (indicator, color, label) = match exit {
         Some(Value::Null) | None => ("?".to_owned(), style.yellow(), "gone"),
@@ -623,7 +657,7 @@ fn ghost_line(out: &mut String, task: &Value, style: &dyn TopStyle) {
     out.push_str(style.dim());
     out.push_str(&format!(
         "  {:<15} {:<8} {:<12} {:>7}  {:>5} {:>5} ",
-        pad(&name, 14),
+        pad_clipped(name, 14, 15),
         "",
         "",
         "",
@@ -654,19 +688,17 @@ fn log_text(reference: Option<&str>, state: &TopState, width: usize) -> (String,
     else {
         return (String::new(), false);
     };
-    let source = log.get(2).map(value_text).unwrap_or_default();
+    let source = log.get(2).and_then(Value::as_str).unwrap_or_default();
     let available = width.saturating_sub(LOG_FIXED_WIDTH);
-    let text = if source.chars().count() > available && available > 0 {
-        let keep = if available >= 3 {
-            available - 3
-        } else {
-            source.chars().count().saturating_sub(3 - available)
-        };
-        format!("{}...", source.chars().take(keep).collect::<String>())
+    let (_, _, truncated) = clip_payload(source, available);
+    let text = if truncated && available >= 3 {
+        format!("{}...", truncate_scalars(source, available - 3))
+    } else if truncated && available > 0 {
+        payload_text(source)
     } else if available == 0 {
         String::new()
     } else {
-        source
+        truncate_scalars(source, available)
     };
     (text, log.get(1).and_then(Value::as_str) == Some("stderr"))
 }
@@ -822,7 +854,7 @@ fn queued_commands(state: &TopState, visible: &std::collections::BTreeSet<String
             count
                 .as_u64()
                 .filter(|count| *count > 0 && !visible.contains(command))
-                .map(|count| format!("{} ×{count}", payload_token_sentinel(command)))
+                .map(|count| format!("{} ×{count}", payload_text(command)))
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -867,17 +899,6 @@ fn memory_mb(bytes: Option<&u64>) -> String {
     )
 }
 
-fn truncate_to_boundary(value: &mut String, limit: usize) {
-    if value.len() <= limit {
-        return;
-    }
-    let mut boundary = limit;
-    while !value.is_char_boundary(boundary) {
-        boundary -= 1;
-    }
-    value.truncate(boundary);
-}
-
 fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn TopStyle) {
     rule(out, width);
     out.push_str("  ");
@@ -889,17 +910,15 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
     if state.think_running {
         if !state.think_status.is_empty() {
             let status = &state.think_status;
-            let mode = payload_token_sentinel(
+            let mode = payload_text(
                 &status
                     .get("mode")
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_uppercase(),
             );
-            let day =
-                payload_token_sentinel(status.get("day").and_then(Value::as_str).unwrap_or(""));
-            let segment =
-                payload_token_sentinel(status.get("segment").and_then(Value::as_str).unwrap_or(""));
+            let day = payload_text(status.get("day").and_then(Value::as_str).unwrap_or(""));
+            let segment = payload_text(status.get("segment").and_then(Value::as_str).unwrap_or(""));
             let completed = status
                 .get("agents_completed")
                 .and_then(Value::as_u64)
@@ -927,7 +946,7 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
                     agents
                         .iter()
                         .filter_map(Value::as_str)
-                        .map(payload_token_sentinel)
+                        .map(payload_text)
                         .collect::<Vec<_>>()
                         .join(", "),
                 );
@@ -971,7 +990,7 @@ fn think_section(out: &mut String, state: &TopState, width: usize, style: &dyn T
                 &names
                     .iter()
                     .filter_map(Value::as_str)
-                    .map(payload_token_sentinel)
+                    .map(payload_text)
                     .collect::<Vec<_>>()
                     .join(", "),
             );
@@ -1028,8 +1047,8 @@ fn reconnecting(
     }
 }
 fn center(value: &str, width: usize) -> String {
-    let cap = truncate_scalars(value, width);
-    let padding = width.saturating_sub(cap.chars().count());
+    let (cap, used, _) = clip_payload(value, width);
+    let padding = width.saturating_sub(used);
     format!(
         "{}{}{}",
         " ".repeat(padding / 2),
@@ -1038,22 +1057,41 @@ fn center(value: &str, width: usize) -> String {
     )
 }
 fn pad(value: &str, width: usize) -> String {
-    let value = truncate_scalars(value, width);
-    format!("{value:<width$}", width = width)
+    pad_clipped(value, width, width)
 }
 fn truncate_scalars(value: &str, width: usize) -> String {
+    clip_payload(value, width).0
+}
+
+fn pad_clipped(value: &str, clip_width: usize, field_width: usize) -> String {
+    let (mut output, used, _) = clip_payload(value, clip_width);
+    output.push_str(&" ".repeat(field_width.saturating_sub(used)));
+    output
+}
+
+fn clip_payload(value: &str, width: usize) -> (String, usize, bool) {
     let mut output = String::new();
     let mut used = 0usize;
-    for scalar in value.chars().take(1024) {
-        let atom = sanitize_for_terminal(&scalar.to_string());
-        let atom_width = atom.chars().count();
-        if used.saturating_add(atom_width) > width {
+    let mut scalars = value.chars();
+    let mut truncated = false;
+    for (count, scalar) in scalars.by_ref().enumerate() {
+        if count == 1024 {
+            truncated = true;
             break;
         }
-        output.push_str(&payload_token_sentinel(&atom));
+        let atom = sanitize_payload_scalar(scalar);
+        let atom_width = atom.chars().count();
+        if used.saturating_add(atom_width) > width {
+            truncated = true;
+            break;
+        }
+        output.push_str(&payload_atom_sentinel(&atom));
         used += atom_width;
     }
-    output
+    if !truncated && scalars.next().is_some() {
+        truncated = true;
+    }
+    (output, used, truncated)
 }
 
 fn status_style<'a>(color: &str, style: &'a dyn TopStyle) -> &'a str {
@@ -1065,20 +1103,16 @@ fn status_style<'a>(color: &str, style: &'a dyn TopStyle) -> &'a str {
     }
 }
 fn value_text(value: &Value) -> String {
-    value.as_str().map_or_else(
-        || bounded_json(value),
-        |text| payload_token_sentinel(&text.chars().take(1024).collect::<String>()),
-    )
+    value
+        .as_str()
+        .map_or_else(|| bounded_json(value), payload_text)
 }
 fn bounded_json(value: &Value) -> String {
     match value {
         Value::Null => "null".to_owned(),
         Value::Bool(value) => value.to_string(),
         Value::Number(value) => value.to_string(),
-        Value::String(value) => format!(
-            "\"{}\"",
-            payload_token_sentinel(&value.chars().take(1024).collect::<String>())
-        ),
+        Value::String(value) => format!("\"{}\"", payload_text(value)),
         Value::Array(values) => format!(
             "[{}]",
             values
@@ -1095,7 +1129,7 @@ fn bounded_json(value: &Value) -> String {
                 .take(32)
                 .map(|(key, value)| format!(
                     "\"{}\":{}",
-                    payload_token_sentinel(&key.chars().take(256).collect::<String>()),
+                    payload_text(&key.chars().take(256).collect::<String>()),
                     bounded_json(value)
                 ))
                 .collect::<Vec<_>>()
@@ -1107,18 +1141,27 @@ fn bounded_json(value: &Value) -> String {
 // Mark token spellings carried by payload so the trusted framing scanner can
 // never mistake them for renderer-owned style. They are restored inside the
 // sanitizer atom during serialization.
-fn payload_token_sentinel(value: &str) -> String {
-    TRUSTED_TOKENS
-        .iter()
-        .fold(value.to_owned(), |value, token| {
-            value.replace(
-                token.spelling(),
-                &format!("\u{e000}{}\u{e001}", token.spelling()),
-            )
-        })
+fn payload_text(value: &str) -> String {
+    value
+        .chars()
+        .take(1024)
+        .map(sanitize_payload_scalar)
+        .map(|atom| payload_atom_sentinel(&atom))
+        .collect()
+}
+
+fn sanitize_payload_scalar(scalar: char) -> String {
+    match scalar {
+        '\u{e000}'..='\u{e003}' => format!("\\u{{{:x}}}", u32::from(scalar)),
+        _ => sanitize_for_terminal(&scalar.to_string()),
+    }
 }
 
 fn sanitized_payload_sentinel(value: &str) -> String {
+    payload_text(value)
+}
+
+fn payload_atom_sentinel(value: &str) -> String {
     format!("\u{e002}{value}\u{e003}")
 }
 
@@ -1139,14 +1182,17 @@ mod tests {
     use super::*;
     #[test]
     fn scalar_truncation_and_boundaries_are_stable() {
-        assert_eq!(truncate_scalars("αβγ", 2), "αβ");
+        assert_eq!(
+            transform_trusted_render(&truncate_scalars("αβγ", 2), 2),
+            "αβ"
+        );
         assert_eq!(format_uptime(86_400), "1d 0m");
         assert_eq!(format_log_age(3_600), "1h");
         assert_eq!(format_runtime(60), "1m 0s");
         let megabyte = 1_048_576;
         assert_eq!(memory_mb(Some(&(12 * megabyte + megabyte / 2))), "12");
         assert_eq!(memory_mb(Some(&(13 * megabyte + megabyte / 2))), "14");
-        assert_eq!(queue_status(None), "─       ");
+        assert_eq!(transform_trusted_render(&queue_status(None), 8), "─       ");
     }
     #[test]
     fn ansi_style_keeps_renderer_owned_controls_out_of_payload_sanitization() {
@@ -1209,5 +1255,92 @@ mod tests {
         .expect("renderer must not truncate inside a UTF-8 scalar");
         assert!(rendered.len() <= MAX_FRAME_BYTES);
         assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn payload_atoms_are_indivisible_and_private_markers_are_escaped() {
+        for width in 0..4 {
+            assert_eq!(truncate_scalars("\u{1b}", width), "");
+        }
+        assert_eq!(
+            transform_trusted_render(&truncate_scalars("\u{1b}", 4), 4),
+            "\\x1b"
+        );
+        for marker in ['\u{e000}', '\u{e001}', '\u{e002}', '\u{e003}'] {
+            let escaped = format!("\\u{{{:x}}}", u32::from(marker));
+            for width in 0..escaped.chars().count() {
+                assert_eq!(truncate_scalars(&marker.to_string(), width), "");
+            }
+            assert_eq!(
+                transform_trusted_render(
+                    &truncate_scalars(&marker.to_string(), escaped.chars().count()),
+                    escaped.chars().count(),
+                ),
+                escaped
+            );
+        }
+    }
+
+    #[test]
+    fn ansi_frame_cap_never_splits_controls_or_payload_atoms() {
+        let style = AnsiTopStyle;
+        let input = format!(
+            "{}{}{}{}{}\n{}tail{}\n",
+            style.home(),
+            style.clear(),
+            style.bold(),
+            payload_atom_sentinel("\\x1b"),
+            style.red(),
+            style.dim(),
+            style.normal(),
+        );
+        let terminator = format!("{}\n", style.normal());
+        for cap in terminator.len()..=input.len().saturating_add(terminator.len()) {
+            let rendered = transform_trusted_render_capped(&input, 512, cap, style.normal());
+            assert!(rendered.len() <= cap, "cap {cap}: {}", rendered.len());
+            assert!(rendered.ends_with(&terminator), "cap {cap}: {rendered:?}");
+            assert!(!rendered.contains(['\u{e000}', '\u{e001}', '\u{e002}', '\u{e003}']));
+            let mut text = rendered;
+            for sequence in TRUSTED_TOKENS.map(TrustedToken::ansi) {
+                text = text.replace(sequence, "");
+            }
+            assert!(!text.contains('\u{1b}'), "cap {cap}: {text:?}");
+            assert!(!text.ends_with('\\'));
+            assert!(!text.ends_with("\\x"));
+            assert!(!text.ends_with("\\x1"));
+        }
+    }
+
+    #[test]
+    fn production_ansi_frame_cap_reserves_a_complete_reset_and_newline() {
+        let state = TopState {
+            crashed: (0..256)
+                .map(|index| {
+                    serde_json::json!({
+                        "name": format!("{index}-{}\u{e000}\u{1b}<RED>", "界".repeat(1024)),
+                        "restart_attempts": index,
+                    })
+                })
+                .collect(),
+            ..TopState::default()
+        };
+        let rendered = render_frame(
+            &state,
+            FrameSample::default(),
+            MAX_FRAME_WIDTH,
+            &AnsiTopStyle,
+        );
+        assert!(rendered.len() <= MAX_FRAME_BYTES);
+        assert!(rendered.ends_with("\u{1b}[0m\n"));
+        assert!(!rendered.contains(['\u{e000}', '\u{e001}', '\u{e002}', '\u{e003}']));
+        let mut text = rendered;
+        for sequence in TRUSTED_TOKENS.map(TrustedToken::ansi) {
+            text = text.replace(sequence, "");
+        }
+        assert!(!text.contains('\u{1b}'));
+        assert!(!text.ends_with('\\'));
+        assert!(!text.ends_with("\\x"));
+        assert!(!text.ends_with("\\x1"));
+        assert!(!text.ends_with("\\u{"));
     }
 }

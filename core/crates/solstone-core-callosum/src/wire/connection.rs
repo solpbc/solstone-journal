@@ -451,6 +451,16 @@ impl CallosumSocketConnection {
         self.outbound_saturation_drops.load(Ordering::Acquire)
     }
 
+    #[cfg(test)]
+    pub(crate) fn has_pending_priority(&self) -> bool {
+        self.queues.priority.pending()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
+    }
+
     pub async fn stop(&mut self) {
         if !self.running.swap(false, Ordering::AcqRel) {
             return;
@@ -538,6 +548,24 @@ async fn run_connection(run: ConnectionRun) {
             drain_outbound(&mut outbound, &mut stream).await;
             break;
         }
+        if queues.priority.pending() && (stream.is_some() || gapped) {
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    let _ = changed;
+                }
+                () = queues.priority.wait_until_consumed() => {
+                    if resume_current && stream.is_some() {
+                        queues.continuity(
+                            counters.generation,
+                            counters.epoch,
+                            CallosumConnectionPhase::Connected,
+                        );
+                        resume_current = false;
+                    }
+                }
+            }
+            continue;
+        }
         if stream.is_none() {
             tokio::select! {
                 changed = shutdown.changed() => {
@@ -621,19 +649,6 @@ async fn run_connection(run: ConnectionRun) {
                         },
                     );
                 }
-            }
-            continue;
-        }
-
-        if queues.priority.pending() {
-            queues.priority.wait_until_consumed().await;
-            if resume_current && stream.is_some() {
-                queues.continuity(
-                    counters.generation,
-                    counters.epoch,
-                    CallosumConnectionPhase::Connected,
-                );
-                resume_current = false;
             }
             continue;
         }
