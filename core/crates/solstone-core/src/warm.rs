@@ -20,6 +20,7 @@
 
 use std::env;
 use std::io::{self, Read};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -32,9 +33,13 @@ pub(crate) const STDERR_LIMIT: usize = 65_536;
 const CARGO_CACHE_TAG: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.";
 const LOADER_PREFIX: &str = "error while loading shared libraries: ";
 const LOADER_SUFFIX: &str = ": cannot open shared object file";
+const DARWIN_LOADER_PREFIX: &str = "Library not loaded: ";
 const MAX_LOADER_LIBRARY_BYTES: usize = 4096;
-const LOADER_SCAN_TAIL: usize =
-    LOADER_PREFIX.len() + MAX_LOADER_LIBRARY_BYTES + LOADER_SUFFIX.len();
+const LOADER_SCAN_TAIL: usize = {
+    let linux = LOADER_PREFIX.len() + MAX_LOADER_LIBRARY_BYTES + LOADER_SUFFIX.len();
+    let darwin = DARWIN_LOADER_PREFIX.len() + MAX_LOADER_LIBRARY_BYTES + 1;
+    if linux > darwin { linux } else { darwin }
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct InventoryRow {
@@ -481,6 +486,26 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
     let stderr_truncated = stderr.truncated;
     let loader_library = stderr.loader_library;
     let stderr = String::from_utf8_lossy(&stderr.bytes).into_owned();
+    let loader_failed = if cfg!(target_os = "macos") {
+        signal == Some(nix::sys::signal::Signal::SIGABRT as i32)
+    } else {
+        exit_code == Some(127)
+    };
+    if loader_failed && let Some(library) = loader_library {
+        return WarmRecord {
+            row,
+            classification: Classification::CannotLoad,
+            reason_code: "loader-library-missing",
+            unresolved_library: Some(library.clone()),
+            exit_code,
+            signal,
+            stderr,
+            stderr_truncated,
+            error: Some("dynamic loader could not resolve a shared library".to_owned()),
+            actual: format!("shared library {library} could not be loaded"),
+            repair: "Repair the reported host execution failure, then reinstall the owning host tool if needed.",
+        };
+    }
     if exit_code.is_none() {
         let actual = match signal {
             Some(signal) => format!("terminated by signal {signal}"),
@@ -500,23 +525,6 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
             repair: "Repair the reported host execution failure, then reinstall the owning host tool if needed.",
         };
     }
-    if exit_code == Some(127)
-        && let Some(library) = loader_library
-    {
-        return WarmRecord {
-            row,
-            classification: Classification::CannotLoad,
-            reason_code: "loader-library-missing",
-            unresolved_library: Some(library.clone()),
-            exit_code,
-            signal,
-            stderr,
-            stderr_truncated,
-            error: Some("dynamic loader could not resolve a shared library".to_owned()),
-            actual: format!("shared library {library} could not be loaded"),
-            repair: "Repair the reported host execution failure, then reinstall the owning host tool if needed.",
-        };
-    }
     WarmRecord {
         row,
         classification: Classification::Ran,
@@ -533,6 +541,14 @@ fn classify_output(row: InventoryRow, status: ExitStatus, stderr: BoundedStderr)
 }
 
 fn unresolved_library(stderr: &[u8]) -> Option<String> {
+    if cfg!(target_os = "macos") {
+        unresolved_darwin_library(stderr)
+    } else {
+        unresolved_linux_library(stderr)
+    }
+}
+
+fn unresolved_linux_library(stderr: &[u8]) -> Option<String> {
     let prefix = LOADER_PREFIX.as_bytes();
     let suffix = LOADER_SUFFIX.as_bytes();
     let prefix_start = find_bytes(stderr, prefix)?;
@@ -540,6 +556,21 @@ fn unresolved_library(stderr: &[u8]) -> Option<String> {
     let suffix_start = library_start + find_bytes(&stderr[library_start..], suffix)?;
     (suffix_start != library_start)
         .then(|| String::from_utf8_lossy(&stderr[library_start..suffix_start]).into_owned())
+}
+
+fn unresolved_darwin_library(stderr: &[u8]) -> Option<String> {
+    let prefix = DARWIN_LOADER_PREFIX.as_bytes();
+    let library_start = find_bytes(stderr, prefix)? + prefix.len();
+    let library_length = find_bytes(&stderr[library_start..], b"\n")?;
+    if library_length == 0 || library_length > MAX_LOADER_LIBRARY_BYTES {
+        return None;
+    }
+    let library = Path::new(std::ffi::OsStr::from_bytes(
+        &stderr[library_start..library_start + library_length],
+    ));
+    library
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
 }
 
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {

@@ -145,7 +145,16 @@ fn linked_fixture_runs_then_reports_missing_library() {
         record.unresolved_library.as_deref(),
         Some("libwarm_fixture.so")
     );
+    #[cfg(target_os = "linux")]
     assert_eq!(record.exit_code, Some(127));
+    #[cfg(target_os = "macos")]
+    {
+        assert_eq!(record.exit_code, None);
+        assert_eq!(
+            record.signal,
+            Some(nix::sys::signal::Signal::SIGABRT as i32)
+        );
+    }
 }
 
 #[test]
@@ -161,6 +170,54 @@ fn signal_death_is_cannot_load() {
     assert_eq!(record.reason_code, "terminated-by-signal");
     assert_eq!(record.exit_code, None);
     assert_eq!(record.signal, Some(15));
+}
+
+#[test]
+fn foreign_loader_diagnostic_does_not_override_a_numeric_exit() {
+    let temp = TempDir::new();
+    #[cfg(target_os = "linux")]
+    let diagnostic = "Library not loaded: libwarm-foreign.so";
+    #[cfg(target_os = "macos")]
+    let diagnostic =
+        "error while loading shared libraries: libwarm-foreign.so: cannot open shared object file";
+    write_shim(
+        &temp.path().join(FIXTURE_ROW.binary_name),
+        &format!("#!/bin/sh\nprintf '%s\\n' '{diagnostic}' >&2\nexit 127\n"),
+    );
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW], Host::Linux);
+    let record = &report.records[0];
+    assert_eq!(record.classification, Classification::Ran);
+    assert_eq!(record.reason_code, "reached-own-code");
+    assert_eq!(record.unresolved_library, None);
+    assert_eq!(record.exit_code, Some(127));
+}
+
+#[test]
+fn native_loader_diagnostic_requires_the_host_loader_status() {
+    let temp = TempDir::new();
+    #[cfg(target_os = "linux")]
+    let (diagnostic, termination, reason_code, exit_code) = (
+        "error while loading shared libraries: libwarm-status.so: cannot open shared object file",
+        "kill -ABRT $$",
+        "terminated-by-signal",
+        None,
+    );
+    #[cfg(target_os = "macos")]
+    let (diagnostic, termination, reason_code, exit_code) = (
+        "Library not loaded: /fixture/libwarm-status.dylib",
+        "exit 127",
+        "reached-own-code",
+        Some(127),
+    );
+    write_shim(
+        &temp.path().join(FIXTURE_ROW.binary_name),
+        &format!("#!/bin/sh\nprintf '%s\\n' '{diagnostic}' >&2\n{termination}\n"),
+    );
+    let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW], Host::Linux);
+    let record = &report.records[0];
+    assert_eq!(record.reason_code, reason_code);
+    assert_eq!(record.unresolved_library, None);
+    assert_eq!(record.exit_code, exit_code);
 }
 
 #[test]
@@ -188,10 +245,14 @@ fn loader_failure_json_has_reason_library_and_house_fields() {
 fn oversized_loader_stderr_still_classifies_cannot_load() {
     let temp = TempDir::new();
     let noise_bytes = warm::STDERR_LIMIT + 1;
+    #[cfg(target_os = "linux")]
+    let failure = "printf '%s: error while loading shared libraries: libwarm-oversize.so: cannot open shared object file: No such file or directory\\n' \"$0\" >&2\nexit 127";
+    #[cfg(target_os = "macos")]
+    let failure = "printf 'dyld[%s]: Library not loaded: /fixture/libwarm-oversize.so\\n  Reason: tried fixture paths\\n' \"$$\" >&2\nkill -ABRT $$";
     write_shim(
         &temp.path().join(FIXTURE_ROW.binary_name),
         &format!(
-            "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt \"{noise_bytes}\" ]; do\n  printf x >&2\n  i=$((i + 1))\ndone\nprintf '%s: error while loading shared libraries: libwarm-oversize.so: cannot open shared object file: No such file or directory\\n' \"$0\" >&2\nexit 127\n"
+            "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt \"{noise_bytes}\" ]; do\n  printf x >&2\n  i=$((i + 1))\ndone\n{failure}\n"
         ),
     );
     let report = collect_for_executable(&executable_in(temp.path()), &[FIXTURE_ROW], Host::Linux);
