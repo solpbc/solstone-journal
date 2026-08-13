@@ -550,10 +550,25 @@ fn run_job(
     cleanup_async(process);
 }
 
-fn cleanup_async(mut process: ManagedProcess) {
-    let _ = thread::Builder::new()
+fn cleanup_async(process: ManagedProcess) {
+    let handoff = Arc::new(Mutex::new(Some(process)));
+    let cleanup_handoff = Arc::clone(&handoff);
+    let spawned = thread::Builder::new()
         .name("sense-process-cleanup".into())
-        .spawn(move || process.cleanup());
+        .spawn(move || {
+            if let Some(mut process) = cleanup_handoff.lock().expect("cleanup handoff").take() {
+                process.cleanup();
+            }
+        });
+    if spawned.is_err() {
+        // A synchronous Drop could block on an unreaped descendant's pipe FDs.
+        let process = handoff
+            .lock()
+            .expect("cleanup handoff")
+            .take()
+            .expect("cleanup process");
+        std::mem::forget(process);
+    }
 }
 
 fn termination_detail(handler: &str, error: TerminationError) -> Option<String> {
