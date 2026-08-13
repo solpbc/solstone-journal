@@ -1523,6 +1523,13 @@ def build_corpus() -> dict[str, Any]:
             "pdf_text. reference_body_sha256 is a RECORD of what weasyprint "
             "emitted and must NOT be asserted by a port; no native renderer "
             "will reproduce those bytes.",
+            "🔴 EVERY GET ROUTE ON THIS SURFACE WRITES, via "
+            "`think/utils.get_journal`, whose docstring reads 'Return the "
+            "journal path. Auto-creates the directory.' and which calls "
+            "os.makedirs on every resolution. It is the deepest and most "
+            "shared instance of the read-named-writer class in the tree, and "
+            "a method-keyed AST sweep over GET-only handlers is what found "
+            "it -- reading did not.",
             "⚠ THIRD FAILURE MODE, on this surface's READ routes: two "
             "read-named helpers WRITE. `think/awareness._awareness_dir` and "
             "`think/facet_review_candidates.facet_review_candidates_dir` both "
