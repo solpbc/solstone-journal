@@ -4766,6 +4766,248 @@
       },
       "status": 200
     },
+    "PUT storage.raw-days-true": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": true
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": 42,
+          "redact": [
+            "password",
+            "secret"
+          ]
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": [
+            "ada",
+            "AAL"
+          ],
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": 17,
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": 90
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "66e17b3d39bc8893",
+      "method": "PUT",
+      "normalized": {
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "days",
+          "raw_media_days": true
+        },
+        "success": true
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage",
+      "sent": {
+        "raw_media_days": true
+      },
+      "status": 200
+    },
     "PUT storage.retention": {
       "config_after": {
         "agent": {
@@ -10456,6 +10698,240 @@
       },
       "status": 200
     },
+    "PUT storage.raw-days-true": {
+      "config_after": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": true
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_before": {
+        "agent": {
+          "name": "sol",
+          "name_status": "named",
+          "named_date": "2026-01-02"
+        },
+        "convey": {
+          "bind": "127.0.0.1",
+          "password": "MUST-NOT-LEAK",
+          "password_hash": "MUST-NOT-LEAK",
+          "secret": "MUST-NOT-LEAK"
+        },
+        "describe": {
+          "categories": {},
+          "max_extractions": null,
+          "redact": "not-a-list"
+        },
+        "env": {
+          "PLAUD_ACCESS_TOKEN": ""
+        },
+        "identity": {
+          "aliases": {
+            "not": "a list"
+          },
+          "bio": "first programmer",
+          "email_addresses": [
+            "ada@example.org"
+          ],
+          "name": "Ada Lovelace",
+          "preferred": "Ada",
+          "pronouns": {
+            "object": "her",
+            "possessive": "her",
+            "reflexive": "herself",
+            "subject": "she"
+          },
+          "timezone": "Europe/London"
+        },
+        "journal": {
+          "name": "Analytical Engine"
+        },
+        "observe": {
+          "tmux": {
+            "capture_interval": "five",
+            "enabled": false
+          }
+        },
+        "processing": {},
+        "providers": {
+          "active": {
+            "provider": "unused"
+          }
+        },
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": "ninety"
+        },
+        "service_key_validation": {
+          "bogus": {
+            "valid": true
+          },
+          "plaud": {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "valid": false
+          }
+        },
+        "setup": {
+          "completed_at": 1700000000000
+        },
+        "some_future_section": {
+          "kept": true,
+          "n": 7
+        },
+        "support": {
+          "anonymous_feedback": true,
+          "enabled": true,
+          "portal_url": "https://support.example.org",
+          "proactive": false
+        },
+        "transcribe": {
+          "backend": "parakeet",
+          "confidential_audio": false,
+          "not_a_real_key": "should not survive projection",
+          "parakeet": {
+            "device": "auto",
+            "model_version": "v3",
+            "timeout_sec": 120.0
+          },
+          "preserve_all": true,
+          "whisper": {
+            "model": "large-v3"
+          }
+        }
+      },
+      "config_keys_added": [],
+      "config_keys_removed": [],
+      "digest": "2be91caac6f957e8",
+      "method": "PUT",
+      "normalized": {
+        "retention": {
+          "journal_logs": {
+            "days": 14,
+            "enabled": true
+          },
+          "per_stream": {
+            "tmux": {
+              "raw_media": "processed"
+            }
+          },
+          "raw_media": "sometimes",
+          "raw_media_days": true
+        },
+        "success": true
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage",
+      "sent": {
+        "raw_media_days": true
+      },
+      "status": 200
+    },
     "PUT storage.retention": {
       "config_after": {
         "agent": {
@@ -11534,6 +12010,15 @@
       "scope": "non-corrupt phases only",
       "when": "the request carries no body, in any non-corrupt phase",
       "why": "same as above"
+    },
+    {
+      "method": "PUT/POST",
+      "native": "stores the supplied token and clears service_key_validation.plaud",
+      "path": "/app/settings/api/config",
+      "reference": "performs a live Plaud token validation and stores its verdict",
+      "scope": "the durable env write remains supported without fabricating a verdict",
+      "when": "env.PLAUD_ACCESS_TOKEN is a non-empty value",
+      "why": "native does not perform the live validation, so it clears rather than refreshes the stored verdict"
     }
   ],
   "phases": {
@@ -20811,6 +21296,64 @@
       "status": 200,
       "stub_exit_code": null
     },
+    "POST stub.days-policy.bool-true": {
+      "digest": "3f640ee86516ecd9",
+      "executor_invocations": [
+        [
+          "marks",
+          "--journal",
+          "<JOURNAL_ROOT>"
+        ],
+        [
+          "mark",
+          "--journal",
+          "<JOURNAL_ROOT>",
+          "--today",
+          "<VOLATILE:today>",
+          "--now",
+          "<VOLATILE:now>",
+          "--policy",
+          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": 1, \"priority\": 0}, \"per_stream\": [], \"minimum_age\": 0, \"enabled\": true}"
+        ]
+      ],
+      "executor_verbs": [
+        "marks",
+        "mark"
+      ],
+      "media_digests_after": {
+        "chronicle/20260810/tmux/090000_300/audio.flac": "ad7facb2586fc6e9",
+        "chronicle/20260810/tmux/090000_300/audio.jsonl": "d9d20502a6eb0e7b",
+        "chronicle/20260810/tmux/090000_300/monitor_1_diff.png": "e5a00aa9991ac8a5",
+        "chronicle/20260810/tmux/100000_300/audio.jsonl": "d9d20502a6eb0e7b",
+        "chronicle/20260811/screen/090000_120/notes.md": "2c11e6f090564f9d"
+      },
+      "method": "POST",
+      "normalized": {
+        "held": [],
+        "marked": [],
+        "no_media": [
+          {
+            "day": "20260811",
+            "dir": "090000_120",
+            "reason": "no_media",
+            "stream": "screen"
+          }
+        ],
+        "not_eligible": [],
+        "standing_total": 2,
+        "unreadable_days": []
+      },
+      "normalized_paths": [],
+      "path": "/app/settings/api/storage/purge",
+      "retention_config": {
+        "per_stream": {},
+        "raw_media": "days",
+        "raw_media_days": true
+      },
+      "sent": {},
+      "status": 200,
+      "stub_exit_code": null
+    },
     "POST stub.days-policy.unparseable": {
       "digest": "d20408d1e8c292b1",
       "executor_invocations": [
@@ -21163,5 +21706,5 @@
       "stub_exit_code": null
     }
   },
-  "rev": "64b71e3a939b8da5b80fbbac8c6fa63fa3f5566e"
+  "rev": "dab516e908ba5eaa6dd5cb21bcc623ff907be0db"
 }

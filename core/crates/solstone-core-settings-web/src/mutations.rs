@@ -13,21 +13,7 @@ use serde_json::{Value, json};
 use solstone_core_journal_config_write::{LockOptions, hold_lock};
 use tower::ServiceExt;
 
-const W3_MUTATION_CASES: [&str; 4] = [
-    "PUT storage.journal-logs",
-    "PUT storage.per-stream",
-    "PUT storage.retention",
-    "POST prune-logs.dry-run",
-];
-
-const W3_STORAGE_REFUSAL_CASES: [&str; 4] = [
-    "POST prune-logs.bad-days",
-    "PUT storage.bad-days",
-    "PUT storage.bad-mode",
-    "PUT storage.logs-bad-days",
-]; // W3 owns the storage/prune routes and they are deliberately unregistered in W2.
-
-const W2_MUTATION_PAIRS: [(&str, &str); 16] = [
+const MUTATION_PAIRS: [(&str, &str); 19] = [
     ("PUT", "/app/settings/api/config"),
     ("POST", "/app/settings/api/config"),
     ("PUT", "/app/settings/api/sol_voice"),
@@ -50,6 +36,9 @@ const W2_MUTATION_PAIRS: [(&str, &str); 16] = [
         "/app/settings/api/facet/work-life/activities/meeting",
     ),
     ("PUT", "/app/settings/api/sync"),
+    ("PUT", "/app/settings/api/storage"),
+    ("POST", "/app/settings/api/storage/purge"),
+    ("POST", "/app/settings/api/storage/prune-logs"),
 ];
 
 fn write_config(root: &std::path::Path, config: &Value) {
@@ -131,12 +120,11 @@ async fn request(
     )
 }
 
-fn w2_mutations<'a>(corpus: &'a Value, collection: &str) -> Vec<(&'a str, &'a Value)> {
+fn mutation_cases<'a>(corpus: &'a Value, collection: &str) -> Vec<(&'a str, &'a Value)> {
     corpus[collection]
         .as_object()
         .expect("mutation collection")
         .iter()
-        .filter(|(name, _)| !W3_MUTATION_CASES.contains(&name.as_str()))
         .map(|(name, case)| (name.as_str(), case))
         .collect()
 }
@@ -236,9 +224,10 @@ fn assert_config_result(case_name: &str, case: &Value, root: &std::path::Path) {
 
 #[tokio::test]
 async fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
+    let _executor_env = crate::retention_tests::executor_env_lock().await;
     let corpus = crate::test_support::corpus();
-    let cases = w2_mutations(&corpus, "mutations");
-    assert_eq!(cases.len(), 16);
+    let cases = mutation_cases(&corpus, "mutations");
+    assert_eq!(cases.len(), 21);
     for (name, case) in cases {
         let root = root_from(&case["config_before"]);
         let (status, body) = request(
@@ -421,9 +410,10 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
 
 #[tokio::test]
 async fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
+    let _executor_env = crate::retention_tests::executor_env_lock().await;
     let corpus = crate::test_support::corpus();
-    let cases = w2_mutations(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 16);
+    let cases = mutation_cases(&corpus, "mutations_malformed");
+    assert_eq!(cases.len(), 21);
     for (name, case) in cases {
         let root = root_from(&case["config_before"]);
         let before_bytes = fs::read(root.path().join("config/journal.json")).expect("before bytes");
@@ -482,7 +472,11 @@ fn refusal_route(name: &str) -> (&'static str, &'static str) {
         "POST facet.rename-no-name" => ("POST", "/app/settings/api/facet/no-such/rename"),
         "PUT chat.bad-thinking-surfaces" => ("PUT", "/app/settings/api/chat"),
         "PUT sol_voice.not-object" => ("PUT", "/app/settings/api/sol_voice"),
-        other => panic!("unknown W2 refusal route: {other}"),
+        "PUT storage.bad-mode" | "PUT storage.bad-days" | "PUT storage.logs-bad-days" => {
+            ("PUT", "/app/settings/api/storage")
+        }
+        "POST prune-logs.bad-days" => ("POST", "/app/settings/api/storage/prune-logs"),
+        other => panic!("unknown refusal route: {other}"),
     }
 }
 
@@ -495,30 +489,30 @@ fn inventory_path(path: &str) -> &str {
 }
 
 #[tokio::test]
-async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
+async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
     let corpus = crate::test_support::corpus();
     let phases = ["established", "rich", "populated", "tokened", "malformed"];
     let mut total = 0;
     let mut per_phase = None;
     for phase in phases {
         let cases = corpus["phases"][phase].as_object().expect("phase");
-        let w2_cases = cases
+        let mutation_cases = cases
             .iter()
             .filter(|(name, _)| {
-                (name.starts_with("POST ")
-                    || name.starts_with("PUT ")
-                    || name.starts_with("DELETE "))
-                    && !W3_STORAGE_REFUSAL_CASES.contains(&name.as_str())
+                name.starts_with("POST ") || name.starts_with("PUT ") || name.starts_with("DELETE ")
             })
             .collect::<Vec<_>>();
-        assert_eq!(per_phase.get_or_insert(w2_cases.len()), &w2_cases.len());
-        for (name, case) in w2_cases {
+        assert_eq!(
+            per_phase.get_or_insert(mutation_cases.len()),
+            &mutation_cases.len()
+        );
+        for (name, case) in mutation_cases {
             let root = crate::test_support::phase_root(phase);
             let before = fs::read(root.path().join("config/journal.json")).expect("config before");
             let (method, path) = refusal_route(name);
             assert!(
-                W2_MUTATION_PAIRS.contains(&(method, inventory_path(path))),
-                "{phase} {name} maps to a W2 route"
+                MUTATION_PAIRS.contains(&(method, inventory_path(path))),
+                "{phase} {name} maps to an inventory route"
             );
             let sent = if matches!(
                 name.as_str(),
@@ -557,8 +551,8 @@ async fn ac3_w2_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(per_phase, Some(23));
-    assert_eq!(total, 23 * 5);
+    assert_eq!(per_phase, Some(27));
+    assert_eq!(total, 27 * 5);
 }
 
 #[tokio::test]
@@ -763,14 +757,38 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
 }
 
 #[tokio::test]
-async fn ac12_explicit_sixteen_pair_inventory() {
-    assert_eq!(W2_MUTATION_PAIRS.len(), 16);
+async fn ac12_explicit_nineteen_pair_inventory() {
+    assert_eq!(MUTATION_PAIRS.len(), 19);
     let root = crate::test_support::populated_root();
-    for (method, path) in W2_MUTATION_PAIRS {
+    for (method, path) in MUTATION_PAIRS {
         let response = crate::test_support::shell_router(root.path())
             .oneshot(body_request(method, path, Some(&json!({}))))
             .await
             .expect("response");
         assert_ne!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+    }
+    let corpus = crate::test_support::corpus();
+    for collection in ["mutations", "mutations_malformed"] {
+        for (name, case) in corpus[collection].as_object().expect("mutation collection") {
+            assert!(
+                MUTATION_PAIRS.contains(&(
+                    case["method"].as_str().expect("method"),
+                    inventory_path(case["path"].as_str().expect("path"))
+                )),
+                "{collection} {name}"
+            );
+        }
+    }
+    for (phase, cases) in corpus["phases"].as_object().expect("phases") {
+        for (name, _) in cases.as_object().expect("phase") {
+            if name.starts_with("POST ") || name.starts_with("PUT ") || name.starts_with("DELETE ")
+            {
+                let (method, path) = refusal_route(name);
+                assert!(
+                    MUTATION_PAIRS.contains(&(method, inventory_path(path))),
+                    "{phase} {name}"
+                );
+            }
+        }
     }
 }

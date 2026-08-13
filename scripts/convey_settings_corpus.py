@@ -460,6 +460,8 @@ MUTATION_CASES = [
      {"redact": ["alpha", "   ", "beta"]}),
     ("storage.retention", "PUT", "/app/settings/api/storage",
      {"raw_media": "processed", "raw_media_days": 45}),
+    ("storage.raw-days-true", "PUT", "/app/settings/api/storage",
+     {"raw_media_days": True}),
     ("storage.journal-logs", "PUT", "/app/settings/api/storage",
      {"journal_logs": {"enabled": False, "days": 7}}),
     ("storage.per-stream", "PUT", "/app/settings/api/storage",
@@ -600,6 +602,8 @@ STUBBED_PURGE_CASES = [
                                         "per_stream": {}}, {"stream_filter": "tmux"}),
     ("stub.days-policy", {"raw_media": "days", "raw_media_days": 30,
                           "per_stream": {}}, {}),
+    ("stub.days-policy.bool-true", {"raw_media": "days", "raw_media_days": True,
+                                     "per_stream": {}}, {}),
     ("stub.processed-policy", {"raw_media": "processed", "raw_media_days": None,
                                "per_stream": {}}, {}),
     # 🔴 The zero-polarity trap: under `days`, a non-positive or unparseable day

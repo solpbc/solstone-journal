@@ -24,6 +24,8 @@ mod logs;
 mod observe;
 mod processing;
 mod request_body;
+mod retention;
+mod retention_executor;
 mod sol_voice;
 mod state;
 mod storage;
@@ -68,6 +70,9 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let logs_root = journal_root.clone();
     let facet_logs_root = journal_root.clone();
     let storage_root = journal_root.clone();
+    let storage_put_root = journal_root.clone();
+    let purge_root = journal_root.clone();
+    let prune_logs_root = journal_root.clone();
     let sync_get_root = journal_root.clone();
     let sync_put_root = journal_root;
     Router::new()
@@ -186,7 +191,17 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         )
         .route(
             "/app/settings/api/storage",
-            get(move || storage::get(storage_root.clone())),
+            get(move || storage::get(storage_root.clone())).put(move |body| {
+                retention::update(storage_put_root.clone(), config_lock_options, body)
+            }),
+        )
+        .route(
+            "/app/settings/api/storage/purge",
+            post(move |body| retention::purge(purge_root.clone(), body)),
+        )
+        .route(
+            "/app/settings/api/storage/prune-logs",
+            post(move |body| retention::prune_logs(prune_logs_root.clone(), body)),
         )
         .route(
             "/app/settings/api/sync",
@@ -202,6 +217,8 @@ mod build_contract;
 mod corpus;
 #[cfg(test)]
 mod mutations;
+#[cfg(test)]
+mod retention_tests;
 #[cfg(test)]
 mod router_contracts;
 #[cfg(test)]

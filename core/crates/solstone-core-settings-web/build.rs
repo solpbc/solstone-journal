@@ -306,6 +306,19 @@ fn main() {
         ),
     ];
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("output directory"));
+    let mut source_names = fs::read_dir(manifest.join("src"))
+        .expect("settings source directory")
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.ends_with(".rs"))
+        .collect::<Vec<_>>();
+    source_names.sort();
+    fs::write(
+        output.join("settings_sources.rs"),
+        format!("pub const SOURCES: &[&str] = &{:?};\n", source_names),
+    )
+    .expect("settings source manifest");
+    println!("cargo:rerun-if-changed={}", manifest.join("src").display());
     for (path, use_all, generated) in modules {
         println!("cargo:rerun-if-changed={}", path.display());
         let source = fs::read_to_string(&path).expect("copy module is readable");
