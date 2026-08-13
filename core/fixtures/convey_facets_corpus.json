@@ -4,12 +4,35 @@
   "capture_clock_epoch": 1778846400.0,
   "capture_clock_serialized": "2026-05-15T12:00:00",
   "coverage_limitations": [
-    "MEASURED, because the aggregate misleads: of 26 mutation-phase cases, 19 are POSTs, and only 10 of those returned 2xx and therefore ACTUALLY MUTATED -- 9 are refusals grading envelopes and 7 are post-state GETs. Those 10 span 8 routes, and EVERY route mutated exactly ONCE (the 3 on /api/imports are three different actions, not one call repeated). So the number of routes successfully called TWICE WITH THE SAME INPUT is ZERO. Quote that, never '26 mutation cases', which is true and reads as coverage it does not have. The replay therefore pins that a first call succeeds and says NOTHING about a second call with the same input. Two helpers under these routes are fill-only-when-absent: think/facets.create_facet raises on collision (six lines above a tolerant mkdir(exist_ok=True)), and think/activities.append_activity_record appends unless the id exists (guard in a nested closure). A port that overwrites, rotates or duplicates on a second call REPLAYS GREEN against this fixture. Assert both directions in unit tests.",
+    "\u26d4 Do not quote the mutation-phase CASE COUNT as coverage. Read `mutation_census` below, which is COMPUTED from the recorded cases: it separates probes that actually mutated (2xx on a mutating method) from refusals and post-state reads, and reports how many routes were successfully called TWICE WITH THE SAME INPUT -- the only number that speaks to the fill-only-when-absent class. The replay therefore pins that a first call succeeds and says NOTHING about a second call with the same input. Two helpers under these routes are fill-only-when-absent: think/facets.create_facet raises on collision (six lines above a tolerant mkdir(exist_ok=True)), and think/activities.append_activity_record appends unless the id exists (guard in a nested closure). A port that overwrites, rotates or duplicates on a second call REPLAYS GREEN against this fixture. Assert both directions in unit tests.",
     "Captured with SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES=1, so any field a live side runtime populates is pinned in its ABSENT state. These four surfaces are filesystem projections and none reads a side runtime -- checked, not assumed -- but do not widen that claim to a route added later.",
     "The PDF case pins status, content type, disposition and pdf_text. reference_body_sha256 is a RECORD of what weasyprint emitted and must NOT be asserted by a port; no native renderer will reproduce those bytes.",
+    "\u26a0 THIRD FAILURE MODE, on this surface's READ routes: two read-named helpers WRITE. `think/awareness._awareness_dir` and `think/facet_review_candidates.facet_review_candidates_dir` both mkdir on the way to a GET, so `GET /app/awareness/api/state` and `GET /app/curation/api/facet/candidates` are not pure reads. Both docstrings DO disclose it -- 'creating it if needed' -- but after the word 'Return', which is where the eye has already stopped. A replay cannot see a directory that gets created either way.",
     "Routes this lane DELETES are deliberately absent: the activities web UI (/, /{day}, /api/index, /api/stats/{month}, /api/day/{day}/activities, /api/activity_output/{path}) and every /app/reflections/* route. Their absence here is a decision, not an oversight."
   ],
   "generator": "scripts/convey_facets_corpus.py",
+  "mutation_census": {
+    "actually_mutated_2xx": 10,
+    "cases_total": 26,
+    "mutating_method_cases": 19,
+    "post_state_reads": 7,
+    "refusals": 9,
+    "routes_called_twice_with_same_input": [],
+    "routes_called_twice_with_same_input_count": 0,
+    "routes_refused_only": [
+      "/app/activities/api/day/20260510/record/nosuchid/mute"
+    ],
+    "routes_that_mutated": {
+      "/app/activities/api/day/20260510/record/{created}/mute": 1,
+      "/app/activities/api/day/20260510/record/{created}/unmute": 1,
+      "/app/activities/api/day/20260510/record/{created}/update": 1,
+      "/app/activities/api/day/20260510/records": 1,
+      "/app/awareness/api/imports": 3,
+      "/app/awareness/api/log": 1,
+      "/app/curation/api/facet/accept": 1,
+      "/app/curation/api/facet/dismiss": 1
+    }
+  },
   "mutations": [
     {
       "body_bytes": 183,
