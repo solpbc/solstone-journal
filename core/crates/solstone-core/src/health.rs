@@ -89,7 +89,10 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
 }
 
 fn invalid_status_message(path: &str) -> String {
-    format!("Cannot connect: supervisor sent an invalid status payload at {path}")
+    format!(
+        "Cannot connect: supervisor sent an invalid status payload at {}",
+        sanitize_for_terminal(path)
+    )
 }
 
 enum SocketInspection {
@@ -553,6 +556,29 @@ mod tests {
         assert_eq!(
             invalid_status_message(&path),
             "Cannot connect: supervisor sent an invalid status payload at services[0].pid"
+        );
+    }
+
+    #[test]
+    fn invalid_status_sanitizes_dynamic_map_key_paths_exactly_once() {
+        let hostile = "bad\n\u{001b}\u{202e}\\literal";
+        let mut value = status_value();
+        value["queues"] = json!({hostile: "not-a-count"});
+        let error = match decode_status::<SupervisorStatus>(value) {
+            Ok(_) => panic!("hostile map value must fail"),
+            Err(error) => error,
+        };
+        let HealthFetchError::InvalidStatus { path } = error else {
+            panic!("expected invalid status");
+        };
+        assert!(path.contains(hostile));
+        let rendered = invalid_status_message(&path);
+        assert_eq!(rendered.lines().count(), 1);
+        assert!(!rendered.contains('\u{001b}'));
+        assert!(rendered.contains("\\n\\x1b\\u{202e}\\\\literal"));
+        assert!(
+            !rendered.contains("\\\\n"),
+            "escape must occur exactly once"
         );
     }
 

@@ -190,6 +190,9 @@ ort = { version = "=2.0.0-rc.12", default-features = false }
 pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"
+unicode-general-category = "1.1.0"
+unicode-xid = "0.2.6"
+unicode_names2 = "1.3.0"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem", "x509-parser"] }
 rustix = { version = "1.1.4", features = ["fs"] }
 rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }

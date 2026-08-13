@@ -18,6 +18,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 regex.workspace = true
+unicode-xid.workspace = true
+unicode_names2.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-format.workspace = true
 solstone-core-processing-record.workspace = true
@@ -32,6 +34,7 @@ required-features = ["differential"]
 solstone-core-cogitate.workspace = true
 tempfile = "3.24.0"
 sha2.workspace = true
+unicode-general-category.workspace = true
 
 [lints]
 workspace = true
