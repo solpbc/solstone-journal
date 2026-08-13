@@ -249,14 +249,6 @@ CONVERTED_GLYPH_RESIDUE = {
         "body: notif.message,\n          icon: notif.icon,",
         "${window.AppServices.escapeHtml(n.icon)}",
     ),
-    "solstone/observe/sense.py": (
-        'return "🎙️"',
-        'return "👁️"',
-        'return "🤖"',
-        'icon = "🤖"',
-        'icon = "🎙️"',
-        'icon = "👁️"',
-    ),
     "solstone/convey/static/shell.html": (
         '<button id="notif-bell" title="enable browser notifications" aria-label="enable browser notifications">🔔</button>',
     ),
@@ -332,14 +324,6 @@ NOTIFICATION_ICON_EMITTERS = {
             "body: notif.message,\n          icon: notif.icon,",
             "tag: `${notif.app}-${notif.id}`",
         ),
-    ),
-    "solstone/observe/sense.py": (
-        ('return "🎙️"', 'return "mic-vocal"'),
-        ('return "👁️"', 'return "eye"'),
-        ('return "🤖"', 'return "bot"'),
-        ('icon = "🤖"', "icon=_handler_icon(handler_name)"),
-        ('icon = "🎙️"', "icon=_handler_icon(handler_name)"),
-        ('icon = "👁️"', "icon=_handler_icon(handler_name)"),
     ),
 }
 

@@ -193,8 +193,8 @@ _OBSERVER_DELIVERY_STALL_FIX = "restart the observer, then confirm a new upload 
 # Reachability beacons can arrive every few seconds and segment keys are normally
 # bounded at five minutes, but a reachable laptop can be awake while delivery is
 # intentionally quiet. Use a generous six-hour window so doctor warns only when
-# uploads have not landed for a sustained period. See solstone/observe/sense.py:
-# 974-978 and solstone/observe/protocol.schema.json:17,:52.
+# uploads have not landed for a sustained period. See native `journal sense`
+# and solstone/observe/protocol.schema.json:17,:52.
 _OBSERVER_DELIVERY_STALL_MS = 6 * 60 * 60 * 1000
 _ORPHAN_SEGMENT_PDF_FIX = (
     "journal maint --force settings:007_migrate_pdf_extractions, "

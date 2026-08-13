@@ -123,7 +123,7 @@ Out of scope for this sweep; keep visible because it is a destructive journal-do
 | file:line | target | trigger | path validation | audit log | dry-run | class | why |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `solstone/observe/observer_client.py:39` | files inside a draft capture directory | `cleanup_draft()` | iterates only files already inside the draft directory | no | no | `⚠️` | draft temp cleanup on the observe side |
-| `solstone/observe/sense.py:982` | derived output files for a segment | `delete_outputs()` during reprocess cleanup | delete only when the file matches the requested reprocess type and a corresponding source exists | no (logger only) | yes | `⚠️` | observe-side cleanup has dry-run support but not retention-style logging |
+| `core/crates/solstone-core-sense/src/batch.rs:250` | derived output files for a segment | `delete_outputs()` during reprocess cleanup | delete only when the file matches the requested reprocess type and a corresponding source exists | stdout diagnostics | yes | `⚠️` | native `journal sense` cleanup has dry-run support but not retention-style logging |
 | `solstone/observe/transcribe/main.py:546,682` | raw/audio capture files that fail VAD thresholds | transcription filtering | delete is gated by VAD outcome on the source file | no (callosum event only) | no | `⚠️` | observe-side source filtering, not part of this journal-domain sweep |
 | `solstone/observe/transcribe/whisper.py:231` | temporary audio upload file | Whisper transcription request teardown | exact temp path plus `exists()` check | no | no | `⚠️` | request temp cleanup |
 

@@ -10,7 +10,6 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -1660,9 +1659,8 @@ def reprocess_segment(day: str, stream: str, segment_key: str) -> Any:
     request_id = str(marker.get("request_id", ""))
 
     argv = [
-        sys.executable,
-        "-m",
-        "solstone.observe.sense",
+        "journal",
+        "sense",
         "--day",
         day,
         "--segment",

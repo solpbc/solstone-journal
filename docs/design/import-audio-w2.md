@@ -155,8 +155,8 @@ to calculate the end (`core/crates/solstone-core-system-health/src/scan.rs:64-76
 The Rust shared formatter accepts any nonempty numeric suffix
 (`core/crates/solstone-core-format/src/segment.rs:47-88`), and the indexer only
 uses the parsed start for buckets (`solstone/think/indexer/journal.py:123-140`).
-Sense dispatch uses the segment path supplied by the observing message, not a
-300-second assumption (`solstone/observe/sense.py:786-855`).
+Native `journal sense` dispatch uses the segment path supplied by the observing
+message, not a 300-second assumption (`core/crates/solstone-core-sense/src/dispatch.rs`).
 
 Rejected: preserve a constant `_300`.  It knowingly misdescribes final chunks
 and makes duration-based readers wrong.  Rejected: floor/round-to-nearest.

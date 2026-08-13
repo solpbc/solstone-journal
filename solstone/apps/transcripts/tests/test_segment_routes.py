@@ -10,7 +10,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -2448,9 +2447,8 @@ def test_reprocess_segment_starts_sense_process(client, journal_copy, monkeypatc
     assert len(popen_calls) == 1
     argv, kwargs = popen_calls[0]
     assert argv == [
-        sys.executable,
-        "-m",
-        "solstone.observe.sense",
+        "journal",
+        "sense",
         "--day",
         day,
         "--segment",

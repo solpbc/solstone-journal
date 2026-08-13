@@ -363,12 +363,6 @@ def add_module_stubs(monkeypatch):
         sys.modules["solstone.observe.hear"] = hear_mod
         observe_pkg = sys.modules.get("solstone.observe")
         setattr(observe_pkg, "hear", hear_mod)
-    if "solstone.observe.sense" not in sys.modules:
-        # Import the real module - it has minimal dependencies
-        sense_mod = importlib.import_module("solstone.observe.sense")
-        sys.modules["solstone.observe.sense"] = sense_mod
-        observe_pkg = sys.modules.get("solstone.observe")
-        setattr(observe_pkg, "sense", sense_mod)
     if "solstone.observe.utils" not in sys.modules:
         # Import the real module
         utils_mod = importlib.import_module("solstone.observe.utils")

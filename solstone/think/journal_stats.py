@@ -10,8 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
-from solstone.observe.sense import scan_day as sense_scan_day
-from solstone.observe.utils import VIDEO_EXTENSIONS, load_analysis_frames
+from solstone.observe.utils import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, load_analysis_frames
 from solstone.think.activities import estimate_duration_minutes, load_activity_records
 from solstone.think.cluster import scan_day as cluster_scan_day
 from solstone.think.facets import get_facets
@@ -28,9 +27,23 @@ from solstone.think.pipeline_health import (
 from solstone.think.stats_schema import DAY_FIELDS, SCHEMA_VERSION, TOTAL_FIELDS
 from solstone.think.stats_schema import validate as validate_stats
 from solstone.think.talents import scan_day as generate_scan_day
-from solstone.think.utils import day_dirs, get_journal, segment_parse, setup_cli
+from solstone.think.utils import day_dirs, get_journal, iter_segments, segment_parse, setup_cli
 
 logger = logging.getLogger(__name__)
+
+
+def _pending_segment_count(day_dir: Path) -> int:
+    """Return segments containing media without its same-stem JSONL output."""
+    pending_segments = set()
+    for _stream, segment_key, segment_dir in iter_segments(day_dir):
+        if any(
+            file_path.is_file()
+            and file_path.suffix.lower() in VIDEO_EXTENSIONS + AUDIO_EXTENSIONS
+            and not file_path.with_suffix(".jsonl").exists()
+            for file_path in segment_dir.iterdir()
+        ):
+            pending_segments.add(segment_key)
+    return len(pending_segments)
 
 
 def _serialize_backlog_error(error: BacklogError) -> dict:
@@ -394,8 +407,7 @@ class JournalStats:
                 logger.warning(f"Unexpected error processing {jsonl_file}: {e}")
 
         # --- Pending segments (unprocessed media files) ---
-        sense_info = sense_scan_day(day_dir)
-        stats["pending_segments"] = sense_info["pending_segments"]
+        stats["pending_segments"] = _pending_segment_count(day_dir)
 
         # --- Insight summaries ---
         output_info = generate_scan_day(day)
