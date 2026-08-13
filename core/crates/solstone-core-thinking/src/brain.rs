@@ -8,6 +8,31 @@ use std::path::Path;
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{BrainInspection, inspect_brain_state, present_brain_inspection};
+use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+
+/// The `POST /api/brain/check` response. `sent` reports whether the refresh
+/// request itself reached the supervisor over Callosum -- not whether the
+/// check it triggers has completed -- matching
+/// `solstone/think/brain_health.py:568-579`'s `request_brain_refresh`. The
+/// send itself is shell-layer transport (it needs the Callosum client, which
+/// this crate does not depend on); this only shapes the response.
+pub fn check_response(journal: &Path, config: &Map<String, Value>, sent: bool) -> Value {
+    let spp_configured = matches!(
+        &resolve_local_endpoint(config),
+        LocalEndpointResolution::Byo(value) if value.is_confidential
+    );
+    let brain_view = presentation(journal, config, spp_configured);
+    let mut response = Map::new();
+    response.insert("ok".to_owned(), Value::Bool(sent));
+    response.insert("brain".to_owned(), brain_view["brain"].clone());
+    if !sent {
+        response.insert(
+            "error".to_owned(),
+            Value::String("check_not_started".to_owned()),
+        );
+    }
+    Value::Object(response)
+}
 
 pub fn presentation(journal: &Path, config: &Map<String, Value>, spp_configured: bool) -> Value {
     let now = Utc::now();

@@ -12,6 +12,12 @@ use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::derive_active_brain_lane;
 use solstone_core_facets::append_action_log;
+use solstone_core_generate::{
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
+};
+use solstone_core_generate_wire::overrides::{
+    API_KEY_OVERRIDE_ENV, MODEL_OVERRIDE_ENV, PROVIDER_OVERRIDE_ENV,
+};
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 
@@ -86,6 +92,112 @@ pub struct UnavailableValidator;
 impl ManagedKeyValidator for UnavailableValidator {
     fn validate(&self, _provider: &str, _key: &str) -> Result<Value, String> {
         Err("key validation is unavailable".to_owned())
+    }
+}
+
+/// Native one-shot validation whose candidate credentials are child-only
+/// environment overrides, never GenerateRequest data.
+pub struct OneShotKeyValidator {
+    client: OneShotClient,
+}
+
+impl OneShotKeyValidator {
+    pub fn sibling() -> Result<Self, ClientError> {
+        Ok(Self {
+            client: OneShotClient::sibling()?,
+        })
+    }
+
+    pub fn at_path(path: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            client: OneShotClient::at_path(path),
+        }
+    }
+
+    pub fn validate_model(&self, provider: &str, model: &str, key: &str) -> Result<Value, String> {
+        self.probe(provider, Some(model), key)
+    }
+
+    fn probe(&self, provider: &str, model: Option<&str>, key: &str) -> Result<Value, String> {
+        let mut client = self.client.clone().with_env(API_KEY_OVERRIDE_ENV, key);
+        if let Some(model) = model {
+            client = client
+                .with_env(PROVIDER_OVERRIDE_ENV, provider)
+                .with_env(MODEL_OVERRIDE_ENV, model);
+        }
+        Ok(classify_probe_result(client.execute(&validation_request())))
+    }
+}
+
+/// The three-way key/model validation classification (AC4): a successful
+/// generation, or a refusal whose reason code is an accepted probe outcome
+/// (the provider understood the credential but rejected the request for an
+/// unrelated reason), are both "valid"; every other refusal or transport
+/// failure is "invalid". Pulled out of `probe()` so it is testable without
+/// spawning a child process.
+fn classify_probe_result(result: Result<GenerateResponse, ClientError>) -> Value {
+    match result {
+        Ok(GenerateResponse::Generated(_)) => json!({"valid":true}),
+        Ok(GenerateResponse::Refused(refusal)) => {
+            let reason_code = refusal
+                .reason_code
+                .as_ref()
+                .map(|value| value.as_wire().to_owned())
+                .unwrap_or_else(|| "provider_response_invalid".to_owned());
+            if matches!(
+                reason_code.as_str(),
+                "model_not_found" | "provider_quota_exceeded"
+            ) {
+                json!({"valid":true,"probe_reason_code":reason_code})
+            } else {
+                json!({"valid":false,"reason_code":reason_code,"error":refusal.detail})
+            }
+        }
+        Err(error) => client_failure(error),
+    }
+}
+
+fn validation_request() -> GenerateRequest {
+    GenerateRequest {
+        id: None,
+        context: "settings.cloud.validate_key".to_owned(),
+        contents: vec![ContentPart::Text {
+            text: "Reply with exactly OK.".to_owned(),
+        }],
+        system_instruction: None,
+        temperature: 0.0,
+        max_output_tokens: 16,
+        thinking_budget: None,
+        timeout_s: Some(30.0),
+        json_output: false,
+        json_schema: None,
+        enforce_responsiveness: true,
+        attempt_index: 0,
+        exclusive_admission: false,
+        transport_retries: Some(0),
+    }
+}
+
+fn client_failure(error: ClientError) -> Value {
+    match error {
+        ClientError::Resolve(error) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        }
+        ClientError::Io(error) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        }
+        ClientError::Protocol(error) => {
+            json!({"valid":false,"reason_code":error.reason,"error":error.detail})
+        }
+        ClientError::Decode(error) => {
+            json!({"valid":false,"reason_code":"validation_unavailable","error":error})
+        }
+    }
+}
+
+impl ManagedKeyValidator for OneShotKeyValidator {
+    fn validate(&self, provider: &str, key: &str) -> Result<Value, String> {
+        self.probe(provider, None, key)
     }
 }
 
@@ -603,8 +715,14 @@ mod tests {
 
     use serde_json::{Map, Value, json};
 
+    use solstone_core_generate::{
+        ClientError, GeneratedResponse, GenerateResponse, ProtocolError, ReasonCode,
+        ReasonCodeValue, RefusalReason, RefusedResponse,
+    };
+
     use super::{
-        ManagedKeyValidator, ProviderUpdate, save_key, update_providers, validate_keys_with,
+        ManagedKeyValidator, ProviderUpdate, classify_probe_result, save_key, update_providers,
+        validate_keys_with,
     };
     use crate::read_config;
 
@@ -709,6 +827,81 @@ mod tests {
             "gemini-3.5-flash"
         );
         let _ = fs::remove_dir_all(journal);
+    }
+
+    fn generated() -> GenerateResponse {
+        GenerateResponse::Generated(Box::new(GeneratedResponse {
+            id: None,
+            text: "OK".to_owned(),
+            model: "test-model".to_owned(),
+            usage: json!({}),
+            finish_reason: "stop".to_owned(),
+            thinking: None,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        }))
+    }
+
+    fn refused(reason_code: &str) -> GenerateResponse {
+        GenerateResponse::Refused(RefusedResponse {
+            id: None,
+            reason: RefusalReason::ProviderResponseInvalid,
+            reason_code: Some(ReasonCodeValue::Known(
+                ReasonCode::new(reason_code).expect("known reason code"),
+            )),
+            retryable: false,
+            blocking: true,
+            reset_at_ms: None,
+            provider: Some("test".to_owned()),
+            detail: format!("refused: {reason_code}"),
+        })
+    }
+
+    #[test]
+    fn classify_generated_response_is_valid() {
+        let result = classify_probe_result(Ok(generated()));
+        assert_eq!(result, json!({"valid":true}));
+    }
+
+    #[test]
+    fn classify_model_not_found_refusal_is_valid_with_probe_reason_code() {
+        let result = classify_probe_result(Ok(refused("model_not_found")));
+        assert_eq!(
+            result,
+            json!({"valid":true,"probe_reason_code":"model_not_found"})
+        );
+    }
+
+    #[test]
+    fn classify_quota_refusal_is_valid_with_probe_reason_code() {
+        let result = classify_probe_result(Ok(refused("provider_quota_exceeded")));
+        assert_eq!(
+            result,
+            json!({"valid":true,"probe_reason_code":"provider_quota_exceeded"})
+        );
+    }
+
+    #[test]
+    fn classify_other_refusal_is_invalid() {
+        let result = classify_probe_result(Ok(refused("provider_key_invalid")));
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["reason_code"], "provider_key_invalid");
+        assert_eq!(result["error"], "refused: provider_key_invalid");
+    }
+
+    #[test]
+    fn classify_transport_failure_is_invalid() {
+        let result = classify_probe_result(Err(ClientError::Protocol(ProtocolError {
+            id: None,
+            reason: "stub_failure".to_owned(),
+            detail: "one-shot stub hard failure".to_owned(),
+        })));
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["reason_code"], "stub_failure");
+        assert_eq!(result["error"], "one-shot stub hard failure");
     }
 
     fn temporary_journal(name: &str, config: Value) -> std::path::PathBuf {

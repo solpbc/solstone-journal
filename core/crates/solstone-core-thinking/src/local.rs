@@ -7,9 +7,11 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use solstone_core_brain::derive_active_brain_lane;
-use solstone_core_brain::inspect_runtime_health;
+pub use solstone_core_brain::RuntimeRetryError;
+use solstone_core_brain::{inspect_runtime_health, inspect_runtime_retry_token, request_runtime_retry as brain_request_runtime_retry};
 use solstone_core_facets::append_action_log;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{
     lease::is_held,
     readiness::{inspect_local, inspect_mlx},
@@ -128,8 +130,6 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
 }
 
 pub fn runtime(journal: &Path) -> Value {
-    // Runtime retry tokens have only a private parser in solstone-core-system;
-    // this projection needs a public read-only inspector to expose their state.
     let inspection = inspect_runtime_health(journal);
     if inspection.status != "ok" {
         return json!({"status":inspection.status,"phase":if inspection.status == "corrupt" {"state-corrupt"} else {"state-unavailable"},"reason_code":inspection.reason_code,"health_revision":null,"desired_fingerprint_sha256":null,"retry_revision":null,"retry_pending":false,"can_retry":false,"poll":false,"updated_at":null});
@@ -148,7 +148,102 @@ pub fn runtime(journal: &Path) -> Value {
             | "stop-deferred"
             | "stopping"
     );
-    json!({"status":"ok","phase":phase,"reason_code":record["reason_code"],"health_revision":record["revision"],"desired_fingerprint_sha256":record["desired_fingerprint_sha256"],"retry_revision":0,"retry_pending":false,"can_retry":phase=="failed" && !record["desired_fingerprint_sha256"].is_null(),"poll":poll,"updated_at":record["updated_at"]})
+    let retry_inspection = inspect_runtime_retry_token(journal, "local");
+    let retry_record = retry_inspection.record.unwrap_or(Value::Null);
+    let retry_revision = retry_record["revision"].as_u64().unwrap_or(0);
+    let retry_pending = !retry_record["token_id"].is_null();
+    json!({"status":"ok","phase":phase,"reason_code":record["reason_code"],"health_revision":record["revision"],"desired_fingerprint_sha256":record["desired_fingerprint_sha256"],"retry_revision":retry_revision,"retry_pending":retry_pending,"can_retry":phase=="failed" && !record["desired_fingerprint_sha256"].is_null() && !retry_pending,"poll":poll,"updated_at":record["updated_at"]})
+}
+
+/// Request a runtime retry token for the bundled local provider, then return
+/// the refreshed runtime projection. The five-check CAS lives in
+/// `solstone-core-brain` beside `inspect_runtime_health`, per the
+/// domain-ownership table (CLAUDE.md §7 L2) -- this is transport only.
+pub fn request_runtime_retry(
+    journal: &Path,
+    health_revision: u64,
+    retry_revision: u64,
+    desired_fingerprint_sha256: &str,
+) -> Result<Value, RuntimeRetryError> {
+    brain_request_runtime_retry(
+        journal,
+        "local",
+        health_revision,
+        retry_revision,
+        desired_fingerprint_sha256,
+        Map::new(),
+    )?;
+    Ok(runtime(journal))
+}
+
+/// Every reachable disposition of a `POST /api/local/bootstrap` request.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BootstrapResponse {
+    /// The model is already installed and ready.
+    Installed,
+    /// An install attempt (of any origin) is already in flight.
+    InFlight(String),
+    /// The install lease is held by someone else and nothing is in flight.
+    Busy(String),
+    /// A BYO local endpoint is configured; the bundled model can't bootstrap.
+    ByoEndpointActive,
+    /// The host can't run the bundled model at all (proof unavailable / host
+    /// ineligible), carrying the reference's reason code as the detail.
+    HostIneligible(String),
+    /// A fresh install is eligible to start, but this wave ships no native
+    /// install-spawn primitive (Fact 8) -- report a truthful failure rather
+    /// than a false in-progress response.
+    SpawnUnavailable,
+    /// A readiness/lease/status inspector itself failed.
+    Unavailable(String),
+}
+
+pub fn start_bootstrap(journal: &Path, config: &Map<String, Value>, model: &str) -> BootstrapResponse {
+    if !matches!(resolve_local_endpoint(config), LocalEndpointResolution::Bundled) {
+        return BootstrapResponse::ByoEndpointActive;
+    }
+    let mut input = Map::from_iter([
+        (
+            "journal".to_owned(),
+            Value::String(journal.display().to_string()),
+        ),
+        ("model_id".to_owned(), Value::String(model.to_owned())),
+    ]);
+    let readiness = if cfg!(target_os = "macos") {
+        input.insert(
+            "platform_supported".to_owned(),
+            Value::Bool(cfg!(target_arch = "aarch64")),
+        );
+        inspect_mlx(input)
+    } else {
+        inspect_local(input)
+    };
+    if readiness["ready"].as_bool() == Some(true) {
+        return BootstrapResponse::Installed;
+    }
+    let readiness_status = readiness["status"].as_str().unwrap_or("");
+    if matches!(readiness_status, "proof-unavailable" | "host-ineligible") {
+        return BootstrapResponse::HostIneligible(
+            readiness["reason_code"]
+                .as_str()
+                .unwrap_or(readiness_status)
+                .to_owned(),
+        );
+    }
+    let held = match is_held(journal, "local") {
+        Ok(held) => held,
+        Err(error) => return BootstrapResponse::Unavailable(error.to_string()),
+    };
+    let install_state = read_status(journal, "local")
+        .map(|status| status.install_state)
+        .unwrap_or_else(|_| "idle".to_owned());
+    if is_in_flight(&install_state) {
+        return BootstrapResponse::InFlight(install_state);
+    }
+    if held {
+        return BootstrapResponse::Busy(install_state);
+    }
+    BootstrapResponse::SpawnUnavailable
 }
 
 #[derive(Debug)]
@@ -293,4 +388,54 @@ fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<S
 
 fn bytes_to_gb(bytes: u64) -> f64 {
     ((bytes as f64 / 1024_f64.powi(3)) * 10.0).round() / 10.0
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde_json::json;
+
+    use super::{BootstrapResponse, default_model, start_bootstrap};
+
+    fn temporary_journal(name: &str) -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("solstone-thinking-local-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("journal directory creates");
+        path
+    }
+
+    #[test]
+    fn bootstrap_refuses_when_a_byo_local_endpoint_is_active() {
+        let journal = temporary_journal("byo-endpoint-active");
+        let config = serde_json::Map::from_iter([(
+            "providers".to_owned(),
+            json!({"local":{"endpoint_url":"https://byo.example/v1","served_model_id":"served"}}),
+        )]);
+        let response = start_bootstrap(&journal, &config, default_model());
+        assert_eq!(response, BootstrapResponse::ByoEndpointActive);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn bootstrap_on_a_fresh_bundled_journal_never_reports_a_false_installed_or_in_flight_state() {
+        let journal = temporary_journal("fresh-bundled");
+        let config = serde_json::Map::new();
+        let response = start_bootstrap(&journal, &config, default_model());
+        // A brand-new journal has no install artifacts and no lease/status
+        // records, so the only truthful outcomes are "the host can't run
+        // this yet" or "an install would need to start" -- never a claim
+        // that installation already happened or is already progressing.
+        assert!(
+            matches!(
+                response,
+                BootstrapResponse::HostIneligible(_)
+                    | BootstrapResponse::SpawnUnavailable
+                    | BootstrapResponse::Unavailable(_)
+            ),
+            "unexpected response for a fresh journal: {response:?}"
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
 }
