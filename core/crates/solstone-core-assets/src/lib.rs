@@ -1299,6 +1299,34 @@ mod tests {
     }
 
     #[test]
+    fn parakeet_coreml_rows_have_the_installer_shape() {
+        let rows = catalog()
+            .iter()
+            .filter(|artifact| artifact.unit == "parakeet-coreml")
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 23);
+
+        let filenames = rows
+            .iter()
+            .map(|artifact| artifact.filename)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(filenames.len(), 23);
+        for artifact in rows {
+            assert_eq!(artifact.version, "aed02740059203c4a87495924f685de3722ae9ce");
+            assert_eq!(artifact.platform, Some(Platform::MacosArm64));
+            assert_eq!(artifact.artifact_key, None);
+            assert_eq!(artifact.backend, None);
+            assert_eq!(
+                artifact.origin_key,
+                format!(
+                    "assets/{}/{}/{}",
+                    artifact.unit, artifact.version, artifact.filename
+                )
+            );
+        }
+    }
+
+    #[test]
     fn selectors_return_complete_file_sets_without_ordering_contracts() {
         assert_eq!(resolve("local-model", None, None).len(), 2);
         assert_eq!(resolve("rerank-model", None, None).len(), 2);
