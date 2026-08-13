@@ -20770,19 +20770,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\":",
-          "{\"anchor\":",
-          "\"captured\",",
-          "\"period\":",
-          "30,",
-          "\"priority\":",
-          "0},",
-          "\"per_stream\":",
-          "[],",
-          "\"minimum_age\":",
-          "0,",
-          "\"enabled\":",
-          "true}"
+          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": 30, \"priority\": 0}, \"per_stream\": [], \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [
@@ -20990,25 +20978,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\":",
-          "{\"anchor\":",
-          "\"captured\",",
-          "\"period\":",
-          "null,",
-          "\"priority\":",
-          "0},",
-          "\"per_stream\":",
-          "[[\"tmux\",",
-          "{\"anchor\":",
-          "\"captured\",",
-          "\"period\":",
-          "7,",
-          "\"priority\":",
-          "0}]],",
-          "\"minimum_age\":",
-          "0,",
-          "\"enabled\":",
-          "true}"
+          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": null, \"priority\": 0}, \"per_stream\": [[\"tmux\", {\"anchor\": \"captured\", \"period\": 7, \"priority\": 0}]], \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [
@@ -21151,19 +21121,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\":",
-          "{\"anchor\":",
-          "\"processed\",",
-          "\"period\":",
-          "0,",
-          "\"priority\":",
-          "0},",
-          "\"per_stream\":",
-          "[],",
-          "\"minimum_age\":",
-          "0,",
-          "\"enabled\":",
-          "true}"
+          "{\"default_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"per_stream\": [], \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [
@@ -21205,5 +21163,5 @@
       "stub_exit_code": null
     }
   },
-  "rev": "63f178d6b7ba98dd7aaacb90879c5169dd0e38a6"
+  "rev": "64b71e3a939b8da5b80fbbac8c6fa63fa3f5566e"
 }

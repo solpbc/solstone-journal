@@ -569,7 +569,8 @@ _PLAN = (
     '"dir":"090000_120","reason":"no_media"}],"unreadable_days":[]}'
 )
 STUB_EXECUTOR = f"""#!/bin/sh
-printf '%s\\n' "$*" >> "$ORACLE_STUB_LOG"
+for _a in "$@"; do printf '%s\\n' "$_a" >> "$ORACLE_STUB_LOG"; done
+printf '%s\\n' '--END--' >> "$ORACLE_STUB_LOG"
 REG='{{"marks":{_M}}}'
 PLAN='{_PLAN}'
 if [ -n "$ORACLE_STUB_EXIT" ] && [ "$ORACLE_STUB_EXIT" != "0" ]; then
@@ -663,11 +664,22 @@ def run_stubbed_purge(base: dict) -> dict:
         )
         body = response.get_json(silent=True)
         normalized, hits = normalize(body) if body is not None else (None, [])
-        invocations = [
-            line.split(" ")
-            for line in log.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ] if log.exists() else []
+        # One argv element per line, `--END--` closing each invocation. ⛔ The
+        # previous shape joined argv with "$*" and re-split on spaces, which
+        # turned a single-element policy JSON into 17 tokens -- so what it
+        # pinned was Python's json.dumps whitespace, not the seam contract.
+        invocations = []
+        if log.exists():
+            current = []
+            for line in log.read_text(encoding="utf-8").splitlines():
+                if line == "--END--":
+                    if current:
+                        invocations.append(current)
+                    current = []
+                else:
+                    current.append(line)
+            if current:
+                invocations.append(current)
         # Two enumerated argv normalizations, BY FLAG NAME -- not by matching the
         # shape of a value, which is the rule that ate another corpus's coverage
         # window. `--journal` carries a per-run temp dir; `--now` and `--today`
