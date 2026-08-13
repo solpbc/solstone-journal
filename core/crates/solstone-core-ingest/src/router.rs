@@ -982,10 +982,7 @@ mod tests {
             day["segments"]["120000_1"]["files"][0]["sha256"],
             format!("{:x}", sha2::Sha256::digest(b"sound"))
         );
-        assert_eq!(
-            day["segments"]["120000_1"]["files"][0]["disposition"],
-            "already_held"
-        );
+        assert_eq!(day["segments"]["120000_1"]["files"][0]["status"], "present");
         let (_, segments) = call(
             &app,
             "GET",
@@ -1003,6 +1000,91 @@ mod tests {
             segments["items"][0]["files"][0]["sha256"],
             format!("{:x}", sha2::Sha256::digest(b"sound"))
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn stream_advance_follows_segment_creation_not_plan_status() {
+        let root = root();
+        let app = router(&root);
+        let stream = root.join("streams/device.json");
+        let state = || -> Value {
+            serde_json::from_str(&fs::read_to_string(&stream).expect("stream record"))
+                .expect("stream json")
+        };
+
+        // Ok mint advances.
+        assert_eq!(
+            call_upload(
+                &app,
+                envelope("20260804", "120000_61", json!([{"submitted":"audio.flac"}])),
+                "audio.flac",
+                b"first",
+            )
+            .await
+            .1["status"],
+            "ok"
+        );
+        assert_eq!(state()["seq"], 1);
+        assert_eq!(state()["last_segment"], "120000_61");
+        // Ok heal does not advance.
+        assert_eq!(
+            call_upload(
+                &app,
+                envelope("20260804", "120000_61", json!([{"submitted":"notes.json"}])),
+                "notes.json",
+                b"notes",
+            )
+            .await
+            .1["status"],
+            "ok"
+        );
+        assert_eq!(state()["seq"], 1);
+        assert_eq!(state()["last_segment"], "120000_61");
+        // Collision heal finds the existing 120000_61 candidate for requested
+        // 120000_60, writes its new file there, and still does not advance.
+        assert_eq!(
+            call_upload(
+                &app,
+                envelope("20260804", "120000_60", json!([{"submitted":"other.json"}])),
+                "other.json",
+                b"other",
+            )
+            .await
+            .1["status"],
+            "collision"
+        );
+        assert_eq!(state()["seq"], 1);
+        assert_eq!(state()["last_segment"], "120000_61");
+        // Collision mint advances because it creates 120000_62 after the
+        // content conflict at 120000_61.
+        assert_eq!(
+            call_upload(
+                &app,
+                envelope("20260804", "120000_61", json!([{"submitted":"audio.flac"}])),
+                "audio.flac",
+                b"second",
+            )
+            .await
+            .1["status"],
+            "collision"
+        );
+        assert_eq!(state()["seq"], 2);
+        assert_eq!(state()["last_segment"], "120000_62");
+        // Duplicate never advances.
+        assert_eq!(
+            call_upload(
+                &app,
+                envelope("20260804", "120000_61", json!([{"submitted":"audio.flac"}])),
+                "audio.flac",
+                b"first",
+            )
+            .await
+            .1["status"],
+            "duplicate"
+        );
+        assert_eq!(state()["seq"], 2);
+        assert_eq!(state()["last_segment"], "120000_62");
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1354,10 +1436,7 @@ mod tests {
             &[],
         )
         .await;
-        assert_eq!(
-            day["segments"][remapped]["files"][0]["submitted"],
-            "audio.flac"
-        );
+        assert_eq!(day["segments"][remapped]["files"][0]["name"], "audio.flac");
         let (_, segments) = call(
             &app,
             "GET",
@@ -1619,12 +1698,13 @@ mod tests {
         )
         .await;
         assert_eq!(
-            day["segments"]["120000_1"]["files"][0]["submitted"],
+            day["segments"]["120000_1"]["files"][0]["name"],
             "audio.flac"
         );
-        assert_eq!(
-            day["segments"]["120000_1"]["files"][0]["written"],
-            "audio.flac"
+        assert!(
+            day["segments"]["120000_1"]["files"][0]
+                .get("submitted_name")
+                .is_none()
         );
         assert_eq!(day["segments"]["120000_1"]["files"][0]["size"], 5);
         assert!(day["segments"]["120000_1"]["files"][0]["sha256"].is_string());

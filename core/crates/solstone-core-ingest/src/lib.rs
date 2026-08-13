@@ -23,7 +23,9 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod listing;
 mod model;
+mod observer_evidence;
 mod read_routes;
 mod router;
 mod validation;
@@ -35,16 +37,19 @@ pub use router::router;
 mod architecture_tests {
     // Unlike solstone-core-segment's older scanner, `public_signatures` also
     // recognizes `pub async fn`; handlers must not open a raw byte-write door.
-    const SOURCES: &[&str] = &[
-        include_str!("model.rs"),
-        include_str!("read_routes.rs"),
-        include_str!("router.rs"),
-        include_str!("validation.rs"),
+    const SOURCES: &[(&str, &str)] = &[
+        ("lib.rs", include_str!("lib.rs")),
+        ("model.rs", include_str!("model.rs")),
+        ("listing.rs", include_str!("listing.rs")),
+        ("observer_evidence.rs", include_str!("observer_evidence.rs")),
+        ("read_routes.rs", include_str!("read_routes.rs")),
+        ("router.rs", include_str!("router.rs")),
+        ("validation.rs", include_str!("validation.rs")),
     ];
 
     #[test]
     fn crate_has_no_direct_journal_write_primitive() {
-        for source in SOURCES {
+        for (_, source) in SOURCES {
             let source = source.split("#[cfg(test)]").next().unwrap_or(source);
             for primitive in [
                 "std::fs::write",
@@ -66,13 +71,30 @@ mod architecture_tests {
 
     #[test]
     fn public_byte_signatures_do_not_expose_raw_write_paths() {
-        for source in SOURCES {
+        for (_, source) in SOURCES {
             let source = source.split("#[cfg(test)]").next().unwrap_or(source);
             for signature in public_signatures(source) {
                 assert!(
                     !signature.contains("&[u8]"),
                     "public raw byte surface: {signature}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn every_production_source_is_architecture_scanned() {
+        let scanned = SOURCES
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<std::collections::BTreeSet<_>>();
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in std::fs::read_dir(directory).expect("read source directory") {
+            let entry = entry.expect("read source entry");
+            let name = entry.file_name();
+            let name = name.to_str().expect("utf8 source name");
+            if name.ends_with(".rs") {
+                assert!(scanned.contains(name), "{name} omitted from SOURCES");
             }
         }
     }

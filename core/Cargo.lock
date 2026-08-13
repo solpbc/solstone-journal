@@ -3098,6 +3098,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-ingest-resolve",
+ "solstone-core-observer",
  "solstone-core-segment",
  "tokio",
  "tower",

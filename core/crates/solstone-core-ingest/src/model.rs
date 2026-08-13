@@ -40,11 +40,18 @@ pub enum ReasonCode {
     EventAppendFailed,
     StreamAdvanceFailed,
     JournalReadFailed,
+    MalformedEvidenceRow,
+    AmbiguousDeviceObserver,
+    ObserverHistoryTorn,
+    ObserverHistoryUnreadable,
+    ObserverRegistryUnreadable,
+    ObserverRecordUnreadable,
+    AmbiguousSegmentFileName,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 34] = [
+    const ALL: [Self; 41] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -79,6 +86,13 @@ impl ReasonCode {
         Self::EventAppendFailed,
         Self::StreamAdvanceFailed,
         Self::JournalReadFailed,
+        Self::MalformedEvidenceRow,
+        Self::AmbiguousDeviceObserver,
+        Self::ObserverHistoryTorn,
+        Self::ObserverHistoryUnreadable,
+        Self::ObserverRegistryUnreadable,
+        Self::ObserverRecordUnreadable,
+        Self::AmbiguousSegmentFileName,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -117,6 +131,13 @@ impl ReasonCode {
             Self::EventAppendFailed => "event_append_failed",
             Self::StreamAdvanceFailed => "stream_advance_failed",
             Self::JournalReadFailed => "journal_read_failed",
+            Self::MalformedEvidenceRow => "malformed_evidence_row",
+            Self::AmbiguousDeviceObserver => "ambiguous_device_observer",
+            Self::ObserverHistoryTorn => "observer_history_torn",
+            Self::ObserverHistoryUnreadable => "observer_history_unreadable",
+            Self::ObserverRegistryUnreadable => "observer_registry_unreadable",
+            Self::ObserverRecordUnreadable => "observer_record_unreadable",
+            Self::AmbiguousSegmentFileName => "ambiguous_segment_file_name",
         }
     }
 }
