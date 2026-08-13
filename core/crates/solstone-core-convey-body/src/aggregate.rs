@@ -12,7 +12,7 @@ use std::time::UNIX_EPOCH;
 use rusqlite::{Connection, OpenFlags};
 
 type DbSignature = (u128, u64, u128, u64);
-type StatsCache = BTreeMap<(String, DbSignature), Arc<HealthDedupeStats>>;
+type StatsCache = BTreeMap<String, (DbSignature, Arc<HealthDedupeStats>)>;
 
 static HEALTH_DEDUPE_STATS_CACHE: OnceLock<Mutex<StatsCache>> = OnceLock::new();
 
@@ -99,16 +99,18 @@ pub fn read_health_dedupe_stats(
     let Some(signature) = db_signature(&db_path)? else {
         return Ok(None);
     };
-    let cache_key = (db_path.to_string_lossy().into_owned(), signature);
+    let cache_key = db_path.to_string_lossy().into_owned();
     let cache = HEALTH_DEDUPE_STATS_CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
     let mut cache = cache
         .lock()
         .map_err(|_| HealthDedupeStatsError::CachePoisoned)?;
-    if let Some(stats) = cache.get(&cache_key) {
+    if let Some((cached_signature, stats)) = cache.get(&cache_key)
+        && *cached_signature == signature
+    {
         return Ok(Some(Arc::clone(stats)));
     }
     let stats = Arc::new(fold_stats(&db_path)?);
-    cache.insert(cache_key, Arc::clone(&stats));
+    cache.insert(cache_key, (signature, Arc::clone(&stats)));
     Ok(Some(stats))
 }
 
@@ -301,6 +303,11 @@ mod tests {
     #[test]
     fn cache_identity_changes_when_database_signature_changes() {
         let temporary = TempDir::new();
+        HEALTH_DEDUPE_STATS_CACHE
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
+            .lock()
+            .unwrap()
+            .clear();
         database(temporary.path(), 1);
         let first = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
         let second = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
@@ -317,5 +324,7 @@ mod tests {
         let changed = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
         assert_eq!(changed.total, 2);
         assert!(!Arc::ptr_eq(&first, &changed));
+        let cache = HEALTH_DEDUPE_STATS_CACHE.get().unwrap().lock().unwrap();
+        assert_eq!(cache.len(), 1);
     }
 }
