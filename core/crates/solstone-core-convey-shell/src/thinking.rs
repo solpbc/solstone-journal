@@ -20,7 +20,7 @@ use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_thinking::providers::ManagedKeyValidator;
 
-use crate::{JournalRoot, asset_response};
+use crate::{JournalRoot, asset_response, not_found_response};
 
 pub fn router(journal: Arc<JournalRoot>) -> Router {
     Router::new()
@@ -28,6 +28,8 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         .route("/app/thinking", get(shell_redirect))
         .route("/app/thinking/workspace", get(workspace))
         .route("/app/thinking/static/thinking.js", get(script))
+        .route("/app/thinking/static/{*rest}", get(static_not_found))
+        .route("/app/thinking/background", get(background_not_found))
         .route("/app/thinking/api/state", get(state))
         .route("/app/thinking/api/providers", get(providers))
         .route(
@@ -94,6 +96,22 @@ async fn workspace() -> Response {
 }
 async fn script() -> Response {
     asset_response("/app/thinking/static/thinking.js")
+}
+/// Everything under `/app/thinking/static/` except `thinking.js` itself --
+/// the literal route above always wins for that exact path, so this
+/// wildcard only ever serves refusals. It never reads a file from the
+/// captured segment, so a `..`-laden request has nothing to traverse into;
+/// no separate guard is needed.
+async fn static_not_found() -> Response {
+    not_found_response()
+}
+/// `/background` is a fragment route Flask injects per-app only when that
+/// app ships a background template (`solstone/apps/__init__.py`'s
+/// `_inject_fragment_routes`); Thinking has none, so the reference's own
+/// answer is a plain 404, not the 501 `app_response()` gives every other
+/// unregistered Thinking path.
+async fn background_not_found() -> Response {
+    not_found_response()
 }
 
 async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
@@ -560,10 +578,26 @@ async fn update_providers(
                     .and_then(Value::as_str)
                     .is_some_and(|value| !value.trim().is_empty())
         });
+    // `services.confidential` existing means confidential is PROVISIONED,
+    // independent of whether it is the currently active lane -- this is
+    // `spp.confidential_provenance()`/`confidential_provenance_block()`'s
+    // exact check (`solstone/think/providers/local_endpoint.py:75-82`), not
+    // `_confidential_lane_active_for_config`'s active-lane check below.
+    let confidential_provisioned = config
+        .get("services")
+        .and_then(Value::as_object)
+        .and_then(|services| services.get("confidential"))
+        .is_some_and(Value::is_object);
     let provider = match lane {
+        "confidential" if confidential_provisioned => "local".to_owned(),
         "confidential" => {
             return invalid_state(
                 "confidential lane activation must use the confidential enable flow.",
+            );
+        }
+        "local" if confidential_provisioned => {
+            return invalid_state(
+                "Turn off confidential thinking first, then switch to the bundled local model.",
             );
         }
         "local" if endpoint_configured => {
