@@ -1,0 +1,1592 @@
+{
+  "generator": "scripts/convey_backup_corpus.py",
+  "phases": {
+    "broken": [
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/",
+        "status": 200,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 19226,
+        "body_sha256": "5965358627dd1c3d9fd5a02e65f4dd818bba20cd580c9d012fb36a267ab4b30b",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/background",
+        "status": 404,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 55221,
+        "body_sha256": "f16ed5e07cc67f7a16ca4371a5cc321e63e7fbee1d86e29afa9d9ce3f0e7e0f5",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.js",
+        "status": 200,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 10197,
+        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/css; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.css",
+        "status": 200,
+        "why": "per-app static stylesheet"
+      },
+      {
+        "body_sha256": "e7c5697f0fb9d4dd68861dcf3ded7780f4cf904974fd2e754f700883df09f02a",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "daily_key_set": true,
+          "destination": {
+            "backend": "s3",
+            "credentials_set": true,
+            "repository": "s3:s3.example.invalid/journal-corpus"
+          },
+          "enabled": true,
+          "hosted": {
+            "bound": false
+          },
+          "last_backup": {
+            "error_reason": "repository_locked",
+            "snapshot_id": null,
+            "status": "error",
+            "time": 1770003600
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_prune": {
+            "error_reason": null,
+            "status": "ok",
+            "time": 1769996400
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": "5%",
+            "last_ok_time": 1769990000,
+            "reason": "read_data_mismatch",
+            "status": "error",
+            "time": 1770003000
+          },
+          "mode": "byo",
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "recovery_key_confirmed": true,
+          "recovery_key_set": true,
+          "retention": {
+            "daily": 7,
+            "hourly": 24,
+            "monthly": 12,
+            "weekly": 4
+          },
+          "schedule": {
+            "enabled": true,
+            "every": "daily"
+          },
+          "success": true
+        },
+        "method": "GET",
+        "path": "/app/backup/status",
+        "status": 200,
+        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+      },
+      {
+        "body_sha256": "c1216953aa43dbc04e8f9689f9e9b4038e112a9249010b1b42d0ce246cac8a4d",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "backup_only": {
+            "degraded": false,
+            "skipped_records": 0,
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0,
+            "unreadable_ledgers": []
+          },
+          "days": [],
+          "device": {
+            "free_bytes": 250000000000,
+            "total_bytes": 1000000000000
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": "5%",
+            "last_ok_time": 1769990000,
+            "reason": "read_data_mismatch",
+            "status": "error",
+            "time": 1770003000
+          },
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "pending_release": {
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0
+          },
+          "raw_media": {
+            "total_bytes": 0,
+            "total_files": 0
+          },
+          "success": true,
+          "suggested_defaults": {
+            "budget_bytes": 500000000000,
+            "floor_bytes": 100000000000
+          }
+        },
+        "method": "GET",
+        "path": "/app/backup/offload/status",
+        "status": 200,
+        "why": "media-offload status view"
+      },
+      {
+        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "status": 400,
+        "why": "mutation with no body: the missing-body refusal"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "request_json": {
+          "hourly": "not-a-number"
+        },
+        "status": 400,
+        "why": "mutation with an uncoercible value: the invalid-value refusal"
+      },
+      {
+        "body_sha256": "0f89f27fbcc5aa417cddd8b5841f8f4e00e808057eb2b3734e57f8184f3a65c5",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't confirm that \u2014 it didn't match your recovery key.",
+          "reason_code": "recovery_key_mismatch"
+        },
+        "method": "POST",
+        "path": "/app/backup/confirm",
+        "request_json": {
+          "recovery_key": "wrong-key-entirely"
+        },
+        "status": 400,
+        "why": "recovery-key mismatch: the refusal an owner can actually trigger"
+      },
+      {
+        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "status": 400,
+        "why": "restore with no body: the missing-field refusal on the destructive route"
+      },
+      {
+        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing recovery_key",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "request_json": {
+          "recovery_key": "   "
+        },
+        "status": 400,
+        "why": "restore with a blank recovery key: whitespace is not a key"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/offload/config",
+        "request_json": {
+          "budget_bytes": -1
+        },
+        "status": 400,
+        "why": "offload config with a negative budget"
+      }
+    ],
+    "corrupt": [
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/",
+        "status": 500,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/workspace",
+        "status": 500,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/background",
+        "status": 500,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.js",
+        "status": 500,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.css",
+        "status": 500,
+        "why": "per-app static stylesheet"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/status",
+        "status": 500,
+        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/offload/status",
+        "status": 500,
+        "why": "media-offload status view"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "status": 500,
+        "why": "mutation with no body: the missing-body refusal"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "request_json": {
+          "hourly": "not-a-number"
+        },
+        "status": 500,
+        "why": "mutation with an uncoercible value: the invalid-value refusal"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "POST",
+        "path": "/app/backup/confirm",
+        "request_json": {
+          "recovery_key": "wrong-key-entirely"
+        },
+        "status": 500,
+        "why": "recovery-key mismatch: the refusal an owner can actually trigger"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "status": 500,
+        "why": "restore with no body: the missing-field refusal on the destructive route"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "request_json": {
+          "recovery_key": "   "
+        },
+        "status": 500,
+        "why": "restore with a blank recovery key: whitespace is not a key"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "POST",
+        "path": "/app/backup/offload/config",
+        "request_json": {
+          "budget_bytes": -1
+        },
+        "status": 500,
+        "why": "offload config with a negative budget"
+      }
+    ],
+    "enabled_never_run": [
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/",
+        "status": 200,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 19226,
+        "body_sha256": "5965358627dd1c3d9fd5a02e65f4dd818bba20cd580c9d012fb36a267ab4b30b",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/background",
+        "status": 404,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 55221,
+        "body_sha256": "f16ed5e07cc67f7a16ca4371a5cc321e63e7fbee1d86e29afa9d9ce3f0e7e0f5",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.js",
+        "status": 200,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 10197,
+        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/css; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.css",
+        "status": 200,
+        "why": "per-app static stylesheet"
+      },
+      {
+        "body_sha256": "bf13bb0c168c0bcd5270405b3abbd4280698f8fa1325b6f2fcc7411fcbdab558",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "daily_key_set": true,
+          "destination": {
+            "backend": "s3",
+            "credentials_set": true,
+            "repository": "s3:s3.example.invalid/journal-corpus"
+          },
+          "enabled": true,
+          "hosted": {
+            "bound": false
+          },
+          "last_backup": {
+            "error_reason": null,
+            "snapshot_id": null,
+            "status": null,
+            "time": null
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_prune": {
+            "error_reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": null,
+            "last_ok_time": null,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "mode": "byo",
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "recovery_key_confirmed": true,
+          "recovery_key_set": true,
+          "retention": {
+            "daily": 7,
+            "hourly": 24,
+            "monthly": 12,
+            "weekly": 4
+          },
+          "schedule": {
+            "enabled": true,
+            "every": "daily"
+          },
+          "success": true
+        },
+        "method": "GET",
+        "path": "/app/backup/status",
+        "status": 200,
+        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+      },
+      {
+        "body_sha256": "ce3a4800ce2220312658172c0708b9aefeaca5dcaeefd22f4c918652f7ebbfbe",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "backup_only": {
+            "degraded": false,
+            "skipped_records": 0,
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0,
+            "unreadable_ledgers": []
+          },
+          "days": [],
+          "device": {
+            "free_bytes": 250000000000,
+            "total_bytes": 1000000000000
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": null,
+            "last_ok_time": null,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "pending_release": {
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0
+          },
+          "raw_media": {
+            "total_bytes": 0,
+            "total_files": 0
+          },
+          "success": true,
+          "suggested_defaults": {
+            "budget_bytes": 500000000000,
+            "floor_bytes": 100000000000
+          }
+        },
+        "method": "GET",
+        "path": "/app/backup/offload/status",
+        "status": 200,
+        "why": "media-offload status view"
+      },
+      {
+        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "status": 400,
+        "why": "mutation with no body: the missing-body refusal"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "request_json": {
+          "hourly": "not-a-number"
+        },
+        "status": 400,
+        "why": "mutation with an uncoercible value: the invalid-value refusal"
+      },
+      {
+        "body_sha256": "0f89f27fbcc5aa417cddd8b5841f8f4e00e808057eb2b3734e57f8184f3a65c5",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't confirm that \u2014 it didn't match your recovery key.",
+          "reason_code": "recovery_key_mismatch"
+        },
+        "method": "POST",
+        "path": "/app/backup/confirm",
+        "request_json": {
+          "recovery_key": "wrong-key-entirely"
+        },
+        "status": 400,
+        "why": "recovery-key mismatch: the refusal an owner can actually trigger"
+      },
+      {
+        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "status": 400,
+        "why": "restore with no body: the missing-field refusal on the destructive route"
+      },
+      {
+        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing recovery_key",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "request_json": {
+          "recovery_key": "   "
+        },
+        "status": 400,
+        "why": "restore with a blank recovery key: whitespace is not a key"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/offload/config",
+        "request_json": {
+          "budget_bytes": -1
+        },
+        "status": 400,
+        "why": "offload config with a negative budget"
+      }
+    ],
+    "fresh": [
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/",
+        "status": 200,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 19226,
+        "body_sha256": "5965358627dd1c3d9fd5a02e65f4dd818bba20cd580c9d012fb36a267ab4b30b",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/background",
+        "status": 404,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 55221,
+        "body_sha256": "f16ed5e07cc67f7a16ca4371a5cc321e63e7fbee1d86e29afa9d9ce3f0e7e0f5",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.js",
+        "status": 200,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 10197,
+        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/css; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.css",
+        "status": 200,
+        "why": "per-app static stylesheet"
+      },
+      {
+        "body_sha256": "4c8b34841a1e537f8c04ed6b975d738646f3ef2c02a729481beafb957627ec6f",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "daily_key_set": false,
+          "destination": {
+            "backend": null,
+            "credentials_set": false,
+            "repository": null
+          },
+          "enabled": false,
+          "hosted": {
+            "bound": false
+          },
+          "last_backup": {
+            "error_reason": null,
+            "snapshot_id": null,
+            "status": null,
+            "time": null
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_prune": {
+            "error_reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": null,
+            "last_ok_time": null,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "mode": "byo",
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "recovery_key_confirmed": false,
+          "recovery_key_set": false,
+          "retention": {
+            "daily": 7,
+            "hourly": 24,
+            "monthly": 12,
+            "weekly": 4
+          },
+          "schedule": {
+            "enabled": false,
+            "every": "daily"
+          },
+          "success": true
+        },
+        "method": "GET",
+        "path": "/app/backup/status",
+        "status": 200,
+        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+      },
+      {
+        "body_sha256": "ce3a4800ce2220312658172c0708b9aefeaca5dcaeefd22f4c918652f7ebbfbe",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "backup_only": {
+            "degraded": false,
+            "skipped_records": 0,
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0,
+            "unreadable_ledgers": []
+          },
+          "days": [],
+          "device": {
+            "free_bytes": 250000000000,
+            "total_bytes": 1000000000000
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": null,
+            "last_ok_time": null,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "pending_release": {
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0
+          },
+          "raw_media": {
+            "total_bytes": 0,
+            "total_files": 0
+          },
+          "success": true,
+          "suggested_defaults": {
+            "budget_bytes": 500000000000,
+            "floor_bytes": 100000000000
+          }
+        },
+        "method": "GET",
+        "path": "/app/backup/offload/status",
+        "status": 200,
+        "why": "media-offload status view"
+      },
+      {
+        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "status": 400,
+        "why": "mutation with no body: the missing-body refusal"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "request_json": {
+          "hourly": "not-a-number"
+        },
+        "status": 400,
+        "why": "mutation with an uncoercible value: the invalid-value refusal"
+      },
+      {
+        "body_sha256": "847e17f6b7e126a0edc79ac9c843cc87d87843e4b176555ec3e9db2f73bf3a59",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "no recovery key yet",
+          "error": "I couldn't take that action in the current state.",
+          "reason_code": "invalid_operation_for_state"
+        },
+        "method": "POST",
+        "path": "/app/backup/confirm",
+        "request_json": {
+          "recovery_key": "wrong-key-entirely"
+        },
+        "status": 400,
+        "why": "recovery-key mismatch: the refusal an owner can actually trigger"
+      },
+      {
+        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "status": 400,
+        "why": "restore with no body: the missing-field refusal on the destructive route"
+      },
+      {
+        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing recovery_key",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "request_json": {
+          "recovery_key": "   "
+        },
+        "status": 400,
+        "why": "restore with a blank recovery key: whitespace is not a key"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/offload/config",
+        "request_json": {
+          "budget_bytes": -1
+        },
+        "status": 400,
+        "why": "offload config with a negative budget"
+      }
+    ],
+    "healthy": [
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/",
+        "status": 200,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 19226,
+        "body_sha256": "5965358627dd1c3d9fd5a02e65f4dd818bba20cd580c9d012fb36a267ab4b30b",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/background",
+        "status": 404,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 55221,
+        "body_sha256": "f16ed5e07cc67f7a16ca4371a5cc321e63e7fbee1d86e29afa9d9ce3f0e7e0f5",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.js",
+        "status": 200,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 10197,
+        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/css; charset=utf-8",
+        "method": "GET",
+        "path": "/app/backup/static/backup.css",
+        "status": 200,
+        "why": "per-app static stylesheet"
+      },
+      {
+        "body_sha256": "b959ed45a703fcf7d299706186c5caeff82a1e12e288dbb0f7cefc13a50b593d",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "daily_key_set": true,
+          "destination": {
+            "backend": "s3",
+            "credentials_set": true,
+            "repository": "s3:s3.example.invalid/journal-corpus"
+          },
+          "enabled": true,
+          "hosted": {
+            "bound": false
+          },
+          "last_backup": {
+            "error_reason": null,
+            "snapshot_id": "9f2c1ab4",
+            "status": "ok",
+            "time": 1770000000
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_prune": {
+            "error_reason": null,
+            "status": "ok",
+            "time": 1769996400
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": "5%",
+            "last_ok_time": 1769990000,
+            "reason": null,
+            "status": "ok",
+            "time": 1769990000
+          },
+          "mode": "byo",
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "recovery_key_confirmed": true,
+          "recovery_key_set": true,
+          "retention": {
+            "daily": 7,
+            "hourly": 24,
+            "monthly": 12,
+            "weekly": 4
+          },
+          "schedule": {
+            "enabled": true,
+            "every": "daily"
+          },
+          "success": true
+        },
+        "method": "GET",
+        "path": "/app/backup/status",
+        "status": 200,
+        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+      },
+      {
+        "body_sha256": "d69d24559aa8663ad8562424fe8dd4f79da8f5c6af579d8ee8720d1f2d11a45f",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "backup_only": {
+            "degraded": false,
+            "skipped_records": 0,
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0,
+            "unreadable_ledgers": []
+          },
+          "days": [],
+          "device": {
+            "free_bytes": 250000000000,
+            "total_bytes": 1000000000000
+          },
+          "last_offload": {
+            "bytes_marked": 0,
+            "files_marked": 0,
+            "last_ok_time": null,
+            "ran_out_of_markable_media": false,
+            "reason": null,
+            "status": null,
+            "time": null
+          },
+          "last_restore": {
+            "bytes_expected": 0,
+            "bytes_restored": 0,
+            "day": null,
+            "files_expected": 0,
+            "files_restored": 0,
+            "reason": null,
+            "scope": null,
+            "segments_restored": 0,
+            "segments_selected": 0,
+            "status": null,
+            "time": null
+          },
+          "last_verification": {
+            "checked_subset": "5%",
+            "last_ok_time": 1769990000,
+            "reason": null,
+            "status": "ok",
+            "time": 1769990000
+          },
+          "offload": {
+            "budget_bytes": null,
+            "enabled": false,
+            "floor_bytes": null
+          },
+          "operation": null,
+          "pending_release": {
+            "total_bytes": 0,
+            "total_days": 0,
+            "total_files": 0,
+            "total_segments": 0
+          },
+          "raw_media": {
+            "total_bytes": 0,
+            "total_files": 0
+          },
+          "success": true,
+          "suggested_defaults": {
+            "budget_bytes": 500000000000,
+            "floor_bytes": 100000000000
+          }
+        },
+        "method": "GET",
+        "path": "/app/backup/offload/status",
+        "status": 200,
+        "why": "media-offload status view"
+      },
+      {
+        "body_sha256": "b6efbf43d6febdd68e8000696d5579e43d4a8bbb754e23b305135d28eace4462",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "status": 400,
+        "why": "mutation with no body: the missing-body refusal"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "request_json": {
+          "hourly": "not-a-number"
+        },
+        "status": 400,
+        "why": "mutation with an uncoercible value: the invalid-value refusal"
+      },
+      {
+        "body_sha256": "0f89f27fbcc5aa417cddd8b5841f8f4e00e808057eb2b3734e57f8184f3a65c5",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't confirm that \u2014 it didn't match your recovery key.",
+          "reason_code": "recovery_key_mismatch"
+        },
+        "method": "POST",
+        "path": "/app/backup/confirm",
+        "request_json": {
+          "recovery_key": "wrong-key-entirely"
+        },
+        "status": 400,
+        "why": "recovery-key mismatch: the refusal an owner can actually trigger"
+      },
+      {
+        "body_sha256": "1ee5c28359c7079116cbba3d03e1144f35337f65015fc73b96e0a53637af17ee",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing request body",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "status": 400,
+        "why": "restore with no body: the missing-field refusal on the destructive route"
+      },
+      {
+        "body_sha256": "1885fe4d95daf31e7ee06874170d8a68f24bfaeebadd292d7a24fc4c59f83082",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "missing recovery_key",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "request_json": {
+          "recovery_key": "   "
+        },
+        "status": 400,
+        "why": "restore with a blank recovery key: whitespace is not a key"
+      },
+      {
+        "body_sha256": "0d59ab42d957069e35a612eda67bf4fc56e469094b346024e5a0e07869c26c69",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "",
+          "error": "I couldn't save that setting because one value was invalid.",
+          "reason_code": "invalid_config_value"
+        },
+        "method": "POST",
+        "path": "/app/backup/offload/config",
+        "request_json": {
+          "budget_bytes": -1
+        },
+        "status": 400,
+        "why": "offload config with a negative budget"
+      }
+    ],
+    "unestablished": [
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/",
+        "status": 302,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/workspace",
+        "status": 302,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/background",
+        "status": 302,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/static/backup.js",
+        "status": 302,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/static/backup.css",
+        "status": 302,
+        "why": "per-app static stylesheet"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/status",
+        "status": 302,
+        "why": "\ud83d\udd34 the honesty probe: the full status view an owner's page renders from"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/backup/offload/status",
+        "status": 302,
+        "why": "media-offload status view"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "status": 302,
+        "why": "mutation with no body: the missing-body refusal"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/backup/retention",
+        "request_json": {
+          "hourly": "not-a-number"
+        },
+        "status": 302,
+        "why": "mutation with an uncoercible value: the invalid-value refusal"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/backup/confirm",
+        "request_json": {
+          "recovery_key": "wrong-key-entirely"
+        },
+        "status": 302,
+        "why": "recovery-key mismatch: the refusal an owner can actually trigger"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "status": 302,
+        "why": "restore with no body: the missing-field refusal on the destructive route"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/backup/restore",
+        "request_json": {
+          "recovery_key": "   "
+        },
+        "status": 302,
+        "why": "restore with a blank recovery key: whitespace is not a key"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/backup/offload/config",
+        "request_json": {
+          "budget_bytes": -1
+        },
+        "status": 302,
+        "why": "offload config with a negative budget"
+      }
+    ]
+  },
+  "pinned": {
+    "backup_error_time": 1770003600,
+    "backup_ok_time": 1770000000,
+    "completed_at": 1767225600,
+    "prune_time": 1769996400,
+    "snapshot_id": "9f2c1ab4",
+    "verify_error_time": 1770003000,
+    "verify_ok_time": 1769990000
+  },
+  "placeholders": {
+    "journal_root": "<JOURNAL_ROOT>"
+  },
+  "schema": "solstone-convey-backup-corpus-v1",
+  "tz": "UTC"
+}

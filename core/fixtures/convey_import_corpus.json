@@ -1,0 +1,2498 @@
+{
+  "generator": "scripts/convey_import_corpus.py",
+  "phases": {
+    "corrupt": [
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/",
+        "status": 500,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/workspace",
+        "status": 500,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/background",
+        "status": 500,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/static/import_detail.js",
+        "status": 500,
+        "why": "per-app static script"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/sources",
+        "status": 500,
+        "why": "the source catalogue the picker renders"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/list",
+        "status": 500,
+        "why": "\ud83d\udd34 the import history list: a LIST of enriched records, not a map"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/ics",
+        "status": 500,
+        "why": "an export guide that exists"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/nope",
+        "status": 500,
+        "why": "an export guide that does not exist: 404, not an empty 200"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/BAD-Name",
+        "status": 500,
+        "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
+      },
+      {
+        "body_bytes": 183,
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a",
+        "body_sha256_basis": "raw-body",
+        "body_text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+        "content_type": "text/plain; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/20260801_120000",
+        "status": 500,
+        "why": "the per-import detail shell"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260801_120000",
+        "status": 500,
+        "why": "detail for a successfully processed import"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260802_130000",
+        "status": 500,
+        "why": "detail for a failed import: status and error_stage travel"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260803_140000",
+        "status": 500,
+        "why": "detail for an unstarted import"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20991231_235959",
+        "status": 500,
+        "why": "detail for an import that does not exist"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260801_120000/content",
+        "status": 500,
+        "why": "content for an import with no manifest and none derivable: refusal, not an empty 200"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content",
+        "status": 500,
+        "why": "the content listing for an import that has a manifest"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content?month=202608&per_page=1&page=2",
+        "status": 500,
+        "why": "the same listing filtered and paged: the arithmetic, not just the shape"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content/corpus-entry-2",
+        "status": 500,
+        "why": "one content item by id"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content/no-such-entry",
+        "status": 500,
+        "why": "a content item id that is not in the manifest"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/list",
+        "status": 500,
+        "why": "the registered journal sources an owner can see"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/status",
+        "status": 500,
+        "why": "status for a registered source"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/missing/status",
+        "status": 500,
+        "why": "status for an unregistered source: refusal"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/staged",
+        "status": 500,
+        "why": "staged review items for a registered source"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/missing/staged",
+        "status": 500,
+        "why": "staged items for an unregistered source: refusal"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/save-path",
+        "request_json": {},
+        "status": 500,
+        "why": "register-a-path with no fields: the missing-field refusal"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/save-path",
+        "request_json": {
+          "client_item_id": "corpus-1",
+          "path": "/nonexistent/corpus/path"
+        },
+        "status": 500,
+        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/meta",
+        "request_json": {},
+        "status": 500,
+        "why": "metadata update with no target"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": ""
+        },
+        "status": 500,
+        "why": "source create with an empty name"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "../escape"
+        },
+        "status": 500,
+        "why": "\ud83d\udd34 source create with a traversal name: what the name guard ACTUALLY guards"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "corpus_peer"
+        },
+        "status": 500,
+        "why": "source create colliding with a registered name: 409, not a silent overwrite"
+      },
+      {
+        "body_normalized": [
+          "<JOURNAL_ROOT>"
+        ],
+        "body_sha256": "912e740ed7edc32a2ff7ee5bf3da573efd648c9d5df6d567d3468e8c20b08fd2",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "error": "I couldn't read your settings.",
+          "reason_code": "corrupt_config"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/resolve-config",
+        "request_json": {
+          "action": "skip",
+          "field": "unknown.field"
+        },
+        "status": 500,
+        "why": "resolve a config field that was never staged"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/corpusSo/manifest/entities",
+        "status": 401,
+        "why": "\ud83d\udd34 door probe with NO key: must refuse on its own terms, never 302 to /init"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/00000000/manifest/entities",
+        "status": 401,
+        "why": "door probe for an unknown prefix with no key"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "POST",
+        "path": "/app/import/journal/corpusSo/ingest/entities",
+        "request_json": {
+          "entities": []
+        },
+        "status": 401,
+        "why": "\ud83d\udd34 ingest POST with no key: the door's own refusal"
+      }
+    ],
+    "empty": [
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/",
+        "status": 200,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 86042,
+        "body_sha256": "655289e15e8d7d322c2d04b5e93ea8d78378ca2c48a9093de3c4e23cd8ba81c7",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/background",
+        "status": 404,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 19649,
+        "body_sha256": "d66fdda8df4676a00100c0ad9a534193f3cc489de61e3ffa8d574af7025568f2",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/static/import_detail.js",
+        "status": 200,
+        "why": "per-app static script"
+      },
+      {
+        "body_sha256": "42f56c16e2e769f4cc6a192482ab5621b9c03d2065b8ac261e841570d3dcf80f",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [
+            {
+              "accept": ".ics,.zip",
+              "description": "import events from Google Calendar, Apple Calendar, or Outlook",
+              "display_name": "calendar",
+              "has_guide": true,
+              "icon": "calendar",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M8 2v4\" /> <path d=\"M16 2v4\" /> <rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /> <path d=\"M3 10h18\" /> </svg>",
+              "input_type": "file",
+              "name": "ics",
+              "upload_prompt": "upload your .ics file or .zip export"
+            },
+            {
+              "accept": ".zip",
+              "description": "import your conversation history from ChatGPT",
+              "display_name": "ChatGPT",
+              "has_guide": true,
+              "icon": "message-square",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" /> </svg>",
+              "input_type": "file",
+              "name": "chatgpt",
+              "upload_prompt": "upload your ChatGPT export .zip file"
+            },
+            {
+              "accept": ".zip",
+              "description": "import your conversation history from Claude",
+              "display_name": "Claude",
+              "has_guide": true,
+              "icon": "message-circle",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\" /> </svg>",
+              "input_type": "file",
+              "name": "claude",
+              "upload_prompt": "upload your Claude export .zip file"
+            },
+            {
+              "accept": ".zip,.json",
+              "description": "import your activity history from Google Gemini",
+              "display_name": "Gemini",
+              "has_guide": true,
+              "icon": "sparkles",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" /> <path d=\"M20 2v4\" /> <path d=\"M22 4h-4\" /> <circle cx=\"4\" cy=\"20\" r=\"2\" /> </svg>",
+              "input_type": "file",
+              "name": "gemini",
+              "upload_prompt": "upload your Google Takeout .zip file"
+            },
+            {
+              "accept": "",
+              "description": "import notes from Obsidian, Logseq, or any markdown vault",
+              "display_name": "notes",
+              "has_guide": true,
+              "icon": "file-text",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" /> </svg>",
+              "input_type": "path_input",
+              "name": "obsidian",
+              "upload_prompt": "paste the full path to your vault folder"
+            },
+            {
+              "accept": ".txt",
+              "description": "import highlights and clippings from your Kindle",
+              "display_name": "Kindle",
+              "has_guide": true,
+              "icon": "book-open",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 7v14\" /> <path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\" /> </svg>",
+              "input_type": "file",
+              "name": "kindle",
+              "upload_prompt": "upload your My Clippings.txt file"
+            },
+            {
+              "accept": ".zip",
+              "description": "import a full journal export from another journal",
+              "display_name": "journal",
+              "has_guide": true,
+              "icon": "book",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20\" /> </svg>",
+              "input_type": "file",
+              "name": "journal_archive",
+              "upload_prompt": "upload your journal export .zip file"
+            },
+            {
+              "accept": ".flac,.gif,.heic,.heif,.jpeg,.jpg,.m4a,.mov,.mp3,.mp4,.ogg,.opus,.png,.tiff,.wav,.webm,.webp",
+              "description": "import audio from meetings or conversations",
+              "display_name": "meeting audio",
+              "has_guide": false,
+              "icon": "mic",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 19v3\" /> <path d=\"M19 10v2a7 7 0 0 1-14 0v-2\" /> <rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\" /> </svg>",
+              "input_type": "file",
+              "name": "recording",
+              "upload_prompt": "upload an audio file (.m4a, .mp3, .wav)"
+            },
+            {
+              "accept": ".pdf",
+              "description": "import a PDF document",
+              "display_name": "document",
+              "has_guide": false,
+              "icon": "file",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> </svg>",
+              "input_type": "file",
+              "name": "document",
+              "upload_prompt": "upload a PDF file"
+            },
+            {
+              "accept": ".png,.jpg,.jpeg,.webp,.gif,.tiff",
+              "description": "add a photo or screenshot and let sol describe what's in it",
+              "display_name": "image",
+              "has_guide": false,
+              "icon": "image",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" /> </svg>",
+              "input_type": "file",
+              "name": "image",
+              "upload_prompt": "upload an image (PNG, JPEG, WebP, GIF, TIFF)"
+            },
+            {
+              "accept": "",
+              "description": "paste text or drop any file for quick import",
+              "display_name": "quick import",
+              "has_guide": false,
+              "icon": "zap",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\" /> </svg>",
+              "input_type": "text",
+              "name": "quick",
+              "upload_prompt": "paste text or drag and drop a file"
+            }
+          ],
+          "total": 11
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/sources",
+        "status": 200,
+        "why": "the source catalogue the picker renders"
+      },
+      {
+        "body_sha256": "88378da9c798e5c850b7d797bfbe08155bd4a82b4ec79593171eb3cfc65ef204",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "imports": [],
+          "page": 1,
+          "pages": 0,
+          "per_page": 25,
+          "total": 0,
+          "total_entities_seeded": 0,
+          "total_entries_written": 0
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/list",
+        "status": 200,
+        "why": "\ud83d\udd34 the import history list: a LIST of enriched records, not a map"
+      },
+      {
+        "body_bytes": 786,
+        "body_sha256": "4589dc854e36abd4cfe86161c47f8654c73fd0d5271b9b5d2c2e8359eee8db46",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/markdown; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/api/guide/ics",
+        "status": 200,
+        "why": "an export guide that exists"
+      },
+      {
+        "body_sha256": "3c41c78540db3098be5428c316635a273009e1bff571902eb7207c0a980282df",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No guide available for 'nope'",
+          "error": "I couldn't find that file.",
+          "reason_code": "file_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/nope",
+        "status": 404,
+        "why": "an export guide that does not exist: 404, not an empty 200"
+      },
+      {
+        "body_sha256": "ff633eeb6c690fc27f02eb45147e9d65ffa150a53ee1d184c3d4b68e5cd4bdf6",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Invalid source name",
+          "error": "I couldn't use one of those values.",
+          "reason_code": "invalid_request_value"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/BAD-Name",
+        "status": 400,
+        "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
+      },
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/20260801_120000",
+        "status": 200,
+        "why": "the per-import detail shell"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260801_120000",
+        "status": 404,
+        "why": "detail for a successfully processed import"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260802_130000",
+        "status": 404,
+        "why": "detail for a failed import: status and error_stage travel"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260803_140000",
+        "status": 404,
+        "why": "detail for an unstarted import"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20991231_235959",
+        "status": 404,
+        "why": "detail for an import that does not exist"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260801_120000/content",
+        "status": 404,
+        "why": "content for an import with no manifest and none derivable: refusal, not an empty 200"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content",
+        "status": 404,
+        "why": "the content listing for an import that has a manifest"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content?month=202608&per_page=1&page=2",
+        "status": 404,
+        "why": "the same listing filtered and paged: the arithmetic, not just the shape"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content/corpus-entry-2",
+        "status": 404,
+        "why": "one content item by id"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content/no-such-entry",
+        "status": 404,
+        "why": "a content item id that is not in the manifest"
+      },
+      {
+        "body_sha256": "064df1fce45c656b27ccdde3138912b90bcc288bdd6ef944cc295dc87d63101f",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [
+            {
+              "created_at": 1767225600000,
+              "name": "corpus_peer",
+              "prefix": "corpusSo",
+              "status": "active"
+            }
+          ],
+          "total": 1
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/list",
+        "status": 200,
+        "why": "the registered journal sources an owner can see"
+      },
+      {
+        "body_sha256": "5aedcc49d89e8362f1349d780ed31b718765df5c7d1c338c2667f025d373f1fb",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "created_at": "<DIR_CTIME>",
+          "name": "corpus_peer",
+          "prefix": "corpusSo",
+          "revoked": false,
+          "revoked_at": null,
+          "stats": {
+            "config_received": 0,
+            "entities_received": 0,
+            "facets_received": 0,
+            "imports_received": 0,
+            "segments_received": 0
+          },
+          "status": "active"
+        },
+        "method": "GET",
+        "normalized_fields": [
+          "created_at"
+        ],
+        "path": "/app/import/api/journal-sources/corpus_peer/status",
+        "status": 200,
+        "why": "status for a registered source"
+      },
+      {
+        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Journal source 'missing' not found",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/missing/status",
+        "status": 404,
+        "why": "status for an unregistered source: refusal"
+      },
+      {
+        "body_sha256": "4bf7c8639bc34bbbae5aef4aba3c724f9a425cbdc0416ab6384f7745ae1acb96",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [],
+          "total": 0
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/staged",
+        "status": 200,
+        "why": "staged review items for a registered source"
+      },
+      {
+        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Journal source 'missing' not found",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/missing/staged",
+        "status": 404,
+        "why": "staged items for an unregistered source: refusal"
+      },
+      {
+        "body_sha256": "291757152d8947ee33d3e7d864698d7cc45c76b38d00de8402878dab98c89268",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Missing client_item_id",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/save-path",
+        "request_json": {},
+        "status": 400,
+        "why": "register-a-path with no fields: the missing-field refusal"
+      },
+      {
+        "body_sha256": "ec9ee00d51373266e05750a90c9755929a9c12a88458cbfcb21db24047df95f5",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Path not found: /nonexistent/corpus/path",
+          "error": "I couldn't find that file.",
+          "reason_code": "file_not_found"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/save-path",
+        "request_json": {
+          "client_item_id": "corpus-1",
+          "path": "/nonexistent/corpus/path"
+        },
+        "status": 404,
+        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+      },
+      {
+        "body_sha256": "c4033225676f468e936dc5be368aafdb6b5be13fcf96bd38aaed83b0bbc5c022",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Missing import path",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/meta",
+        "request_json": {},
+        "status": 400,
+        "why": "metadata update with no target"
+      },
+      {
+        "body_sha256": "882c03f0de998cdd07dd647fabf65bcc133abcfe83b441fd1ad2cb2939f10dbd",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Name is required",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": ""
+        },
+        "status": 400,
+        "why": "source create with an empty name"
+      },
+      {
+        "body_sha256": "87558b0f823b7102eea54ede5c516165d4a09472376865f972ced18ce1021bba",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Invalid journal source name",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "../escape"
+        },
+        "status": 400,
+        "why": "\ud83d\udd34 source create with a traversal name: what the name guard ACTUALLY guards"
+      },
+      {
+        "body_sha256": "18cf601c674bb7e9606fe264d9b53de9847cc19781dd95f4d2f6703d34d64216",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Journal source 'corpus_peer' already exists",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "corpus_peer"
+        },
+        "status": 409,
+        "why": "source create colliding with a registered name: 409, not a silent overwrite"
+      },
+      {
+        "body_sha256": "74e3c2a24104cd3cf7523f2405dee65e01b2a38a5937a799d856838068dd28a7",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No staged config diff found.",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/resolve-config",
+        "request_json": {
+          "action": "skip",
+          "field": "unknown.field"
+        },
+        "status": 404,
+        "why": "resolve a config field that was never staged"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/corpusSo/manifest/entities",
+        "status": 401,
+        "why": "\ud83d\udd34 door probe with NO key: must refuse on its own terms, never 302 to /init"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/00000000/manifest/entities",
+        "status": 401,
+        "why": "door probe for an unknown prefix with no key"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "POST",
+        "path": "/app/import/journal/corpusSo/ingest/entities",
+        "request_json": {
+          "entities": []
+        },
+        "status": 401,
+        "why": "\ud83d\udd34 ingest POST with no key: the door's own refusal"
+      }
+    ],
+    "populated": [
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/",
+        "status": 200,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 86042,
+        "body_sha256": "655289e15e8d7d322c2d04b5e93ea8d78378ca2c48a9093de3c4e23cd8ba81c7",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/workspace",
+        "status": 200,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/background",
+        "status": 404,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 19649,
+        "body_sha256": "d66fdda8df4676a00100c0ad9a534193f3cc489de61e3ffa8d574af7025568f2",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/javascript; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/static/import_detail.js",
+        "status": 200,
+        "why": "per-app static script"
+      },
+      {
+        "body_sha256": "42f56c16e2e769f4cc6a192482ab5621b9c03d2065b8ac261e841570d3dcf80f",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [
+            {
+              "accept": ".ics,.zip",
+              "description": "import events from Google Calendar, Apple Calendar, or Outlook",
+              "display_name": "calendar",
+              "has_guide": true,
+              "icon": "calendar",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M8 2v4\" /> <path d=\"M16 2v4\" /> <rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /> <path d=\"M3 10h18\" /> </svg>",
+              "input_type": "file",
+              "name": "ics",
+              "upload_prompt": "upload your .ics file or .zip export"
+            },
+            {
+              "accept": ".zip",
+              "description": "import your conversation history from ChatGPT",
+              "display_name": "ChatGPT",
+              "has_guide": true,
+              "icon": "message-square",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" /> </svg>",
+              "input_type": "file",
+              "name": "chatgpt",
+              "upload_prompt": "upload your ChatGPT export .zip file"
+            },
+            {
+              "accept": ".zip",
+              "description": "import your conversation history from Claude",
+              "display_name": "Claude",
+              "has_guide": true,
+              "icon": "message-circle",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\" /> </svg>",
+              "input_type": "file",
+              "name": "claude",
+              "upload_prompt": "upload your Claude export .zip file"
+            },
+            {
+              "accept": ".zip,.json",
+              "description": "import your activity history from Google Gemini",
+              "display_name": "Gemini",
+              "has_guide": true,
+              "icon": "sparkles",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" /> <path d=\"M20 2v4\" /> <path d=\"M22 4h-4\" /> <circle cx=\"4\" cy=\"20\" r=\"2\" /> </svg>",
+              "input_type": "file",
+              "name": "gemini",
+              "upload_prompt": "upload your Google Takeout .zip file"
+            },
+            {
+              "accept": "",
+              "description": "import notes from Obsidian, Logseq, or any markdown vault",
+              "display_name": "notes",
+              "has_guide": true,
+              "icon": "file-text",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" /> </svg>",
+              "input_type": "path_input",
+              "name": "obsidian",
+              "upload_prompt": "paste the full path to your vault folder"
+            },
+            {
+              "accept": ".txt",
+              "description": "import highlights and clippings from your Kindle",
+              "display_name": "Kindle",
+              "has_guide": true,
+              "icon": "book-open",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 7v14\" /> <path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\" /> </svg>",
+              "input_type": "file",
+              "name": "kindle",
+              "upload_prompt": "upload your My Clippings.txt file"
+            },
+            {
+              "accept": ".zip",
+              "description": "import a full journal export from another journal",
+              "display_name": "journal",
+              "has_guide": true,
+              "icon": "book",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20\" /> </svg>",
+              "input_type": "file",
+              "name": "journal_archive",
+              "upload_prompt": "upload your journal export .zip file"
+            },
+            {
+              "accept": ".flac,.gif,.heic,.heif,.jpeg,.jpg,.m4a,.mov,.mp3,.mp4,.ogg,.opus,.png,.tiff,.wav,.webm,.webp",
+              "description": "import audio from meetings or conversations",
+              "display_name": "meeting audio",
+              "has_guide": false,
+              "icon": "mic",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 19v3\" /> <path d=\"M19 10v2a7 7 0 0 1-14 0v-2\" /> <rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\" /> </svg>",
+              "input_type": "file",
+              "name": "recording",
+              "upload_prompt": "upload an audio file (.m4a, .mp3, .wav)"
+            },
+            {
+              "accept": ".pdf",
+              "description": "import a PDF document",
+              "display_name": "document",
+              "has_guide": false,
+              "icon": "file",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> </svg>",
+              "input_type": "file",
+              "name": "document",
+              "upload_prompt": "upload a PDF file"
+            },
+            {
+              "accept": ".png,.jpg,.jpeg,.webp,.gif,.tiff",
+              "description": "add a photo or screenshot and let sol describe what's in it",
+              "display_name": "image",
+              "has_guide": false,
+              "icon": "image",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" /> </svg>",
+              "input_type": "file",
+              "name": "image",
+              "upload_prompt": "upload an image (PNG, JPEG, WebP, GIF, TIFF)"
+            },
+            {
+              "accept": "",
+              "description": "paste text or drop any file for quick import",
+              "display_name": "quick import",
+              "has_guide": false,
+              "icon": "zap",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z\" /> </svg>",
+              "input_type": "text",
+              "name": "quick",
+              "upload_prompt": "paste text or drag and drop a file"
+            }
+          ],
+          "total": 11
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/sources",
+        "status": 200,
+        "why": "the source catalogue the picker renders"
+      },
+      {
+        "body_sha256": "6c13ce523deed85b748d4600e31025ff3ea69ffaba6873b64f045b3455a90770",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "imports": [
+            {
+              "created_at": "<DIR_CTIME>",
+              "date_range": null,
+              "entities_seeded": null,
+              "entries_written": null,
+              "error": null,
+              "error_stage": null,
+              "facet": null,
+              "file_size": 42,
+              "imported_at": "<DIR_CTIME>",
+              "imported_via": "web_dashboard",
+              "link_id": null,
+              "mime_type": "application/json",
+              "observer_handle": null,
+              "original_filename": "conversations.json",
+              "processed": true,
+              "setting": null,
+              "source_display": "ChatGPT",
+              "source_type": "chatgpt",
+              "status": "success",
+              "target_day": null,
+              "task_id": null,
+              "timestamp": "20260804_150000",
+              "total_files_created": 0,
+              "user_timestamp": null
+            },
+            {
+              "created_at": "<DIR_CTIME>",
+              "error": null,
+              "error_stage": null,
+              "facet": null,
+              "file_size": 42,
+              "imported_at": "<DIR_CTIME>",
+              "imported_via": "web_dashboard",
+              "link_id": null,
+              "mime_type": "text/plain",
+              "observer_handle": null,
+              "original_filename": "waiting.md",
+              "processed": false,
+              "setting": null,
+              "status": "pending",
+              "task_id": null,
+              "timestamp": "20260803_140000",
+              "user_timestamp": null
+            },
+            {
+              "created_at": "<DIR_CTIME>",
+              "date_range": null,
+              "entities_seeded": null,
+              "entries_written": null,
+              "error": "calendar payload could not be parsed",
+              "error_stage": "detect",
+              "facet": null,
+              "file_size": 42,
+              "imported_at": "<DIR_CTIME>",
+              "imported_via": "web_dashboard",
+              "link_id": null,
+              "mime_type": "text/calendar",
+              "observer_handle": null,
+              "original_filename": "broken.ics",
+              "processed": true,
+              "setting": null,
+              "source_display": null,
+              "source_type": null,
+              "status": "failed",
+              "target_day": null,
+              "task_id": null,
+              "timestamp": "20260802_130000",
+              "total_files_created": 0,
+              "user_timestamp": null
+            },
+            {
+              "created_at": "<DIR_CTIME>",
+              "date_range": null,
+              "entities_seeded": null,
+              "entries_written": null,
+              "error": null,
+              "error_stage": null,
+              "facet": null,
+              "file_size": 42,
+              "imported_at": "<DIR_CTIME>",
+              "imported_via": "web_dashboard",
+              "link_id": null,
+              "mime_type": "text/plain",
+              "observer_handle": null,
+              "original_filename": "notes.txt",
+              "processed": true,
+              "setting": null,
+              "source_display": null,
+              "source_type": null,
+              "status": "success",
+              "target_day": null,
+              "task_id": null,
+              "timestamp": "20260801_120000",
+              "total_files_created": 0,
+              "user_timestamp": null
+            }
+          ],
+          "page": 1,
+          "pages": 1,
+          "per_page": 25,
+          "total": 4,
+          "total_entities_seeded": 0,
+          "total_entries_written": 0
+        },
+        "method": "GET",
+        "normalized_fields": [
+          "imports[].created_at",
+          "imports[].imported_at"
+        ],
+        "path": "/app/import/api/list",
+        "status": 200,
+        "why": "\ud83d\udd34 the import history list: a LIST of enriched records, not a map"
+      },
+      {
+        "body_bytes": 786,
+        "body_sha256": "4589dc854e36abd4cfe86161c47f8654c73fd0d5271b9b5d2c2e8359eee8db46",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/markdown; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/api/guide/ics",
+        "status": 200,
+        "why": "an export guide that exists"
+      },
+      {
+        "body_sha256": "3c41c78540db3098be5428c316635a273009e1bff571902eb7207c0a980282df",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No guide available for 'nope'",
+          "error": "I couldn't find that file.",
+          "reason_code": "file_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/nope",
+        "status": 404,
+        "why": "an export guide that does not exist: 404, not an empty 200"
+      },
+      {
+        "body_sha256": "ff633eeb6c690fc27f02eb45147e9d65ffa150a53ee1d184c3d4b68e5cd4bdf6",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Invalid source name",
+          "error": "I couldn't use one of those values.",
+          "reason_code": "invalid_request_value"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/guide/BAD-Name",
+        "status": 400,
+        "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
+      },
+      {
+        "body_bytes": 12199,
+        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/20260801_120000",
+        "status": 200,
+        "why": "the per-import detail shell"
+      },
+      {
+        "body_sha256": "e30d43ddbfb2dd20dedda0c59b7a765304973cf0109b7e4deed25e067c7ab436",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "error": null,
+          "error_stage": null,
+          "import_json": {
+            "client_item_id": "corpus-item-1",
+            "facet": null,
+            "file_size": 42,
+            "imported_via": "web_dashboard",
+            "link_id": null,
+            "mime_type": "text/plain",
+            "observer_handle": null,
+            "original_filename": "notes.txt",
+            "setting": null,
+            "source": "corpus",
+            "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "user_timestamp": null
+          },
+          "imported_json": {
+            "days": [
+              "20260801"
+            ],
+            "files_written": 1,
+            "processed": true
+          },
+          "status": "success",
+          "timestamp": "20260801_120000"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260801_120000",
+        "status": 200,
+        "why": "detail for a successfully processed import"
+      },
+      {
+        "body_sha256": "74be32793869aa7703107eda437b0ba218ad7522bd0969de740cf5a35811de5c",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "error": "calendar payload could not be parsed",
+          "error_stage": "detect",
+          "import_json": {
+            "client_item_id": "corpus-item-2",
+            "facet": null,
+            "file_size": 42,
+            "imported_via": "web_dashboard",
+            "link_id": null,
+            "mime_type": "text/calendar",
+            "observer_handle": null,
+            "original_filename": "broken.ics",
+            "setting": null,
+            "source": "corpus",
+            "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "user_timestamp": null
+          },
+          "imported_json": {
+            "error": "calendar payload could not be parsed",
+            "error_stage": "detect",
+            "processed": false
+          },
+          "status": "failed",
+          "timestamp": "20260802_130000"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260802_130000",
+        "status": 200,
+        "why": "detail for a failed import: status and error_stage travel"
+      },
+      {
+        "body_sha256": "c8c2b783584cf32ef0fb90559a4c32d59db38e4d14c32dad34b728af4fbcbcc3",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "error": null,
+          "error_stage": null,
+          "import_json": {
+            "client_item_id": "corpus-item-3",
+            "facet": null,
+            "file_size": 42,
+            "imported_via": "web_dashboard",
+            "link_id": null,
+            "mime_type": "text/plain",
+            "observer_handle": null,
+            "original_filename": "waiting.md",
+            "setting": null,
+            "source": "corpus",
+            "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "user_timestamp": null
+          },
+          "imported_json": null,
+          "status": "pending",
+          "timestamp": "20260803_140000"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260803_140000",
+        "status": 200,
+        "why": "detail for an unstarted import"
+      },
+      {
+        "body_sha256": "584aff5b7885dc2369b00111a33ec16dfa4eb54e729f02360e8c549bfec25c57",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Import not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20991231_235959",
+        "status": 404,
+        "why": "detail for an import that does not exist"
+      },
+      {
+        "body_sha256": "6446d0344200bdb7f1b31f9afa18c9d17555844539b4312ca428f0c0ddf27359",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No content available",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260801_120000/content",
+        "status": 404,
+        "why": "content for an import with no manifest and none derivable: refusal, not an empty 200"
+      },
+      {
+        "body_sha256": "de7e7bea5fb5a05ebfb0844ff9b385e6a6b27db29c40925e325ac80fcefaef24",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [
+            {
+              "body": "the full body of the first entry",
+              "date": "20260801",
+              "id": "corpus-entry-1",
+              "preview": "a short preview of the first entry",
+              "title": "first conversation"
+            },
+            {
+              "body": "the full body of the second entry",
+              "date": "20260802",
+              "id": "corpus-entry-2",
+              "preview": "a short preview of the second entry",
+              "title": "second conversation"
+            },
+            {
+              "body": "the full body of the third entry",
+              "date": "20260901",
+              "id": "corpus-entry-3",
+              "preview": "a short preview of the third entry",
+              "title": "a September conversation"
+            }
+          ],
+          "months": {
+            "202608": 2,
+            "202609": 1
+          },
+          "page": 1,
+          "pages": 1,
+          "per_page": 50,
+          "source_display": "ChatGPT",
+          "source_icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" /> </svg>",
+          "source_type": "chatgpt",
+          "total": 3
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content",
+        "status": 200,
+        "why": "the content listing for an import that has a manifest"
+      },
+      {
+        "body_sha256": "dc3cefa0cd932c35f7d2615af7eba044e55e367f4f9acf2945ae48c82e44115d",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [
+            {
+              "body": "the full body of the second entry",
+              "date": "20260802",
+              "id": "corpus-entry-2",
+              "preview": "a short preview of the second entry",
+              "title": "second conversation"
+            }
+          ],
+          "months": {
+            "202608": 2,
+            "202609": 1
+          },
+          "page": 2,
+          "pages": 2,
+          "per_page": 1,
+          "source_display": "ChatGPT",
+          "source_icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" /> </svg>",
+          "source_type": "chatgpt",
+          "total": 2
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content?month=202608&per_page=1&page=2",
+        "status": 200,
+        "why": "the same listing filtered and paged: the arithmetic, not just the shape"
+      },
+      {
+        "body_sha256": "5f04b6a13210fb9489c369830f2c3f350e9de34f528a3df2f0873dd72885bb8e",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "content": [],
+          "item": {
+            "body": "the full body of the second entry",
+            "date": "20260802",
+            "id": "corpus-entry-2",
+            "preview": "a short preview of the second entry",
+            "title": "second conversation"
+          }
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content/corpus-entry-2",
+        "status": 200,
+        "why": "one content item by id"
+      },
+      {
+        "body_sha256": "555cd95a6e777a8c43cb04b7a224d3d93a17eabf24e66f50eaa6d4783fcfb29a",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Item not found",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/20260804_150000/content/no-such-entry",
+        "status": 404,
+        "why": "a content item id that is not in the manifest"
+      },
+      {
+        "body_sha256": "064df1fce45c656b27ccdde3138912b90bcc288bdd6ef944cc295dc87d63101f",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [
+            {
+              "created_at": 1767225600000,
+              "name": "corpus_peer",
+              "prefix": "corpusSo",
+              "status": "active"
+            }
+          ],
+          "total": 1
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/list",
+        "status": 200,
+        "why": "the registered journal sources an owner can see"
+      },
+      {
+        "body_sha256": "5aedcc49d89e8362f1349d780ed31b718765df5c7d1c338c2667f025d373f1fb",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "created_at": "<DIR_CTIME>",
+          "name": "corpus_peer",
+          "prefix": "corpusSo",
+          "revoked": false,
+          "revoked_at": null,
+          "stats": {
+            "config_received": 0,
+            "entities_received": 0,
+            "facets_received": 0,
+            "imports_received": 0,
+            "segments_received": 0
+          },
+          "status": "active"
+        },
+        "method": "GET",
+        "normalized_fields": [
+          "created_at"
+        ],
+        "path": "/app/import/api/journal-sources/corpus_peer/status",
+        "status": 200,
+        "why": "status for a registered source"
+      },
+      {
+        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Journal source 'missing' not found",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/missing/status",
+        "status": 404,
+        "why": "status for an unregistered source: refusal"
+      },
+      {
+        "body_sha256": "4bf7c8639bc34bbbae5aef4aba3c724f9a425cbdc0416ab6384f7745ae1acb96",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "items": [],
+          "total": 0
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/staged",
+        "status": 200,
+        "why": "staged review items for a registered source"
+      },
+      {
+        "body_sha256": "8fd6a2094eead930ed4b25eee19d5950e55b1273beeaa67ff112f0bee1e829e3",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Journal source 'missing' not found",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "GET",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/missing/staged",
+        "status": 404,
+        "why": "staged items for an unregistered source: refusal"
+      },
+      {
+        "body_sha256": "291757152d8947ee33d3e7d864698d7cc45c76b38d00de8402878dab98c89268",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Missing client_item_id",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/save-path",
+        "request_json": {},
+        "status": 400,
+        "why": "register-a-path with no fields: the missing-field refusal"
+      },
+      {
+        "body_sha256": "ec9ee00d51373266e05750a90c9755929a9c12a88458cbfcb21db24047df95f5",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Path not found: /nonexistent/corpus/path",
+          "error": "I couldn't find that file.",
+          "reason_code": "file_not_found"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/save-path",
+        "request_json": {
+          "client_item_id": "corpus-1",
+          "path": "/nonexistent/corpus/path"
+        },
+        "status": 404,
+        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+      },
+      {
+        "body_sha256": "c4033225676f468e936dc5be368aafdb6b5be13fcf96bd38aaed83b0bbc5c022",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Missing import path",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/meta",
+        "request_json": {},
+        "status": 400,
+        "why": "metadata update with no target"
+      },
+      {
+        "body_sha256": "882c03f0de998cdd07dd647fabf65bcc133abcfe83b441fd1ad2cb2939f10dbd",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Name is required",
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": ""
+        },
+        "status": 400,
+        "why": "source create with an empty name"
+      },
+      {
+        "body_sha256": "87558b0f823b7102eea54ede5c516165d4a09472376865f972ced18ce1021bba",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Invalid journal source name",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "../escape"
+        },
+        "status": 400,
+        "why": "\ud83d\udd34 source create with a traversal name: what the name guard ACTUALLY guards"
+      },
+      {
+        "body_sha256": "18cf601c674bb7e9606fe264d9b53de9847cc19781dd95f4d2f6703d34d64216",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "Journal source 'corpus_peer' already exists",
+          "error": "I couldn't use that journal source.",
+          "reason_code": "journal_source_problem"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "corpus_peer"
+        },
+        "status": 409,
+        "why": "source create colliding with a registered name: 409, not a silent overwrite"
+      },
+      {
+        "body_sha256": "74e3c2a24104cd3cf7523f2405dee65e01b2a38a5937a799d856838068dd28a7",
+        "body_sha256_basis": "canonical-json",
+        "content_type": "application/json",
+        "json": {
+          "detail": "No staged config diff found.",
+          "error": "I couldn't find that import.",
+          "reason_code": "import_not_found"
+        },
+        "method": "POST",
+        "normalized_fields": [],
+        "path": "/app/import/api/journal-sources/corpus_peer/resolve-config",
+        "request_json": {
+          "action": "skip",
+          "field": "unknown.field"
+        },
+        "status": 404,
+        "why": "resolve a config field that was never staged"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/corpusSo/manifest/entities",
+        "status": 401,
+        "why": "\ud83d\udd34 door probe with NO key: must refuse on its own terms, never 302 to /init"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/00000000/manifest/entities",
+        "status": 401,
+        "why": "door probe for an unknown prefix with no key"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "POST",
+        "path": "/app/import/journal/corpusSo/ingest/entities",
+        "request_json": {
+          "entities": []
+        },
+        "status": 401,
+        "why": "\ud83d\udd34 ingest POST with no key: the door's own refusal"
+      }
+    ],
+    "unestablished": [
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/",
+        "status": 302,
+        "why": "the app index: the SPA shell, byte-identical"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/workspace",
+        "status": 302,
+        "why": "the app fragment bytes"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/background",
+        "status": 302,
+        "why": "the background fragment"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/static/import_detail.js",
+        "status": 302,
+        "why": "per-app static script"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/sources",
+        "status": 302,
+        "why": "the source catalogue the picker renders"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/list",
+        "status": 302,
+        "why": "\ud83d\udd34 the import history list: a LIST of enriched records, not a map"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/guide/ics",
+        "status": 302,
+        "why": "an export guide that exists"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/guide/nope",
+        "status": 302,
+        "why": "an export guide that does not exist: 404, not an empty 200"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/guide/BAD-Name",
+        "status": 302,
+        "why": "a guide name failing the [a-z_]+ guard: refusal, not a path read"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/20260801_120000",
+        "status": 302,
+        "why": "the per-import detail shell"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260801_120000",
+        "status": 302,
+        "why": "detail for a successfully processed import"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260802_130000",
+        "status": 302,
+        "why": "detail for a failed import: status and error_stage travel"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260803_140000",
+        "status": 302,
+        "why": "detail for an unstarted import"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20991231_235959",
+        "status": 302,
+        "why": "detail for an import that does not exist"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260801_120000/content",
+        "status": 302,
+        "why": "content for an import with no manifest and none derivable: refusal, not an empty 200"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260804_150000/content",
+        "status": 302,
+        "why": "the content listing for an import that has a manifest"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260804_150000/content?month=202608&per_page=1&page=2",
+        "status": 302,
+        "why": "the same listing filtered and paged: the arithmetic, not just the shape"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260804_150000/content/corpus-entry-2",
+        "status": 302,
+        "why": "one content item by id"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/20260804_150000/content/no-such-entry",
+        "status": 302,
+        "why": "a content item id that is not in the manifest"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/journal-sources/list",
+        "status": 302,
+        "why": "the registered journal sources an owner can see"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/journal-sources/corpus_peer/status",
+        "status": 302,
+        "why": "status for a registered source"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/journal-sources/missing/status",
+        "status": 302,
+        "why": "status for an unregistered source: refusal"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/journal-sources/corpus_peer/staged",
+        "status": 302,
+        "why": "staged review items for a registered source"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "GET",
+        "path": "/app/import/api/journal-sources/missing/staged",
+        "status": 302,
+        "why": "staged items for an unregistered source: refusal"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/save-path",
+        "request_json": {},
+        "status": 302,
+        "why": "register-a-path with no fields: the missing-field refusal"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/save-path",
+        "request_json": {
+          "client_item_id": "corpus-1",
+          "path": "/nonexistent/corpus/path"
+        },
+        "status": 302,
+        "why": "\ud83d\udd34 register-a-path pointing at nothing: FILE_NOT_FOUND, and nothing is written"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/meta",
+        "request_json": {},
+        "status": 302,
+        "why": "metadata update with no target"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": ""
+        },
+        "status": 302,
+        "why": "source create with an empty name"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "../escape"
+        },
+        "status": 302,
+        "why": "\ud83d\udd34 source create with a traversal name: what the name guard ACTUALLY guards"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/journal-sources/create",
+        "request_json": {
+          "name": "corpus_peer"
+        },
+        "status": 302,
+        "why": "source create colliding with a registered name: 409, not a silent overwrite"
+      },
+      {
+        "body_bytes": 197,
+        "body_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "location": "/init",
+        "method": "POST",
+        "path": "/app/import/api/journal-sources/corpus_peer/resolve-config",
+        "request_json": {
+          "action": "skip",
+          "field": "unknown.field"
+        },
+        "status": 302,
+        "why": "resolve a config field that was never staged"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/corpusSo/manifest/entities",
+        "status": 401,
+        "why": "\ud83d\udd34 door probe with NO key: must refuse on its own terms, never 302 to /init"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "GET",
+        "path": "/app/import/journal/00000000/manifest/entities",
+        "status": 401,
+        "why": "door probe for an unknown prefix with no key"
+      },
+      {
+        "body_bytes": 126,
+        "body_sha256": "6a5b559a9ddfe2bc20016810f4ab185af56d2f497b699fb5dc7721b3afcd037f",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "method": "POST",
+        "path": "/app/import/journal/corpusSo/ingest/entities",
+        "request_json": {
+          "entities": []
+        },
+        "status": 401,
+        "why": "\ud83d\udd34 ingest POST with no key: the door's own refusal"
+      }
+    ]
+  },
+  "pinned": {
+    "completed_at": 1767225600,
+    "imports": {
+      "failed": "20260802_130000",
+      "pending": "20260803_140000",
+      "success": "20260801_120000"
+    },
+    "source_created_at_ms": 1767225600000,
+    "source_key": "corpusSourceKey0000000000000000000000000000",
+    "source_name": "corpus_peer",
+    "source_prefix": "corpusSo"
+  },
+  "placeholders": {
+    "dir_ctime": "<DIR_CTIME>",
+    "journal_root": "<JOURNAL_ROOT>"
+  },
+  "schema": "solstone-convey-import-corpus-v1",
+  "tz": "UTC"
+}
