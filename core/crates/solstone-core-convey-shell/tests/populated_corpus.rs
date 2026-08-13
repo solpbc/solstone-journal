@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[path = "support/mod.rs"]
-mod support;
+use crate::support;
 
 use std::fs;
 

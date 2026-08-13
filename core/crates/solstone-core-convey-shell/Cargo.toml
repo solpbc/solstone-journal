@@ -6,6 +6,23 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 build = "build.rs"
+autotests = false
+
+[[test]]
+name = "convey_authorization_contracts"
+path = "tests/convey_authorization_contracts.rs"
+
+[[test]]
+name = "convey_route_contracts"
+path = "tests/convey_route_contracts.rs"
+
+[[test]]
+name = "convey_speaker_contracts"
+path = "tests/convey_speaker_contracts.rs"
+
+[[test]]
+name = "restart_protocol"
+path = "tests/restart_protocol.rs"
 
 [lints]
 workspace = true
