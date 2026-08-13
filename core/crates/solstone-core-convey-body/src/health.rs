@@ -185,7 +185,7 @@ mod tests {
 
     fn journal(entry_count: Option<u64>, aggregate: BodyAggregateSeed) -> BodyJournalSeed {
         BodyJournalSeed {
-            dates: BTreeSet::from(["20240105".to_owned()]),
+            dates: BTreeSet::from(["2024-01-05".to_owned()]),
             bundles: vec![BodySeedBundle {
                 import_id: "synthetic-health-bundle".to_owned(),
                 source_family: "apple_health".to_owned(),

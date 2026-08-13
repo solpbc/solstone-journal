@@ -2767,7 +2767,6 @@ dependencies = [
  "sha2",
  "solstone-core-body-rebuild",
  "solstone-core-body-source",
- "solstone-core-body-store",
  "solstone-core-journal-io",
 ]
 

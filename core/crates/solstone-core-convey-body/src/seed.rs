@@ -11,8 +11,6 @@ use rusqlite::Connection;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::read_health_dedupe_stats;
-
 const SCHEMA: &str = "
 CREATE TABLE health_dedupe (
     dedupe_key TEXT PRIMARY KEY,
@@ -91,8 +89,8 @@ pub struct BodySeedReport {
     pub dates: BTreeSet<String>,
     /// Created bundle identifiers.
     pub bundles: Vec<String>,
-    /// Aggregate row count by date prefix of `start_date`/row-time.
-    pub aggregate_by_day: BTreeMap<String, u64>,
+    /// Seeded row count by the `YYYYMMDD` date prefix of each row's own `start_date`.
+    pub rows_by_start_date_day: BTreeMap<String, u64>,
 }
 
 /// Synthetic journal fixture write failures.
@@ -104,8 +102,23 @@ pub enum BodySeedError {
     Json(serde_json::Error),
     /// SQLite aggregate write failure.
     Sqlite(rusqlite::Error),
+    /// A seed date was not a plain `YYYY-MM-DD` value.
+    InvalidDate { value: String },
+    /// A bundle import ID was not a plain path component.
+    InvalidImportId { value: String },
+    /// A normalized shard name was not a plain path component.
+    InvalidShardName { value: String },
+    /// Direct aggregate seeding refuses to overwrite an existing aggregate.
+    AggregateAlreadyExists { path: PathBuf },
     /// A directly seeded aggregate row lacks its required fields.
-    InvalidAggregateRow { bundle: String, shard: String },
+    InvalidAggregateRow {
+        /// Bundle containing the row.
+        bundle: String,
+        /// Shard containing the row.
+        shard: String,
+        /// Missing required field.
+        field: &'static str,
+    },
 }
 
 impl fmt::Display for BodySeedError {
@@ -121,10 +134,36 @@ impl fmt::Display for BodySeedError {
             Self::Sqlite(source) => {
                 write!(formatter, "could not seed synthetic aggregate: {source}")
             }
-            Self::InvalidAggregateRow { bundle, shard } => {
+            Self::InvalidDate { value } => {
+                write!(formatter, "synthetic seed date must be YYYY-MM-DD: {value}")
+            }
+            Self::InvalidImportId { value } => {
                 write!(
                     formatter,
-                    "synthetic aggregate row is incomplete in {bundle}/{shard}"
+                    "synthetic import ID must be one plain path component: {value}"
+                )
+            }
+            Self::InvalidShardName { value } => {
+                write!(
+                    formatter,
+                    "synthetic shard name must be one plain path component: {value}"
+                )
+            }
+            Self::AggregateAlreadyExists { path } => {
+                write!(
+                    formatter,
+                    "refusing to overwrite existing aggregate {}",
+                    path.display()
+                )
+            }
+            Self::InvalidAggregateRow {
+                bundle,
+                shard,
+                field,
+            } => {
+                write!(
+                    formatter,
+                    "synthetic aggregate row is missing {field} in {bundle}/{shard}"
                 )
             }
         }
@@ -137,7 +176,11 @@ impl std::error::Error for BodySeedError {
             Self::Io { source, .. } => Some(source),
             Self::Json(source) => Some(source),
             Self::Sqlite(source) => Some(source),
-            Self::InvalidAggregateRow { .. } => None,
+            Self::InvalidDate { .. }
+            | Self::InvalidImportId { .. }
+            | Self::InvalidShardName { .. }
+            | Self::AggregateAlreadyExists { .. }
+            | Self::InvalidAggregateRow { .. } => None,
         }
     }
 }
@@ -148,6 +191,7 @@ pub fn seed_body_journal(
     seed: &BodyJournalSeed,
 ) -> Result<BodySeedReport, BodySeedError> {
     let root = journal_root.as_ref();
+    let rows_by_start_date_day = prevalidate_seed(root, seed)?;
     for date in &seed.dates {
         create_dir(root.join("chronicle").join(date))?;
     }
@@ -156,10 +200,9 @@ pub fn seed_body_journal(
     for bundle in &seed.bundles {
         write_bundle(&imports, bundle)?;
     }
-    let aggregate_by_day = match seed.aggregate {
-        BodyAggregateSeed::Absent => BTreeMap::new(),
-        BodyAggregateSeed::Direct => write_aggregate(root, &seed.bundles)?,
-    };
+    if seed.aggregate == BodyAggregateSeed::Direct {
+        write_aggregate(root, &seed.bundles)?;
+    }
     Ok(BodySeedReport {
         dates: seed.dates.clone(),
         bundles: seed
@@ -167,8 +210,89 @@ pub fn seed_body_journal(
             .iter()
             .map(|bundle| bundle.import_id.clone())
             .collect(),
-        aggregate_by_day,
+        rows_by_start_date_day,
     })
+}
+
+fn prevalidate_seed(
+    root: &Path,
+    seed: &BodyJournalSeed,
+) -> Result<BTreeMap<String, u64>, BodySeedError> {
+    for date in &seed.dates {
+        if !is_date(date) {
+            return Err(BodySeedError::InvalidDate {
+                value: date.clone(),
+            });
+        }
+    }
+    let mut rows_by_start_date_day = BTreeMap::new();
+    for bundle in &seed.bundles {
+        if !is_plain_component(&bundle.import_id) {
+            return Err(BodySeedError::InvalidImportId {
+                value: bundle.import_id.clone(),
+            });
+        }
+        for (shard, rows) in &bundle.shards {
+            if !is_plain_component(shard) {
+                return Err(BodySeedError::InvalidShardName {
+                    value: shard.clone(),
+                });
+            }
+            for row in rows {
+                if let Some(start_date) = string(row, "start_date") {
+                    let day = start_date
+                        .chars()
+                        .take(10)
+                        .filter(|character| *character != '-')
+                        .collect::<String>();
+                    if !day.is_empty() {
+                        *rows_by_start_date_day.entry(day).or_default() += 1;
+                    }
+                }
+                if seed.aggregate == BodyAggregateSeed::Direct {
+                    validate_aggregate_row(bundle, shard, row)?;
+                }
+            }
+        }
+    }
+    if seed.aggregate == BodyAggregateSeed::Direct {
+        let aggregate = root.join("imports/health-dedupe.sqlite");
+        match fs::symlink_metadata(&aggregate) {
+            Ok(_) => return Err(BodySeedError::AggregateAlreadyExists { path: aggregate }),
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(BodySeedError::Io {
+                    path: aggregate,
+                    source,
+                });
+            }
+        }
+    }
+    Ok(rows_by_start_date_day)
+}
+
+fn validate_aggregate_row(
+    bundle: &BodySeedBundle,
+    shard: &str,
+    row: &Map<String, Value>,
+) -> Result<(), BodySeedError> {
+    for field in ["dedupe_key", "record_type"] {
+        if string(row, field).is_none() {
+            return Err(BodySeedError::InvalidAggregateRow {
+                bundle: bundle.import_id.clone(),
+                shard: shard.to_owned(),
+                field,
+            });
+        }
+    }
+    if row_time(row).is_none() {
+        return Err(BodySeedError::InvalidAggregateRow {
+            bundle: bundle.import_id.clone(),
+            shard: shard.to_owned(),
+            field: "start_date, start_time, or end_date",
+        });
+    }
+    Ok(())
 }
 
 fn write_bundle(imports: &Path, bundle: &BodySeedBundle) -> Result<(), BodySeedError> {
@@ -211,36 +335,18 @@ fn write_bundle(imports: &Path, bundle: &BodySeedBundle) -> Result<(), BodySeedE
     Ok(())
 }
 
-fn write_aggregate(
-    root: &Path,
-    bundles: &[BodySeedBundle],
-) -> Result<BTreeMap<String, u64>, BodySeedError> {
+fn write_aggregate(root: &Path, bundles: &[BodySeedBundle]) -> Result<(), BodySeedError> {
     let path = root.join("imports/health-dedupe.sqlite");
     let connection = Connection::open(&path).map_err(BodySeedError::Sqlite)?;
     connection
         .execute_batch(SCHEMA)
         .map_err(BodySeedError::Sqlite)?;
     for bundle in bundles {
-        for (shard, rows) in &bundle.shards {
+        for rows in bundle.shards.values() {
             for row in rows {
-                let Some(dedupe_key) = string(row, "dedupe_key") else {
-                    return Err(BodySeedError::InvalidAggregateRow {
-                        bundle: bundle.import_id.clone(),
-                        shard: shard.clone(),
-                    });
-                };
-                let Some(record_type) = string(row, "record_type") else {
-                    return Err(BodySeedError::InvalidAggregateRow {
-                        bundle: bundle.import_id.clone(),
-                        shard: shard.clone(),
-                    });
-                };
-                let Some(start_time) = row_time(row) else {
-                    return Err(BodySeedError::InvalidAggregateRow {
-                        bundle: bundle.import_id.clone(),
-                        shard: shard.clone(),
-                    });
-                };
+                let dedupe_key = string(row, "dedupe_key").expect("prevalidated dedupe key");
+                let record_type = string(row, "record_type").expect("prevalidated record type");
+                let start_time = row_time(row).expect("prevalidated row time");
                 let source_family = string(row, "source_family").unwrap_or(&bundle.source_family);
                 let value_hash = row.get("value").map(|value| {
                     let encoded = serde_json::to_vec(value).expect("JSON value serializes");
@@ -266,14 +372,7 @@ fn write_aggregate(
             }
         }
     }
-    drop(connection);
-    Ok(read_health_dedupe_stats(root)
-        .map_err(|source| BodySeedError::Io {
-            path,
-            source: io::Error::other(source),
-        })?
-        .map(|stats| stats.by_day.clone())
-        .unwrap_or_default())
+    Ok(())
 }
 
 fn string<'a>(row: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
@@ -284,6 +383,26 @@ fn row_time(row: &Map<String, Value>) -> Option<&str> {
     ["start_date", "start_time", "end_date"]
         .into_iter()
         .find_map(|key| string(row, key))
+}
+
+fn is_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+}
+
+fn is_plain_component(value: &str) -> bool {
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !Path::new(value).is_absolute()
+        && !value.contains('/')
+        && !value.contains('\\')
 }
 
 fn create_dir(path: PathBuf) -> Result<(), BodySeedError> {
@@ -384,11 +503,11 @@ mod tests {
         let temporary = TempDir::new();
         let report = seed_body_journal(
             temporary.path(),
-            &seed(&["20240103", "20240105"], BodyAggregateSeed::Direct),
+            &seed(&["2024-01-03", "2024-01-05"], BodyAggregateSeed::Direct),
         )
         .unwrap();
         let stats = read_health_dedupe_stats(temporary.path()).unwrap().unwrap();
-        assert_eq!(report.aggregate_by_day, stats.by_day);
+        assert_eq!(report.rows_by_start_date_day, stats.by_day);
         assert_eq!(report.dates.len(), 2);
     }
 
@@ -397,11 +516,11 @@ mod tests {
         let direct = TempDir::new();
         seed_body_journal(
             direct.path(),
-            &seed(&["20240103"], BodyAggregateSeed::Direct),
+            &seed(&["2024-01-03"], BodyAggregateSeed::Direct),
         )
         .unwrap();
         let rebuilt = TempDir::new();
-        let mut rebuild_seed = seed(&["20240103"], BodyAggregateSeed::Absent);
+        let mut rebuild_seed = seed(&["2024-01-03"], BodyAggregateSeed::Absent);
         rebuild_seed.bundles[0].manifest = BodySeedManifest::Absent;
         seed_body_journal(rebuilt.path(), &rebuild_seed).unwrap();
         solstone_core_body_rebuild::rebuild_body_store(rebuilt.path()).unwrap();
@@ -440,11 +559,11 @@ mod tests {
         let second = TempDir::new();
         let first_report = seed_body_journal(
             first.path(),
-            &seed(&["20240103"], BodyAggregateSeed::Direct),
+            &seed(&["2024-01-03"], BodyAggregateSeed::Direct),
         )
         .unwrap();
         let mut second_seed = seed(
-            &["20231230", "20240103", "20240215"],
+            &["2023-12-30", "2024-01-03", "2024-02-15"],
             BodyAggregateSeed::Direct,
         );
         second_seed.bundles[0].import_id = "synthetic-apple-b".to_owned();
@@ -455,6 +574,90 @@ mod tests {
         let second_report = seed_body_journal(second.path(), &second_seed).unwrap();
         assert_ne!(first_report.dates, second_report.dates);
         assert_ne!(first_report.bundles, second_report.bundles);
-        assert_eq!(second_report.aggregate_by_day.len(), 3);
+        assert_eq!(second_report.rows_by_start_date_day.len(), 3);
+    }
+
+    #[test]
+    fn report_counts_start_dates_without_an_aggregate() {
+        let temporary = TempDir::new();
+        let report = seed_body_journal(
+            temporary.path(),
+            &seed(&["2024-01-03"], BodyAggregateSeed::Absent),
+        )
+        .unwrap();
+        assert_eq!(
+            report.rows_by_start_date_day,
+            BTreeMap::from([("20240103".to_owned(), 1), ("20240105".to_owned(), 1)])
+        );
+        assert!(
+            !temporary
+                .path()
+                .join("imports/health-dedupe.sqlite")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_paths_before_writing_the_journal() {
+        let temporary = TempDir::new();
+        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        invalid.dates = BTreeSet::from(["../outside".to_owned()]);
+        assert!(matches!(
+            seed_body_journal(temporary.path(), &invalid),
+            Err(BodySeedError::InvalidDate { value }) if value == "../outside"
+        ));
+        assert!(!temporary.path().join("imports").exists());
+
+        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        invalid.bundles[0].import_id = "../outside".to_owned();
+        assert!(matches!(
+            seed_body_journal(temporary.path(), &invalid),
+            Err(BodySeedError::InvalidImportId { value }) if value == "../outside"
+        ));
+        assert!(!temporary.path().join("imports").exists());
+
+        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        let rows = invalid.bundles[0].shards.remove("2024-01").unwrap();
+        invalid.bundles[0]
+            .shards
+            .insert("../outside".to_owned(), rows);
+        assert!(matches!(
+            seed_body_journal(temporary.path(), &invalid),
+            Err(BodySeedError::InvalidShardName { value }) if value == "../outside"
+        ));
+        assert!(!temporary.path().join("imports").exists());
+    }
+
+    #[test]
+    fn invalid_direct_rows_and_existing_aggregate_fail_before_writes() {
+        let temporary = TempDir::new();
+        let mut invalid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        invalid.bundles[0].shards.get_mut("2024-01").unwrap()[0].remove("dedupe_key");
+        assert!(matches!(
+            seed_body_journal(temporary.path(), &invalid),
+            Err(BodySeedError::InvalidAggregateRow {
+                field: "dedupe_key",
+                ..
+            })
+        ));
+        assert!(!temporary.path().join("chronicle").exists());
+        assert!(!temporary.path().join("imports").exists());
+
+        let imports = temporary.path().join("imports");
+        fs::create_dir_all(&imports).unwrap();
+        fs::write(
+            imports.join("health-dedupe.sqlite"),
+            "real-journal-sentinel",
+        )
+        .unwrap();
+        let valid = seed(&["2024-01-03"], BodyAggregateSeed::Direct);
+        assert!(matches!(
+            seed_body_journal(temporary.path(), &valid),
+            Err(BodySeedError::AggregateAlreadyExists { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(imports.join("health-dedupe.sqlite")).unwrap(),
+            "real-journal-sentinel"
+        );
     }
 }
