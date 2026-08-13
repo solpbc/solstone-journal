@@ -3106,6 +3106,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-format",
+ "solstone-core-indexer",
  "solstone-core-indexer-store",
  "unicode-normalization",
 ]

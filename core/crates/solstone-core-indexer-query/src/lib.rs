@@ -5,6 +5,7 @@
 
 mod atomize;
 mod compile;
+mod edges;
 mod execute;
 mod ladder;
 mod predicate;
@@ -12,6 +13,13 @@ mod temporal;
 mod types;
 
 pub use compile::{CompileOutcome, QueryCompilation, compile_query};
+pub use edges::{
+    DirectedCounts, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeFiltersPayload,
+    EdgeQueryError, EntityTypeLookup, EvidenceRow, KindSummary, NetworkNeighbor,
+    NetworkOverviewRequest, NetworkOverviewResponse, NetworkRequest, NetworkResponse,
+    OverviewEntity, OverviewTotals, load_edge_evidence, load_entity_network, load_network_overview,
+    open_edges_reader,
+};
 pub use execute::{agents, coverage, search, search_counts};
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use temporal::{TemporalExtraction, extract_temporal_references};
@@ -20,6 +28,8 @@ pub use types::{
     IndexDegraded, Order, RequestError, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
+#[cfg(test)]
+mod edges_tests;
 #[cfg(test)]
 mod execute_tests;
 #[cfg(test)]

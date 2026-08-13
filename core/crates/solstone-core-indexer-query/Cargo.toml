@@ -17,6 +17,7 @@ chrono.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 solstone-core-format.workspace = true
+solstone-core-indexer.workspace = true
 solstone-core-indexer-store.workspace = true
 unicode-normalization.workspace = true
 
