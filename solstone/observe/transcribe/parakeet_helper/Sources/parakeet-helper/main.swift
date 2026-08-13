@@ -9,6 +9,28 @@ import Foundation
 private let fluidAudioVersion = "0.14.0"
 private let defaultModelVersion = "v3"
 
+/// The only host this helper may fetch a model from.
+///
+/// FluidAudio resolves every model request through `ModelRegistry.baseURL`,
+/// which otherwise defaults to a public model hub. Fetching from one tells that
+/// hub a journal exists, when it was set up, and that its owner turned
+/// transcription on, as a side effect of transcribing. Pinning the registry
+/// here means that cannot happen, and it holds on the path staging the models
+/// ahead of time cannot reach: `DownloadUtils.loadModels` deletes its cache and
+/// re-downloads whenever a model fails to load, so a truncated or
+/// OS-invalidated model would otherwise send the retry upstream with nothing
+/// visible to the owner.
+///
+/// The models arrive through `install-models`, which fetches them from this
+/// origin under a host allowlist re-checked on every redirect hop. Nothing here
+/// serves the hub's repository-listing API, so a fetch that reaches this point
+/// fails and says so rather than quietly succeeding somewhere else. That is
+/// deliberate: absent means run the installer, and there is no third option.
+///
+/// A programmatic assignment wins over `REGISTRY_URL` and `MODEL_REGISTRY_URL`,
+/// so the environment cannot reopen the route.
+private let modelOriginBaseURL = "https://updates.solstone.app"
+
 private struct JSONTokenTiming: Encodable {
     let token: String
     let token_id: Int
@@ -255,6 +277,9 @@ private func audioDurationSeconds(url: URL) throws -> Double {
 @main
 struct Main {
     static func main() async {
+        // Before anything that could reach the network.
+        ModelRegistry.baseURL = modelOriginBaseURL
+
         let hardware = hardwareString()
         let macosVersion = macosVersionString()
         let swiftVersion = swiftVersionString()
