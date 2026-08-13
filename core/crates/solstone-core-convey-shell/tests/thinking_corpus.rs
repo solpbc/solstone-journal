@@ -543,6 +543,18 @@ fn json_string(value: &str) -> String {
     output
 }
 
+fn assert_top_level_keys(body: &Value, mut expected: Vec<&str>) {
+    let mut actual: Vec<_> = body
+        .as_object()
+        .expect("response is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected);
+}
+
 /// Replays all 448 fixture cases against one journal per phase in the
 /// generator's recorded order. Every recorded request body is sent. Each
 /// established phase contains 35 non-GET cases; the trailing
@@ -691,6 +703,109 @@ async fn invalid_brain_record_degrades_the_brain_read_projections() {
     let body: Value = serde_json::from_slice(&response.3).expect("local status is JSON");
     assert_eq!(body["generate_ready"], false);
     assert_eq!(body["cogitate_ready"], false);
+}
+
+#[tokio::test]
+async fn post_keys_check_refusals_have_exact_top_level_keys() {
+    let journal = journal_for_phase("none");
+    for request_json in [
+        None,
+        Some(json!({"env_var":"OPENAI_API_KEY","value":""})),
+        Some(json!({"env_var":"bogus","value":"x"})),
+    ] {
+        let response = request_with_body(
+            router(journal.0.clone()),
+            "POST",
+            "/app/thinking/api/keys/check",
+            request_json.as_ref(),
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::BAD_REQUEST);
+        let body: Value = serde_json::from_slice(&response.3).expect("response is JSON");
+        assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+    }
+}
+
+#[tokio::test]
+async fn post_validate_model_missing_key_has_exact_top_level_keys() {
+    let journal = journal_for_phase("none");
+    let response = request_with_body(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/validate-model",
+        Some(&json!({"provider":"openai","model":"gpt-5"})),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::OK);
+    let body: Value = serde_json::from_slice(&response.3).expect("response is JSON");
+    assert_top_level_keys(
+        &body,
+        vec!["message", "model", "provider", "reason_code", "valid"],
+    );
+
+    let response = request_with_body(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/validate-model",
+        Some(&json!({"provider":"local","model":"m"})),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(&response.3).expect("response is JSON");
+    assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+}
+
+#[tokio::test]
+async fn post_local_bootstrap_byo_refusal_has_exact_top_level_keys() {
+    let journal = TempDir::new("bootstrap-byo");
+    journal.config(established(json!({
+        "providers": {
+            "local": {
+                "endpoint_url": "http://127.0.0.1:1/v1",
+                "served_model_id": "served-model"
+            }
+        }
+    })));
+    let response = request_with_body(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/local/bootstrap",
+        None,
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(&response.3).expect("response is JSON");
+    assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+}
+
+#[tokio::test]
+async fn post_local_runtime_retry_refusal_has_exact_top_level_keys() {
+    let journal = journal_for_phase("none");
+    let response = request_with_body(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/local/runtime/retry",
+        Some(&json!({"health_revision":1})),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(&response.3).expect("response is JSON");
+    assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+}
+
+#[tokio::test]
+async fn post_brain_check_without_callosum_has_exact_top_level_keys() {
+    let journal = journal_for_phase("none");
+    let response = request_with_body(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/brain/check",
+        None,
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::OK);
+    let body: Value = serde_json::from_slice(&response.3).expect("response is JSON");
+    assert_top_level_keys(&body, vec!["brain", "error", "ok"]);
 }
 
 struct PanicValidator;
