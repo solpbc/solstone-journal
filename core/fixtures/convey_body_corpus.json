@@ -3838,6 +3838,31 @@
         "rule": "/app/body/api/trends",
         "status": 200,
         "why": "trends cache state"
+      },
+      {
+        "body_bytes": 79096,
+        "body_sha256": "d7ac5fdbcbf327139af2a1a8cb9101b243e0eefd0e30ef217549638324908473",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "endpoint": "app:body.workspace_fragment",
+        "method": "GET",
+        "path": "/app/body/workspace",
+        "rule": "/app/body/workspace",
+        "status": 200,
+        "why": "body workspace fragment"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "endpoint": "app:body.background_fragment",
+        "method": "GET",
+        "path": "/app/body/background",
+        "rule": "/app/body/background",
+        "status": 404,
+        "why": "body unavailable background fragment"
       }
     ],
     "fixed": [
@@ -9883,6 +9908,31 @@
         "rule": "/app/body/api/trends",
         "status": 200,
         "why": "trends cache state"
+      },
+      {
+        "body_bytes": 79096,
+        "body_sha256": "d7ac5fdbcbf327139af2a1a8cb9101b243e0eefd0e30ef217549638324908473",
+        "body_sha256_basis": "raw-body",
+        "content_type": "text/html; charset=utf-8",
+        "endpoint": "app:body.workspace_fragment",
+        "method": "GET",
+        "path": "/app/body/workspace",
+        "rule": "/app/body/workspace",
+        "status": 200,
+        "why": "body workspace fragment"
+      },
+      {
+        "body_bytes": 207,
+        "body_sha256": "e9639e3c4681ce85f852fbac48e2eeee5ba51296dbfec57c200d59b76237ab80",
+        "body_sha256_basis": "raw-body",
+        "body_text": "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n",
+        "content_type": "text/html; charset=utf-8",
+        "endpoint": "app:body.background_fragment",
+        "method": "GET",
+        "path": "/app/body/background",
+        "rule": "/app/body/background",
+        "status": 404,
+        "why": "body unavailable background fragment"
       }
     ],
     "torn_db_unreadable": [
@@ -11490,7 +11540,9 @@
       "/app/body/api/status",
       "/app/body/api/trends",
       "/app/body/api/window",
-      "/app/body/trends"
+      "/app/body/background",
+      "/app/body/trends",
+      "/app/body/workspace"
     ],
     "first_run": [
       {
@@ -11552,6 +11604,18 @@
         "method": "GET",
         "path": "/app/body/api/trends",
         "rule": "/app/body/api/trends"
+      },
+      {
+        "endpoint": "app:body.workspace_fragment",
+        "method": "GET",
+        "path": "/app/body/workspace",
+        "rule": "/app/body/workspace"
+      },
+      {
+        "endpoint": "app:body.background_fragment",
+        "method": "GET",
+        "path": "/app/body/background",
+        "rule": "/app/body/background"
       }
     ],
     "fixed": [
@@ -11614,6 +11678,18 @@
         "method": "GET",
         "path": "/app/body/api/trends",
         "rule": "/app/body/api/trends"
+      },
+      {
+        "endpoint": "app:body.workspace_fragment",
+        "method": "GET",
+        "path": "/app/body/workspace",
+        "rule": "/app/body/workspace"
+      },
+      {
+        "endpoint": "app:body.background_fragment",
+        "method": "GET",
+        "path": "/app/body/background",
+        "rule": "/app/body/background"
       }
     ]
   },

@@ -63,6 +63,8 @@ FULL_PROBES: tuple[Probe, ...] = (
     ("GET", "/app/body/api/index", "date-nav index"),
     ("GET", "/app/body/api/stats/202608", "August date-nav month counts"),
     ("GET", "/app/body/api/trends", "trends cache state"),
+    ("GET", "/app/body/workspace", "body workspace fragment"),
+    ("GET", "/app/body/background", "body unavailable background fragment"),
 )
 
 NAMED_TORN_PROBES: tuple[Probe, ...] = (
@@ -84,21 +86,6 @@ NAMED_TORN_ROUTES = {
     "index": "/app/body/api/index",
     "stats": "/app/body/api/stats/202608",
 }
-
-BODY_RULES = frozenset(
-    {
-        "/app/body/",
-        "/app/body/trends",
-        "/app/body/<day>",
-        "/app/body/api/status",
-        "/app/body/api/recent",
-        "/app/body/api/trends",
-        "/app/body/api/day/<day>",
-        "/app/body/api/window",
-        "/app/body/api/index",
-        "/app/body/api/stats/<month>",
-    }
-)
 
 # This is intentionally a path allowlist, not a date-shaped-value rule.
 NORMALIZED_FIELDS: dict[str, set[str]] = {
@@ -162,7 +149,9 @@ def _validate_wall_clock_contract(routes: Any) -> list[dict[str, Any]]:
     return calls
 
 
-def _matched_rule(app: Any, method: str, path: str) -> tuple[str, str]:
+def _matched_rule(
+    app: Any, method: str, path: str, expected_rules: frozenset[str]
+) -> tuple[str, str]:
     """Match the concrete path through Flask's URL map, never by prefix."""
 
     clean_path = urlsplit(path).path
@@ -171,16 +160,22 @@ def _matched_rule(app: Any, method: str, path: str) -> tuple[str, str]:
     rules = [
         rule
         for rule in app.url_map.iter_rules(endpoint)
-        if method in rule.methods and rule.rule in BODY_RULES
+        if method in rule.methods and rule.rule in expected_rules
     ]
     if len(rules) != 1:
         raise AssertionError(f"Expected one Body rule for {method} {clean_path}, got {rules}")
     return endpoint, rules[0].rule
 
 
-def _record(app: Any, client: Any, probe: Probe, root: Path) -> dict[str, Any]:
+def _record(
+    app: Any,
+    client: Any,
+    probe: Probe,
+    root: Path,
+    expected_rules: frozenset[str],
+) -> dict[str, Any]:
     method, path, why = probe
-    endpoint, rule = _matched_rule(app, method, path)
+    endpoint, rule = _matched_rule(app, method, path, expected_rules)
     # Deliberately uncaught: a reference exception must fail corpus generation.
     response = client.open(path, method=method)
     raw = response.get_data()
@@ -264,10 +259,12 @@ def _create_phase_app(root: Path) -> Any:
     return create_app(str(root))
 
 
-def _capture_phase(root: Path, probes: tuple[Probe, ...]) -> tuple[list[dict[str, Any]], Any]:
+def _capture_phase(
+    root: Path, probes: tuple[Probe, ...], expected_rules: frozenset[str]
+) -> tuple[list[dict[str, Any]], Any]:
     app = _create_phase_app(root)
     client = app.test_client()
-    return [_record(app, client, probe, root) for probe in probes], app
+    return [_record(app, client, probe, root, expected_rules) for probe in probes], app
 
 
 def _damage(root: Path, phase: str) -> None:
@@ -330,6 +327,7 @@ def _assert_and_analyze(
     routes: Any,
     native_deviations: list[Any],
     clock_reads: list[dict[str, Any]],
+    expected_rules: frozenset[str],
 ) -> tuple[dict[str, Any], dict[str, bool], dict[str, Any]]:
     fixed_cases = cases_by_phase["fixed"]
     first_run_cases = cases_by_phase["first_run"]
@@ -346,8 +344,8 @@ def _assert_and_analyze(
 
     fixed_rules = {case["rule"] for case in fixed_cases}
     first_rules = {case["rule"] for case in first_run_cases}
-    assert fixed_rules == BODY_RULES
-    assert first_rules == BODY_RULES
+    assert fixed_rules == expected_rules
+    assert first_rules == expected_rules
     assert fixed_status == first_status
 
     assert fixed_status["normalized"]["total"] == seed_manifest["sqlite_normalized_total"]
@@ -595,7 +593,7 @@ def _assert_and_analyze(
         "wall_clock_calls": clock_reads,
     }
     assertions = {
-        "criterion_4_fixed_route_coverage": fixed_rules == BODY_RULES,
+        "criterion_4_fixed_route_coverage": fixed_rules == expected_rules,
         "criterion_5_major_day_card_families": bool(
             fixed_day["glucose_series"]
             and fixed_day["heart"]
@@ -644,7 +642,7 @@ def _assert_and_analyze(
     }
     assert all(assertions.values())
     route_coverage = {
-        "expected_rules": sorted(BODY_RULES),
+        "expected_rules": sorted(expected_rules),
         "fixed": [
             {key: case[key] for key in ("method", "path", "endpoint", "rule")}
             for case in fixed_cases
@@ -675,6 +673,11 @@ def build_corpus() -> dict[str, Any]:
         if "solstone.apps.body.events" in sys.modules:
             raise AssertionError("Body events must not be imported by corpus capture")
         fixed_app = _create_phase_app(fixed_root)
+        expected_rules = frozenset(
+            rule.rule
+            for rule in fixed_app.url_map.iter_rules()
+            if rule.endpoint.startswith("app:body.")
+        )
         if "solstone.apps.body.events" in sys.modules:
             raise AssertionError("create_app imported Body cache-warm events")
         assert routes._load_trends_cache(fixed_root) is None
@@ -688,12 +691,13 @@ def build_corpus() -> dict[str, Any]:
         assert not trends_thread.is_alive()
         fixed_client = fixed_app.test_client()
         cases_by_phase["fixed"] = [
-            _record(fixed_app, fixed_client, probe, fixed_root) for probe in FULL_PROBES
+            _record(fixed_app, fixed_client, probe, fixed_root, expected_rules)
+            for probe in FULL_PROBES
         ]
 
         first_root = temp_root / "first_run"
         shutil.copytree(fixed_root, first_root)
-        first_cases, _first_app = _capture_phase(first_root, FULL_PROBES)
+        first_cases, _first_app = _capture_phase(first_root, FULL_PROBES, expected_rules)
         cases_by_phase["first_run"] = first_cases
         _drain_trends_flight(routes)
 
@@ -701,7 +705,9 @@ def build_corpus() -> dict[str, Any]:
             phase_root = temp_root / phase
             shutil.copytree(fixed_root, phase_root)
             _damage(phase_root, phase)
-            phase_cases, _phase_app = _capture_phase(phase_root, NAMED_TORN_PROBES)
+            phase_cases, _phase_app = _capture_phase(
+                phase_root, NAMED_TORN_PROBES, expected_rules
+            )
             cases_by_phase[phase] = phase_cases
             _drain_trends_flight(routes)
 
@@ -712,6 +718,7 @@ def build_corpus() -> dict[str, Any]:
             routes=routes,
             native_deviations=native_deviations,
             clock_reads=clock_reads,
+            expected_rules=expected_rules,
         )
 
     return {
