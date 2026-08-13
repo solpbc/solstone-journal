@@ -2548,6 +2548,7 @@ dependencies = [
  "solstone-core-reprocess-cli",
  "solstone-core-segment",
  "solstone-core-segment-cli",
+ "solstone-core-sense",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
@@ -3356,6 +3357,22 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-segment",
  "tempfile",
+]
+
+[[package]]
+name = "solstone-core-sense"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-journal-config",
+ "solstone-core-local",
+ "solstone-core-system",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

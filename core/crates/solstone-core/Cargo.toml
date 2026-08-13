@@ -100,6 +100,7 @@ solstone-core-cogitate-wire.workspace = true
 solstone-core-cogitate.workspace = true
 solstone-core-grab.workspace = true
 solstone-core-spl.workspace = true
+solstone-core-sense.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
