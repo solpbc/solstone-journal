@@ -644,17 +644,38 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
 #[test]
 fn fixture_body_arms_are_361_55_32_across_all_448_cases() {
     let corpus = corpus();
+    let phases = corpus["phases"].as_object().expect("phase map");
     let mut arms = [0; 3];
     let mut count = 0;
-    for cases in corpus["phases"].as_object().expect("phase map").values() {
+    let mut generators_missing_body_vectors = 0;
+    for (phase, cases) in phases {
         for case in cases.as_array().expect("phase cases") {
             arms[body_arm(case)] += 1;
             count += 1;
+            if case["method"] == "PUT"
+                && case["path"] == "/app/thinking/api/generators"
+                && case.get("request_json").is_none()
+            {
+                generators_missing_body_vectors += 1;
+            }
+        }
+        if is_established_phase(phase) {
+            assert_eq!(
+                cases
+                    .as_array()
+                    .expect("phase cases")
+                    .iter()
+                    .filter(|case| case["method"] != "GET")
+                    .count(),
+                35,
+                "{phase} non-GET cases"
+            );
         }
     }
     assert_eq!(count, 448);
     assert_eq!(arms, [361, 55, 32]);
     assert_eq!(arms.iter().sum::<usize>(), 448);
+    assert_eq!(generators_missing_body_vectors, 8);
     assert_eq!(
         corpus["native_deviations"]
             .as_array()
