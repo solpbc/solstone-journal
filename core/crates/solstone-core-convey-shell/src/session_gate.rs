@@ -7,7 +7,8 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Request, StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
+use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::registry::known_app;
 use crate::session::{SessionState, classify_session};
@@ -96,14 +97,13 @@ fn corrupt_response(path: &str, detail: String) -> Response {
         .split('/')
         .any(|segment| segment == "api")
     {
-        return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(format!(
-                "{{\"detail\":{},\"error\":\"I couldn't read your settings.\",\"reason_code\":\"corrupt_config\"}}\n",
-                serde_json::to_string(&detail).expect("corrupt detail serializes")
-            )))
-            .expect("corrupt API response builds");
+        return error_envelope(
+            "corrupt_config",
+            "I couldn't read your settings.",
+            detail,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response();
     }
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)

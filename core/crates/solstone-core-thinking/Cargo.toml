@@ -20,4 +20,3 @@ solstone-core-brain.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-local.workspace = true
 solstone-core-sense.workspace = true
-solstone-core-thinking-copy.workspace = true

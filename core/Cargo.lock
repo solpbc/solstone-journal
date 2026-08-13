@@ -3724,7 +3724,6 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-local",
  "solstone-core-sense",
- "solstone-core-thinking-copy",
 ]
 
 [[package]]

@@ -67,7 +67,7 @@ async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     let journal = journal.as_ref();
     match config(&journal.0) {
         Ok(config) => json_response(
-            json!({"providers":solstone_core_thinking::providers::payload(&journal.0,&config,solstone_core_thinking::local::DEFAULT_MODEL),"keys":solstone_core_thinking::providers::keys(&config),"copy":solstone_core_thinking_copy::thinking_copy_payload()}),
+            json!({"providers":solstone_core_thinking::providers::payload(&journal.0,&config,solstone_core_thinking::local::default_model()),"keys":solstone_core_thinking::providers::keys(&config),"copy":solstone_core_thinking_copy::thinking_copy_payload()}),
         ),
         Err(response) => *response,
     }
@@ -164,7 +164,7 @@ fn model_response(
     match solstone_core_thinking::local::accepted_model(requested) {
         Some(model) => json_response(render(model)),
         None => json_error(solstone_core_thinking::local::invalid_model(
-            requested.unwrap_or(solstone_core_thinking::local::DEFAULT_MODEL),
+            requested.unwrap_or(solstone_core_thinking::local::default_model()),
         )),
     }
 }
@@ -261,6 +261,8 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
+    /// This exists only while the embedded and Python assets coexist; the cut
+    /// wave must remove this test with the Python copies.
     fn thinking_asset_copies_match_the_source_until_the_cut_wave_removes_both() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root = manifest.ancestors().nth(3).expect("repository root");

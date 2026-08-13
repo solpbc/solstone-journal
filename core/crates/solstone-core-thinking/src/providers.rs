@@ -3,6 +3,7 @@
 
 //! Thinking-provider read projections.
 
+use std::env;
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
@@ -13,21 +14,22 @@ use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpo
 
 use crate::{brain, local};
 
-const CLOUD: [(&str, &str, &str); 3] = [
-    ("google", "GOOGLE_API_KEY", "Google (Gemini)"),
-    ("openai", "OPENAI_API_KEY", "OpenAI (GPT)"),
-    ("anthropic", "ANTHROPIC_API_KEY", "Anthropic (Claude)"),
+const CLOUD: [(&str, &str); 3] = [
+    ("google", "GOOGLE_API_KEY"),
+    ("openai", "OPENAI_API_KEY"),
+    ("anthropic", "ANTHROPIC_API_KEY"),
 ];
 
 pub fn keys(config: &Map<String, Value>) -> Value {
     let env = config.get("env").and_then(Value::as_object);
-    let api_keys = Map::from_iter(CLOUD.map(|(provider, key, _)| {
+    let api_keys = Map::from_iter(CLOUD.map(|(provider, key)| {
         (
             provider.to_owned(),
             Value::Bool(
                 env.and_then(|values| values.get(key))
                     .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty()),
+                    .is_some_and(|value| !value.trim().is_empty())
+                    || env::var(key).is_ok_and(|value| !value.trim().is_empty()),
             ),
         )
     }));
@@ -42,11 +44,10 @@ pub fn payload(journal: &Path, config: &Map<String, Value>, local_model: &str) -
     let active = active(config);
     let selected = active["provider"] == "local";
     let local_status = local_status(journal, &brain_view, selected, &endpoint);
+    let key_payload = keys(config);
     let mut status = Map::new();
-    for (provider, env_key, _) in CLOUD {
-        let configured = keys(config)["api_keys"][provider]
-            .as_bool()
-            .unwrap_or(false);
+    for (provider, env_key) in CLOUD {
+        let configured = key_payload["api_keys"][provider].as_bool().unwrap_or(false);
         let ready = configured;
         status.insert(provider.to_owned(), json!({"provider":provider,"configured":configured,"generate_ready":ready,"cogitate_ready":ready,"issues":if configured { Vec::<String>::new() } else { vec![format!("{env_key} not set")] }}));
     }
@@ -61,16 +62,16 @@ pub fn payload(journal: &Path, config: &Map<String, Value>, local_model: &str) -
     };
     json!({
         "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"local","label":"Local (on-device)","env_key":""}],
-        "api_keys":keys(config)["api_keys"], "key_validation":keys(config)["key_validation"], "active":active,
+        "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
         "model_tiers":{"google":[{"tier":"mid","label":"Gemini 3.5 Flash","model":"gemini-3.5-flash"},{"tier":"lite","label":"Gemini 3.1 Flash Lite","model":"gemini-3.1-flash-lite"}],"anthropic":[{"tier":"top","label":"Claude Opus","model":"claude-opus-4-8"},{"tier":"mid","label":"Claude Sonnet","model":"claude-sonnet-5"},{"tier":"lite","label":"Claude Haiku","model":"claude-haiku-4-5"}],"openai":[{"tier":"top","label":"GPT","model":"gpt-5.5"},{"tier":"mid","label":"GPT mini","model":"gpt-5.4-mini"},{"tier":"lite","label":"GPT nano","model":"gpt-5.4-nano"}]},
-        "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":true,"confidential_operation":Value::Null,"confidential_attestation":brain_view["confidential_attestation"]},
-        "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"mlx"} else {"local"},"configuration_guidance":Value::Null
+        "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation(),"confidential_attestation":brain_view["confidential_attestation"]},
+        "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"mlx"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
     })
 }
 
 pub fn local_status_only(journal: &Path, config: &Map<String, Value>) -> Value {
-    payload(journal, config, local::DEFAULT_MODEL)["provider_status"]["local"].clone()
+    payload(journal, config, local::default_model())["provider_status"]["local"].clone()
 }
 
 pub trait ManagedKeyValidator {
@@ -86,6 +87,8 @@ impl ManagedKeyValidator for UnavailableValidator {
 }
 
 pub fn validate_keys(config: &Map<String, Value>) -> Value {
+    // `OneShotClient::execute` accepts only a `GenerateRequest`, with no
+    // provider or key override, so native per-key validation has no seam yet.
     validate_keys_with(config, &UnavailableValidator)
 }
 
@@ -95,7 +98,7 @@ pub fn validate_keys_with(
 ) -> Value {
     let env = config.get("env").and_then(Value::as_object);
     let mut validation = Map::new();
-    for (provider, key, _) in CLOUD {
+    for (provider, key) in CLOUD {
         if let Some(value) = env
             .and_then(|values| values.get(key))
             .and_then(Value::as_str)
@@ -111,7 +114,89 @@ pub fn validate_keys_with(
 }
 
 fn active(config: &Map<String, Value>) -> Value {
-    config.get("providers").and_then(Value::as_object).and_then(|providers|providers.get("active")).and_then(Value::as_object).map(|active|json!({"provider":active.get("provider").and_then(Value::as_str).unwrap_or("none"),"model":active.get("model").and_then(Value::as_str).unwrap_or("")})).unwrap_or_else(||json!({"provider":"none","model":""}))
+    let active = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("active"))
+        .and_then(Value::as_object);
+    let provider = active
+        .and_then(|active| active.get("provider"))
+        .and_then(Value::as_str)
+        .filter(|provider| !provider.is_empty())
+        .unwrap_or("none");
+    let model = active
+        .and_then(|active| active.get("model"))
+        .and_then(Value::as_str)
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or_else(|| default_model_for(provider));
+    json!({"provider":provider,"model":model})
+}
+
+fn default_model_for(provider: &str) -> &'static str {
+    match provider {
+        "google" => "gemini-3.5-flash",
+        "openai" => "gpt-5.4-mini",
+        "anthropic" => "claude-sonnet-4-6",
+        "local" => local::default_model(),
+        _ => "",
+    }
+}
+
+fn confidential_audio(config: &Map<String, Value>) -> bool {
+    let Some(transcribe) = config.get("transcribe").and_then(Value::as_object) else {
+        return true;
+    };
+    match transcribe.get("confidential_audio") {
+        None => true,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => false,
+    }
+}
+
+fn confidential_operation() -> Value {
+    // The reference reads in-memory operation state; no native read API exists
+    // yet, so this read-only projection cannot observe it.
+    Value::Null
+}
+
+fn google_exact_model_advisory(config: &Map<String, Value>) -> Value {
+    const PROVIDER: &str = "google";
+    const PRO_ALIAS: &str = "gemini-pro-latest";
+    let is_google_alias = |value: Option<&Value>| {
+        value.and_then(Value::as_object).is_some_and(|profile| {
+            profile.get("provider").and_then(Value::as_str) == Some(PROVIDER)
+                && profile.get("model").and_then(Value::as_str) == Some(PRO_ALIAS)
+        })
+    };
+    let mut targets = Vec::new();
+    let providers = config.get("providers").and_then(Value::as_object);
+    if is_google_alias(providers.and_then(|providers| providers.get("active"))) {
+        targets.push("active");
+    }
+    if providers
+        .and_then(|providers| providers.get("byo_models"))
+        .and_then(Value::as_object)
+        .and_then(|models| models.get(PROVIDER))
+        .and_then(Value::as_str)
+        == Some(PRO_ALIAS)
+    {
+        targets.push("remembered");
+    }
+    if is_google_alias(
+        config
+            .get("services")
+            .and_then(Value::as_object)
+            .and_then(|services| services.get("confidential"))
+            .and_then(Value::as_object)
+            .and_then(|confidential| confidential.get("prior_active")),
+    ) {
+        targets.push("confidential_prior");
+    }
+    if targets.is_empty() {
+        Value::Null
+    } else {
+        json!({"id":"choose_exact_gemini_model","heading":"choose an exact Gemini model","google_model_resolution_targets":targets,"action":{"label":"choose model","href":"/app/thinking/#byo-setup"}})
+    }
 }
 fn ui_lane(config: &Map<String, Value>) -> &'static str {
     match derive_active_brain_lane(config).lane.as_deref() {
@@ -134,7 +219,7 @@ fn local_status(
     let configured = matches!(endpoint, LocalEndpointResolution::Byo(_));
     match endpoint {
         LocalEndpointResolution::Bundled if selected => {
-            let availability = local::availability(journal, local::DEFAULT_MODEL);
+            let availability = local::availability(journal, local::default_model());
             if !availability["binary_present"].as_bool().unwrap_or(false) {
                 issues.push("binary_missing");
             }
@@ -219,5 +304,15 @@ mod tests {
             result["key_validation"]["openai"]["reason_code"],
             "validation_unavailable"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "managed-provider validation must not run")]
+    fn configured_key_reaches_the_injected_validator() {
+        let config = Map::from_iter([(
+            "env".to_owned(),
+            json!({"OPENAI_API_KEY": "not-a-real-key"}),
+        )]);
+        let _ = validate_keys_with(&config, &PanicValidator);
     }
 }

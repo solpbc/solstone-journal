@@ -61,6 +61,8 @@ pub enum CopyValue {
     String(&'static str),
     Array(&'static [CopyValue]),
     Object(&'static [(&'static str, CopyValue)]),
+    Lanes,
+    ConfidentialLaneDetail,
 }
 
 impl Serialize for CopyValue {
@@ -78,6 +80,8 @@ impl Serialize for CopyValue {
                 }
                 map.end()
             }
+            Self::Lanes => LANES.serialize(serializer),
+            Self::ConfidentialLaneDetail => CONFIDENTIAL_LANE_DETAIL.serialize(serializer),
         }
     }
 }
@@ -93,42 +97,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ("byo", CopyValue::String("your own AI engine")),
         ]),
     ),
-    (
-        "lanes",
-        CopyValue::Array(&[
-            CopyValue::Object(&[
-                ("id", CopyValue::String("local")),
-                ("label", CopyValue::String("Local")),
-                ("sub", CopyValue::String("on your device")),
-                (
-                    "description",
-                    CopyValue::String(
-                        "a model runs right on this computer — nothing leaves for sol to think.",
-                    ),
-                ),
-            ]),
-            CopyValue::Object(&[
-                ("id", CopyValue::String("confidential")),
-                ("label", CopyValue::String("Confidential processing")),
-                ("sub", CopyValue::String("operated by sol pbc")),
-                (
-                    "description",
-                    CopyValue::String("sol pbc runs the model on confidential GPUs."),
-                ),
-            ]),
-            CopyValue::Object(&[
-                ("id", CopyValue::String("byo")),
-                ("label", CopyValue::String("your own AI engine")),
-                ("sub", CopyValue::String("your key, or your own endpoint")),
-                (
-                    "description",
-                    CopyValue::String(
-                        "bring a provider key — Claude, Gemini, or GPT — or point sol at your own endpoint. it stays in your journal; sol pbc is never in the path.",
-                    ),
-                ),
-            ]),
-        ]),
-    ),
+    ("lanes", CopyValue::Lanes),
     (
         "provider_labels",
         CopyValue::Object(&[
@@ -172,43 +141,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
     (
         "confidential",
         CopyValue::Object(&[
-            (
-                "lane_detail",
-                CopyValue::Object(&[
-                    ("heading", CopyValue::String("confidential processing")),
-                    ("sub", CopyValue::String("operated by sol pbc")),
-                    (
-                        "mechanism",
-                        CopyValue::String(
-                            "sol pbc runs the model itself on confidential GPUs in Microsoft Azure. the hardware boundary keeps the cloud host excluded from what's processed — no third-party AI provider is in the path.",
-                        ),
-                    ),
-                    (
-                        "egress",
-                        CopyValue::String(
-                            "when it's on, the thinking leaves your device — text, images, and (with the audio switch on, its default) your audio for transcription. your journal itself never leaves.",
-                        ),
-                    ),
-                    (
-                        "claims",
-                        CopyValue::String(
-                            "no content is retained · no human reviews it · nothing is used to train",
-                        ),
-                    ),
-                    (
-                        "attestation",
-                        CopyValue::String(
-                            "your journal must verify the service before anything is sent — if it can't verify, it doesn't send.",
-                        ),
-                    ),
-                    (
-                        "early_access",
-                        CopyValue::String(
-                            "confidential processing is coming — scouts get it first.",
-                        ),
-                    ),
-                ]),
-            ),
+            ("lane_detail", CopyValue::ConfidentialLaneDetail),
             ("more_label", CopyValue::String("how it works →")),
             (
                 "setup",
