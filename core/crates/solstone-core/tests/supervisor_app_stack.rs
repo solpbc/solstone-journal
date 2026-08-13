@@ -265,10 +265,14 @@ async fn collect_remaining_app_start_refs(
 }
 
 fn assert_marker_absent(journal: &TempJournal, service: &str) {
+    #[cfg(target_os = "macos")]
+    let (interval, iterations) = (Duration::from_millis(100), 5);
+    #[cfg(not(target_os = "macos"))]
+    let (interval, iterations) = (Duration::from_millis(5), 100);
     let outcome = await_outcome(
         WaitPolarity::Negative,
-        Duration::from_millis(5),
-        100,
+        interval,
+        iterations,
         Instant::now,
         || {
             if journal.marker(service).exists() {
@@ -280,6 +284,10 @@ fn assert_marker_absent(journal: &TempJournal, service: &str) {
         thread::sleep,
     );
     panic_for_wait(&format!("unexpected {service} fixture marker"), outcome);
+    assert!(
+        !journal.marker(service).exists(),
+        "unexpected {service} fixture marker at the observation boundary"
+    );
 }
 
 fn wait_for_path(path: &Path) {
