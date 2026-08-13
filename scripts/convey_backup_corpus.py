@@ -398,6 +398,49 @@ def build_corpus() -> dict[str, Any]:
             "snapshot_id": PINNED_SNAPSHOT_ID,
         },
         "placeholders": {"journal_root": PLACEHOLDER_ROOT},
+        # 🔴 WHAT A GREEN REPLAY OF THIS CORPUS IS NOT EVIDENCE ABOUT.
+        # Written into the fixture, not only into this generator, so a future
+        # reader cannot mistake a green replay for coverage. Every write route in
+        # this conversion is outside a corpus's reach by construction: a POST
+        # would mutate the sequential per-phase journal underneath later probes.
+        "coverage_limits": {
+            "note": (
+                "A green replay proves the recorded GET bodies and the recorded "
+                "rejection bodies. It proves nothing about any route below, and "
+                "those routes must be checked by reading the reference."
+            ),
+            "no_probe_at_all": [
+                "POST /app/backup/keys/generate",
+                "POST /app/backup/recovery-key/reveal",
+                "POST /app/backup/backup-now",
+                "POST /app/backup/offload/enable",
+                "POST /app/backup/offload/disable",
+                "POST /app/backup/enable",
+                "POST /app/backup/enable-hosted",
+                "POST /app/backup/destination",
+                "POST /app/backup/recovery-key/rotate",
+                "POST /app/backup/teardown",
+                "POST /app/backup/restore-hosted",
+                "POST /app/backup/offload/restore",
+            ],
+            "rejection_paths_only": [
+                "POST /app/backup/retention",
+                "POST /app/backup/confirm",
+                "POST /app/backup/offload/config",
+                "POST /app/backup/restore",
+            ],
+            "no_successful_mutation_is_recorded_anywhere": True,
+            "named_hazards_a_replay_cannot_see": [
+                "generate_and_store_keys fills daily_key and recovery_key ONLY when "
+                "they are None. A second call returns the existing keys. A port "
+                "written as an unconditional generate-then-store overwrites the "
+                "owner's recovery key and orphans every existing snapshot, and "
+                "returns success.",
+                "mutate_journal_config returns before taking the lock and before "
+                "writing when the computed change is a no-op. A port that always "
+                "reports changed writes on every call.",
+            ],
+        },
         "phases": cases,
     }
 
