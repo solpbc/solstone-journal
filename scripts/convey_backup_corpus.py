@@ -358,6 +358,43 @@ def _record(client: Any, probe: Probe, root: Path) -> dict[str, Any]:
     return case
 
 
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _mutation_census(phases: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Count how many recorded probes actually MUTATED and returned 2xx.
+
+    🔴 The number that matters is not how many write-method cases a corpus
+    carries. It is how many of them **succeeded**, because a refusal grades the
+    refusal envelope and the session gate, never mutation semantics. "N write
+    cases across M routes" is a true aggregate that reads as thorough and is not
+    a claim about the thing anyone cares about.
+
+    ⚠ For the fill-only-when-absent defect class this is decisive: that class is
+    entirely about what a successful SECOND call does, so a corpus with zero
+    successful mutations is exactly as blind to it as a corpus with no write
+    probes at all.
+
+    Computed rather than written down, so it cannot drift from the fixture.
+    """
+    cases = [case for phase in phases.values() for case in phase]
+    mutating = [case for case in cases if case["method"] in _MUTATING_METHODS]
+    succeeded = [case for case in mutating if 200 <= case["status"] < 300]
+    routes: dict[str, list[str]] = {}
+    for phase, phase_cases in phases.items():
+        for case in phase_cases:
+            if case["method"] in _MUTATING_METHODS and 200 <= case["status"] < 300:
+                routes.setdefault(f"{case['method']} {case['path']}", []).append(phase)
+    return {
+        "mutating_method_cases": len(mutating),
+        "distinct_routes_probed_with_a_mutating_method": len(
+            {f"{case['method']} {case['path']}" for case in mutating}
+        ),
+        "cases_that_actually_mutated": len(succeeded),
+        "routes_with_a_successful_mutation": routes,
+    }
+
+
 PHASES = (
     "unestablished",
     "corrupt",
@@ -398,6 +435,49 @@ def build_corpus() -> dict[str, Any]:
             "snapshot_id": PINNED_SNAPSHOT_ID,
         },
         "placeholders": {"journal_root": PLACEHOLDER_ROOT},
+        # 🔴 WHAT A GREEN REPLAY OF THIS CORPUS IS NOT EVIDENCE ABOUT.
+        # Written into the fixture, not only into this generator, so a future
+        # reader cannot mistake a green replay for coverage. Every write route in
+        # this conversion is outside a corpus's reach by construction: a POST
+        # would mutate the sequential per-phase journal underneath later probes.
+        "coverage_limits": {
+            "note": (
+                "A green replay proves the recorded GET bodies and the recorded "
+                "rejection bodies. It proves nothing about any route below, and "
+                "those routes must be checked by reading the reference."
+            ),
+            "no_probe_at_all": [
+                "POST /app/backup/keys/generate",
+                "POST /app/backup/recovery-key/reveal",
+                "POST /app/backup/backup-now",
+                "POST /app/backup/offload/enable",
+                "POST /app/backup/offload/disable",
+                "POST /app/backup/enable",
+                "POST /app/backup/enable-hosted",
+                "POST /app/backup/destination",
+                "POST /app/backup/recovery-key/rotate",
+                "POST /app/backup/teardown",
+                "POST /app/backup/restore-hosted",
+                "POST /app/backup/offload/restore",
+            ],
+            "rejection_paths_only": [
+                "POST /app/backup/retention",
+                "POST /app/backup/confirm",
+                "POST /app/backup/offload/config",
+                "POST /app/backup/restore",
+            ],
+            "mutation_census": _mutation_census(cases),
+            "named_hazards_a_replay_cannot_see": [
+                "generate_and_store_keys fills daily_key and recovery_key ONLY when "
+                "they are None. A second call returns the existing keys. A port "
+                "written as an unconditional generate-then-store overwrites the "
+                "owner's recovery key and orphans every existing snapshot, and "
+                "returns success.",
+                "mutate_journal_config returns before taking the lock and before "
+                "writing when the computed change is a no-op. A port that always "
+                "reports changed writes on every call.",
+            ],
+        },
         "phases": cases,
     }
 

@@ -570,6 +570,43 @@ def _record(client: Any, probe: Probe, root: Path) -> dict[str, Any]:
     return case
 
 
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _mutation_census(phases: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Count how many recorded probes actually MUTATED and returned 2xx.
+
+    🔴 The number that matters is not how many write-method cases a corpus
+    carries. It is how many of them **succeeded**, because a refusal grades the
+    refusal envelope and the session gate, never mutation semantics. "N write
+    cases across M routes" is a true aggregate that reads as thorough and is not
+    a claim about the thing anyone cares about.
+
+    ⚠ For the fill-only-when-absent defect class this is decisive: that class is
+    entirely about what a successful SECOND call does, so a corpus with zero
+    successful mutations is exactly as blind to it as a corpus with no write
+    probes at all.
+
+    Computed rather than written down, so it cannot drift from the fixture.
+    """
+    cases = [case for phase in phases.values() for case in phase]
+    mutating = [case for case in cases if case["method"] in _MUTATING_METHODS]
+    succeeded = [case for case in mutating if 200 <= case["status"] < 300]
+    routes: dict[str, list[str]] = {}
+    for phase, phase_cases in phases.items():
+        for case in phase_cases:
+            if case["method"] in _MUTATING_METHODS and 200 <= case["status"] < 300:
+                routes.setdefault(f"{case['method']} {case['path']}", []).append(phase)
+    return {
+        "mutating_method_cases": len(mutating),
+        "distinct_routes_probed_with_a_mutating_method": len(
+            {f"{case['method']} {case['path']}" for case in mutating}
+        ),
+        "cases_that_actually_mutated": len(succeeded),
+        "routes_with_a_successful_mutation": routes,
+    }
+
+
 PHASES = ("unestablished", "corrupt", "empty", "populated")
 
 
@@ -607,6 +644,56 @@ def build_corpus() -> dict[str, Any]:
         "placeholders": {
             "journal_root": PLACEHOLDER_ROOT,
             "dir_ctime": PLACEHOLDER_CTIME,
+        },
+        # 🔴 WHAT A GREEN REPLAY OF THIS CORPUS IS NOT EVIDENCE ABOUT.
+        # Written into the fixture, not only into this generator. Every write
+        # route in this conversion is outside a corpus's reach by construction:
+        # a POST would mutate the sequential per-phase journal underneath later
+        # probes.
+        "coverage_limits": {
+            "note": (
+                "A green replay proves the recorded GET bodies and the recorded "
+                "refusal bodies. It proves nothing about any route below, and "
+                "those routes must be checked by reading the reference."
+            ),
+            "no_probe_at_all": [
+                "POST /app/import/api/save",
+                "POST /app/import/api/start",
+                "POST /app/import/api/journal-sources/{name}/revoke",
+                "POST /app/import/api/journal-sources/{name}/resolve-entity",
+                "POST /app/import/api/journal-sources/{name}/resolve-facet",
+                "POST /app/import/api/journal-sources/{name}/resolve-config-all",
+                "POST /app/import/journal/{prefix}/ingest/segments",
+                "POST /app/import/journal/{prefix}/ingest/facets",
+                "POST /app/import/journal/{prefix}/ingest/imports",
+                "POST /app/import/journal/{prefix}/ingest/config",
+            ],
+            "rejection_paths_only": [
+                "POST /app/import/api/save-path",
+                "POST /app/import/api/meta",
+                "POST /app/import/api/journal-sources/create",
+                "POST /app/import/api/journal-sources/{name}/resolve-config",
+                "GET  /app/import/journal/{prefix}/manifest/{area}",
+                "POST /app/import/journal/{prefix}/ingest/entities",
+            ],
+            "mutation_census": _mutation_census(cases),
+            "named_hazards_a_replay_cannot_see": [
+                "GET /app/import/api/{ts}/content BACKFILLS content_manifest.jsonl "
+                "into the owner's import directory when it is absent. This corpus "
+                "seeds that manifest directly, so BOTH recorded content cases pass "
+                "on a port that never implements the backfill -- and every legacy "
+                "import then answers 'no content available' for an import that is "
+                "full.",
+                "build_import_info overrides imported_at with "
+                "upload_timestamp/1000 when present, and /api/list sorts on "
+                "imported_at. No seeded import carries upload_timestamp, so that "
+                "branch has zero coverage and a port that omits it matches every "
+                "case while ordering a real owner's history wrong.",
+                "The imports[] record shape is HETEROGENEOUS: a processed import "
+                "carries 24 keys, an unprocessed one 17. The seven extra keys are "
+                "added inside an if-imported.json-exists branch, so a struct of "
+                "Options emitting all 24 with nulls diverges from the reference.",
+            ],
         },
         "phases": cases,
     }
