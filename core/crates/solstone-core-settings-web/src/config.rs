@@ -32,7 +32,10 @@ pub fn project_public_config(mut config: Map<String, Value>) -> Map<String, Valu
         json!({"PLAUD_ACCESS_TOKEN": env.and_then(|values| values.get("PLAUD_ACCESS_TOKEN")).is_some_and(truthy)}),
     );
     config.remove("providers");
-    if let Some(Value::Object(convey)) = config.get_mut("convey") {
+    let convey = config
+        .entry("convey".to_owned())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Value::Object(convey) = convey {
         convey.remove("secret");
         convey.remove("password_hash");
         convey.remove("password");
@@ -60,7 +63,7 @@ pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Val
             "parakeet" | "parakeet-cpp" => {
                 if let Some(nested) = value.as_object() {
                     let allowed: &[&str] = if key == "parakeet" {
-                        &["device", "timeout_sec"]
+                        &["model_version", "device", "timeout_sec"]
                     } else {
                         &["device"]
                     };
@@ -95,7 +98,7 @@ pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Val
     if include_confidential_audio {
         projected.insert(
             "confidential_audio".to_owned(),
-            Value::Bool(values.get("confidential_audio").is_some_and(truthy)),
+            Value::Bool(values.get("confidential_audio").map(truthy).unwrap_or(true)),
         );
     }
     Value::Object(projected)
@@ -114,7 +117,12 @@ pub fn truthy(value: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
     use serde_json::json;
+    use tower::ServiceExt;
 
     use super::project_public_config;
 
@@ -143,5 +151,54 @@ mod tests {
                 "some_future_section"
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn ac5_tokened_config_masks_token_and_live_responses_never_leak_it() {
+        for (phase, expected) in [("tokened", true), ("rich", false)] {
+            let root = crate::test_support::phase_root(phase);
+            let router = crate::test_support::shell_router(root.path());
+            let config = router
+                .clone()
+                .oneshot(
+                    Request::get("/app/settings/api/config")
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            let body: serde_json::Value = serde_json::from_slice(
+                &to_bytes(config.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON");
+            assert_eq!(body["env"]["PLAUD_ACCESS_TOKEN"], expected, "{phase}");
+            for name in crate::test_support::corpus()["phases"][phase]
+                .as_object()
+                .expect("phase")
+                .keys()
+                .filter(|name| name.starts_with("GET "))
+            {
+                let response = router
+                    .clone()
+                    .oneshot(
+                        Request::get(crate::test_support::request_path(name))
+                            .body(Body::empty())
+                            .expect("request"),
+                    )
+                    .await
+                    .expect("response");
+                let bytes = to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body");
+                let text = String::from_utf8_lossy(&bytes);
+                assert!(
+                    !text.contains("plaud-token-MUST-NOT-LEAK"),
+                    "{phase} {name}"
+                );
+                assert!(!text.contains("MUST-NOT-LEAK"), "{phase} {name}");
+            }
+        }
     }
 }

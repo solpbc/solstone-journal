@@ -13,29 +13,9 @@ use crate::{
     icons,
 };
 
-const ALWAYS_ON: &[(&str, &str, &str, &str, &str)] = &[
-    (
-        "meeting",
-        "Meetings",
-        "Video calls, in-person meetings, and conferences",
-        "📅",
-        "users",
-    ),
-    (
-        "email",
-        "Email",
-        "Email reading and composition",
-        "📧",
-        "mail",
-    ),
-    (
-        "messaging",
-        "Messaging",
-        "Chat, Slack, Discord, and text messaging",
-        "💬",
-        "messages-square",
-    ),
-];
+mod default_activities {
+    include!(concat!(env!("OUT_DIR"), "/default_activities.rs"));
+}
 
 pub async fn defaults() -> Response {
     json_response(json!({"activities": default_records()}))
@@ -46,6 +26,12 @@ pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) ->
         return facet_not_found();
     }
     let mut activities = read_attached(&journal_root, &facet_name);
+    if activities.is_empty() {
+        activities = default_records()
+            .into_iter()
+            .map(default_for_facet)
+            .collect();
+    }
     let existing: Vec<String> = activities
         .iter()
         .filter_map(|activity| {
@@ -57,7 +43,7 @@ pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) ->
         .collect();
     for default in always_on_records() {
         if !existing.iter().any(|id| default["id"].as_str() == Some(id)) {
-            activities.push(default);
+            activities.push(default_for_facet(default));
         }
     }
     json_response(json!({"activities": activities, "defaults": default_records()}))
@@ -81,18 +67,30 @@ fn read_attached(journal_root: &std::path::Path, facet_name: &str) -> Vec<Value>
 }
 
 fn default_records() -> Vec<Value> {
-    always_on_records()
+    raw_default_records()
 }
 
 fn always_on_records() -> Vec<Value> {
-    ALWAYS_ON
-        .iter()
-        .map(|(id, name, description, emoji, icon)| {
-            json!({
-                "id": id, "name": name, "description": description, "emoji": emoji, "icon": icon,
-                "always_on": true, "instructions": "", "icon_svg": icons::svg(Some(icon), emoji),
-            })
-        })
+    raw_default_records()
+        .into_iter()
+        .filter(|activity| activity["always_on"].as_bool() == Some(true))
+        .collect()
+}
+
+fn default_for_facet(mut record: Value) -> Value {
+    let values = record.as_object_mut().expect("default activity object");
+    values.insert("custom".to_owned(), Value::Bool(false));
+    values
+        .entry("priority".to_owned())
+        .or_insert_with(|| json!("normal"));
+    record
+}
+
+fn raw_default_records() -> Vec<Value> {
+    serde_json::from_str::<Vec<Value>>(default_activities::JSON)
+        .expect("generated default activities")
+        .into_iter()
+        .map(public_record)
         .collect()
 }
 

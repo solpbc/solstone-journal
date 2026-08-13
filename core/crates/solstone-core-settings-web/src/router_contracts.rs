@@ -7,7 +7,43 @@ use axum::{
 };
 use tower::ServiceExt;
 
-use crate::test_support::{corrupt_root, established_root, shell_router};
+use crate::test_support::{corpus, corrupt_root, established_root, shell_router};
+
+#[tokio::test]
+async fn ac1_established_has_exactly_22_reachable_json_get_routes() {
+    let corpus = corpus();
+    let cases = corpus["phases"]["established"]
+        .as_object()
+        .expect("established cases");
+    let get_cases = cases
+        .iter()
+        .filter(|(name, _)| name.starts_with("GET "))
+        .collect::<Vec<_>>();
+    assert_eq!(get_cases.len(), 22);
+    let root = established_root();
+    let router = shell_router(root.path());
+    for (name, expected) in get_cases {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::get(crate::test_support::request_path(name))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            response.status().as_u16(),
+            expected["status"].as_u64().expect("status") as u16,
+            "{name}"
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/json",
+            "{name}"
+        );
+    }
+}
 
 #[tokio::test]
 async fn ac14_shell_router_applies_session_and_corrupt_contracts() {

@@ -23,8 +23,8 @@ pub async fn get(journal_root: PathBuf) -> Response {
         available.map(|bytes| (bytes as f64 / 1024_f64.powi(3) * 10.0).round() / 10.0);
     json_response(json!({
         "backends": [
-            {"name": "parakeet", "label": "Parakeet - Local processing", "description": "On-device speech recognition.", "env_key": null, "settings": ["device", "timeout_sec"], "available": true},
-            {"name": "parakeet-cpp", "label": "Parakeet.cpp - Local processing (Linux)", "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.", "env_key": null, "settings": ["device"], "available": true},
+            {"name": "parakeet", "label": "Parakeet - Local processing (Apple Silicon CoreML or Linux parakeet.cpp)", "description": "On-device speech recognition via Parakeet TDT; macOS uses a FluidAudio/CoreML helper, Linux uses the supervised parakeet.cpp server. Requires `make install`.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
+            {"name": "parakeet-cpp", "label": "Parakeet.cpp - Local processing (Linux)", "description": "On-device speech recognition via a supervised parakeet.cpp server (mudler/parakeet.cpp). Linux only; install with `journal install-provider parakeet`.", "env_key": null, "settings": ["device"]},
         ],
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
@@ -41,5 +41,17 @@ pub fn runtime_label(os: &str, arch: &str) -> &'static str {
         "unsupported"
     } else {
         "Linux parakeet.cpp"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime_label;
+
+    #[test]
+    fn ac12_runtime_label_has_all_three_branches() {
+        assert_eq!(runtime_label("darwin", "arm64"), "macOS CoreML helper");
+        assert_eq!(runtime_label("linux", "x86_64"), "Linux parakeet.cpp");
+        assert_eq!(runtime_label("windows", "x86_64"), "unsupported");
     }
 }

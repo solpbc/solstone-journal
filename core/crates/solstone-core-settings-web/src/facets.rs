@@ -54,9 +54,23 @@ pub async fn muted(journal_root: PathBuf) -> Response {
 }
 
 pub async fn get_one(journal_root: PathBuf, Path(facet_name): Path<String>) -> Response {
-    let Some(config) = facet(&journal_root, &facet_name) else {
+    let Some(mut config) = facet(&journal_root, &facet_name) else {
         return facet_not_found();
     };
+    let config = config.as_object_mut().expect("facet config object");
+    config
+        .entry("muted".to_owned())
+        .or_insert(Value::Bool(false));
+    config.insert(
+        "path".to_owned(),
+        Value::String(
+            journal_root
+                .join("facets")
+                .join(&facet_name)
+                .display()
+                .to_string(),
+        ),
+    );
     json_response(json!({"facet": facet_name, "config": config}))
 }
 

@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use axum::{
+    body::{Body, to_bytes},
+    http::Request,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tower::ServiceExt;
 
 const NORMALIZE: [(&str, &str); 13] = [
     ("runtime_label", "<HOST:runtime_label>"),
@@ -20,18 +25,32 @@ const NORMALIZE: [(&str, &str); 13] = [
     ("category_mute_state.*", "<VOLATILE:mute_state>"),
 ];
 
-#[test]
-fn ac11_normalizer_path_sets_equal_the_corpus_per_case() {
+#[tokio::test]
+async fn ac11_normalizer_path_sets_equal_the_corpus_per_case() {
     let corpus = crate::test_support::corpus();
-    for phase in corpus["phases"].as_object().expect("phases").values() {
-        for case in phase
-            .as_object()
-            .expect("phase")
-            .values()
-            .filter(|case| case.get("normalized_paths").is_some())
-        {
-            let (normalized, mut hits) =
-                normalize(case["normalized"].clone(), "", "<JOURNAL_ROOT>");
+    for (phase_name, phase) in corpus["phases"].as_object().expect("phases") {
+        let root = crate::test_support::phase_root(phase_name);
+        let router = crate::test_support::shell_router(root.path());
+        for (name, case) in phase.as_object().expect("phase") {
+            if !name.starts_with("GET ") {
+                continue;
+            }
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::get(crate::test_support::request_path(name))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON response");
+            let (_, mut hits) = normalize(body, "", &root.path().display().to_string());
             hits.sort();
             hits.dedup();
             let mut expected = case["normalized_paths"]
@@ -43,13 +62,65 @@ fn ac11_normalizer_path_sets_equal_the_corpus_per_case() {
                 .collect::<Vec<_>>();
             expected.sort();
             expected.dedup();
-            assert_eq!(hits, expected);
+            assert_eq!(hits, expected, "{phase_name} {name}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn ac3_all_captured_get_cases_match_status_and_digest() {
+    let corpus = crate::test_support::corpus();
+    let phases = corpus["phases"].as_object().expect("phases");
+    let mut total = 0;
+    for (phase_name, phase) in phases {
+        let root = crate::test_support::phase_root(phase_name);
+        let router = crate::test_support::shell_router(root.path());
+        for (name, expected) in phase.as_object().expect("phase") {
+            if !name.starts_with("GET ") {
+                continue;
+            }
+            total += 1;
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::get(crate::test_support::request_path(name))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(
+                response.status().as_u16(),
+                expected["status"].as_u64().expect("status") as u16,
+                "{phase_name} {name}"
+            );
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON response");
+            let (normalized, mut hits) = normalize(body, "", &root.path().display().to_string());
+            hits.sort();
+            hits.dedup();
+            let mut expected_hits = expected["normalized_paths"]
+                .as_array()
+                .expect("normalized paths")
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
+            expected_hits.sort();
+            expected_hits.dedup();
+            assert_eq!(hits, expected_hits, "{phase_name} {name}");
             assert_eq!(
                 digest(&normalized),
-                case["digest"].as_str().expect("digest")
+                expected["digest"].as_str().expect("digest"),
+                "{phase_name} {name}"
             );
         }
     }
+    assert_eq!(total, 125);
 }
 
 fn normalize(value: Value, path: &str, root: &str) -> (Value, Vec<String>) {

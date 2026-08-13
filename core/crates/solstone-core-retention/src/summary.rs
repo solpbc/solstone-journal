@@ -133,21 +133,21 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn populated_storage_arithmetic_matches_the_corpus() {
-        let temporary = TempDir::new().expect("temporary journal");
+    fn populated_storage_arithmetic_matches_the_corpus() -> Result<(), Box<dyn std::error::Error>> {
+        let temporary = TempDir::new()?;
         let with_raw = temporary.path().join("chronicle/20260810/tmux/090000_300");
         let purged = temporary.path().join("chronicle/20260810/tmux/100000_300");
         let bare = temporary
             .path()
             .join("chronicle/20260811/screen/090000_120");
         for path in [&with_raw, &purged, &bare] {
-            fs::create_dir_all(path).expect("segment directory");
+            fs::create_dir_all(path)?;
         }
-        fs::write(with_raw.join("audio.flac"), vec![0_u8; 4096]).expect("audio");
-        fs::write(with_raw.join("monitor_1_diff.png"), vec![0_u8; 2048]).expect("monitor");
-        fs::write(with_raw.join("audio.jsonl"), b"{\"seeded\": true}\n").expect("sidecar");
-        fs::write(purged.join("audio.jsonl"), b"{\"seeded\": true}\n").expect("sidecar");
-        fs::write(bare.join("notes.md"), b"seeded\n").expect("notes");
+        fs::write(with_raw.join("audio.flac"), vec![0_u8; 4096])?;
+        fs::write(with_raw.join("monitor_1_diff.png"), vec![0_u8; 2048])?;
+        fs::write(with_raw.join("audio.jsonl"), b"{\"seeded\": true}\n")?;
+        fs::write(purged.join("audio.jsonl"), b"{\"seeded\": true}\n")?;
+        fs::write(bare.join("notes.md"), b"seeded\n")?;
 
         let summary = compute_storage_summary(temporary.path());
         assert_eq!(summary.total_segments, 3);
@@ -158,5 +158,6 @@ mod tests {
         assert_eq!(summary.raw_media_human(), "6.0 KB");
         assert_eq!(summary.derived_human(), "41 B");
         assert_eq!(human_bytes(0), "0 B");
+        Ok(())
     }
 }

@@ -46,7 +46,7 @@ fn assignments(source: &str) -> BTreeMap<String, String> {
         if !line.chars().next().is_some_and(char::is_whitespace)
             && let Some((name, expression)) = line.split_once('=')
         {
-            let name = name.trim();
+            let name = name.split(':').next().expect("assignment name").trim();
             if name
                 .chars()
                 .all(|character| character == '_' || character.is_ascii_alphanumeric())
@@ -123,7 +123,7 @@ impl<'a> Literal<'a> {
     fn string(&mut self) -> String {
         let quote = self.source[self.index];
         self.index += 1;
-        let mut output = String::new();
+        let mut output = Vec::new();
         while let Some(byte) = self.source.get(self.index).copied() {
             self.index += 1;
             if byte == quote {
@@ -133,9 +133,9 @@ impl<'a> Literal<'a> {
                     .get(self.index)
                     .is_some_and(|next| *next == quote)
                 {
-                    output.push_str(&self.string());
+                    output.extend(self.string().bytes());
                 }
-                return output;
+                return String::from_utf8(output).expect("Python string UTF-8");
             }
             if byte == b'\\' {
                 let escaped = self
@@ -145,15 +145,15 @@ impl<'a> Literal<'a> {
                     .expect("terminated escape");
                 self.index += 1;
                 output.push(match escaped {
-                    b'\\' => '\\',
-                    b'\'' => '\'',
-                    b'"' => '"',
-                    b'n' => '\n',
-                    b't' => '\t',
+                    b'\\' => b'\\',
+                    b'\'' => b'\'',
+                    b'"' => b'"',
+                    b'n' => b'\n',
+                    b't' => b'\t',
                     other => panic!("unsupported Python string escape: {}", other as char),
                 });
             } else {
-                output.push(byte as char);
+                output.push(byte);
             }
         }
         panic!("unterminated Python string")
@@ -163,16 +163,21 @@ impl<'a> Literal<'a> {
         assert_eq!(self.source[self.index], open, "sequence opener");
         self.index += 1;
         let mut values = Vec::new();
+        let mut comma = false;
         loop {
             self.whitespace();
             if self.source.get(self.index) == Some(&close) {
                 self.index += 1;
+                if open == b'(' && !comma && values.len() == 1 {
+                    return values.pop().expect("grouped literal");
+                }
                 return Value::Array(values);
             }
             values.push(self.value());
             self.whitespace();
             if self.source.get(self.index) == Some(&b',') {
                 self.index += 1;
+                comma = true;
             } else {
                 assert_eq!(
                     self.source.get(self.index),
@@ -269,6 +274,12 @@ fn write_constants(path: &Path, constants: &serde_json::Map<String, Value>) {
     .expect("generated copy constants write");
 }
 
+fn write_value(path: &Path, value: &Value) {
+    let json = serde_json::to_string(value).expect("literal serializes");
+    fs::write(path, format!("pub const JSON: &str = r##\"{json}\"##;\n"))
+        .expect("generated literal write");
+}
+
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
     let root = manifest.join("../../..");
@@ -303,6 +314,17 @@ fn main() {
             &exported_constants(&source, use_all),
         );
     }
+    let activities = root.join("solstone/think/activities.py");
+    println!("cargo:rerun-if-changed={}", activities.display());
+    let activities_source = fs::read_to_string(&activities).expect("activities module is readable");
+    write_value(
+        &output.join("default_activities.rs"),
+        &Literal::parse(
+            assignments(&activities_source)
+                .get("DEFAULT_ACTIVITIES")
+                .expect("activities module defines DEFAULT_ACTIVITIES"),
+        ),
+    );
     for path in [
         manifest.join("assets/workspace.html"),
         manifest.join("assets/settings.js"),
