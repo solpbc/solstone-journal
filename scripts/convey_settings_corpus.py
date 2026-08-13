@@ -228,7 +228,11 @@ READ_CASES = [
     ("api/facets", "/app/settings/api/facets"),
     ("api/facets?all=true", "/app/settings/api/facets?all=true"),
     ("api/facets/muted", "/app/settings/api/facets/muted"),
+    # Two queries, deliberately: `search_lucide_icons` is a RANKED search, and a
+    # ranking correct for exactly one prefix passes a one-case corpus.
     ("api/icons?q=sett", "/app/settings/api/icons?q=sett&limit=5"),
+    ("api/icons?q=hea", "/app/settings/api/icons?q=hea&limit=8"),
+    ("api/icons?q=zzzznomatch", "/app/settings/api/icons?q=zzzznomatch&limit=5"),
     ("api/logs", "/app/settings/api/logs"),
     ("api/activities/defaults", "/app/settings/api/activities/defaults"),
     ("api/sync", "/app/settings/api/sync"),
@@ -502,6 +506,12 @@ def run_mutations(config: dict) -> dict:
         )
         before = json.loads(json.dumps(config))
         cases[f"{method} {name}"] = {
+            "method": method,
+            "path": url,
+            # The base every mutation is applied to. Without it a consumer has to
+            # hand-transcribe this file's RICH literal, which is exactly the
+            # transcription hazard the normalizer table exists to avoid.
+            "config_before": before,
             "sent": payload,
             "status": response.status_code,
             "normalized": normalized,
@@ -512,6 +522,77 @@ def run_mutations(config: dict) -> dict:
             "config_after": after,
             "config_keys_added": sorted(set(after) - set(before)),
             "config_keys_removed": sorted(set(before) - set(after)),
+        }
+    return cases
+
+
+PURGE_CASES = [
+    ("keep-policy.no-filter", {}),
+    ("keep-policy.stream-filter", {"stream_filter": "tmux"}),
+    ("keep-policy.no-body", None),
+    ("keep-policy.non-object-body", ["nope"]),
+]
+
+
+def run_purge_cases(config: dict) -> dict:
+    """Drive `api/storage/purge` under a policy that releases NOTHING.
+
+    🔴 MEASURED, AND IT REFUTES THE ASSUMPTION THIS FUNCTION WAS WRITTEN ON.
+    `before = marks(journal)` is called BEFORE `if not policy_would_release(...)`,
+    so the native `solstone-retention` binary is required even on the branch that
+    marks nothing. On a host without it, every purge request that gets past body
+    validation answers 500 -- including the must-not-mark branch.
+
+    That is not a capture failure; it IS the contract on such a host, and it is
+    worth more than the branch originally sought:
+
+      * a non-object body answers 400 WITHOUT reaching the executor, so body
+        validation precedes the binary dependency;
+      * every other shape answers 500 with the binary's own message; and
+      * `media_digests_after` proves all five seeded media files are untouched in
+        every case -- the refusal path destroys nothing.
+
+    ⏳ The releasing branch, and the standing-count branch with the binary
+    present, still have no capture. ⛔ Do not guess them: a port's behaviour on
+    the route that marks an owner's media for removal is not somewhere to infer
+    from source.
+    """
+    from solstone.convey import create_app
+
+    cases = {}
+    for name, payload in PURGE_CASES:
+        root = Path(tempfile.mkdtemp(prefix="oracle-purge-"))
+        (root / "config").mkdir(parents=True)
+        (root / "config" / "journal.json").write_text(
+            json.dumps(config, indent=2) + "\n", encoding="utf-8"
+        )
+        seed_chronicle(root)
+        os.environ["SOLSTONE_JOURNAL"] = str(root)
+        app = create_app(str(root))
+        app.config["TESTING"] = True
+        client = app.test_client()
+        response = (client.post("/app/settings/api/storage/purge", json=payload)
+                    if payload is not None
+                    else client.post("/app/settings/api/storage/purge"))
+        body = response.get_json(silent=True)
+        normalized, hits = normalize(body) if body is not None else (None, [])
+        # Prove the route touched nothing: every seeded media file, by digest.
+        media = {}
+        for path in sorted((root / "chronicle").rglob("*")):
+            if path.is_file():
+                media[str(path.relative_to(root))] = hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest()[:16]
+        cases[f"POST {name}"] = {
+            "method": "POST",
+            "path": "/app/settings/api/storage/purge",
+            "sent": payload,
+            "status": response.status_code,
+            "normalized": normalized,
+            "normalized_paths": sorted(set(hits)),
+            "digest": digest(normalized),
+            "retention_config": config["retention"],
+            "media_digests_after": media,
         }
     return cases
 
@@ -561,6 +642,10 @@ def run_phase(name: str, config: dict, *, seed: bool = False,
              "/app/settings/api/facet/work-life/logs?cursor=20260812"),
             ("api/facet/work-life/logs?cursor=20260810",
              "/app/settings/api/facet/work-life/logs?cursor=20260810"),
+            # 20260813 lands on 20260812, whose contents no other case reaches:
+            # every existing row skipped over it, so an off-by-one on that day
+            # passed all of them.
+            ("api/logs?cursor=20260813", "/app/settings/api/logs?cursor=20260813"),
             ("api/logs?cursor=20260812", "/app/settings/api/logs?cursor=20260812"),
             ("api/logs?cursor=20260811", "/app/settings/api/logs?cursor=20260811"),
             ("api/logs?cursor=20260810", "/app/settings/api/logs?cursor=20260810"),
@@ -623,6 +708,46 @@ def main() -> int:
         "captured_by": "driving the reference; no value here is a restated expectation",
         "host": {"system": platform.system(), "machine": platform.machine()},
         "phases": {},
+        # Deliberate, reasoned departures from the reference. Same shape as the
+        # sibling thinking corpus. ⛔ A divergence belongs HERE, never as an edit
+        # to a recorded case: the phases are generated by driving the reference,
+        # so an edited case is overwritten on the next run and silently
+        # falsifies `captured_by`.
+        "native_deviations": [
+            {
+                "method": "POST",
+                "path": "/app/settings/api/config",
+                "when": "the request carries no body, in any non-corrupt phase",
+                "reference": (
+                    "500 settings_operation_failed -- request.get_json() is called "
+                    "without silent=True, werkzeug raises UnsupportedMediaType before "
+                    "the handler's own missing-body check can run, and the route's "
+                    "blanket except turns it into a generic failure"
+                ),
+                "native": "400 missing_request_body",
+                "why": (
+                    "a raise is not a refusal, and contract.py already DECLARES 400 "
+                    "missing_request_body for this operation -- so the reference "
+                    "contradicts its own published contract and the 400 is the "
+                    "contract being honoured, not a new behaviour. Nothing consumes "
+                    "the 500: neither workspace.html nor settings.js reads "
+                    "reason_code."
+                ),
+                "scope": (
+                    "non-corrupt phases only. On a corrupt config the session gate "
+                    "answers before any handler runs, and that envelope stays."
+                ),
+            },
+            {
+                "method": "POST",
+                "path": "/app/settings/api/observe",
+                "when": "the request carries no body, in any non-corrupt phase",
+                "reference": "500 settings_operation_failed, same mechanism",
+                "native": "400 missing_request_body",
+                "why": "same as above",
+                "scope": "non-corrupt phases only",
+            },
+        ],
     }
     out["phases"]["established"] = run_phase("established", ESTABLISHED)
     out["phases"]["rich"] = run_phase("rich", RICH)
@@ -634,7 +759,31 @@ def main() -> int:
     tokened = json.loads(json.dumps(RICH))
     tokened["env"]["PLAUD_ACCESS_TOKEN"] = "plaud-token-MUST-NOT-LEAK"
     out["phases"]["tokened"] = run_phase("tokened", tokened)
+    # ⚠ A config that is valid JSON but carries a malformed KNOWN section. The
+    # whole-file gate does not fire -- it parses -- so this reaches the handlers
+    # untouched, and the reference tolerates shapes a typed deserializer will
+    # reject. `retention.raw_media` is the live case: the write route validates
+    # membership but the eligibility reader takes an unknown mode as *keep* by
+    # falling off the end, so it fails closed by accident rather than by design.
+    malformed = json.loads(json.dumps(RICH))
+    malformed["retention"]["raw_media"] = "sometimes"
+    malformed["retention"]["raw_media_days"] = "ninety"
+    malformed["observe"]["tmux"]["capture_interval"] = "five"
+    malformed["describe"]["max_extractions"] = None
+    malformed["describe"]["redact"] = "not-a-list"
+    malformed["identity"]["aliases"] = {"not": "a list"}
+    out["phases"]["malformed"] = run_phase("malformed", malformed)
     out["mutations"] = run_mutations(RICH)
+    # 🔴 `api/storage/purge` had no captured case at all, on the one route that
+    # marks an owner's raw media for removal. The policy short-circuit runs
+    # BEFORE the executor is reached, so the must-not-mark branch is capturable
+    # on a host with no `solstone-retention` binary -- which is the branch a port
+    # most needs pinned. The releasing branch needs the binary and is named as a
+    # gap rather than guessed at.
+    keeps = json.loads(json.dumps(RICH))
+    keeps["retention"] = {"raw_media": "keep", "raw_media_days": None,
+                          "per_stream": {}, "journal_logs": {"enabled": True, "days": 14}}
+    out["purge"] = run_purge_cases(keeps)
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUTPUT
     target.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     total = sum(len(phase) for phase in out["phases"].values())
