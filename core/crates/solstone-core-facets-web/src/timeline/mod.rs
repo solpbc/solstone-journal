@@ -130,6 +130,7 @@ async fn grid(root: PathBuf) -> Response {
         Ok(master) => json_response(date_nav::day_grid_payload(
             &day_segment_counts(&root, None),
             rollup::rollup_watermark(&master).as_deref(),
+            None,
         )),
         Err(_) => http::internal_error(),
     }

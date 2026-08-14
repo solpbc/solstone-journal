@@ -12,12 +12,14 @@ workspace = true
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
+pulldown-cmark.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-convey-http.workspace = true
 
 [dev-dependencies]
+pdf-extract.workspace = true
 sha2.workspace = true
 solstone-core-convey-shell.workspace = true
 tempfile = "3.24.0"

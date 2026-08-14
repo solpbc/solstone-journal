@@ -8,6 +8,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, header},
 };
+use chrono::NaiveDateTime;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
@@ -162,6 +163,432 @@ async fn ac2_ac3_replay_all_108_timeline_records() {
     }
     assert_eq!(executed, 108);
 }
+
+#[tokio::test]
+async fn ac1_replay_all_120_news_records() {
+    let fixture = corpus();
+    let mut executed = 0;
+    for (phase, records) in fixture["phases"].as_object().expect("phases") {
+        let root = phase_root(phase);
+        let router = gated(root.path());
+        for expected in records
+            .as_array()
+            .expect("records")
+            .iter()
+            .filter(|record| {
+                record["path"]
+                    .as_str()
+                    .is_some_and(|path| path.starts_with("/app/news/"))
+            })
+        {
+            executed += 1;
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::get(expected["path"].as_str().expect("path"))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(
+                response.status().as_u16(),
+                expected["status"].as_u64().expect("status") as u16,
+                "{phase} {}",
+                expected["path"]
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok()),
+                expected["content_type"].as_str(),
+                "{phase} {}",
+                expected["path"]
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::LOCATION)
+                    .and_then(|value| value.to_str().ok()),
+                expected.get("location").and_then(Value::as_str),
+                "{phase} {}",
+                expected["path"]
+            );
+            let path = expected["path"].as_str().expect("path");
+            // Flask's static sender adds these on five static records: /app/news/,
+            // /app/news/workspace, /app/news/sample, /app/news/20260510, and
+            // /app/news/work/20260510. Only the PDF record is compared.
+            if path == "/app/news/work/20260510/pdf" {
+                assert_eq!(
+                    response
+                        .headers()
+                        .get(header::CONTENT_DISPOSITION)
+                        .and_then(|value| value.to_str().ok()),
+                    expected.get("content_disposition").and_then(Value::as_str)
+                );
+            }
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body");
+            if expected["body_sha256_basis"] == "reference-bytes-record-only" {
+                assert!(expected.get("body_sha256").is_none() || expected["body_sha256"].is_null());
+                continue;
+            }
+            let digest = if expected["body_sha256_basis"] == "raw-body" {
+                Sha256::digest(
+                    substitute(std::str::from_utf8(&body).expect("UTF-8"), root.path()).as_bytes(),
+                )
+            } else {
+                let mut value: Value = serde_json::from_slice(&body).expect("JSON body");
+                normalize(&mut value, root.path());
+                Sha256::digest(canonical(&value))
+            };
+            assert_eq!(
+                format!("{digest:x}"),
+                expected["body_sha256"].as_str().expect("digest"),
+                "{phase} {path}"
+            );
+        }
+    }
+    assert_eq!(executed, 120);
+}
+
+async fn news_json(root: &Path, path: &str) -> (axum::http::StatusCode, Value) {
+    let response = routes(root.to_path_buf(), fixed_clock())
+        .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+        .await
+        .expect("response");
+    let status = response.status();
+    (
+        status,
+        serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON"),
+    )
+}
+
+#[tokio::test]
+async fn ac1b_news_clock_only_moves_grid_coverage() {
+    let root = phase_root("populated");
+    let first = routes(root.path().to_path_buf(), fixed_clock());
+    let grid = first
+        .clone()
+        .oneshot(
+            Request::get("/app/news/api/grid")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    let index = first
+        .oneshot(
+            Request::get("/app/news/api/index")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    let grid: Value =
+        serde_json::from_slice(&to_bytes(grid.into_body(), usize::MAX).await.expect("body"))
+            .expect("json");
+    let index: Value =
+        serde_json::from_slice(&to_bytes(index.into_body(), usize::MAX).await.expect("body"))
+            .expect("json");
+    let one_day_later = crate::Clock::new(|| {
+        NaiveDateTime::parse_from_str("2026-05-16T12:00:00", "%Y-%m-%dT%H:%M:%S")
+            .expect("one-day-later clock")
+    });
+    let later = routes(root.path().to_path_buf(), one_day_later)
+        .oneshot(
+            Request::get("/app/news/api/grid")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    let later: Value =
+        serde_json::from_slice(&to_bytes(later.into_body(), usize::MAX).await.expect("body"))
+            .expect("json");
+    assert_eq!(grid["coverage"]["end"], "20260515");
+    assert_eq!(later["coverage"]["end"], "20260516");
+    assert_eq!(index["coverage"]["end"], "20260510");
+    let empty = phase_root("established_empty");
+    for clock in [
+        fixed_clock(),
+        crate::Clock::new(|| {
+            NaiveDateTime::parse_from_str("2026-05-16T12:00:00", "%Y-%m-%dT%H:%M:%S")
+                .expect("one-day-later clock")
+        }),
+    ] {
+        let router = routes(empty.path().to_path_buf(), clock);
+        let grid = router
+            .clone()
+            .oneshot(
+                Request::get("/app/news/api/grid")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let grid: Value =
+            serde_json::from_slice(&to_bytes(grid.into_body(), usize::MAX).await.expect("body"))
+                .expect("JSON");
+        assert_eq!(grid["coverage"], Value::Null);
+        let index = router
+            .oneshot(
+                Request::get("/app/news/api/index")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let index: Value =
+            serde_json::from_slice(&to_bytes(index.into_body(), usize::MAX).await.expect("body"))
+                .expect("JSON");
+        assert_eq!(index["coverage"], Value::Null);
+    }
+}
+
+#[tokio::test]
+async fn ac2_missing_api_raw_pdf_have_distinct_contracts() {
+    let root = phase_root("established_empty");
+    let (status, value) = news_json(root.path(), "/app/news/api/work/20260510").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(value["empty"], true);
+    for path in ["/app/news/work/20260510/raw", "/app/news/work/20260510/pdf"] {
+        let response = routes(root.path().to_path_buf(), fixed_clock())
+            .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+            .await
+            .expect("response");
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/plain; charset=utf-8"
+        );
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+            "Newsletter not found"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ac3_ac4_ac5_paging_limits_and_facet_validation() {
+    let root = phase_root("populated");
+    write(&root.path().join("facets/work/news/20260426.md"), "third");
+    let (_, first) = news_json(root.path(), "/app/news/api/facet/work?limit=1").await;
+    assert_eq!(first["days"].as_array().expect("days").len(), 1);
+    assert_eq!(first["has_more"], true);
+    assert_eq!(first["next_cursor"], "20260510");
+    let (_, second) = news_json(
+        root.path(),
+        "/app/news/api/facet/work?limit=1&cursor=20260510",
+    )
+    .await;
+    assert_eq!(second["days"][0]["date"], "20260503");
+    let (_, last) = news_json(
+        root.path(),
+        "/app/news/api/facet/work?limit=1&cursor=20260503",
+    )
+    .await;
+    assert_eq!(last["has_more"], false);
+    assert!(last["next_cursor"].is_null());
+    for value in ["0", "101", "nope"] {
+        let (status, body) = news_json(
+            root.path(),
+            &format!("/app/news/api/facet/work?limit={value}"),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "invalid_request_value");
+    }
+    for value in ["1", "100"] {
+        assert_eq!(
+            news_json(
+                root.path(),
+                &format!("/app/news/api/facet/work?limit={value}")
+            )
+            .await
+            .0,
+            axum::http::StatusCode::OK
+        );
+    }
+    assert_eq!(
+        news_json(root.path(), "/app/news/api/facet/nope").await.1["days"],
+        serde_json::json!([])
+    );
+    let (status, body) = news_json(root.path(), "/app/news/api/facet/bad!facet").await;
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+    assert_eq!(body["reason_code"], "invalid_request_value");
+}
+
+#[tokio::test]
+async fn ac6_ac7_ac15_ac16_state_and_observer_contracts() {
+    let empty = phase_root("established_empty");
+    let (_, state) = news_json(empty.path(), "/app/news/api/state").await;
+    let mut keys = state
+        .as_object()
+        .expect("keys")
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    keys.sort();
+    assert_eq!(keys, vec!["copy", "newsletters", "total_count"]);
+    assert!(state["copy"]["grid_lede"].is_null());
+    assert!(!crate::news::routes::journal_has_any_observer_input(
+        empty.path()
+    ));
+    let one = phase_root("established_empty");
+    write(&one.path().join("facets/work/news/20260401.md"), "one");
+    let (_, state) = news_json(one.path(), "/app/news/api/state").await;
+    assert_eq!(state["copy"]["grid_lede"], "1 newsletter since April 2026.");
+    let many = phase_root("populated");
+    write(&many.path().join("facets/work/news/20260401.md"), "old");
+    let (_, state) = news_json(many.path(), "/app/news/api/state").await;
+    assert_eq!(
+        state["copy"]["grid_lede"],
+        "4 newsletters since April 2026."
+    );
+    assert!(crate::news::routes::journal_has_any_observer_input(
+        many.path()
+    ));
+    let capped = phase_root("established_empty");
+    for number in 0..61 {
+        write(
+            &capped.path().join(format!(
+                "facets/work/news/2025{:02}{:02}.md",
+                1 + number / 28,
+                1 + number % 28
+            )),
+            "n",
+        );
+    }
+    let (_, state) = news_json(capped.path(), "/app/news/api/state").await;
+    assert_eq!(state["newsletters"].as_array().expect("news").len(), 60);
+    assert_eq!(state["total_count"], 61);
+}
+
+#[tokio::test]
+async fn ac8_live_pdf_ac10_frontmatter_and_ac11_dates() {
+    let root = phase_root("populated");
+    let response = routes(root.path().to_path_buf(), fixed_clock())
+        .oneshot(
+            Request::get("/app/news/work/20260510/pdf")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/pdf");
+    assert_eq!(
+        response.headers()[header::CONTENT_DISPOSITION],
+        "attachment; filename=\"newsletter-work-20260510.pdf\""
+    );
+    let text = crate::pdf::writer::extract_text_checked(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("pdf"),
+    );
+    for line in [
+        "FACET NEWSLETTER",
+        "work · Sun May 10, 2026",
+        "What happened",
+        "A short newsletter body with a list:",
+        "one item",
+        "two item",
+        "and a blockquote, because the PDF stylesheet has a rule for it.",
+    ] {
+        assert!(
+            text.split_whitespace()
+                .collect::<String>()
+                .contains(&line.split_whitespace().collect::<String>()),
+            "missing {line:?}"
+        );
+    }
+    assert!(!text.contains("generated_at"));
+    assert!(!text.contains("title:"));
+    write(
+        &root.path().join("facets/work/news/20260511.md"),
+        "---\n\x01\n---\nbad",
+    );
+    let (status, body) = news_json(root.path(), "/app/news/api/work/20260511").await;
+    assert_eq!(status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body["reason_code"], "internal_error");
+    for path in ["/app/news/work/20260511/raw", "/app/news/work/20260511/pdf"] {
+        let response = routes(root.path().to_path_buf(), fixed_clock())
+            .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+            .await
+            .expect("response");
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+    }
+    let values = ["20260510", "20260610", "bad"].map(crate::news::dates::next_newsletter_when);
+    assert!(values.windows(2).all(|values| values[0] == values[1]));
+    // [check] Current copy; argument-independence above is the test contract.
+    assert_eq!(values[0], "tomorrow morning");
+}
+
+#[tokio::test]
+async fn ac12_ac13_ac14_invalid_path_contracts() {
+    let root = phase_root("established_empty");
+    let background = routes(root.path().to_path_buf(), fixed_clock())
+        .oneshot(
+            Request::get("/app/news/background")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(background.status(), axum::http::StatusCode::NOT_FOUND);
+    assert_eq!(
+        background.headers()[header::CONTENT_TYPE],
+        "text/html; charset=utf-8"
+    );
+    assert_eq!(
+        to_bytes(background.into_body(), usize::MAX)
+            .await
+            .expect("body")
+            .len(),
+        207
+    );
+    let (status, bad) = news_json(root.path(), "/app/news/notaday").await;
+    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    assert_eq!(bad["reason_code"], "invalid_day");
+    for (path, code, status) in [
+        (
+            "/app/news/api/facet/work?cursor=nope",
+            "invalid_request_value",
+            axum::http::StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/app/news/api/facet/work?day=nope",
+            "invalid_day",
+            axum::http::StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/app/news/api/day/nope",
+            "invalid_day",
+            axum::http::StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let (actual, body) = news_json(root.path(), path).await;
+        assert_eq!(actual, status);
+        assert_eq!(body["reason_code"], code);
+    }
+}
+
 
 #[tokio::test]
 async fn ac4_clock_grows_populated_coverage_by_one_month() {

@@ -11,13 +11,15 @@ mod assets;
 pub mod clock;
 mod date_nav;
 mod http;
+mod news;
+mod pdf;
 pub mod segments;
 mod timeline;
 
 pub use clock::Clock;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
-    timeline::routes(journal_root, clock)
+    timeline::routes(journal_root.clone(), clock.clone()).merge(news::routes(journal_root, clock))
 }
 
 #[cfg(test)]

@@ -233,6 +233,7 @@ md5 = "0.8.1"
 nix = { version = "0.30.1", default-features = false, features = ["fs", "term", "user"] }
 plist = "1.8.0"
 ort = { version = "=2.0.0-rc.12", default-features = false }
+pdf-extract = "0.12.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"

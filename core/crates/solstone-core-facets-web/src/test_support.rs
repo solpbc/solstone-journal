@@ -43,10 +43,34 @@ pub fn phase_root(phase: &str) -> TempDir {
         "populated" => {
             config(root.path());
             chronicle(root.path());
+            news(root.path());
         }
         _ => panic!("known phase: {phase}"),
     }
     root
+}
+
+fn news(root: &Path) {
+    write(
+        &root.join("facets/work/news/20260510.md"),
+        "---\ntitle: Work, week of May 10\nfacet: work\ngenerated_at: 1770000200\n---\n\n# What happened\n\nA **short** newsletter body with a list:\n\n- one item\n- two item\n\n> and a blockquote, because the PDF stylesheet has a rule for it.\n",
+    );
+    write(
+        &root.join("facets/work/news/20260503.md"),
+        "---\ntitle: Work, week of May 3\nfacet: work\ngenerated_at: 1770000100\n---\n\nAn earlier work newsletter so the feed has a second page.\n",
+    );
+    write(
+        &root.join("facets/personal/news/20260510.md"),
+        "---\ntitle: Personal, week of May 10\nfacet: personal\ngenerated_at: 1770000201\n---\n\nThe personal facet newsletter, one paragraph, no headings.\n",
+    );
+    write(
+        &root.join("facets/work/facet.json"),
+        "{\"title\": \"Work\", \"description\": \"The work facet.\"}\n",
+    );
+    write(
+        &root.join("facets/personal/facet.json"),
+        "{\"title\": \"Personal\", \"description\": \"The personal facet.\"}\n",
+    );
 }
 
 pub fn write(path: &Path, text: &str) {
