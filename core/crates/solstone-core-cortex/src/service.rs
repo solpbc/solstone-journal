@@ -12,6 +12,7 @@ use thiserror::Error;
 use tokio::time::{Duration, MissedTickBehavior};
 
 use crate::process::{cancel_worker, spawn_worker, stop_group};
+use crate::renewal::{RenewalHandle, RenewalService, RenewalWorkerStart};
 use crate::state::{CortexState, Outbound};
 use crate::storage::CortexStore;
 
@@ -72,18 +73,24 @@ pub async fn run_until<F>(
 where
     F: Future<Output = ShutdownMode> + Send + 'static,
 {
-    let store = CortexStore::new(journal).map_err(CortexServiceError::Storage)?;
+    let store = CortexStore::new(journal.clone()).map_err(CortexServiceError::Storage)?;
     // Recovery intentionally happens before this connection is started.
     store.recover();
     let (spawn_tx, spawn_rx) = mpsc::channel();
     let (cancel_tx, cancel_rx) = mpsc::channel();
     let (outbound_tx, outbound_rx) = mpsc::channel();
-    let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+    let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx.clone());
     let spawn_state = state.clone();
     thread::spawn(move || spawn_worker(spawn_state, executable_dir, spawn_rx));
     let cancel_state = state.clone();
     thread::spawn(move || cancel_worker(cancel_state, cancel_rx));
     connection.start();
+    let renewal_handle = RenewalHandle::production(journal, outbound_tx);
+    if renewal_handle.startup_refresh_needed(chrono::Utc::now()) {
+        renewal_handle.startup_refresh();
+    }
+    let mut renewal = RenewalService::new(RenewalWorkerStart::production(renewal_handle.clone()));
+    let _ = renewal.start_worker_once();
     let mut status = tokio::time::interval(Duration::from_secs(5));
     let mut drain = tokio::time::interval(Duration::from_millis(10));
     status.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -105,24 +112,32 @@ where
                 }
             },
             message = connection.next_message(), if !draining => match message {
-                Some(message) => dispatch(&state, message.tract.as_str(), message.event.as_str(), message.extra),
+                Some(message) => dispatch(&state, &renewal_handle, message.tract.as_str(), message.event.as_str(), message.extra),
                 None => break,
             },
             _ = tokio::time::sleep(Duration::from_millis(20)), if draining && state.is_idle() => break,
         }
     }
     drain_outbound(&connection, &outbound_rx);
+    renewal.stop();
     connection.stop().await;
     Ok(())
 }
 
-fn dispatch(state: &CortexState, tract: &str, event: &str, fields: Map<String, Value>) {
-    if tract != "cortex" {
-        return;
-    }
-    match event {
-        "request" => state.request(fields),
-        "cancel" => state.queue_cancel(&fields),
+fn dispatch(
+    state: &CortexState,
+    renewal: &RenewalHandle,
+    tract: &str,
+    event: &str,
+    fields: Map<String, Value>,
+) {
+    match tract {
+        "cortex" => match event {
+            "request" => state.request(fields),
+            "cancel" => state.queue_cancel(&fields),
+            _ => {}
+        },
+        "supervisor" => renewal.handle_supervisor(chrono::Utc::now(), event, &fields),
         _ => {}
     }
 }
@@ -157,6 +172,14 @@ mod tests {
 
     use super::*;
 
+    fn renewal_handle(directory: &tempfile::TempDir) -> (RenewalHandle, mpsc::Receiver<Outbound>) {
+        let (outbound, receiver) = mpsc::channel();
+        (
+            RenewalHandle::production(directory.path().to_path_buf(), outbound),
+            receiver,
+        )
+    }
+
     fn running_state() -> (tempfile::TempDir, CortexState, std::process::Child) {
         let directory = tempfile::tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
@@ -185,7 +208,43 @@ mod tests {
 
     #[test]
     fn dispatch_filters_only_at_service_boundary() {
-        let _ = ShutdownMode::Immediate;
+        let directory = tempfile::tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, _) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        let (renewal, _) = renewal_handle(&directory);
+        let before = renewal.snapshot();
+        dispatch(&state, &renewal, "other", "started", Map::new());
+        assert_eq!(renewal.snapshot(), before);
+    }
+
+    #[test]
+    fn service_starts_one_renewal_worker_once_even_when_start_requested_twice() {
+        let directory = tempfile::tempdir().unwrap();
+        let (handle, _) = renewal_handle(&directory);
+        let mut renewal = RenewalService::new(RenewalWorkerStart::production(handle));
+        assert!(renewal.start_worker_once());
+        assert!(!renewal.start_worker_once());
+        renewal.stop();
+    }
+
+    #[test]
+    fn startup_refresh_is_emitted_before_the_single_renewal_worker_starts() {
+        let directory = tempfile::tempdir().unwrap();
+        let (handle, outbound) = renewal_handle(&directory);
+        handle.startup_refresh();
+        let request = outbound.recv().unwrap();
+        assert_eq!(request.tract, "supervisor");
+        assert_eq!(request.event, "request");
+        assert_eq!(
+            request.fields["cmd"],
+            serde_json::json!(["journal", "brain", "refresh"])
+        );
+        let mut renewal = RenewalService::new(RenewalWorkerStart::production(handle));
+        assert!(renewal.start_worker_once());
+        renewal.stop();
     }
 
     #[test]

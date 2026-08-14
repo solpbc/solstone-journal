@@ -3113,12 +3113,15 @@ dependencies = [
  "chrono",
  "nix",
  "serde_json",
+ "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-generate-wire",
  "solstone-core-journal-cli",
+ "solstone-core-spp-ratls",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

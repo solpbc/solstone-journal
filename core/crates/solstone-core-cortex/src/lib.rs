@@ -4,6 +4,7 @@
 //! Native Cortex service lifecycle and Callosum adapter.
 
 mod process;
+mod renewal;
 mod service;
 mod state;
 mod storage;

@@ -329,6 +329,7 @@ mod tests {
 
     use super::*;
 
+    use crate::renewal::{BrainAdapter, RenewalBrain, RenewalHandle, write_valid_test_journal};
     use crate::storage::CortexStore;
     use tempfile::tempdir;
 
@@ -414,6 +415,81 @@ mod tests {
                 .unwrap()
                 .contains("SOL_FACET=override")
         );
+    }
+
+    #[test]
+    fn renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does() {
+        let directory = tempdir().unwrap();
+        let executable_dir = directory.path().join("bin");
+        fs::create_dir(&executable_dir).unwrap();
+        let marker = directory.path().join("marker");
+        for name in ["python", "python3", "pytest", "uv", "ruff"] {
+            let shim = executable_dir.join(name);
+            fs::write(&shim, "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n").unwrap();
+            let mut permissions = fs::metadata(&shim).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&shim, permissions).unwrap();
+        }
+
+        write_valid_test_journal(directory.path());
+        let cycle_now = chrono::Utc::now();
+        let brain_path = directory.path().join("health/brain.json");
+        let mut brain: Value = serde_json::from_slice(&fs::read(&brain_path).unwrap()).unwrap();
+        let adapter = BrainAdapter::new(directory.path().to_path_buf());
+        brain["fingerprint_sha256"] = Value::String(adapter.active_fingerprint().unwrap().unwrap());
+        brain["evidence"]["lane_prerequisites"]["observed_at"] =
+            Value::String((cycle_now - chrono::Duration::minutes(9)).to_rfc3339());
+        brain["evidence"]["lane_prerequisites"]["expires_at"] =
+            Value::String((cycle_now + chrono::Duration::seconds(30)).to_rfc3339());
+        fs::write(&brain_path, serde_json::to_vec(&brain).unwrap()).unwrap();
+
+        let (outbound, receiver) = mpsc::channel();
+        let renewal = RenewalHandle::production(directory.path().to_path_buf(), outbound);
+        let _ = renewal.step(cycle_now);
+        let request = receiver.recv().unwrap();
+        let reference = request.fields["ref"].as_str().unwrap().to_owned();
+        renewal.handle_supervisor(
+            cycle_now,
+            "started",
+            &Map::from_iter([("ref".into(), Value::String(reference.clone()))]),
+        );
+        brain["evidence"]["lane_prerequisites"]["observed_at"] =
+            Value::String((cycle_now + chrono::Duration::seconds(1)).to_rfc3339());
+        brain["evidence"]["lane_prerequisites"]["expires_at"] =
+            Value::String((cycle_now + chrono::Duration::minutes(10)).to_rfc3339());
+        fs::write(&brain_path, serde_json::to_vec(&brain).unwrap()).unwrap();
+        renewal.handle_supervisor(
+            cycle_now,
+            "stopped",
+            &Map::from_iter([
+                ("ref".into(), Value::String(reference)),
+                ("exit_code".into(), Value::from(0)),
+            ]),
+        );
+        assert!(!marker.exists());
+
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "use_id":"one","name":"chat","day":"20260101","env":{"CORTEX_MARKER":marker}
+        }))
+        .unwrap();
+        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let (spawn_tx, _) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        spawn_one(
+            state,
+            executable_dir,
+            Work {
+                use_id: "one".into(),
+                active,
+                request,
+            },
+        )
+        .unwrap();
+        thread::sleep(Duration::from_millis(150));
+        assert_eq!(fs::read_to_string(marker).unwrap(), "x");
     }
 
     #[test]
