@@ -700,7 +700,7 @@ fn run_segment(args: Vec<OsString>) -> ExitCode {
 
 fn run_backup(args: Vec<OsString>) -> ExitCode {
     run_storage_ops_verb("backup", args, |arguments, journal| {
-        let run = solstone_core_backup::cli::run_cli(arguments, journal);
+        let run = solstone_core_backup_cli::run_cli(arguments, journal);
         (run.stdout, run.stderr, run.exit_code)
     })
 }

@@ -25,6 +25,7 @@ members = [
     "crates/solstone-core-operational-logs",
     "crates/solstone-core-brain",
     "crates/solstone-core-backup",
+    "crates/solstone-core-backup-cli",
     "crates/solstone-core-artifact-download",
     "crates/solstone-core-backup-runtime",
     "crates/solstone-core-offload",
@@ -144,6 +145,7 @@ solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
 solstone-core-records-web = { path = "crates/solstone-core-records-web" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-backup = { path = "crates/solstone-core-backup" }
+solstone-core-backup-cli = { path = "crates/solstone-core-backup-cli" }
 solstone-core-artifact-download = { path = "crates/solstone-core-artifact-download" }
 solstone-core-backup-runtime = { path = "crates/solstone-core-backup-runtime" }
 solstone-core-offload = { path = "crates/solstone-core-offload" }
