@@ -3240,11 +3240,15 @@ name = "solstone-core-import-web"
 version = "1.0.22"
 dependencies = [
  "axum",
+ "base64 0.22.1",
+ "chrono",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
+ "solstone-core-journal-io",
  "tempfile",
  "tokio",
  "tower",

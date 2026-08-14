@@ -51,21 +51,16 @@ mod tests {
     const DOOR_PATHS: &[&str] = &[
         "/app/import/journal/corpusSo/manifest/entities",
         "/app/import/journal/00000000/manifest/entities",
-        "/app/import/journal/corpusSo/ingest/entities",
     ];
     const BROWSER_WRITE_PATHS: &[&str] = &[
-        "/app/import/api/save-path",
-        "/app/import/api/meta",
         "/app/import/api/journal-sources/create",
-        "/app/import/api/journal-sources/corpus_peer/resolve-config",
+        "/app/import/api/journal-sources/corpus_peer/revoke",
     ];
     const UNREGISTERED: &[(&str, &str)] = &[
         ("POST", "/app/import/api/save"),
         ("POST", "/app/import/api/save-path"),
         ("POST", "/app/import/api/meta"),
         ("POST", "/app/import/api/start"),
-        ("POST", "/app/import/api/journal-sources/create"),
-        ("POST", "/app/import/api/journal-sources/corpus_peer/revoke"),
         (
             "POST",
             "/app/import/api/journal-sources/corpus_peer/resolve-entity",
@@ -82,7 +77,6 @@ mod tests {
             "POST",
             "/app/import/api/journal-sources/corpus_peer/resolve-config-all",
         ),
-        ("GET", "/app/import/journal/corpusSo/manifest/entities"),
         ("POST", "/app/import/journal/corpusSo/ingest/segments"),
         ("POST", "/app/import/journal/corpusSo/ingest/entities"),
         ("POST", "/app/import/journal/corpusSo/ingest/facets"),
@@ -194,14 +188,11 @@ mod tests {
 
     fn declared_deviation(phase: &str, method: &str, path: &str) -> bool {
         (matches!(phase, "empty" | "populated") && method == "GET" && path == "/app/import/")
-            || (DOOR_PATHS.contains(&path))
-            || (matches!(phase, "empty" | "populated")
-                && method == "POST"
-                && BROWSER_WRITE_PATHS.contains(&path))
+            || UNREGISTERED.contains(&(method, path))
     }
 
     #[tokio::test]
-    async fn ac4_corpus_replay_has_only_the_declared_28_deviations() {
+    async fn ac4_corpus_replay_has_only_the_declared_14_deviations() {
         let corpus: Value = serde_json::from_str(CORPUS).expect("corpus JSON");
         let mut passed = 0;
         let mut declared = Vec::new();
@@ -246,8 +237,8 @@ mod tests {
                 }
             }
         }
-        assert_eq!(passed, 108, "unexpected replay cases: {unexpected:?}");
-        assert_eq!(declared.len(), 28, "declared roster changed: {declared:?}");
+        assert_eq!(passed, 122, "unexpected replay cases: {unexpected:?}");
+        assert_eq!(declared.len(), 14, "declared roster changed: {declared:?}");
         assert!(
             unexpected.is_empty(),
             "unexpected replay cases: {unexpected:?}"
@@ -789,12 +780,34 @@ mod tests {
 
     #[tokio::test]
     async fn ac15_unregistered_paths_keep_their_phase_specific_fallbacks() {
-        assert_eq!(UNREGISTERED.len(), 16);
+        assert_eq!(UNREGISTERED.len(), 13);
+        assert_eq!(
+            DOOR_PATHS,
+            [
+                "/app/import/journal/corpusSo/manifest/entities",
+                "/app/import/journal/00000000/manifest/entities",
+            ]
+        );
+        assert_eq!(
+            BROWSER_WRITE_PATHS,
+            [
+                "/app/import/api/journal-sources/create",
+                "/app/import/api/journal-sources/corpus_peer/revoke",
+            ]
+        );
         for phase in ["empty", "unestablished", "corrupt"] {
             let root = phase_root(phase);
             for (method, path) in UNREGISTERED {
                 let (status, content_type, location, body) =
                     request(root.path(), method, path, None).await;
+                if path.contains("/journal/") {
+                    assert_eq!(
+                        (status, body.len()),
+                        (StatusCode::METHOD_NOT_ALLOWED, 0),
+                        "{phase} {method} {path}"
+                    );
+                    continue;
+                }
                 match phase {
                     "empty" if *method == "POST" => assert_eq!(
                         (status, body.len()),

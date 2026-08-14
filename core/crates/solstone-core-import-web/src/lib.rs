@@ -5,7 +5,10 @@
 
 use std::path::PathBuf;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 mod assets;
 mod content;
@@ -42,6 +45,18 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route(
             "/app/import/api/journal-sources/{name}/staged",
             get(journal_sources::staged),
+        )
+        .route(
+            "/app/import/api/journal-sources/create",
+            post(journal_sources::create),
+        )
+        .route(
+            "/app/import/api/journal-sources/{name}/revoke",
+            post(journal_sources::revoke),
+        )
+        .route(
+            "/app/import/journal/{key_prefix}/manifest/{area}",
+            get(journal_sources::manifest),
         )
         .route(
             "/app/import/api/{timestamp}/content/{item_id}",
