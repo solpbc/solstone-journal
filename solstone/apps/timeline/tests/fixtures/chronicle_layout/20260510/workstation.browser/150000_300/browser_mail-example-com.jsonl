@@ -1,2 +1,0 @@
-{"t":"segment_start","ts":1778446800000,"rel":0,"site":"mail.example.com","url":"https://mail.example.com/inbox","title":"Timeline Mixed Browser","adapter":"mail","ctx":"inbox","n":2,"blocks":[{"type":"heading","text":"Timeline Mixed Browser"},{"type":"text","text":"Sibling browser stream."}]}
-{"t":"delta","ts":1778446810000,"rel":10000,"site":"mail.example.com","adapter":"mail","ctx":"inbox","op":"add","block":{"type":"text","text":"Mixed bucket update."}}

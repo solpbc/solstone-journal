@@ -181,24 +181,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         converted: true,
     },
     AppDefinition {
-        name: "reflections",
-        icon: "🌙",
-        label: "reflections",
-        lucide_icon: "moon",
-        date_nav: Some(DateNav {
-            allow_future: false,
-            step: Some("week"),
-            unit: DateNavUnit::Content {
-                one: "reflection",
-                other: "reflections",
-                none: "no reflection",
-            },
-        }),
-        facets_enabled: false,
-        has_background: false,
-        converted: false,
-    },
-    AppDefinition {
         name: "search",
         icon: "🔍",
         label: "search",

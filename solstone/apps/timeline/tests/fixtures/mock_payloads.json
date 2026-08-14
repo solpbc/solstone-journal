@@ -1,7 +1,0 @@
-{
-    "segment_summary": {
-        "title": "Short Title",
-        "description": "Brief description here",
-    },
-    "rollup": {"picks": [0, 1, 2, 3], "rationale": "highest consequence"},
-}

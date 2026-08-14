@@ -63,6 +63,27 @@ fn corpus() -> Value {
 /// cannot expire, narrowness is the safeguard: this is keyed to the one
 /// renamed entry and exactly two keys. Never generalize this into a rule over
 /// app names or other keys, and never retire it.
+/// Permanent documented divergence, introduced 2026-08-14, with no expiry
+/// condition: the frozen capture permanently records the deleted reference's
+/// `reflections` app, which was dropped by ruling and whose Python surface no
+/// longer exists. The capture CANNOT be regenerated -- its generator needs a
+/// runnable reference tree and this wave removes it -- so the fixture is a
+/// frozen record and the divergence is absorbed here instead. Because this
+/// cannot expire, narrowness is the safeguard: it is keyed to the one dropped
+/// entry and removes exactly that element. Never generalize this into a rule
+/// over app names, and never retire it.
+fn apply_permanent_reflections_drop_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "reflections").count(),
+        1,
+        "frozen shell contains exactly one reflections app"
+    );
+    apps.retain(|app| app["name"] != "reflections");
+}
+
 fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
     let apps = expected["apps"]
         .as_array_mut()
@@ -217,6 +238,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                 let mut expected = expected_json.clone();
                 if phase == "established" && path == "/api/shell" {
                     apply_permanent_devices_shell_divergence(&mut expected);
+                    apply_permanent_reflections_drop_divergence(&mut expected);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");
@@ -263,7 +285,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
     let apps = shell["apps"].as_array().expect("apps array");
     assert_eq!(shell["chat_bar"]["placeholder"], "send a message…");
-    assert_eq!(apps.len(), 23);
+    assert_eq!(apps.len(), 22);
     for app in apps {
         assert_eq!(app.as_object().unwrap().len(), 10);
         assert!(app["icon_svg"].is_string());
@@ -321,7 +343,13 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         "/app/home/",
         "/app/home/workspace",
         "/app/home/background",
-        "/app/timeline/background",
+        // `/app/timeline/background` was here until 2026-08-14, when the
+        // timeline conversion landed and made it a real 200 serving the app's
+        // background fragment. The INVARIANT is unchanged -- an unconverted
+        // app's refusal is never 2xx -- only this example went stale. Replaced
+        // with a still-unconverted app rather than deleted, so the assertion
+        // keeps covering a background path.
+        "/app/sol/background",
     ] {
         let (status, _content_type, _location, body) = get(router(journal.0.clone()), path).await;
         assert!(

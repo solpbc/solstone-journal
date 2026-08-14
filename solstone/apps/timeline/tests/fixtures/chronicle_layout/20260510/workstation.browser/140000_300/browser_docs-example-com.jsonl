@@ -1,2 +1,0 @@
-{"t":"segment_start","ts":1778443200000,"rel":0,"site":"docs.example.com","url":"https://docs.example.com/timeline-browser-only","title":"Timeline Browser Only","adapter":"docs","ctx":"doc","n":2,"blocks":[{"type":"heading","text":"Timeline Browser Only"},{"type":"text","text":"Browser-only bucket."}]}
-{"t":"delta","ts":1778443215000,"rel":15000,"site":"docs.example.com","adapter":"docs","ctx":"doc","op":"add","block":{"type":"text","text":"Browser-only update."}}
