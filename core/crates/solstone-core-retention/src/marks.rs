@@ -188,6 +188,42 @@ pub struct Register {
     pub marks: BTreeMap<MarkId, Mark>,
 }
 
+/// Construct and upsert an offload proposal after the caller has scanned and
+/// validated owner-media names. This is the importable half of the retention
+/// CLI's `mark-offload` body.
+pub fn upsert_offload(
+    journal: &Path,
+    target: &Target,
+    names: Vec<String>,
+    bytes: u64,
+    reason: String,
+    now: &str,
+) -> Result<Register, StoreError> {
+    upsert(
+        journal,
+        RemovalClass::OffloadRawRelease,
+        target,
+        Proposal {
+            bytes,
+            reason,
+            names,
+        },
+        now,
+    )
+}
+
+/// Resolve the current offload proposal for the target's exact file names.
+pub fn resolve_offload(
+    journal: &Path,
+    target: &Target,
+    names: &[String],
+) -> Result<Register, StoreError> {
+    resolve(
+        journal,
+        &MarkId::derive(RemovalClass::OffloadRawRelease, target, names),
+    )
+}
+
 impl Register {
     pub fn empty() -> Self {
         Self {

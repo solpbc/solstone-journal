@@ -57,7 +57,7 @@ use solstone_core_retention::logs::{
 };
 use solstone_core_retention::marks::{
     Failure, MarkId, Proposal, RemovalClass, load, reconcile, reconcile_recovered, record_failure,
-    resolve as resolve_mark, upsert,
+    resolve_offload, upsert_offload,
 };
 use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
@@ -985,18 +985,7 @@ fn run_mark_offload(args: &Args) -> ExitCode {
         };
         bytes = bytes.saturating_add(item.size);
     }
-    let proposal = Proposal {
-        bytes,
-        reason: reason.to_owned(),
-        names,
-    };
-    match upsert(
-        &journal,
-        RemovalClass::OffloadRawRelease,
-        &target,
-        proposal,
-        now,
-    ) {
+    match upsert_offload(&journal, &target, names, bytes, reason.to_owned(), now) {
         Ok(register) => emit(
             serde_json::json!({ "ok": true, "verb": "mark-offload", "marks": register }),
             EXIT_OK,
@@ -1039,8 +1028,7 @@ fn run_resolve_offload(args: &Args) -> ExitCode {
         stream: stream.to_owned(),
         dir: dir.to_owned(),
     };
-    let id = MarkId::derive(RemovalClass::OffloadRawRelease, &target, &names);
-    match resolve_mark(&journal, &id) {
+    match resolve_offload(&journal, &target, &names) {
         Ok(register) => emit(
             serde_json::json!({ "ok": true, "verb": "resolve-offload", "marks": register }),
             EXIT_OK,

@@ -69,7 +69,10 @@ pub mod tombstone;
 pub use content::{ContentName, HandlerRegistry, MediaClassifier};
 pub use door::{EvidenceTally, release_raw};
 pub use eligibility::{Blocker, Evidence, FoundContent, ProvenRaw, RawRelease, SidecarFacts};
-pub use marks::{Failure, Mark, MarkId, MarkState, Proposal, RemovalClass};
+pub use marks::{
+    Failure, Mark, MarkId, MarkState, Proposal, Register, RemovalClass, resolve_offload,
+    upsert_offload,
+};
 pub use notify::{IndexNotify, NoIndex, NotifyError, PruneCounts};
 pub use policy::{Anchor, Days, Eligibility, Policy, Rule, SegmentAge};
 pub use receipt::{NotRemoved, Outcome, RemovedPath, RunHalt, Target, TargetOutcome};
