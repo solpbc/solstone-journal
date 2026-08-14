@@ -1,45 +1,45 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-const SCHEDULE_MOD: &str = include_str!("../../solstone-core-system/src/schedule/mod.rs");
+const SCHEDULE_MOD: &str = include_str!("../../../solstone-core-system/src/schedule/mod.rs");
 const SCHEDULE_SOURCES: &[(&str, &str)] = &[
     (
         "caps",
-        include_str!("../../solstone-core-system/src/schedule/caps.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/caps.rs"),
     ),
     (
         "completion",
-        include_str!("../../solstone-core-system/src/schedule/completion.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/completion.rs"),
     ),
     (
         "config",
-        include_str!("../../solstone-core-system/src/schedule/config.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/config.rs"),
     ),
     (
         "due",
-        include_str!("../../solstone-core-system/src/schedule/due.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/due.rs"),
     ),
     (
         "engine",
-        include_str!("../../solstone-core-system/src/schedule/engine.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/engine.rs"),
     ),
     (
         "report",
-        include_str!("../../solstone-core-system/src/schedule/report.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/report.rs"),
     ),
     (
         "status",
-        include_str!("../../solstone-core-system/src/schedule/status.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/status.rs"),
     ),
     (
         "submission",
-        include_str!("../../solstone-core-system/src/schedule/submission.rs"),
+        include_str!("../../../solstone-core-system/src/schedule/submission.rs"),
     ),
 ];
-const CLI: &str = include_str!("../../solstone-core-cli/src/lib.rs");
-const MAIN: &str = include_str!("../src/main.rs");
-const JOURNAL_IO: &str = include_str!("../../solstone-core-journal-io/src/lib.rs");
-const JOURNAL_IO_READERS: &str = include_str!("../../solstone-core-journal-io/src/readers.rs");
+const CLI: &str = include_str!("../../../solstone-core-cli/src/lib.rs");
+const MAIN: &str = include_str!("../../../solstone-core/src/main.rs");
+const JOURNAL_IO: &str = include_str!("../../../solstone-core-journal-io/src/lib.rs");
+const JOURNAL_IO_READERS: &str = include_str!("../../../solstone-core-journal-io/src/readers.rs");
 
 fn function_source<'a>(source: &'a str, name: &str) -> &'a str {
     let start = source.find(name).expect("function exists");

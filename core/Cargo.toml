@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/solstone-core",
+    "crates/solstone-core-repository-contracts",
     "crates/solstone-core-cli",
     "crates/solstone-core-check",
     "crates/solstone-core-indexer",

@@ -3363,6 +3363,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-repository-contracts"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "solstone-core-reprocess-cli"
 version = "1.0.22"
 dependencies = [
