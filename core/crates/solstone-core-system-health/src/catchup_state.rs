@@ -3,18 +3,18 @@
 
 //! Read-only projections of the shared catchup-state envelope.
 
-use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value};
+use solstone_core_system::catchup::{
+    KIND_DAILY_CATCHUP, KIND_SEGMENT_REPAIR, catchup_state_key, catchup_state_path,
+    normalized_catchup_entries,
+};
 
 use crate::{
     BackoffSummary, SEGMENT_REPAIR_STATUS_DEGRADED, SEGMENT_REPAIR_STATUS_PROGRESSING,
     SEGMENT_REPAIR_STATUS_STUCK, SEGMENT_REPAIR_STATUS_UNKNOWN, SegmentRepairSummary,
 };
-
-const KIND_DAILY_CATCHUP: &str = "daily-catchup";
-const KIND_SEGMENT_REPAIR: &str = "segment-repair";
 
 /// Read the daily-catchup backoff projection, failing open on state-read errors.
 pub fn read_backoff_summary(journal: &Path, day: &str) -> Option<BackoffSummary> {
@@ -45,7 +45,7 @@ pub fn read_segment_repair_attempted(journal: &Path, day: &str) -> bool {
 /// status, while a fingerprint mismatch (or fingerprint-read error) suppresses
 /// the record entirely.
 pub fn read_segment_repair_summary(journal: &Path, day: &str) -> Option<SegmentRepairSummary> {
-    let value = match fs::read(state_path(journal)) {
+    let value = match std::fs::read(catchup_state_path(journal)) {
         Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
             Ok(value) => value,
             Err(_) => return Some(unknown_summary()),
@@ -55,7 +55,7 @@ pub fn read_segment_repair_summary(journal: &Path, day: &str) -> Option<SegmentR
     };
     let entries = normalized_entries(&value);
     let record = entries
-        .get(&key(day, KIND_SEGMENT_REPAIR))
+        .get(&catchup_state_key(day, KIND_SEGMENT_REPAIR))
         .and_then(Value::as_object)?;
     let fingerprint = record.get("fingerprint").and_then(Value::as_str)?;
     let Ok(current_fingerprint) =
@@ -126,28 +126,15 @@ fn unknown_summary() -> SegmentRepairSummary {
 }
 
 fn shared_record(journal: &Path, day: &str, kind: &str) -> Option<Map<String, Value>> {
-    let bytes = fs::read(state_path(journal)).ok()?;
+    let bytes = std::fs::read(catchup_state_path(journal)).ok()?;
     let value = serde_json::from_slice::<Value>(&bytes).ok()?;
     normalized_entries(&value)
-        .remove(&key(day, kind))
+        .remove(&catchup_state_key(day, kind))
         .and_then(|value| value.as_object().cloned())
 }
 
-fn state_path(journal: &Path) -> std::path::PathBuf {
-    journal.join("health/catchup-state.json")
-}
-
-fn key(day: &str, kind: &str) -> String {
-    format!("{day}:{kind}")
-}
-
 fn normalized_entries(value: &Value) -> Map<String, Value> {
-    value
-        .as_object()
-        .and_then(|value| value.get("entries"))
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default()
+    normalized_catchup_entries(value)
 }
 
 fn json_string(value: Option<&Value>) -> Option<String> {
@@ -182,4 +169,62 @@ fn json_f64(value: Option<&Value>) -> f64 {
 
 fn non_null_value(value: Option<&Value>) -> Option<Value> {
     value.filter(|value| !value.is_null()).cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::SystemTime;
+
+    use solstone_core_system::catchup::{
+        CatchupKind, SegmentRepairOutcome, record_daily_catchup_progress,
+        record_segment_repair_attempt, record_segment_repair_outcome,
+    };
+
+    use super::{read_segment_repair_attempted, read_segment_repair_summary};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn writers_populate_shipped_repair_and_drain_projections() {
+        let root = std::env::temp_dir().join(format!(
+            "wave-two-projection-{}",
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let segment = root.join("chronicle/20260101/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("audio.json"), b"raw").unwrap();
+        record_daily_catchup_progress(&root, "20260101", 1, 2);
+        record_segment_repair_attempt(&root, "20260101", 1.0);
+        assert!(read_segment_repair_attempted(&root, "20260101"));
+        record_segment_repair_outcome(
+            &root,
+            "20260101",
+            SegmentRepairOutcome {
+                success: false,
+                timed_out: true,
+                timeout_seconds: Some(3.0),
+                ended_at: 4.0,
+                cleared: Some(1),
+                remaining: Some(2),
+            },
+        );
+        assert_eq!(
+            read_segment_repair_summary(&root, "20260101")
+                .unwrap()
+                .status,
+            "progressing"
+        );
+        assert!(
+            !solstone_core_system::catchup::day_eligible_to_drain(
+                &root,
+                "20260101",
+                CatchupKind::SegmentRepair,
+                SystemTime::UNIX_EPOCH
+            )
+            .unwrap()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
 }

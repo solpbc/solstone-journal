@@ -118,7 +118,7 @@ pub fn scan_day<S: SegmentSource>(
     ))
 }
 
-fn detect_data_state(
+pub(crate) fn detect_data_state(
     segment_path: &Path,
     stream_parent_name: &str,
     now: DateTime<Utc>,

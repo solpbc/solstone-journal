@@ -5,6 +5,7 @@
 
 mod backlog;
 mod catchup_state;
+mod change_detection;
 mod completion;
 mod data_state;
 mod error;
@@ -15,6 +16,7 @@ mod progress;
 mod read;
 mod safe_text;
 mod scan;
+mod segment_state;
 mod source;
 mod terminal;
 mod types;
@@ -23,6 +25,10 @@ mod vocabulary;
 pub use backlog::read_backlog_view;
 pub use catchup_state::{
     read_backoff_summary, read_segment_repair_attempted, read_segment_repair_summary,
+};
+pub use change_detection::{
+    assemble_sensor_state, classify, compare_screen, compare_transcript, detect_segment_change,
+    read_predecessor_state, resolve_predecessor,
 };
 pub use completion::{
     blocked_segment_keys, classify_segment_completion, lookup_segment_progress,
@@ -36,6 +42,7 @@ pub use maint::{MaintTaskState, MaintTaskStatus, read_maint_task_state, read_mai
 pub use progress::read_segment_progress;
 pub use safe_text::{sanitize_for_terminal, sanitize_os_bytes_for_terminal, unsafe_ranges};
 pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
+pub use segment_state::{find_segment_dir, read_segment_data_state};
 pub use source::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthLogSource, SegmentSource,
     day_is_complete,

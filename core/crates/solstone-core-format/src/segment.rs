@@ -88,6 +88,23 @@ pub fn segment_parse(value: &str) -> Option<SegmentTimes> {
     })
 }
 
+/// Parse the reference segment spelling and return its start plus the raw
+/// duration. This intentionally does not clamp an end-of-day overrun: callers
+/// using chronological gaps need Python's `start + LEN` semantics, unlike the
+/// display-only end calculation in system-health's scan.
+pub fn segment_start_and_duration_seconds(value: &str) -> Option<(SegmentTimes, u64)> {
+    let (time, length) = value.split_once('_')?;
+    if time.len() != 6
+        || !time.bytes().all(|byte| byte.is_ascii_digit())
+        || length.is_empty()
+        || !length.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let times = segment_parse(value)?;
+    Some((times, length.parse().ok()?))
+}
+
 pub fn time_bucket(rel: &str) -> String {
     match segment_parse(rel).map(|times| times.hour) {
         Some(6..=11) => "morning".to_string(),
