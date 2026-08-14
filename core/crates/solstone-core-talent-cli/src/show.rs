@@ -10,9 +10,9 @@ use solstone_core_cogitate::compose_system_instruction;
 use crate::CliRun;
 use crate::args::{ListOptions, ShowOptions};
 use crate::compose::compose_talent;
-use crate::discovery::{self, TalentConfig};
 use crate::emit;
 use crate::inventory;
+use solstone_core_talent_config::{TalentConfig, read_frontmatter};
 
 const PRIORITY_KEYS: &[&str] = &[
     "title",
@@ -38,7 +38,7 @@ pub(crate) fn run(
     if !resolved.path.is_file() {
         return not_found(&options.name, &resolved.file, options.prompt);
     }
-    let parsed = match discovery::read_frontmatter(&resolved.path) {
+    let parsed = match read_frontmatter(&resolved.path) {
         Ok(parsed) => parsed,
         Err(error) => return failure(error),
     };
@@ -163,7 +163,7 @@ fn render_default(resolved: &ResolvedTalent, metadata: Map<String, Value>) -> Cl
     }
 
     // A second guarded parse mirrors Python's independent body load: failure omits body-derived lines.
-    if let Ok(parsed) = discovery::read_frontmatter(&resolved.path) {
+    if let Ok(parsed) = read_frontmatter(&resolved.path) {
         let variables = scan_variables(&parsed.body);
         if !variables.is_empty() {
             let _ = writeln!(
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn chat_pre_hook_uses_python_dict_rendering() {
         let chat = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../solstone/talent/chat.md");
-        let parsed = discovery::read_frontmatter(&chat).expect("checked-in chat talent");
+        let parsed = read_frontmatter(&chat).expect("checked-in chat talent");
         assert_eq!(
             python_str(parsed.metadata.get("hook").expect("hook")),
             "{'pre': 'chat_context'}"
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn checked_in_read_talent_is_the_cogitate_static_view_fixture() {
         let read = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../solstone/talent/read.md");
-        let parsed = discovery::read_frontmatter(&read).expect("checked-in read talent");
+        let parsed = read_frontmatter(&read).expect("checked-in read talent");
         assert_eq!(
             parsed.metadata.get("type"),
             Some(&Value::String("cogitate".to_owned()))

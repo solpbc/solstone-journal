@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value};
 use solstone_core_journal_config::{plain_defaults, read_journal_config};
 
-use crate::discovery::read_frontmatter;
+use solstone_core_talent_config::read_frontmatter;
 
 pub(crate) fn safe_substitute(text: &str, vars: &BTreeMap<String, String>) -> String {
     let mut output = String::with_capacity(text.len());

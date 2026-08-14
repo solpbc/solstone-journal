@@ -6,11 +6,12 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::discovery::TalentConfig;
 use crate::facets_context::resolve_facets;
 use crate::schema::load_talent_schema;
 use crate::templates::{compose_prompt_body, load_raw_templates};
-use crate::validation::{validate_access_tier, validate_cwd, validate_write};
+use solstone_core_talent_config::{
+    TalentConfig, validate_access_tier, validate_cwd, validate_write,
+};
 
 const DEFAULT_LOAD: [(&str, bool); 3] = [
     ("transcripts", false),
@@ -119,7 +120,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::discovery;
+    use solstone_core_talent_config::discover;
 
     fn setup() -> tempfile::TempDir {
         let root = tempfile::tempdir().expect("root");
@@ -166,7 +167,7 @@ mod tests {
     #[test]
     fn compose_talent_applies_runtime_defaults_and_renames_schema_and_load() {
         let root = setup();
-        let config = discovery::discover(&root.path().join("talent"), &root.path().join("apps"))
+        let config = discover(&root.path().join("talent"), &root.path().join("apps"))
             .expect("discover")
             .pop()
             .expect("config");

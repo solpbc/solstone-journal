@@ -7,10 +7,10 @@ use std::time::SystemTime;
 use serde_json::Value;
 
 use crate::args::ListOptions;
-use crate::discovery::TalentConfig;
 use crate::emit;
 use crate::last_run::format_last_run;
-use crate::validation::is_truthy;
+use solstone_core_talent_config::TalentConfig;
+use solstone_core_talent_config::is_truthy;
 
 pub(crate) fn render(
     configs: &[TalentConfig],

@@ -15,9 +15,9 @@ use solstone_core_cogitate_tools::bound_tools;
 
 use crate::args::InventoryOptions;
 use crate::compose::compose_talent;
-use crate::discovery::{self, TalentConfig};
 use crate::templates::python_string_any;
-use crate::validation::is_truthy;
+use solstone_core_talent_config::is_truthy;
+use solstone_core_talent_config::{TalentConfig, discover};
 
 struct InventoryRow {
     name: String,
@@ -48,7 +48,7 @@ pub(crate) fn run(
     journal_root: &Path,
     options: &InventoryOptions,
 ) -> Result<String, String> {
-    let mut configs = discovery::discover(talent_root, apps_root)?
+    let mut configs = discover(talent_root, apps_root)?
         .into_iter()
         .filter(|config| {
             config.metadata.get("type").and_then(Value::as_str) == Some("cogitate")

@@ -11,8 +11,8 @@ use serde_json::Value;
 
 use crate::CliRun;
 use crate::args::LogsOptions;
-use crate::discovery::TalentConfig;
 use crate::runs;
+use solstone_core_talent_config::TalentConfig;
 
 #[derive(Default)]
 struct RunStats {

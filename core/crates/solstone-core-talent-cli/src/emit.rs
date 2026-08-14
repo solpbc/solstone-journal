@@ -4,8 +4,7 @@
 use serde_json::{Map, Value};
 
 use crate::args::ListOptions;
-use crate::discovery::TalentConfig;
-use crate::validation::is_truthy;
+use solstone_core_talent_config::{TalentConfig, is_truthy};
 
 pub(crate) fn jsonl(configs: &[TalentConfig], options: &ListOptions) -> String {
     let mut configs = filtered(configs, options);

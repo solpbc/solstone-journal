@@ -15,16 +15,13 @@ mod inventory;
 mod schema;
 mod templates;
 
-mod discovery;
 mod emit;
 mod last_run;
 mod list;
 mod log;
 mod logs;
-mod overrides;
 mod runs;
 mod show;
-mod validation;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CliRun {
@@ -85,11 +82,18 @@ fn load_configs(
     talent_root: &Path,
     apps_root: &Path,
     journal_root: &Path,
-) -> Result<Vec<discovery::TalentConfig>, String> {
-    let mut configs = discovery::discover(talent_root, apps_root)?;
-    overrides::merge(&mut configs, journal_root)?;
-    validation::validate(&mut configs)?;
-    Ok(configs)
+) -> Result<Vec<solstone_core_talent_config::TalentConfig>, String> {
+    let overrides = solstone_core_talent_config::read_talent_overrides(journal_root)?;
+    solstone_core_talent_config::load_talent_configs(
+        talent_root,
+        apps_root,
+        overrides.as_ref(),
+        solstone_core_talent_config::TalentFilter {
+            r#type: None,
+            schedule: None,
+            include_disabled: true,
+        },
+    )
 }
 
 fn success(stdout: String) -> CliRun {
@@ -126,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn no_frontmatter_is_discovered_and_json_uses_python_spacing() {
+    fn plain_prompt_is_discovered_and_json_uses_python_spacing() {
         let root = roots();
         fs::write(root.path().join("talent/plain.md"), "prompt body\n").expect("prompt");
         let output = run(&root, &["list", "--json"]);
@@ -134,6 +138,63 @@ mod tests {
         assert_eq!(
             output.stdout,
             "{\"file\": \"talent/plain.md\", \"color\": \"#6c757d\", \"source\": \"system\"}\n"
+        );
+    }
+
+    // §7 criteria 1, 2, and 4: JSONL is the consumer observable; it omits path/mtime.
+    #[test]
+    fn consumer_conformance_table_and_crlf_equality() {
+        const CASES: [(&str, &str, bool); 11] = [
+            (
+                "lf",
+                "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+                true,
+            ),
+            (
+                "leading_blank",
+                "\n{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+                true,
+            ),
+            ("unclosed", "{\n\"type\":\"generate\"\nbody", false),
+            (
+                "crlf",
+                "{\r\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
+                true,
+            ),
+            ("opening_space", "{ \n\"type\":\"generate\"\n}\nbody", false),
+            (
+                "nested_column_zero",
+                "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
+                false,
+            ),
+            (
+                "nested_indented",
+                "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
+                true,
+            ),
+            ("invalid", "{\n\"type\": generate\n}\nbody", false),
+            ("none", "body", false),
+            ("empty", "", false),
+            ("array", "[\"generate\"]\nbody", false),
+        ];
+        for (name, contents, has_metadata) in CASES {
+            let root = roots();
+            fs::write(root.path().join("talent/case.md"), contents).unwrap();
+            let output = run(&root, &["list", "--json"]);
+            if matches!(name, "nested_column_zero" | "invalid") {
+                assert_ne!(output.exit_code, 0, "{name}");
+            } else {
+                assert_eq!(output.exit_code, 0, "{name}: {}", output.stderr);
+                assert_eq!(output.stdout.contains("\"type\""), has_metadata, "{name}");
+            }
+        }
+        let lf = roots();
+        let crlf = roots();
+        fs::write(lf.path().join("talent/case.md"), CASES[0].1).unwrap();
+        fs::write(crlf.path().join("talent/case.md"), CASES[3].1).unwrap();
+        assert_eq!(
+            run(&lf, &["list", "--json"]).stdout,
+            run(&crlf, &["list", "--json"]).stdout
         );
     }
 
@@ -171,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_frontmatter_fails_without_partial_output() {
+    fn malformed_metadata_fails_without_partial_output() {
         let root = roots();
         fs::write(
             root.path().join("talent/bad.md"),
@@ -266,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_records_keep_json_types_and_frontmatter_key_order() {
+    fn synthetic_records_keep_json_types_and_metadata_key_order() {
         let root = roots();
         fs::write(
             root.path().join("talent/rich.md"),
@@ -384,7 +445,8 @@ mod tests {
         let apps_root = repository.join("solstone/apps");
         let args = |items: &[&str]| items.iter().map(OsString::from).collect::<Vec<_>>();
 
-        let discovered = discovery::discover(&talent_root, &apps_root).expect("discover corpus");
+        let discovered = solstone_core_talent_config::discover(&talent_root, &apps_root)
+            .expect("discover corpus");
         assert!(discovered.iter().any(|config| config.key == "chat"));
         assert!(
             discovered
