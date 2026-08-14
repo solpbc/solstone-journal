@@ -43,7 +43,7 @@ const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
 const LANE_AU_REQUIRED_NATIVE_TOKENS: &[&str] =
     &["engage", "maintenance", "heartbeat", "maint", "backup"];
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
-const LANE_AW_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
+const THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -97,12 +97,12 @@ fn lane_av_brain_is_registered_for_native_dispatch() {
 // token is therefore inseparable from proving its owner grammar reaches a
 // native sibling with no interpreter in its path.
 #[test]
-fn lane_aw_think_and_setup_are_registered_for_native_dispatch() {
+fn think_and_setup_are_registered_for_native_dispatch() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    let missing = LANE_AW_REQUIRED_NATIVE_TOKENS
+    let missing = THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS
         .iter()
         .copied()
         .filter(|token| !native_tokens.contains(token))
@@ -110,7 +110,7 @@ fn lane_aw_think_and_setup_are_registered_for_native_dispatch() {
 
     assert!(
         missing.is_empty(),
-        "required Lane AW native process tokens are missing: {missing:?}"
+        "required native process tokens are missing: {missing:?}"
     );
 }
 
