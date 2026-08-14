@@ -7,12 +7,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use chrono::NaiveDate;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_format::{
-    content::{RawPerceptFamily, produce_raw_percept_chunks_by_shape},
-    segment::segment_start_and_end_seconds,
-};
+use solstone_core_format::segment::{is_date_key, segment_parse, segment_start_and_end_seconds};
 use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, iter_segments};
 
 const SCREEN_DHASH_THRESHOLD: u32 = 8;
@@ -331,12 +329,202 @@ fn formatted_jsonl_transcript(path: &Path) -> Option<String> {
                 .cloned()
         })
         .collect::<Option<Vec<Map<String, Value>>>>()?;
-    let rel = path.to_string_lossy();
-    let produced =
-        produce_raw_percept_chunks_by_shape(RawPerceptFamily::Audio, Some(&rel), &records);
-    let mut parts = produced.header.into_iter().collect::<Vec<_>>();
-    parts.extend(produced.chunks.into_iter().map(|chunk| chunk.content));
+    let rel = normalize_transcript_path(&path.to_string_lossy());
+    format_transcript_for_fingerprint(&rel, &records)
+}
+
+fn normalize_transcript_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+/// Format exactly the text that Python's `hear._format_transcript_entries`
+/// supplies to change detection.
+///
+/// This intentionally does not reuse the shared raw-audio renderer. That
+/// renderer has established transcript-web consumers and its JSON display
+/// coercions are observable there; this fingerprint must instead preserve
+/// `hear.py`'s truthiness and `str()` semantics without changing that output.
+fn format_transcript_for_fingerprint(rel: &str, records: &[Map<String, Value>]) -> Option<String> {
+    let metadata = records
+        .first()
+        .filter(|record| !record.contains_key("start"));
+    let mut header_parts = transcript_start_header(rel).into_iter().collect::<Vec<_>>();
+    if let Some(metadata) = metadata {
+        for (key, value) in metadata {
+            if matches!(
+                key.as_str(),
+                "error" | "raw" | "imported" | "_solstone_processing" | "sound_tags"
+            ) {
+                continue;
+            }
+            let value = transcript_header_value(value);
+            if !value.is_empty() {
+                header_parts.push(format!("{}: {value}", python_capitalize(key)));
+            }
+        }
+        if let Some(imported) = metadata.get("imported").and_then(Value::as_object) {
+            if let Some(facet) = imported.get("facet") {
+                header_parts.push(format!("Facet: {}", python_display(facet)));
+            }
+            if let Some(id) = imported.get("id") {
+                header_parts.push(format!("Import ID: {}", python_display(id)));
+            }
+        }
+    }
+
+    let mut parts = (!header_parts.is_empty())
+        .then(|| header_parts.join(" "))
+        .into_iter()
+        .collect::<Vec<_>>();
+    for (index, entry) in records.iter().enumerate() {
+        if index == 0 && metadata.is_some() {
+            continue;
+        }
+        if !entry.contains_key("start") {
+            continue;
+        }
+        let mut entry_parts = Vec::new();
+        if let Some(start) = entry.get("start").filter(|value| python_truthy(value)) {
+            entry_parts.push(format!("[{}]", python_display(start)));
+        }
+        if let Some(source) = entry.get("source").filter(|value| python_truthy(value)) {
+            entry_parts.push(format!("({})", python_display(source)));
+        }
+        match entry.get("speaker") {
+            Some(Value::Bool(value)) => entry_parts.push(format!("Speaker {value}:")),
+            Some(Value::Number(value)) if value.is_i64() || value.is_u64() => {
+                entry_parts.push(format!("Speaker {value}:"));
+            }
+            Some(value) => entry_parts.push(format!("{}:", python_display(value))),
+            None => entry_parts.push(String::new()),
+        }
+        let text = entry
+            .get("corrected")
+            .filter(|value| python_truthy(value))
+            .or_else(|| entry.get("text").filter(|value| python_truthy(value)))
+            .map(python_display)
+            .unwrap_or_default();
+        let prefix = entry_parts.join(" ").trim().to_owned();
+        let mut markdown = if !prefix.is_empty() {
+            if text.is_empty() {
+                prefix
+            } else {
+                format!("{prefix} {text}")
+            }
+        } else if !text.is_empty() {
+            text
+        } else {
+            continue;
+        };
+        if let Some(emotion) = entry.get("emotion").filter(|value| python_truthy(value)) {
+            let emotion = emotion.as_str()?;
+            if !emotion.eq_ignore_ascii_case("neutral") {
+                markdown.push_str(&format!(" *({emotion})*"));
+            }
+        }
+        parts.push(markdown);
+    }
     Some(parts.join("\n"))
+}
+
+fn transcript_start_header(rel: &str) -> Option<String> {
+    let parts = rel.split('/').collect::<Vec<_>>();
+    let (day_index, day) = parts
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, part)| is_date_key(part))?;
+    let times = parts
+        .iter()
+        .skip(day_index + 1)
+        .rev()
+        .find_map(|part| segment_parse(part))?;
+    let day = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let start = day.and_hms_opt(times.hour.into(), times.minute.into(), times.second.into())?;
+    Some(start.format("Start: %Y-%m-%d %I:%M%P").to_string())
+}
+
+fn transcript_header_value(value: &Value) -> String {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .map(python_display)
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => python_display(value),
+    }
+}
+
+fn python_display(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        _ => python_repr(value),
+    }
+}
+
+fn python_repr(value: &Value) -> String {
+    match value {
+        Value::Null => "None".to_owned(),
+        Value::Bool(value) => {
+            if *value {
+                "True".to_owned()
+            } else {
+                "False".to_owned()
+            }
+        }
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => python_string_repr(value),
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(python_repr)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Value::Object(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!("{}: {}", python_string_repr(key), python_repr(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn python_string_repr(value: &str) -> String {
+    let quote = if value.contains('\'') && !value.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut escaped = String::new();
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character == quote => {
+                escaped.push('\\');
+                escaped.push(character);
+            }
+            character if character.is_control() => escaped.extend(character.escape_default()),
+            character => escaped.push(character),
+        }
+    }
+    format!("{quote}{escaped}{quote}")
+}
+
+fn python_capitalize(value: &str) -> String {
+    let mut characters = value.chars();
+    let Some(first) = characters.next() else {
+        return String::new();
+    };
+    let mut result = first.to_uppercase().collect::<String>();
+    result.push_str(&characters.as_str().to_lowercase());
+    result
 }
 
 #[cfg(test)]
@@ -348,6 +536,7 @@ mod tests {
 
     use super::{
         assemble_sensor_state, classify, compare_screen, compare_transcript, detect_segment_change,
+        format_transcript_for_fingerprint, formatted_jsonl_transcript, normalize_transcript_path,
         read_predecessor_state, resolve_predecessor,
     };
 
@@ -455,17 +644,27 @@ mod tests {
     fn formatted_transcripts_include_metadata_and_entry_formatting() {
         let root = tempfile::tempdir().unwrap();
         let segment = segment(root.path(), None, "090000_60");
-        fs::write(
-            segment.join("audio.jsonl"),
-            concat!(
-                "{\"setting\":\"work\",\"topics\":[\"planning\"]}\n",
-                "{\"start\":\"00:00:01\",\"source\":\"mic\",\"speaker\":\"Alex\",\"text\":\"bare words\",\"corrected\":\"Corrected words\",\"emotion\":\"focused\"}\n"
-            ),
-        )
-        .unwrap();
+        let transcript = concat!(
+            "{\"setting\":\"work\",\"topics\":[\"planning\"],\"topic\":null,\"rank\":7}\n",
+            "{\"start\":\"00:00:01\",\"source\":false,\"speaker\":\"Alex\",\"text\":\"bare words\",\"corrected\":\"Corrected words\",\"emotion\":\"focused\"}\n"
+        );
+        let path = segment.join("audio.jsonl");
+        fs::write(&path, transcript).unwrap();
+        let expected = "Start: 2026-01-01 09:00am Setting: work Topics: planning Topic: None Rank: 7\n[00:00:01] Alex: Corrected words *(focused)*";
+        assert_eq!(formatted_jsonl_transcript(&path), Some(expected.to_owned()));
+        let records = transcript
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .map(|value| value.as_object().unwrap().clone())
+            .collect::<Vec<_>>();
+        let windows_rel = normalize_transcript_path(r"chronicle\20260101\090000_60\audio.jsonl");
+        assert_eq!(
+            format_transcript_for_fingerprint(&windows_rel, &records),
+            Some(expected.to_owned())
+        );
         let state = assemble_sensor_state(&segment);
-        let expected = "start: 2026-01-01 09:00am setting: work topics: planning [00:00:01] (mic) alex: corrected words *(focused)*";
-        assert_eq!(state["transcript"]["word_count"], 13);
+        let expected = "start: 2026-01-01 09:00am setting: work topics: planning topic: none rank: 7 [00:00:01] alex: corrected words *(focused)*";
+        assert_eq!(state["transcript"]["word_count"], 16);
         assert_eq!(
             state["transcript"]["content_hash"],
             format!("sha256:{:x}", Sha256::digest(expected.as_bytes()))
