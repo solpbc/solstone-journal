@@ -4,7 +4,6 @@
 //! Injected memory-admission decisions for local GPU work.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -16,15 +15,7 @@ pub struct MemoryAdmissionCache {
     unified_memory: Option<bool>,
 }
 
-/// Keep this process-wide cache outside the decision body, matching the
-/// provider-runtime admission pattern. The resolution and throttle locks are
-/// deliberately separate: never hold them together or across a poll sleep.
-static PROCESS_CACHE: OnceLock<Mutex<MemoryAdmissionCache>> = OnceLock::new();
 static WARNED_UNRELIABLE_MEMORY: AtomicBool = AtomicBool::new(false);
-
-pub fn process_cache() -> &'static Mutex<MemoryAdmissionCache> {
-    PROCESS_CACHE.get_or_init(|| Mutex::new(MemoryAdmissionCache::default()))
-}
 
 pub fn resolve_memory_floor_bytes(
     cache: &mut MemoryAdmissionCache,

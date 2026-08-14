@@ -96,7 +96,11 @@ mod tests {
         let beta = day.join("beta/090001_300_summary");
         fs::create_dir_all(&alpha).unwrap();
         fs::create_dir_all(&beta).unwrap();
-        fs::write(alpha.join("audio.json"), b"raw").unwrap();
+        fs::write(
+            alpha.join("audio.jsonl"),
+            "{}\n{\"start\":\"00:00:01\",\"text\":\"recognized\"}\n",
+        )
+        .unwrap();
         let before = snapshot(root.path());
         assert_eq!(
             find_segment_dir(root.path(), "20260101", "090000_300_summary", Some("alpha")),
@@ -118,7 +122,10 @@ mod tests {
                 Some("alpha"),
                 Utc::now(),
             ),
-            crate::DataStateMap::default()
+            crate::DataStateMap(std::collections::BTreeMap::from([(
+                "audio".to_owned(),
+                "analyzed".to_owned(),
+            )]))
         );
         assert_eq!(snapshot(root.path()), before);
     }

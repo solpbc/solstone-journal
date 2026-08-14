@@ -174,8 +174,9 @@ fn non_null_value(value: Option<&Value>) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::SystemTime;
+
+    use tempfile::TempDir;
 
     use solstone_core_system::catchup::{
         CatchupKind, SegmentRepairOutcome, record_daily_catchup_progress,
@@ -184,22 +185,17 @@ mod tests {
 
     use super::{read_segment_repair_attempted, read_segment_repair_summary};
 
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-
     #[test]
     fn writers_populate_shipped_repair_and_drain_projections() {
-        let root = std::env::temp_dir().join(format!(
-            "wave-two-projection-{}",
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let segment = root.join("chronicle/20260101/120000_60");
+        let root = TempDir::new().unwrap();
+        let segment = root.path().join("chronicle/20260101/120000_60");
         fs::create_dir_all(&segment).unwrap();
         fs::write(segment.join("audio.json"), b"raw").unwrap();
-        record_daily_catchup_progress(&root, "20260101", 1, 2);
-        record_segment_repair_attempt(&root, "20260101", 1.0);
-        assert!(read_segment_repair_attempted(&root, "20260101"));
+        record_daily_catchup_progress(root.path(), "20260101", 1, 2);
+        record_segment_repair_attempt(root.path(), "20260101", 1.0);
+        assert!(read_segment_repair_attempted(root.path(), "20260101"));
         record_segment_repair_outcome(
-            &root,
+            root.path(),
             "20260101",
             SegmentRepairOutcome {
                 success: false,
@@ -211,20 +207,19 @@ mod tests {
             },
         );
         assert_eq!(
-            read_segment_repair_summary(&root, "20260101")
+            read_segment_repair_summary(root.path(), "20260101")
                 .unwrap()
                 .status,
             "progressing"
         );
         assert!(
             !solstone_core_system::catchup::day_eligible_to_drain(
-                &root,
+                root.path(),
                 "20260101",
                 CatchupKind::SegmentRepair,
                 SystemTime::UNIX_EPOCH
             )
             .unwrap()
         );
-        let _ = fs::remove_dir_all(root);
     }
 }

@@ -3,7 +3,7 @@
 
 //! Catchup-state reads and writer-owned progress records shared by native tasks.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -63,12 +63,20 @@ pub fn catchup_state_key(day: &str, kind: &str) -> String {
 }
 
 pub fn normalized_catchup_entries(value: &Value) -> Map<String, Value> {
+    catchup_entries(value).cloned().unwrap_or_default()
+}
+
+fn catchup_entries(value: &Value) -> Option<&Map<String, Value>> {
     value
         .as_object()
         .and_then(|object| object.get("entries"))
         .and_then(Value::as_object)
+}
+
+fn strict_catchup_entries(value: &Value) -> Result<Map<String, Value>, CatchupError> {
+    catchup_entries(value)
         .cloned()
-        .unwrap_or_default()
+        .ok_or_else(|| CatchupError::State("entries is not an object".to_owned()))
 }
 
 fn empty_catchup_state() -> Value {
@@ -76,11 +84,22 @@ fn empty_catchup_state() -> Value {
 }
 
 fn read_catchup_state(journal: &Path) -> Value {
-    match fs::read(catchup_state_path(journal)) {
-        Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
-            .map(|value| json!({"version": CATCHUP_STATE_VERSION, "entries": normalized_catchup_entries(&value)}))
-            .unwrap_or_else(|_| empty_catchup_state()),
-        Err(_) => empty_catchup_state(),
+    let path = catchup_state_path(journal);
+    match fs::read(&path) {
+        Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
+            Ok(value) => {
+                json!({"version": CATCHUP_STATE_VERSION, "entries": normalized_catchup_entries(&value)})
+            }
+            Err(error) => {
+                eprintln!("failed to read catchup state: {error}");
+                empty_catchup_state()
+            }
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => empty_catchup_state(),
+        Err(error) => {
+            eprintln!("failed to read catchup state {}: {error}", path.display());
+            empty_catchup_state()
+        }
     }
 }
 
@@ -118,7 +137,13 @@ fn as_usize(value: Option<&Value>) -> usize {
 }
 
 fn prune(entries: &mut Map<String, Value>, journal: &Path) {
-    let Ok(days) = day_dirs(journal) else { return };
+    let days = match day_dirs(journal) {
+        Ok(days) => days,
+        Err(error) => {
+            eprintln!("failed to prune catchup state: {error}");
+            return;
+        }
+    };
     let Some(newest) = days.keys().max() else {
         return;
     };
@@ -464,24 +489,16 @@ fn eligible_or_fail_open(journal: &Path, day: &str, now: SystemTime) -> bool {
     }
 }
 
-fn read_entries(journal: &Path) -> Result<HashMap<String, Value>, CatchupError> {
-    let path = journal.join("health/catchup-state.json");
+fn read_entries(journal: &Path) -> Result<Map<String, Value>, CatchupError> {
+    let path = catchup_state_path(journal);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
         Err(source) => return Err(CatchupError::Io { path, source }),
     };
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|error| CatchupError::State(format!("invalid JSON: {error}")))?;
-    let entries = value
-        .as_object()
-        .and_then(|value| value.get("entries"))
-        .and_then(Value::as_object)
-        .ok_or_else(|| CatchupError::State("entries is not an object".to_owned()))?;
-    Ok(entries
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect())
+    strict_catchup_entries(&value)
 }
 
 fn json_truthy(value: &Value) -> bool {
@@ -751,6 +768,62 @@ mod tests {
             day_eligible_to_drain(&bed.root, "20260101", CatchupKind::DailyCatchup, UNIX_EPOCH)
                 .expect("missing state")
         );
+    }
+
+    #[test]
+    fn strict_drain_reader_keeps_malformed_state_errors() {
+        let bed = Bed::new("strict-state");
+
+        bed.write("health/catchup-state.json", b"[]");
+        assert!(matches!(
+            day_eligible_to_drain(&bed.root, "20260101", CatchupKind::DailyCatchup, UNIX_EPOCH),
+            Err(CatchupError::State(_))
+        ));
+
+        bed.write("health/catchup-state.json", br#"{"entries":[]}"#);
+        assert!(matches!(
+            day_eligible_to_drain(&bed.root, "20260101", CatchupKind::DailyCatchup, UNIX_EPOCH),
+            Err(CatchupError::State(_))
+        ));
+
+        bed.write(
+            "health/catchup-state.json",
+            state_entry(
+                "20260101",
+                CatchupKind::DailyCatchup,
+                r#"{"next_retry_at":"bad","fingerprint":"fingerprint"}"#,
+            ),
+        );
+        assert!(matches!(
+            day_eligible_to_drain(&bed.root, "20260101", CatchupKind::DailyCatchup, UNIX_EPOCH),
+            Err(CatchupError::State(_))
+        ));
+
+        bed.write(
+            "health/catchup-state.json",
+            state_entry(
+                "20260101",
+                CatchupKind::DailyCatchup,
+                r#"{"next_retry_at":10}"#,
+            ),
+        );
+        assert!(matches!(
+            day_eligible_to_drain(&bed.root, "20260101", CatchupKind::DailyCatchup, UNIX_EPOCH),
+            Err(CatchupError::State(_))
+        ));
+
+        bed.write(
+            "health/catchup-state.json",
+            state_entry(
+                "20260101",
+                CatchupKind::DailyCatchup,
+                r#"{"next_retry_at":10,"fingerprint":false}"#,
+            ),
+        );
+        assert!(matches!(
+            day_eligible_to_drain(&bed.root, "20260101", CatchupKind::DailyCatchup, UNIX_EPOCH),
+            Err(CatchupError::State(_))
+        ));
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
-use solstone_core_format::segment::segment_parse;
+use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_processing_record::{MediaKind, media_kind, vocab};
 
 use crate::{
@@ -61,19 +61,15 @@ pub fn scan_day<S: SegmentSource>(
         let Some(raw_name) = segment.path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        let Some(times) = segment_parse(raw_name) else {
-            continue;
-        };
-        let Some((_, length)) = raw_name.split_once('_') else {
-            continue;
-        };
-        let Ok(length_seconds) = length.parse::<u64>() else {
+        let Some((times, end_seconds)) = segment_start_and_end_seconds(raw_name) else {
             continue;
         };
         let start_seconds =
             u64::from(times.hour) * 3_600 + u64::from(times.minute) * 60 + u64::from(times.second);
         let start = format_time(start_seconds);
-        let end = segment_end(start_seconds, length_seconds);
+        // This shares Python's end-of-day clamp with chronological consumers;
+        // rendering remains the same `HH:MM` display format.
+        let end = format_time(end_seconds);
         // The card check uses the path parent, which differs from Segment.stream
         // for direct day children; do not replace this with segment.stream.
         let parent_name = segment
@@ -357,15 +353,6 @@ fn slots_to_ranges(slots: Vec<u64>) -> Vec<TimeRange> {
     }
     ranges.push((format_time(start), format_time((previous + 900) % 86_400)));
     ranges
-}
-
-fn segment_end(start_seconds: u64, length_seconds: u64) -> String {
-    let end_seconds = start_seconds.saturating_add(length_seconds);
-    if end_seconds >= 86_400 {
-        "23:59".to_owned()
-    } else {
-        format_time(end_seconds)
-    }
 }
 
 fn format_time(seconds: u64) -> String {

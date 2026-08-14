@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
-use solstone_core_format::segment::segment_start_and_duration_seconds;
+use solstone_core_format::segment::segment_start_and_end_seconds;
 
 pub const GAP_THRESHOLD_SECONDS: i64 = 600;
 pub const END_HYSTERESIS_SEGMENTS: usize = 2;
@@ -114,23 +114,16 @@ impl ActivityStateMachine {
         let Some(previous) = previous.or(self.last_segment_key.as_deref()) else {
             return false;
         };
-        let Some((previous_start, previous_duration)) =
-            segment_start_and_duration_seconds(previous)
-        else {
+        let Some((_previous_start, previous_end)) = segment_start_and_end_seconds(previous) else {
             return false;
         };
-        let Some((current_start, _)) = segment_start_and_duration_seconds(segment) else {
+        let Some((current_start, _)) = segment_start_and_end_seconds(segment) else {
             return false;
         };
-        let previous_end = (i64::from(previous_start.hour) * 3600
-            + i64::from(previous_start.minute) * 60
-            + i64::from(previous_start.second)
-            + i64::try_from(previous_duration).unwrap_or(i64::MAX))
-        .rem_euclid(86_400);
         let current = i64::from(current_start.hour) * 3600
             + i64::from(current_start.minute) * 60
             + i64::from(current_start.second);
-        current - previous_end > GAP_THRESHOLD_SECONDS
+        current - i64::try_from(previous_end).unwrap_or(i64::MAX) > GAP_THRESHOLD_SECONDS
     }
 
     pub fn update(
@@ -411,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn hysteresis_gap_and_unclamped_end_boundaries_match_python() {
+    fn hysteresis_gap_and_clamped_end_boundaries_match_python() {
         assert_eq!(END_HYSTERESIS_SEGMENTS, 2);
         assert_eq!(GAP_THRESHOLD_SECONDS, 600);
         let mut machine = ActivityStateMachine::default();
@@ -431,8 +424,8 @@ mod tests {
         assert!(!machine.should_reset("091100_60", "20260101", Some("090000_60")));
         assert!(machine.should_reset("091101_60", "20260101", Some("090000_60")));
         assert!(
-            machine.should_reset("235900_60", "20260101", Some("235000_7200")),
-            "unclamped reference end wraps to 01:00, not display-clamped 23:59"
+            !machine.should_reset("235959_60", "20260101", Some("235000_7200")),
+            "the reference clamps an overrun to 23:59:59"
         );
     }
 

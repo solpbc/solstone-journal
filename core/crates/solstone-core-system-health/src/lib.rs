@@ -26,10 +26,7 @@ pub use backlog::read_backlog_view;
 pub use catchup_state::{
     read_backoff_summary, read_segment_repair_attempted, read_segment_repair_summary,
 };
-pub use change_detection::{
-    assemble_sensor_state, classify, compare_screen, compare_transcript, detect_segment_change,
-    read_predecessor_state, resolve_predecessor,
-};
+pub use change_detection::{detect_segment_change, resolve_predecessor};
 pub use completion::{
     blocked_segment_keys, classify_segment_completion, lookup_segment_progress,
     segment_fully_sensed, segment_fully_thought, segment_requires_processing,
