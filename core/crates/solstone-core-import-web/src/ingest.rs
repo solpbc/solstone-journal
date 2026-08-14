@@ -295,6 +295,12 @@ pub(crate) async fn facets(
         );
     };
     let base = state(&app.root, identity.prefix(), "facets");
+    let entity_id_map =
+        read_json(&state(&app.root, identity.prefix(), "entities").join("state.json"))
+            .get("id_map")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
     let state_path = base.join("state.json");
     let mut facet_state = read_json(&state_path);
     let received = facet_state
@@ -352,6 +358,7 @@ pub(crate) async fn facets(
                 name,
                 &items,
                 &base.join("staged"),
+                &entity_id_map,
                 received,
             )?;
             created += outcome.created;
@@ -615,7 +622,8 @@ fn merge_entity_fields(
     }
     let changed = merged
         .iter()
-        .filter_map(|(field, value)| (target.get(field) != Some(value)).then(|| field.clone()))
+        .filter(|(field, value)| target.get(*field) != Some(*value))
+        .map(|(field, _)| field.clone())
         .collect();
     (merged, changed)
 }

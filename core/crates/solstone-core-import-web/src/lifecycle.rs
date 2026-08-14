@@ -41,9 +41,9 @@ fn import_timestamp() -> String {
 
 fn clean_optional(value: Option<&Value>) -> Option<String> {
     value
-        .and_then(|value| match value {
-            Value::String(value) => Some(value.trim().to_owned()),
-            other => Some(other.to_string().trim_matches('"').trim().to_owned()),
+        .map(|value| match value {
+            Value::String(value) => value.trim().to_owned(),
+            other => other.to_string().trim_matches('"').trim().to_owned(),
         })
         .filter(|value| !value.is_empty())
 }
@@ -190,18 +190,32 @@ fn temporary_hash(bytes: &[u8]) -> Result<(SourceHash, bool), String> {
     Ok((source_hash, !path.exists()))
 }
 
-fn staged_metadata(
-    timestamp: &str,
-    original_filename: &str,
+struct StagedMetadata<'a> {
+    timestamp: &'a str,
+    original_filename: &'a str,
     file_path: String,
     source_hash: SourceHash,
-    source: &str,
+    source: &'a str,
     mime_type: Option<String>,
     client_item_id: String,
-    data: &Value,
+    data: &'a Value,
     is_local_path: bool,
-    method: &str,
-) -> ImportMetadata {
+    method: &'a str,
+}
+
+fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
+    let StagedMetadata {
+        timestamp,
+        original_filename,
+        file_path,
+        source_hash,
+        source,
+        mime_type,
+        client_item_id,
+        data,
+        is_local_path,
+        method,
+    } = input;
     let upload_timestamp = now_ms();
     let imported_via = text_value(data, "imported_via");
     let imported_via = if imported_via.is_empty() {
@@ -332,18 +346,18 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         Ok(path) => path,
         Err(error) => return metadata_failed(error.to_string()),
     };
-    let mut metadata = staged_metadata(
-        &timestamp,
-        &original_filename,
-        file_path.display().to_string(),
+    let mut metadata = staged_metadata(StagedMetadata {
+        timestamp: &timestamp,
+        original_filename: &original_filename,
+        file_path: file_path.display().to_string(),
         source_hash,
-        source_for(&original_filename, mime_type.as_deref()),
+        source: source_for(&original_filename, mime_type.as_deref()),
         mime_type,
         client_item_id,
-        &data,
-        false,
-        "upload_fallback",
-    );
+        data: &data,
+        is_local_path: false,
+        method: "upload_fallback",
+    });
     metadata.insert("file_size".to_owned(), json!(bytes.len()));
     if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
@@ -382,18 +396,18 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_owned();
-    let metadata = staged_metadata(
-        &timestamp,
-        &original_filename,
-        local_path,
+    let metadata = staged_metadata(StagedMetadata {
+        timestamp: &timestamp,
+        original_filename: &original_filename,
+        file_path: local_path,
         source_hash,
-        source_for(&original_filename, None),
-        None,
+        source: source_for(&original_filename, None),
+        mime_type: None,
         client_item_id,
-        &data,
-        true,
-        "path_fallback",
-    );
+        data: &data,
+        is_local_path: true,
+        method: "path_fallback",
+    });
     if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
     }
@@ -523,12 +537,7 @@ fn command(path: &str, timestamp: &str, metadata: &ImportMetadata, force: bool) 
 }
 
 pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
-    start_with(
-        &state.root,
-        &data,
-        |root, task_id, cmd| request_required(root, task_id, cmd),
-        |root, timestamp, metadata| write_import_metadata(root, timestamp, metadata),
-    )
+    start_with(&state.root, &data, request_required, write_import_metadata)
 }
 
 fn start_with<S, W>(root: &Path, data: &Value, mut send: S, mut write: W) -> Response

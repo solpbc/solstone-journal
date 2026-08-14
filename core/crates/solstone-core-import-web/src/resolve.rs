@@ -1188,4 +1188,315 @@ mod tests {
             "the invalid second field has no resolution entry"
         );
     }
+
+    /// Criterion 15's whole-tree oracle.  It snapshots both roots so that a
+    /// handler cannot hide an owner-domain write outside its paired state tree.
+    mod differential {
+        use std::{collections::BTreeMap, fs, path::Path};
+
+        use axum::extract::{Json, Path as AxumPath, State};
+        use serde_json::{Value, json};
+        use sha2::{Digest, Sha256};
+        use tempfile::TempDir;
+
+        use super::{AppState, config, config_all, entity, facet, state, write_json};
+
+        // Declared normalizations: volatile `ts` JSON fields, vh_<uuid4hex>
+        // path components, and atomic `.tmp_*` path components.  They are
+        // intentionally visible here rather than hidden in assertion output.
+        const NORMALIZED_TS: &str = "<ts>";
+        const NORMALIZED_VH: &str = "vh_<uuid4hex>";
+        const NORMALIZED_TMP: &str = ".tmp_<normalized>";
+
+        #[derive(Default)]
+        struct Snapshot(BTreeMap<String, String>);
+
+        impl Snapshot {
+            fn capture(journal_root: &Path, state_dir: &Path) -> Self {
+                let mut nodes = BTreeMap::new();
+                visit("journal", journal_root, journal_root, &mut nodes);
+                visit("state", state_dir, state_dir, &mut nodes);
+                Self(nodes)
+            }
+
+            fn delta(&self, after: &Self) -> Vec<String> {
+                let mut delta = Vec::new();
+                for (path, before) in &self.0 {
+                    match after.0.get(path) {
+                        None => delta.push(format!("- {path}")),
+                        Some(current) if current != before => delta.push(format!("~ {path}")),
+                        _ => {}
+                    }
+                }
+                for path in after.0.keys().filter(|path| !self.0.contains_key(*path)) {
+                    delta.push(format!("+ {path}"));
+                }
+                delta.sort();
+                delta
+            }
+        }
+
+        fn visit(prefix: &str, root: &Path, path: &Path, nodes: &mut BTreeMap<String, String>) {
+            let relative = path.strip_prefix(root).expect("descendant");
+            if !relative.as_os_str().is_empty() {
+                let key = format!("{prefix}/{}", normalize_path(relative));
+                if path.is_dir() {
+                    nodes.insert(key, "dir".into());
+                } else {
+                    let bytes = fs::read(path).expect("snapshot file");
+                    nodes.insert(
+                        key,
+                        format!("{:x}", Sha256::digest(normalize_bytes(&bytes))),
+                    );
+                }
+            }
+            if path.is_dir() {
+                let mut children = fs::read_dir(path)
+                    .expect("snapshot directory")
+                    .map(|entry| entry.expect("directory entry").path())
+                    .collect::<Vec<_>>();
+                children.sort();
+                for child in children {
+                    visit(prefix, root, &child, nodes);
+                }
+            }
+        }
+
+        fn normalize_path(path: &Path) -> String {
+            path.components()
+                .map(|part| {
+                    let part = part.as_os_str().to_string_lossy();
+                    if part.starts_with(".tmp_") {
+                        NORMALIZED_TMP.to_owned()
+                    } else if part.starts_with("vh_")
+                        && part.len() == 35
+                        && part[3..].bytes().all(|byte| byte.is_ascii_hexdigit())
+                    {
+                        NORMALIZED_VH.to_owned()
+                    } else {
+                        part.into_owned()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("/")
+        }
+
+        fn normalize_bytes(bytes: &[u8]) -> Vec<u8> {
+            let Ok(text) = std::str::from_utf8(bytes) else {
+                return bytes.to_vec();
+            };
+            text.lines()
+                .map(|line| {
+                    serde_json::from_str::<Value>(line)
+                        .map(|mut value| {
+                            normalize_value(&mut value);
+                            serde_json::to_string(&value).expect("normalized JSON")
+                        })
+                        .unwrap_or_else(|_| line.to_owned())
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into_bytes()
+        }
+
+        fn normalize_value(value: &mut Value) {
+            match value {
+                Value::Object(object) => {
+                    for (key, child) in object {
+                        if key == "ts" {
+                            *child = json!(NORMALIZED_TS);
+                        } else {
+                            normalize_value(child);
+                        }
+                    }
+                }
+                Value::Array(items) => items.iter_mut().for_each(normalize_value),
+                _ => {}
+            }
+        }
+
+        fn assert_delta(before: Snapshot, after: Snapshot, expected: &[&str]) {
+            let mut expected = expected.iter().map(ToString::to_string).collect::<Vec<_>>();
+            expected.sort();
+            assert_eq!(before.delta(&after), expected);
+        }
+
+        async fn call_entity(root: &TempDir, body: Value) {
+            let response = entity(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await;
+            assert!(response.status().is_success());
+        }
+
+        async fn call_facet(root: &TempDir, body: Value) {
+            let response = facet(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await;
+            assert!(response.status().is_success());
+        }
+
+        async fn call_config(root: &TempDir, body: Value) {
+            let response = config(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await;
+            assert!(response.status().is_success());
+        }
+
+        async fn call_config_all(root: &TempDir, body: Value) {
+            let response = config_all(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await;
+            assert!(response.status().is_success());
+        }
+
+        #[tokio::test]
+        async fn entity_resolution_has_only_its_declared_whole_tree_delta() {
+            let root = TempDir::new().unwrap();
+            let state_dir = state(&root);
+            write_json(
+                &root.path().join("entities/owner/entity.json"),
+                json!({"id":"owner","name":"Owner"}),
+            );
+            write_json(
+                &state_dir.join("entities/staged/incoming.json"),
+                json!({"reason":"ambiguous","source_entity":{"id":"incoming","name":"Incoming"}}),
+            );
+            let before = Snapshot::capture(root.path(), &state_dir);
+            call_entity(
+                &root,
+                json!({"source_id":"incoming","action":"merge","target":"owner"}),
+            )
+            .await;
+            assert_delta(
+                before,
+                Snapshot::capture(root.path(), &state_dir),
+                &[
+                    "~ journal/entities/owner/entity.json",
+                    "- journal/imports/prefix01/entities/staged/incoming.json",
+                    "+ journal/imports/prefix01/entities/state.json",
+                    "+ journal/imports/prefix01/entities/log.jsonl",
+                    "- state/entities/staged/incoming.json",
+                    "+ state/entities/state.json",
+                    "+ state/entities/log.jsonl",
+                ],
+            );
+        }
+
+        #[tokio::test]
+        async fn facet_resolution_has_only_its_declared_whole_tree_delta() {
+            let root = TempDir::new().unwrap();
+            let state_dir = state(&root);
+            write_json(
+                &state_dir.join("facets/staged/work/facet_json/facet.json.staged.json"),
+                json!({"reason":"facet_json_conflict","source_content":{"name":"source"},"target_content":{"name":"owner"}}),
+            );
+            let before = Snapshot::capture(root.path(), &state_dir);
+            call_facet(
+                &root,
+                json!({"staged_file":"work/facet_json/facet.json.staged.json","mode":"apply"}),
+            )
+            .await;
+            assert_delta(
+                before,
+                Snapshot::capture(root.path(), &state_dir),
+                &[
+                    "+ journal/facets",
+                    "+ journal/facets/work",
+                    "+ journal/facets/work/facet.json",
+                    "- journal/imports/prefix01/facets/staged/work/facet_json/facet.json.staged.json",
+                    "+ journal/imports/prefix01/facets/log.jsonl",
+                    "- state/facets/staged/work/facet_json/facet.json.staged.json",
+                    "+ state/facets/log.jsonl",
+                ],
+            );
+        }
+
+        #[tokio::test]
+        async fn config_resolution_has_only_its_declared_whole_tree_delta() {
+            let root = TempDir::new().unwrap();
+            let state_dir = state(&root);
+            write_json(
+                &root.path().join("config/journal.json"),
+                json!({"appearance":{"theme":"owner"}}),
+            );
+            write_json(
+                &state_dir.join("config/diff.json"),
+                json!({"appearance.theme":{"source":"source","target":"owner","category":"preference"}}),
+            );
+            write_json(
+                &state_dir.join("config/source_config.json"),
+                json!({"appearance":{"theme":"source"}}),
+            );
+            let before = Snapshot::capture(root.path(), &state_dir);
+            call_config(&root, json!({"field":"appearance.theme","action":"apply"})).await;
+            assert_delta(
+                before,
+                Snapshot::capture(root.path(), &state_dir),
+                &[
+                    "~ journal/config/journal.json",
+                    "+ journal/config/journal.json.lock",
+                    "- journal/imports/prefix01/config/diff.json",
+                    "- journal/imports/prefix01/config/source_config.json",
+                    "+ journal/imports/prefix01/config/log.jsonl",
+                    "- state/config/diff.json",
+                    "- state/config/source_config.json",
+                    "+ state/config/log.jsonl",
+                ],
+            );
+        }
+
+        #[tokio::test]
+        async fn config_all_resolution_has_only_its_declared_whole_tree_delta() {
+            let root = TempDir::new().unwrap();
+            let state_dir = state(&root);
+            write_json(
+                &root.path().join("config/journal.json"),
+                json!({"a":0,"b":0}),
+            );
+            write_json(
+                &state_dir.join("config/diff.json"),
+                json!({"a":{"source":1,"target":0,"category":"preference"},"b":{"source":2,"target":0,"category":"preference"}}),
+            );
+            write_json(
+                &state_dir.join("config/source_config.json"),
+                json!({"a":1,"b":2}),
+            );
+            let before = Snapshot::capture(root.path(), &state_dir);
+            call_config_all(&root, json!({"category":"preference"})).await;
+            assert_delta(
+                before,
+                Snapshot::capture(root.path(), &state_dir),
+                &[
+                    "~ journal/config/journal.json",
+                    "+ journal/config/journal.json.lock",
+                    "- journal/imports/prefix01/config/diff.json",
+                    "- journal/imports/prefix01/config/source_config.json",
+                    "+ journal/imports/prefix01/config/log.jsonl",
+                    "- state/config/diff.json",
+                    "- state/config/source_config.json",
+                    "+ state/config/log.jsonl",
+                ],
+            );
+        }
+    }
 }

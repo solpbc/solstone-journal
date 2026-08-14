@@ -94,7 +94,8 @@ impl FromRequestParts<AppState> for JournalSourceIdentity {
                 )
             })?;
         let (source, derived_prefix) =
-            authorize_bearer(&state.root, supplied_prefix, &parts.headers)?;
+            authorize_bearer(&state.root, supplied_prefix, &parts.headers)
+                .map_err(|response| *response)?;
         Ok(Self {
             source,
             derived_prefix,
@@ -216,14 +217,14 @@ fn authorize_bearer(
     root: &Path,
     supplied_prefix: &str,
     headers: &HeaderMap,
-) -> Result<(Map<String, Value>, String), Response> {
+) -> Result<(Map<String, Value>, String), Box<Response>> {
     let identity = bearer_identity(headers).map_err(|case| {
         let (status, description) = case.response();
-        html_auth_failure(status, description)
+        Box::new(html_auth_failure(status, description))
     })?;
     authorize(root, supplied_prefix, identity).map_err(|case| {
         let (status, description) = case.response();
-        html_auth_failure(status, description)
+        Box::new(html_auth_failure(status, description))
     })
 }
 

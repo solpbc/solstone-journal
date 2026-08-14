@@ -135,12 +135,11 @@ pub(crate) fn merge_entity_relationship(
 ) -> Result<MergeResult, String> {
     let mut source: serde_json::Map<String, Value> =
         serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-    if !new_facet {
-        if let Ok(Value::Object(owner)) =
+    if !new_facet
+        && let Ok(Value::Object(owner)) =
             serde_json::from_slice(&fs::read(target).unwrap_or_default())
-        {
-            source.extend(owner);
-        }
+    {
+        source.extend(owner);
     }
     write_value(target, &Value::Object(source))?;
     Ok(MergeResult {
@@ -372,6 +371,7 @@ pub(crate) fn process_facet(
     facet: &str,
     items: &[FacetItem<'_>],
     staged: &Path,
+    id_map: &serde_json::Map<String, Value>,
     received: &mut serde_json::Map<String, Value>,
 ) -> Result<ProcessResult, String> {
     let facet_dir = journal_root.join("facets").join(facet);
@@ -395,25 +395,40 @@ pub(crate) fn process_facet(
         }
         #[cfg(test)]
         DISPATCH_CALLS.fetch_add(1, Ordering::Relaxed);
-        let target = facet_dir.join(item.path);
+        let mut relative = item.path.to_owned();
+        let mut bytes = item.bytes.to_vec();
+        if let Some(unmapped) = unmapped_entity(item.kind, &relative, &bytes, id_map)? {
+            stage_unmapped_entity(
+                staged,
+                facet,
+                item.kind,
+                &relative,
+                &unmapped,
+                std::str::from_utf8(&bytes).map_err(|error| error.to_string())?,
+            )?;
+            received.insert(item_id.clone(), json!(digest));
+            result.staged += 1;
+            result.decisions.push(json!({"ts":Utc::now().to_rfc3339(),"action":"facet_file_staged","item_type":item.kind,"item_id":item_id,"facet":facet,"reason":"unmapped_entity","staged_path":staged.join(facet).join(item.kind).join(format!("{}.staged.json", relative.replace('/', "__")))}));
+            continue;
+        }
+        remap_entity_ids(item.kind, &mut relative, &mut bytes, id_map)?;
+        let target = facet_dir.join(&relative);
         let merge = match item.kind {
-            "facet_json" => {
-                merge_facet_json(&target, item.bytes, new_facet, staged, facet, item.path)
-            }
-            "entity_relationship" => merge_entity_relationship(&target, item.bytes, new_facet),
-            "entity_observations" => merge_observations(&target, item.bytes, new_facet),
-            "detected_entities" => merge_detected_entities(&target, item.bytes, new_facet),
-            "activity_config" => merge_activity_config(&target, item.bytes, new_facet),
-            "activity_records" => merge_activity_records(&target, item.bytes, new_facet),
+            "facet_json" => merge_facet_json(&target, &bytes, new_facet, staged, facet, &relative),
+            "entity_relationship" => merge_entity_relationship(&target, &bytes, new_facet),
+            "entity_observations" => merge_observations(&target, &bytes, new_facet),
+            "detected_entities" => merge_detected_entities(&target, &bytes, new_facet),
+            "activity_config" => merge_activity_config(&target, &bytes, new_facet),
+            "activity_records" => merge_activity_records(&target, &bytes, new_facet),
             "activity_output" => merge_activity_output(
                 &target,
-                item.bytes,
+                &bytes,
                 target.parent().expect("activity output parent"),
                 new_facet,
             ),
-            "todos" => merge_todos(&target, item.bytes, new_facet),
-            "news" => merge_news(&target, item.bytes, new_facet),
-            "logs" => merge_logs(&target, item.bytes, new_facet),
+            "todos" => merge_todos(&target, &bytes, new_facet),
+            "news" => merge_news(&target, &bytes, new_facet),
+            "logs" => merge_logs(&target, &bytes, new_facet),
             _ => return Err(format!("Unsupported file type: {}", item.kind)),
         }?;
         received.insert(item_id.clone(), json!(digest));
@@ -434,6 +449,91 @@ pub(crate) fn process_facet(
         result.decisions.push(json!({"ts":Utc::now().to_rfc3339(),"action":action,"item_type":item.kind,"item_id":item_id,"facet":facet,"reason":merge.reason}));
     }
     Ok(result)
+}
+
+fn unmapped_entity(
+    kind: &str,
+    relative: &str,
+    bytes: &[u8],
+    id_map: &serde_json::Map<String, Value>,
+) -> Result<Option<String>, String> {
+    let missing = |id: &str| (!id.is_empty() && !id_map.contains_key(id)).then(|| id.to_owned());
+    let path_entity = || {
+        relative
+            .split('/')
+            .nth(1)
+            .filter(|_| relative.starts_with("entities/"))
+    };
+    match kind {
+        "entity_relationship" | "entity_observations" => Ok(path_entity().and_then(missing)),
+        "detected_entities" => Ok(parse_jsonl(bytes)?
+            .iter()
+            .filter_map(|item| item.get("id").and_then(Value::as_str))
+            .find_map(missing)),
+        "activity_records" => Ok(parse_jsonl(bytes)?
+            .iter()
+            .filter_map(|item| item.get("active_entities").and_then(Value::as_array))
+            .flatten()
+            .filter_map(Value::as_str)
+            .find_map(missing)),
+        _ => Ok(None),
+    }
+}
+
+fn remap_entity_ids(
+    kind: &str,
+    relative: &mut String,
+    bytes: &mut Vec<u8>,
+    id_map: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    let mapped = |id: &str| {
+        id_map
+            .get(id)
+            .and_then(Value::as_str)
+            .unwrap_or(id)
+            .to_owned()
+    };
+    match kind {
+        "entity_relationship" | "entity_observations" => {
+            if let Some(source_id) = relative
+                .split('/')
+                .nth(1)
+                .filter(|_| relative.starts_with("entities/"))
+                .map(str::to_owned)
+            {
+                let target_id = mapped(&source_id);
+                *relative = relative.replacen(&source_id, &target_id, 1);
+                if kind == "entity_relationship" {
+                    let mut relationship: serde_json::Map<String, Value> =
+                        serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+                    relationship.insert("entity_id".into(), json!(target_id));
+                    *bytes = serde_json::to_vec_pretty(&relationship)
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+        }
+        "detected_entities" | "activity_records" => {
+            let mut items = parse_jsonl(bytes)?;
+            for item in &mut items {
+                if let Some(id) = item.get("id").and_then(Value::as_str).map(str::to_owned) {
+                    item["id"] = json!(mapped(&id));
+                }
+                if let Some(ids) = item
+                    .get_mut("active_entities")
+                    .and_then(Value::as_array_mut)
+                {
+                    for id in ids {
+                        if let Some(source) = id.as_str().map(str::to_owned) {
+                            *id = json!(mapped(&source));
+                        }
+                    }
+                }
+            }
+            *bytes = serialize_jsonl(&items);
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -641,6 +741,7 @@ mod tests {
             "work",
             &items,
             &temp.path().join("state/staged"),
+            &serde_json::Map::from_iter([("ada".to_owned(), json!("ada"))]),
             &mut received,
         )
         .unwrap();
@@ -668,6 +769,7 @@ mod tests {
                 bytes,
             }],
             &temp.path().join("state/staged"),
+            &serde_json::Map::new(),
             &mut received,
         )
         .unwrap();
@@ -708,6 +810,7 @@ mod tests {
             "work",
             &items,
             &journal.join("state/staged"),
+            &serde_json::Map::new(),
             &mut received,
         )
         .unwrap();
@@ -726,5 +829,45 @@ mod tests {
                 ("facet_file_skipped", "idempotent")
             ]
         );
+    }
+
+    #[test]
+    fn process_stages_an_unmapped_entity_before_any_owner_merge() {
+        let temp = TempDir::new().unwrap();
+        let staged = temp.path().join("imports/prefix/facets/staged");
+        let mut received = serde_json::Map::new();
+        let item = FacetItem {
+            path: "entities/source-person/entity.json",
+            kind: "entity_relationship",
+            bytes: br#"{"relationship":"source"}"#,
+        };
+
+        let result = process_facet(
+            temp.path(),
+            "work",
+            &[item],
+            &staged,
+            &serde_json::Map::new(),
+            &mut received,
+        )
+        .unwrap();
+        assert_eq!((result.staged, result.merged, result.created), (1, 0, 0));
+        assert!(
+            !temp
+                .path()
+                .join("facets/work/entities/source-person/entity.json")
+                .exists()
+        );
+        let proposal: Value =
+            serde_json::from_slice(
+                &fs::read(staged.join(
+                    "work/entity_relationship/entities__source-person__entity.json.staged.json",
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(proposal["reason"], "unmapped_entity");
+        assert_eq!(proposal["source_entity_id"], "source-person");
+        assert_eq!(result.decisions[0]["action"], "facet_file_staged");
     }
 }
