@@ -69,6 +69,18 @@ const ALLOWED: &[(&str, &str)] = &[
         "labels a synthetic principal entity from the principal_identity_or_none fallback when no \
          journal entity exists yet -- never used to look one up",
     ),
+    (
+        "solstone-core-import-web/src/ingest.rs",
+        "proposes an id for an incoming entity that carries none; matching is by name, and an id \
+         that collides with an existing entity is STAGED for review rather than adopted -- the \
+         derived value only ever labels a NEW entities/<id>/ directory",
+    ),
+    (
+        "solstone-core-import-web/src/resolve.rs",
+        "names a NEW entity on the operator's explicit create action after a collision; \
+         allocate_entity_id then takes the first candidate whose directory does NOT exist, so the \
+         derived value can never resolve to an entity that is already there",
+    ),
 ];
 
 fn crates_root() -> PathBuf {
