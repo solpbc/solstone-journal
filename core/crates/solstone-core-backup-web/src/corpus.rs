@@ -45,10 +45,10 @@ fn corpus_cache() -> crate::measurement::SharedMeasurementCache {
 }
 
 #[tokio::test]
-async fn corpus_replays_all_cases_with_only_the_deferred_root_deviation() {
+async fn corpus_replays_all_cases() {
     let corpus = crate::test_support::corpus();
     let mut asserted = 0;
-    let mut deferred = 0;
+    let deferred = 0;
     let mut gate = 0;
     for (phase, cases) in corpus["phases"].as_object().expect("phases") {
         let root = crate::test_support::root(phase);
@@ -68,8 +68,11 @@ async fn corpus_replays_all_cases_with_only_the_deferred_root_deviation() {
                 .body(Body::from(body))
                 .expect("request");
             let established = phase != "unestablished" && phase != "corrupt";
-            let deferred_route = established && case["path"] == "/app/backup/";
-            let native = established && !deferred_route;
+            let native = established;
+            // The fixture hashes the Python-identical backup.js it predates. Lane AR W5
+            // intentionally serves crate-local backup.js bytes, so this is the corpus-level
+            // counterpart to assets.rs's deliberate JS byte-identity divergence.
+            let native_copy_deviation = native && case["path"] == "/app/backup/static/backup.js";
             let response = if native {
                 capture(
                     crate::routes_with_cache(root.path().to_path_buf(), corpus_cache()),
@@ -84,12 +87,6 @@ async fn corpus_replays_all_cases_with_only_the_deferred_root_deviation() {
                 .await
             };
             let expected = case["status"].as_u64().expect("status") as u16;
-            if deferred_route {
-                // W2 owns the root shell. It remains the only declared corpus deviation.
-                assert_eq!(response.status, 501, "{phase} deferred root");
-                deferred += 1;
-                continue;
-            }
             assert_eq!(response.status, expected, "{phase} {}", case["path"]);
             assert_eq!(
                 response
@@ -116,7 +113,9 @@ async fn corpus_replays_all_cases_with_only_the_deferred_root_deviation() {
                     "{phase} {}",
                     case["path"]
                 );
-            } else if let Some(expected_digest) = case.get("body_sha256") {
+            } else if let Some(expected_digest) = case.get("body_sha256")
+                && !native_copy_deviation
+            {
                 let mut body = String::from_utf8_lossy(&response.body).into_owned();
                 if case.get("body_normalized").is_some() {
                     body = body.replace(root.path().to_string_lossy().as_ref(), "<JOURNAL_ROOT>");
@@ -135,7 +134,7 @@ async fn corpus_replays_all_cases_with_only_the_deferred_root_deviation() {
             }
         }
     }
-    assert_eq!((asserted, deferred, gate), (48, 4, 26));
+    assert_eq!((asserted, deferred, gate), (52, 0, 26));
 }
 
 #[tokio::test]
@@ -651,7 +650,7 @@ fn journal_builder_writes_every_phase_or_leaves_unestablished_absent() {
 }
 
 #[test]
-fn corpus_declares_the_deferred_root_deviation() {
+fn corpus_declares_all_route_cases() {
     let corpus = crate::test_support::corpus();
     assert_eq!(
         corpus["phases"]

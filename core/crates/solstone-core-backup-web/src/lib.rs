@@ -48,6 +48,7 @@ fn routes_with_cache(journal_root: PathBuf, cache: SharedMeasurementCache) -> Ro
     let enable_cache = cache.clone();
     let disable_cache = cache;
     Router::new()
+        .route("/app/backup/", get(assets::shell))
         .route("/app/backup/workspace", get(assets::workspace))
         .route("/app/backup/background", get(assets::background))
         .route("/app/backup/static/{name}", get(assets::static_asset))

@@ -8,10 +8,11 @@ const WORKSPACE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../solstone/apps/backup/workspace.html"
 ));
-const JS: &[u8] = include_bytes!(concat!(
+const SHELL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/backup/static/backup.js"
+    "/../../../solstone/convey/static/shell.html"
 ));
+const JS: &[u8] = include_bytes!("../assets/backup.js");
 const CSS: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../solstone/apps/backup/static/backup.css"
@@ -24,6 +25,9 @@ fn bytes(status: StatusCode, bytes: &'static [u8], content_type: &'static str) -
         .header(header::CONTENT_TYPE, content_type)
         .body(Body::from(bytes))
         .expect("backup asset response")
+}
+pub async fn shell() -> Response {
+    bytes(StatusCode::OK, SHELL, "text/html; charset=utf-8")
 }
 pub async fn workspace() -> Response {
     bytes(StatusCode::OK, WORKSPACE, "text/html; charset=utf-8")
@@ -45,11 +49,25 @@ pub async fn static_asset(axum::extract::Path(name): axum::extract::Path<String>
 
 #[cfg(test)]
 mod tests {
-    use super::{CSS, JS, WORKSPACE};
+    use serde_json::{Value, json};
+
+    use super::{CSS, JS, SHELL, WORKSPACE};
+
+    #[test]
+    fn embedded_shell_matches_the_convey_shell_template() {
+        // Permanent framework invariant: every converted app embeds the canonical Convey shell.
+        assert_eq!(
+            SHELL,
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../solstone/convey/static/shell.html"
+            ))
+        );
+    }
 
     #[test]
     fn embedded_assets_match_the_python_source_until_that_surface_is_removed() {
-        // Retire this assertion with the Python backup surface it deliberately protects.
+        // Retire these assertions with the Python backup surface they deliberately protect.
         assert_eq!(
             WORKSPACE,
             include_bytes!(concat!(
@@ -57,13 +75,7 @@ mod tests {
                 "/../../../solstone/apps/backup/workspace.html"
             ))
         );
-        assert_eq!(
-            JS,
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/backup/static/backup.js"
-            ))
-        );
+        // backup.js now diverges by design (Lane AR W5 status-copy fix) — see assets/backup.js.
         assert_eq!(
             CSS,
             include_bytes!(concat!(
@@ -71,5 +83,70 @@ mod tests {
                 "/../../../solstone/apps/backup/static/backup.css"
             ))
         );
+    }
+
+    fn embedded_js_object(prefix: &str) -> Value {
+        let source = std::str::from_utf8(JS).expect("embedded backup.js is UTF-8");
+        let payload =
+            &source[source.find(prefix).expect("embedded object prefix") + prefix.len()..];
+        let end = payload.find(";\n").expect("embedded object terminator");
+        serde_json::from_str(&payload[..end]).expect("embedded object JSON")
+    }
+
+    #[test]
+    fn status_selection_table_is_complete_and_leaves_prune_outside_its_scope() {
+        let actual = embedded_js_object("const STATUS_SELECTION_TABLE = ");
+        let backup_never_run =
+            json!({"copy_key":"status.last_backup.never_run","duration_source":null});
+        let backup_ok =
+            json!({"copy_key":"management.status_labels.ago","duration_source":"last_backup.time"});
+        let backup_error =
+            json!({"copy_key":"status.last_backup.failed","duration_source":"last_backup.time"});
+        let verification_not_yet =
+            json!({"copy_key":"management.status_labels.not_yet","duration_source":null});
+        let verification_ok = json!({"copy_key":"status.last_verification.ok","duration_source":"last_verification.time"});
+        let verification_skipped = json!({"copy_key":"status.last_verification.skipped","duration_source":"last_verification.time"});
+        let verification_error = json!({"copy_key":"status.last_verification.failed","duration_source":"last_verification.time"});
+        let expected = json!({
+            "null|null":{"backup":backup_never_run,"verification":verification_not_yet},
+            "null|ok":{"backup":{"copy_key":"status.last_backup.never_run","duration_source":null},"verification":{"copy_key":"management.status_labels.not_yet","duration_source":null}},
+            "null|skipped":{"backup":{"copy_key":"status.last_backup.never_run","duration_source":null},"verification":{"copy_key":"management.status_labels.not_yet","duration_source":null}},
+            "null|error":{"backup":{"copy_key":"status.last_backup.never_run","duration_source":null},"verification":{"copy_key":"management.status_labels.not_yet","duration_source":null}},
+            "ok|null":{"backup":backup_ok,"verification":{"copy_key":"management.status_labels.not_yet","duration_source":null}},
+            "ok|ok":{"backup":{"copy_key":"management.status_labels.ago","duration_source":"last_backup.time"},"verification":verification_ok},
+            "ok|skipped":{"backup":{"copy_key":"management.status_labels.ago","duration_source":"last_backup.time"},"verification":verification_skipped},
+            "ok|error":{"backup":{"copy_key":"management.status_labels.ago","duration_source":"last_backup.time"},"verification":verification_error},
+            "error|null":{"backup":backup_error,"verification":{"copy_key":"management.status_labels.not_yet","duration_source":null}},
+            "error|ok":{"backup":{"copy_key":"status.last_backup.failed","duration_source":"last_backup.time"},"verification":{"copy_key":"status.last_verification.ok","duration_source":"last_verification.time"}},
+            "error|skipped":{"backup":{"copy_key":"status.last_backup.failed","duration_source":"last_backup.time"},"verification":{"copy_key":"status.last_verification.skipped","duration_source":"last_verification.time"}},
+            "error|error":{"backup":{"copy_key":"status.last_backup.failed","duration_source":"last_backup.time"},"verification":{"copy_key":"status.last_verification.failed","duration_source":"last_verification.time"}}
+        });
+        assert_eq!(actual, expected);
+        assert!(!actual.to_string().contains("last_prune"));
+    }
+
+    #[test]
+    fn backup_status_reason_labels_are_closed() {
+        let copy = embedded_js_object("  const BACKUP_COPY = ");
+        let reasons = &copy["status"]["error_reasons"];
+        assert_eq!(
+            reasons
+                .as_object()
+                .expect("error reasons object")
+                .keys()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from([
+                "_missing",
+                "auth_failed",
+                "backup_unavailable",
+                "incomplete",
+                "locked",
+                "repo_missing",
+                "restic_unavailable",
+                "timeout",
+            ])
+        );
+        assert!(reasons.get("integrity_failed").is_none());
     }
 }
