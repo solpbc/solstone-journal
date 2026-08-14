@@ -399,10 +399,11 @@ mod tests {
             Some(&Value::String("app_not_converted".to_owned()))
         );
 
-        let home = socket_request(journal.0.clone(), "GET", "/app/home/workspace", b"").await;
-        assert_eq!(home.status, 501);
-        assert_eq!(home.json()["reason_code"], "app_not_converted");
-        assert_eq!(home.json()["app"], "home");
+        let activities =
+            socket_request(journal.0.clone(), "GET", "/app/activities/workspace", b"").await;
+        assert_eq!(activities.status, 501);
+        assert_eq!(activities.json()["reason_code"], "app_not_converted");
+        assert_eq!(activities.json()["app"], "activities");
     }
 
     #[tokio::test]

@@ -189,7 +189,7 @@ mod tests {
         let app = crate::router(journal.0.clone());
         assert_eq!(get(app.clone(), "/app/body/").await.0, StatusCode::OK);
         assert_eq!(
-            get(app.clone(), "/app/home/").await.0,
+            get(app.clone(), "/app/activities/").await.0,
             StatusCode::NOT_IMPLEMENTED
         );
         for path in [

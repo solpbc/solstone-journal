@@ -1,0 +1,21 @@
+[package]
+name = "solstone-core-home-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["tokio"] }
+
+[dev-dependencies]
+regex.workspace = true
+serde_json.workspace = true
+solstone-core-convey-shell.workspace = true
+tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower.workspace = true

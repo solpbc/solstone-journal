@@ -3089,6 +3089,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-facets-web",
  "solstone-core-health-web",
+ "solstone-core-home-web",
  "solstone-core-import-web",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
@@ -3368,6 +3369,19 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-thinking",
  "temp-env",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "solstone-core-home-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "regex",
+ "serde_json",
+ "solstone-core-convey-shell",
  "tempfile",
  "tokio",
  "tower",

@@ -302,19 +302,19 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     );
 
     let (status, content_type, _, body) =
-        get(router(journal.0.clone()), "/app/home/workspace").await;
+        get(router(journal.0.clone()), "/app/activities/workspace").await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(content_type, "application/json");
     let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
     assert_eq!(refusal["reason_code"], "app_not_converted");
-    assert_eq!(refusal["app"], "home");
+    assert_eq!(refusal["app"], "activities");
 
-    let (status, content_type, _, body) = get(router(journal.0.clone()), "/app/home/").await;
+    let (status, content_type, _, body) = get(router(journal.0.clone()), "/app/activities/").await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(content_type, "application/json");
     let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
     assert_eq!(refusal["reason_code"], "app_not_converted");
-    assert_eq!(refusal["app"], "home");
+    assert_eq!(refusal["app"], "activities");
 }
 
 #[tokio::test]
@@ -342,8 +342,13 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
     // client branches on that bit -- pin it rather than the exact code.
     let journal = journal_for_phase("established");
     for path in [
-        "/app/home/",
-        "/app/home/workspace",
+        // `/app/home/` and `/app/home/workspace` were here until 2026-08-14, when
+        // the home page's shell and workspace became native routes. The INVARIANT is
+        // unchanged -- an unconverted app's refusal is never 2xx -- only these
+        // examples went stale. Replaced with a still-unconverted app rather than
+        // deleted, so the assertion keeps covering shell and workspace paths.
+        "/app/activities/",
+        "/app/activities/workspace",
         "/app/home/background",
         // `/app/timeline/background` was here until 2026-08-14, when the
         // timeline conversion landed and made it a real 200 serving the app's
