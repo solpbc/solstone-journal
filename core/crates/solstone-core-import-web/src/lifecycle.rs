@@ -39,6 +39,49 @@ fn import_timestamp() -> String {
     Local::now().format("%Y%m%d_%H%M%S").to_string()
 }
 
+fn deterministic_timestamp(filename: &str) -> Option<String> {
+    let bytes = filename.as_bytes();
+    for start in 0..bytes.len().saturating_sub(14) {
+        let candidate = &bytes[start..start + 15];
+        if candidate.get(8) != Some(&b'_')
+            || !candidate[..8].iter().all(u8::is_ascii_digit)
+            || !candidate[9..].iter().all(u8::is_ascii_digit)
+        {
+            continue;
+        }
+        let candidate = std::str::from_utf8(candidate).expect("ASCII timestamp candidate");
+        if chrono::NaiveDateTime::parse_from_str(candidate, "%Y%m%d_%H%M%S").is_ok() {
+            return Some(candidate.to_owned());
+        }
+    }
+    None
+}
+
+fn timestamp_for_upload(
+    data: &Value,
+    filename: &str,
+) -> (String, &'static str, bool, Option<&'static str>) {
+    if let Some(timestamp) = deterministic_timestamp(filename) {
+        return (timestamp, "deterministic", false, None);
+    }
+    if text_value(data, "deterministic_only") == "true" {
+        return (
+            import_timestamp(),
+            "upload_fallback",
+            false,
+            Some("no_deterministic_match"),
+        );
+    }
+    // The native web adapter has no model transport of its own.  Its import core
+    // treats an unavailable model as a no-match, just as the reference does.
+    (
+        import_timestamp(),
+        "upload_fallback",
+        true,
+        Some("model_no_match"),
+    )
+}
+
 fn clean_optional(value: Option<&Value>) -> Option<String> {
     value
         .map(|value| match value {
@@ -129,6 +172,27 @@ fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
         .is_some()
 }
 
+fn import_is_running_or_successful(
+    root: &Path,
+    timestamp: &str,
+    metadata: &ImportMetadata,
+) -> bool {
+    let imported = root.join("imports").join(timestamp).join("imported.json");
+    if let Ok(bytes) = std::fs::read(imported)
+        && let Ok(result) = serde_json::from_slice::<Value>(&bytes)
+    {
+        return result.get("error").is_none_or(Value::is_null);
+    }
+    if metadata.get("task_id").and_then(Value::as_str).is_none() {
+        return false;
+    }
+    let uploaded = metadata
+        .get("upload_timestamp")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(now_ms);
+    now_ms().saturating_sub(uploaded) <= 3_600_000
+}
+
 fn summary(metadata: &ImportMetadata) -> Value {
     json!({
         "schema_version": 1,
@@ -156,6 +220,37 @@ fn summary(metadata: &ImportMetadata) -> Value {
             "source_inference": metadata.get("source_inference").cloned().unwrap_or_else(|| json!("default")),
         },
     })
+}
+
+fn replay_summary(metadata: &ImportMetadata) -> Value {
+    let mut result = summary(metadata);
+    result["replay"] = json!(true);
+    result["recommended_action"] = json!("start");
+    result
+}
+
+fn staged_by_client_item(root: &Path, client_item_id: &str) -> Option<ImportMetadata> {
+    std::fs::read_dir(root.join("imports"))
+        .ok()?
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .find_map(|timestamp| {
+            let metadata = read_import_metadata(root, &timestamp).ok()?;
+            (metadata.get("client_item_id").and_then(Value::as_str) == Some(client_item_id))
+                .then_some(metadata)
+        })
+}
+
+fn staged_by_source_hash(root: &Path, source_hash: &SourceHash) -> Option<ImportMetadata> {
+    std::fs::read_dir(root.join("imports"))
+        .ok()?
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .find_map(|timestamp| {
+            let metadata = read_import_metadata(root, &timestamp).ok()?;
+            (metadata.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()))
+                .then_some(metadata)
+        })
 }
 
 fn stage_bytes(
@@ -338,10 +433,22 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         temporary_removed,
         "request-scoped upload temporary survives"
     );
+    if let Some(existing) = staged_by_client_item(&state.root, &client_item_id) {
+        if existing.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()) {
+            return json_response(StatusCode::OK, replay_summary(&existing));
+        }
+        return invalid_state(
+            "client_item_id already staged for different content; use a new client_item_id or re-fetch the existing item",
+        );
+    }
     if manifest_exists(&state.root, &source_hash) {
         return invalid_state("content already imported");
     }
-    let timestamp = import_timestamp();
+    if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
+        return json_response(StatusCode::OK, summary(&existing));
+    }
+    let (timestamp, method, model_called, no_match_reason) =
+        timestamp_for_upload(&data, &original_filename);
     let file_path = match stage_bytes(&state.root, &timestamp, &filename, &bytes) {
         Ok(path) => path,
         Err(error) => return metadata_failed(error.to_string()),
@@ -356,9 +463,17 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         client_item_id,
         data: &data,
         is_local_path: false,
-        method: "upload_fallback",
+        method,
     });
     metadata.insert("file_size".to_owned(), json!(bytes.len()));
+    metadata.insert(
+        "timestamp_detection_model_called".to_owned(),
+        json!(model_called),
+    );
+    metadata.insert(
+        "timestamp_detection_no_match_reason".to_owned(),
+        no_match_reason.map_or(Value::Null, |reason| json!(reason)),
+    );
     if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
     }
@@ -430,6 +545,9 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
         Ok(metadata) => metadata,
         Err(_) => return import_not_found("Import metadata not found"),
     };
+    if import_is_running_or_successful(&state.root, timestamp, &metadata) {
+        return invalid_state("import already started or processed");
+    }
     if metadata
         .get("source_hash")
         .and_then(Value::as_str)
@@ -759,6 +877,56 @@ mod tests {
         assert!(temporary_hash(b"temporary bytes").unwrap().1);
     }
 
+    #[tokio::test]
+    async fn save_replays_same_second_same_name_without_replacing_staged_bytes() {
+        let root = TempDir::new().unwrap();
+        let boundary = "same-second";
+        let upload = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nreplay-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nowner-safe bytes\r\n--{boundary}--\r\n"
+        );
+        let mut responses = Vec::new();
+        for _ in 0..2 {
+            let response = crate::routes(root.path().to_path_buf())
+                .oneshot(
+                    Request::post("/app/import/api/save")
+                        .header(
+                            "content-type",
+                            format!("multipart/form-data; boundary={boundary}"),
+                        )
+                        .body(Body::from(upload.clone()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            responses.push(response_json(response).await.1);
+        }
+        let path = std::path::PathBuf::from(responses[0]["path"].as_str().unwrap());
+        assert_eq!(fs::read(path).unwrap(), b"owner-safe bytes");
+        assert_eq!(responses[1]["replay"], true);
+        assert_eq!(responses[1]["path"], responses[0]["path"]);
+    }
+
+    #[test]
+    fn upload_timestamp_prefers_a_valid_deterministic_filename_timestamp() {
+        let (timestamp, method, model_called, reason) = super::timestamp_for_upload(
+            &json!({"deterministic_only":"true"}),
+            "notes_20260801_120000.txt",
+        );
+        assert_eq!(timestamp, "20260801_120000");
+        assert_eq!(method, "deterministic");
+        assert!(!model_called);
+        assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn deterministic_only_upload_does_not_claim_a_model_attempt() {
+        let (_, method, model_called, reason) =
+            super::timestamp_for_upload(&json!({"deterministic_only":"true"}), "notes.txt");
+        assert_eq!(method, "upload_fallback");
+        assert!(!model_called);
+        assert_eq!(reason, Some("no_deterministic_match"));
+    }
+
     #[test]
     fn criterion_22_pointer_start_never_renames_owner_material() {
         let root = TempDir::new().unwrap();
@@ -954,5 +1122,49 @@ mod tests {
         );
         let (_, start) = response_json(start).await;
         assert_eq!(start["reason_code"], "invalid_operation_for_state");
+    }
+
+    #[tokio::test]
+    async fn meta_refuses_running_and_successful_imports_without_retargeting_metadata() {
+        let root = TempDir::new().unwrap();
+        for (timestamp, imported) in [("running", None), ("success", Some(json!({})))] {
+            let path = root.path().join(format!("imports/{timestamp}/item.txt"));
+            let mut stored = metadata(path.display().to_string(), "hash");
+            stored.insert("upload_timestamp".to_owned(), json!(super::now_ms()));
+            if imported.is_none() {
+                stored.insert("task_id".to_owned(), json!("active-task"));
+            }
+            staged(root.path(), timestamp, Value::Object(stored));
+            if let Some(imported) = imported {
+                fs::write(
+                    root.path()
+                        .join(format!("imports/{timestamp}/imported.json")),
+                    serde_json::to_vec(&imported).unwrap(),
+                )
+                .unwrap();
+            }
+            let response = crate::routes(root.path().to_path_buf())
+                .oneshot(
+                    Request::post("/app/import/api/meta")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::to_vec(&json!({"path":path,"source_hint":"retarget"}))
+                                .unwrap(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let (_, body) = response_json(response).await;
+            assert_eq!(
+                body["reason_code"], "invalid_operation_for_state",
+                "{timestamp}"
+            );
+            assert_eq!(
+                read_import_metadata(root.path(), timestamp).unwrap()["source_hint"],
+                "right-source",
+                "{timestamp} metadata remains unchanged"
+            );
+        }
     }
 }

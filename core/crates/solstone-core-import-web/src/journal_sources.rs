@@ -16,6 +16,7 @@ use axum::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Local, Utc};
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_journal_io::{AtomicWriteOptions, append_jsonl, atomic_replace};
 
 use crate::{
@@ -56,12 +57,11 @@ impl IngestIdentityCase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DoorIdentity<'a> {
     Bearer(&'a str),
-    #[allow(dead_code)]
-    // PL transport identity is supplied by the paired-device door in a later phase.
     PrivateLink(&'a str),
 }
 
 pub(crate) struct JournalSourceIdentity {
+    source: Map<String, Value>,
     derived_prefix: String,
 }
 
@@ -69,6 +69,27 @@ impl JournalSourceIdentity {
     pub(crate) fn prefix(&self) -> &str {
         &self.derived_prefix
     }
+
+    pub(crate) fn provenance(&self) -> Value {
+        json!({
+            "imported_via": "peer_link",
+            "link_id": self.source.get("fingerprint").cloned().unwrap_or(Value::Null),
+            "sender_fingerprint": self.source.get("fingerprint").cloned().unwrap_or(Value::Null),
+            "sender_instance_id": self.source.get("peer_instance_id").cloned().unwrap_or(Value::Null),
+        })
+    }
+}
+
+pub(crate) fn provenance_for_prefix(root: &Path, key_prefix: &str) -> Option<Value> {
+    let source = records(root)
+        .into_iter()
+        .find(|record| state_prefix(record).as_deref() == Some(key_prefix))?;
+    Some(json!({
+        "imported_via": "peer_link",
+        "link_id": source.get("fingerprint").cloned().unwrap_or(Value::Null),
+        "sender_fingerprint": source.get("fingerprint").cloned().unwrap_or(Value::Null),
+        "sender_instance_id": source.get("peer_instance_id").cloned().unwrap_or(Value::Null),
+    }))
 }
 
 impl FromRequestParts<AppState> for JournalSourceIdentity {
@@ -91,9 +112,12 @@ impl FromRequestParts<AppState> for JournalSourceIdentity {
                     "Missing or invalid authentication",
                 )
             })?;
-        let (_, derived_prefix) = authorize_bearer(&state.root, supplied_prefix, &parts.headers)
+        let (source, derived_prefix) = authorize_transport(&state.root, supplied_prefix, parts)
             .map_err(|response| *response)?;
-        Ok(Self { derived_prefix })
+        Ok(Self {
+            source,
+            derived_prefix,
+        })
     }
 }
 
@@ -207,12 +231,20 @@ fn bearer_identity(headers: &HeaderMap) -> Result<DoorIdentity<'_>, IngestIdenti
     Ok(DoorIdentity::Bearer(key))
 }
 
-fn authorize_bearer(
+fn authorize_transport(
     root: &Path,
     supplied_prefix: &str,
-    headers: &HeaderMap,
+    parts: &Parts,
 ) -> Result<(Map<String, Value>, String), Box<Response>> {
-    let identity = bearer_identity(headers).map_err(|case| {
+    let identity = match parts.extensions.get::<AccessBasis>() {
+        Some(AccessBasis::LinkedDevice { did, .. }) => Ok(DoorIdentity::PrivateLink(did.as_str())),
+        // Localhost and pairing-window requests have no accepted device identity and must
+        // authenticate with the journal-source key.
+        Some(AccessBasis::Localhost | AccessBasis::PairingPeer { .. }) | None => {
+            bearer_identity(&parts.headers)
+        }
+    }
+    .map_err(|case| {
         let (status, description) = case.response();
         Box::new(html_auth_failure(status, description))
     })?;
@@ -253,15 +285,48 @@ fn source_path(root: &Path, name: &str) -> std::path::PathBuf {
         .join(format!("{name}.json"))
 }
 
-fn save_journal_source(root: &Path, record: &Map<String, Value>) -> Result<(), ()> {
-    let name = record.get("name").and_then(Value::as_str).ok_or(())?;
-    if !valid_name(name) {
-        return Err(());
+fn source_record_path(root: &Path, record: &Map<String, Value>) -> Option<std::path::PathBuf> {
+    if let Some(name) = record
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| valid_name(name))
+    {
+        return Some(source_path(root, name));
     }
-    let path = source_path(root, name);
+    let prefix = state_prefix(record)?;
+    Some(
+        root.join("apps/import/journal_sources")
+            .join(format!("{prefix}.json")),
+    )
+}
+
+fn save_journal_source(root: &Path, record: &Map<String, Value>) -> Result<(), ()> {
+    let path = source_record_path(root, record).ok_or(())?;
     fs::create_dir_all(path.parent().ok_or(())?).map_err(|_| ())?;
     let bytes = serde_json::to_vec_pretty(&Value::Object(record.clone())).map_err(|_| ())?;
     atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) }).map_err(|_| ())
+}
+
+pub(crate) fn record_received(
+    root: &Path,
+    identity: &JournalSourceIdentity,
+    stat: &str,
+    amount: usize,
+) -> Result<(), String> {
+    if amount == 0 {
+        return Ok(());
+    }
+    let mut record = identity.source.clone();
+    let stats = record
+        .entry("stats".to_owned())
+        .or_insert_with(|| json!({}));
+    let object = stats
+        .as_object_mut()
+        .ok_or_else(|| "Journal source statistics must be an object".to_owned())?;
+    let prior = object.get(stat).and_then(Value::as_u64).unwrap_or(0);
+    object.insert(stat.to_owned(), json!(prior.saturating_add(amount as u64)));
+    save_journal_source(root, &record)
+        .map_err(|_| "Failed to persist journal source statistics".to_owned())
 }
 
 fn create_state_directory(root: &Path, key_prefix: &str) -> Result<(), ()> {
@@ -570,10 +635,12 @@ mod tests {
     use std::{fs, os::unix::fs::PermissionsExt};
 
     use axum::{
+        Extension,
         body::{Body, to_bytes},
         http::{Request, StatusCode},
     };
     use serde_json::json;
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
     use tempfile::TempDir;
     use tower::ServiceExt;
 
@@ -766,6 +833,41 @@ mod tests {
         }
         assert_eq!(responses[0], responses[1]);
         assert_eq!(responses[0].0, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn private_link_transport_identity_authenticates_the_manifest_door() {
+        const FINGERPRINT: &str =
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let root = TempDir::new().unwrap();
+        write_source(
+            root.path(),
+            "pl-peer",
+            json!({
+                "name":"pl-peer",
+                "pair_mode":"pl",
+                "fingerprint":FINGERPRINT,
+                "enabled":true,
+                "revoked":false,
+            }),
+        );
+        let prefix = "aaaaaaaaaaaaaaaa";
+        create_state_directory(root.path(), prefix).unwrap();
+        let router =
+            crate::routes(root.path().to_path_buf()).layer(Extension(AccessBasis::LinkedDevice {
+                carrier: Carrier::Direct,
+                did: LinkedDeviceDid::try_from(FINGERPRINT).unwrap(),
+            }));
+
+        let response = router
+            .oneshot(
+                Request::get(format!("/app/import/journal/{prefix}/manifest/entities"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

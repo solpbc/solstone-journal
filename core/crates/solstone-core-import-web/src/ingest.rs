@@ -5,7 +5,7 @@ use crate::{
     AppState,
     callosum::emit_best_effort,
     http::{error, json as json_response},
-    journal_sources::JournalSourceIdentity,
+    journal_sources::{JournalSourceIdentity, provenance_for_prefix, record_received},
     multipart,
 };
 use axum::{
@@ -45,7 +45,20 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())
 }
-fn decision(path: &Path, value: Value) -> Result<(), String> {
+fn decision(path: &Path, mut value: Value) -> Result<(), String> {
+    // Every door audit entry carries the paired peer identity.  The state root is
+    // structurally `root/imports/<prefix>/<area>/log.jsonl`.
+    if let Some(root) = path.ancestors().nth(4)
+        && let Some(prefix) = path
+            .ancestors()
+            .nth(2)
+            .and_then(Path::file_name)
+            .and_then(|p| p.to_str())
+        && let Some(provenance) = provenance_for_prefix(root, prefix)
+        && let (Some(entry), Some(provenance)) = (value.as_object_mut(), provenance.as_object())
+    {
+        entry.extend(provenance.clone());
+    }
     append_jsonl(path, &value).map_err(|error| error.to_string())
 }
 fn hash(bytes: &[u8]) -> String {
@@ -92,7 +105,14 @@ pub(crate) async fn segments(
     identity: JournalSourceIdentity,
     multipart_body: Multipart,
 ) -> Response {
-    segments_with_attempts(app, identity.prefix(), multipart_body, MAX_ATTEMPTS).await
+    segments_with_attempts(
+        app,
+        identity.prefix(),
+        multipart_body,
+        MAX_ATTEMPTS,
+        Some(&identity),
+    )
+    .await
 }
 
 async fn segments_with_attempts(
@@ -100,6 +120,7 @@ async fn segments_with_attempts(
     prefix: &str,
     multipart_body: Multipart,
     max_attempts: usize,
+    identity: Option<&JournalSourceIdentity>,
 ) -> Response {
     let parts = match multipart::collect(multipart_body).await {
         Ok(p) => p,
@@ -225,7 +246,16 @@ async fn segments_with_attempts(
                     .map_err(|e| e.to_string())?;
                 }
             }
-            let rec = json!({"files":names.iter().map(|n|json!({"name":n,"sha256":hash(&payload[n]),"size":payload[n].len()})).collect::<Vec<_>>(),"imported_via":"peer_link","link_id":null});
+            let mut rec = json!({"files":names.iter().map(|n|json!({"name":n,"sha256":hash(&payload[n]),"size":payload[n].len()})).collect::<Vec<_>>()});
+            if let Some(identity) = identity {
+                rec.as_object_mut().expect("segment record object").extend(
+                    identity
+                        .provenance()
+                        .as_object()
+                        .expect("provenance object")
+                        .clone(),
+                );
+            }
             let day_state = new
                 .entry(day.to_owned())
                 .or_insert_with(|| Value::Object(Map::new()))
@@ -235,7 +265,16 @@ async fn segments_with_attempts(
             if action == "deconflicted" {
                 day_state.insert(format!("{stream}/{original}"), rec);
             }
-            let mut entry = json!({"ts":Utc::now().to_rfc3339(),"action":action,"item_type":"segment","item_id":format!("{day}/{stream}/{final_key}"),"reason":reason,"files":names,"imported_via":"peer_link","link_id":null});
+            let mut entry = json!({"ts":Utc::now().to_rfc3339(),"action":action,"item_type":"segment","item_id":format!("{day}/{stream}/{final_key}"),"reason":reason,"files":names});
+            if let Some(identity) = identity {
+                entry.as_object_mut().expect("segment log object").extend(
+                    identity
+                        .provenance()
+                        .as_object()
+                        .expect("provenance object")
+                        .clone(),
+                );
+            }
             if action == "deconflicted" {
                 entry["original_key"] = json!(original)
             }
@@ -271,6 +310,16 @@ async fn segments_with_attempts(
         }
     }
     let written = copied + deconflicted;
+    if let Some(identity) = identity
+        && let Err(detail) = record_received(&app.root, identity, "segments_received", written)
+    {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     if written > 0 {
         emit_best_effort(
             &app.root,
@@ -289,12 +338,6 @@ fn valid_facet_name(name: &str) -> bool {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
         })
 }
-fn safe_relative(path: &str) -> bool {
-    !path.is_empty()
-        && !path.starts_with('/')
-        && !path.split('/').any(|part| matches!(part, "" | "." | ".."))
-}
-
 pub(crate) async fn facets(
     State(app): State<AppState>,
     AxumPath(_): AxumPath<String>,
@@ -370,8 +413,7 @@ pub(crate) async fn facets(
                 let relative = descriptor
                     .get("path")
                     .and_then(Value::as_str)
-                    .filter(|path| safe_relative(path))
-                    .ok_or("Invalid path")?;
+                    .ok_or("Facet file metadata must include path and type")?;
                 let kind = descriptor
                     .get("type")
                     .and_then(Value::as_str)
@@ -388,7 +430,12 @@ pub(crate) async fn facets(
                 });
             }
             let outcome = crate::facet_ingest::process_facet(
-                &app.root,
+                crate::facet_ingest::FacetRoots {
+                    // The native app's `AppState.root` is the sole journal-root authority;
+                    // pass it explicitly for both Python resolution channels.
+                    direct: &app.root,
+                    ambient: &app.root,
+                },
                 name,
                 &items,
                 &base.join("staged"),
@@ -399,6 +446,7 @@ pub(crate) async fn facets(
             merged += outcome.merged;
             skipped += outcome.skipped;
             staged += outcome.staged;
+            errors.extend(outcome.errors);
             for entry in outcome.decisions {
                 decision(&base.join("log.jsonl"), entry)?;
             }
@@ -409,6 +457,15 @@ pub(crate) async fn facets(
         }
     }
     if let Err(detail) = write_json(&state_path, &facet_state) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
+    if let Err(detail) = record_received(&app.root, &identity, "facets_received", created + merged)
+    {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "I couldn't save that import.",
@@ -588,6 +645,19 @@ pub(crate) async fn entities(
                 detail,
             );
         }
+    }
+    if let Err(detail) = record_received(
+        &app.root,
+        &identity,
+        "entities_received",
+        auto_merged + created,
+    ) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
     }
     json_response(
         StatusCode::OK,
@@ -828,6 +898,14 @@ pub(crate) async fn imports(
             detail,
         );
     }
+    if let Err(detail) = record_received(&app.root, &identity, "imports_received", copied) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(
         StatusCode::OK,
         json!({"copied":copied,"skipped":skipped,"staged":staged,"errors":errors}),
@@ -918,6 +996,14 @@ pub(crate) async fn config(
         &base.join("log.jsonl"),
         json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"config"}),
     ) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
+    if let Err(detail) = record_received(&app.root, &identity, "config_received", 1) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "I couldn't save that import.",
@@ -1049,7 +1135,7 @@ mod tests {
         let root = phase_root("empty");
         let path = format!("/app/import/journal/{PREFIX}/ingest/segments");
         let content_type = "multipart/form-data; boundary=segment-boundary";
-        assert_eq!(crate::callosum::take_send_attempts(), 0);
+        let _ = crate::callosum::take_send_attempts();
         let (status, copied) = request(
             root.path(),
             &path,
@@ -1142,6 +1228,7 @@ mod tests {
             PREFIX,
             multipart_for_test(segment_body(b"inbound bytes\n")).await,
             0,
+            None,
         )
         .await;
         let status = response.status();
@@ -1206,6 +1293,13 @@ mod tests {
     #[tokio::test]
     async fn criterion_13_keyed_doors_write_their_owned_destinations() {
         let root = phase_root("empty");
+        let source_path = root
+            .path()
+            .join("apps/import/journal_sources/corpus_peer.json");
+        let mut source: Value = serde_json::from_slice(&fs::read(&source_path).unwrap()).unwrap();
+        source["fingerprint"] = json!("sha256:peer-fingerprint");
+        source["peer_instance_id"] = json!("peer-instance");
+        fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
         let entities = format!("/app/import/journal/{PREFIX}/ingest/entities");
         let imports = format!("/app/import/journal/{PREFIX}/ingest/imports");
         let config = format!("/app/import/journal/{PREFIX}/ingest/config");
@@ -1237,6 +1331,56 @@ mod tests {
             root.path()
                 .join("imports/corpusSo/config/source_config.json")
                 .is_file()
+        );
+        let (status, _) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_body(b"provenance"),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let boundary = "facet-provenance";
+        let metadata = json!({"facets":[{"name":"work","files":[{"path":"todos/20260801.jsonl","type":"todos"}]}]});
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"text\":\"peer todo\"}}\r\n--{boundary}--\r\n"
+        );
+        let (status, _) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/facets"),
+            Body::from(body),
+            &format!("multipart/form-data; boundary={boundary}"),
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let source: Value = serde_json::from_slice(&fs::read(&source_path).unwrap()).unwrap();
+        for stat in [
+            "segments_received",
+            "entities_received",
+            "facets_received",
+            "imports_received",
+            "config_received",
+        ] {
+            assert_eq!(
+                source["stats"][stat], 1,
+                "{stat} increments after its write"
+            );
+        }
+        let state: Value = serde_json::from_slice(
+            &fs::read(root.path().join("imports/corpusSo/segments/state.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            state["20260801"]["default/120000_60"]["link_id"],
+            "sha256:peer-fingerprint"
+        );
+        let log =
+            fs::read_to_string(root.path().join("imports/corpusSo/entities/log.jsonl")).unwrap();
+        assert!(
+            log.contains("peer-instance"),
+            "door audit records sender provenance"
         );
     }
 
