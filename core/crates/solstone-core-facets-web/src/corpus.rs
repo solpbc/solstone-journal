@@ -229,6 +229,34 @@ async fn ac17_unparseable_rollup_is_internal_error() {
     }
 }
 
+#[tokio::test]
+async fn ac17_semantically_invalid_rollup_month_is_internal_error() {
+    let root = phase_root("established_empty");
+    write(
+        &root.path().join("timeline.json"),
+        r#"{"months":{"202699":{}}}"#,
+    );
+    let response = routes(root.path().to_path_buf(), fixed_clock())
+        .oneshot(
+            Request::get("/app/timeline/api/overview")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+        r#"{"detail":"","error":"I couldn't complete that request.","reason_code":"internal_error"}"#
+    );
+}
+
 #[test]
 fn ac19_canonicalizer_matches_python_compact_ascii_and_surrogate_pairs() {
     let value = serde_json::json!({"z": "é", "a": "😀"});

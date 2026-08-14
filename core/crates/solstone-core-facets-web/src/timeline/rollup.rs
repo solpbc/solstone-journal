@@ -22,10 +22,19 @@ pub fn overview(root: &Path, clock: &Clock) -> Result<Value, std::io::Error> {
     let master = load_master(root)?;
     let counts = day_segment_counts(root, None);
     let today = clock.now().date();
-    let months = coverage_months(&master, &counts, today).into_iter().map(|ym| {
-        let month = master.get("months").and_then(Value::as_object).and_then(|months| months.get(&ym)).cloned().unwrap_or_else(|| json!({}));
-        json!({"ym": ym, "year": ym[0..4].parse::<i32>().unwrap_or_default(), "month_num": ym[4..6].parse::<u32>().unwrap_or_default(), "days_in_month": days_in_month(&ym), "first_weekday": first_weekday(&ym), "day_count": month.get("day_count").and_then(Value::as_u64).unwrap_or(0), "days_with_data": days_with_data(&month)})
-    }).collect::<Vec<_>>();
+    let months = coverage_months(&master, &counts, today)
+        .into_iter()
+        .map(|ym| {
+            let (year, month_num) = month_parts(&ym)?;
+            let month = master
+                .get("months")
+                .and_then(Value::as_object)
+                .and_then(|months| months.get(&ym))
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            Ok(json!({"ym": ym, "year": year, "month_num": month_num, "days_in_month": days_in_month(&ym)?, "first_weekday": first_weekday(&ym)?, "day_count": month.get("day_count").and_then(Value::as_u64).unwrap_or(0), "days_with_data": days_with_data(&month)}))
+        })
+        .collect::<Result<Vec<_>, std::io::Error>>()?;
     Ok(
         json!({"now": clock.now().format("%Y-%m-%dT%H:%M:%S").to_string(), "today": today.format("%Y%m%d").to_string(), "generated_at": master.get("generated_at"), "model": master.get("model"), "data_through": rollup_watermark(&master), "months": months}),
     )
@@ -138,26 +147,39 @@ fn month_span(start: &str, end: &str) -> Vec<String> {
     months
 }
 
-fn days_in_month(ym: &str) -> u32 {
-    let year = ym[0..4].parse::<i32>().unwrap_or_default();
-    let month = ym[4..6].parse::<u32>().unwrap_or(1);
+fn month_parts(ym: &str) -> Result<(i32, u32), std::io::Error> {
+    let (Some(year), Some(month)) = (ym.get(0..4), ym.get(4..6)) else {
+        return Err(std::io::Error::other("invalid timeline month"));
+    };
+    let year = year
+        .parse::<i32>()
+        .map_err(|_| std::io::Error::other("invalid timeline month"))?;
+    let month = month
+        .parse::<u32>()
+        .map_err(|_| std::io::Error::other("invalid timeline month"))?;
+    if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
+        return Err(std::io::Error::other("invalid timeline month"));
+    }
+    Ok((year, month))
+}
+
+fn days_in_month(ym: &str) -> Result<u32, std::io::Error> {
+    let (year, month) = month_parts(ym)?;
     let start = NaiveDate::from_ymd_opt(year, month, 1)
-        .unwrap_or_else(|| NaiveDate::from_ymd_opt(1970, 1, 1).expect("fixed date"));
+        .ok_or_else(|| std::io::Error::other("invalid timeline month"))?;
     let next = if month == 12 {
         NaiveDate::from_ymd_opt(year + 1, 1, 1)
     } else {
         NaiveDate::from_ymd_opt(year, month + 1, 1)
     }
-    .expect("valid month");
-    (next - start).num_days() as u32
+    .ok_or_else(|| std::io::Error::other("invalid timeline month"))?;
+    Ok((next - start).num_days() as u32)
 }
-fn first_weekday(ym: &str) -> u32 {
-    NaiveDate::from_ymd_opt(
-        ym[0..4].parse().unwrap_or(1970),
-        ym[4..6].parse().unwrap_or(1),
-        1,
-    )
-    .map_or(3, |date| date.weekday().num_days_from_monday())
+fn first_weekday(ym: &str) -> Result<u32, std::io::Error> {
+    let (year, month) = month_parts(ym)?;
+    NaiveDate::from_ymd_opt(year, month, 1)
+        .map(|date| date.weekday().num_days_from_monday())
+        .ok_or_else(|| std::io::Error::other("invalid timeline month"))
 }
 
 #[cfg(test)]
