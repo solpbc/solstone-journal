@@ -789,6 +789,11 @@ the set-aside directory is finished.
 - ⚠ **A `maint/` directory inside an app is not necessarily app machinery.** `activities`' one-shot icon migration operates on facet activity **definitions** and is not reached by the maintenance registry at all, which discovers `apps/*/maintenance.py`.
 - 📌 **Directory counts over-state these four by roughly 8×.** The six directories total 18,539 lines; the real owner-visible web surface across the four survivors is ~7,470, of which 3,878 is `timeline`'s JS and CSS that relocates rather than being rewritten — leaving ~2,278 lines of route code actually replaced by Rust.
 
+**Two findings from web-surface conversion, 2026-08-14** — engineering findings, not a grouping decision:
+
+- 🔴 **When an app's web UI is removed, its registry row must STAY at `converted: false`.** Measured on `activities`, whose six registered API routes back a native command grammar rather than the UI, so the UI can go while those routes must not. The row is what holds them behind the session gate: drop it and `known_app` returns `None`, the whole `/app/{name}` prefix becomes gate-exempt, and the create route writes owner records into a journal that was never established. ✅ With the row present, `POST` against an unestablished journal answers 302 and creates **zero** files. ⚠ Removing the row alongside the UI reads as cleanup and is a data-safety regression.
+- 📌 **A frozen conformance corpus records the reference, so a deliberate app drop reads as a regression forever.** Dropping `reflections` makes the shell's app list diverge from the recorded corpus permanently, and that corpus cannot be regenerated once the reference tree it was recorded from is gone. Carry the divergence as a narrow, named exception at the point of comparison, one that asserts the row was present before it removes it, rather than editing a fixture that several conversions read.
+
 ⛔ **The `convey` shell is not an app plate.** It is `P-web` core and already has its crate.
 
 🔒 **OPERATOR RULING 2026-08-09: convey/Flask is REPLACED OUTRIGHT, not proxied** — *"a minimum viable path through the stack that is all rust, no python, no flask"* — and breaking other surfaces is authorized while a lane stays in its own scope. ⛔ That retires proxy, bridge and WSGI-shim shapes for **all ten** `P-web-*` plates.

@@ -58,15 +58,15 @@ fn corpus() -> Value {
 }
 
 /// Permanent documented divergence, introduced 2026-08-13, with no expiry
-/// condition: the frozen capture permanently records the deleted reference's
+/// condition: the frozen corpus permanently records the deleted reference's
 /// `observer`, while the shell permanently serves `devices`. Because this
 /// cannot expire, narrowness is the safeguard: this is keyed to the one
 /// renamed entry and exactly two keys. Never generalize this into a rule over
 /// app names or other keys, and never retire it.
 /// Permanent documented divergence, introduced 2026-08-14, with no expiry
-/// condition: the frozen capture permanently records the deleted reference's
+/// condition: the frozen corpus permanently records the deleted reference's
 /// `reflections` app, which was dropped by ruling and whose Python surface no
-/// longer exists. The capture CANNOT be regenerated -- its generator needs a
+/// longer exists. The corpus CANNOT be regenerated -- its generator needs a
 /// runnable reference tree and this wave removes it -- so the fixture is a
 /// frozen record and the divergence is absorbed here instead. Because this
 /// cannot expire, narrowness is the safeguard: it is keyed to the one dropped
