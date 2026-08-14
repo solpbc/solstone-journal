@@ -136,7 +136,13 @@ fn render_json(resolved: &ResolvedTalent, metadata: Map<String, Value>, body: St
         metadata,
         body,
     };
-    success(emit::jsonl(&[config], &ListOptions::default()))
+    success(emit::jsonl(
+        &[config],
+        &ListOptions {
+            disabled: true,
+            ..ListOptions::default()
+        },
+    ))
 }
 
 fn render_default(resolved: &ResolvedTalent, metadata: Map<String, Value>) -> CliRun {
@@ -214,7 +220,7 @@ fn python_repr(value: &Value) -> String {
             .replace("true", "True")
             .replace("false", "False"),
         Value::Number(value) => value.to_string(),
-        Value::String(value) => format!("'{}'", python_escape(value)),
+        Value::String(value) => python_string_repr(value),
         Value::Array(values) => format!(
             "[{}]",
             values
@@ -227,19 +233,28 @@ fn python_repr(value: &Value) -> String {
             "{{{}}}",
             values
                 .iter()
-                .map(|(key, value)| format!("'{}': {}", python_escape(key), python_repr(value)))
+                .map(|(key, value)| format!("{}: {}", python_string_repr(key), python_repr(value)))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
     }
 }
 
-fn python_escape(value: &str) -> String {
+fn python_string_repr(value: &str) -> String {
+    let delimiter = if value.contains('\'') && !value.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    format!("{delimiter}{}{delimiter}", python_escape(value, delimiter))
+}
+
+fn python_escape(value: &str, delimiter: char) -> String {
     value
         .chars()
         .flat_map(|character| match character {
             '\\' => "\\\\".chars().collect::<Vec<_>>(),
-            '\'' => "\\'".chars().collect(),
+            character if character == delimiter => format!("\\{character}").chars().collect(),
             '\n' => "\\n".chars().collect(),
             '\r' => "\\r".chars().collect(),
             '\t' => "\\t".chars().collect(),
@@ -534,6 +549,14 @@ mod tests {
             }
         );
         assert_eq!(
+            run(&root, &["show", "missing", "--prompt"]),
+            CliRun {
+                stdout: String::new(),
+                stderr: "Prompt not found: missing\n".to_owned(),
+                exit_code: 1
+            }
+        );
+        assert_eq!(
             run(&root, &["show", "demo:missing"]),
             CliRun {
                 stdout: String::new(),
@@ -560,6 +583,24 @@ mod tests {
         );
         assert!(!output.stdout.contains("source"));
         assert!(!output.stdout.contains("mtime"));
+
+        fs::write(
+            root.path().join("talent/disabled.md"),
+            "{\n\"title\": \"Disabled\",\n\"disabled\": true\n}\nbody",
+        )
+        .expect("disabled");
+        let json = run(&root, &["show", "disabled", "--json"]);
+        assert_eq!(json.exit_code, 0, "{}", json.stderr);
+        assert!(json.stdout.contains("\"disabled\": true"));
+        let default = run(&root, &["show", "disabled"]);
+        assert_eq!(default.exit_code, 0, "{}", default.stderr);
+        assert!(default.stdout.contains("  disabled:      True\n"));
+    }
+
+    #[test]
+    fn python_repr_chooses_the_python_string_delimiter() {
+        assert_eq!(python_repr(&json!("don't")), r#""don't""#);
+        assert_eq!(python_repr(&json!("say \"don't\"")), r#"'say "don\'t"'"#);
     }
 
     #[test]
