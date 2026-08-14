@@ -15,9 +15,9 @@ use axum::{
 };
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
-    EntityMergeOptions, EntityReviewCandidateError, LockError, MalformedPolicy,
-    accept_merge_candidate, dismiss_merge_candidate, load_merge_candidates, preview_entity_merge,
-    read_ambiguities,
+    EncoderIdentity, EntityMergeError, EntityMergeOptions, EntityReviewCandidateError,
+    EntityWriteError, LockError, MalformedPolicy, accept_merge_candidate, commit_entity_merge,
+    dismiss_merge_candidate, load_merge_candidates, preview_entity_merge, read_ambiguities,
 };
 use solstone_core_speaker_resolve::{
     candidate_tracker::CandidateTracker, keep_separate::find_assertion,
@@ -96,7 +96,7 @@ fn load_state(root: &Path) -> Result<Value, String> {
         .into_iter()
         .map(entity_item)
         .collect::<Vec<_>>();
-    let ambiguity_items = read_ambiguities(root, MalformedPolicy::WarnAndSkip)
+    let ambiguity_items = read_ambiguities(root, MalformedPolicy::Raise)
         .map_err(|error| error.to_string())?
         .into_iter()
         .filter(|row| row.get("status").and_then(Value::as_str) == Some("open"))
@@ -396,6 +396,8 @@ async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             ),
         );
     }
+    // Native previews currently compute only identity additions. The remaining
+    // response fields retain the Flask shape until core entity exposes them.
     match preview_entity_merge(&root, &source, &target, EntityMergeOptions::default()) {
         Ok(preview) => Json(json!({"status":"preview","kind":"entity_merge","key":entity_key(&facet,&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"facet_moved_count":0,"facet_merged_count":0,"observations_appended":0,"labels_rewritten":0,"corrections_rewritten":0,"segment_errors":[],"voiceprints_added":0,"voiceprints_target_total":0}})).into_response(),
         Err(error) => result_error("entity_merge", entity_key(&facet, &source, &target), &error.to_string()),
@@ -416,39 +418,91 @@ fn entity_transition(root: &Path, body: Value, accept: bool) -> Response {
         Ok(fields) => fields,
         Err(response) => return *response,
     };
-    let key = entity_key(&facet, &source, &target);
-    let candidate = match entity_candidate(root, &facet, &source, &target) {
+    match entity_transition_value(root, &facet, &source, &target, accept) {
+        Ok(value) => result_response(value),
+        Err(TransitionFailure::Busy) => busy(ENTITY_BUSY),
+        Err(TransitionFailure::Internal(error)) => internal(error),
+    }
+}
+
+fn entity_transition_value(
+    root: &Path,
+    facet: &str,
+    source: &str,
+    target: &str,
+    accept: bool,
+) -> Result<Value, TransitionFailure> {
+    let key = entity_key(facet, source, target);
+    let candidate = match entity_candidate(root, facet, source, target) {
         Ok(Some(value)) => value,
-        Ok(None) => return result_error("entity_merge", key, "candidate not found"),
-        Err(error) => return internal(error),
+        Ok(None) => {
+            return Ok(result_error_value(
+                "entity_merge",
+                key,
+                "candidate not found",
+            ));
+        }
+        Err(error) => return Err(TransitionFailure::Internal(error)),
     };
     let status = string(&candidate, "status");
     if accept && status == "accepted" {
-        return Json(json!({"status":"already_accepted","kind":"entity_merge","key":key,"candidate":candidate,"merge_id":candidate.get("merge_id")})).into_response();
+        let merge_id = merge_id(&candidate);
+        return Ok(
+            json!({"status":"already_accepted","kind":"entity_merge","key":key,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id)}),
+        );
     }
     if !accept && status == "dismissed" {
-        return Json(json!({"status":"already_dismissed","kind":"entity_merge","key":key,"candidate":candidate})).into_response();
+        return Ok(
+            json!({"status":"already_dismissed","kind":"entity_merge","key":key,"candidate":candidate}),
+        );
     }
     if status != "open" {
-        return result_error(
+        return Ok(result_error_value(
             "entity_merge",
             key,
             &format!(
                 "cannot {} candidate with status {status}",
                 if accept { "accept" } else { "dismiss" }
             ),
-        );
+        ));
     }
-    let outcome = if accept {
-        accept_merge_candidate(root, &facet, &source, &target, None)
-    } else {
-        dismiss_merge_candidate(root, &facet, &source, &target)
-    };
-    match outcome {
-        Ok(Some(candidate)) => Json(json!({"status":if accept {"accepted"} else {"dismissed"},"kind":"entity_merge","key":key,"candidate":candidate})).into_response(),
-        Ok(None) => result_error("entity_merge", key, "candidate not found"),
-        Err(error) if entity_busy(&error) => busy(ENTITY_BUSY),
-        Err(error) => internal(error.to_string()),
+    if accept {
+        let report = match commit_entity_merge(
+            root,
+            source,
+            target,
+            EntityMergeOptions::default(),
+            &unresolved_voiceprint_encoder(),
+        ) {
+            Ok(report) => report,
+            Err(error) if merge_busy(&error) => return Err(TransitionFailure::Busy),
+            Err(error) => return Ok(result_error_value("entity_merge", key, &error.to_string())),
+        };
+        let merge_id = report.merge_id.clone();
+        return match accept_merge_candidate(root, facet, source, target, Some(&merge_id)) {
+            Ok(Some(candidate)) => Ok(
+                json!({"status":"accepted","kind":"entity_merge","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+            ),
+            Ok(None) => Ok(result_error_value(
+                "entity_merge",
+                key,
+                "candidate not found",
+            )),
+            Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
+            Err(error) => Err(TransitionFailure::Internal(error.to_string())),
+        };
+    }
+    match dismiss_merge_candidate(root, facet, source, target) {
+        Ok(Some(candidate)) => {
+            Ok(json!({"status":"dismissed","kind":"entity_merge","key":key,"candidate":candidate}))
+        }
+        Ok(None) => Ok(result_error_value(
+            "entity_merge",
+            key,
+            "candidate not found",
+        )),
+        Err(error) if entity_busy(&error) => Err(TransitionFailure::Busy),
+        Err(error) => Err(TransitionFailure::Internal(error.to_string())),
     }
 }
 
@@ -478,21 +532,19 @@ fn entity_batch(root: &Path, body: Value, accept: bool) -> Response {
         let result = if facet.is_empty() || source.is_empty() || target.is_empty() {
             json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":"candidate is missing facet, source_slug, or target_slug"})
         } else {
-            let response = entity_transition(
-                root,
-                json!({"facet":facet,"source_slug":source,"target_slug":target}),
-                accept,
-            );
-            // Batch paths retain per-item reporting. The native branch result is
-            // derived directly instead of exposing a route-level timeout.
-            let status = response.status();
-            if status == StatusCode::SERVICE_UNAVAILABLE {
-                json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":ENTITY_BUSY})
-            } else {
-                json!({"facet":facet,"source_slug":source,"target_slug":target,"status":if status.is_success() { if accept {"accepted"} else {"dismissed"} } else {"error"},"error":if status.is_success() {Value::Null} else {Value::String("candidate operation failed".to_owned())}})
+            match entity_transition_value(root, &facet, &source, &target, accept) {
+                Ok(value) => batch_item_result(&facet, &source, &target, value, accept),
+                // Batch paths retain per-item reporting instead of exposing a
+                // route-level timeout.
+                Err(TransitionFailure::Busy) => {
+                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":ENTITY_BUSY})
+                }
+                Err(TransitionFailure::Internal(error)) => {
+                    json!({"facet":facet,"source_slug":source,"target_slug":target,"status":"error","error":error})
+                }
             }
         };
-        if result["status"] == if accept { "accepted" } else { "dismissed" } {
+        if success_status(&result, accept) {
             ok += 1;
         }
         results.push(result);
@@ -527,6 +579,8 @@ async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             ),
         );
     }
+    // Native previews currently compute only identity additions. The remaining
+    // response fields retain the Flask shape until core entity exposes them.
     match preview_entity_merge(&root,&source,&target,EntityMergeOptions { keep_source_as_aka: true }) { Ok(preview) => Json(json!({"status":"preview","kind":"speaker_name_variant","key":speaker_key(&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"facet_moved_count":0,"facet_merged_count":0,"observations_appended":0,"labels_rewritten":0,"corrections_rewritten":0,"segment_errors":[],"voiceprints_added":0,"voiceprints_target_total":0}})).into_response(), Err(error) => result_error("speaker_name_variant",speaker_key(&source,&target),&error.to_string()) }
 }
 
@@ -543,36 +597,99 @@ fn speaker_transition(root: &Path, body: Value, accept: bool) -> Response {
         Ok(value) => value,
         Err(response) => return *response,
     };
-    let key = speaker_key(&source, &target);
-    let candidate = match find_speaker(root, &source, &target) {
+    match speaker_transition_value(root, &source, &target, accept) {
+        Ok(value) => result_response(value),
+        Err(TransitionFailure::Busy) => busy(SPEAKER_BUSY),
+        Err(TransitionFailure::Internal(error)) => internal(error),
+    }
+}
+
+fn speaker_transition_value(
+    root: &Path,
+    source: &str,
+    target: &str,
+    accept: bool,
+) -> Result<Value, TransitionFailure> {
+    let key = speaker_key(source, target);
+    let candidate = match find_speaker(root, source, target) {
         Ok(Some(value)) => value,
-        Ok(None) => return result_error("speaker_name_variant", key, "candidate not found"),
-        Err(error) => return internal(error),
+        Ok(None) => {
+            return Ok(result_error_value(
+                "speaker_name_variant",
+                key,
+                "candidate not found",
+            ));
+        }
+        Err(error) => return Err(TransitionFailure::Internal(error)),
     };
     let status = string(&candidate, "status");
     if accept && status == "accepted" {
-        return Json(json!({"status":"already_accepted","kind":"speaker_name_variant","key":key,"candidate":candidate,"merge_id":candidate.get("merge_id")})).into_response();
+        let merge_id = merge_id(&candidate);
+        return Ok(
+            json!({"status":"already_accepted","kind":"speaker_name_variant","key":key,"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(merge_id)}),
+        );
     }
     if !accept && status == "dismissed" {
-        return Json(json!({"status":"already_dismissed","kind":"speaker_name_variant","key":key,"candidate":candidate})).into_response();
+        return Ok(
+            json!({"status":"already_dismissed","kind":"speaker_name_variant","key":key,"candidate":candidate}),
+        );
     }
     if status != "open" {
-        return result_error(
+        return Ok(result_error_value(
             "speaker_name_variant",
             key,
             &format!(
                 "cannot {} candidate with status {status}",
                 if accept { "accept" } else { "dismiss" }
             ),
-        );
+        ));
     }
-    let outcome = if accept {
-        speaker_store::accept_candidate(root, &source, &target, None)
-            .map_err(|error| error.to_string())
-    } else {
-        speaker_store::dismiss_candidate(root, &source, &target).map_err(|error| error.to_string())
-    };
-    match outcome { Ok(Some(candidate))=>Json(json!({"status":if accept{"accepted"}else{"dismissed"},"kind":"speaker_name_variant","key":key,"candidate":candidate})).into_response(),Ok(None)=>result_error("speaker_name_variant",key,"candidate not found"),Err(error) if error.contains("timed out")=>busy(SPEAKER_BUSY),Err(error)=>internal(error) }
+    if accept {
+        let report = match commit_entity_merge(
+            root,
+            source,
+            target,
+            EntityMergeOptions {
+                keep_source_as_aka: true,
+            },
+            &unresolved_voiceprint_encoder(),
+        ) {
+            Ok(report) => report,
+            Err(error) if merge_busy(&error) => return Err(TransitionFailure::Busy),
+            Err(error) => {
+                return Ok(result_error_value(
+                    "speaker_name_variant",
+                    key,
+                    &error.to_string(),
+                ));
+            }
+        };
+        let merge_id = report.merge_id.clone();
+        return match speaker_store::accept_candidate(root, source, target, Some(&merge_id)) {
+            Ok(Some(candidate)) => Ok(
+                json!({"status":"accepted","kind":"speaker_name_variant","key":key,"merge":merge_report_value(&report),"candidate":candidate,"merge_id":merge_id,"undo":entity_merge_undo(Some(&merge_id))}),
+            ),
+            Ok(None) => Ok(result_error_value(
+                "speaker_name_variant",
+                key,
+                "candidate not found",
+            )),
+            Err(error) if speaker_busy(&error) => Err(TransitionFailure::Busy),
+            Err(error) => Err(TransitionFailure::Internal(error.to_string())),
+        };
+    }
+    match speaker_store::dismiss_candidate(root, source, target) {
+        Ok(Some(candidate)) => Ok(
+            json!({"status":"dismissed","kind":"speaker_name_variant","key":key,"candidate":candidate}),
+        ),
+        Ok(None) => Ok(result_error_value(
+            "speaker_name_variant",
+            key,
+            "candidate not found",
+        )),
+        Err(error) if speaker_busy(&error) => Err(TransitionFailure::Busy),
+        Err(error) => Err(TransitionFailure::Internal(error.to_string())),
+    }
 }
 
 async fn pair_accept(State(root): State<PathBuf>, body: Bytes) -> Response {
@@ -708,6 +825,55 @@ fn find_speaker(root: &Path, source: &str, target: &str) -> Result<Option<Value>
 fn entity_key(facet: &str, source: &str, target: &str) -> String {
     format!("{facet}|{source}|{target}")
 }
+
+enum TransitionFailure {
+    Busy,
+    Internal(String),
+}
+
+fn unresolved_voiceprint_encoder() -> EncoderIdentity {
+    EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
+}
+
+fn merge_report_value(report: &solstone_core_entity::EntityMergeReport) -> Value {
+    json!({
+        "merge_id": report.merge_id,
+        "source_id": report.source_id,
+        "target_id": report.target_id,
+        "completed_phases": report.completed_phases,
+        "aliases_added": report.aliases_added,
+        "emails_added": report.emails_added,
+    })
+}
+
+fn merge_id(candidate: &Value) -> Option<&str> {
+    candidate
+        .get("merge_id")
+        .and_then(Value::as_str)
+        .filter(|merge_id| !merge_id.is_empty())
+}
+
+fn entity_merge_undo(merge_id: Option<&str>) -> Value {
+    json!({
+        "available": merge_id.is_some(),
+        "merge_id": merge_id,
+        "reason": merge_id.is_none().then_some("No recorded merge id is available."),
+    })
+}
+
+fn merge_busy(error: &EntityMergeError) -> bool {
+    matches!(
+        error,
+        EntityMergeError::Write(EntityWriteError::TrustLock(
+            solstone_core_entity::EntityTrustLockError::Lock(LockError::Timeout(_))
+        )) | EntityMergeError::Write(EntityWriteError::AmbiguityLock(LockError::Timeout(_)))
+    )
+}
+
 fn entity_busy(error: &EntityReviewCandidateError) -> bool {
     matches!(
         error,
@@ -717,6 +883,78 @@ fn entity_busy(error: &EntityReviewCandidateError) -> bool {
             )
     )
 }
+
+fn speaker_busy(error: &speaker_store::SpeakerReviewCandidateError) -> bool {
+    matches!(
+        error,
+        speaker_store::SpeakerReviewCandidateError::Lock(LockError::Timeout(_))
+    )
+}
+
+fn result_response(result: Value) -> Response {
+    if result.get("status").and_then(Value::as_str) == Some("error") {
+        (StatusCode::BAD_REQUEST, Json(result)).into_response()
+    } else {
+        Json(result).into_response()
+    }
+}
+
+fn result_error_value(kind: &str, key: String, error: &str) -> Value {
+    json!({"status":"error","kind":kind,"key":key,"error":error})
+}
+
+fn success_status(result: &Value, accept: bool) -> bool {
+    matches!(
+        (accept, result.get("status").and_then(Value::as_str)),
+        (true, Some("accepted" | "already_accepted"))
+            | (false, Some("dismissed" | "already_dismissed"))
+    )
+}
+
+fn batch_item_result(
+    facet: &str,
+    source: &str,
+    target: &str,
+    result: Value,
+    accept: bool,
+) -> Value {
+    let status = result
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let mut item = Map::from_iter([
+        ("facet".to_owned(), Value::String(facet.to_owned())),
+        ("source_slug".to_owned(), Value::String(source.to_owned())),
+        ("target_slug".to_owned(), Value::String(target.to_owned())),
+        ("status".to_owned(), Value::String(status.to_owned())),
+        (
+            "error".to_owned(),
+            result.get("error").cloned().unwrap_or(Value::Null),
+        ),
+    ]);
+    if success_status(&result, accept) && result.get("undo").is_some() {
+        item.insert(
+            "merge_id".to_owned(),
+            result.get("merge_id").cloned().unwrap_or(Value::Null),
+        );
+        item.insert("undo".to_owned(), result["undo"].clone());
+    }
+    if result.get("operation_state").and_then(Value::as_str) == Some("repair_required") {
+        for field in [
+            "operation_state",
+            "mutation_applied",
+            "source_state",
+            "target_state",
+            "safe_remediation",
+        ] {
+            if let Some(value) = result.get(field) {
+                item.insert(field.to_owned(), value.clone());
+            }
+        }
+    }
+    Value::Object(item)
+}
+
 fn missing(field: &str) -> Response {
     http::error(
         "missing_required_field",
@@ -750,11 +988,7 @@ fn internal(detail: String) -> Response {
     )
 }
 fn result_error(kind: &str, key: String, error: &str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(json!({"status":"error","kind":kind,"key":key,"error":error})),
-    )
-        .into_response()
+    result_response(result_error_value(kind, key, error))
 }
 
 fn corrupt_config(root: &Path) -> Option<Response> {
@@ -807,5 +1041,103 @@ mod tests {
             assert_eq!(body["reason_code"], "missing_required_field");
             assert_eq!(body["detail"], "Missing facet");
         }
+    }
+
+    fn mergeable_entity_root() -> tempfile::TempDir {
+        let root = crate::test_support::phase_root("established_empty");
+        crate::test_support::write(
+            &root.path().join("entities/review-candidates.jsonl"),
+            "{\"facet\":\"work\",\"source_slug\":\"source\",\"target_slug\":\"target\",\"status\":\"open\",\"evidence\":{\"detection_count\":1}}\n",
+        );
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "source",
+            &json!({"id":"source","name":"Source","aka":["Source Alias"],"emails":[]}),
+            None,
+        )
+        .expect("source identity");
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "target",
+            &json!({"id":"target","name":"Target","aka":[],"emails":[]}),
+            None,
+        )
+        .expect("target identity");
+        root
+    }
+
+    async fn post_json(router: Router, path: &str, body: Value) -> Value {
+        let response = router
+            .oneshot(
+                Request::post(path)
+                    .body(Body::from(body.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json response")
+    }
+
+    #[tokio::test]
+    async fn entity_accept_commits_the_merge_before_accepting_the_candidate() {
+        let root = mergeable_entity_root();
+        let response = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept",
+            json!({"facet":"work","source_slug":"source","target_slug":"target"}),
+        )
+        .await;
+
+        assert_eq!(response["status"], "accepted");
+        assert!(response["merge_id"].is_string());
+        assert_eq!(response["candidate"]["merge_id"], response["merge_id"]);
+        assert_eq!(response["undo"]["available"], true);
+        let target = solstone_core_entity::read_entity_identity(root.path(), "target")
+            .expect("target identity")
+            .expect("target exists");
+        assert!(
+            target.value()["aka"]
+                .as_array()
+                .expect("aliases")
+                .contains(&Value::String("Source Alias".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn entity_batch_preserves_accepted_and_already_accepted_merge_details() {
+        let root = mergeable_entity_root();
+        let body =
+            json!({"items":[{"facet":"work","source_slug":"source","target_slug":"target"}]});
+        let accepted = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept-batch",
+            body.clone(),
+        )
+        .await;
+        assert_eq!(accepted["accepted"], 1);
+        assert_eq!(accepted["failed"], 0);
+        assert_eq!(accepted["results"][0]["status"], "accepted");
+        assert!(accepted["results"][0]["merge_id"].is_string());
+        assert_eq!(accepted["results"][0]["undo"]["available"], true);
+
+        let already_accepted = post_json(
+            routes(root.path().to_path_buf()),
+            "/app/curation/api/entity/accept-batch",
+            body,
+        )
+        .await;
+        assert_eq!(already_accepted["accepted"], 1);
+        assert_eq!(already_accepted["failed"], 0);
+        assert_eq!(already_accepted["results"][0]["status"], "already_accepted");
+        assert_eq!(
+            already_accepted["results"][0]["merge_id"],
+            accepted["results"][0]["merge_id"]
+        );
+        assert_eq!(already_accepted["results"][0]["undo"]["available"], true);
     }
 }

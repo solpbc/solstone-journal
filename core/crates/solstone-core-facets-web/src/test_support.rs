@@ -63,7 +63,7 @@ fn curation(root: &Path) {
     );
     write(
         &root.join("entities/ambiguities.jsonl"),
-        "{\"ambiguity_id\":\"amb_ed9e7f6db452dc02e3f6f752\",\"status\":\"open\",\"original_query\":\"Jordan\",\"observed_tier\":5,\"occurrence_count\":1,\"origins\":[{\"day\":\"20260510\",\"facet\":\"work\",\"field\":\"participation.name\",\"lane\":\"corpus.seed\",\"record_id\":\"100000_300\"}],\"ranked_candidates\":[{\"id\":\"jordan-vance\",\"name\":\"Jordan Vance\",\"score\":0.61,\"tier\":5},{\"id\":\"jordan-vancey\",\"name\":\"Jordan Vancey\",\"score\":0.58,\"tier\":5}]}\n",
+        "{\"schema_version\":1,\"ambiguity_id\":\"amb_ed9e7f6db452dc02e3f6f752\",\"scope\":{\"kind\":\"facet\",\"facet\":\"work\"},\"normalized_query\":\"jordan\",\"status\":\"open\",\"original_query\":\"Jordan\",\"latest_query\":\"Jordan\",\"first_seen\":\"2026-05-15T12:00:00Z\",\"last_seen\":\"2026-05-15T12:00:00Z\",\"observed_tier\":5,\"occurrence_count\":1,\"origins\":[{\"day\":\"20260510\",\"facet\":\"work\",\"field\":\"participation.name\",\"lane\":\"corpus.seed\",\"record_id\":\"100000_300\"}],\"origin_keys\":[\"{\\\"day\\\":\\\"20260510\\\",\\\"facet\\\":\\\"work\\\",\\\"field\\\":\\\"participation.name\\\",\\\"lane\\\":\\\"corpus.seed\\\",\\\"record_id\\\":\\\"100000_300\\\"}\"],\"resolved_entity_id\":null,\"resolved_at\":null,\"audit\":{\"prior_choices\":[]},\"ranked_candidates\":[{\"id\":\"jordan-vance\",\"name\":\"Jordan Vance\",\"score\":0.61,\"tier\":5},{\"id\":\"jordan-vancey\",\"name\":\"Jordan Vancey\",\"score\":0.58,\"tier\":5}]}\n",
     );
     write(
         &root.join("speakers/review-candidates.jsonl"),

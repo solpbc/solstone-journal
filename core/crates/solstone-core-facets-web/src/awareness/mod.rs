@@ -176,12 +176,9 @@ async fn create_log(State((root, clock)): State<(PathBuf, Clock)>, body: Bytes) 
         );
     };
     let data = body.get("data").and_then(Value::as_object);
-    let mut extra = Map::new();
-    for (key, value) in body.as_object().expect("JSON body is object") {
-        if !matches!(key.as_str(), "kind" | "key" | "message" | "data") {
-            extra.insert(key.clone(), value.clone());
-        }
-    }
+    // The HTTP contract accepts only the documented fields; framework-owned
+    // fields such as `ts` must not be supplied by a caller.
+    let extra = Map::new();
     let now = clock.now();
     match solstone_core_facets::append_log(
         &root,
@@ -333,5 +330,28 @@ mod tests {
             .expect("json");
             assert_eq!(body["reason_code"], reason);
         }
+    }
+
+    #[tokio::test]
+    async fn create_log_does_not_allow_a_request_to_override_the_timestamp() {
+        let root = crate::test_support::phase_root("established_empty");
+        let response = routes(
+            root.path().to_path_buf(),
+            crate::test_support::fixed_clock(),
+        )
+        .oneshot(
+            Request::post("/app/awareness/api/log")
+                .body(Body::from(r#"{"kind":"state","key":"test","ts":0}"#))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+        let body: Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("json");
+        assert_eq!(body["ts"], 1_778_846_400_000_i64);
     }
 }
