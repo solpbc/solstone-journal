@@ -2692,6 +2692,7 @@ dependencies = [
  "solstone-core-cogitate-tools",
  "solstone-core-cogitate-wire",
  "solstone-core-convey-shell",
+ "solstone-core-cortex",
  "solstone-core-doctor",
  "solstone-core-entity",
  "solstone-core-facets",
@@ -3103,6 +3104,21 @@ dependencies = [
  "ureq",
  "x509-parser",
  "zip",
+]
+
+[[package]]
+name = "solstone-core-cortex"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "nix",
+ "serde_json",
+ "solstone-core-callosum",
+ "solstone-core-generate-wire",
+ "solstone-core-journal-cli",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

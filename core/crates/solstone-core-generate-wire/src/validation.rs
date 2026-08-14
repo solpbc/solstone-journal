@@ -6,7 +6,9 @@
 use std::io;
 use std::path::Path;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
+
+pub use crate::token_log::usage_for_log;
 
 use crate::responsiveness::{
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS, ResponsivenessSignal, classify_output_responsiveness,
@@ -105,52 +107,6 @@ pub fn assess_provider_result(view: ProviderResultView<'_>) -> ProviderResultAss
     }
 }
 
-pub fn usage_for_log(usage: &Value) -> Value {
-    let mut normalized = Map::new();
-    for name in [
-        "input_tokens",
-        "output_tokens",
-        "total_tokens",
-        "cached_tokens",
-        "reasoning_tokens",
-        "cache_creation_tokens",
-        "requests",
-    ] {
-        if usage
-            .get(name)
-            .and_then(Value::as_u64)
-            .is_some_and(|value| value != 0)
-        {
-            normalized.insert(name.to_owned(), usage[name].clone());
-        }
-    }
-    if !normalized.contains_key("cached_tokens")
-        && usage
-            .get("cached_input_tokens")
-            .and_then(Value::as_u64)
-            .is_some_and(|value| value != 0)
-    {
-        normalized.insert("cached_tokens".into(), usage["cached_input_tokens"].clone());
-    }
-    if !normalized.contains_key("total_tokens") {
-        let input = normalized
-            .get("input_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0);
-        let output = normalized
-            .get("output_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0);
-        if input != 0 || output != 0 {
-            normalized.insert(
-                "total_tokens".into(),
-                Value::from(input.saturating_add(output)),
-            );
-        }
-    }
-    Value::Object(normalized)
-}
-
 pub fn sanitize_finish_reason(value: &str) -> SanitizedFinishReason {
     if value.chars().count() > MAX_SAFE_FINISH_REASON_LENGTH {
         return SanitizedFinishReason::Unknown;
@@ -185,7 +141,7 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use serde_json::json;
+    use serde_json::{Map, json};
 
     use super::*;
 

@@ -555,6 +555,19 @@ pub const SENSE_HELP: &str = concat!(
     "  -d, --debug           Enable debug logging\n",
 );
 
+pub const CORTEX_USAGE: &str = "usage: journal cortex [-h] [-v] [-d]\n";
+
+pub const CORTEX_HELP: &str = concat!(
+    "usage: journal cortex [-h] [-v] [-d]\n",
+    "\n",
+    "solstone Cortex Talent Manager\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
 pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
 
 pub const CHECK_HELP: &str = concat!(
@@ -775,6 +788,9 @@ pub enum Command {
     Sense(SenseOptions),
     SenseUsage,
     SenseHelp,
+    Cortex(ServiceOptions),
+    CortexUsage(CortexUsageError),
+    CortexHelp,
     Supervisor(SupervisorOptions),
     SupervisorUsage,
     SupervisorHelp,
@@ -1072,6 +1088,9 @@ pub struct ConveyOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConveyUsageError(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CortexUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RestartConveyOptions {
@@ -1645,6 +1664,11 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(SenseParse::Run(options)) => Ok(Command::Sense(options)),
             Ok(SenseParse::Help) => Ok(Command::SenseHelp),
             Err(()) => Ok(Command::SenseUsage),
+        },
+        [command, rest @ ..] if command == OsStr::new("cortex") => match parse_cortex(rest) {
+            Ok(CortexParse::Run(options)) => Ok(Command::Cortex(options)),
+            Ok(CortexParse::Help) => Ok(Command::CortexHelp),
+            Err(error) => Ok(Command::CortexUsage(error)),
         },
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             let help = |argument: &OsString| {
@@ -3902,6 +3926,36 @@ fn parse_service(args: &[OsString]) -> Result<ServiceOptions, UsageError> {
 enum SenseParse {
     Run(SenseOptions),
     Help,
+}
+
+enum CortexParse {
+    Run(ServiceOptions),
+    Help,
+}
+
+fn parse_cortex(args: &[OsString]) -> Result<CortexParse, CortexUsageError> {
+    let mut verbose = false;
+    let mut debug = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].to_str() {
+            Some("-h" | "--help") => return Ok(CortexParse::Help),
+            Some("-v" | "--verbose") if !verbose => verbose = true,
+            Some("-d" | "--debug") if !debug => debug = true,
+            _ => {
+                return Err(CortexUsageError(format!(
+                    "unrecognized arguments: {}",
+                    args[index..]
+                        .iter()
+                        .map(|value| value.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )));
+            }
+        }
+        index += 1;
+    }
+    Ok(CortexParse::Run(ServiceOptions { verbose, debug }))
 }
 
 fn parse_sense(args: &[OsString]) -> Result<SenseParse, ()> {
@@ -8069,5 +8123,27 @@ mod tests {
                 "{values:?}"
             );
         }
+    }
+
+    #[test]
+    fn cortex_nonsense_is_detail_carrying_usage_error() {
+        assert_eq!(
+            evaluate_args(&args(&["cortex", "--nonsense"])),
+            Ok(Command::CortexUsage(CortexUsageError(
+                "unrecognized arguments: --nonsense".into()
+            )))
+        );
+    }
+
+    #[test]
+    fn cortex_help_matches_argparse_body_verbatim() {
+        assert_eq!(
+            evaluate_args(&args(&["cortex", "--help"])),
+            Ok(Command::CortexHelp)
+        );
+        assert_eq!(
+            CORTEX_HELP,
+            "usage: journal cortex [-h] [-v] [-d]\n\nsolstone Cortex Talent Manager\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+        );
     }
 }

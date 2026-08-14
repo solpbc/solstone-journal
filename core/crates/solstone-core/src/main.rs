@@ -22,19 +22,19 @@ use solstone_core_cli::{
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP,
     CHECK_USAGE, CONFIG_HELP, CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE,
     CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP,
-    CONVEY_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, ENGAGE_HELP,
-    ENGAGE_USAGE, EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP,
-    FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
-    GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
-    IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE,
-    IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE,
-    INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
-    IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
-    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
-    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    CONVEY_USAGE, CORTEX_HELP, CORTEX_USAGE, CogitateCommand, Command, ContractCommand,
+    ConveyOptions, ENGAGE_HELP, ENGAGE_USAGE, EXPORT_HELP, EXPORT_USAGE, ExportOptions,
+    FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand,
+    GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP,
+    HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP,
+    IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE,
+    IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP,
+    INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand,
+    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SPL_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
@@ -288,6 +288,16 @@ fn main() -> ExitCode {
         Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "journal sense"),
         Ok(Command::SenseHelp) => {
             print!("{SENSE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Cortex(options)) => run_cortex_service(options),
+        Ok(Command::CortexUsage(error)) => {
+            eprint!("{CORTEX_USAGE}");
+            eprintln!("journal cortex: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::CortexHelp) => {
+            print!("{CORTEX_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::Supervisor(options)) => supervisor::run(options),
@@ -4719,6 +4729,36 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("sense service failed: {}", error.class());
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
+}
+
+fn run_cortex_service(options: ServiceOptions) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(_) => return ExitCode::from(EXIT_TEMPFAIL),
+    };
+    match runtime.block_on(solstone_core_cortex::run_native_service(
+        journal.path,
+        solstone_core_cortex::CortexOptions {
+            verbose: options.verbose,
+            debug: options.debug,
+        },
+    )) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("cortex service failed: {}", error.class());
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }

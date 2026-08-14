@@ -64,6 +64,7 @@ members = [
     "crates/solstone-core-ingest-resolve",
     "crates/solstone-core-spl",
     "crates/solstone-core-sense",
+    "crates/solstone-core-cortex",
     "crates/solstone-core-service-unit",
     "crates/solstone-core-speaker-id",
     "crates/solstone-core-speaker-resolve",
@@ -189,6 +190,7 @@ solstone-core-thinking = { path = "crates/solstone-core-thinking" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-sense = { path = "crates/solstone-core-sense" }
+solstone-core-cortex = { path = "crates/solstone-core-cortex" }
 solstone-core-service-unit = { path = "crates/solstone-core-service-unit" }
 solstone-core-steward-prune = { path = "crates/solstone-core-steward-prune" }
 solstone-core-health-web = { path = "crates/solstone-core-health-web" }

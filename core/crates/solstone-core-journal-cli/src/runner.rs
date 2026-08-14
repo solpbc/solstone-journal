@@ -11,7 +11,7 @@ use crate::processes::ProcessSpec;
 pub(crate) const PYTHON_BOOTSTRAP_SCRIPT: &str = "import importlib, logging, sys\nmodule = sys.argv[1]\ndisplay_argv0 = sys.argv[2]\nverbose_marker = sys.argv[3]\nif verbose_marker == \"1\":\n    logging.basicConfig(level=logging.DEBUG)\nsys.argv = [display_argv0, *sys.argv[4:]]\nresult = importlib.import_module(module).main()\nsys.exit(0 if result is None else int(result))\n";
 
 #[derive(Debug)]
-pub(crate) enum InterpreterError {
+pub enum InterpreterError {
     CurrentExe(std::io::Error),
     Missing { dir: PathBuf },
     NonExecutable { path: PathBuf },
@@ -100,7 +100,10 @@ pub(crate) fn sibling_native_for_executable(
 pub(crate) fn sibling_python_for_executable(
     executable: &Path,
 ) -> Result<PathBuf, InterpreterError> {
-    let dir = executable_dir(executable);
+    sibling_python_in_dir(&executable_dir(executable))
+}
+
+pub fn sibling_python_in_dir(dir: &Path) -> Result<PathBuf, InterpreterError> {
     for name in ["python3", "python"] {
         let candidate = dir.join(name);
         match fs::metadata(&candidate) {
@@ -110,7 +113,9 @@ pub(crate) fn sibling_python_for_executable(
             Err(_) => return Err(InterpreterError::NonExecutable { path: candidate }),
         }
     }
-    Err(InterpreterError::Missing { dir })
+    Err(InterpreterError::Missing {
+        dir: dir.to_path_buf(),
+    })
 }
 
 pub(crate) fn process_args(

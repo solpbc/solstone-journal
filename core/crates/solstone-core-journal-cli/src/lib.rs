@@ -15,6 +15,8 @@ mod notify_handler;
 mod processes;
 mod runner;
 
+pub use runner::{InterpreterError, sibling_python_in_dir};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalCommand {
     Help,
