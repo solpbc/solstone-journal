@@ -94,7 +94,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: Some(content_date_nav("message", "messages", "no messages")),
         facets_enabled: true,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "curation",
@@ -206,7 +206,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: true,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "settings",

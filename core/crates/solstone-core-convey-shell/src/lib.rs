@@ -710,6 +710,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
+        .merge(solstone_core_records_web::api_router(journal_root.clone()))
         .merge(thinking::router(route_journal_root.clone()))
         .merge(network::router(route_journal_root.clone()))
         .layer(Extension(shell))

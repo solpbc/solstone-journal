@@ -85,6 +85,7 @@ members = [
     "crates/solstone-core-body-rebuild",
     "crates/solstone-core-body-ingest",
     "crates/solstone-core-convey-body",
+    "crates/solstone-core-records-web",
     "crates/solstone-core-system",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
@@ -135,6 +136,7 @@ solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
+solstone-core-records-web = { path = "crates/solstone-core-records-web" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-backup = { path = "crates/solstone-core-backup" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }

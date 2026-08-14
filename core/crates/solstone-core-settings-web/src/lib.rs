@@ -13,7 +13,7 @@ use solstone_core_journal_io::LockOptions;
 
 mod activities;
 mod assets;
-mod chat;
+pub mod chat;
 mod config;
 mod convey;
 mod facets;

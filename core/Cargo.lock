@@ -2862,6 +2862,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-npy",
  "solstone-core-observer",
+ "solstone-core-records-web",
  "solstone-core-settings-web",
  "solstone-core-sol-link",
  "solstone-core-speaker-id",
@@ -3414,6 +3415,25 @@ version = "1.0.22"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "solstone-core-records-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "solstone-core-convey-http",
+ "solstone-core-convey-shell",
+ "solstone-core-indexer-query",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-settings-web",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
