@@ -1,8 +1,7 @@
 {
   "captured_from": [
-    "solstone.apps.observer.routes._classify_observer_freshness",
-    "solstone.apps.observer.routes._serialize_observer",
-    "solstone.apps.observer.routes.api_list (sort comparator)"
+    "solstone.apps.observer.presentation.classify_observer_freshness",
+    "solstone.apps.observer.presentation.serialize_observer"
   ],
   "comparator": {
     "group_order": {

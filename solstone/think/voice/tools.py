@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from solstone.apps.entities.routes import _build_facet_relationships
+from solstone.think.entities.relationships import build_facet_relationships
 from solstone.think.activities import load_activity_records
 from solstone.think.briefing import (
     briefing_needs_items,
@@ -478,7 +478,7 @@ def handle_entities_get(payload: dict[str, Any], app: Any) -> dict[str, Any]:
     if profile is None:
         facets_config = get_facets()
         name = str(journal_entity.get("name") or slug)
-        facet_relationships, _, _ = _build_facet_relationships(
+        facet_relationships, _, _ = build_facet_relationships(
             slug, name, facets_config
         )
         profile_text = "\n".join(

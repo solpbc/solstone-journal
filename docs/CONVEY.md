@@ -156,7 +156,7 @@ facet or scope set before forwarding any event.
 |---|---|
 | `activity` | `live`, `recorded` |
 | `chat` | `owner_message`, `sol_message`, `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `reflection_ready`, `chat_queue_depth`, `chat_error`, `sol_chat_request`, `sol_chat_request_superseded`, `owner_chat_open`, `owner_chat_dismissed`, `support_draft`, `result`, `support_submit_claim` |
-| `cortex` | `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `warning`, `budget_escalation` |
+| `cortex` | `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `budget_escalation` |
 | `importer` | `started`, `status`, `completed`, `error`, `file_imported`, `enrichment_ready` |
 | `link` | `pair_complete`, `last_seen`, `stream_reset` |
 | `logs` | `exec`, `line`, `exit` |

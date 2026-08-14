@@ -190,8 +190,9 @@ def test_callosum_sse_revoked_key_returns_403(observer_env, monkeypatch):
         lambda: AuthorizedClients(authorized_clients_path()),
     )
     key, key_prefix = _create_bound_observer(env, "revoked-sse")
-    revoke = env.client.delete(f"/app/observer/api/{key_prefix}")
-    assert revoke.status_code == 200
+    from solstone.apps.observer.utils import revoke_observer_record
+
+    revoke_observer_record(key_prefix)
 
     resp = env.client.get(
         _route(),

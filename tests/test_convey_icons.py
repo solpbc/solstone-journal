@@ -26,7 +26,6 @@ CONVEY_ICONS_JS = ROOT / "solstone" / "convey" / "static" / "convey_icons.js"
 CONVERTED_FILES = (
     ROOT / "solstone" / "apps" / "sol" / "workspace.html",
     ROOT / "core" / "crates" / "solstone-core-import-web" / "assets" / "workspace.html",
-    ROOT / "solstone" / "apps" / "settings" / "workspace.html",
     ROOT / "solstone" / "apps" / "support" / "workspace.html",
     ROOT / "solstone" / "apps" / "support" / "static" / "support.js",
     ROOT / "solstone" / "apps" / "stats" / "workspace.html",
@@ -203,11 +202,6 @@ CONVERTED_GLYPH_RESIDUE = {
         "icon: '⚠️'",
         "icon: '↩️',\n        title: doneMessage",
     ),
-    "solstone/apps/settings/workspace.html": (
-        "icon: '❌'",
-        "icon: '✅'",
-        "icon: '🔄'",
-    ),
     "solstone/apps/support/background.html": ("icon: '🛟'",),
     "solstone/apps/health/workspace.html": (
         '<div class="trust-indicator" id="trustIndicator">🔒 all data stored locally on your device</div>',
@@ -259,10 +253,6 @@ OUT_OF_SCOPE_GLYPHS = {
         '"emoji": "📦",',
         'emoji: str = "📦",',
     ),
-    "solstone/apps/settings/routes.py": (
-        'emoji: Icon emoji (optional, default: "📦")',
-        'emoji = data.get("emoji", "📦")',
-    ),
     "solstone/think/tools/call.py": (
         'emoji: str = typer.Option("📦", "--emoji", help="Icon emoji."),',
     ),
@@ -282,11 +272,6 @@ OUT_OF_SCOPE_GLYPHS = {
 }
 
 NOTIFICATION_ICON_EMITTERS = {
-    "solstone/apps/settings/workspace.html": (
-        ("icon: '❌'", "icon: 'circle-x'"),
-        ("icon: '✅'", "icon: 'circle-check'"),
-        ("icon: '🔄'", "icon: 'refresh-cw'"),
-    ),
     "solstone/apps/entities/workspace.html": (
         ("icon: '🗑️'", "icon: 'trash-2'"),
         ("icon: '↩️'", "icon: 'undo-2'"),

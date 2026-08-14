@@ -19,7 +19,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from solstone.think.entities.core import EntityDict, entity_slug
+from solstone.think.entities.core import (
+    EntityDict,
+    entity_last_active_day,
+    entity_last_active_ts,
+    entity_slug,
+)
 from solstone.think.entities.errors import EntityExistsError, EntityNotFoundError
 from solstone.think.journal_io import (
     MalformedPolicy,
@@ -28,6 +33,20 @@ from solstone.think.journal_io import (
     read_json,
 )
 from solstone.think.utils import get_journal
+
+
+def get_entity_metadata(facet_name: str, entity_name: str) -> dict:
+    """Get observation count and voiceprint status for an entity."""
+    from solstone.think.entities.observations import count_observations
+
+    try:
+        folder = entity_memory_path(facet_name, entity_name)
+    except ValueError:
+        return {"observation_count": 0, "has_voiceprint": False}
+    return {
+        "observation_count": count_observations(facet_name, entity_name),
+        "has_voiceprint": (folder / "voiceprints.npz").exists(),
+    }
 
 
 def facet_relationship_path(facet: str, entity_id: str) -> Path:
@@ -69,6 +88,75 @@ def load_facet_relationship(facet: str, entity_id: str) -> EntityDict | None:
         return data
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def build_facet_relationships(
+    entity_id: str,
+    entity_name: str,
+    facets_config: dict,
+    *,
+    all_relationships: dict[str, dict[str, EntityDict]] | None = None,
+) -> tuple[list, int, int]:
+    """Build facet relationships list for a journal entity.
+
+    Args:
+        entity_id: The entity id
+        entity_name: The entity name
+        facets_config: Dict of facet configs from get_facets()
+
+    Returns:
+        Tuple of (facet_relationships list, total_observation_count, latest_active_ts)
+    """
+    facet_relationships = []
+    total_observation_count = 0
+    latest_active_ts = 0
+
+    for facet_name in facets_config:
+        if all_relationships is None:
+            relationship = load_facet_relationship(facet_name, entity_id)
+        else:
+            relationship = all_relationships.get(facet_name, {}).get(entity_id)
+        if not relationship:
+            continue
+
+        is_detached = relationship.get("detached", False)
+        facet_config = facets_config.get(facet_name, {})
+        metadata = get_entity_metadata(facet_name, entity_name)
+
+        facet_rel = {
+            "name": facet_name,
+            "title": facet_config.get("title", facet_name),
+            "color": facet_config.get("color", "#888"),
+            "emoji": facet_config.get("emoji", ""),
+            "description": relationship.get("description", ""),
+            "last_seen": relationship.get("last_seen"),
+            "attached_at": relationship.get("attached_at"),
+            "updated_at": relationship.get("updated_at"),
+            "observation_count": metadata["observation_count"],
+            "has_voiceprint": metadata["has_voiceprint"],
+        }
+
+        # Include detached flag if true
+        if is_detached:
+            facet_rel["detached"] = True
+
+        # Compute last_active_ts for this relationship
+        rel_active_ts = entity_last_active_ts(relationship)
+        facet_rel["last_active_ts"] = rel_active_ts
+        facet_rel["last_active_day"] = entity_last_active_day(relationship)
+
+        # Only count observations and activity from non-detached relationships
+        if not is_detached:
+            total_observation_count += metadata["observation_count"]
+            if rel_active_ts > latest_active_ts:
+                latest_active_ts = rel_active_ts
+
+        facet_relationships.append(facet_rel)
+
+    # Sort facet relationships by last_active_ts (most recent first)
+    facet_relationships.sort(key=lambda r: r.get("last_active_ts", 0), reverse=True)
+
+    return facet_relationships, total_observation_count, latest_active_ts
 
 
 def save_facet_relationship(

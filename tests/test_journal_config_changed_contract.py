@@ -102,17 +102,6 @@ def _patch_noop_action(monkeypatch: pytest.MonkeyPatch, module: Any) -> None:
         monkeypatch.setattr(module, "log_app_action", lambda **_kwargs: None)
 
 
-def _patch_settings_key_validation(
-    monkeypatch: pytest.MonkeyPatch, module: Any
-) -> None:
-    _patch_noop_action(monkeypatch, module)
-    monkeypatch.setattr(module, "datetime", _FixedDateTime)
-    plaud = importlib.import_module("solstone.think.importers.plaud")
-    monkeypatch.setattr(
-        plaud,
-        "validate_token",
-        lambda token: {"valid": True, "account": token},
-    )
 
 
 def _patch_thinking_key_validation(
@@ -127,12 +116,6 @@ def _patch_thinking_key_validation(
     )
 
 
-def _patch_settings_validate_all(monkeypatch: pytest.MonkeyPatch, module: Any) -> None:
-    monkeypatch.setattr(
-        module,
-        "_compute_key_validation",
-        lambda _config: {"plaud": {"valid": True}},
-    )
 
 
 def _patch_thinking_validate_all(monkeypatch: pytest.MonkeyPatch, module: Any) -> None:
@@ -144,150 +127,6 @@ def _patch_thinking_validate_all(monkeypatch: pytest.MonkeyPatch, module: Any) -
 
 
 ROUTE_CASES: tuple[RouteCase, ...] = (
-    RouteCase(
-        "settings.update_config.identity",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "identity", "data": {"name": "After"}},
-        _base_config(),
-        _base_config(identity={"name": "After", "preferred": "Before"}),
-    ),
-    RouteCase(
-        "settings.update_config.journal",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "journal", "data": {"name": "After"}},
-        _base_config(),
-        _base_config(journal={"name": "After"}),
-    ),
-    RouteCase(
-        "settings.update_config.transcribe",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "transcribe", "data": {"backend": "parakeet-cpp"}},
-        _base_config(transcribe={"backend": "parakeet"}),
-        _base_config(transcribe={"backend": "parakeet-cpp"}),
-    ),
-    RouteCase(
-        "settings.update_config.support",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "support", "data": {"enabled": True}},
-        _base_config(support={"enabled": False}),
-        _base_config(support={"enabled": True}),
-    ),
-    RouteCase(
-        "settings.update_config.agent",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "agent", "data": {"name": "helper"}},
-        _base_config(agent={"name": "sol"}),
-        _base_config(agent={"name": "helper"}),
-    ),
-    RouteCase(
-        "settings.update_config.processing",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {
-            "section": "processing",
-            "data": {
-                "mode": "deferred",
-                "gate": {"time_window": {"start": "01:00", "end": "05:00"}},
-            },
-        },
-        _base_config(),
-        _base_config(
-            processing={
-                "mode": "deferred",
-                "gate": {
-                    "time_window": {
-                        "enabled": True,
-                        "start": "01:00",
-                        "end": "05:00",
-                    },
-                    "display_powersave": {"enabled": False},
-                },
-            }
-        ),
-    ),
-    RouteCase(
-        "settings.update_config.env.set",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "env", "data": {"PLAUD_ACCESS_TOKEN": "plaud-token"}},
-        _base_config(env={}),
-        _base_config(
-            env={"PLAUD_ACCESS_TOKEN": "plaud-token"},
-            service_key_validation={
-                "plaud": {
-                    "valid": True,
-                    "account": "plaud-token",
-                    "timestamp": "2026-07-19T12:00:00+00:00",
-                }
-            },
-        ),
-        _patch_settings_key_validation,
-    ),
-    RouteCase(
-        "settings.update_config.env.clear",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/config",
-        {"section": "env", "data": {"PLAUD_ACCESS_TOKEN": ""}},
-        _base_config(
-            env={"PLAUD_ACCESS_TOKEN": "plaud-token"},
-            service_key_validation={"plaud": {"valid": True}},
-        ),
-        _base_config(env={"PLAUD_ACCESS_TOKEN": ""}, service_key_validation={}),
-        _patch_settings_key_validation,
-    ),
-    RouteCase(
-        "settings.validate_all_keys",
-        "solstone.apps.settings.routes",
-        "post",
-        "/app/settings/api/validate-keys",
-        None,
-        _base_config(env={"PLAUD_ACCESS_TOKEN": "plaud-token"}),
-        _base_config(
-            env={"PLAUD_ACCESS_TOKEN": "plaud-token"},
-            service_key_validation={"plaud": {"valid": True}},
-        ),
-        _patch_settings_validate_all,
-    ),
-    RouteCase(
-        "settings.update_vision",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/vision",
-        {"max_extractions": 42},
-        _base_config(describe={"max_extractions": 10}),
-        _base_config(describe={"max_extractions": 42}),
-    ),
-    RouteCase(
-        "settings.update_observe",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/observe",
-        {"tmux": {"enabled": False}},
-        _base_config(observe={"tmux": {"enabled": True}}),
-        _base_config(observe={"tmux": {"enabled": False}}),
-    ),
-    RouteCase(
-        "settings.update_storage",
-        "solstone.apps.settings.routes",
-        "put",
-        "/app/settings/api/storage",
-        {"raw_media": "days", "raw_media_days": 14},
-        _base_config(retention={"raw_media": "keep", "raw_media_days": None}),
-        _base_config(retention={"raw_media": "days", "raw_media_days": 14}),
-    ),
     RouteCase(
         "thinking.keys.set",
         "solstone.apps.thinking.routes",

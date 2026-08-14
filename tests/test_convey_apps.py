@@ -226,9 +226,30 @@ def test_body_native_surface_is_absent_from_python_discovery(caplog):
         registry.discover()
 
     assert "body" not in registry.apps
+    assert "settings" not in registry.apps
     assert [blueprint.name for blueprint in registry.api_blueprints] == [
-        "app:awareness"
+        "app:observer"
     ]
+    app = Flask(__name__)
+    app.register_blueprint(registry.api_blueprints[0])
+    operations = {
+        (method, rule.rule)
+        for rule in app.url_map.iter_rules()
+        for method in rule.methods or ()
+        if method not in {"HEAD", "OPTIONS"}
+        and rule.rule != "/static/<path:filename>"
+    }
+    assert operations == {
+        ("GET", "/app/observer/callosum"),
+        ("POST", "/app/observer/register"),
+        ("POST", "/app/observer/ingest"),
+        ("GET", "/app/observer/ingest/manifest"),
+        ("GET", "/app/observer/ingest/manifest/<day>"),
+        ("POST", "/app/observer/ingest/event"),
+        ("POST", "/app/observer/health"),
+        ("GET", "/app/observer/ingest/segments/<day>"),
+        ("DELETE", "/app/observer/source/<stream>"),
+    }
     assert "Skipping body/ - no workspace.html found" in caplog.text
 
 

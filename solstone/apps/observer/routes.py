@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Observer app - manage observer connections.
+"""Observer app wire protocol.
 
 Provides endpoints for:
-- Managing observer registrations (UI)
+- Registering observer connections
 - Receiving file uploads from observers (ingest)
 - Serving segment manifests for transfer diffing
 - Relaying events from observers to local Callosum
@@ -43,7 +43,6 @@ from solstone.convey.copy import OBSERVER_CALLOSUM_LIVE_LABEL
 from solstone.convey.reasons import (
     AUTH_REQUIRED,
     FEATURE_UNAVAILABLE,
-    FILE_READ_FAILED,
     INGEST_CONTRACT_INVALID,
     INGEST_NO_FILES,
     INGEST_SIDECAR_CONFLICT,
@@ -52,8 +51,6 @@ from solstone.convey.reasons import (
     INVALID_SEGMENT_OR_STREAM,
     LOCAL_REQUEST_ONLY,
     MISSING_REQUIRED_FIELD,
-    OPERATION_NO_LONGER_AVAILABLE,
-    PAIRED_DEVICE_NOT_FOUND,
     PL_REVOKED,
     SETTINGS_OPERATION_FAILED,
     Reason,
@@ -87,20 +84,15 @@ from .utils import (
     append_history_record,
     clear_ingest_rejection,
     find_oldest_unrevoked_by_name,
-    get_active_ingest_rejection,
     get_hist_dir,
-    get_observers_dir,
-    list_observers,
     load_history,
     observer_device_binding,
-    observer_filename_prefix,
     pruned_segments,
     record_ingest_rejection,
     record_status_beacon,
     resolve_ingest_identity,
     resolve_ingest_plan,
     resolve_observer_identity,
-    revoke_observer_record,
     save_ingest_plan,
     save_observer,
 )
@@ -119,17 +111,7 @@ _OBSERVER_CALLOSUM_SSE_RULE = OBSERVER_CALLOSUM_SSE_ROUTE.removeprefix(
 
 # Key length in bytes (256 bits = 32 bytes)
 KEY_BYTES = 32
-ACTIVE_THRESHOLD_MS = 30_000
-STALE_THRESHOLD_MS = 120_000
-FUTURE_CLOCK_DRIFT_TOLERANCE_MS = 5 * 60 * 1000
 _SSE_DEVICE_RECHECK_SECONDS = 5.0
-
-OBSERVER_STATE_LABELS = {
-    "connected": "connected",
-    "stale": "not reporting",
-    "disconnected": "offline",
-    "revoked": "removed",
-}
 
 
 def _error_body(reason: Reason, *, detail: str | None = None) -> dict[str, str]:
@@ -205,142 +187,6 @@ def _validate_ingest_contract(
 def _generate_key() -> str:
     """Generate a URL-safe key for observer authentication."""
     return base64.urlsafe_b64encode(secrets.token_bytes(KEY_BYTES)).decode().rstrip("=")
-
-
-def _classify_observer_freshness(
-    last_seen_ms: int | None,
-    revoked: bool,
-    now_ms: int,
-) -> dict[str, object]:
-    """Classify a registered observer's freshness.
-
-    Returns keys: state, group, elapsed_ms, clock_skew.
-    """
-    if revoked:
-        return {
-            "state": "revoked",
-            "group": "inactive",
-            "elapsed_ms": None,
-            "clock_skew": False,
-        }
-    if last_seen_ms is None:
-        return {
-            "state": "disconnected",
-            "group": "inactive",
-            "elapsed_ms": None,
-            "clock_skew": False,
-        }
-    elapsed = now_ms - last_seen_ms
-    if elapsed < -FUTURE_CLOCK_DRIFT_TOLERANCE_MS:
-        return {
-            "state": "disconnected",
-            "group": "inactive",
-            "elapsed_ms": elapsed,
-            "clock_skew": True,
-        }
-    if elapsed < 0:
-        return {
-            "state": "connected",
-            "group": "active",
-            "elapsed_ms": 0,
-            "clock_skew": False,
-        }
-    if elapsed < ACTIVE_THRESHOLD_MS:
-        return {
-            "state": "connected",
-            "group": "active",
-            "elapsed_ms": elapsed,
-            "clock_skew": False,
-        }
-    if elapsed < STALE_THRESHOLD_MS:
-        return {
-            "state": "stale",
-            "group": "stale",
-            "elapsed_ms": elapsed,
-            "clock_skew": False,
-        }
-    return {
-        "state": "disconnected",
-        "group": "inactive",
-        "elapsed_ms": elapsed,
-        "clock_skew": False,
-    }
-
-
-def _serialize_observer(observer: dict[str, Any], current_now: int) -> dict[str, Any]:
-    """Serialize a registered observer for management API consumers."""
-    revoked = observer.get("revoked", False)
-    enabled = observer.get("enabled", True)
-    rejection = get_active_ingest_rejection(observer)
-    failing = bool(rejection) and not revoked and enabled
-    freshness = _classify_observer_freshness(
-        observer.get("last_seen"),
-        revoked,
-        current_now,
-    )
-    key_prefix = observer_filename_prefix(observer)
-    data = {
-        "prefix": key_prefix,
-        "name": observer.get("name", ""),
-        "created_at": observer.get("created_at", 0),
-        "last_seen": observer.get("last_seen"),
-        "last_segment": observer.get("last_segment"),
-        "enabled": enabled,
-        "revoked": revoked,
-        "revoked_at": observer.get("revoked_at"),
-        "stats": observer.get("stats", {}),
-        "live": convey_bridge.subscription_count(key_prefix) > 0,
-        "last_chat_request_at": convey_bridge.last_chat_request_at(key_prefix),
-        **freshness,
-        "label": OBSERVER_STATE_LABELS[str(freshness["state"])],
-        "failing": failing,
-    }
-    if failing:
-        data["ingest_rejection"] = {
-            "reason_code": rejection.get("reason_code"),
-            "active_count": rejection.get("active_count"),
-            "first_ts": rejection.get("first_ts"),
-            "latest_ts": rejection.get("latest_ts"),
-            "summary": rejection.get("summary"),
-            "stream": rejection.get("stream"),
-            "version": rejection.get("version"),
-        }
-    return data
-
-
-# === Management API (session-protected) ===
-
-
-@observer_bp.route("/api/list")
-def api_list() -> Any:
-    """List all registered observers."""
-    current_now = now_ms()
-    observers = list_observers()
-    # Sanitize output - don't expose full keys
-    result = [_serialize_observer(observer, current_now) for observer in observers]
-
-    group_order = {"active": 0, "stale": 1, "inactive": 2}
-    result.sort(
-        key=lambda observer: (
-            group_order[observer.get("group", "inactive")],
-            1 if observer.get("last_seen") is None else 0,
-            -(observer.get("last_seen") or 0),
-            observer.get("prefix", ""),
-        )
-    )
-
-    return jsonify(
-        {
-            "thresholds": {
-                "active_ms": ACTIVE_THRESHOLD_MS,
-                "stale_ms": STALE_THRESHOLD_MS,
-            },
-            "labels": {
-                "live": OBSERVER_CALLOSUM_LIVE_LABEL,
-            },
-            "observers": result,
-        }
-    )
 
 
 # LOCKED — wire format observer clients depend on. Field names and presence are the
@@ -454,16 +300,6 @@ def callosum_sse() -> Any:
     return response
 
 
-@observer_bp.route("/api/create", methods=["POST"])
-def api_create() -> Any:
-    """Refuse retired hand-created observer registrations."""
-    return error_response(
-        OPERATION_NO_LONGER_AVAILABLE,
-        detail=(
-            "Observer records are no longer created by hand. "
-            "A device registers itself when you pair it."
-        ),
-    )
 
 
 _REGISTER_REQUIRED_FIELDS = ("platform", "hostname", "stream_type", "version")
@@ -643,64 +479,8 @@ def register() -> Any:
     return jsonify(_register_descriptor(observer_data))
 
 
-@observer_bp.route("/api/<key_prefix>", methods=["DELETE"])
-def api_delete(key_prefix: str) -> Any:
-    """Revoke an observer by key prefix (soft-delete)."""
-    try:
-        revoke_observer_record(key_prefix)
-    except ValueError as exc:
-        message = str(exc)
-        if message.startswith("observer already revoked:"):
-            return error_response(
-                PL_REVOKED, detail="Observer already revoked", status=409
-            )
-        return error_response(PAIRED_DEVICE_NOT_FOUND, detail="Observer not found")
-    except RuntimeError:
-        return error_response(
-            SETTINGS_OPERATION_FAILED,
-            detail="Failed to revoke observer",
-        )
-
-    return jsonify({"status": "ok"})
 
 
-@observer_bp.route("/api/<key_prefix>/key")
-def api_get_key(key_prefix: str) -> Any:
-    """Get full key and ingest URL for an observer."""
-    # Find observer by prefix
-    observers_dir = get_observers_dir()
-    observer_path = observers_dir / f"{key_prefix}.json"
-    if not observer_path.exists():
-        return error_response(PAIRED_DEVICE_NOT_FOUND, detail="Observer not found")
-
-    try:
-        with open(observer_path) as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return error_response(FILE_READ_FAILED, detail="Failed to read observer")
-
-    if data.get("revoked", False):
-        return error_response(
-            PL_REVOKED,
-            detail="key unavailable — observer revoked",
-        )
-
-    log_app_action(
-        app="observer",
-        facet=None,
-        action="observer_key_view",
-        params={"name": data.get("name", ""), "key_prefix": key_prefix},
-    )
-
-    key = data.get("key", "")
-    return jsonify(
-        {
-            "key": key,
-            "name": data.get("name", ""),
-            "ingest_url": "/app/observer/ingest",
-            "protocol_version": protocol.OBSERVER_PROTOCOL_VERSION,
-        }
-    )
 
 
 # === Sync history helpers ===

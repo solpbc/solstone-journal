@@ -334,10 +334,10 @@ def init() -> Any:
 
 @bp.route("/init/observers")
 def init_observers() -> Any:
-    from solstone.apps.observer.routes import (
+    from solstone.apps.observer.presentation import (
         ACTIVE_THRESHOLD_MS,
         STALE_THRESHOLD_MS,
-        _serialize_observer,
+        serialize_observer,
     )
     from solstone.apps.observer.utils import list_observers
     from solstone.think.utils import now_ms
@@ -347,7 +347,7 @@ def init_observers() -> Any:
     for observer in list_observers():
         if observer.get("revoked", False):
             continue
-        observers_list.append(_serialize_observer(observer, current_now))
+        observers_list.append(serialize_observer(observer, current_now))
     return jsonify(
         {
             "thresholds": {
