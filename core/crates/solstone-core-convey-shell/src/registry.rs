@@ -276,7 +276,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: Some(content_date_nav("segment", "segments", "no segments")),
         facets_enabled: false,
         has_background: true,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "tokens",
