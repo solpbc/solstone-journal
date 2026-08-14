@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import inspect
 import sys
 import tomllib

@@ -9,18 +9,6 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-_MEDIA_OPEN = re.compile(r"@media\s*\(\s*max-width\s*:\s*(\d+)px\s*\)\s*\{")
-_CSS_RULE = re.compile(r"(?P<selector>[^{}]+)\{(?P<body>[^{}]*)\}", re.DOTALL)
-_LEFT_CLEARANCE = re.compile(
-    r"\b(?:padding-left|margin-left)\s*:\s*[^;]*--menu-bar-width[^;]*;",
-    re.DOTALL,
-)
-_BOTTOM_CLEARANCE = re.compile(
-    r"\b(?:padding-bottom|margin-bottom)\s*:\s*[^;]*--app-bar-height[^;]*;",
-    re.DOTALL,
-)
-
-
 def _backup_css() -> str:
     return Path("core/crates/solstone-core-backup-web/assets/backup.css").read_text(encoding="utf-8")
 
@@ -31,68 +19,6 @@ def _backup_js() -> str:
 
 def _backup_workspace_html() -> str:
     return Path("core/crates/solstone-core-backup-web/assets/workspace.html").read_text(encoding="utf-8")
-
-
-def _media_spans(css: str) -> list[tuple[int, int, int, str]]:
-    spans: list[tuple[int, int, int, str]] = []
-    for match in _MEDIA_OPEN.finditer(css):
-        depth = 1
-        index = match.end()
-        while index < len(css) and depth > 0:
-            char = css[index]
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-            index += 1
-        if depth != 0:
-            raise AssertionError("unterminated @media block in backup.css")
-        spans.append(
-            (match.start(), index, int(match.group(1)), css[match.end() : index - 1])
-        )
-    return spans
-
-
-def _narrow_media_blocks(css: str) -> list[str]:
-    return [body for _start, _end, width, body in _media_spans(css) if width <= 768]
-
-
-def _selector_root_tokens(selector: str) -> set[str]:
-    tokens: set[str] = set()
-    if re.search(r"(?<![\w-])\.backup-shell(?![\w-])", selector):
-        tokens.add("backup-shell")
-    if re.search(r"\[data-backup-root(?:[\]\s=~|^$*])", selector):
-        tokens.add("data-backup-root")
-    return tokens
-
-
-def _clearance_tokens(blocks: list[str], declaration: re.Pattern[str]) -> set[str]:
-    tokens: set[str] = set()
-    for block in blocks:
-        for match in _CSS_RULE.finditer(block):
-            selector_tokens = _selector_root_tokens(match.group("selector"))
-            if selector_tokens and declaration.search(match.group("body")):
-                tokens.update(selector_tokens)
-    return tokens
-
-
-def _class_token_present(html: str, class_name: str) -> bool:
-    return any(
-        class_name in class_attr.split()
-        for class_attr in re.findall(r'class="([^"]*)"', html)
-    )
-
-
-def _root_token_present(html: str, token: str) -> bool:
-    if token.startswith("data-"):
-        return bool(re.search(rf"\s{re.escape(token)}(?:[=\s>]|$)", html))
-    return _class_token_present(html, token)
-
-
-def _rendered_backup_html(backup_env) -> str:
-    response = backup_env().client.get("/app/backup/workspace")
-    assert response.status_code == 200
-    return response.get_data(as_text=True)
 
 
 class _OffloadDaysTemplateParser(HTMLParser):
@@ -232,19 +158,27 @@ def test_offload_js_source_contracts() -> None:
     assert "offloadActionError(err)" in offload_catch
     assert "showError" not in offload_catch
 
-    timestamp_validity = js[
-        js.index("function formatTime(value)") : js.index("function validTimestamp")
+    valid_timestamp = js[
+        js.index("function validTimestamp(value)") : js.index(
+            "function timestampRelativeDuration(value)"
+        )
     ]
     for guard in (
-        "typeof value !== 'number'",
-        "!Number.isFinite(value)",
-        "value <= 0",
+        "typeof value === 'number'",
+        "Number.isFinite(value)",
+        "value > 0",
     ):
-        assert guard in timestamp_validity
+        assert guard in valid_timestamp
     assert (
-        timestamp_validity.index("typeof value !== 'number'")
-        < timestamp_validity.index("!Number.isFinite(value)")
-        < timestamp_validity.index("value <= 0")
+        valid_timestamp.index("typeof value === 'number'")
+        < valid_timestamp.index("Number.isFinite(value)")
+        < valid_timestamp.index("value > 0")
+    )
+    timestamp_display = js[
+        js.index("function timestampDisplay(value)") : js.index("function resolveCopyPath")
+    ]
+    assert timestamp_display.index("!validTimestamp(value)") < timestamp_display.index(
+        "timestampRelativeDuration(value)"
     )
     timestamp_relative_duration = js[
         js.index("function timestampRelativeDuration(value)") : js.index(
