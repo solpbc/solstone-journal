@@ -300,11 +300,8 @@ mod tests {
             serde_json::json!({"ts":timestamp,"tool":"probe","args":{}}),
         );
         assert_eq!(
-            format_event_line(&tool, false)
-                .rsplit("  ")
-                .next()
-                .expect("detail"),
-            "probe()"
+            format_event_line(&tool, false),
+            format!("{expected_time}.123  tool      probe()")
         );
 
         let full = event(
