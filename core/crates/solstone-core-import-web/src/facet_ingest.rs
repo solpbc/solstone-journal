@@ -36,11 +36,14 @@ pub(crate) struct ProcessResult {
     pub(crate) wrote_files: bool,
 }
 
-/// Python resolves direct facet files from `process_facet`'s explicit root but
-/// relationship/observation owner APIs through the ambient journal resolver.
-/// The native web app has one authoritative `AppState.root`, so its caller
-/// supplies that root twice; keeping both parameters makes that containment
-/// invariant explicit instead of silently collapsing the two resolutions.
+/// Declared divergence from Python: Python resolves direct facet files from
+/// `process_facet`'s explicit root but relationship/observation owner APIs
+/// through an ambient journal resolver. Native has no ambient resolver;
+/// `AppState.root` is its sole journal-root authority. The convey shell builds
+/// this router with the same journal root that Python's ambient resolver would
+/// return, so passing that root for both fields is sound. Keeping both fields
+/// makes this single-root invariant visible rather than implying two live
+/// native resolutions.
 pub(crate) struct FacetRoots<'a> {
     pub(crate) direct: &'a Path,
     pub(crate) ambient: &'a Path,

@@ -17,7 +17,7 @@ use chrono::Utc;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, append_jsonl, atomic_replace, find_available_segment,
+    AtomicWriteOptions, append_jsonl, atomic_replace, contained_path, find_available_segment,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -77,6 +77,10 @@ fn safe_component(value: &str) -> bool {
         Path::new(value).components().collect::<Vec<_>>().as_slice(),
         [Component::Normal(_)]
     )
+}
+
+fn contained(root: &Path, relative: &str) -> Result<std::path::PathBuf, String> {
+    contained_path(root, relative).map_err(|error| error.to_string())
 }
 
 fn valid_stream(value: &str) -> bool {
@@ -205,8 +209,9 @@ async fn segments_with_attempts(
             if payload.len() != names.len() || names.iter().any(|n| !payload.contains_key(n)) {
                 return Err("Missing uploaded files".into());
             }
-            let stream_dir = app.root.join("chronicle").join(day).join(stream);
-            let mut target = stream_dir.join(key);
+            let stream_relative = format!("chronicle/{day}/{stream}");
+            let stream_dir = contained(&app.root, &stream_relative)?;
+            let mut target = contained(&app.root, &format!("{stream_relative}/{key}"))?;
             let original = key.to_owned();
             let mut action = "copied";
             let mut reason = "new segment";
@@ -225,7 +230,7 @@ async fn segments_with_attempts(
                     else {
                         return Err("No available segment slot".into());
                     };
-                    target = stream_dir.join(&next);
+                    target = contained(&app.root, &format!("{stream_relative}/{next}"))?;
                     action = "deconflicted";
                     reason = "segment key conflict";
                 }
@@ -390,6 +395,7 @@ pub(crate) async fn facets(
         })
         .expect("facet state object");
     let (mut created, mut merged, mut skipped, mut staged) = (0, 0, 0, 0);
+    let mut received_facets = HashSet::new();
     let mut errors = Vec::new();
     for (facet_index, facet) in facets.iter().enumerate() {
         let outcome = (|| -> Result<(), String> {
@@ -447,6 +453,9 @@ pub(crate) async fn facets(
             skipped += outcome.skipped;
             staged += outcome.staged;
             errors.extend(outcome.errors);
+            if outcome.wrote_files {
+                received_facets.insert(name.to_owned());
+            }
             for entry in outcome.decisions {
                 decision(&base.join("log.jsonl"), entry)?;
             }
@@ -464,8 +473,12 @@ pub(crate) async fn facets(
             detail,
         );
     }
-    if let Err(detail) = record_received(&app.root, &identity, "facets_received", created + merged)
-    {
+    if let Err(detail) = record_received(
+        &app.root,
+        &identity,
+        "facets_received",
+        received_facets.len(),
+    ) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "I couldn't save that import.",
@@ -838,7 +851,7 @@ pub(crate) async fn imports(
                 )?;
                 return Ok(());
             }
-            let target = app.root.join("imports").join(id);
+            let target = contained(&app.root, &format!("imports/{id}"))?;
             if target.is_dir() {
                 fs::create_dir_all(base.join("staged")).map_err(|error| error.to_string())?;
                 write_json(
@@ -1290,6 +1303,46 @@ mod tests {
         assert_eq!(fs::read(outside).unwrap(), b"owner bytes");
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_segment_components_are_refused_without_writing_outside_the_journal() {
+        use std::os::unix::fs::symlink;
+
+        let root = phase_root("empty");
+        let outside = tempfile::TempDir::new().unwrap();
+        let stream = root.path().join("chronicle/20260801/default");
+        fs::create_dir_all(stream.parent().unwrap()).unwrap();
+        symlink(outside.path(), &stream).unwrap();
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_body(b"peer bytes"),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
+
+        let root = phase_root("empty");
+        let outside = tempfile::TempDir::new().unwrap();
+        let segment = root.path().join("chronicle/20260801/default/120000_60");
+        fs::create_dir_all(segment.parent().unwrap()).unwrap();
+        symlink(outside.path(), &segment).unwrap();
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_body(b"peer bytes"),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
+    }
+
     #[tokio::test]
     async fn criterion_13_keyed_doors_write_their_owned_destinations() {
         let root = phase_root("empty");
@@ -1342,9 +1395,9 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         let boundary = "facet-provenance";
-        let metadata = json!({"facets":[{"name":"work","files":[{"path":"todos/20260801.jsonl","type":"todos"}]}]});
+        let metadata = json!({"facets":[{"name":"work","files":[{"path":"todos/20260801.jsonl","type":"todos"},{"path":"logs/20260801.jsonl","type":"logs"}]}]});
         let body = format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"text\":\"peer todo\"}}\r\n--{boundary}--\r\n"
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"text\":\"peer todo\"}}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_1\"; filename=\"20260801.jsonl\"\r\n\r\n{{\"message\":\"peer log\"}}\r\n--{boundary}--\r\n"
         );
         let (status, _) = request(
             root.path(),
@@ -1382,6 +1435,30 @@ mod tests {
             log.contains("peer-instance"),
             "door audit records sender provenance"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_inbound_import_directory_is_refused_without_writing_outside_the_journal() {
+        use std::os::unix::fs::symlink;
+
+        let root = phase_root("empty");
+        let outside = tempfile::TempDir::new().unwrap();
+        let id = "20260801_120000";
+        symlink(outside.path(), root.path().join("imports").join(id)).unwrap();
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/imports"),
+            Body::from(
+                json!({"imports":[{"id":id,"import_json":{},"imported_json":{},"content_manifest":[]}]}).to_string(),
+            ),
+            "application/json",
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
     }
 
     fn write_entity(root: &std::path::Path, id: &str, value: Value) {

@@ -2,9 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -39,7 +40,7 @@ fn import_timestamp() -> String {
     Local::now().format("%Y%m%d_%H%M%S").to_string()
 }
 
-fn deterministic_timestamp(filename: &str) -> Option<String> {
+fn filename_timestamp(filename: &str) -> Option<String> {
     let bytes = filename.as_bytes();
     for start in 0..bytes.len().saturating_sub(14) {
         let candidate = &bytes[start..start + 15];
@@ -57,14 +58,86 @@ fn deterministic_timestamp(filename: &str) -> Option<String> {
     None
 }
 
+const METADATA_CREATION_FIELDS: [&str; 8] = [
+    "SubSecCreateDate",
+    "SubSecDateTimeOriginal",
+    "CreateDate",
+    "CreationDate",
+    "DateTimeOriginal",
+    "MediaCreateDate",
+    "TrackCreateDate",
+    "ContentCreateDate",
+];
+
+fn metadata_timestamp(value: &str) -> Option<String> {
+    let mut normalized = value.trim().replace('T', " ");
+    if normalized.starts_with("0000:") || normalized.starts_with("0000-") {
+        return None;
+    }
+    if normalized.as_bytes().get(4) == Some(&b':') && normalized.as_bytes().get(7) == Some(&b':') {
+        normalized.replace_range(7..8, "-");
+        normalized.replace_range(4..5, "-");
+    }
+    if normalized.ends_with('Z') {
+        normalized.pop();
+        normalized.push_str("+00:00");
+    }
+    let local = chrono::DateTime::parse_from_str(&normalized, "%Y-%m-%d %H:%M:%S%.f%:z")
+        .ok()
+        .map(|value| value.with_timezone(&Local).naive_local())
+        .or_else(|| {
+            chrono::NaiveDateTime::parse_from_str(&normalized, "%Y-%m-%d %H:%M:%S%.f").ok()
+        })?;
+    Some(local.format("%Y%m%d_%H%M%S").to_string())
+}
+
+fn metadata_timestamp_from_fields(metadata: &Map<String, Value>) -> Option<String> {
+    let timestamps = METADATA_CREATION_FIELDS
+        .iter()
+        .filter_map(|field| metadata.get(*field).and_then(Value::as_str))
+        .filter_map(metadata_timestamp)
+        .collect::<BTreeSet<_>>();
+    (timestamps.len() == 1)
+        .then(|| timestamps.into_iter().next())
+        .flatten()
+}
+
+fn metadata_timestamp_from_file(path: &Path) -> Option<String> {
+    let output = Command::new("exiftool")
+        .arg("-json")
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let parsed = serde_json::from_slice::<Value>(&output.stdout).ok()?;
+    metadata_timestamp_from_fields(parsed.as_array()?.first()?.as_object()?)
+}
+
+fn deterministic_timestamp(bytes: &[u8], filename: &str) -> Option<String> {
+    let mut temporary = tempfile::NamedTempFile::new().ok()?;
+    temporary.as_file_mut().write_all(bytes).ok()?;
+    temporary.as_file_mut().flush().ok()?;
+    let from_filename = filename_timestamp(filename);
+    let from_metadata = metadata_timestamp_from_file(temporary.path());
+    match (from_filename, from_metadata) {
+        (Some(filename), Some(metadata)) if filename != metadata => None,
+        (Some(filename), _) => Some(filename),
+        (_, Some(metadata)) => Some(metadata),
+        (None, None) => None,
+    }
+}
+
 fn timestamp_for_upload(
     data: &Value,
+    bytes: &[u8],
     filename: &str,
 ) -> (String, &'static str, bool, Option<&'static str>) {
-    if let Some(timestamp) = deterministic_timestamp(filename) {
+    if let Some(timestamp) = deterministic_timestamp(bytes, filename) {
         return (timestamp, "deterministic", false, None);
     }
-    if text_value(data, "deterministic_only") == "true" {
+    if form_bool(data, "deterministic_only") {
         return (
             import_timestamp(),
             "upload_fallback",
@@ -79,6 +152,16 @@ fn timestamp_for_upload(
         "upload_fallback",
         true,
         Some("model_no_match"),
+    )
+}
+
+fn form_bool(data: &Value, key: &str) -> bool {
+    matches!(
+        data.get(key).and_then(Value::as_str).map(str::trim),
+        Some(value)
+            if value.eq_ignore_ascii_case("true")
+                || value == "1"
+                || value.eq_ignore_ascii_case("yes")
     )
 }
 
@@ -448,7 +531,7 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         return json_response(StatusCode::OK, summary(&existing));
     }
     let (timestamp, method, model_called, no_match_reason) =
-        timestamp_for_upload(&data, &original_filename);
+        timestamp_for_upload(&data, &bytes, &original_filename);
     let file_path = match stage_bytes(&state.root, &timestamp, &filename, &bytes) {
         Ok(path) => path,
         Err(error) => return metadata_failed(error.to_string()),
@@ -910,6 +993,7 @@ mod tests {
     fn upload_timestamp_prefers_a_valid_deterministic_filename_timestamp() {
         let (timestamp, method, model_called, reason) = super::timestamp_for_upload(
             &json!({"deterministic_only":"true"}),
+            b"",
             "notes_20260801_120000.txt",
         );
         assert_eq!(timestamp, "20260801_120000");
@@ -921,10 +1005,42 @@ mod tests {
     #[test]
     fn deterministic_only_upload_does_not_claim_a_model_attempt() {
         let (_, method, model_called, reason) =
-            super::timestamp_for_upload(&json!({"deterministic_only":"true"}), "notes.txt");
+            super::timestamp_for_upload(&json!({"deterministic_only":"true"}), b"", "notes.txt");
         assert_eq!(method, "upload_fallback");
         assert!(!model_called);
         assert_eq!(reason, Some("no_deterministic_match"));
+    }
+
+    #[test]
+    fn deterministic_only_form_values_match_the_browser_contract() {
+        for value in ["true", "TRUE", "1", "yes", "yEs"] {
+            let (_, method, model_called, reason) =
+                super::timestamp_for_upload(&json!({"deterministic_only":value}), b"", "notes.txt");
+            assert_eq!(method, "upload_fallback", "{value}");
+            assert!(!model_called, "{value}");
+            assert_eq!(reason, Some("no_deterministic_match"), "{value}");
+        }
+    }
+
+    #[test]
+    fn deterministic_metadata_timestamp_accepts_the_exiftool_creation_shape() {
+        assert_eq!(
+            super::metadata_timestamp("2026:08:01 12:34:56"),
+            Some("20260801_123456".to_owned())
+        );
+        let fields = json!({"CreateDate":"2026-08-01T12:34:56Z"})
+            .as_object()
+            .unwrap()
+            .clone();
+        let expected = chrono::DateTime::parse_from_rfc3339("2026-08-01T12:34:56Z")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y%m%d_%H%M%S")
+            .to_string();
+        assert_eq!(
+            super::metadata_timestamp_from_fields(&fields),
+            Some(expected)
+        );
     }
 
     #[test]

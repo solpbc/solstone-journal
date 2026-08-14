@@ -16,7 +16,7 @@ use solstone_core_entity_matching::entity_slug;
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockOptions, mutate_journal_config,
 };
-use solstone_core_journal_io::{AtomicWriteOptions, append_jsonl, atomic_replace};
+use solstone_core_journal_io::{AtomicWriteOptions, append_jsonl, atomic_replace, contained_path};
 
 use crate::{
     AppState,
@@ -28,29 +28,34 @@ fn source_state(root: &Path, name: &str) -> Option<std::path::PathBuf> {
         return None;
     }
     let source: Value = serde_json::from_slice(
-        &fs::read(
-            root.join("apps/import/journal_sources")
-                .join(format!("{name}.json")),
-        )
-        .ok()?,
+        &fs::read(contained(root, &format!("apps/import/journal_sources/{name}.json")).ok()?)
+            .ok()?,
     )
     .ok()?;
     let key = source.get("key")?.as_str()?.get(..8)?;
-    Some(root.join("imports").join(&key[..8]))
+    contained(root, &format!("imports/{}", &key[..8])).ok()
 }
 
 fn safe_component(value: &str) -> bool {
-    matches!(
-        Path::new(value).components().collect::<Vec<_>>().as_slice(),
-        [Component::Normal(_)]
-    )
+    !value.is_empty()
+        && !value.contains(['/', '\\'])
+        && matches!(
+            Path::new(value).components().collect::<Vec<_>>().as_slice(),
+            [Component::Normal(_)]
+        )
 }
 
 fn safe_relative(value: &str) -> bool {
     !value.is_empty()
-        && Path::new(value)
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
+        && !Path::new(value).is_absolute()
+        && !value.contains('\\')
+        && value
+            .split('/')
+            .all(|part| !matches!(part, "" | "." | ".."))
+}
+
+fn contained(root: &Path, relative: &str) -> Result<std::path::PathBuf, String> {
+    contained_path(root, relative).map_err(|error| error.to_string())
 }
 fn read(path: &Path) -> Value {
     fs::read(path)
@@ -70,7 +75,8 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 fn append_resolution_log(state: &Path, area: &str, value: Value) -> Result<(), String> {
-    append_jsonl(state.join(area).join("log.jsonl"), &value).map_err(|error| error.to_string())
+    let path = contained(state, &format!("{area}/log.jsonl"))?;
+    append_jsonl(path, &value).map_err(|error| error.to_string())
 }
 
 fn remove_derived(path: &Path) -> Result<(), String> {
@@ -106,9 +112,17 @@ pub(crate) async fn entity(
             "source_id is required".into(),
         );
     };
-    let staged = state
-        .join("entities/staged")
-        .join(format!("{source_id}.json"));
+    let staged = match contained(&state, &format!("entities/staged/{source_id}.json")) {
+        Ok(path) => path,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't use one of those values.",
+                "invalid_request_value",
+                "Invalid staged entity path".into(),
+            );
+        }
+    };
     let payload = read(&staged);
     if !staged.exists() {
         return error(
@@ -158,11 +172,18 @@ pub(crate) async fn entity(
                     "--target is required for merge.".into(),
                 );
             };
-            let target_path = app
-                .root
-                .join("entities")
-                .join(target_id)
-                .join("entity.json");
+            let target_path =
+                match contained(&app.root, &format!("entities/{target_id}/entity.json")) {
+                    Ok(path) => path,
+                    Err(_) => {
+                        return error(
+                            StatusCode::BAD_REQUEST,
+                            "I couldn't use one of those values.",
+                            "invalid_request_value",
+                            "Invalid target entity path".into(),
+                        );
+                    }
+                };
             if !target_path.exists() {
                 return error(
                     StatusCode::NOT_FOUND,
@@ -197,7 +218,8 @@ pub(crate) async fn entity(
                 None => source_id.to_owned(),
             };
             let id = if reason == "id_collision"
-                || app.root.join("entities").join(&requested_id).exists()
+                || contained(&app.root, &format!("entities/{requested_id}"))
+                    .is_ok_and(|path| path.exists())
             {
                 let name = source.get("name").and_then(Value::as_str).unwrap_or("");
                 let base = entity_slug(name);
@@ -218,10 +240,18 @@ pub(crate) async fn entity(
             if reason == "principal_conflict" {
                 created.insert("is_principal".into(), json!(false));
             }
-            if let Err(detail) = write(
-                &app.root.join("entities").join(&id).join("entity.json"),
-                &Value::Object(created),
-            ) {
+            let target = match contained(&app.root, &format!("entities/{id}/entity.json")) {
+                Ok(path) => path,
+                Err(_) => {
+                    return error(
+                        StatusCode::BAD_REQUEST,
+                        "I couldn't use one of those values.",
+                        "invalid_request_value",
+                        "Invalid target entity path".into(),
+                    );
+                }
+            };
+            if let Err(detail) = write(&target, &Value::Object(created)) {
                 return error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "I couldn't save that import.",
@@ -234,7 +264,17 @@ pub(crate) async fn entity(
         _ => String::new(),
     };
     if action != "skip" {
-        let state_path = state.join("entities/state.json");
+        let state_path = match contained(&state, "entities/state.json") {
+            Ok(path) => path,
+            Err(_) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "I couldn't use one of those values.",
+                    "invalid_request_value",
+                    "Invalid entity state path".into(),
+                );
+            }
+        };
         let mut entity_state = read(&state_path);
         if !entity_state.is_object() {
             entity_state = json!({});
@@ -369,7 +409,17 @@ pub(crate) async fn facet(
             "Invalid staged file".into(),
         );
     };
-    let staged = state.join("facets/staged").join(file);
+    let staged = match contained(&state, &format!("facets/staged/{file}")) {
+        Ok(path) => path,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't use one of those values.",
+                "invalid_request_value",
+                "Invalid staged file".into(),
+            );
+        }
+    };
     if !staged.exists() {
         return error(
             StatusCode::NOT_FOUND,
@@ -415,7 +465,17 @@ pub(crate) async fn facet(
     let action = if mode == "skip" {
         "resolved_skip"
     } else if reason == "unmapped_entity" {
-        let entities_state = read(&state.join("entities/state.json"));
+        let entities_state = match contained(&state, "entities/state.json") {
+            Ok(path) => read(&path),
+            Err(_) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "I couldn't use one of those values.",
+                    "invalid_request_value",
+                    "Invalid entity state path".into(),
+                );
+            }
+        };
         let Some(id_map) = entities_state.get("id_map").and_then(Value::as_object) else {
             return error(
                 StatusCode::BAD_REQUEST,
@@ -440,12 +500,26 @@ pub(crate) async fn facet(
             .get("source_path")
             .and_then(Value::as_str)
             .unwrap_or("");
+        if !safe_relative(source_path) {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't use one of those values.",
+                "invalid_request_value",
+                "Staged facet source path is invalid".into(),
+            );
+        }
         let target_relative = source_path.replacen(source_entity_id, target_entity_id, 1);
-        let target = app
-            .root
-            .join("facets")
-            .join(facet_name)
-            .join(&target_relative);
+        let target = match contained(&app.root, &format!("facets/{facet_name}/{target_relative}")) {
+            Ok(path) => path,
+            Err(_) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "I couldn't use one of those values.",
+                    "invalid_request_value",
+                    "Invalid facet target path".into(),
+                );
+            }
+        };
         let source_data = payload
             .get("source_data")
             .and_then(Value::as_str)
@@ -526,7 +600,17 @@ pub(crate) async fn facet(
         extra["target_path"] = json!(target);
         "resolved_apply"
     } else if reason == "facet_json_conflict" {
-        let target = app.root.join("facets").join(facet_name).join("facet.json");
+        let target = match contained(&app.root, &format!("facets/{facet_name}/facet.json")) {
+            Ok(path) => path,
+            Err(_) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "I couldn't use one of those values.",
+                    "invalid_request_value",
+                    "Invalid facet target path".into(),
+                );
+            }
+        };
         if let Err(detail) = write(
             &target,
             payload.get("source_content").unwrap_or(&Value::Null),
@@ -640,7 +724,18 @@ pub(crate) async fn config_all(
             "Category must be 'transferable' or 'preference'.".into(),
         );
     }
-    let diff = read(&state.join("config/diff.json"));
+    let diff_path = match contained(&state, "config/diff.json") {
+        Ok(path) => path,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't use one of those values.",
+                "invalid_request_value",
+                "Invalid config diff path".into(),
+            );
+        }
+    };
+    let diff = read(&diff_path);
     let fields = diff
         .as_object()
         .into_iter()
@@ -678,7 +773,17 @@ async fn apply_config_field(
     };
     let field = data.get("field").and_then(Value::as_str).unwrap_or("");
     let action = data.get("action").and_then(Value::as_str).unwrap_or("");
-    let path = state.join("config/diff.json");
+    let path = match contained(&state, "config/diff.json") {
+        Ok(path) => path,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't use one of those values.",
+                "invalid_request_value",
+                "Invalid config diff path".into(),
+            );
+        }
+    };
     if !path.exists() {
         return error(
             StatusCode::NOT_FOUND,
@@ -740,7 +845,18 @@ async fn apply_config_field(
                 detail,
             );
         }
-        if let Err(detail) = remove_derived(&state.join("config/source_config.json")) {
+        let source_path = match contained(&state, "config/source_config.json") {
+            Ok(path) => path,
+            Err(_) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "I couldn't use one of those values.",
+                    "invalid_request_value",
+                    "Invalid staged config path".into(),
+                );
+            }
+        };
+        if let Err(detail) = remove_derived(&source_path) {
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "I couldn't save that import.",
@@ -1392,9 +1508,20 @@ mod tests {
 
         fn visit(prefix: &str, root: &Path, path: &Path, nodes: &mut BTreeMap<String, String>) {
             let relative = path.strip_prefix(root).expect("descendant");
+            let metadata = fs::symlink_metadata(path).expect("snapshot metadata");
             if !relative.as_os_str().is_empty() {
                 let key = format!("{prefix}/{}", normalize_path(relative));
-                if path.is_dir() {
+                if metadata.file_type().is_symlink() {
+                    nodes.insert(
+                        key,
+                        format!(
+                            "symlink:{}",
+                            fs::read_link(path).expect("symlink target").display()
+                        ),
+                    );
+                    return;
+                }
+                if metadata.is_dir() {
                     nodes.insert(key, "dir".into());
                 } else {
                     let bytes = fs::read(path).expect("snapshot file");
@@ -1404,7 +1531,7 @@ mod tests {
                     );
                 }
             }
-            if path.is_dir() {
+            if metadata.is_dir() {
                 let mut children = fs::read_dir(path)
                     .expect("snapshot directory")
                     .map(|entry| entry.expect("directory entry").path())
@@ -1545,6 +1672,75 @@ mod tests {
             )
             .await
             .status()
+        }
+
+        #[cfg(unix)]
+        #[tokio::test]
+        async fn symlinked_resolution_paths_are_refused_without_a_whole_tree_delta() {
+            use std::os::unix::fs::symlink;
+
+            let root = TempDir::new().unwrap();
+            let outside = TempDir::new().unwrap();
+            let state_dir = state(&root);
+
+            fs::create_dir_all(state_dir.join("entities")).unwrap();
+            symlink(outside.path(), state_dir.join("entities/staged")).unwrap();
+            let before = Snapshot::capture(root.path(), &state_dir);
+            assert_eq!(
+                entity_status(&root, json!({"source_id":"incoming","action":"skip"})).await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);
+
+            fs::remove_file(state_dir.join("entities/staged")).unwrap();
+            write_json(
+                &state_dir.join("entities/staged/incoming.json"),
+                json!({"reason":"ambiguous","source_entity":{"id":"incoming","name":"Incoming"}}),
+            );
+            fs::create_dir_all(root.path().join("entities")).unwrap();
+            symlink(outside.path(), root.path().join("entities/owner")).unwrap();
+            let before = Snapshot::capture(root.path(), &state_dir);
+            assert_eq!(
+                entity_status(
+                    &root,
+                    json!({"source_id":"incoming","action":"merge","target":"owner"}),
+                )
+                .await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);
+
+            fs::create_dir_all(state_dir.join("facets")).unwrap();
+            symlink(outside.path(), state_dir.join("facets/staged")).unwrap();
+            let before = Snapshot::capture(root.path(), &state_dir);
+            assert_eq!(
+                facet_status(
+                    &root,
+                    json!({"staged_file":"work/facet_json/facet.json.staged.json","mode":"skip"}),
+                )
+                .await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);
+
+            fs::remove_file(state_dir.join("facets/staged")).unwrap();
+            write_json(
+                &state_dir.join("facets/staged/work/facet_json/facet.json.staged.json"),
+                json!({"reason":"facet_json_conflict","source_content":{"name":"inbound"},"target_content":{}}),
+            );
+            fs::create_dir_all(root.path().join("facets")).unwrap();
+            symlink(outside.path(), root.path().join("facets/work")).unwrap();
+            let before = Snapshot::capture(root.path(), &state_dir);
+            assert_eq!(
+                facet_status(
+                    &root,
+                    json!({"staged_file":"work/facet_json/facet.json.staged.json","mode":"apply"}),
+                )
+                .await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);
+            assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
         }
 
         #[tokio::test]

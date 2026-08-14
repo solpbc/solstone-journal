@@ -17,7 +17,9 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Local, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_journal_io::{AtomicWriteOptions, append_jsonl, atomic_replace};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, LockOptions, append_jsonl, atomic_replace, hold_lock,
+};
 
 use crate::{
     AppState,
@@ -316,7 +318,24 @@ pub(crate) fn record_received(
     if amount == 0 {
         return Ok(());
     }
-    let mut record = identity.source.clone();
+    let path = source_record_path(root, &identity.source)
+        .ok_or_else(|| "Journal source has no safe record path".to_owned())?;
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|error| format!("Failed to lock journal source statistics: {error}"))?;
+    let mut record = serde_json::from_slice::<Value>(
+        &fs::read(&path)
+            .map_err(|error| format!("Failed to read journal source statistics: {error}"))?,
+    )
+    .map_err(|error| format!("Failed to parse journal source statistics: {error}"))?
+    .as_object()
+    .cloned()
+    .ok_or_else(|| "Journal source statistics record must be an object".to_owned())?;
     let stats = record
         .entry("stats".to_owned())
         .or_insert_with(|| json!({}));
@@ -632,7 +651,12 @@ fn collect_staged_facets(root: &Path, directory: &Path, items: &mut Vec<Value>) 
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        sync::{Arc, Barrier},
+        thread,
+    };
 
     use axum::{
         Extension,
@@ -645,7 +669,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        DoorIdentity, IngestIdentityCase, authorize, bearer_identity, create_state_directory,
+        DoorIdentity, IngestIdentityCase, JournalSourceIdentity, authorize, bearer_identity,
+        create_state_directory, record_received,
     };
 
     fn source(key: &str, revoked: bool) -> serde_json::Map<String, serde_json::Value> {
@@ -809,6 +834,50 @@ mod tests {
                 b"{}"
             );
         }
+    }
+
+    #[test]
+    fn concurrent_received_counters_reload_under_one_source_lock() {
+        let root = TempDir::new().unwrap();
+        let record = source("prefix01-key-material", false);
+        write_source(
+            root.path(),
+            "source",
+            serde_json::Value::Object(record.clone()),
+        );
+        let root = Arc::new(root.path().to_owned());
+        let identity = Arc::new(JournalSourceIdentity {
+            source: record,
+            derived_prefix: "prefix01".to_owned(),
+        });
+        let barrier = Arc::new(Barrier::new(2));
+        let segments = {
+            let root = Arc::clone(&root);
+            let identity = Arc::clone(&identity);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                record_received(&root, &identity, "segments_received", 1).unwrap();
+            })
+        };
+        let entities = {
+            let root = Arc::clone(&root);
+            let identity = Arc::clone(&identity);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                record_received(&root, &identity, "entities_received", 1).unwrap();
+            })
+        };
+        segments.join().unwrap();
+        entities.join().unwrap();
+
+        let saved: serde_json::Value = serde_json::from_slice(
+            &fs::read(root.join("apps/import/journal_sources/source.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["stats"]["segments_received"], 1);
+        assert_eq!(saved["stats"]["entities_received"], 1);
     }
 
     #[tokio::test]
