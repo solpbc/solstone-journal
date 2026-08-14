@@ -7,7 +7,17 @@ use axum::{
     response::IntoResponse,
 };
 
-// Deliberate local shell copy: W5 removes the Python source tree; settings-web's cross-tree include is a known W5 obligation.
+// Deliberate local shell copy, so this crate has no build-time read into the
+// Python tree.
+//
+// CORRECTION to the comment that shipped here first, which said "W5 removes the
+// Python source tree; settings-web's cross-tree include is a known W5
+// obligation". That was wrong in the way that matters: SIX crates read
+// solstone/convey/static/shell.html, not one -- backup-web, convey-shell,
+// health-web, import-web, records-web and settings-web. So that file is convey
+// core shared by many lanes, it is NOT a single lane's obligation, and nothing
+// in the facets plate should delete it. Anyone acting on the original comment
+// would have broken five other lanes.
 const SHELL: &[u8] = include_bytes!("../assets/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/timeline/workspace.html");
 const BACKGROUND: &[u8] = include_bytes!("../assets/timeline/background.html");
