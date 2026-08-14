@@ -350,7 +350,7 @@ fn render_cogitate_prompt(
         .unwrap_or(false);
     let system_instruction = compose_system_instruction(
         diagnostic,
-        composed.get("user_instruction").and_then(Value::as_str),
+        composed.get("system_instruction").and_then(Value::as_str),
         (!diagnostic).then_some("sol"),
         composed
             .get("read_scope")
@@ -386,7 +386,16 @@ fn render_cogitate_prompt(
         &system_instruction,
         options.full,
     );
-    format_section(&mut output, "INSTRUCTION", "", options.full);
+    // The reference joins transcript / extra_context / user_instruction / prompt into
+    // the prompt body; a composed cogitate talent carries only user_instruction, so the
+    // body IS that field. It belongs under INSTRUCTION, not folded into the system
+    // instruction, which carries the runtime preamble plus the talent's own
+    // `system_instruction` and the sol tool hint.
+    let instruction = composed
+        .get("user_instruction")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    format_section(&mut output, "INSTRUCTION", instruction, options.full);
     let _ = writeln!(output, "{footer}");
     output.push('\n');
     success(output)
@@ -630,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn cogitate_prompt_is_composed_with_empty_initial_instruction_and_truncation() {
+    fn cogitate_prompt_puts_the_body_under_instruction_and_truncates_it() {
         let root = root();
         let body = (0..105)
             .map(|line| format!("line {line}"))
@@ -648,9 +657,27 @@ mod tests {
                 .stdout
                 .starts_with("Static cogitate prompt view ignores runtime args except --facet.\n")
         );
-        assert!(output.stdout.contains("SYSTEM INSTRUCTION"));
-        assert!(output.stdout.contains("INSTRUCTION"));
-        assert!(output.stdout.contains("(empty)\n"));
+        // The two sections carry DIFFERENT things, and asserting only that both
+        // headings appear is what let them be swapped: the body was rendered under
+        // SYSTEM INSTRUCTION while INSTRUCTION printed "(empty)", and every
+        // assertion here still passed.
+        let (system, instruction) = output
+            .stdout
+            .split_once("  INSTRUCTION\n")
+            .expect("both sections render");
+        assert!(system.contains("SYSTEM INSTRUCTION"));
+        assert!(
+            !system.contains("line 0"),
+            "the talent body must not appear under SYSTEM INSTRUCTION"
+        );
+        assert!(
+            instruction.contains("line 0"),
+            "the talent body belongs under INSTRUCTION"
+        );
+        assert!(
+            !output.stdout.contains("(empty)"),
+            "a talent with a body must render no empty section"
+        );
         assert!(output.stdout.contains("lines omitted)"));
         assert!(output.stdout.contains("(use --full to see all "));
         assert!(output.stdout.contains("tools: "));
