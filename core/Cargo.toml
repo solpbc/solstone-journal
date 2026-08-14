@@ -93,6 +93,7 @@ members = [
     "crates/solstone-core-convey-body",
     "crates/solstone-core-records-web",
     "crates/solstone-core-system",
+    "crates/solstone-core-think-cli",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
     "crates/solstone-core-import-sources",
@@ -158,6 +159,7 @@ solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
 solstone-core-system-health = { path = "crates/solstone-core-system-health" }
+solstone-core-think-cli = { path = "crates/solstone-core-think-cli" }
 solstone-core-top = { path = "crates/solstone-core-top" }
 solstone-core-operational-logs = { path = "crates/solstone-core-operational-logs" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }

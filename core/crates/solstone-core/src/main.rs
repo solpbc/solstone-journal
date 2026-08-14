@@ -217,6 +217,10 @@ fn main() -> ExitCode {
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
+        Ok(Command::Think(args)) => run_storage_ops_verb("think", args, |arguments, journal| {
+            let run = solstone_core_think_cli::run_cli(arguments, journal);
+            (run.stdout, run.stderr, run.exit_code)
+        }),
         Ok(Command::Streams(args)) => run_streams(args),
         Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),

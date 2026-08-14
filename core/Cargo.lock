@@ -2728,6 +2728,7 @@ dependencies = [
  "solstone-core-streams-cli",
  "solstone-core-system",
  "solstone-core-system-health",
+ "solstone-core-think-cli",
  "solstone-core-top",
  "solstone-core-transcribe",
  "solstone-core-transfer",
@@ -4153,6 +4154,24 @@ dependencies = [
  "unicode-general-category",
  "unicode-xid",
  "unicode_names2",
+]
+
+[[package]]
+name = "solstone-core-think-cli"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "filetime",
+ "log",
+ "serde_json",
+ "solstone-core-cli",
+ "solstone-core-identity",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-local",
+ "solstone-core-segment",
+ "solstone-core-system",
+ "tempfile",
 ]
 
 [[package]]

@@ -40,6 +40,7 @@ pub const USAGE: &str = concat!(
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
+pub const THINK_USAGE: &str = "usage: journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [-v] [-d]\n";
 /// The usage line the ERROR path prints, verbatim from the reference.
 /// It names `journal grab`, not `solstone-core grab`: the owner-facing verb
 /// is `journal grab`, and the native dispatch is a POSIX exec into the same
@@ -738,6 +739,7 @@ pub enum Command {
     Transfer(TransferCommand),
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
+    Think(Vec<OsString>),
     Streams(Vec<OsString>),
     Importer(Vec<OsString>),
     Segment(Vec<OsString>),
@@ -1552,6 +1554,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("settings") => parse_settings(rest),
         [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
+        [command, rest @ ..] if command == OsStr::new("think") => Ok(Command::Think(rest.to_vec())),
         [command, rest @ ..] if command == OsStr::new("streams") => {
             Ok(Command::Streams(rest.to_vec()))
         }
