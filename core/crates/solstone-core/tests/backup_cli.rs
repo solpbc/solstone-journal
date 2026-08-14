@@ -242,6 +242,48 @@ fn recovery_key_show_is_read_only_and_renders_four_rows() {
 }
 
 #[test]
+fn nested_backup_grammar_reaches_native_destination_offload_and_recovery_bodies() {
+    let journal = tempfile::tempdir().expect("journal");
+    let hosted = output_with_stdin(
+        &journal,
+        &["destination", "set-hosted"],
+        r#"{"broker_endpoint":"https://broker","account_id":"account","instance_id":"instance","bucket":"bucket","prefix":"prefix","broker_token":"token"}"#,
+    );
+    assert_eq!(hosted.status.code(), Some(0));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&hosted.stdout).unwrap()["bound"],
+        true
+    );
+
+    let offload = output(&journal, &["offload", "status"]);
+    assert_eq!(offload.status.code(), Some(0));
+    assert!(
+        String::from_utf8(offload.stdout)
+            .unwrap()
+            .starts_with("backup offload: enabled=")
+    );
+
+    let recovery = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    write_config(
+        &journal,
+        serde_json::to_string(&json!({
+            "backup": {"daily_key": "daily", "recovery_key": recovery}
+        }))
+        .unwrap()
+        .as_bytes(),
+    );
+    let recovery_show = output(&journal, &["recovery-key", "show"]);
+    assert_eq!(recovery_show.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8(recovery_show.stdout)
+            .unwrap()
+            .lines()
+            .count(),
+        4
+    );
+}
+
+#[test]
 fn set_hosted_trims_all_fields_and_redacts_token() {
     let journal = tempfile::tempdir().expect("journal");
     let success = output_with_stdin(

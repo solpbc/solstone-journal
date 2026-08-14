@@ -91,8 +91,15 @@ fn lane_av_brain_is_registered_for_native_dispatch() {
 const SUPERVISOR_USAGE_ANCHOR: &[u8] =
     b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
+const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: journal backup <command> [options]\n";
 
 const PROBES: &[Probe] = &[
+    Probe {
+        token: "backup",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(BACKUP_USAGE_ANCHOR),
+    },
     Probe {
         token: "brain",
         argv: &["--nonsense"],
@@ -1024,15 +1031,7 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         probe_tokens, native_tokens,
         "native process probe-table mismatch; verdicts={verdicts:?}"
     );
-    let Some(token) = PROCESS_SPECS
-        .iter()
-        .find(|spec| {
-            !NATIVE_PROCESS_SPECS
-                .iter()
-                .any(|native| native.token == spec.token)
-        })
-        .map(|spec| spec.token)
-    else {
+    let Some(token) = python_process_control_token() else {
         eprintln!("skipping poison-liveness assertion: every process token is native");
         return;
     };
@@ -1047,6 +1046,115 @@ fn native_process_dispatch_and_poison_liveness_contract() {
     assert!(
         context.poison_marker.exists(),
         "{token}: poison-liveness expected the poisoned interpreter marker"
+    );
+}
+
+fn python_process_control_token() -> Option<&'static str> {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    // The positive control must be selected from the current Python-routed
+    // difference, not from PROCESS_SPECS declaration order. Native cutovers
+    // may remove any historical first entry (including backup).
+    PROCESS_SPECS
+        .iter()
+        .filter(|spec| !native_tokens.contains(spec.token))
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .next()
+}
+
+#[test]
+fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    let shell = context.sibling_dir.join("sh");
+    fs::write(&shell, POISON_INTERPRETER).expect("write poison shell");
+    make_executable(&shell);
+    fs::create_dir_all(context.journal).expect("create backup journal root");
+
+    // These cover every owner-facing backup leaf under the same sibling/PATH
+    // interpreter poison as the registration contract. The success cases use
+    // empty configuration; the error cases stop before any live tool/network
+    // seam, so no backup provider or package host is contacted.
+    for (argv, expected_exit) in [
+        (["status"].as_slice(), 0),
+        (["destination", "show"].as_slice(), 0),
+        (["destination", "set"].as_slice(), 1),
+        (["destination", "set-hosted"].as_slice(), 1),
+        (["enable"].as_slice(), 1),
+        (["run"].as_slice(), 0),
+        (["prune"].as_slice(), 0),
+        (["offload", "status"].as_slice(), 0),
+        (["offload", "run"].as_slice(), 0),
+        (["offload", "restore"].as_slice(), 1),
+        (["recovery-key", "show"].as_slice(), 1),
+        (["recovery-key", "rotate"].as_slice(), 0),
+        (["restore"].as_slice(), 1),
+        (["off", "--yes"].as_slice(), 0),
+    ] {
+        let output = run_dispatcher_with_bounded_output(&context, "backup", argv, PROBE_TIMEOUT)
+            .expect("run native backup grammar through dispatcher")
+            .expect("backup grammar did not time out");
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "backup {argv:?} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !context.poison_marker.exists(),
+            "backup {argv:?} reached a poisoned interpreter"
+        );
+    }
+
+    // The representative success body receives a release-shaped restic JSON
+    // fixture. It proves the native runner boundary without a live repository.
+    let restic = context.sibling_dir.join("restic");
+    fs::write(
+        &restic,
+        "#!/bin/sh\ncase \" $* \" in\n*\" backup \"*) printf '[{\"message_type\":\"summary\",\"snapshot_id\":\"fixture-snapshot\"}]\\n' ;;\n*) exit 0 ;;\nesac\n",
+    )
+    .expect("write restic fixture");
+    make_executable(&restic);
+    let recovery = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    let config = context.journal.join("config/journal.json");
+    fs::create_dir_all(config.parent().expect("backup config parent"))
+        .expect("create backup config parent");
+    fs::write(
+        config,
+        serde_json::to_vec(&serde_json::json!({"backup": {
+            "enabled": true,
+            "daily_key": "daily",
+            "recovery_key": recovery,
+            "destination": {
+                "repository": "s3:bucket/prefix",
+                "backend": "s3",
+                "credentials": {"access_key_id": "fixture-access", "secret_access_key": "fixture-secret"}
+            }
+        }}))
+        .expect("encode backup config"),
+    )
+    .expect("write backup config");
+    let output = run_dispatcher_with_bounded_output(&context, "backup", &["run"], PROBE_TIMEOUT)
+        .expect("run native backup success fixture")
+        .expect("backup success fixture did not time out");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        output.stdout,
+        b"Backup complete (snapshot fixture-snapshot).\n"
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "native backup success reached a poisoned interpreter"
     );
 }
 
@@ -1582,7 +1690,8 @@ fn native_backfill_commit_dispatches_without_python_and_is_idempotent() {
     let sidecar = segment.join("audio.jsonl");
     fs::write(&sidecar, b"{\"raw\":\"audio.flac\"}\n").expect("write sidecar");
 
-    let python_status = run_dispatcher(&context, "backup", &[])
+    let token = python_process_control_token().expect("a retained Python process token");
+    let python_status = run_dispatcher(&context, token, &[])
         .expect("run retained Python process")
         .and_then(|status| status.code());
     assert_eq!(python_status, Some(97));
