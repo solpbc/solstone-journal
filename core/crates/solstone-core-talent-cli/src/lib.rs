@@ -182,6 +182,42 @@ mod tests {
     }
 
     #[test]
+    fn disabled_override_shows_hint_or_disabled_tag() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/visible.md"),
+            "{\n\"title\": \"Visible\"\n}\n",
+        )
+        .expect("visible prompt");
+        fs::write(
+            root.path().join("talent/hidden.md"),
+            "{\n\"title\": \"Hidden\"\n}\n",
+        )
+        .expect("hidden prompt");
+        fs::create_dir_all(root.path().join("config")).expect("config");
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"talent_overrides":{"talent.system.hidden":{"disabled":true}}}"#,
+        )
+        .expect("overrides");
+
+        let hidden = run(&root, &["list"]);
+        assert_eq!(hidden.exit_code, 0, "{}", hidden.stderr);
+        assert!(
+            hidden
+                .stdout
+                .contains("1 prompts (1 disabled hidden, use --disabled)\n")
+        );
+        assert!(!hidden.stdout.contains("  hidden"));
+
+        let included = run(&root, &["list", "--disabled"]);
+        assert_eq!(included.exit_code, 0, "{}", included.stderr);
+        assert!(included.stdout.contains("hidden"));
+        assert!(included.stdout.contains("disabled"));
+        assert!(!included.stdout.contains("disabled hidden, use --disabled"));
+    }
+
+    #[test]
     fn synthetic_records_keep_json_types_and_frontmatter_key_order() {
         let root = roots();
         fs::write(
@@ -245,6 +281,11 @@ mod tests {
                 "access",
                 "{\n\"type\": \"generate\",\n\"output\": \"json\",\n\"access_tier\": \"normal\"\n}\n",
                 "Prompt 'access' sets 'access_tier' but access_tier is only valid for type: cogitate",
+            ),
+            (
+                "cwd",
+                "{\n\"type\": \"generate\",\n\"output\": \"json\",\n\"cwd\": \"somewhere\"\n}\n",
+                "Prompt 'cwd' sets 'cwd' but cwd is only valid for type: cogitate",
             ),
         ];
         for (name, content, expected) in cases {
