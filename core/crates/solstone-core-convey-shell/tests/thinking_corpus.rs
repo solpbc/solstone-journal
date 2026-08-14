@@ -1139,22 +1139,43 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
             .bytes()
             .all(|byte| b"23456789ABCDEFGHJKMNPQRSTUVWXYZ".contains(&byte))
     );
-    let mut began = false;
-    for _ in 0..20 {
-        tokio::task::yield_now().await;
+    // ⛔ This was a `yield_now()` loop, and a yield is NOT a synchronization
+    // primitive: the operation runs on a runtime worker, so yielding the test's
+    // own task guarantees nothing about the worker's progress. Measured flaky at
+    // 1 pass / 5 fail. Wait on the channel with a real deadline instead.
+    // ⛔ And NOT `recv_timeout` either: that is a BLOCKING std call, and blocking
+    // inside an async test holds the runtime worker so the operation can never be
+    // scheduled -- measured 0 pass / 6 fail, strictly worse than the yield loop,
+    // which at least yielded. Await between attempts instead.
+    let began_by = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
         match started_receiver.try_recv() {
-            Ok(()) => {
-                began = true;
-                break;
-            }
-            Err(TryRecvError::Empty) => {}
+            Ok(()) => break,
             Err(TryRecvError::Disconnected) => panic!("poll sender disconnected"),
+            Err(TryRecvError::Empty) => {
+                assert!(std::time::Instant::now() < began_by, "poll began");
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
         }
     }
-    assert!(began, "poll began");
 
-    let providers = request(first.clone(), "GET", "/app/thinking/api/providers").await;
-    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    // ⚠ And observing that poll STARTED does not mean the operation's phase has
+    // settled -- the fake signals at the top of `poll()`, so the transition to
+    // "waiting" can land after. Poll for the state rather than assuming it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let providers_body: Value = loop {
+        let providers = request(first.clone(), "GET", "/app/thinking/api/providers").await;
+        let body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+        if body["active_lane"]["confidential_operation"]["phase"] == "waiting" {
+            break body;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "confidential operation never reached \"waiting\"; last phase: {}",
+            body["active_lane"]["confidential_operation"]["phase"]
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    };
     assert_eq!(
         providers_body["active_lane"]["confidential_operation"]["phase"],
         "waiting"
@@ -1168,9 +1189,29 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
     .await;
     assert_eq!(updated.0, StatusCode::OK);
     let updated_body: Value = serde_json::from_slice(&updated.3).expect("updated providers JSON");
-    assert_eq!(
-        updated_body["active_lane"]["confidential_operation"],
-        providers_body["active_lane"]["confidential_operation"]
+    // ⛔ Comparing the two snapshots WHOLE was unsatisfiable: the operation is
+    // live and `elapsed_ms` advances between the reads, so equality could only
+    // hold if both landed in the same millisecond. Measured failing on 26 vs 28.
+    // ✅ The claim is that the PUT does not DISTURB the operation, and an
+    // advancing clock is the operation working, not a disturbance -- so compare
+    // the stable identity and assert the clock only moves forward.
+    let strip_clock = |value: &Value| {
+        let mut operation = value["active_lane"]["confidential_operation"].clone();
+        operation
+            .as_object_mut()
+            .expect("operation object")
+            .remove("elapsed_ms");
+        operation
+    };
+    assert_eq!(strip_clock(&updated_body), strip_clock(&providers_body));
+    let elapsed_of = |value: &Value| {
+        value["active_lane"]["confidential_operation"]["elapsed_ms"]
+            .as_u64()
+            .expect("elapsed_ms")
+    };
+    assert!(
+        elapsed_of(&updated_body) >= elapsed_of(&providers_body),
+        "elapsed_ms must not go backwards across the PUT"
     );
     let busy = request(
         first.clone(),
