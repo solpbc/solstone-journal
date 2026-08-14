@@ -77,7 +77,7 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
                 })
                 .unwrap_or((false, LocalEndpointResolution::Bundled))
         },
-        || None,
+        || workers::bundled_slots(journal),
     )
 }
 
@@ -145,8 +145,9 @@ where
         let (uses_local, endpoint) = endpoint();
         validate(&parsed, cpu_count(), uses_local, endpoint, bundled_slots())?;
 
-        // `EXIT_UNAVAILABLE` already means this route is unavailable in this build;
-        // this message, rather than the code, identifies the unavailable think run.
+        // `EXIT_UNAVAILABLE` is already used by several verbs in this binary to mean
+        // this route is unavailable in this build; the message, not the code,
+        // identifies the unavailable think run.
         // Intentional divergence: run-mode-bound inputs, including --dry-run, do not
         // execute the retained Python run and exit 69 rather than succeeding.
         Err(CliError::Unavailable)
@@ -238,9 +239,12 @@ fn validate(
         return usage(CADENCE_INCOMPATIBLE);
     }
     if args.segments {
-        let workers = args.segment_workers.unwrap_or_else(|| {
-            workers::default_segment_workers(cpu_count, uses_local, endpoint, bundled_slots)
-        });
+        let workers = args
+            .segment_workers
+            .map(|workers| workers as usize)
+            .unwrap_or_else(|| {
+                workers::default_segment_workers(cpu_count, uses_local, endpoint, bundled_slots)
+            });
         if args.jobs == 0 && workers > 1 {
             return usage(MULTI_WORKER_UNLIMITED_JOBS);
         }
@@ -419,6 +423,26 @@ mod tests {
     }
 
     #[test]
+    fn negative_segment_workers_reaches_updated_before_runtime_range_validation() {
+        let journal = tempdir().unwrap();
+        marker(journal.path(), "20260813", "stream.updated", 100);
+        let output = run_at(journal.path(), &["--updated", "--segment-workers", "-1"]);
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.stdout, "20260813\n");
+    }
+
+    #[test]
+    fn negative_segment_workers_is_a_runtime_refusal() {
+        let output = run(&["--segment-workers", "-1"]);
+        assert_eq!(output.exit_code, 2);
+        assert!(
+            output
+                .stderr
+                .ends_with("journal think: error: --segment-workers must be between 1 and 32\n")
+        );
+    }
+
+    #[test]
     fn day_defaulting_uses_injected_clock_for_cadence_and_daily() {
         let today = NaiveDate::from_ymd_opt(2026, 8, 14).unwrap();
         assert_eq!(day::selected_day(None, true, today), "20260814");
@@ -546,6 +570,17 @@ mod tests {
     }
 
     #[test]
+    fn bundled_slots_matches_the_existing_local_context_precedent() {
+        let journal = tempdir().unwrap();
+        assert_eq!(workers::bundled_slots(journal.path()), Some(1));
+        fs::create_dir_all(journal.path().join("health")).unwrap();
+        fs::write(journal.path().join("health/local.ctx"), "32768\n").unwrap();
+        assert_eq!(workers::bundled_slots(journal.path()), Some(2));
+        fs::write(journal.path().join("health/local.ctx"), "unknown\n").unwrap();
+        assert_eq!(workers::bundled_slots(journal.path()), Some(1));
+    }
+
+    #[test]
     fn mode_derivation_covers_reachable_modes() {
         for (args, expected) in [
             (
@@ -564,7 +599,7 @@ mod tests {
             };
             assert_eq!(run_log::mode(&parsed), expected);
         }
-        // Cadence's writer is unreachable in this wave.
+        // The cadence run-log mode is unreachable in this wave.
     }
 
     #[test]

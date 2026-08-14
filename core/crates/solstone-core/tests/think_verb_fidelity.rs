@@ -219,6 +219,15 @@ fn updated_ignores_invalid_segment_workers_and_run_modes_are_unavailable() {
 }
 
 #[test]
+fn negative_jobs_reaches_the_unavailable_run_mode() {
+    let journal = TempDir::new().unwrap();
+    let output = command(&["think", "--jobs", "-1"], &journal)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(69));
+}
+
+#[test]
 fn think_never_reaches_interpreters_while_a_python_path_reaches_the_poison() {
     let temp = TempDir::new().unwrap();
     let bin = temp.path().join("bin");
