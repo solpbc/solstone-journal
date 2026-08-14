@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Read-only native implementation of `journal talent list`.
+//! Read-only native implementation of `journal talent` commands.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -12,7 +12,9 @@ mod discovery;
 mod emit;
 mod last_run;
 mod list;
+mod log;
 mod overrides;
+mod runs;
 mod validation;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -41,6 +43,7 @@ pub fn run_cli(
             stderr: format!("journal talent {name}: not implemented yet\n"),
             exit_code: 1,
         },
+        args::Command::Log(options) => log::run_log(&journal_root.join("talents"), &options),
         args::Command::List(options) => match load_configs(talent_root, apps_root, journal_root) {
             Ok(configs) if options.json => success(emit::jsonl(&configs, &options)),
             Ok(configs) => success(list::render(&configs, &options, journal_root, now)),
@@ -154,6 +157,26 @@ mod tests {
         assert_eq!(output.exit_code, 1);
         assert!(output.stdout.is_empty());
         assert!(output.stderr.contains("bad.md"));
+    }
+
+    #[test]
+    fn log_dispatches_parser_and_not_found_outcomes() {
+        let root = roots();
+        let missing_id = run(&root, &["log"]);
+        assert_eq!(missing_id.exit_code, 2);
+        assert_eq!(
+            missing_id.stderr,
+            "usage: journal talent log [-h] [--json] [--full] id\njournal talent log: error: the following arguments are required: id\n"
+        );
+        let missing_run = run(&root, &["log", "synthetic-id"]);
+        assert_eq!(
+            missing_run,
+            CliRun {
+                stdout: String::new(),
+                stderr: "Talent run not found: synthetic-id\n".to_owned(),
+                exit_code: 1,
+            }
+        );
     }
 
     #[test]

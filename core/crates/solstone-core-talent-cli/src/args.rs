@@ -32,6 +32,16 @@ pub const LIST_HELP: &str = concat!(
     "  --json                Output as JSONL\n",
 );
 
+pub const LOG_HELP: &str = concat!(
+    "usage: journal talent log [-h] [--json] [--full] id\n\n",
+    "positional arguments:\n",
+    "  id          Agent ID\n\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --json      Output raw JSONL\n",
+    "  --full      Expand event details\n",
+);
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct ListOptions {
     pub(crate) schedule: Option<String>,
@@ -41,9 +51,17 @@ pub(crate) struct ListOptions {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub(crate) struct LogOptions {
+    pub(crate) id: String,
+    pub(crate) json: bool,
+    pub(crate) full: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Help(String),
     List(ListOptions),
+    Log(LogOptions),
     Stub(&'static str),
     Error(String),
 }
@@ -76,7 +94,8 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
             }
         }
         "list" => parse_list(&args[index + 1..]),
-        "show" | "logs" | "log" | "inventory" => {
+        "log" => parse_log(&args[index + 1..]),
+        "show" | "logs" | "inventory" => {
             let name = args[index];
             if args[index + 1..]
                 .iter()
@@ -89,7 +108,6 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
                 Command::Stub(match name {
                     "show" => "show",
                     "logs" => "logs",
-                    "log" => "log",
                     _ => "inventory",
                 })
             }
@@ -160,11 +178,43 @@ fn parse_list(args: &[&str]) -> Command {
     Command::List(options)
 }
 
+fn parse_log(args: &[&str]) -> Command {
+    let mut id = None;
+    let mut json = false;
+    let mut full = false;
+    let mut unrecognized = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "-h" | "--help" => return Command::Help(LOG_HELP.to_owned()),
+            "--json" => json = true,
+            "--full" => full = true,
+            value if value.starts_with('-') => unrecognized.push(value),
+            value if id.is_none() => id = Some(value.to_owned()),
+            value => unrecognized.push(value),
+        }
+        index += 1;
+    }
+    let Some(id) = id else {
+        return error(
+            "journal talent log",
+            "the following arguments are required: id",
+        );
+    };
+    if !unrecognized.is_empty() {
+        return error(
+            "journal talent",
+            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
+        );
+    }
+    Command::Log(LogOptions { id, json, full })
+}
+
 fn error(program: &str, message: &str) -> Command {
-    let usage = if program == "journal talent list" {
-        LIST_HELP.lines().next().unwrap_or_default()
-    } else {
-        HELP.lines().next().unwrap_or_default()
+    let usage = match program {
+        "journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
+        "journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
+        _ => HELP.lines().next().unwrap_or_default(),
     };
     Command::Error(format!("{usage}\n{program}: error: {message}\n"))
 }
@@ -186,6 +236,62 @@ mod tests {
         assert_eq!(
             stderr,
             "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\njournal talent: error: unrecognized arguments: --nonsense\n"
+        );
+    }
+
+    #[test]
+    fn log_parser_matches_help_and_error_boundaries() {
+        for flag in ["-h", "--help"] {
+            assert_eq!(
+                parse(&[OsString::from("log"), OsString::from(flag)]),
+                Command::Help(LOG_HELP.to_owned())
+            );
+        }
+        let Command::Error(missing) = parse(&[OsString::from("log")]) else {
+            panic!("expected error");
+        };
+        assert_eq!(
+            missing,
+            "usage: journal talent log [-h] [--json] [--full] id\njournal talent log: error: the following arguments are required: id\n"
+        );
+        for (arguments, expected) in [
+            (
+                ["log", "run-id", "--unknown"],
+                "unrecognized arguments: --unknown",
+            ),
+            (["log", "run-id", "spare"], "unrecognized arguments: spare"),
+        ] {
+            let Command::Error(stderr) = parse(
+                &arguments
+                    .iter()
+                    .map(|value| OsString::from(*value))
+                    .collect::<Vec<_>>(),
+            ) else {
+                panic!("expected error");
+            };
+            assert_eq!(
+                stderr,
+                format!(
+                    "usage: journal talent [-h] [-v] [-d] {{list,inventory,show,logs,log}} ...\njournal talent: error: {expected}\n"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn log_parser_accepts_interspersed_flags() {
+        assert_eq!(
+            parse(&[
+                OsString::from("log"),
+                OsString::from("--full"),
+                OsString::from("run-id"),
+                OsString::from("--json"),
+            ]),
+            Command::Log(LogOptions {
+                id: "run-id".to_owned(),
+                json: true,
+                full: true,
+            })
         );
     }
 }

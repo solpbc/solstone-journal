@@ -4178,6 +4178,7 @@ dependencies = [
 name = "solstone-core-talent-cli"
 version = "1.0.22"
 dependencies = [
+ "chrono",
  "regex",
  "serde_json",
  "solstone-core-cogitate",
