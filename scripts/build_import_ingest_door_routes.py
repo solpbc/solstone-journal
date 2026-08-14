@@ -93,7 +93,12 @@ def _identifier_control_value(identifiers: set[str]) -> str:
 
 
 def _expect_scrub_control(
-    *, label: str, rendered: str, expected: str, absent: tuple[str, ...]
+    *,
+    label: str,
+    rendered: str,
+    expected_finding: str,
+    expected_value: str,
+    absent: tuple[str, ...],
 ) -> None:
     try:
         assert_publishable(rendered, label=label)
@@ -103,9 +108,13 @@ def _expect_scrub_control(
         raise RuntimeError(
             f"{label}: publication guard did not report the planted value"
         )
-    if expected not in message:
+    if expected_finding not in message:
         raise RuntimeError(
-            f"{label}: publication guard did not name {expected!r}: {message}"
+            f"{label}: publication guard did not report {expected_finding!r}: {message}"
+        )
+    if expected_value not in message:
+        raise RuntimeError(
+            f"{label}: publication guard did not name {expected_value!r}: {message}"
         )
     unexpected = [finding for finding in absent if finding in message]
     if unexpected:
@@ -117,27 +126,33 @@ def _expect_scrub_control(
 def run_scrub_controls() -> None:
     identifiers = _host_identifiers()
     _assert_authored_prefix_is_safe(identifiers)
+    ipv4_value = "203.0.113.9"
+    home_path = _home_control_path(identifiers)
+    identifier_value = _identifier_control_value(identifiers)
 
     _expect_scrub_control(
         label="IPv4 control",
-        rendered='{"address":"203.0.113.9"}',
-        expected="IPv4 literals:",
+        rendered=json.dumps({"address": ipv4_value}),
+        expected_finding="IPv4 literals:",
+        expected_value=ipv4_value,
         absent=FINDING_LABELS[1:],
     )
     print("scrub control: IPv4")
 
     _expect_scrub_control(
         label="home path control",
-        rendered=json.dumps({"home": _home_control_path(identifiers)}),
-        expected="home-shaped paths:",
+        rendered=json.dumps({"home": home_path}),
+        expected_finding="home-shaped paths:",
+        expected_value=home_path,
         absent=(FINDING_LABELS[0], FINDING_LABELS[2]),
     )
     print("scrub control: home path")
 
     _expect_scrub_control(
         label="host/account identifier control",
-        rendered=json.dumps({"identifier": _identifier_control_value(identifiers)}),
-        expected="host/account identifiers:",
+        rendered=json.dumps({"identifier": identifier_value}),
+        expected_finding="host/account identifiers:",
+        expected_value=identifier_value,
         absent=FINDING_LABELS[:2],
     )
     print("scrub control: host/account identifier")
@@ -221,6 +236,26 @@ def _probe_failures(observation: Observation) -> list[str]:
     return failures
 
 
+def _rule_entries(
+    rules: list[object], *, source: str
+) -> tuple[dict[str, dict[object, object]], list[str]]:
+    entries: dict[str, dict[object, object]] = {}
+    failures: list[str] = []
+    for index, item in enumerate(rules):
+        if not isinstance(item, dict):
+            failures.append(f"{source} rule entry {index} is not an object")
+            continue
+        rule = item.get("rule")
+        if not isinstance(rule, str):
+            failures.append(f"{source} rule entry {index} has no string rule")
+            continue
+        if rule in entries:
+            failures.append(f"{source} contains duplicate rule {rule!r}")
+            continue
+        entries[rule] = item
+    return entries, failures
+
+
 def _fixture_failures(expected: object, actual: object) -> list[str]:
     if not isinstance(expected, dict) or not isinstance(actual, dict):
         return ["fixture document is not an object"]
@@ -235,12 +270,12 @@ def _fixture_failures(expected: object, actual: object) -> list[str]:
     actual_rules = actual.get("rules")
     if not isinstance(expected_rules, list) or not isinstance(actual_rules, list):
         return [*failures, "fixture rules are not a list"]
-    expected_by_rule = {
-        item.get("rule"): item for item in expected_rules if isinstance(item, dict)
-    }
-    actual_by_rule = {
-        item.get("rule"): item for item in actual_rules if isinstance(item, dict)
-    }
+    expected_by_rule, expected_failures = _rule_entries(
+        expected_rules, source="fixture"
+    )
+    actual_by_rule, actual_failures = _rule_entries(actual_rules, source="reference")
+    failures.extend(expected_failures)
+    failures.extend(actual_failures)
     for rule in sorted(set(expected_by_rule) - set(actual_by_rule)):
         failures.append(f"reference no longer registers rule {rule!r}")
     for rule in sorted(set(actual_by_rule) - set(expected_by_rule)):
