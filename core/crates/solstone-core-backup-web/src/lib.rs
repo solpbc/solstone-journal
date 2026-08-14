@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 //! Native backup Convey routes. Engine operations are deliberately explicit 501
 //! refusals until their restic/rclone owners have native implementations.
 
