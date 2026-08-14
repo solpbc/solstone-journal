@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Json;
 use axum::Router;
@@ -14,12 +15,14 @@ use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::{get, post};
 use chrono::{DateTime, Utc};
-use serde_json::json;
 
 mod assemble;
 mod attach;
 mod calendar;
 mod day;
+mod deferred;
+mod delete;
+mod reprocess;
 mod segment;
 mod segment_media;
 mod segment_speakers;
@@ -47,6 +50,32 @@ impl Clock {
 }
 
 pub fn router(journal_root: PathBuf, clock: Clock, shared_shell: fn() -> Response) -> Router {
+    router_with_delete_window(journal_root, clock, shared_shell, Duration::from_secs(10))
+}
+
+/// Build the transcript routes with an injectable cancellation window.
+pub fn router_with_delete_window(
+    journal_root: PathBuf,
+    clock: Clock,
+    shared_shell: fn() -> Response,
+    delete_window: Duration,
+) -> Router {
+    router_with_dependencies(
+        journal_root,
+        clock,
+        shared_shell,
+        delete_window,
+        Arc::new(reprocess::ProcessSenseSpawner),
+    )
+}
+
+fn router_with_dependencies(
+    journal_root: PathBuf,
+    clock: Clock,
+    shared_shell: fn() -> Response,
+    delete_window: Duration,
+    sense_spawner: Arc<dyn reprocess::SenseSpawner>,
+) -> Router {
     Router::new()
         .route("/app/transcripts/", get(shell::root))
         .route("/app/transcripts/workspace", get(shell::workspace))
@@ -59,11 +88,15 @@ pub fn router(journal_root: PathBuf, clock: Clock, shared_shell: fn() -> Respons
         .route("/app/transcripts/api/read/{day}", get(assemble::api_read))
         .route(
             "/app/transcripts/api/segment/{day}/{stream}/{segment_key}/reprocess",
-            post(unconverted_transcripts),
+            post(reprocess::reprocess_segment),
         )
         .route(
             "/app/transcripts/api/segment/{day}/{stream}/{segment_key}",
-            get(segment::segment_content).delete(unconverted_transcripts),
+            get(segment::segment_content).delete(delete::delete_segment),
+        )
+        .route(
+            "/app/transcripts/api/cancel-delete/{pending_id}",
+            post(delete::cancel_delete),
         )
         .route(
             "/app/transcripts/api/serve_file/{day}/{*rel_path}",
@@ -73,26 +106,36 @@ pub fn router(journal_root: PathBuf, clock: Clock, shared_shell: fn() -> Respons
             journal_root: Arc::new(journal_root),
             clock,
             shared_shell,
+            deferred_deletes: deferred::DeferredDeleteRegistry::new(),
+            delete_window,
+            sense_spawner,
         }))
 }
 
-async fn unconverted_transcripts() -> Response {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-            "error": "This app isn't available yet.",
-            "reason_code": "app_not_converted",
-            "detail": "The transcripts app has not been ported to the native shell.",
-            "app": "transcripts",
-        })),
+#[cfg(test)]
+pub(crate) fn router_with_test_spawner(
+    journal_root: PathBuf,
+    clock: Clock,
+    shared_shell: fn() -> Response,
+    delete_window: Duration,
+    sense_spawner: Arc<dyn reprocess::SenseSpawner>,
+) -> Router {
+    router_with_dependencies(
+        journal_root,
+        clock,
+        shared_shell,
+        delete_window,
+        sense_spawner,
     )
-        .into_response()
 }
 
 struct AppState {
     journal_root: Arc<PathBuf>,
     clock: Clock,
     shared_shell: fn() -> Response,
+    deferred_deletes: deferred::DeferredDeleteRegistry,
+    delete_window: Duration,
+    sense_spawner: Arc<dyn reprocess::SenseSpawner>,
 }
 
 struct EmbeddedAsset {

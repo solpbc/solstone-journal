@@ -817,14 +817,18 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode};
     use serde_json::{Map, Value, json};
     use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
     use solstone_core_sol_link::DeviceDoorAuthorization;
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::watch;
+    use tower::ServiceExt;
 
     use super::{ConveyServeOptions, authorization_gate, bind_with_authorization, router};
+    use crate::registry::APP_REGISTRY;
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -1033,5 +1037,87 @@ mod tests {
         clients_until(&server, 0).await;
         server.stop().await;
         let _ = fs::remove_dir_all(path);
+    }
+
+    #[tokio::test]
+    async fn converted_transcripts_write_routes_are_real_and_unserved_paths_are_404() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-convey-shell-transcripts-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .unwrap();
+        let analyzed = root.join("chronicle/20260731/field/090000_300");
+        fs::create_dir_all(&analyzed).unwrap();
+        fs::write(analyzed.join("audio.flac"), b"raw").unwrap();
+        fs::write(analyzed.join("audio.jsonl"), b"{\"start\":\"00:00:01\"}\n").unwrap();
+        let deleted = root.join("chronicle/20260731/field/090001_300");
+        fs::create_dir_all(deleted.join("talents")).unwrap();
+        fs::write(deleted.join("audio.flac"), b"raw").unwrap();
+        fs::write(deleted.join("audio.jsonl"), b"{}\n").unwrap();
+        fs::write(deleted.join("stream.json"), b"{}").unwrap();
+        fs::write(deleted.join("talents/sense.json"), b"{}").unwrap();
+
+        assert!(
+            APP_REGISTRY
+                .iter()
+                .any(|app| app.name == "transcripts" && app.converted)
+        );
+        let app = router(root.clone());
+        let reprocess = app
+            .clone()
+            .oneshot(
+                Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                    .body(Body::from(r#"{"modality":"audio"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reprocess.status(), StatusCode::BAD_REQUEST);
+        let reprocess_body: Value =
+            serde_json::from_slice(&to_bytes(reprocess.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(reprocess_body["reason_code"], "invalid_operation_for_state");
+
+        let deleted = app
+            .clone()
+            .oneshot(
+                Request::delete("/app/transcripts/api/segment/20260731/field/090001_300")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::OK);
+        let deleted: Value =
+            serde_json::from_slice(&to_bytes(deleted.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        let pending = deleted["pending"].as_str().unwrap();
+        let cancelled = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/app/transcripts/api/cancel-delete/{pending}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cancelled.status(), StatusCode::OK);
+
+        let missing = app
+            .oneshot(
+                Request::get("/app/transcripts/not-a-registered-route")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        fs::remove_dir_all(root).unwrap();
     }
 }

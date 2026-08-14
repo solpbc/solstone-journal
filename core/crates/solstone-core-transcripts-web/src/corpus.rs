@@ -106,14 +106,21 @@ mod tests {
         path: &str,
         request_headers: &BTreeMap<String, String>,
     ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        request_body(app, method, path, request_headers, Body::empty()).await
+    }
+
+    async fn request_body(
+        app: axum::Router,
+        method: Method,
+        path: &str,
+        request_headers: &BTreeMap<String, String>,
+        body: Body,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
         let mut builder = Request::builder().method(method).uri(path);
         for (name, value) in request_headers {
             builder = builder.header(name, value);
         }
-        let response = app
-            .oneshot(builder.body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let response = app.oneshot(builder.body(body).unwrap()).await.unwrap();
         let status = response.status();
         let headers = response.headers().clone();
         let body = to_bytes(response.into_body(), usize::MAX)
@@ -292,6 +299,232 @@ mod tests {
         let mut output = BTreeMap::new();
         visit(root, root, &mut output);
         output
+    }
+
+    fn deletion_root() -> TempDir {
+        let root = TempDir::new().expect("journal");
+        config(root.path());
+        segment(
+            root.path(),
+            DAY,
+            "field",
+            "090000_300",
+            &[
+                ("audio.flac", b"raw"),
+                ("audio.jsonl", b"{}\n"),
+                ("stream.json", b"{}"),
+                ("talents/sense.json", b"{}"),
+            ],
+        );
+        root
+    }
+
+    fn delete_app(root: &Path, window: Duration) -> axum::Router {
+        crate::router_with_delete_window(
+            root.to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+            shell,
+            window,
+        )
+    }
+
+    fn action_rows(root: &Path) -> Vec<Value> {
+        let path = root.join("config/actions");
+        let mut rows = Vec::new();
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let text = fs::read_to_string(entry.path()).expect("action log");
+                rows.extend(
+                    text.lines()
+                        .map(|line| serde_json::from_str(line).expect("action row")),
+                );
+            }
+        }
+        rows
+    }
+
+    fn assert_only_write_route_paths_changed(
+        before: &BTreeMap<PathBuf, (u64, SystemTime, String)>,
+        after: &BTreeMap<PathBuf, (u64, SystemTime, String)>,
+    ) {
+        for path in before.keys().chain(after.keys()) {
+            if before.get(path) != after.get(path) {
+                assert!(
+                    path.starts_with("chronicle/20260731/field/090000_300")
+                        || path == Path::new("chronicle/20260731/field/090000_300.lock")
+                        || path.starts_with("config/actions"),
+                    "unexpected journal mutation: {}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    async fn delete_request(app: axum::Router) -> Value {
+        let (status, _, body) = request(
+            app,
+            Method::DELETE,
+            "/app/transcripts/api/segment/20260731/field/090000_300",
+            &BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        serde_json::from_slice(&body).expect("delete response")
+    }
+
+    #[tokio::test]
+    async fn deferred_delete_commits_to_a_tombstone_and_logs_pending_then_committed() {
+        let root = deletion_root();
+        let before = snapshot(root.path());
+        let app = delete_app(root.path(), Duration::from_millis(20));
+        let response = delete_request(app.clone()).await;
+        assert_eq!(response["ttl_seconds"], 10);
+        assert_eq!(response["success"], true);
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let segment = root.path().join("chronicle/20260731/field/090000_300");
+        let names = fs::read_dir(segment)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["tombstone.json"]);
+        assert_only_write_route_paths_changed(&before, &snapshot(root.path()));
+        let rows = action_rows(root.path());
+        let phases = rows
+            .iter()
+            .map(|row| row["params"]["phase"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(phases.contains(&"pending"));
+        assert!(phases.contains(&"committed"));
+        let (status, _, _) = request(
+            app,
+            Method::POST,
+            &format!(
+                "/app/transcripts/api/cancel-delete/{}",
+                response["pending"].as_str().unwrap()
+            ),
+            &BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::GONE);
+    }
+
+    #[tokio::test]
+    async fn cancellation_preserves_the_segment_and_never_commits() {
+        let root = deletion_root();
+        let before = snapshot(root.path());
+        let app = delete_app(root.path(), Duration::from_millis(40));
+        let response = delete_request(app.clone()).await;
+        let pending = response["pending"].as_str().unwrap();
+        let (status, _, body) = request(
+            app,
+            Method::POST,
+            &format!("/app/transcripts/api/cancel-delete/{pending}"),
+            &BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"cancelled":pending})
+        );
+        tokio::time::sleep(Duration::from_millis(90)).await;
+        let after = snapshot(root.path());
+        for (path, value) in &before {
+            if !path.starts_with("config/actions") {
+                assert_eq!(
+                    after.get(path),
+                    Some(value),
+                    "unexpected change: {}",
+                    path.display()
+                );
+            }
+        }
+        for path in after.keys() {
+            assert!(
+                before.contains_key(path) || path.starts_with("config/actions"),
+                "unexpected new path: {}",
+                path.display()
+            );
+        }
+        assert_only_write_route_paths_changed(&before, &after);
+        let rows = action_rows(root.path());
+        let phases = rows
+            .iter()
+            .map(|row| row["params"]["phase"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(phases.contains(&"pending"));
+        assert!(phases.contains(&"cancelled"));
+        assert!(!phases.contains(&"committed"));
+    }
+
+    #[cfg(target_os = "linux")]
+    fn this_process_started_at() -> f64 {
+        let pid = std::process::id();
+        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).expect("proc stat");
+        let close = stat.rfind(')').expect("comm close");
+        let ticks: f64 = stat[close + 1..]
+            .split_whitespace()
+            .nth(19)
+            .expect("start ticks")
+            .parse()
+            .expect("numeric ticks");
+        let boot: f64 = fs::read_to_string("/proc/stat")
+            .expect("proc stat")
+            .lines()
+            .find_map(|line| line.strip_prefix("btime "))
+            .expect("boot time")
+            .parse()
+            .expect("numeric boot");
+        let ticks_per_second: f64 = std::process::Command::new("getconf")
+            .arg("CLK_TCK")
+            .output()
+            .expect("getconf")
+            .stdout
+            .iter()
+            .map(|byte| *byte as char)
+            .collect::<String>()
+            .trim()
+            .parse()
+            .expect("clock ticks");
+        boot + ticks / ticks_per_second
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn search_index_warning_tracks_the_native_supervisor_identity_contract() {
+        let down = deletion_root();
+        let down_response = delete_request(delete_app(down.path(), Duration::from_secs(1))).await;
+        assert_eq!(down_response["search_index_warning"], true);
+
+        let up = deletion_root();
+        write(
+            up.path(),
+            "health/supervisor.pid",
+            std::process::id().to_string().as_bytes(),
+        );
+        write(
+            up.path(),
+            "health/supervisor.start_time",
+            this_process_started_at().to_string().as_bytes(),
+        );
+        assert!(solstone_core_system::lifecycle::is_supervisor_up(up.path()));
+        let up_response = delete_request(delete_app(up.path(), Duration::from_secs(1))).await;
+        assert!(up_response.get("search_index_warning").is_none());
+        assert_eq!(
+            up_response
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "commit_at_ms".into(),
+                "deleted".into(),
+                "pending".into(),
+                "success".into(),
+                "ttl_seconds".into(),
+            ])
+        );
     }
 
     #[tokio::test]
@@ -634,6 +867,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn corpus_replays_all_twelve_transcript_write_refusals() {
+        let root = seeded_root();
+        let corpus: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/convey_records_corpus.json"
+        )))
+        .unwrap();
+        let cases = corpus["phases"]["populated"]["transcripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| matches!(case["method"].as_str(), Some("POST" | "DELETE")))
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 12);
+        for case in cases {
+            let method = case["method"].as_str().unwrap().parse().unwrap();
+            let body = match case["why"].as_str().unwrap() {
+                "invalid modality refusal" => Body::from(r#"{"modality":"other"}"#),
+                "analyzed refusal" | "purged refusal" => Body::from(r#"{"modality":"audio"}"#),
+                _ => Body::empty(),
+            };
+            let (status, headers, body) = request_body(
+                app(&root),
+                method,
+                case["path"].as_str().unwrap(),
+                &BTreeMap::new(),
+                body,
+            )
+            .await;
+            assert_eq!(
+                status.as_u16(),
+                case["status"].as_u64().unwrap() as u16,
+                "{}",
+                case["why"]
+            );
+            for (name, expected) in case["response_headers"].as_object().unwrap() {
+                assert_eq!(
+                    headers[name],
+                    expected.as_str().unwrap(),
+                    "{} {name}",
+                    case["why"]
+                );
+            }
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap(),
+                case["json"],
+                "{}",
+                case["why"]
+            );
+        }
+        fs::remove_dir_all(root).expect("seeded corpus cleanup");
+    }
+
+    #[tokio::test]
     async fn corpus_replay_matches_session_gate_bodies_in_both_nonready_phases() {
         let corpus: Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -838,11 +1125,11 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(
             serde_json::from_slice::<Value>(&body).unwrap()["reason_code"],
-            "app_not_converted"
+            "raw_media_not_available"
         );
     }
 
