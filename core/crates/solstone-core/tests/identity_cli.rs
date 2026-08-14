@@ -112,6 +112,9 @@ fn start_refresh_server(journal: &TestJournal) -> thread::JoinHandle<Value> {
         write(&active, "{\"event\":\"request\"}\n");
 
         let (mut subscriber, _) = listener.accept().expect("accept outcome subscriber");
+        write(&active, "{\"event\":\"request\"}\n{\"event\":\"finish\"}\n");
+        fs::rename(&active, active.with_file_name(format!("{use_id}.jsonl")))
+            .expect("finalize steward output");
         let stamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         fs::write(journal_path.join("identity/health.md"), health_body(&stamp)).unwrap();
         writeln!(
