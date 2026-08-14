@@ -22,6 +22,7 @@ solstone-core-callosum.workspace = true
 solstone-core-import.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-journal-config-write.workspace = true
+solstone-core-entity-matching.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["rt"] }
 

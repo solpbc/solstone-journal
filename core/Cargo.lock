@@ -3249,6 +3249,7 @@ dependencies = [
  "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
+ "solstone-core-entity-matching",
  "solstone-core-import",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
