@@ -4,12 +4,12 @@
 //! Discovery and read-only rendering of scheduled generators.
 
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use solstone_core_facets::append_action_log;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
+use solstone_core_talent_config::{TalentFilter, context_key, load_talent_configs};
 
 use crate::MutationError;
 
@@ -49,33 +49,29 @@ pub fn generators_from_roots(
     system_root: &Path,
     apps_root: &Path,
 ) -> Result<Value, String> {
-    let mut found = Vec::new();
-    collect_system(system_root, &mut found)?;
-    collect_apps(apps_root, &mut found)?;
     let overrides = config.get("talent_overrides").and_then(Value::as_object);
+    let found = load_talent_configs(
+        system_root,
+        apps_root,
+        overrides,
+        TalentFilter {
+            r#type: Some("generate"),
+            schedule: None,
+            include_disabled: true,
+        },
+    )?;
     let mut segment = Vec::new();
     let mut daily = Vec::new();
     for item in found {
-        if item.metadata.get("type").and_then(Value::as_str) != Some("generate") {
-            continue;
-        }
-        let context = context_key(&item.key);
-        let disabled = overrides
-            .and_then(|entries| entries.get(&context))
-            .and_then(Value::as_object)
-            .and_then(|entry| entry.get("disabled"))
-            .and_then(Value::as_bool)
-            .or_else(|| item.metadata.get("disabled").and_then(Value::as_bool))
-            .unwrap_or(false);
         let rendered = json!({
             "key": item.key,
             "title": item.metadata.get("title").and_then(Value::as_str)
                 .or_else(|| item.metadata.get("label").and_then(Value::as_str))
-                .unwrap_or(&item.fallback_title),
+                .unwrap_or(&item.key),
             "description": item.metadata.get("description").and_then(Value::as_str).unwrap_or(""),
-            "source": item.source,
-            "app": item.app,
-            "disabled": disabled,
+            "source": item.metadata.get("source").and_then(Value::as_str).unwrap_or("system"),
+            "app": item.metadata.get("app").cloned().unwrap_or(Value::Null),
+            "disabled": item.metadata.get("disabled").cloned().unwrap_or(Value::Bool(false)),
         });
         match item.metadata.get("schedule").and_then(Value::as_str) {
             Some("segment") => segment.push(rendered),
@@ -84,127 +80,6 @@ pub fn generators_from_roots(
         }
     }
     Ok(json!({"segment": segment, "daily": daily}))
-}
-
-struct Generator {
-    key: String,
-    fallback_title: String,
-    source: &'static str,
-    app: Option<String>,
-    metadata: Map<String, Value>,
-}
-
-fn collect_system(root: &Path, into: &mut Vec<Generator>) -> Result<(), String> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for path in markdown_entries(root)? {
-        if let Some(metadata) = read_frontmatter(&path)? {
-            let key = stem(&path)?;
-            into.push(Generator {
-                fallback_title: key.clone(),
-                key,
-                source: "system",
-                app: None,
-                metadata,
-            });
-        }
-    }
-    Ok(())
-}
-
-fn collect_apps(root: &Path, into: &mut Vec<Generator>) -> Result<(), String> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    let mut apps: Vec<_> = fs::read_dir(root)
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-    apps.sort_by_key(|entry| entry.file_name());
-    for app_path in apps {
-        let path = app_path.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let app = app_path.file_name().to_string_lossy().into_owned();
-        if app.starts_with('_') {
-            continue;
-        }
-        for prompt in markdown_entries(&path.join("talent"))? {
-            if let Some(metadata) = read_frontmatter(&prompt)? {
-                let name = stem(&prompt)?;
-                into.push(Generator {
-                    fallback_title: name.clone(),
-                    key: format!("{app}:{name}"),
-                    source: "app",
-                    app: Some(app.clone()),
-                    metadata,
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
-fn markdown_entries(root: &Path) -> Result<Vec<PathBuf>, String> {
-    if !root.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut entries: Vec<_> = fs::read_dir(root)
-        .map_err(|error| error.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("md"))
-        .collect();
-    entries.sort();
-    Ok(entries)
-}
-
-fn read_frontmatter(path: &Path) -> Result<Option<Map<String, Value>>, String> {
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let mut lines = text.lines();
-    if lines.next() != Some("{") {
-        return Ok(None);
-    }
-    let mut json_text = String::from("{\n");
-    let mut closed = false;
-    for line in lines {
-        json_text.push_str(line);
-        json_text.push('\n');
-        if line == "}" {
-            closed = true;
-            break;
-        }
-    }
-    if !closed {
-        return Err(format!(
-            "{}: frontmatter opening brace has no closing brace",
-            path.display()
-        ));
-    }
-    serde_json::from_str::<Value>(&json_text)
-        .map_err(|error| error.to_string())?
-        .as_object()
-        .cloned()
-        .ok_or_else(|| format!("{}: frontmatter must be a JSON object", path.display()))
-        .map(Some)
-}
-
-fn stem(path: &Path) -> Result<String, String> {
-    path.file_stem()
-        .and_then(|value| value.to_str())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| format!("{}: non-UTF-8 file stem", path.display()))
-}
-
-pub fn context_key(key: &str) -> String {
-    match key.split_once(':') {
-        Some((app, name)) => format!("talent.{app}.{name}"),
-        None => format!("talent.system.{key}"),
-    }
 }
 
 pub fn update_overrides(journal: &Path, updates: &Map<String, Value>) -> Result<(), MutationError> {
@@ -248,4 +123,107 @@ fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<S
         .get_mut(key)
         .and_then(Value::as_object_mut)
         .expect("object inserted")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    // §7 criteria 1, 2, and 4: this is the consumer-visible corpus table.
+    const CASES: [(&str, &str, bool); 11] = [
+        (
+            "lf",
+            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            true,
+        ),
+        (
+            "leading_blank",
+            "\n{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            true,
+        ),
+        ("unclosed", "{\n\"type\":\"generate\"\nbody", false),
+        (
+            "crlf",
+            "{\r\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
+            true,
+        ),
+        ("opening_space", "{ \n\"type\":\"generate\"\n}\nbody", false),
+        (
+            "nested_column_zero",
+            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
+            false,
+        ),
+        (
+            "nested_indented",
+            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
+            true,
+        ),
+        ("invalid", "{\n\"type\": generate\n}\nbody", false),
+        ("none", "body", false),
+        ("empty", "", false),
+        ("array", "[\"generate\"]\nbody", false),
+    ];
+
+    fn roots() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("talent")).unwrap();
+        fs::create_dir(root.path().join("apps")).unwrap();
+        root
+    }
+
+    #[test]
+    fn criterion_1_2_4_projection_conformance() {
+        for (name, contents, present) in CASES {
+            let root = roots();
+            fs::write(root.path().join("talent/case.md"), contents).unwrap();
+            let result = generators_from_roots(
+                &Map::new(),
+                &root.path().join("talent"),
+                &root.path().join("apps"),
+            );
+            if matches!(name, "nested_column_zero" | "invalid") {
+                assert!(result.is_err(), "{name}");
+            } else {
+                assert_eq!(
+                    !result.unwrap()["daily"].as_array().unwrap().is_empty(),
+                    present,
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn criterion_2_crlf_equals_lf_and_disabled_shape_is_preserved() {
+        let lf = roots();
+        let crlf = roots();
+        fs::write(lf.path().join("talent/case.md"), CASES[0].1).unwrap();
+        fs::write(crlf.path().join("talent/case.md"), CASES[3].1).unwrap();
+        assert_eq!(
+            generators_from_roots(
+                &Map::new(),
+                &lf.path().join("talent"),
+                &lf.path().join("apps")
+            )
+            .unwrap(),
+            generators_from_roots(
+                &Map::new(),
+                &crlf.path().join("talent"),
+                &crlf.path().join("apps")
+            )
+            .unwrap()
+        );
+        let mut config = Map::new();
+        config.insert(
+            "talent_overrides".to_owned(),
+            serde_json::json!({"talent.system.case":{"disabled":"yes"}}),
+        );
+        assert_eq!(
+            generators_from_roots(&config, &lf.path().join("talent"), &lf.path().join("apps"))
+                .unwrap()["daily"][0]["disabled"],
+            "yes"
+        );
+    }
 }
