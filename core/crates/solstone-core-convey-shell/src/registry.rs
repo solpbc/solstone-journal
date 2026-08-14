@@ -104,7 +104,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "entities",

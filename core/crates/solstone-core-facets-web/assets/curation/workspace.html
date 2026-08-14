@@ -1,0 +1,1037 @@
+<style>
+.curation-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.5em;
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+
+.curation-header {
+  margin: 0;
+  color: #111827;
+  font-size: 1.6em;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.curation-empty {
+  margin: 0;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.curation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85em;
+}
+
+.curation-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.85em;
+  color: #374151;
+}
+
+.curation-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55em;
+}
+
+.curation-toolbar-select {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  color: #374151;
+  cursor: pointer;
+}
+
+.curation-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 1em;
+}
+
+.curation-item[data-removing="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.curation-body {
+  margin: 0;
+  color: #1f2937;
+  line-height: 1.45;
+}
+
+.curation-select {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6em;
+  cursor: pointer;
+}
+
+.curation-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55em;
+  margin-top: 0.85em;
+}
+
+.curation-button {
+  min-height: 2.25em;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  padding: 0.45em 0.75em;
+  font: inherit;
+  cursor: pointer;
+}
+
+.curation-button:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.curation-button-primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.curation-button-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.curation-button-link {
+  border-color: transparent;
+  background: transparent;
+  color: #2563eb;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.curation-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.curation-preview {
+  margin-top: 0.85em;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 0.85em;
+}
+
+.curation-preview[hidden] {
+  display: none;
+}
+
+.curation-preview-list {
+  margin: 0;
+  padding-left: 1.2em;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.curation-preview-lead {
+  margin: 0 0 0.55em;
+  color: #374151;
+  font-weight: 600;
+}
+
+.curation-preview-error {
+  color: #b91c1c;
+}
+
+.curation-batch-confirm {
+  color: #4b5563;
+}
+
+.curation-batch-confirm[hidden] {
+  display: none;
+}
+
+.curation-batch-confirm-list {
+  margin: 0;
+  padding-left: 1.2em;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.curation-batch-status {
+  margin: 0;
+  color: #374151;
+}
+
+.curation-batch-status[hidden] {
+  display: none;
+}
+
+.curation-batch-status-error {
+  color: #b91c1c;
+}
+
+.curation-item-error {
+  margin: 0.75em 0 0;
+  color: #b91c1c;
+  line-height: 1.4;
+}
+
+.curation-outcomes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+
+.curation-outcome {
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 0.8em;
+  background: #f8fafc;
+}
+
+.curation-ambiguity-origin {
+  margin: 0.45em 0 0;
+  color: #6b7280;
+  font-size: 0.9em;
+}
+
+.curation-pair-evidence {
+  margin-top: 0.85em;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 0.85em;
+}
+
+.curation-speaker-pair-summary {
+  margin: 0 0 0.65em;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.curation-speaker-pair-samples {
+  display: grid;
+  gap: 0.75em;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.curation-speaker-pair-samples h3 {
+  margin: 0 0 0.45em;
+  color: #374151;
+  font-size: 1em;
+  font-weight: 650;
+}
+
+.curation-speaker-pair-samples ul {
+  margin: 0;
+  padding-left: 1.2em;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.curation-speaker-pair-samples audio {
+  display: block;
+  width: 100%;
+  margin-top: 0.35em;
+}
+
+@media (max-width: 640px) {
+  .curation-shell {
+    padding: 1em;
+  }
+
+  .curation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .curation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .curation-button {
+    width: 100%;
+  }
+}
+</style>
+
+<section class="curation-shell" data-curation-root>
+</section>
+
+<script src="/app/curation/static/curation_evidence.js"></script>
+<script>
+let CUR_COPY = {};
+window.CUR_COPY = CUR_COPY;
+
+(function() {
+  const root = document.querySelector('[data-curation-root]');
+  if (!root) return;
+
+  function renderLoading() {
+    root.innerHTML = window.SurfaceState
+      ? window.SurfaceState.loading({text: 'loading suggestions...'})
+      : '<p>loading suggestions...</p>';
+  }
+
+  function renderError(err, retry) {
+    window.logError?.(err, {context: 'curation-state'});
+    root.innerHTML = window.SurfaceState
+      ? window.SurfaceState.error({
+          retry: true,
+          serverMessage: err?.serverMessage || err?.message || '',
+          detail: err
+        })
+      : '<p>could not load suggestions.</p><button type="button" class="surface-state-retry">try again</button>';
+    root.querySelector('.surface-state-retry')?.addEventListener('click', retry, {once: true});
+  }
+
+  function copyFormat(template, values) {
+    let result = String(template || '');
+    Object.entries(values).forEach(([key, value]) => {
+      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value ?? ''));
+    });
+    return result;
+  }
+
+  function formatSimilarity(value) {
+    const number = Number(value || 0);
+    return Number.isFinite(number) ? number.toFixed(2) : '0.00';
+  }
+
+  function sampleAudioHtml(sample) {
+    if (!sample?.audio_url) return '';
+    return `<audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>`;
+  }
+
+  function speakerCandidatePairSampleHtml(sample) {
+    return `
+      <li>
+        <span>${escapeHtml(sample.day)}</span>
+        ${sample.stream ? `<span> · ${escapeHtml(sample.stream)}</span>` : ''}
+        ${sample.segment_key ? `<span> · ${escapeHtml(sample.segment_key)}</span>` : ''}
+        ${sample.source ? `<span> · ${escapeHtml(sample.source)}</span>` : ''}
+        ${sample.cluster_label !== undefined && sample.cluster_label >= 0 ? `<span> · cluster ${escapeHtml(sample.cluster_label)}</span>` : ''}
+        ${sampleAudioHtml(sample)}
+      </li>
+    `;
+  }
+
+  function speakerCandidatePairEvidenceHtml(item) {
+    const evidence = item.evidence || {};
+    const sourceSamples = evidence.source_samples || [];
+    const targetSamples = evidence.target_samples || [];
+    return `
+      <div class="curation-pair-evidence">
+        <p class="curation-speaker-pair-summary">
+          ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SIMILARITY_LABEL)}: ${escapeHtml(formatSimilarity(evidence.similarity))}
+          · ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL)} ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL)}: ${escapeHtml(evidence.source_intervals || 0)}
+          · ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL)} ${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_INTERVALS_LABEL)}: ${escapeHtml(evidence.target_intervals || 0)}
+        </p>
+        <div class="curation-speaker-pair-samples">
+          <section>
+            <h3>${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_SOURCE_LABEL)}</h3>
+            <ul>${sourceSamples.map(speakerCandidatePairSampleHtml).join('')}</ul>
+          </section>
+          <section>
+            <h3>${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_TARGET_LABEL)}</h3>
+            <ul>${targetSamples.map(speakerCandidatePairSampleHtml).join('')}</ul>
+          </section>
+        </div>
+      </div>
+    `;
+  }
+
+  function facetItemHtml(item) {
+    const evidenceProps = window.CurationEvidence.buildEvidenceDrawerProps(item);
+    const evidenceHtml = evidenceProps ? window.Drawer.render(evidenceProps) : '';
+    return `
+      <article class="curation-item" data-curation-item data-kind="facet_candidate" data-name-key="${escapeHtml(item.key)}">
+        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_FACET_BODY, {name: item.name}))}</p>
+        <div class="curation-actions">
+          <button class="curation-button curation-button-primary" type="button" data-action="facet-accept" data-name-key="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_FACET_CREATE_ACTION)}</button>
+          <button class="curation-button" type="button" data-action="facet-dismiss" data-name-key="${escapeHtml(item.key)}">${escapeHtml(CUR_COPY.CUR_FACET_DISMISS_ACTION)}</button>
+        </div>
+        ${evidenceHtml}
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
+  function entityItemHtml(item) {
+    return `
+      <article class="curation-item" data-curation-item data-kind="entity_merge" data-facet="${escapeHtml(item.facet)}" data-source-slug="${escapeHtml(item.source_slug)}" data-target-slug="${escapeHtml(item.target_slug)}" data-source="${escapeHtml(item.source)}" data-target="${escapeHtml(item.target)}">
+        <label class="curation-select">
+          <input type="checkbox" data-action="entity-select">
+          <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_ENTITY_BODY, {a: item.source, b: item.target}))}</span>
+        </label>
+        <div class="curation-actions">
+          <button class="curation-button curation-button-primary" type="button" data-action="entity-preview" data-facet="${escapeHtml(item.facet)}" data-source-slug="${escapeHtml(item.source_slug)}" data-target-slug="${escapeHtml(item.target_slug)}">${escapeHtml(CUR_COPY.CUR_ENTITY_MERGE_ACTION)}</button>
+          <button class="curation-button" type="button" data-action="entity-dismiss" data-facet="${escapeHtml(item.facet)}" data-source-slug="${escapeHtml(item.source_slug)}" data-target-slug="${escapeHtml(item.target_slug)}">${escapeHtml(CUR_COPY.CUR_ENTITY_DISMISS_ACTION)}</button>
+        </div>
+        <div class="curation-preview" hidden></div>
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
+  function ambiguityItemHtml(item) {
+    const origins = item?.evidence?.origins || [];
+    const originLanes = origins.map((origin) => origin.lane).filter(Boolean).join(', ');
+    const candidates = item?.evidence?.ranked_candidates || [];
+    return `
+      <article class="curation-item" data-curation-item data-kind="entity_ambiguity" data-ambiguity-id="${escapeHtml(item.key)}">
+        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: item.name || item.source}))}</p>
+        <p class="curation-ambiguity-origin">${escapeHtml(CUR_COPY.CUR_AMBIGUITY_ORIGIN_LABEL)}: ${escapeHtml(originLanes)}</p>
+        <div class="curation-actions">
+          ${candidates.map((candidate) => `
+            <button class="curation-button curation-button-primary" type="button" data-action="ambiguity-resolve" data-ambiguity-id="${escapeHtml(item.key)}" data-entity-id="${escapeHtml(candidate.id)}">
+              ${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_CHOOSE_ACTION, {name: candidate.name}))}
+            </button>
+          `).join('')}
+        </div>
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
+  function entityBatchHtml() {
+    return `
+      <div class="curation-batch" data-curation-batch>
+        <div class="curation-toolbar" data-curation-toolbar>
+          <label class="curation-toolbar-select">
+            <input type="checkbox" data-action="entity-select-all">
+            <span>${escapeHtml(CUR_COPY.CUR_ENTITY_SELECT_ALL_ACTION)}</span>
+          </label>
+          <button class="curation-button curation-button-primary" type="button" data-action="entity-batch-merge" disabled>${escapeHtml(CUR_COPY.CUR_ENTITY_BATCH_MERGE_ACTION)}</button>
+          <button class="curation-button" type="button" data-action="entity-batch-dismiss" disabled>${escapeHtml(CUR_COPY.CUR_ENTITY_BATCH_DISMISS_ACTION)}</button>
+        </div>
+        <div class="curation-batch-confirm" hidden></div>
+        <p class="curation-batch-status" hidden></p>
+      </div>
+    `;
+  }
+
+  function speakerItemHtml(item) {
+    return `
+      <article class="curation-item" data-curation-item data-kind="speaker_name_variant" data-key="${escapeHtml(item.key)}" data-source-id="${escapeHtml(item.source_slug)}" data-target-id="${escapeHtml(item.target_slug)}">
+        <p class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_SPEAKER_BODY, {source: item.source, target: item.target}))}</p>
+        <div class="curation-actions">
+          <button class="curation-button curation-button-primary" type="button" data-action="speaker-preview">${escapeHtml(CUR_COPY.CUR_SPEAKER_MERGE_ACTION)}</button>
+          <button class="curation-button" type="button" data-action="speaker-dismiss">${escapeHtml(CUR_COPY.CUR_SPEAKER_DISMISS_ACTION)}</button>
+        </div>
+        <div class="curation-preview" hidden></div>
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
+  function speakerCandidatePairItemHtml(item) {
+    return `
+      <article class="curation-item" data-curation-item data-kind="speaker_candidate_pair" data-key="${escapeAttr(item.key)}" data-anchor-a="${escapeAttr(item.source_slug)}" data-anchor-b="${escapeAttr(item.target_slug)}">
+        <p class="curation-body">${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_BODY)}</p>
+        ${speakerCandidatePairEvidenceHtml(item)}
+        <div class="curation-actions">
+          <button class="curation-button curation-button-primary" type="button" data-action="speaker-pair-accept">${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_MERGE_ACTION)}</button>
+          <button class="curation-button" type="button" data-action="speaker-pair-dismiss">${escapeHtml(CUR_COPY.CUR_SPEAKER_CANDIDATE_PAIR_DISMISS_ACTION)}</button>
+        </div>
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
+  function renderState(payload, preserveOutcomes = false) {
+    const savedOutcomes = preserveOutcomes
+      ? Array.from(root.querySelector('[data-curation-outcomes]')?.children || [])
+      : [];
+    CUR_COPY = payload.copy || {};
+    window.CUR_COPY = CUR_COPY;
+    const facetItems = payload.facet_items || [];
+    const entityItems = payload.entity_items || [];
+    const ambiguityItems = payload.ambiguity_items || [];
+    const speakerItems = payload.speaker_items || [];
+    const speakerCandidatePairItems = payload.speaker_candidate_pair_items || [];
+    const empty = !facetItems.length && !entityItems.length && !ambiguityItems.length && !speakerItems.length && !speakerCandidatePairItems.length;
+    window.Drawer.preserveOpen(root, () => {
+      root.innerHTML = `
+        <h1 class="curation-header">${escapeHtml(CUR_COPY.CUR_HEADING)}</h1>
+        ${empty ? `<p class="curation-empty">${escapeHtml(CUR_COPY.CUR_EMPTY_STATE)}</p>` : ''}
+        <div class="curation-outcomes" data-curation-outcomes></div>
+        <div class="curation-list" data-curation-list>
+          ${facetItems.map(facetItemHtml).join('')}
+          ${entityItems.length ? entityBatchHtml() : ''}
+          ${entityItems.map(entityItemHtml).join('')}
+          ${ambiguityItems.map(ambiguityItemHtml).join('')}
+          ${speakerItems.map(speakerItemHtml).join('')}
+          ${speakerCandidatePairItems.map(speakerCandidatePairItemHtml).join('')}
+        </div>
+      `;
+      const outcomes = root.querySelector('[data-curation-outcomes]');
+      savedOutcomes.forEach((outcome) => outcomes?.appendChild(outcome));
+      refreshToolbar();
+    });
+  }
+
+  async function refreshCurationState() {
+    renderState(await window.apiJson('/app/curation/api/state'), true);
+  }
+
+  async function loadInitialState() {
+    renderLoading();
+    try {
+      renderState(await window.apiJson('/app/curation/api/state'));
+    } catch (err) {
+      renderError(err, loadInitialState);
+    }
+  }
+
+  loadInitialState();
+
+  function setBusy(button, busy) {
+    if (!button) return;
+    button.disabled = busy;
+  }
+
+  function itemFor(node) {
+    return node ? node.closest('[data-curation-item]') : null;
+  }
+
+  function showError(item, message) {
+    const errorNode = item?.querySelector('.curation-item-error');
+    if (!errorNode) return;
+    errorNode.textContent = message || '';
+    errorNode.hidden = !message;
+  }
+
+  function repairRequired(err) {
+    return err?.payload?.operation_state === 'repair_required';
+  }
+
+  function mutationErrorMessage(err, fallback) {
+    if (repairRequired(err)) {
+      return copyFormat(CUR_COPY.CUR_REPAIR_REQUIRED, {
+        detail: err.rawDetail || err.serverMessage || fallback,
+        remediation: err.payload.safe_remediation || ''
+      }).trim();
+    }
+    return err?.rawDetail || err?.serverMessage || err?.message || fallback;
+  }
+
+  function showMutationError(item, button, err, fallback) {
+    if (repairRequired(err)) {
+      item?.querySelectorAll('button, input').forEach((control) => setBusy(control, true));
+    } else {
+      setBusy(button, false);
+    }
+    showError(item, mutationErrorMessage(err, fallback));
+  }
+
+  function postJson(path, payload) {
+    return window.apiJson(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  function escapeHtml(value) {
+    const holder = document.createElement('div');
+    holder.textContent = value == null ? '' : String(value);
+    return holder.innerHTML;
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/"/g, '&quot;');
+  }
+
+  function removeItem(item) {
+    if (!item) return;
+    item.dataset.removing = 'true';
+    item.remove();
+    refreshToolbar();
+  }
+
+  function appendUndoOutcome(undo, label) {
+    const outcomes = root.querySelector('[data-curation-outcomes]');
+    if (!outcomes) return;
+    const row = document.createElement('div');
+    row.className = 'curation-outcome';
+    if (undo?.merge_id) row.dataset.mergeId = undo.merge_id;
+    const text = document.createElement('span');
+    text.textContent = label || CUR_COPY.CUR_ENTITY_MERGE_ACTION;
+    row.appendChild(text);
+    if (undo?.available && undo.merge_id) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'curation-button';
+      button.dataset.action = 'merge-undo';
+      button.dataset.mergeId = undo.merge_id;
+      button.textContent = CUR_COPY.CUR_UNDO_ACTION;
+      row.appendChild(button);
+    } else {
+      const reason = document.createElement('p');
+      reason.className = 'curation-item-error';
+      reason.textContent = undo?.reason || CUR_COPY.CUR_UNDO_UNAVAILABLE;
+      row.appendChild(reason);
+    }
+    outcomes.appendChild(row);
+  }
+
+  function entityPayload(button) {
+    return {
+      facet: button.dataset.facet,
+      source_slug: button.dataset.sourceSlug,
+      target_slug: button.dataset.targetSlug
+    };
+  }
+
+  function entityCheckboxes() {
+    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"] input[data-action="entity-select"]'));
+  }
+
+  function entityArticles() {
+    return Array.from(root.querySelectorAll('[data-curation-item][data-kind="entity_merge"]'));
+  }
+
+  function selectedEntityItems() {
+    return entityCheckboxes()
+      .filter((checkbox) => checkbox.checked)
+      .map((checkbox) => itemFor(checkbox))
+      .filter(Boolean);
+  }
+
+  function entityItemPayload(item) {
+    return {
+      facet: item.dataset.facet,
+      source_slug: item.dataset.sourceSlug,
+      target_slug: item.dataset.targetSlug
+    };
+  }
+
+  function clearBatchConfirm() {
+    const confirm = root.querySelector('.curation-batch-confirm');
+    if (!confirm) return;
+    confirm.hidden = true;
+    confirm.innerHTML = '';
+  }
+
+  function clearBatchStatus() {
+    const status = root.querySelector('.curation-batch-status');
+    if (!status) return;
+    status.hidden = true;
+    status.textContent = '';
+    status.classList.remove('curation-batch-status-error');
+  }
+
+  function setBatchBusy(busy) {
+    const batch = root.querySelector('[data-curation-batch]');
+    if (!batch) return;
+    batch.querySelectorAll('button').forEach((batchButton) => setBusy(batchButton, busy));
+  }
+
+  function refreshToolbar() {
+    const toolbar = root.querySelector('[data-curation-toolbar]');
+    const confirm = root.querySelector('.curation-batch-confirm');
+    if (!toolbar) return;
+    const articles = entityArticles();
+    const selected = selectedEntityItems();
+    const count = selected.length;
+    const total = articles.length;
+    if (total === 0) {
+      toolbar.hidden = true;
+      if (confirm) {
+        confirm.hidden = true;
+        confirm.innerHTML = '';
+      }
+      return;
+    }
+    toolbar.hidden = false;
+    const mergeButton = toolbar.querySelector('[data-action="entity-batch-merge"]');
+    const dismissButton = toolbar.querySelector('[data-action="entity-batch-dismiss"]');
+    const selectAll = toolbar.querySelector('[data-action="entity-select-all"]');
+    const mergeBase = CUR_COPY.CUR_ENTITY_BATCH_MERGE_ACTION;
+    const dismissBase = CUR_COPY.CUR_ENTITY_BATCH_DISMISS_ACTION;
+    if (mergeButton) {
+      mergeButton.textContent = count ? `${mergeBase} (${count})` : mergeBase;
+      mergeButton.disabled = count === 0;
+    }
+    if (dismissButton) {
+      dismissButton.textContent = count ? `${dismissBase} (${count})` : dismissBase;
+      dismissButton.disabled = count === 0;
+    }
+    if (selectAll) {
+      selectAll.checked = count === total && total > 0;
+      selectAll.indeterminate = count > 0 && count < total;
+    }
+  }
+
+  function speakerPayload(button) {
+    const item = itemFor(button);
+    const ds = item?.dataset || {};
+    return {
+      key: ds.key,
+      source_id: ds.sourceId,
+      target_id: ds.targetId
+    };
+  }
+
+  function speakerCandidatePairPayload(button) {
+    const item = itemFor(button);
+    const ds = item?.dataset || {};
+    return {
+      key: ds.key,
+      anchor_a: ds.anchorA,
+      anchor_b: ds.anchorB
+    };
+  }
+
+  function payloadAttrs(payload) {
+    if (payload.facet !== undefined) {
+      return `data-facet="${escapeHtml(payload.facet)}" data-source-slug="${escapeHtml(payload.source_slug)}" data-target-slug="${escapeHtml(payload.target_slug)}"`;
+    }
+    return `data-key="${escapeHtml(payload.key)}" data-source-id="${escapeHtml(payload.source_id)}" data-target-id="${escapeHtml(payload.target_id)}"`;
+  }
+
+  function previewRows(preview) {
+    const rows = [];
+    const aliases = preview.akas_added || [];
+    if (aliases.length) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_AKAS_LABEL}: ${aliases.join(', ')}`);
+    }
+    if (preview.emails_added_count) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_EMAILS_LABEL}: ${preview.emails_added_count}`);
+    }
+    if (preview.facet_moved_count || preview.facet_merged_count) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_FACETS_LABEL}: ${preview.facet_moved_count || 0} moved, ${preview.facet_merged_count || 0} merged`);
+    }
+    if (preview.observations_appended) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_OBSERVATIONS_LABEL}: ${preview.observations_appended}`);
+    }
+    if (preview.labels_rewritten || preview.corrections_rewritten) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_SEGMENTS_LABEL}: ${preview.labels_rewritten || 0} labels, ${preview.corrections_rewritten || 0} corrections`);
+    }
+    if (preview.voiceprints_added || preview.voiceprints_target_total) {
+      rows.push(`${CUR_COPY.CUR_PREVIEW_VOICEPRINTS_LABEL}: ${preview.voiceprints_added || 0} added, ${preview.voiceprints_target_total || 0} total`);
+    }
+    return rows;
+  }
+
+  function renderPreview(item, payload, result, acceptAction = 'entity-accept', cancelAction = 'entity-cancel') {
+    const previewNode = item.querySelector('.curation-preview');
+    if (!previewNode) return;
+    const preview = result.preview || {};
+    const rows = previewRows(preview);
+    const errors = preview.segment_errors || [];
+    const listHtml = rows.length
+      ? `<ul class="curation-preview-list">${rows.map((row) => `<li>${escapeHtml(row)}</li>`).join('')}</ul>`
+      : `<p class="curation-empty">${escapeHtml(CUR_COPY.CUR_ENTITY_PREVIEW_EMPTY)}</p>`;
+    const errorHtml = errors.length
+      ? `<p class="curation-preview-error">${escapeHtml(CUR_COPY.CUR_ENTITY_PREVIEW_ERRORS)}</p>`
+      : '';
+    previewNode.innerHTML = `
+      <p class="curation-preview-lead">${escapeHtml(CUR_COPY.CUR_ENTITY_PREVIEW_LEAD)}</p>
+      ${listHtml}
+      ${errorHtml}
+      <div class="curation-actions">
+        <button class="curation-button curation-button-primary" type="button" data-action="${escapeHtml(acceptAction)}" ${payloadAttrs(payload)}>${escapeHtml(CUR_COPY.CUR_ENTITY_CONFIRM_ACTION)}</button>
+        <button class="curation-button" type="button" data-action="${escapeHtml(cancelAction)}">${escapeHtml(CUR_COPY.CUR_ENTITY_CANCEL_ACTION)}</button>
+      </div>
+    `;
+    previewNode.hidden = false;
+  }
+
+  root.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const item = itemFor(button);
+    const action = button.dataset.action;
+
+    if (action === 'merge-undo') {
+      const outcome = button.closest('.curation-outcome');
+      setBusy(button, true);
+      postJson(`/app/entities/api/merge/${encodeURIComponent(button.dataset.mergeId)}/undo`, {})
+        .then(async () => {
+          button.remove();
+          const done = document.createElement('span');
+          done.textContent = CUR_COPY.CUR_UNDO_DONE;
+          outcome?.appendChild(done);
+          outcome?.querySelector('.curation-item-error')?.remove();
+          try {
+            await refreshCurationState();
+          } catch (err) {
+            const refreshError = document.createElement('p');
+            refreshError.className = 'curation-item-error';
+            refreshError.textContent = err.serverMessage || err.message;
+            outcome?.appendChild(refreshError);
+          }
+        })
+        .catch((err) => {
+          if (!repairRequired(err)) setBusy(button, false);
+          let error = outcome?.querySelector('.curation-item-error');
+          if (!error && outcome) {
+            error = document.createElement('p');
+            error.className = 'curation-item-error';
+            outcome.appendChild(error);
+          }
+          if (error) error.textContent = mutationErrorMessage(err, CUR_COPY.CUR_UNDO_FAILED);
+        });
+      return;
+    }
+
+    if (action === 'ambiguity-resolve') {
+      setBusy(button, true);
+      postJson(
+        `/app/entities/api/ambiguities/${encodeURIComponent(button.dataset.ambiguityId)}/resolve`,
+        {entity_id: button.dataset.entityId}
+      )
+        .then(() => removeItem(item))
+        .catch((err) => {
+          setBusy(button, false);
+          showError(item, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    if (action === 'entity-cancel' || action === 'speaker-cancel') {
+      const preview = item?.querySelector('.curation-preview');
+      if (preview) {
+        preview.hidden = true;
+        preview.innerHTML = '';
+      }
+      return;
+    }
+
+    if (action === 'facet-accept' || action === 'facet-dismiss') {
+      const nameKey = button.dataset.nameKey;
+      const path = action === 'facet-accept'
+        ? '/app/curation/api/facet/accept'
+        : '/app/curation/api/facet/dismiss';
+      setBusy(button, true);
+      postJson(path, { name_key: nameKey })
+        .then(() => removeItem(item))
+        .catch((err) => {
+          setBusy(button, false);
+          showError(item, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    if (action === 'speaker-preview') {
+      const payload = speakerPayload(button);
+      setBusy(button, true);
+      postJson('/app/curation/api/speaker/preview', payload)
+        .then((result) => {
+          setBusy(button, false);
+          renderPreview(item, payload, result, 'speaker-accept', 'speaker-cancel');
+        })
+        .catch((err) => {
+          setBusy(button, false);
+          showError(item, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    if (action === 'speaker-accept' || action === 'speaker-dismiss') {
+      const payload = speakerPayload(button);
+      const path = action === 'speaker-accept'
+        ? '/app/curation/api/speaker/accept'
+        : '/app/curation/api/speaker/dismiss';
+      setBusy(button, true);
+      postJson(path, payload)
+        .then((data) => {
+          if (action === 'speaker-accept') appendUndoOutcome(data.undo, data.candidate?.target_label || data.key);
+          removeItem(item);
+        })
+        .catch((err) => {
+          if (action === 'speaker-accept') {
+            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+          } else {
+            setBusy(button, false);
+            showError(item, err.serverMessage || err.message);
+          }
+        });
+      return;
+    }
+
+    if (action === 'speaker-pair-accept' || action === 'speaker-pair-dismiss') {
+      const payload = speakerCandidatePairPayload(button);
+      const path = action === 'speaker-pair-accept'
+        ? '/app/curation/api/speaker-candidate-pair/accept'
+        : '/app/curation/api/speaker-candidate-pair/dismiss';
+      setBusy(button, true);
+      postJson(path, payload)
+        .then((data) => {
+          if (action === 'speaker-pair-accept') appendUndoOutcome(data.undo, data.key);
+          removeItem(item);
+        })
+        .catch((err) => {
+          if (action === 'speaker-pair-accept') {
+            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+          } else {
+            setBusy(button, false);
+            showError(item, err.serverMessage || err.message);
+          }
+        });
+      return;
+    }
+
+    if (action === 'entity-select' || action === 'entity-select-all') {
+      if (action === 'entity-select-all') {
+        entityCheckboxes().forEach((checkbox) => {
+          checkbox.checked = button.checked;
+        });
+      }
+      clearBatchConfirm();
+      refreshToolbar();
+      return;
+    }
+
+    if (action === 'entity-batch-merge' || action === 'entity-batch-dismiss') {
+      const mode = action === 'entity-batch-merge' ? 'merge' : 'dismiss';
+      const items = selectedEntityItems();
+      if (!items.length) return;
+      clearBatchStatus();
+      const confirm = root.querySelector('.curation-batch-confirm');
+      if (!confirm) return;
+      const lead = mode === 'merge'
+        ? CUR_COPY.CUR_ENTITY_BATCH_MERGE_LEAD
+        : CUR_COPY.CUR_ENTITY_BATCH_DISMISS_LEAD;
+      const actionCopy = mode === 'merge'
+        ? CUR_COPY.CUR_ENTITY_BATCH_CONFIRM_MERGE_ACTION
+        : CUR_COPY.CUR_ENTITY_BATCH_CONFIRM_DISMISS_ACTION;
+      confirm.innerHTML = `
+        <p class="curation-preview-lead">${escapeHtml(lead)}</p>
+        <ul class="curation-batch-confirm-list">
+          ${items.map((selectedItem) => `<li>${escapeHtml(`"${selectedItem.dataset.source}" and "${selectedItem.dataset.target}"`)}</li>`).join('')}
+        </ul>
+        <div class="curation-actions">
+          <button class="curation-button curation-button-primary" type="button" data-action="entity-batch-confirm" data-mode="${mode}">${escapeHtml(actionCopy)}</button>
+          <button class="curation-button" type="button" data-action="entity-batch-cancel">${escapeHtml(CUR_COPY.CUR_ENTITY_CANCEL_ACTION)}</button>
+        </div>
+      `;
+      confirm.hidden = false;
+      return;
+    }
+
+    if (action === 'entity-batch-cancel') {
+      clearBatchConfirm();
+      return;
+    }
+
+    if (action === 'entity-batch-confirm') {
+      const mode = button.dataset.mode;
+      const items = selectedEntityItems();
+      if (!items.length) return;
+      const path = mode === 'merge'
+        ? '/app/curation/api/entity/accept-batch'
+        : '/app/curation/api/entity/dismiss-batch';
+      setBatchBusy(true);
+      postJson(path, {items: items.map(entityItemPayload)})
+        .then((data) => {
+          const articlesByKey = {};
+          entityArticles().forEach((article) => {
+            const payload = entityItemPayload(article);
+            articlesByKey[`${payload.facet}|${payload.source_slug}|${payload.target_slug}`] = article;
+          });
+          const ok = mode === 'merge'
+            ? {accepted: 1, already_accepted: 1}
+            : {dismissed: 1, already_dismissed: 1};
+          (data.results || []).forEach((result) => {
+            const article = articlesByKey[`${result.facet}|${result.source_slug}|${result.target_slug}`];
+            if (!article) return;
+            if (Object.prototype.hasOwnProperty.call(ok, result.status)) {
+              if (mode === 'merge') {
+                appendUndoOutcome(result.undo, `${result.source_slug} → ${result.target_slug}`);
+              }
+              removeItem(article);
+              return;
+            }
+            const checkbox = article.querySelector('input[data-action="entity-select"]');
+            if (checkbox) checkbox.checked = false;
+            if (result.operation_state === 'repair_required') {
+              article.querySelectorAll('button, input').forEach((control) => setBusy(control, true));
+              showError(article, copyFormat(CUR_COPY.CUR_REPAIR_REQUIRED, {
+                detail: result.error,
+                remediation: result.safe_remediation || ''
+              }).trim());
+            } else {
+              showError(article, result.error);
+            }
+          });
+          const status = root.querySelector('.curation-batch-status');
+          if (status) {
+            const okCount = mode === 'merge' ? data.accepted : data.dismissed;
+            let text = copyFormat(
+              mode === 'merge'
+                ? CUR_COPY.CUR_ENTITY_BATCH_MERGE_SUMMARY
+                : CUR_COPY.CUR_ENTITY_BATCH_DISMISS_SUMMARY,
+              {ok: okCount, total: (data.results || []).length}
+            );
+            if (data.failed) {
+              text += ' ' + copyFormat(CUR_COPY.CUR_ENTITY_BATCH_FAILED_NOTE, {failed: data.failed});
+            }
+            status.textContent = text;
+            status.classList.remove('curation-batch-status-error');
+            status.hidden = false;
+          }
+          clearBatchConfirm();
+          setBatchBusy(false);
+          refreshToolbar();
+        })
+        .catch((err) => {
+          if (!repairRequired(err)) setBatchBusy(false);
+          const status = root.querySelector('.curation-batch-status');
+          if (status) {
+            status.textContent = mutationErrorMessage(err, CUR_COPY.CUR_UNDO_FAILED);
+            status.classList.add('curation-batch-status-error');
+            status.hidden = false;
+          }
+        });
+      return;
+    }
+
+    if (action === 'entity-preview') {
+      const payload = entityPayload(button);
+      setBusy(button, true);
+      postJson('/app/curation/api/entity/preview', payload)
+        .then((result) => {
+          setBusy(button, false);
+          renderPreview(item, payload, result);
+        })
+        .catch((err) => {
+          setBusy(button, false);
+          showError(item, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    if (action === 'entity-accept' || action === 'entity-dismiss') {
+      const payload = entityPayload(button);
+      const path = action === 'entity-accept'
+        ? '/app/curation/api/entity/accept'
+        : '/app/curation/api/entity/dismiss';
+      setBusy(button, true);
+      postJson(path, payload)
+        .then((data) => {
+          if (action === 'entity-accept') appendUndoOutcome(data.undo, `${item.dataset.source} → ${item.dataset.target}`);
+          removeItem(item);
+        })
+        .catch((err) => {
+          if (action === 'entity-accept') {
+            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+          } else {
+            setBusy(button, false);
+            showError(item, err.serverMessage || err.message);
+          }
+        });
+    }
+  });
+})();
+</script>

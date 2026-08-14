@@ -82,6 +82,175 @@ fn gated(root: &Path) -> Router {
     )
 }
 
+async fn replay_record(router: Router, root: &Path, expected: &Value) {
+    let method = expected
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or("GET");
+    let mut request = Request::builder()
+        .method(method)
+        .uri(expected["path"].as_str().expect("path"));
+    if expected.get("request_json").is_some() {
+        request = request.header(header::CONTENT_TYPE, "application/json");
+    }
+    let body = expected
+        .get("request_json")
+        .map(|value| Body::from(serde_json::to_vec(value).expect("request JSON")))
+        .unwrap_or_else(Body::empty);
+    let response = router
+        .oneshot(request.body(body).expect("request"))
+        .await
+        .expect("response");
+    assert_eq!(
+        response.status().as_u16(),
+        expected["status"].as_u64().expect("status") as u16,
+        "{}",
+        expected["path"]
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        expected["content_type"].as_str(),
+        "{}",
+        expected["path"]
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let digest = if expected["body_sha256_basis"] == "raw-body" {
+        Sha256::digest(substitute(std::str::from_utf8(&body).expect("UTF-8"), root).as_bytes())
+    } else {
+        let mut value: Value = serde_json::from_slice(&body).expect("JSON body");
+        normalize(&mut value, root);
+        Sha256::digest(canonical(&value))
+    };
+    assert_eq!(
+        format!("{digest:x}"),
+        expected["body_sha256"].as_str().expect("digest"),
+        "{}",
+        expected["path"]
+    );
+}
+
+#[tokio::test]
+async fn ac1_replay_all_16_curation_phase_records() {
+    let fixture = corpus();
+    let paths = [
+        "/app/curation/",
+        "/app/curation/workspace",
+        "/app/curation/static/curation_evidence.js",
+        "/app/curation/api/state",
+    ];
+    let mut executed = 0;
+    for (phase, records) in fixture["phases"].as_object().expect("phases") {
+        let root = phase_root(phase);
+        let router = gated(root.path());
+        for expected in records
+            .as_array()
+            .expect("records")
+            .iter()
+            .filter(|record| {
+                record["path"]
+                    .as_str()
+                    .is_some_and(|path| paths.contains(&path))
+            })
+        {
+            replay_record(router.clone(), root.path(), expected).await;
+            executed += 1;
+        }
+    }
+    // /api/facet/candidates is intentionally excluded: solstone-core-entities owns it
+    // and covers it in core/crates/solstone-core-entities/src/router_tests.rs.
+    assert_eq!(executed, 16);
+}
+
+#[tokio::test]
+async fn ac1_replay_all_40_awareness_phase_records_and_no_index() {
+    let fixture = corpus();
+    let mut executed = 0;
+    for (phase, records) in fixture["phases"].as_object().expect("phases") {
+        let root = phase_root(phase);
+        let router = gated(root.path());
+        for expected in records
+            .as_array()
+            .expect("records")
+            .iter()
+            .filter(|record| {
+                record["path"]
+                    .as_str()
+                    .is_some_and(|path| path.starts_with("/app/awareness/"))
+            })
+        {
+            let route = if expected["path"] == "/app/awareness/" {
+                solstone_core_convey_shell::router(root.path().to_path_buf())
+            } else {
+                router.clone()
+            };
+            replay_record(route, root.path(), expected).await;
+            executed += 1;
+        }
+        let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+            .oneshot(
+                Request::get("/app/awareness/")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::NOT_FOUND,
+            "{phase}"
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8",
+            "{phase}"
+        );
+        assert_eq!(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body")
+                .len(),
+            207,
+            "{phase}"
+        );
+    }
+    assert_eq!(executed, 40);
+}
+
+#[tokio::test]
+async fn ac1_replay_all_10_in_scope_mutation_records() {
+    let fixture = corpus();
+    let root = phase_root("populated");
+    // The preceding five curation mutations are intentionally owned by
+    // solstone-core-entities. Apply their durable facet state here so the one
+    // in-scope curation read sees the same sequence state without registering
+    // duplicate facet-candidate routes in this crate.
+    solstone_core_facets::accept_candidate(root.path(), "atlas").expect("accept atlas");
+    solstone_core_facets::dismiss_candidate(root.path(), "ledger").expect("dismiss ledger");
+    let router = gated(root.path());
+    let mut records = fixture["mutations"]
+        .as_array()
+        .expect("mutations")
+        .iter()
+        .filter(|record| {
+            record["path"].as_str().is_some_and(|path| {
+                path.starts_with("/app/awareness/") || path == "/app/curation/api/state"
+            })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by_key(|record| record["sequence"].as_u64().expect("sequence"));
+    for expected in &records {
+        replay_record(router.clone(), root.path(), expected).await;
+    }
+    // The five other curation mutations target the descoped facet-candidate API, owned
+    // and tested by solstone-core-entities/src/router_tests.rs.
+    assert_eq!(records.len(), 10);
+}
+
 #[tokio::test]
 async fn ac2_ac3_replay_all_108_timeline_records() {
     let fixture = corpus();
@@ -619,6 +788,33 @@ async fn ac1d_convey_shell_uses_converted_news_registry_row() {
     let response = solstone_core_convey_shell::router(root.path().to_path_buf())
         .oneshot(
             Request::get("/app/news/nosuch/deep/path")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/html; charset=utf-8"
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    assert_eq!(body.len(), 207);
+    assert!(
+        !std::str::from_utf8(&body)
+            .expect("HTML")
+            .contains("app_not_converted")
+    );
+}
+
+#[tokio::test]
+async fn ac1e_convey_shell_uses_converted_curation_registry_row() {
+    let root = phase_root("established_empty");
+    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+        .oneshot(
+            Request::get("/app/curation/nosuch/deep/path")
                 .body(Body::empty())
                 .expect("request"),
         )

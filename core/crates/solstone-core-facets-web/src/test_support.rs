@@ -44,10 +44,50 @@ pub fn phase_root(phase: &str) -> TempDir {
             config(root.path());
             chronicle(root.path());
             news(root.path());
+            curation(root.path());
+            awareness(root.path());
         }
         _ => panic!("known phase: {phase}"),
     }
     root
+}
+
+fn curation(root: &Path) {
+    write(
+        &root.join("facets/review-candidates.jsonl"),
+        "{\"name\":\"Atlas\",\"name_key\":\"atlas\",\"status\":\"open\",\"count\":4,\"window_days\":7,\"evidence\":{\"samples\":[{\"day\":\"20260510\",\"quote\":\"we should look at Atlas again\",\"segment\":\"100000_300\"}]},\"first_surfaced\":\"20260510\",\"last_surfaced\":\"20260510\",\"created_at\":\"2026-05-15T12:00:00Z\",\"updated_at\":\"2026-05-15T12:00:00Z\"}\n{\"name\":\"Ledger\",\"name_key\":\"ledger\",\"status\":\"open\",\"count\":2,\"window_days\":7,\"evidence\":{\"samples\":[{\"day\":\"20260510\",\"quote\":\"we should look at Ledger again\",\"segment\":\"100000_300\"}]},\"first_surfaced\":\"20260510\",\"last_surfaced\":\"20260510\",\"created_at\":\"2026-05-15T12:00:00Z\",\"updated_at\":\"2026-05-15T12:00:00Z\"}\n",
+    );
+    write(
+        &root.join("entities/review-candidates.jsonl"),
+        "{\"facet\":\"work\",\"source\":\"Jordan Vancey\",\"source_slug\":\"jordan-vancey\",\"target\":\"Jordan Vance\",\"target_slug\":\"jordan-vance\",\"status\":\"open\",\"evidence\":{\"basis\":\"name-variant\",\"summary\":\"the two names appear in the same segment\",\"detection_count\":3,\"needs\":2}}\n",
+    );
+    write(
+        &root.join("entities/ambiguities.jsonl"),
+        "{\"ambiguity_id\":\"amb_ed9e7f6db452dc02e3f6f752\",\"status\":\"open\",\"original_query\":\"Jordan\",\"observed_tier\":5,\"occurrence_count\":1,\"origins\":[{\"day\":\"20260510\",\"facet\":\"work\",\"field\":\"participation.name\",\"lane\":\"corpus.seed\",\"record_id\":\"100000_300\"}],\"ranked_candidates\":[{\"id\":\"jordan-vance\",\"name\":\"Jordan Vance\",\"score\":0.61,\"tier\":5},{\"id\":\"jordan-vancey\",\"name\":\"Jordan Vancey\",\"score\":0.58,\"tier\":5}]}\n",
+    );
+    write(
+        &root.join("speakers/review-candidates.jsonl"),
+        "{\"source_id\":\"spk_jordan_v\",\"source_label\":\"Jordan V\",\"target_id\":\"spk_jordan_vance\",\"target_label\":\"Jordan Vance\",\"status\":\"open\",\"similarity\":0.86,\"readiness\":\"ready\",\"evidence\":{\"basis\":\"speaker-name-variant\",\"summary\":\"Jordan V and Jordan Vance have matching speaker voiceprints (similarity 0.8600).\",\"detection_count\":1,\"readiness\":\"ready\"}}\n",
+    );
+    write(
+        &root.join("speakers/candidate-pair-review-candidates.jsonl"),
+        "{\"key\":\"[\\\"anchor_a\\\",\\\"anchor_b\\\"]\",\"anchor_a\":\"anchor_a\",\"anchor_b\":\"anchor_b\",\"status\":\"open\",\"similarity\":0.74,\"evidence\":{\"basis\":\"speaker-candidate-pair\",\"similarity\":0.74,\"source_intervals\":4,\"source_samples\":[{\"day\":\"20260510\",\"segment\":\"100000_300\"}],\"target_intervals\":3,\"target_samples\":[{\"day\":\"20260510\",\"segment\":\"103000_300\"}]}}\n",
+    );
+}
+
+fn awareness(root: &Path) {
+    write(
+        &root.join("awareness/current.json"),
+        "{\"capture\":{\"first_segment_day\":\"20260510\",\"streams_seen\":[\"_default\",\"workstation.browser\"]},\"imports\":{\"has_imported\":true,\"import_count\":1,\"last_completed\":\"20260515T12:00:00\",\"last_nudge\":null,\"last_result_summary\":\"12 notes\",\"offer_declined\":null,\"sources_used\":[\"obsidian\"]}}\n",
+    );
+    write(
+        &root.join("awareness/20260515.jsonl"),
+        "{\"ts\":1778846400000,\"kind\":\"state\",\"key\":\"imports.completed\",\"data\":{\"source_type\":\"obsidian\"}}\n{\"ts\":1778846400000,\"kind\":\"observation\",\"message\":\"seeded on the injected clock's today\"}\n",
+    );
+    write(
+        &root.join("awareness/20260510.jsonl"),
+        "{\"ts\":1778846400000,\"kind\":\"state\",\"key\":\"capture.first_segment\",\"message\":\"first segment seen\"}\n{\"ts\":1778846400000,\"kind\":\"observation\",\"message\":\"the owner works mornings\"}\n{\"ts\":1778846400000,\"kind\":\"nudge\",\"key\":\"imports.nudge_sent\"}\n",
+    );
 }
 
 fn news(root: &Path) {
