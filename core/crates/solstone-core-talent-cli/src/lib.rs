@@ -125,6 +125,24 @@ mod tests {
     }
 
     #[test]
+    fn list_width_uses_the_rendered_filter_set() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/very_long_segment.md"),
+            "{\n\"schedule\": \"segment\",\n\"priority\": 1\n}\n",
+        )
+        .expect("segment prompt");
+        fs::write(
+            root.path().join("talent/daily.md"),
+            "{\n\"schedule\": \"daily\",\n\"priority\": 1\n}\n",
+        )
+        .expect("daily prompt");
+        let output = run(&root, &["list", "--schedule", "daily"]);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert!(output.stdout.starts_with("  NAME        TITLE"));
+    }
+
+    #[test]
     fn malformed_frontmatter_fails_without_partial_output() {
         let root = roots();
         fs::write(
@@ -265,6 +283,12 @@ mod tests {
         assert_eq!(json.exit_code, 0, "{}", json.stderr);
         let records = json.stdout.lines().collect::<Vec<_>>();
         assert_eq!(records.len(), discovered.len());
+        assert!(
+            json.stdout
+                .find("apps/entities/talent/detection.md")
+                .expect("detection")
+                < json.stdout.find("talent/event.md").expect("event")
+        );
         for expected in [
             r##"{"file": "talent/chat.md", "type": "generate", "title": "Chat", "description": "Structured conversational reply planner for the chat backend rewrite", "thinking_budget": 4096, "max_output_tokens": 2048, "output": "json", "schema": "chat.schema.json", "hook": {"pre": "chat_context"}, "color": "#6c757d", "source": "system"}"##,
             r##"{"file": "talent/conversation.md", "type": "generate", "title": "Conversation Story", "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.", "color": "#00796b", "schedule": "activity", "activities": ["meeting", "call", "messaging", "email"], "priority": 20, "output": "json", "max_output_tokens": 12288, "schema": "story.schema.json", "hook": {"post": "story"}, "degradation_check": true, "load": {"transcripts": true, "percepts": true, "talents": false}, "source": "system"}"##,

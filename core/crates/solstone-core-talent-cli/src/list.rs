@@ -23,7 +23,7 @@ pub(crate) fn render(
     if filtered.is_empty() {
         return "No prompts found matching filters.\n".to_owned();
     }
-    let name_width = configs
+    let name_width = filtered
         .iter()
         .map(|config| config.key.len())
         .max()

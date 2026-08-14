@@ -8,8 +8,10 @@ use crate::discovery::TalentConfig;
 use crate::validation::is_truthy;
 
 pub(crate) fn jsonl(configs: &[TalentConfig], options: &ListOptions) -> String {
+    let mut configs = filtered(configs, options);
+    configs.sort_by(|left, right| left.key.cmp(&right.key));
     let mut output = String::new();
-    for config in filtered(configs, options) {
+    for config in configs {
         let mut record = Map::new();
         record.insert("file".to_owned(), Value::String(config.file.clone()));
         for (key, value) in &config.metadata {

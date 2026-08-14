@@ -19,7 +19,7 @@ pub(crate) fn format_last_run(key: &str, journal_root: &Path, now: SystemTime) -
         let first = serde_json::from_str::<Value>(first_line).ok()?;
         let first_ts = first.get("ts")?.as_f64()?;
         let now_seconds = now.duration_since(UNIX_EPOCH).ok()?.as_secs_f64();
-        let mut age = format_seconds(now_seconds - first_ts / 1000.0, true);
+        let mut age = format_age(now_seconds - first_ts / 1000.0);
         let last_line = lines.next_back();
         let mut failed = false;
         if let Some(last_line) = last_line {
@@ -28,7 +28,7 @@ pub(crate) fn format_last_run(key: &str, journal_root: &Path, now: SystemTime) -
             failed = last.get("event").and_then(Value::as_str) == Some("error");
             age.push_str(&format!(
                 " ({})",
-                format_seconds(last_ts / 1000.0 - first_ts / 1000.0, false)
+                format_duration(last_ts / 1000.0 - first_ts / 1000.0)
             ));
         }
         Some((age, failed))
@@ -36,7 +36,7 @@ pub(crate) fn format_last_run(key: &str, journal_root: &Path, now: SystemTime) -
     result.unwrap_or_else(|| ("-".to_owned(), false))
 }
 
-fn format_seconds(seconds: f64, age: bool) -> String {
+fn format_age(seconds: f64) -> String {
     let value = if seconds < 60.0 {
         format!("{}s", seconds as i64)
     } else if seconds < 3600.0 {
@@ -46,7 +46,17 @@ fn format_seconds(seconds: f64, age: bool) -> String {
     } else {
         format!("{}d", (seconds / 86400.0) as i64)
     };
-    if age { format!("{value} ago") } else { value }
+    format!("{value} ago")
+}
+
+fn format_duration(seconds: f64) -> String {
+    if seconds < 60.0 {
+        format!("{}s", seconds as i64)
+    } else if seconds < 3600.0 {
+        format!("{}m", (seconds / 60.0) as i64)
+    } else {
+        format!("{}h", (seconds / 3600.0) as i64)
+    }
 }
 
 #[cfg(test)]
@@ -94,6 +104,15 @@ mod tests {
         assert_eq!(
             format_last_run("missing-ts", root.path(), now),
             ("-".to_owned(), false)
+        );
+        fs::write(
+            root.path().join("talents/long.log"),
+            "{\"ts\":0}\n{\"ts\":90000000}\n",
+        )
+        .expect("long duration log");
+        assert_eq!(
+            format_last_run("long", root.path(), now),
+            ("1d ago (25h)".to_owned(), false)
         );
         for (name, seconds, expected) in [
             ("seconds", 59, "59s ago"),
