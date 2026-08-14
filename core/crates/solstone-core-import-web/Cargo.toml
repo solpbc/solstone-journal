@@ -1,0 +1,24 @@
+[package]
+name = "solstone-core-import-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["tokio"] }
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-convey-http.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+sha2.workspace = true
+solstone-core-convey-shell.workspace = true
+tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower.workspace = true

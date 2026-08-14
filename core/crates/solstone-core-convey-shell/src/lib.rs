@@ -701,6 +701,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/body/workspace", get(body::workspace))
         .route("/app/body/background", get(body::background))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
+        .merge(solstone_core_import_web::routes(journal_root.clone()))
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
