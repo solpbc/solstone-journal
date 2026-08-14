@@ -307,18 +307,31 @@ async fn ac1_replay_all_20_activities_phase_records_and_14_mutations() {
         expected["path"] = Value::String(path);
         replay_record(router.clone(), root.path(), &expected).await;
     }
-    // The implementation dispatch adds three repeat probes to the prior eleven rows.
-    assert_eq!(
-        fixture["mutations"]
-            .as_array()
-            .expect("mutations")
-            .iter()
-            .filter(|record| record["path"]
+    let activity_mutations = fixture["mutations"]
+        .as_array()
+        .expect("mutations")
+        .iter()
+        .filter(|record| {
+            record["path"]
                 .as_str()
-                .is_some_and(|path| path.starts_with("/app/activities/api/")))
-            .count(),
-        14
-    );
+                .is_some_and(|path| path.starts_with("/app/activities/api/"))
+        })
+        .collect::<Vec<_>>();
+    // Deliberate, governed AC1 coverage count: the repeat probes are part of the contract.
+    assert_eq!(activity_mutations.len(), 14);
+    for (sequence, suffix, status) in [
+        (10, "/records?facet=work", 409),
+        (16, "/mute?facet=work", 200),
+        (20, "/unmute?facet=work", 200),
+    ] {
+        assert!(activity_mutations.iter().any(|record| {
+            record["sequence"].as_u64() == Some(sequence)
+                && record["path"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with(suffix))
+                && record["status"].as_u64() == Some(status)
+        }));
+    }
 }
 
 #[tokio::test]

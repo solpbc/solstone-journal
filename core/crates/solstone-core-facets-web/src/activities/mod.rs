@@ -9,15 +9,18 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{Path as RoutePath, RawQuery, State},
-    http::{StatusCode, header},
+    http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
-    EntityResolutionOutcome, load_all_journal_entities, record_entity_resolution,
+    EntityResolutionEntity, EntityResolutionOutcome, record_entity_resolution,
 };
-use solstone_core_facets::{ActivityRecord, AppendOutcome};
+use solstone_core_facets::{
+    ActivityRecord, AppendOutcome, activity_value_or_empty, activity_value_string,
+    read_detected_entities,
+};
 use solstone_core_format::content::{ChatLabels, Family, produce_chunks_by_shape};
 
 use crate::{Clock, http};
@@ -52,9 +55,6 @@ async fn list(
     RoutePath(day): RoutePath<String>,
     RawQuery(query): RawQuery,
 ) -> Response {
-    if let Some(response) = session_response(&root) {
-        return response;
-    }
     let facet = query_value(query.as_deref(), "facet").filter(|facet| !facet.is_empty());
     let include_hidden = query_value(query.as_deref(), "include_hidden").as_deref() == Some("1");
     let facets = match facet {
@@ -83,9 +83,6 @@ async fn record(
     RoutePath((day, span_id)): RoutePath<(String, String)>,
     RawQuery(query): RawQuery,
 ) -> Response {
-    if let Some(response) = session_response(&root) {
-        return response;
-    }
     let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
     if facet.is_empty() {
         return not_found(span_id);
@@ -105,16 +102,13 @@ async fn create(
     RawQuery(query): RawQuery,
     body: Bytes,
 ) -> Response {
-    if let Some(response) = session_response(&root) {
-        return response;
-    }
     let body = object_body(&body);
     let title = string(&body, "title").trim().to_owned();
     let source = body
         .get("source")
-        .and_then(Value::as_str)
-        .unwrap_or("user")
-        .to_owned();
+        .map(|value| activity_value_or_empty(Some(value)))
+        .filter(|source| !source.is_empty())
+        .unwrap_or_else(|| "user".to_owned());
     if title.is_empty() {
         return invalid("title must not be empty");
     }
@@ -133,8 +127,8 @@ async fn create(
     }
     let (anchor, segments) = match body.get("since_segment") {
         Some(value) if !value.is_null() => (
-            value_to_string(value),
-            vec![Value::String(value_to_string(value))],
+            activity_value_string(value),
+            vec![Value::String(activity_value_string(value))],
         ),
         _ => (
             format!("user_{}", clock.now().and_utc().timestamp_millis()),
@@ -182,7 +176,7 @@ async fn create(
     record.insert("edits".to_owned(), json!([{"timestamp":clock.now().and_utc().format("%Y-%m-%dT%H:%M:%SZ").to_string(),"actor":if source == "cogitate" { "cogitate:activities" } else { "cli:create" },"fields":fields,"note":"created"}]));
     match solstone_core_facets::append_activity_record(&root, &facet, &day, record) {
         Ok(AppendOutcome::Written(record)) => {
-            let _ = solstone_core_facets::append_action_log_for_day(
+            if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 &root,
                 Some(&facet),
                 "call",
@@ -190,7 +184,9 @@ async fn create(
                 "activity_create",
                 json!({"id":span_id,"activity":activity,"source":source}),
                 &day,
-            );
+            ) {
+                return internal(error.to_string());
+            }
             Json(payload(record)).into_response()
         }
         Ok(AppendOutcome::AlreadyExists) => already_exists(span_id),
@@ -231,9 +227,6 @@ async fn mutate_update(
     query: Option<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(response) = session_response(root) {
-        return response;
-    }
     let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
     if facet.is_empty() {
         return not_found(span_id);
@@ -256,7 +249,7 @@ async fn mutate_update(
             disallowed.join(", ")
         ));
     }
-    let note = value_to_string(body.get("note").unwrap_or(&Value::Null));
+    let note = activity_value_or_empty(body.get("note"));
     let timestamp = clock
         .now()
         .and_utc()
@@ -273,7 +266,7 @@ async fn mutate_update(
         &timestamp,
     ) {
         Ok(Some(record)) => {
-            let _ = solstone_core_facets::append_action_log_for_day(
+            if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 root,
                 Some(&facet),
                 "call",
@@ -281,7 +274,9 @@ async fn mutate_update(
                 "activity_update",
                 json!({"id":span_id,"fields":patch.keys().collect::<Vec<_>>() }),
                 &day,
-            );
+            ) {
+                return internal(error.to_string());
+            }
             Json(payload(record)).into_response()
         }
         Ok(None) | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
@@ -300,9 +295,6 @@ fn set_hidden(
     body: Bytes,
     hidden: bool,
 ) -> Response {
-    if let Some(response) = session_response(root) {
-        return response;
-    }
     let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
     if facet.is_empty() {
         return not_found(span_id);
@@ -330,7 +322,7 @@ fn set_hidden(
             } else {
                 "activity_unmute"
             };
-            let _ = solstone_core_facets::append_action_log_for_day(
+            if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 root,
                 Some(&facet),
                 "call",
@@ -338,7 +330,9 @@ fn set_hidden(
                 action,
                 json!({"id":span_id,"reason":reason}),
                 &day,
-            );
+            ) {
+                return internal(error.to_string());
+            }
             Json(payload(record)).into_response()
         }
         Ok(None) | Err(solstone_core_facets::ActivityRecordStoreError::MissingDayFile { .. }) => {
@@ -355,10 +349,25 @@ fn resolve_participation(
     record_id: &str,
     raw: Option<&Value>,
 ) -> Result<Vec<Value>, String> {
-    let entities = load_all_journal_entities(root)
+    // Python routes.py:_resolve_participation_entity_ids calls
+    // load_entities(facet=facet, day=day), i.e. this facet day's detected rows.
+    let entities = read_detected_entities(root, facet, day)
         .map_err(|error| error.to_string())?
         .into_iter()
-        .map(|entity| entity.resolution_entity())
+        .filter_map(|entity| entity.as_object().cloned())
+        .map(|entity| EntityResolutionEntity {
+            id: entity.get("id").and_then(Value::as_str).map(str::to_owned),
+            name: entity
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            aka: string_values(&entity, "aka"),
+            emails: string_values(&entity, "emails"),
+            blocked: entity
+                .get("blocked")
+                .is_some_and(solstone_core_facets::activity_value_truthy),
+        })
         .collect::<Vec<_>>();
     raw.and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(|entry| {
         let mut entry = entry.as_object().cloned().unwrap_or_default();
@@ -397,13 +406,17 @@ fn object_body(bytes: &[u8]) -> Map<String, Value> {
         .unwrap_or_default()
 }
 fn string(record: &Map<String, Value>, key: &str) -> String {
-    record.get(key).map(value_to_string).unwrap_or_default()
+    activity_value_or_empty(record.get(key))
 }
-fn value_to_string(value: &Value) -> String {
-    value
-        .as_str()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| value.to_string())
+fn string_values(record: &Map<String, Value>, key: &str) -> Vec<String> {
+    record
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }
 fn invalid(detail: &str) -> Response {
     http::error(
@@ -446,35 +459,502 @@ fn store_error(error: solstone_core_facets::ActivityRecordStoreError) -> Respons
     ) {
         http::error(
             "activities_busy",
-            "Activities are busy; try again.",
-            "activities are busy; try again".to_owned(),
+            "I couldn't update activities right now because they were busy. Try again in a moment.",
+            "I couldn't update activities right now because they were busy. Try again in a moment."
+                .to_owned(),
             StatusCode::SERVICE_UNAVAILABLE,
         )
     } else {
         internal(error.to_string())
     }
 }
-fn session_response(root: &Path) -> Option<Response> {
-    let path = root.join("config/journal.json");
-    if !path.exists() {
-        return Some(
-            axum::http::Response::builder()
-                .status(StatusCode::FOUND)
-                .header(header::LOCATION, "/init")
-                .body(axum::body::Body::empty())
-                .expect("redirect"),
+
+#[cfg(test)]
+mod tests {
+    use std::{path::Path, time::Duration};
+
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
+    };
+    use serde_json::{Value, json};
+    use solstone_core_journal_io::{LockError, LockTimeout};
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::test_support::{fixed_clock, later_clock, phase_root, write};
+
+    fn gated(root: &Path, clock: Clock) -> Router {
+        solstone_core_convey_shell::session_gate::apply_layer(
+            routes(root.to_path_buf(), clock),
+            root.to_path_buf(),
+        )
+    }
+
+    async fn request(
+        router: Router,
+        method: &str,
+        uri: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut request = Request::builder().method(method).uri(uri);
+        if body.is_some() {
+            request = request.header(header::CONTENT_TYPE, "application/json");
+        }
+        let body = body
+            .map(|body| Body::from(serde_json::to_vec(&body).expect("request JSON")))
+            .unwrap_or_else(Body::empty);
+        let response = router
+            .oneshot(request.body(body).expect("request"))
+            .await
+            .expect("response");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, body)
+    }
+
+    fn create_body(since_segment: Option<&str>) -> Value {
+        let mut body = json!({"title":"Planning","activity":"meeting"});
+        if let Some(since_segment) = since_segment {
+            body["since_segment"] = Value::String(since_segment.to_owned());
+        }
+        body
+    }
+
+    fn day_path(root: &Path) -> std::path::PathBuf {
+        root.join("facets/work/activities/20260510.jsonl")
+    }
+
+    #[tokio::test]
+    async fn ac2a_create_guard_same_since_segment_refuses_second_create() {
+        let root = phase_root("established_empty");
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let (first, _) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(create_body(Some("111000_300"))),
+        )
+        .await;
+        let (second, body) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(create_body(Some("111000_300"))),
+        )
+        .await;
+        assert_eq!(first, StatusCode::OK);
+        assert_eq!(second, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "activity_already_exists");
+        assert_eq!(
+            std::fs::read_to_string(day_path(root.path()))
+                .expect("rows")
+                .lines()
+                .count(),
+            1
         );
     }
-    if std::fs::read_to_string(path)
-        .ok()
-        .is_some_and(|contents| serde_json::from_str::<Value>(&contents).is_err())
-    {
-        return Some(http::error(
-            "corrupt_config",
-            "I couldn't read the journal configuration.",
-            "journal configuration is corrupt".to_owned(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ));
+
+    #[tokio::test]
+    async fn ac2b_create_guard_fixed_clock_refuses_second_create() {
+        let root = phase_root("established_empty");
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let (first, _) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(create_body(None)),
+        )
+        .await;
+        let (second, body) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(create_body(None)),
+        )
+        .await;
+        assert_eq!(first, StatusCode::OK);
+        assert_eq!(second, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "activity_already_exists");
+        assert_eq!(
+            std::fs::read_to_string(day_path(root.path()))
+                .expect("rows")
+                .lines()
+                .count(),
+            1
+        );
     }
-    None
+
+    #[tokio::test]
+    async fn ac2c_create_guard_distinct_clock_readings_create_two_records() {
+        let root = phase_root("established_empty");
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let (first, _) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(create_body(None)),
+        )
+        .await;
+        let (second, _) = request(
+            gated(root.path(), later_clock()),
+            "POST",
+            uri,
+            Some(create_body(None)),
+        )
+        .await;
+        assert_eq!(first, StatusCode::OK);
+        assert_eq!(second, StatusCode::OK);
+        assert_eq!(
+            std::fs::read_to_string(day_path(root.path()))
+                .expect("rows")
+                .lines()
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn ac3_list_hides_muted_unless_requested() {
+        let root = phase_root("populated");
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let (_, visible) = request(gated(root.path(), fixed_clock()), "GET", uri, None).await;
+        let (_, all) = request(
+            gated(root.path(), fixed_clock()),
+            "GET",
+            &format!("{uri}&include_hidden=1"),
+            None,
+        )
+        .await;
+        assert_eq!(visible["items"].as_array().expect("items").len(), 1);
+        assert_eq!(all["items"].as_array().expect("items").len(), 2);
+        assert_eq!(all["items"][1]["record"]["hidden"], true);
+    }
+
+    #[tokio::test]
+    async fn ac4_list_without_facet_orders_two_declared_facets() {
+        let root = phase_root("populated");
+        write(
+            &root
+                .path()
+                .join("facets/personal/activities/20260510.jsonl"),
+            "{\"id\":\"personal_1\",\"activity\":\"meeting\",\"title\":\"Personal\",\"description\":\"Personal\",\"hidden\":false}\n",
+        );
+        let (_, all) = request(
+            gated(root.path(), fixed_clock()),
+            "GET",
+            "/app/activities/api/day/20260510/records?include_hidden=1",
+            None,
+        )
+        .await;
+        let ids = all["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .map(|item| item["record"]["id"].as_str().expect("id"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            ["personal_1", "meeting_100000_300", "focus_103000_300"]
+        );
+        let (_, scoped) = request(
+            gated(root.path(), fixed_clock()),
+            "GET",
+            "/app/activities/api/day/20260510/records?facet=work&include_hidden=1",
+            None,
+        )
+        .await;
+        assert_eq!(scoped["items"].as_array().expect("items").len(), 2);
+    }
+
+    #[tokio::test]
+    async fn ac6_update_adds_one_named_edit_with_note() {
+        let root = phase_root("populated");
+        let uri = "/app/activities/api/day/20260510/record/meeting_100000_300/update?facet=work";
+        let (status, body) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(json!({"patch":{"title":"Retitled","details":"More"},"note":"corrected"})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let edits = body["record"]["edits"].as_array().expect("edits");
+        assert_eq!(edits.len(), 2);
+        assert_eq!(edits[1]["fields"], json!(["title", "details"]));
+        assert_eq!(edits[1]["note"], "corrected");
+        assert_eq!(body["record"]["title"], "Retitled");
+    }
+
+    #[tokio::test]
+    async fn ac7_mute_then_unmute_each_append_an_edit() {
+        let root = phase_root("populated");
+        let mute_uri = "/app/activities/api/day/20260510/record/meeting_100000_300/mute?facet=work";
+        let (muted, muted_body) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            mute_uri,
+            Some(json!({"reason":"quiet"})),
+        )
+        .await;
+        let (unmuted, unmuted_body) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            "/app/activities/api/day/20260510/record/meeting_100000_300/unmute?facet=work",
+            Some(json!({"reason":"back"})),
+        )
+        .await;
+        assert_eq!(muted, StatusCode::OK);
+        assert_eq!(muted_body["record"]["hidden"], true);
+        assert_eq!(
+            muted_body["record"]["edits"]
+                .as_array()
+                .expect("edits")
+                .len(),
+            2
+        );
+        assert_eq!(unmuted, StatusCode::OK);
+        assert_eq!(unmuted_body["record"]["hidden"], false);
+        assert_eq!(
+            unmuted_body["record"]["edits"]
+                .as_array()
+                .expect("edits")
+                .len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn ac8_repeat_hidden_state_normalizes_once_then_suppresses_each_direction() {
+        let root = phase_root("populated");
+        write(
+            &day_path(root.path()),
+            "{\"id\":\"loose_mute\",\"activity\":\"meeting\",\"description\":\"Loose mute\",\"title\":false,\"details\":false,\"hidden\":false,\"edits\":{}}\n{\"id\":\"loose_unmute\",\"activity\":\"meeting\",\"description\":\"Loose unmute\",\"title\":false,\"details\":false,\"hidden\":true,\"edits\":{}}\n",
+        );
+        for (id, action, expected) in [
+            ("loose_mute", "mute", true),
+            ("loose_unmute", "unmute", false),
+        ] {
+            let uri = format!("/app/activities/api/day/20260510/record/{id}/{action}?facet=work");
+            let (first, body) = request(
+                gated(root.path(), fixed_clock()),
+                "POST",
+                &uri,
+                Some(json!({})),
+            )
+            .await;
+            assert_eq!(first, StatusCode::OK);
+            assert_eq!(body["record"]["hidden"], expected);
+            assert_eq!(
+                body["record"]["title"],
+                if expected {
+                    "Loose mute"
+                } else {
+                    "Loose unmute"
+                }
+            );
+            assert_eq!(body["record"]["details"], "");
+            assert_eq!(body["record"]["edits"].as_array().expect("edits").len(), 1);
+            let persisted =
+                std::fs::read_to_string(day_path(root.path())).expect("normalized rows");
+            let (second, repeated) = request(
+                gated(root.path(), fixed_clock()),
+                "POST",
+                &uri,
+                Some(json!({})),
+            )
+            .await;
+            // An always-append port grows edits here; an early-return port cannot persist first-pass normalization.
+            assert_eq!(second, StatusCode::OK);
+            assert_eq!(
+                repeated["record"]["edits"].as_array().expect("edits").len(),
+                1
+            );
+            assert_eq!(
+                std::fs::read_to_string(day_path(root.path())).expect("suppressed rows"),
+                persisted
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn ac9_missing_record_is_not_found_for_each_record_route() {
+        let root = phase_root("populated");
+        for (suffix, body) in [
+            ("", None),
+            ("/update", Some(json!({"patch":{"title":"new"}}))),
+            ("/mute", Some(json!({}))),
+            ("/unmute", Some(json!({}))),
+        ] {
+            let method = if suffix.is_empty() { "GET" } else { "POST" };
+            let uri = format!("/app/activities/api/day/20260510/record/missing{suffix}?facet=work");
+            let (status, response) =
+                request(gated(root.path(), fixed_clock()), method, &uri, body).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{suffix}");
+            assert_eq!(response["reason_code"], "activity_not_found");
+            assert_eq!(response["detail"], "missing");
+        }
+    }
+
+    #[tokio::test]
+    async fn ac10_create_refusal_order_matches_python() {
+        let root = phase_root("populated");
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        for (body, code, detail) in [
+            (
+                json!({"activity":"missing"}),
+                "activity_invalid",
+                "title must not be empty",
+            ),
+            (
+                json!({"title":"x","source":"bad","activity":"meeting"}),
+                "activity_invalid",
+                "source must be 'user' or 'cogitate'",
+            ),
+            (
+                json!({"title":"x","activity":"missing"}),
+                "activity_not_found",
+                "missing",
+            ),
+            (
+                json!({"title":"x","source":"bad","activity":"missing"}),
+                "activity_invalid",
+                "source must be 'user' or 'cogitate'",
+            ),
+        ] {
+            let (_, response) =
+                request(gated(root.path(), fixed_clock()), "POST", uri, Some(body)).await;
+            assert_eq!(response["reason_code"], code);
+            assert_eq!(response["detail"], detail);
+        }
+    }
+
+    #[tokio::test]
+    async fn ac14_gated_preinit_and_corrupt_config_do_not_create_activity_days() {
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let unestablished = phase_root("unestablished");
+        let response = gated(unestablished.path(), fixed_clock())
+            .oneshot(
+                Request::post(uri)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&create_body(None)).expect("body"),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(response.headers()[header::LOCATION], "/init");
+        assert!(!day_path(unestablished.path()).exists());
+
+        let corrupt = phase_root("corrupt");
+        let (status, body) = request(
+            gated(corrupt.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(create_body(None)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "corrupt_config");
+        assert!(!day_path(corrupt.path()).exists());
+    }
+
+    #[tokio::test]
+    async fn participation_uses_only_the_facet_day_detected_entities() {
+        let root = phase_root("populated");
+        write(
+            &root.path().join("entities/outside/entity.json"),
+            "{\"id\":\"outside\",\"name\":\"Outside Person\",\"type\":\"person\"}\n",
+        );
+        write(
+            &root.path().join("facets/personal/entities/20260510.jsonl"),
+            "{\"id\":\"outside\",\"name\":\"Outside Person\",\"type\":\"person\"}\n",
+        );
+        let (status, body) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            "/app/activities/api/day/20260510/records?facet=work",
+            Some(json!({"title":"Planning","activity":"meeting","participation":[{"name":"Outside Person"}]})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["record"]["participation"][0]["entity_id"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn python_value_coercion_matches_create_and_update() {
+        let root = phase_root("populated");
+        let uri = "/app/activities/api/day/20260510/records?facet=work";
+        let (_, refused) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(json!({"title":"x","activity":"meeting","source":true})),
+        )
+        .await;
+        assert_eq!(refused["detail"], "source must be 'user' or 'cogitate'");
+        let (_, created) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            uri,
+            Some(json!({"title":"Fallback","activity":"meeting","description":false})),
+        )
+        .await;
+        assert_eq!(created["record"]["description"], "Fallback");
+        let (_, updated) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            "/app/activities/api/day/20260510/record/meeting_100000_300/update?facet=work",
+            Some(json!({"patch":{"details":"changed"},"note":null})),
+        )
+        .await;
+        assert_eq!(updated["record"]["edits"][1]["note"], "");
+    }
+
+    #[tokio::test]
+    async fn action_log_failures_propagate_after_the_record_write() {
+        let root = phase_root("populated");
+        write(&root.path().join("facets/work/logs"), "not a directory");
+        let (status, response) = request(
+            gated(root.path(), fixed_clock()),
+            "POST",
+            "/app/activities/api/day/20260510/records?facet=work",
+            Some(create_body(Some("111000_300"))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response["reason_code"], "internal_error");
+        assert_eq!(
+            std::fs::read_to_string(day_path(root.path()))
+                .expect("record was written before the Python-equivalent log failure")
+                .lines()
+                .count(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn lock_timeout_uses_the_canonical_activities_busy_reason() {
+        let response = store_error(solstone_core_facets::ActivityRecordStoreError::Lock(
+            LockError::Timeout(LockTimeout {
+                path: "activities.jsonl".into(),
+                timeout: Duration::from_millis(1),
+            }),
+        ));
+        let (parts, body) = response.into_parts();
+        let body = to_bytes(body, usize::MAX).await.expect("body");
+        let body: Value = serde_json::from_slice(&body).expect("JSON");
+        assert_eq!(parts.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "activities_busy");
+        assert_eq!(
+            body["error"],
+            "I couldn't update activities right now because they were busy. Try again in a moment."
+        );
+    }
 }

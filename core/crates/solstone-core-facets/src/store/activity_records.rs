@@ -365,19 +365,91 @@ fn title(record: &ActivityRecord) -> String {
     "untitled activity".to_owned()
 }
 fn string(record: &ActivityRecord, key: &str) -> String {
-    record
-        .get(key)
-        .map(Value::to_string)
-        .unwrap_or_default()
-        .trim_matches('"')
-        .trim()
-        .to_owned()
+    activity_value_or_empty(record.get(key)).trim().to_owned()
 }
 fn hidden(record: &ActivityRecord) -> bool {
-    record
-        .get("hidden")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+    record.get("hidden").is_some_and(activity_value_truthy)
+}
+
+/// Python's `bool(value)` for activity-record compatibility.
+pub fn activity_value_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value
+            .as_i64()
+            .map(|value| value != 0)
+            .or_else(|| value.as_u64().map(|value| value != 0))
+            .or_else(|| value.as_f64().map(|value| value != 0.0))
+            .unwrap_or(false),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
+/// Python's `str(value)` for activity request and record coercion.
+pub fn activity_value_string(value: &Value) -> String {
+    match value {
+        Value::Null => "None".to_owned(),
+        Value::Bool(value) => {
+            if *value {
+                "True".to_owned()
+            } else {
+                "False".to_owned()
+            }
+        }
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => value.clone(),
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(activity_value_repr)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Value::Object(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!(
+                    "{}: {}",
+                    python_quote(key),
+                    activity_value_repr(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Python's `str(value or "")` for activity request and record coercion.
+pub fn activity_value_or_empty(value: Option<&Value>) -> String {
+    value
+        .filter(|value| activity_value_truthy(value))
+        .map(activity_value_string)
+        .unwrap_or_default()
+}
+
+fn activity_value_repr(value: &Value) -> String {
+    match value {
+        Value::String(value) => python_quote(value),
+        Value::Array(_) | Value::Object(_) => activity_value_string(value),
+        _ => activity_value_string(value),
+    }
+}
+
+fn python_quote(value: &str) -> String {
+    format!(
+        "'{}'",
+        value
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t")
+    )
 }
 fn id(record: &ActivityRecord) -> &str {
     record.get("id").and_then(Value::as_str).unwrap_or_default()
@@ -400,5 +472,33 @@ mod tests {
             append_activity_record(root.path(), "work", "20260510", record).expect("read"),
             AppendOutcome::AlreadyExists
         ));
+    }
+
+    #[test]
+    fn python_value_coercion_preserves_truthiness_and_string_forms() {
+        assert!(!activity_value_truthy(&Value::Null));
+        assert!(!activity_value_truthy(&serde_json::json!(0)));
+        assert!(!activity_value_truthy(&serde_json::json!([])));
+        assert!(activity_value_truthy(&serde_json::json!([0])));
+        assert_eq!(activity_value_or_empty(Some(&serde_json::json!(false))), "");
+        assert_eq!(activity_value_string(&serde_json::json!(true)), "True");
+        assert_eq!(
+            activity_value_string(&serde_json::json!(["a", true])),
+            "['a', True]"
+        );
+
+        let normalized = normalize(
+            serde_json::json!({
+                "id":"record_1", "activity":"meeting", "description":"Fallback",
+                "title":false, "details":false, "hidden":"yes", "edits":{}
+            })
+            .as_object()
+            .expect("record")
+            .clone(),
+        );
+        assert_eq!(normalized["title"], "Fallback");
+        assert_eq!(normalized["details"], "");
+        assert_eq!(normalized["hidden"], true);
+        assert_eq!(normalized["edits"], serde_json::json!([]));
     }
 }

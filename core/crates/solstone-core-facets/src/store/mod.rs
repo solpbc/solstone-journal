@@ -31,8 +31,8 @@ pub use activities::{
 };
 pub use activity_records::{
     ActivityRecord, ActivityRecordStoreError, AppendOutcome, activity_is_available,
-    append_activity_record, get_activity_record, load_activity_records, set_activity_hidden,
-    update_activity_record,
+    activity_value_or_empty, activity_value_string, activity_value_truthy, append_activity_record,
+    get_activity_record, load_activity_records, set_activity_hidden, update_activity_record,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
