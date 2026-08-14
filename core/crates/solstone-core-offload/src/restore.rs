@@ -11,7 +11,8 @@ use std::time::Duration;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use solstone_core_backup::{
-    assemble_backend_env, get_destination, get_keys, record_restore_result,
+    assemble_backend_env, get_backup_config, get_destination, get_keys, load_hosted_binding,
+    record_restore_result,
 };
 use solstone_core_backup_runtime::{BackupServices, reason_for_returncode, run_restic};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments, segment_path};
@@ -25,7 +26,7 @@ use crate::measurement::device_free_bytes;
 pub const RESTORE_RESERVE_BYTES: u64 = 1_000_000_000;
 pub const OFFLOAD_RESTORE_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const OFFLOAD_RESTORE_STATUSES: [&str; 5] = ["ok", "no_op", "refused", "degraded", "error"];
-pub const OFFLOAD_RESTORE_REASONS: [&str; 12] = [
+pub const OFFLOAD_RESTORE_REASONS: [&str; 14] = [
     "auth_failed",
     "backup_not_ready",
     "failed",
@@ -36,6 +37,8 @@ pub const OFFLOAD_RESTORE_REASONS: [&str; 12] = [
     "nothing_to_restore",
     "repo_missing",
     "restic_unavailable",
+    "rclone_unavailable",
+    "segment_missing",
     "timeout",
     "verification_failed",
 ];
@@ -142,7 +145,7 @@ fn restore_segment(
         bytes_restored: 0,
     };
     if !directory.is_dir() {
-        return (err("failed"), true);
+        return (err("segment_missing"), true);
     }
     let absent = summary
         .files
@@ -270,6 +273,16 @@ fn run(
         result.bytes_expected = expected;
         return result;
     }
+    if operated_restore_requires_rclone(journal, services) {
+        let mut result = base("error", Some("rclone_unavailable"), scope, day);
+        result.segments_selected = selected.len() as u64;
+        result.files_expected = selected
+            .iter()
+            .map(|segment| segment.offloaded_file_count)
+            .sum();
+        result.bytes_expected = expected;
+        return result;
+    }
     let mut details = vec![];
     let mut record_result = true;
     for segment in &selected {
@@ -351,6 +364,16 @@ fn run(
     }
     result
 }
+fn operated_restore_requires_rclone(journal: &Path, services: &BackupServices<'_>) -> bool {
+    let Ok(config) = get_backup_config(journal) else {
+        return false;
+    };
+    config.get("enabled") == Some(&Value::Bool(true))
+        && config.get("mode") == Some(&Value::String("operated".into()))
+        && get_keys(journal).ok().flatten().is_some()
+        && load_hosted_binding(journal).is_some()
+        && services.rclone_path.is_none()
+}
 pub fn restore_offload_day(
     journal: &Path,
     services: &BackupServices<'_>,
@@ -391,6 +414,9 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use crate::ledger::append_offload_event;
+    use solstone_core_backup::{
+        HostedBinding, generate_and_store_keys, save_hosted_binding, set_enabled, set_mode,
+    };
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
     use solstone_core_backup_runtime::{
         Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
@@ -873,6 +899,61 @@ mod tests {
 
         assert_eq!(result.status, "refused");
         assert_eq!(result.reason.as_deref(), Some("insufficient_free_space"));
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn missing_segment_reports_the_reference_reason_code() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = marked_segment(journal.path(), "20260113", "130000_013", b"missing");
+        fs::remove_dir_all(segment).unwrap();
+        let runner = empty_runner();
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_offload_day(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            "20260113",
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason.as_deref(), Some("segment_missing"));
+    }
+
+    #[test]
+    fn configured_operated_restore_without_rclone_reports_the_reference_reason_code() {
+        let journal = tempfile::tempdir().unwrap();
+        marked_segment(journal.path(), "20260114", "140000_014", b"operated");
+        generate_and_store_keys(journal.path()).unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        set_mode(journal.path(), "operated").unwrap();
+        save_hosted_binding(
+            journal.path(),
+            &HostedBinding {
+                broker_endpoint: "https://broker.example".into(),
+                account_id: "account".into(),
+                instance_id: "instance".into(),
+                bucket: "bucket".into(),
+                prefix: "prefix".into(),
+                broker_token: "fixture-token".into(),
+            },
+        )
+        .unwrap();
+        let runner = empty_runner();
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_offload_day(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            "20260114",
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason.as_deref(), Some("rclone_unavailable"));
         assert!(runner.calls.borrow().is_empty());
     }
 }

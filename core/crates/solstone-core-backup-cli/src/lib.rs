@@ -25,35 +25,29 @@ use solstone_core_offload::{
 };
 
 pub const USAGE: &str = "usage: journal backup <command> [options]\n";
+pub const DESTINATION_USAGE: &str = "usage: journal backup destination <command> [options]\n";
 pub const OFFLOAD_USAGE: &str = "usage: journal backup offload <command> [options]\n";
+pub const RECOVERY_KEY_USAGE: &str = "usage: journal backup recovery-key <command> [options]\n";
 const MAX_JSON_STDIN_BYTES: usize = 1024 * 1024; // Keep in lockstep with solstone-core main.rs.
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct CliRun {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
 }
+impl std::fmt::Debug for CliRun {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CliRun")
+            .field("stdout", &"<redacted>")
+            .field("stderr", &"<redacted>")
+            .field("exit_code", &self.exit_code)
+            .finish()
+    }
+}
 
 pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
-    let args = args
-        .iter()
-        .filter(|arg| !matches!(arg.as_str(), "-v" | "--verbose" | "-d" | "--debug"))
-        .cloned()
-        .collect::<Vec<_>>();
-    if args
-        .iter()
-        .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
-    {
-        return success(
-            if args.first().is_some_and(|arg| arg == "offload") {
-                OFFLOAD_USAGE
-            } else {
-                USAGE
-            }
-            .to_owned(),
-        );
-    }
     let runner = SystemToolRunner;
     let http = UreqHttpTransport;
     let clock = ProductionClock;
@@ -67,7 +61,7 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
         version: env!("CARGO_PKG_VERSION"),
         journal_maintenance: &maintenance,
     };
-    run_cli_with(&args, journal, &services)
+    run_cli_with(args, journal, &services)
 }
 
 struct ProductionClock;
@@ -86,37 +80,112 @@ impl Clock for ProductionClock {
 }
 
 fn run_cli_with(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    match args {
-        [command] if command == "status" => render_json(status_view(journal).map(Value::Object)),
-        [destination, command] if destination == "destination" && command == "show" => {
-            match status_view(journal) {
-                Ok(view) => render_json(Ok::<_, String>(
-                    view.get("destination")
-                        .cloned()
-                        .expect("status has destination"),
-                )),
-                Err(error) => runtime_error(error.to_string()),
-            }
-        }
-        [destination, command] if destination == "destination" && command == "set-hosted" => {
-            set_hosted(journal)
-        }
-        [destination, command] if destination == "destination" && command == "set" => {
-            destination_set(journal, services)
-        }
-        [key, command] if key == "recovery-key" && command == "show" => recovery_key_show(journal),
-        [command] if command == "enable" => enable(journal, services),
-        [command] if command == "run" => backup_run(journal, services),
-        [command] if command == "prune" => backup_prune(journal, services),
-        [key, command] if key == "recovery-key" && command == "rotate" => {
-            recovery_key_rotate(journal, services)
-        }
-        [offload, rest @ ..] if offload == "offload" => offload_command(rest, journal, services),
-        [command] if command == "off" => turn_off(false, journal, services),
-        [command, yes] if command == "off" && yes == "--yes" => turn_off(true, journal, services),
-        [command] if command == "restore" => restore(journal, services),
+    let args = normalize_global_flags(args);
+    if has_help(&args) {
+        return success(usage_for_scope(&args).to_owned());
+    }
+    let Some((command, rest)) = args.split_first() else {
+        return usage_error("");
+    };
+    match command.as_str() {
+        "status" if no_positionals(rest) => render_json(status_view(journal).map(Value::Object)),
+        "destination" => destination_command(rest, journal, services),
+        "recovery-key" => recovery_key_command(rest, journal, services),
+        "enable" if no_positionals(rest) => enable(journal, services),
+        "run" if no_positionals(rest) => backup_run(journal, services),
+        "prune" if no_positionals(rest) => backup_prune(journal, services),
+        "offload" => offload_command(rest, journal, services),
+        "off" => off_command(rest, journal, services),
+        "restore" if no_positionals(rest) => restore(journal, services),
         _ => usage_error(&args.join(" ")),
     }
+}
+
+fn normalize_global_flags(args: &[String]) -> Vec<String> {
+    let mut options = true;
+    let mut normalized = Vec::new();
+    for argument in args {
+        if options && argument == "--" {
+            options = false;
+            normalized.push(argument.clone());
+        } else if options && matches!(argument.as_str(), "-v" | "--verbose" | "-d" | "--debug") {
+        } else {
+            normalized.push(argument.clone());
+        }
+    }
+    normalized
+}
+
+fn split_terminator(args: &[String]) -> (&[String], &[String]) {
+    match args.iter().position(|argument| argument == "--") {
+        Some(index) => (&args[..index], &args[index + 1..]),
+        None => (args, &[]),
+    }
+}
+
+fn no_positionals(args: &[String]) -> bool {
+    let (options, positionals) = split_terminator(args);
+    options.is_empty() && positionals.is_empty()
+}
+
+fn has_help(args: &[String]) -> bool {
+    let (options, _) = split_terminator(args);
+    options
+        .iter()
+        .any(|argument| matches!(argument.as_str(), "-h" | "--help"))
+}
+
+fn usage_for_scope(args: &[String]) -> &'static str {
+    match args.first().map(String::as_str) {
+        Some("destination") => DESTINATION_USAGE,
+        Some("offload") => OFFLOAD_USAGE,
+        Some("recovery-key") => RECOVERY_KEY_USAGE,
+        _ => USAGE,
+    }
+}
+
+fn destination_command(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() {
+        return destination_usage_error(&args.join(" "));
+    }
+    match options {
+        [command] if command == "show" => match status_view(journal) {
+            Ok(view) => render_json(Ok::<_, String>(
+                view.get("destination")
+                    .cloned()
+                    .expect("status has destination"),
+            )),
+            Err(error) => runtime_error(error.to_string()),
+        },
+        [command] if command == "set-hosted" => set_hosted(journal),
+        [command] if command == "set" => destination_set(journal, services),
+        _ => destination_usage_error(&args.join(" ")),
+    }
+}
+
+fn recovery_key_command(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() {
+        return recovery_key_usage_error(&args.join(" "));
+    }
+    match options {
+        [command] if command == "show" => recovery_key_show(journal),
+        [command] if command == "rotate" => recovery_key_rotate(journal, services),
+        _ => recovery_key_usage_error(&args.join(" ")),
+    }
+}
+
+fn off_command(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() || options.iter().any(|argument| argument != "--yes") {
+        return usage_error(&format!("off {}", args.join(" ")));
+    }
+    turn_off(
+        options.iter().any(|argument| argument == "--yes"),
+        journal,
+        services,
+    )
 }
 
 fn enable(journal: &Path, services: &BackupServices<'_>) -> CliRun {
@@ -444,11 +513,11 @@ fn offload_command(args: &[String], journal: &Path, services: &BackupServices<'_
 }
 
 fn offload_status(args: &[String], journal: &Path) -> CliRun {
-    let json = match args {
-        [] => false,
-        [option] if option == "--json" => true,
-        _ => return offload_usage_error(&args.join(" ")),
-    };
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() || options.iter().any(|option| option != "--json") {
+        return offload_usage_error(&args.join(" "));
+    }
+    let json = options.iter().any(|option| option == "--json");
     let value = match build_offload_status(journal) {
         Ok(status) => status.value,
         Err(error) => return runtime_error(error),
@@ -504,11 +573,11 @@ fn python_bool(value: bool) -> &'static str {
 }
 
 fn offload_run(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
-    let dry_run = match args {
-        [] => false,
-        [option] if option == "--dry-run" => true,
-        _ => return offload_usage_error(&args.join(" ")),
-    };
+    let (options, positionals) = split_terminator(args);
+    if !positionals.is_empty() || options.iter().any(|option| option != "--dry-run") {
+        return offload_usage_error(&args.join(" "));
+    }
+    let dry_run = options.iter().any(|option| option == "--dry-run");
     offload_run_result(run_offload(journal, services, dry_run))
 }
 
@@ -518,16 +587,22 @@ fn offload_run_result(result: OffloadResult) -> CliRun {
 }
 
 fn offload_restore(args: &[String], journal: &Path, services: &BackupServices<'_>) -> CliRun {
+    let (options, positionals) = split_terminator(args);
     let mut json_output = false;
     let mut all = false;
     let mut day = None;
-    for argument in args {
+    for argument in options {
         match argument.as_str() {
-            "--json" if !json_output => json_output = true,
-            "--all" if !all => all = true,
+            "--json" => json_output = true,
+            "--all" => all = true,
             option if option.starts_with('-') => return offload_usage_error(&args.join(" ")),
             _ if day.is_none() => day = Some(argument.as_str()),
             _ => return offload_usage_error(&args.join(" ")),
+        }
+    }
+    for argument in positionals {
+        if day.replace(argument.as_str()).is_some() {
+            return offload_usage_error(&args.join(" "));
         }
     }
     if all && day.is_some() {
@@ -835,6 +910,26 @@ fn offload_usage_error(arguments: &str) -> CliRun {
         exit_code: 2,
     }
 }
+
+fn destination_usage_error(arguments: &str) -> CliRun {
+    CliRun {
+        stdout: String::new(),
+        stderr: format!(
+            "{DESTINATION_USAGE}journal backup destination: error: unrecognized arguments: {arguments}\n"
+        ),
+        exit_code: 2,
+    }
+}
+
+fn recovery_key_usage_error(arguments: &str) -> CliRun {
+    CliRun {
+        stdout: String::new(),
+        stderr: format!(
+            "{RECOVERY_KEY_USAGE}journal backup recovery-key: error: unrecognized arguments: {arguments}\n"
+        ),
+        exit_code: 2,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,6 +1101,18 @@ mod tests {
 
     fn payload(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn debug_redacts_cli_output_that_may_contain_a_recovery_key() {
+        let output = CliRun {
+            stdout: "RECOVERY_KEY_SECRET".into(),
+            stderr: "ERROR_SECRET".into(),
+            exit_code: 1,
+        };
+        let rendered = format!("{output:?}");
+        assert!(!rendered.contains("RECOVERY_KEY_SECRET"));
+        assert!(!rendered.contains("ERROR_SECRET"));
     }
 
     fn s3_payload() -> Map<String, Value> {
@@ -1339,6 +1446,77 @@ mod tests {
     }
 
     #[test]
+    fn parser_accepts_repeated_boolean_flags_idempotently() {
+        let journal = tempfile::tempdir().unwrap();
+        let runner = UnusedRunner;
+        let http = UnusedHttp;
+        let clock = FixedClock;
+        let maintenance = UnusedMaintenance;
+        let services = unconfigured_services(&runner, &http, &clock, &maintenance);
+        for args in [
+            vec!["off".into(), "--yes".into(), "--yes".into()],
+            vec![
+                "offload".into(),
+                "status".into(),
+                "--json".into(),
+                "--json".into(),
+            ],
+            vec![
+                "offload".into(),
+                "run".into(),
+                "--dry-run".into(),
+                "--dry-run".into(),
+            ],
+            vec![
+                "offload".into(),
+                "restore".into(),
+                "--all".into(),
+                "--all".into(),
+                "--json".into(),
+                "--json".into(),
+            ],
+        ] {
+            assert_eq!(run_cli_with(&args, journal.path(), &services).exit_code, 0);
+        }
+    }
+
+    #[test]
+    fn parser_honors_terminator_and_reports_the_owning_usage_scope() {
+        let journal = tempfile::tempdir().unwrap();
+        let runner = UnusedRunner;
+        let http = UnusedHttp;
+        let clock = FixedClock;
+        let maintenance = UnusedMaintenance;
+        let services = unconfigured_services(&runner, &http, &clock, &maintenance);
+
+        let day = run_cli_with(
+            &[
+                "offload".into(),
+                "restore".into(),
+                "--".into(),
+                "20260101".into(),
+            ],
+            journal.path(),
+            &services,
+        );
+        assert_eq!(day.exit_code, 0);
+
+        for (args, usage) in [
+            (vec!["status".into(), "--".into(), "extra".into()], USAGE),
+            (vec!["destination".into(), "wat".into()], DESTINATION_USAGE),
+            (vec!["offload".into(), "wat".into()], OFFLOAD_USAGE),
+            (
+                vec!["recovery-key".into(), "wat".into()],
+                RECOVERY_KEY_USAGE,
+            ),
+        ] {
+            let output = run_cli_with(&args, journal.path(), &services);
+            assert_eq!(output.exit_code, 2);
+            assert!(output.stderr.starts_with(usage));
+        }
+    }
+
+    #[test]
     fn destination_payload_rejects_every_required_field_and_trims_both_backends() {
         for (value, message) in [
             (json!({}), "Missing repository."),
@@ -1553,20 +1731,23 @@ mod tests {
     }
 
     #[test]
-    fn destination_set_and_restore_positionals_use_root_usage() {
+    fn destination_and_restore_positionals_use_their_own_usage_scopes() {
         let journal = tempfile::tempdir().unwrap();
         let runner = UnusedRunner;
         let http = UnusedHttp;
         let clock = FixedClock;
         let maintenance = UnusedMaintenance;
         let services = unconfigured_services(&runner, &http, &clock, &maintenance);
-        for args in [
-            vec!["destination".into(), "set".into(), "extra".into()],
-            vec!["restore".into(), "extra".into()],
+        for (args, usage) in [
+            (
+                vec!["destination".into(), "set".into(), "extra".into()],
+                DESTINATION_USAGE,
+            ),
+            (vec!["restore".into(), "extra".into()], USAGE),
         ] {
             let output = run_cli_with(&args, journal.path(), &services);
             assert_eq!(output.exit_code, 2);
-            assert!(output.stderr.starts_with(USAGE));
+            assert!(output.stderr.starts_with(usage));
         }
     }
 

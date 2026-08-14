@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
+use std::fmt;
 use std::io::{self, Read};
 use std::os::fd::BorrowedFd;
 use std::path::Path;
@@ -15,7 +16,7 @@ use nix::fcntl::{FcntlArg, FdFlag, fcntl};
 use serde_json::Value;
 use thiserror::Error;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ToolRequest<'a> {
     pub program: OsString,
     pub argv: Vec<OsString>,
@@ -23,12 +24,34 @@ pub struct ToolRequest<'a> {
     pub timeout: Option<Duration>,
     pub pass_fds: Vec<BorrowedFd<'a>>,
 }
+impl fmt::Debug for ToolRequest<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ToolRequest")
+            .field("program", &self.program)
+            .field("argv", &self.argv)
+            .field("env", &"<redacted>")
+            .field("timeout", &self.timeout)
+            .field("pass_fds", &self.pass_fds.len())
+            .finish()
+    }
+}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ToolOutput {
     pub returncode: i32,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+}
+impl fmt::Debug for ToolOutput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ToolOutput")
+            .field("returncode", &self.returncode)
+            .field("stdout", &"<redacted>")
+            .field("stderr", &"<redacted>")
+            .finish()
+    }
 }
 
 pub trait ToolRunner {
@@ -349,6 +372,26 @@ mod tests {
             Some(&Value::from(2))
         );
         assert_eq!(parse_json("{\nnot-json"), None);
+    }
+    #[test]
+    fn debug_redacts_process_environment_and_raw_output() {
+        let request = ToolRequest {
+            program: "restic".into(),
+            argv: vec!["snapshots".into()],
+            env: BTreeMap::from([("RESTIC_PASSWORD".into(), "REQUEST_SECRET".into())]),
+            timeout: None,
+            pass_fds: vec![],
+        };
+        let output = ToolOutput {
+            returncode: 1,
+            stdout: b"OUTPUT_SECRET".to_vec(),
+            stderr: b"ERROR_SECRET".to_vec(),
+        };
+
+        let rendered = format!("{request:?}\n{output:?}");
+        for secret in ["REQUEST_SECRET", "OUTPUT_SECRET", "ERROR_SECRET"] {
+            assert!(!rendered.contains(secret));
+        }
     }
     #[cfg(unix)]
     #[test]

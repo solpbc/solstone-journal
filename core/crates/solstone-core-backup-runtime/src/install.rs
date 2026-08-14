@@ -9,9 +9,7 @@ use std::time::Duration;
 
 use bzip2_rs::DecoderReader;
 use serde_json::json;
-use solstone_core_artifact_download::{
-    ByteDownload, UreqByteDownload, download_verified_bytes, verify_sha256_bytes,
-};
+use solstone_core_artifact_download::{ByteDownload, download_verified_bytes, verify_sha256_bytes};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
 use crate::readiness::{
@@ -87,15 +85,6 @@ pub fn install_from_bz2(
     .map_err(|error| error.to_string())?;
     fs::write(license_path(tool_dir), RESTIC_LICENSE_TEXT).map_err(|error| error.to_string())?;
     Ok(binary)
-}
-
-pub fn ensure_restic_default(force: bool, requested_dir: Option<&Path>) -> Result<PathBuf, String> {
-    ensure_restic(
-        &crate::runner::SystemToolRunner,
-        force,
-        requested_dir,
-        &UreqByteDownload,
-    )
 }
 
 fn bundle_path(filename: &str) -> Result<Option<PathBuf>, String> {

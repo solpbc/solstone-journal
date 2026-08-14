@@ -8,9 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::json;
-use solstone_core_artifact_download::{
-    ByteDownload, UreqByteDownload, download_verified_bytes, verify_sha256_bytes,
-};
+use solstone_core_artifact_download::{ByteDownload, download_verified_bytes, verify_sha256_bytes};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
 use crate::install::DOWNLOAD_ATTEMPTS;
@@ -116,9 +114,6 @@ pub fn ensure_rclone(
         .map_err(|_| "rclone download failed".to_owned())?,
     };
     install_from_zip(&data, &filename, &expected, &dir, &os, &arch)
-}
-pub fn ensure_rclone_default(force: bool, requested_dir: Option<&Path>) -> Result<PathBuf, String> {
-    ensure_rclone(force, requested_dir, &UreqByteDownload)
 }
 pub fn install_from_zip(
     data: &[u8],

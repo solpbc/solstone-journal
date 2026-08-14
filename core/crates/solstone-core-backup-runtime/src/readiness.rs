@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
-use crate::runner::{SystemToolRunner, ToolRunner, run_restic};
+use crate::runner::{ToolRunner, run_restic};
 
 pub const RESTIC_VERSION: &str = "0.19.0";
 pub const RESTIC_SCHEMA_VERSION: u64 = 1;
@@ -124,9 +124,6 @@ pub fn file_sha256(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
-pub fn check_restic_ready(tool_dir: Option<&Path>) -> Option<PathBuf> {
-    check_restic_ready_with(&SystemToolRunner, tool_dir)
-}
 pub fn check_restic_ready_with(
     runner: &dyn ToolRunner,
     requested: Option<&Path>,

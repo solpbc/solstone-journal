@@ -14,7 +14,7 @@ use solstone_core_backup::{
 
 pub const BROKER_TIMEOUT_SECONDS: u64 = 30;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     pub method: String,
     pub url: String,
@@ -22,11 +22,33 @@ pub struct HttpRequest {
     pub body: Vec<u8>,
     pub timeout: Duration,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl fmt::Debug for HttpRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HttpRequest")
+            .field("method", &self.method)
+            .field("url", &self.url)
+            .field("headers", &"<redacted>")
+            .field("body", &"<redacted>")
+            .field("timeout", &self.timeout)
+            .finish()
+    }
+}
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+}
+impl fmt::Debug for HttpResponse {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HttpResponse")
+            .field("status", &self.status)
+            .field("headers", &"<redacted>")
+            .field("body", &"<redacted>")
+            .finish()
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HttpError {
@@ -220,11 +242,21 @@ pub fn operated_destination(
 ) -> Destination {
     Destination { repository:operated_repository(binding, credentials), backend:"s3".into(), credentials:serde_json::from_value(json!({"access_key_id":credentials.access_key_id,"secret_access_key":credentials.secret_access_key,"session_token":credentials.session_token})).expect("object") }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HostedResticSession {
     pub destination: Destination,
     pub backend_env: BTreeMap<String, String>,
     pub global_options: Vec<String>,
+}
+impl fmt::Debug for HostedResticSession {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HostedResticSession")
+            .field("destination", &self.destination)
+            .field("backend_env", &"<redacted>")
+            .field("global_options", &self.global_options)
+            .finish()
+    }
 }
 pub fn hosted_session(
     binding: &HostedBinding,
@@ -363,6 +395,42 @@ mod tests {
         };
         let rendered = format!("{credentials:?}");
         for secret in ["ACCESS", "SECRET", "TOKEN"] {
+            assert!(!rendered.contains(secret));
+        }
+    }
+
+    #[test]
+    fn debug_redacts_http_and_hosted_session_secrets() {
+        let request = HttpRequest {
+            method: "POST".into(),
+            url: "https://broker".into(),
+            headers: vec![("Authorization".into(), "Bearer REQUEST_TOKEN".into())],
+            body: b"REQUEST_BODY_SECRET".to_vec(),
+            timeout: Duration::from_secs(1),
+        };
+        let response = HttpResponse {
+            status: 200,
+            headers: vec![("x-session".into(), "RESPONSE_HEADER_SECRET".into())],
+            body: b"RESPONSE_BODY_SECRET".to_vec(),
+        };
+        let session = HostedResticSession {
+            destination: Destination {
+                repository: "s3:bucket/prefix".into(),
+                backend: "s3".into(),
+                credentials: Default::default(),
+            },
+            backend_env: BTreeMap::from([("AWS_SECRET_ACCESS_KEY".into(), "ENV_SECRET".into())]),
+            global_options: vec![],
+        };
+
+        let rendered = format!("{request:?}\n{response:?}\n{session:?}");
+        for secret in [
+            "REQUEST_TOKEN",
+            "REQUEST_BODY_SECRET",
+            "RESPONSE_HEADER_SECRET",
+            "RESPONSE_BODY_SECRET",
+            "ENV_SECRET",
+        ] {
             assert!(!rendered.contains(secret));
         }
     }

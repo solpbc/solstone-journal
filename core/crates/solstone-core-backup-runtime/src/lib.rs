@@ -32,7 +32,7 @@ pub use install::{RESTIC_LICENSE_TEXT, ensure_restic};
 pub use rclone_install::ensure_rclone;
 pub use readiness::{
     ARCH_ALIASES, LINUX_TOOL_DIR, MAC_TOOL_DIR, RESTIC_BUNDLE_ENV, RESTIC_BZ2_SHA256,
-    RESTIC_SCHEMA_VERSION, RESTIC_VERSION, check_restic_ready, select_restic_asset,
+    RESTIC_SCHEMA_VERSION, RESTIC_VERSION, select_restic_asset,
 };
 pub use repo::{
     ResticKeyError, add_recovery_key, capture_current_key_id, init_repository, remove_key,
