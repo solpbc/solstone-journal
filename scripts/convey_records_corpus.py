@@ -44,7 +44,7 @@ from records_corpus_seed import (  # noqa: E402
     D_CACHE,
     D_CORRUPT_CHAT,
     D_FULL,
-    D_MIXED,
+    D_NO_CACHE,
     D_RAW,
     build_corrupt_journal,
     build_established_journal,
@@ -197,6 +197,7 @@ def _record(
     root: Path,
     today_day: str,
     body: dict[str, Any] | None = None,
+    allow_known_value_error: bool = False,
 ) -> dict[str, Any]:
     """Drive one route and preserve its JSON or compact raw response exactly."""
     try:
@@ -210,6 +211,8 @@ def _record(
         }
         content_type = response.headers.get("Content-Type", "")
     except ValueError as error:
+        if not allow_known_value_error:
+            raise
         # Flask may propagate the known unregistered-MIME exception under a
         # future test-client configuration. Preserve the reference failure
         # without letting the generator process terminate.
@@ -285,11 +288,11 @@ class CannedNativeSearch:
         long_text = " ".join(["needle"] + [f"word{index}" for index in range(1, 55)])
         self.hits = [] if empty else [
             *[_hit(f"needle-{index}", long_text if index == 0 else f"needle result {index}", D_FULL, "work", "flow", "field", "morning", index) for index in range(6)],
-            _hit("needle-muted", "needle muted facet result", D_MIXED, "muted", "screen", "field", "afternoon", 6),
+            _hit("needle-muted", "needle muted facet result", D_NO_CACHE, "muted", "screen", "field", "afternoon", 6),
             _hit("apostrophe", "O'Brien and dogs & <friends>", D_FULL, "work", "flow", "field", "morning", 7),
             _hit("locale", "locale-probe captures a deterministic day", D_FULL, "work", "flow", "field", "morning", 8),
             _hit("meeting", "yesterday's meeting needle", D_CACHE, "work", "meetings", "field", "evening", 9),
-            _hit("nebula", "nebula appears after relaxed matching", D_MIXED, "work", "flow", "field", "night", 10),
+            _hit("nebula", "nebula appears after relaxed matching", D_NO_CACHE, "work", "flow", "field", "night", 10),
         ]
         self.responses: dict[tuple[Any, ...], dict[str, Any]] = {}
         for path in http_paths:
@@ -443,8 +446,25 @@ def _install_search_dispatcher(paths: list[str], *, empty: bool = False) -> Iter
         journal_index.run_native_indexer_coverage = original_coverage
 
 
-def _probe(app: str, method: str, path: str, why: str, *, body: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
-    return {"app": app, "method": method, "path": path, "why": why, "body": body, "headers": headers or {}}
+def _probe(
+    app: str,
+    method: str,
+    path: str,
+    why: str,
+    *,
+    body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    allow_known_value_error: bool = False,
+) -> dict[str, Any]:
+    return {
+        "app": app,
+        "method": method,
+        "path": path,
+        "why": why,
+        "body": body,
+        "headers": headers or {},
+        "allow_known_value_error": allow_known_value_error,
+    }
 
 
 def _populated_probes(today: str) -> list[dict[str, Any]]:
@@ -487,7 +507,13 @@ def _populated_probes(today: str) -> list[dict[str, Any]]:
     add(_probe("transcripts", "GET", f"{media}/mic_audio.flac", "registered media"))
     add(_probe("transcripts", "GET", f"{media}/mic_audio.flac", "registered ranged media", headers={"Range": "bytes=0-15"}))
     for name, why in [("zero.flac", "zero-byte media"), ("mic_audio.xyz", "unregistered extension native deviation"), ("absent.exe", "missing file refusal")]:
-        add(_probe("transcripts", "GET", f"{media}/{name}", why))
+        add(_probe(
+            "transcripts",
+            "GET",
+            f"{media}/{name}",
+            why,
+            allow_known_value_error=name == "mic_audio.xyz",
+        ))
     add(_probe("transcripts", "GET", f"/app/transcripts/api/serve_file/{D_FULL}/../config/journal.json", "traversal refusal"))
     for stream, segment, why in [
         ("field", "090000_300", "analyzed segment"), ("field", "100000_120", "analyzing rendering only"),
@@ -530,9 +556,11 @@ def _populated_probes(today: str) -> list[dict[str, Any]]:
         ("/app/search/api/search?q=yesterday%27s%20meeting&day_from=00000000&day_to=99999999", "sentinel day bounds"),
         ("/app/search/api/search?q=needle&day_from=20260230", "invalid calendar bound"), ("/app/search/api/search?q=needle&day_from=20260802&day_to=20260801", "reversed bounds"),
         ("/app/search/api/search?q=%27", "apostrophe-only query"), ("/app/search/api/search?q=what%20nebula", "relaxed matching"),
-        (f"/app/search/api/agents?day={D_FULL}", "daily and segment outputs"), (f"/app/search/api/agents?day={D_FULL}&segment=090000_300", "segment outputs"),
+        (f"/app/search/api/agents?day={D_FULL}", "daily and stream-nested segment outputs"),
+        (f"/app/search/api/agents?day={D_FULL}&segment=090000_300", "segment-scoped lookup is empty because the reference omits stream"),
         (f"/app/search/api/agents?day={D_RAW}", "zero outputs"), (f"/app/search/api/read?path={D_FULL}/talents/flow.md", "safe direct read"),
-        (f"/app/search/api/read?agent=flow&day={D_FULL}", "daily talent read"), (f"/app/search/api/read?agent=flow&day={D_FULL}&segment=090000_300", "segment talent read"),
+        (f"/app/search/api/read?agent=flow&day={D_FULL}", "daily talent read"),
+        (f"/app/search/api/read?agent=flow&day={D_FULL}&segment=090000_300", "segment-scoped lookup is 404 because the reference omits stream"),
         ("/app/search/api/read?path=../config/journal.json", "path containment refusal"), ("/app/search/api/read?path=entity_search:ada", "entity pseudo-path refusal"),
         (f"/app/search/api/read?path={D_FULL}/talents/flow.md:3", "search result suffix refusal"), (f"/app/search/api/read?agent=missing&day={D_FULL}", "missing talent refusal"),
         (f"/app/search/api/day_results?q=needle&day={D_FULL}&limit=1&offset=1&facet=work&agent=flow&stream=field", "reference-only pagination"),
@@ -566,7 +594,8 @@ def _capture_phase(
                 _record(
                     client,
                     app=str(probe["app"]), phase=phase, method=str(probe["method"]), path=str(probe["path"]),
-                    headers=dict(probe["headers"]), why=str(probe["why"]), root=root, today_day=today, body=probe["body"],
+                    headers=dict(probe["headers"]), why=str(probe["why"]), root=root, today_day=today,
+                    body=probe["body"], allow_known_value_error=bool(probe["allow_known_value_error"]),
                 )
             )
     return out
@@ -622,7 +651,20 @@ def _assert_egress_helper_sweep() -> None:
         raise RuntimeError("egress helper positive control did not find a connection primitive")
 
 
-def build_corpus() -> dict[str, Any]:
+@contextmanager
+def _temporary_roots() -> Iterator[list[Path]]:
+    roots: list[Path] = []
+    try:
+        yield roots
+    finally:
+        for root in roots:
+            try:
+                shutil.rmtree(root)
+            except OSError:
+                print(f"warning: could not remove temporary records corpus root: {root}", file=sys.stderr)
+
+
+def _build_corpus(temporary_roots: list[Path]) -> dict[str, Any]:
     today = _capture_day()
     old_locale = locale.setlocale(locale.LC_ALL)
     locale.setlocale(locale.LC_ALL, "C")
@@ -633,12 +675,17 @@ def build_corpus() -> dict[str, Any]:
     _assert_egress_helper_sweep()
 
     common = [_probe("transcripts", "GET", f"/app/transcripts/{D_FULL}", "journal-state gate")]
-    roots = {
-        "unestablished": build_unestablished_journal(),
-        "established": build_established_journal(),
-        "corrupt": build_corrupt_journal(),
-    }
+    roots = {}
+    for phase, builder in (
+        ("unestablished", build_unestablished_journal),
+        ("established", build_established_journal),
+        ("corrupt", build_corrupt_journal),
+    ):
+        root = builder()
+        temporary_roots.append(root)
+        roots[phase] = root
     populated_root, manifest = build_populated_journal(today)
+    temporary_roots.append(populated_root)
     populated_probes = _populated_probes(today)
     phases = {
         "unestablished": _capture_phase("unestablished", roots["unestablished"], common, today=today),
@@ -667,6 +714,7 @@ def build_corpus() -> dict[str, Any]:
     try:
         locale.setlocale(locale.LC_ALL, "de_DE.utf8")
         locale_root, _ = build_populated_journal(today)
+        temporary_roots.append(locale_root)
         locale_probes = [probe for probe in populated_probes if probe["path"] in locale_paths]
         locale_cases = _capture_phase("populated", locale_root, locale_probes, today=today)
     finally:
@@ -707,19 +755,21 @@ def build_corpus() -> dict[str, Any]:
         "native_deviations": [
             {"path_or_field": "/app/search/api/day_results", "reference": "200 with a day's paginated results.", "native": "absent.", "why": "it exists only to serve its own now-dropped page and has no other caller (no authority.toml row, no CLI inventory entry, no sibling app)."},
             {"path_or_field": "/app/search/api/search response fields: agent_icon_svg, icon_svg, agent_icon, facet_color, facet_emoji, day_grid, showing_days, has_more", "reference": "includes all eight fields.", "native": "drops all eight; facets[], talents[], total, total_days, relaxed stay.", "why": "these are inline SVG/page chrome consumed only by search's own page; a CLI/talent consumer drills down using the retained counts."},
-            {"path_or_field": "/app/transcripts/api/serve_file/{day}/{rel_path} — present file, unregistered extension", "reference": "routes.py raises an uncaught ValueError; Flask renders an HTML 500.", "native": "a typed refusal.", "why": "an unhandled exception is not a contract worth reproducing; the sibling speakers corpus already carries this same deviation for its own media route."},
+            {"path_or_field": "/app/transcripts/api/serve_file/{day}/{rel_path} — present file, unregistered extension", "reference": "routes.py raises an uncaught ValueError; Convey returns JSON {\"reason_code\": \"internal_error\"} with HTTP 500.", "native": "a typed refusal.", "why": "an unhandled exception is not a contract worth reproducing; the sibling speakers corpus already carries this same deviation for its own media route."},
         ],
         "host_dependent": {"baseline_locale": "C", "perturbed_locale": "de_DE.utf8", "fields": sorted(locale_fields)},
-        # The manifest's physical day count includes the capture-day chat
-        # stream.  Publish the three fixed calendar months instead, so a
-        # capture-day month cannot perturb the deterministic corpus.
-        "seeder_manifest": {**manifest, "today_day": PLACEHOLDER_TODAY, "month_count": 3},
+        "seeder_manifest": {**manifest, "today_day": PLACEHOLDER_TODAY},
     }
     rendered = json.dumps(corpus, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     corpus_scrub.assert_publishable(rendered, label="records corpus")
     _assert_no_host_paths(rendered, today)
     corpus_scrub.assert_no_egress_attempted("records corpus", ignore=guard_positive_attempts)
     return corpus
+
+
+def build_corpus() -> dict[str, Any]:
+    with _temporary_roots() as temporary_roots:
+        return _build_corpus(temporary_roots)
 
 
 def main() -> int:

@@ -31,7 +31,7 @@
     {
       "native": "a typed refusal.",
       "path_or_field": "/app/transcripts/api/serve_file/{day}/{rel_path} — present file, unregistered extension",
-      "reference": "routes.py raises an uncaught ValueError; Flask renders an HTML 500.",
+      "reference": "routes.py raises an uncaught ValueError; Convey returns JSON {\"reason_code\": \"internal_error\"} with HTTP 500.",
       "why": "an unhandled exception is not a contract worth reproducing; the sibling speakers corpus already carries this same deviation for its own media route."
     }
   ],
@@ -2286,7 +2286,7 @@
             "Content-Type": "application/json"
           },
           "status": 200,
-          "why": "daily and segment outputs"
+          "why": "daily and stream-nested segment outputs"
         },
         {
           "app": "search",
@@ -2307,7 +2307,7 @@
             "Content-Type": "application/json"
           },
           "status": 200,
-          "why": "segment outputs"
+          "why": "segment-scoped lookup is empty because the reference omits stream"
         },
         {
           "app": "search",
@@ -2389,7 +2389,7 @@
             "Content-Type": "application/json"
           },
           "status": 404,
-          "why": "segment talent read"
+          "why": "segment-scoped lookup is 404 because the reference omits stream"
         },
         {
           "app": "search",
@@ -4163,7 +4163,7 @@
     "journal_root": "<JOURNAL_ROOT>",
     "today": "<TODAY>"
   },
-  "rev": "ba6c2874edb1ed97abaf1288ecf8240458e1efd9",
+  "rev": "0b981794dff9ad6f98f3433b70c540bd5114dd37",
   "schema": "solstone-convey-records-corpus-v1",
   "seeder_manifest": {
     "agent_name_present": true,

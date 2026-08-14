@@ -33,7 +33,7 @@ from solstone.think.stats_schema import DAY_FIELDS, SCHEMA_VERSION
 
 D_FULL = "20260731"
 D_CACHE = "20260715"
-D_MIXED = "20260801"
+D_NO_CACHE = "20260801"
 D_RAW = "20260915"
 D_CORRUPT_CHAT = "20260916"
 
@@ -324,12 +324,13 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
     """
     if not _DAY_RE.fullmatch(today_day):
         raise ValueError("today_day must be an eight-digit YYYYMMDD string")
-    if today_day in {D_FULL, D_CACHE, D_MIXED, D_RAW, D_CORRUPT_CHAT}:
+    if today_day in {D_FULL, D_CACHE, D_NO_CACHE, D_RAW, D_CORRUPT_CHAT}:
         raise ValueError("today_day must not overlap a fixed records corpus day")
 
     root = _new_root("populated")
     chronicle = root / "chronicle"
-    fixed_days = (D_FULL, D_CACHE, D_MIXED, D_RAW, D_CORRUPT_CHAT)
+    fixed_days = (D_FULL, D_CACHE, D_NO_CACHE, D_RAW, D_CORRUPT_CHAT)
+    fixed_months = {day[:6] for day in fixed_days}
     for day in (*fixed_days, today_day):
         (chronicle / day).mkdir(parents=True, exist_ok=True)
 
@@ -415,8 +416,8 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
     cache_segment = _segment(root, D_CACHE, FULL_STREAM, "090000_60")
     _write_analyzed_audio(cache_segment)
     _write_fresh_stats_cache(chronicle / D_CACHE)
-    mixed_segment = _segment(root, D_MIXED, FULL_STREAM, "090000_60")
-    _write_analyzed_audio(mixed_segment)
+    no_cache_segment = _segment(root, D_NO_CACHE, FULL_STREAM, "090000_60")
+    _write_analyzed_audio(no_cache_segment)
 
     corrupt_chat = _segment(root, D_CORRUPT_CHAT, "chat", "090000_300")
     (corrupt_chat / "chat.jsonl").write_text("{ this is not valid JSON\n", encoding="utf-8")
@@ -457,7 +458,7 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
     )
 
     cache_fresh = load_fresh_day_cache(chronicle / D_CACHE) is not None
-    mixed_cache_absent = load_fresh_day_cache(chronicle / D_MIXED) is None
+    no_cache_absent = load_fresh_day_cache(chronicle / D_NO_CACHE) is None
     today_chat_path = chronicle / today_day / "chat" / "090000_300" / "chat.jsonl"
     today_events = [json.loads(line) for line in today_chat_path.read_text(encoding="utf-8").splitlines()]
     unresolved_index = next(
@@ -500,8 +501,10 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
 
     manifest: dict[str, int | bool | str] = {
         "day_count": len(day_dirs),
-        "month_count": len({day.name[:6] for day in day_dirs}),
-        "spans_multiple_months": len({day.name[:6] for day in day_dirs}) > 1,
+        # The caller-supplied current chat day is deliberately outside the
+        # stable corpus topology, so report only the fixed seeded months.
+        "month_count": len(fixed_months),
+        "spans_multiple_months": len(fixed_months) > 1,
         "today_day": today_day,
         "today_day_seeded": today_chat_path.is_file(),
         "stream_count": len(non_chat_stream_names),
@@ -536,7 +539,7 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
         "stats_cache_present_day_count": sum((day / "stats.json").is_file() for day in day_dirs),
         "stats_cache_absent_day_count": sum(not (day / "stats.json").is_file() for day in day_dirs),
         "stats_cache_fresh_asserted": cache_fresh,
-        "stats_cache_absent_returns_none_asserted": mixed_cache_absent,
+        "stats_cache_absent_returns_none_asserted": no_cache_absent,
         "chat_day_count": sum((day / "chat").is_dir() for day in day_dirs),
         "chat_today_events_present": bool(today_events),
         "chat_today_threaded_request_present": any(
