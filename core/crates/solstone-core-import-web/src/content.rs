@@ -146,16 +146,20 @@ pub(crate) fn generate_content_manifest(
                 .iter()
                 .find(|item| item.get("speaker").and_then(Value::as_str) == Some("Human"))
                 .and_then(|item| item.get("text").and_then(Value::as_str))
-                .unwrap_or("");
+                .unwrap_or("")
+                .chars()
+                .take(200)
+                .collect::<String>();
             let title = header
                 .get("topics")
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
                 .unwrap_or_else(|| {
                     if preview.is_empty() {
-                        "Conversation segment"
+                        "Conversation segment".to_owned()
                     } else {
-                        &preview[..preview.len().min(80)]
+                        preview.chars().take(80).collect::<String>()
                     }
                 });
             entries.push(json!({"id": format!("seg-{index}"), "title": title, "date": day, "type": "conversation", "preview": preview, "meta": {"message_count": messages.len()}, "segments": segments}));
@@ -164,7 +168,8 @@ pub(crate) fn generate_content_manifest(
             let Ok(text) = fs::read_to_string(&path) else {
                 continue;
             };
-            for section in text.split("\n## ") {
+            let sections = text.strip_prefix("## ").unwrap_or(&text);
+            for section in sections.split("\n## ") {
                 let section = section.trim();
                 if section.is_empty() {
                     continue;
@@ -195,13 +200,19 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
         return Err(Box::new(import_not_found("Import not found")));
     }
     let manifest = directory.join("content_manifest.jsonl");
-    if !manifest.exists()
-        && generate_content_manifest(root, timestamp)
-            .ok()
-            .flatten()
-            .is_none()
-    {
-        return Err(Box::new(import_not_found("No content available")));
+    if !manifest.exists() {
+        match generate_content_manifest(root, timestamp) {
+            Ok(Some(_)) => {}
+            Ok(None) => return Err(Box::new(import_not_found("No content available"))),
+            Err(_) => {
+                return Err(Box::new(error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "I couldn't read that import metadata.",
+                    "import_metadata_failed",
+                    "Failed to read manifest".to_owned(),
+                )));
+            }
+        }
     }
     let items = read_jsonl(&manifest).map_err(|_| {
         Box::new(error(

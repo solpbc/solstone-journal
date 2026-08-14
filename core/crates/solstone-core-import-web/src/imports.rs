@@ -179,6 +179,54 @@ fn object_from_file(path: &Path) -> Result<Map<String, Value>, ()> {
         .ok_or(())
 }
 
+fn value_from_file(path: &Path) -> Result<Value, ()> {
+    let text = fs::read_to_string(path).map_err(|_| ())?;
+    serde_json::from_str(&text).map_err(|_| ())
+}
+
+fn decision_highlights(path: &Path) -> Option<Value> {
+    let text = fs::read_to_string(path).ok()?;
+    let mut staged_entities = Vec::new();
+    let mut errored_segments = Vec::new();
+    let mut qualifying = 0;
+    for line in text.lines() {
+        if qualifying >= 50 {
+            break;
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(row) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        match row.get("action").and_then(Value::as_str) {
+            Some("entity_staged") => {
+                staged_entities.push(json!({
+                    "source_name": row["source"]["name"],
+                    "target_name": row["target"]["name"],
+                    "staging_path": row["staging_path"],
+                }));
+                qualifying += 1;
+            }
+            Some("segment_errored") => {
+                errored_segments.push(json!({
+                    "item_id": row["item_id"],
+                    "reason": row["reason"],
+                }));
+                qualifying += 1;
+            }
+            _ => {}
+        }
+    }
+    (!staged_entities.is_empty() || !errored_segments.is_empty()).then(|| {
+        json!({
+            "staged_entities": staged_entities,
+            "errored_segments": errored_segments,
+        })
+    })
+}
+
 fn duration_minutes(files: &Value) -> Option<i64> {
     let mut times: Vec<&str> = files
         .as_array()?
@@ -458,6 +506,43 @@ pub(crate) async fn detail(
             .map(Value::Object)
             .unwrap_or(Value::Null),
     );
+    if let Ok(segments) = value_from_file(&directory.join("segments.json")) {
+        body.insert("segments_json".into(), segments);
+    }
+    let imported = body.get("imported_json").cloned();
+    if let Some(imported) = imported.as_ref().and_then(Value::as_object)
+        && !imported
+            .get("merge_summary")
+            .unwrap_or(&Value::Null)
+            .is_null()
+        && let (Some(decisions), Some(staging)) = (
+            imported
+                .get("merge_log_path")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            imported
+                .get("merge_staging_path")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+        )
+    {
+        body.insert(
+            "merge_artifact_paths".into(),
+            json!({"decisions": decisions, "staging": staging}),
+        );
+        if let Some(highlights) = decision_highlights(Path::new(&decisions)) {
+            body.insert("decision_highlights".into(), highlights);
+        }
+    }
+    if let Some(errors) = imported
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|imported| imported.get("summary_errors"))
+        .and_then(Value::as_array)
+        .filter(|errors| !errors.is_empty())
+    {
+        body.insert("summary_errors".into(), Value::Array(errors.clone()));
+    }
     let (status, error_value, stage) = resolve_status(
         &info,
         SystemTime::now()

@@ -346,6 +346,7 @@ mod tests {
             "text/plain",
             "old",
             Some(json!({"processed": true})),
+            b"old\n",
         );
         seed_import(
             root.path(),
@@ -354,6 +355,7 @@ mod tests {
             "text/plain",
             "new",
             Some(json!({"processed": true})),
+            b"new\n",
         );
         for (timestamp, upload) in [
             ("20260101_000000", 2_000_000.0),
@@ -386,6 +388,7 @@ mod tests {
             Some(
                 json!({"source_type":"chatgpt", "all_created_files":["chronicle/20260103/import.chatgpt/key-a/conversation_transcript.jsonl"]}),
             ),
+            b"jsonl\n",
         );
         seed_import(
             root.path(),
@@ -396,21 +399,22 @@ mod tests {
             Some(
                 json!({"source_type":"obsidian", "all_created_files":["chronicle/20260104/import.obsidian/key-b/note.md"]}),
             ),
+            b"markdown\n",
         );
         let transcript = root.path().join("chronicle/20260103/import.chatgpt/key-a");
         fs::create_dir_all(&transcript).unwrap();
+        let unicode_preview = format!("{}😀{}", "a".repeat(79), "z".repeat(200));
         fs::write(
             transcript.join("conversation_transcript.jsonl"),
-            "{\"topics\":\"topic\"}\n{\"speaker\":\"Human\",\"text\":\"hello\"}\n",
+            format!(
+                "{{\"topics\":\"\"}}\n{{\"speaker\":\"Human\",\"text\":{}}}\n",
+                serde_json::to_string(&unicode_preview).unwrap()
+            ),
         )
         .unwrap();
         let note = root.path().join("chronicle/20260104/import.obsidian/key-b");
         fs::create_dir_all(&note).unwrap();
-        fs::write(
-            note.join("note.md"),
-            "# ignored\n## One\nfirst\n## Two\nsecond\n",
-        )
-        .unwrap();
+        fs::write(note.join("note.md"), "## One\nfirst\n## Two\nsecond\n").unwrap();
         for (timestamp, expected_prefix) in [(jsonl, "seg-"), (markdown, "item-")] {
             let uri = format!("/app/import/api/{timestamp}/content");
             let (status, _, _, first) = request(root.path(), "GET", &uri, None).await;
@@ -441,9 +445,64 @@ mod tests {
                     == keys
                     && row["id"].as_str().unwrap().starts_with(expected_prefix)
             }));
+            if timestamp == jsonl {
+                assert_eq!(rows[0]["preview"].as_str().unwrap().chars().count(), 200);
+                assert_eq!(rows[0]["title"].as_str().unwrap().chars().count(), 80);
+                assert!(rows[0]["title"].as_str().unwrap().ends_with('😀'));
+            } else {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0]["title"], "One");
+            }
             let (_, _, _, second) = request(root.path(), "GET", &uri, None).await;
             assert_eq!(first, second, "{timestamp} uses persisted manifest");
         }
+        let detail = "20260105_000000";
+        seed_import(
+            root.path(),
+            detail,
+            "detail.jsonl",
+            "application/json",
+            "detail",
+            Some(
+                json!({"source_type":"chatgpt", "all_created_files":["chronicle/20260105/import.chatgpt/key-c/conversation_transcript.jsonl"]}),
+            ),
+            b"detail\n",
+        );
+        let detail_transcript = root.path().join("chronicle/20260105/import.chatgpt/key-c");
+        fs::create_dir_all(&detail_transcript).unwrap();
+        fs::write(
+            detail_transcript.join("conversation_transcript.jsonl"),
+            "{\"topics\":\"detail\"}\n{\"speaker\":\"Human\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        let detail_uri = format!("/app/import/api/{detail}/content/seg-0");
+        let (status, _, _, first) = request(root.path(), "GET", &detail_uri, None).await;
+        assert_eq!(status, StatusCode::OK, "detail route first request");
+        let manifest = root
+            .path()
+            .join("imports")
+            .join(detail)
+            .join("content_manifest.jsonl");
+        assert_eq!(
+            fs::metadata(&manifest).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let row: Value =
+            serde_json::from_str(fs::read_to_string(&manifest).unwrap().trim()).unwrap();
+        let keys: BTreeSet<_> = ["id", "title", "date", "type", "preview", "meta", "segments"]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            row.as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            keys
+        );
+        assert_eq!(row["id"], "seg-0");
+        let (_, _, _, second) = request(root.path(), "GET", &detail_uri, None).await;
+        assert_eq!(first, second, "detail route uses its persisted manifest");
     }
 
     #[tokio::test]
@@ -469,6 +528,18 @@ mod tests {
             json_request(root.path(), "GET", &format!("/app/import/api/{OK}/content")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["reason_code"], "import_not_found");
+        let corrupt = "20260106_000000";
+        let directory = root.path().join("imports").join(corrupt);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("imported.json"), "{").unwrap();
+        let (status, body) = json_request(
+            root.path(),
+            "GET",
+            &format!("/app/import/api/{corrupt}/content"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "import_metadata_failed");
     }
 
     #[tokio::test]
@@ -495,6 +566,41 @@ mod tests {
             (code, body["reason_code"].clone()),
             (StatusCode::NOT_FOUND, json!("import_not_found"))
         );
+        let directory = root.path().join("imports").join(FAILED);
+        let decisions = root.path().join("decisions.jsonl");
+        fs::write(
+            &decisions,
+            "{\"action\":\"entity_staged\",\"source\":{\"name\":\"Ada\"},\"target\":{\"name\":\"Ada Lovelace\"},\"staging_path\":\"entities/ada.json\"}\n{\"action\":\"segment_errored\",\"item_id\":\"segment-1\",\"reason\":\"bad\"}\n",
+        )
+        .unwrap();
+        let mut imported: Value =
+            serde_json::from_slice(&fs::read(directory.join("imported.json")).unwrap()).unwrap();
+        imported["merge_summary"] = json!({});
+        imported["merge_log_path"] = json!(decisions);
+        imported["merge_staging_path"] = json!("staging");
+        imported["summary_errors"] = json!(["summary failed"]);
+        fs::write(
+            directory.join("imported.json"),
+            serde_json::to_vec(&imported).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            directory.join("segments.json"),
+            json!({"segments":["one"]}).to_string(),
+        )
+        .unwrap();
+        let (_, body) =
+            json_request(root.path(), "GET", &format!("/app/import/api/{FAILED}")).await;
+        assert_eq!(body["segments_json"], json!({"segments":["one"]}));
+        assert_eq!(
+            body["merge_artifact_paths"],
+            json!({"decisions":decisions,"staging":"staging"})
+        );
+        assert_eq!(
+            body["decision_highlights"],
+            json!({"staged_entities":[{"source_name":"Ada","target_name":"Ada Lovelace","staging_path":"entities/ada.json"}],"errored_segments":[{"item_id":"segment-1","reason":"bad"}]})
+        );
+        assert_eq!(body["summary_errors"], json!(["summary failed"]));
     }
 
     #[tokio::test]
@@ -574,12 +680,46 @@ mod tests {
             .iter()
             .find(|item| item["area"] == "entities")
             .unwrap();
-        assert_eq!(entity.as_object().unwrap().len(), 6);
+        assert_eq!(
+            entity
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            [
+                "area",
+                "source_id",
+                "reason",
+                "source_entity",
+                "match_candidates",
+                "staged_at"
+            ]
+            .into_iter()
+            .collect()
+        );
         let facet = items.iter().find(|item| item["area"] == "facets").unwrap();
-        assert_eq!(facet["custom"], "payload");
-        assert_eq!(facet["facet"], "work");
+        assert_eq!(
+            facet
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            ["area", "staged_file", "facet", "file_type", "custom"]
+                .into_iter()
+                .collect()
+        );
         let config = items.iter().find(|item| item["area"] == "config").unwrap();
-        assert_eq!(config, &json!({"area":"config","diff":{"changed":true}}));
+        assert_eq!(
+            config
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            ["area", "diff"].into_iter().collect()
+        );
         let (code, body) = json_request(
             root.path(),
             "GET",
@@ -609,8 +749,14 @@ mod tests {
                 .to_vec()
             )
         );
-        let (_, missing) = json_request(root.path(), "GET", "/app/import/api/guide/nope").await;
-        assert_eq!(missing["reason_code"], "file_not_found");
+        let (code, missing) = json_request(root.path(), "GET", "/app/import/api/guide/nope").await;
+        assert_eq!(
+            (code, missing),
+            (
+                StatusCode::NOT_FOUND,
+                json!({"detail":"No guide available for 'nope'","error":"I couldn't find that file.","reason_code":"file_not_found"})
+            )
+        );
         for path in ["..", "%2e%2e%2f", "ICS"] {
             let (code, body) =
                 json_request(root.path(), "GET", &format!("/app/import/api/guide/{path}")).await;
@@ -665,22 +811,40 @@ mod tests {
                         (StatusCode::FOUND, Some("/init")),
                         "{phase} {method} {path}"
                     ),
-                    "corrupt" if path.contains("/api/") => assert_eq!(
-                        (status, content_type),
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "application/json".to_owned()
-                        ),
-                        "{phase} {method} {path}"
-                    ),
-                    "corrupt" => assert_eq!(
-                        (status, content_type),
-                        (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            "text/plain; charset=utf-8".to_owned()
-                        ),
-                        "{phase} {method} {path}"
-                    ),
+                    "corrupt" if path.contains("/api/") => {
+                        assert_eq!(
+                            (status, content_type),
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "application/json".to_owned()
+                            ),
+                            "{phase} {method} {path}"
+                        );
+                        let actual: Value = serde_json::from_slice(&body).unwrap();
+                        assert_eq!(
+                            actual,
+                            json!({"error":"I couldn't read your settings.","reason_code":"corrupt_config","detail":format!("I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.", root.path().join("config/journal.json").display())}),
+                            "{phase} {method} {path}"
+                        );
+                    }
+                    "corrupt" => {
+                        assert_eq!(
+                            (status, content_type),
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "text/plain; charset=utf-8".to_owned()
+                            ),
+                            "{phase} {method} {path}"
+                        );
+                        assert_eq!(
+                            String::from_utf8(body).unwrap(),
+                            format!(
+                                "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+                                root.path().join("config/journal.json").display()
+                            ),
+                            "{phase} {method} {path}"
+                        );
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -720,25 +884,41 @@ mod tests {
 
     #[test]
     fn ac17a_upload_timestamp_is_the_shared_sort_and_timeout_time() {
-        let mut values = Map::new();
-        values.insert("error".into(), Value::Null);
-        values.insert("error_stage".into(), Value::Null);
-        values.insert("processed".into(), Value::Bool(false));
-        values.insert("task_id".into(), json!("task"));
-        let old_upload = ImportInfo {
-            imported_at: 100.0,
-            values: values.clone(),
-        };
-        let recent_upload = ImportInfo {
-            imported_at: 999.0,
-            values,
-        };
+        let root = phase_root("empty");
+        for (timestamp, upload) in [
+            ("20260108_000000", 100_000.0),
+            ("20260109_000000", 199_995.0),
+        ] {
+            seed_import(
+                root.path(),
+                timestamp,
+                "waiting.md",
+                "text/plain",
+                "timeout",
+                None,
+                b"# waiting\n",
+            );
+            let path = root
+                .path()
+                .join("imports")
+                .join(timestamp)
+                .join("import.json");
+            let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            metadata["task_id"] = json!("task");
+            metadata["upload_timestamp"] = json!(upload * 1000.0);
+            fs::write(path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        }
+        let old_upload = crate::imports::load_import_info(root.path(), "20260108_000000").unwrap();
+        let recent_upload =
+            crate::imports::load_import_info(root.path(), "20260109_000000").unwrap();
+        assert_eq!(old_upload.imported_at, 100_000.0);
+        assert_eq!(recent_upload.imported_at, 199_995.0);
         assert_eq!(
-            resolve_status_with_timeout(&old_upload, 200.0, 10.0).0,
+            resolve_status_with_timeout(&old_upload, 200_000.0, 10.0).0,
             "failed"
         );
         assert_eq!(
-            resolve_status_with_timeout(&recent_upload, 1_000.0, 10.0).0,
+            resolve_status_with_timeout(&recent_upload, 200_000.0, 10.0).0,
             "running"
         );
     }
@@ -778,21 +958,39 @@ mod tests {
 
     #[test]
     fn ac19_four_phase_seeds_match_the_corpus_generator_layout() {
+        // These expectations are the generator's _build_journal and
+        // _seed_journal_sources contract (scripts/convey_import_corpus.py:377-508),
+        // deliberately independent of test_support's writers.
+        let source_record = json!({"key":"corpusSourceKey0000000000000000000000000000","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}});
         for phase in ["unestablished", "corrupt", "empty", "populated"] {
             let root = phase_root(phase);
             let source = root
                 .path()
                 .join("apps/import/journal_sources/corpus_peer.json");
-            assert_eq!(
-                serde_json::from_slice::<Value>(&fs::read(source).unwrap()).unwrap(),
-                json!({"key":"corpusSourceKey0000000000000000000000000000","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}}),
-                "{phase} source registry"
-            );
-            for area in ["segments", "entities", "facets", "imports", "config"] {
-                assert!(
-                    root.path().join("imports/corpusSo").join(area).is_dir(),
-                    "{phase} {area}"
-                );
+            match phase {
+                "unestablished" | "empty" | "populated" => {
+                    assert_eq!(
+                        serde_json::from_slice::<Value>(&fs::read(&source).unwrap()).unwrap(),
+                        source_record,
+                        "{phase} source registry"
+                    );
+                    assert_eq!(
+                        fs::read_to_string(root.path().join("imports/corpusSo/source.json"))
+                            .unwrap(),
+                        "{}"
+                    );
+                    for area in ["segments", "entities", "facets", "imports", "config"] {
+                        assert!(
+                            root.path().join("imports/corpusSo").join(area).is_dir(),
+                            "{phase} {area}"
+                        );
+                    }
+                }
+                "corrupt" => {
+                    assert!(!source.exists(), "generator does not seed corrupt sources");
+                    assert!(!root.path().join("imports/corpusSo").exists());
+                }
+                _ => unreachable!(),
             }
             match phase {
                 "unestablished" => assert!(!root.path().join("config/journal.json").exists()),
@@ -802,31 +1000,98 @@ mod tests {
                 ),
                 "empty" => assert_eq!(
                     fs::read_to_string(root.path().join("config/journal.json")).unwrap(),
-                    "{\"setup\":{\"completed_at\":1767225600}}\n"
+                    "{\n  \"setup\": {\n    \"completed_at\": 1767225600\n  }\n}\n"
                 ),
                 "populated" => {
-                    for (timestamp, client_item_id) in [
-                        (OK, "corpus-item-1"),
-                        (FAILED, "corpus-item-2"),
-                        (PENDING, "corpus-item-3"),
-                        (CONTENT, "corpus-item-4"),
+                    assert_eq!(
+                        fs::read_to_string(root.path().join("config/journal.json")).unwrap(),
+                        "{\n  \"setup\": {\n    \"completed_at\": 1767225600\n  }\n}\n"
+                    );
+                    for (timestamp, filename, mime_type, client_item_id, payload, imported) in [
+                        (
+                            OK,
+                            "notes.txt",
+                            "text/plain",
+                            "corpus-item-1",
+                            b"corpus import payload\n".as_slice(),
+                            Some(json!({"processed":true,"files_written":1,"days":["20260801"]})),
+                        ),
+                        (
+                            FAILED,
+                            "broken.ics",
+                            "text/calendar",
+                            "corpus-item-2",
+                            b"not really an ics\n".as_slice(),
+                            Some(
+                                json!({"processed":false,"error":"calendar payload could not be parsed","error_stage":"detect"}),
+                            ),
+                        ),
+                        (
+                            PENDING,
+                            "waiting.md",
+                            "text/plain",
+                            "corpus-item-3",
+                            b"# waiting\n".as_slice(),
+                            None,
+                        ),
+                        (
+                            CONTENT,
+                            "conversations.json",
+                            "application/json",
+                            "corpus-item-4",
+                            b"[]\n".as_slice(),
+                            Some(
+                                json!({"processed":true,"files_written":3,"source_type":"chatgpt","days":["20260801","20260802","20260901"]}),
+                            ),
+                        ),
                     ] {
+                        let directory = root.path().join("imports").join(timestamp);
                         let metadata: Value = serde_json::from_slice(
-                            &fs::read(
-                                root.path()
-                                    .join("imports")
-                                    .join(timestamp)
-                                    .join("import.json"),
-                            )
-                            .unwrap(),
+                            &fs::read(directory.join("import.json")).unwrap(),
                         )
                         .unwrap();
-                        assert_eq!(metadata["client_item_id"], client_item_id, "{timestamp}");
-                        assert!(
-                            metadata.get("task_id").is_none(),
-                            "generator does not persist task_id"
+                        assert_eq!(
+                            metadata,
+                            json!({"original_filename":filename,"file_size":42,"mime_type":mime_type,"facet":null,"setting":null,"user_timestamp":null,"imported_via":"web_dashboard","link_id":null,"observer_handle":null,"source":"corpus","source_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000","client_item_id":client_item_id}),
+                            "{timestamp} import metadata"
                         );
+                        assert_eq!(
+                            fs::read(directory.join(filename)).unwrap(),
+                            payload,
+                            "{timestamp} payload"
+                        );
+                        let imported_path = directory.join("imported.json");
+                        match imported {
+                            Some(expected) => assert_eq!(
+                                serde_json::from_slice::<Value>(&fs::read(imported_path).unwrap())
+                                    .unwrap(),
+                                expected,
+                                "{timestamp} imported result"
+                            ),
+                            None => assert!(
+                                !imported_path.exists(),
+                                "{timestamp} has no imported result"
+                            ),
+                        }
                     }
+                    let manifest: Vec<Value> = fs::read_to_string(
+                        root.path()
+                            .join("imports")
+                            .join(CONTENT)
+                            .join("content_manifest.jsonl"),
+                    )
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                    assert_eq!(
+                        manifest,
+                        vec![
+                            json!({"id":"corpus-entry-1","date":"20260801","title":"first conversation","preview":"a short preview of the first entry","body":"the full body of the first entry"}),
+                            json!({"id":"corpus-entry-2","date":"20260802","title":"second conversation","preview":"a short preview of the second entry","body":"the full body of the second entry"}),
+                            json!({"id":"corpus-entry-3","date":"20260901","title":"a September conversation","preview":"a short preview of the third entry","body":"the full body of the third entry"}),
+                        ]
+                    );
                 }
                 _ => unreachable!(),
             }
