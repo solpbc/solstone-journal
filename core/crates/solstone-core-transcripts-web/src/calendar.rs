@@ -11,12 +11,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
-use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::{day_dirs, day_path};
 use solstone_core_journal_stats_cli::load_fresh_day_cache;
 
 use crate::day::prepare_day;
-use crate::{AppState, TranscriptError};
+use crate::{AppState, TranscriptError, legacy_error_response};
 
 pub(crate) async fn index(State(state): State<Arc<AppState>>) -> Response {
     let now = state.clock.now();
@@ -30,7 +29,7 @@ pub(crate) async fn stats(
     RoutePath(month): RoutePath<String>,
 ) -> Response {
     if !valid_month(&month) {
-        return error_envelope(
+        return legacy_error_response(
             "invalid_month",
             "I couldn't use that month.",
             "Invalid month format",

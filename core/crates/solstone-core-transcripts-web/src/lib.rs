@@ -6,8 +6,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::Router;
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::get;
@@ -89,10 +91,27 @@ impl TranscriptError {
 }
 
 fn workspace_response() -> Response {
-    use axum::body::Body;
-    use axum::http::header;
     Response::builder()
         .header(header::CONTENT_TYPE, WORKSPACE.content_type)
         .body(Body::from(WORKSPACE.bytes))
         .expect("workspace response builds")
+}
+
+pub(crate) fn legacy_error_response(
+    reason_code: impl Into<String>,
+    message: impl Into<String>,
+    detail: impl Into<String>,
+    status: StatusCode,
+) -> Response {
+    let (status, Json(envelope)) =
+        solstone_core_convey_http::envelope::error_envelope(reason_code, message, detail, status);
+    let mut body = serde_json::to_vec(&envelope).expect("error envelope serializes");
+    // Flask's jsonify response includes this terminal newline.
+    body.push(b'\n');
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_LENGTH, body.len())
+        .body(Body::from(body))
+        .expect("legacy error response builds")
 }

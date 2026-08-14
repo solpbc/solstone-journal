@@ -10,14 +10,13 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde_json::json;
-use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_system_health::{DaySegment, FilesystemSegmentSource, TimeRange, scan_day};
 
 use crate::attach::{
     TranscriptSegment, attach_think_to_segments, attach_visible_streams_to_ranges,
     normalize_markdown_only_segments,
 };
-use crate::{AppState, TranscriptError};
+use crate::{AppState, TranscriptError, legacy_error_response};
 
 pub(crate) async fn ranges(
     State(state): State<Arc<AppState>>,
@@ -100,7 +99,7 @@ pub(crate) fn valid_day(day: &str) -> bool {
     day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
 }
 pub(crate) fn invalid_day() -> Response {
-    error_envelope(
+    legacy_error_response(
         "invalid_day",
         "I couldn't use that day.",
         "Day not found",

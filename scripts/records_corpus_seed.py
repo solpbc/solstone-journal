@@ -153,6 +153,9 @@ def _write_fresh_stats_cache(day_dir: Path) -> None:
         {
             "schema_version": SCHEMA_VERSION,
             "stats": {field: 0 for field in DAY_FIELDS},
+            "agent_data": {},
+            "facet_data": {},
+            "heatmap_data": {"weekday": 0, "hours": {}},
         },
     )
     cache = day_dir / "stats.json"

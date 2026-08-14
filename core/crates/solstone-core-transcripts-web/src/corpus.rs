@@ -421,10 +421,21 @@ mod tests {
             .await;
             assert_eq!(status.as_u16(), case["status"].as_u64().unwrap() as u16);
             for (name, expected) in case["response_headers"].as_object().unwrap() {
+                if name == "Content-Length" {
+                    assert_eq!(
+                        headers[name],
+                        body.len().to_string(),
+                        "{phase} {name} reflects the live response body"
+                    );
+                    continue;
+                }
                 assert_eq!(headers[name], expected.as_str().unwrap(), "{phase} {name}");
             }
+            let normalized = String::from_utf8(body)
+                .unwrap()
+                .replace(&root.path().display().to_string(), "<JOURNAL_ROOT>");
             assert_eq!(
-                format!("{:x}", Sha256::digest(&body)),
+                format!("{:x}", Sha256::digest(normalized.as_bytes())),
                 case["body_sha256"].as_str().unwrap(),
                 "{phase}"
             );
