@@ -24,13 +24,19 @@ pub fn hours_avail(day: &str, segments: Vec<SegmentDirectory>) -> Value {
         let Some(key) = segment_key(&segment.key) else {
             continue;
         };
-        // `iter_segments` retains a directory name that can merely contain a key.
-        // Extract and parse the ASCII key; malformed names are omitted rather than
+        // The reference regex is Unicode-aware, so extracted digits are not guaranteed ASCII.
+        // Parse character slices; non-ASCII digits are omitted rather than panicking or
         // becoming a phantom 00:00 availability bucket.
-        let Ok(hour) = key[0..2].parse::<u32>() else {
+        let Ok(hour) = key.chars().take(2).collect::<String>().parse::<u32>() else {
             continue;
         };
-        let Ok(minute) = key[2..4].parse::<u32>() else {
+        let Ok(minute) = key
+            .chars()
+            .skip(2)
+            .take(2)
+            .collect::<String>()
+            .parse::<u32>()
+        else {
             continue;
         };
         buckets
@@ -114,7 +120,7 @@ fn bucket(segments: Option<Vec<AvailableSegment>>, minute: u32) -> Value {
 mod tests {
     use std::fs;
 
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use tempfile::TempDir;
 
     use crate::segments::{DEFAULT_STREAM, SegmentDirectory};
@@ -175,6 +181,8 @@ mod tests {
     fn ac9b_all_rank_levels_flow_through_availability_reduction() {
         let root = TempDir::new().expect("root");
         let mut segments = Vec::new();
+        // Ranks 0-3 must beat an earlier key. Rank 4 has no lower-priority
+        // opponent, so its pair exercises the documented key tiebreak instead.
         for (minute, winner, loser) in [
             (
                 0,
@@ -189,22 +197,22 @@ mod tests {
             segments.push(segment(
                 &root,
                 DEFAULT_STREAM,
-                &format!("10{minute:02}00_300"),
+                &format!("10{minute:02}01_300"),
                 winner,
             ));
             segments.push(segment(
                 &root,
                 "other",
-                &format!("10{minute:02}01_300"),
+                &format!("10{minute:02}00_300"),
                 loser,
             ));
         }
         let payload = hours_avail("20260510", segments);
         for (minute, suffix) in [
-            (0, "100000_300"),
-            (5, "100500_300"),
-            (10, "101000_300"),
-            (15, "101500_300"),
+            (0, "100001_300"),
+            (5, "100501_300"),
+            (10, "101001_300"),
+            (15, "101501_300"),
             (20, "102000_300"),
         ] {
             assert!(
@@ -214,6 +222,13 @@ mod tests {
                     .ends_with(suffix)
             );
         }
+    }
+
+    #[test]
+    fn unicode_digit_segment_key_is_omitted_without_panicking() {
+        let root = TempDir::new().expect("root");
+        let unicode_key = segment(&root, DEFAULT_STREAM, "००००००_३००", &["audio.jsonl"]);
+        assert_eq!(hours_avail("20260510", vec![unicode_key]), json!({}));
     }
 
     #[test]

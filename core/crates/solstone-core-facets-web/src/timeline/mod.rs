@@ -139,6 +139,8 @@ async fn index_api(root: PathBuf) -> Response {
 }
 async fn stats(root: PathBuf, ym: String) -> Response {
     if !is_month(&ym) {
+        // Python reaches this same 400 via the reason's default status; this port has no
+        // reason-default table, so the observable status remains explicit.
         return http::error(
             "invalid_month",
             "I couldn't use that month.",
