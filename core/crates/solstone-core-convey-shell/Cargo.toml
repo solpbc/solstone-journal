@@ -75,6 +75,7 @@ solstone-core-thinking = { workspace = true, optional = true }
 solstone-core-thinking-copy = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
 tower.workspace = true
+ureq = { workspace = true, features = ["rustls"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [build-dependencies]

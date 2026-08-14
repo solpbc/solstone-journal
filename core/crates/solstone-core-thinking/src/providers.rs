@@ -45,7 +45,12 @@ pub fn keys(config: &Map<String, Value>) -> Value {
     json!({"env":{"GOOGLE_API_KEY":api_keys["google"],"OPENAI_API_KEY":api_keys["openai"],"ANTHROPIC_API_KEY":api_keys["anthropic"]},"api_keys":api_keys,"key_validation":config.get("providers").and_then(Value::as_object).and_then(|providers| providers.get("key_validation")).cloned().unwrap_or_else(|| json!({}))})
 }
 
-pub fn payload(journal: &Path, config: &Map<String, Value>, local_model: &str) -> Value {
+pub fn payload(
+    journal: &Path,
+    config: &Map<String, Value>,
+    local_model: &str,
+    confidential_operation: Value,
+) -> Value {
     let endpoint = resolve_local_endpoint(config);
     let spp_configured =
         matches!(&endpoint, LocalEndpointResolution::Byo(value) if value.is_confidential);
@@ -74,13 +79,23 @@ pub fn payload(journal: &Path, config: &Map<String, Value>, local_model: &str) -
         "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
         "model_tiers":{"google":[{"tier":"mid","label":"Gemini 3.5 Flash","model":"gemini-3.5-flash"},{"tier":"lite","label":"Gemini 3.1 Flash Lite","model":"gemini-3.1-flash-lite"}],"anthropic":[{"tier":"top","label":"Claude Opus","model":"claude-opus-4-8"},{"tier":"mid","label":"Claude Sonnet","model":"claude-sonnet-5"},{"tier":"lite","label":"Claude Haiku","model":"claude-haiku-4-5"}],"openai":[{"tier":"top","label":"GPT","model":"gpt-5.5"},{"tier":"mid","label":"GPT mini","model":"gpt-5.4-mini"},{"tier":"lite","label":"GPT nano","model":"gpt-5.4-nano"}]},
-        "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation(),"confidential_attestation":brain_view["confidential_attestation"]},
+        "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation,"confidential_attestation":brain_view["confidential_attestation"]},
         "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"mlx"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
     })
 }
 
-pub fn local_status_only(journal: &Path, config: &Map<String, Value>) -> Value {
-    payload(journal, config, local::default_model())["provider_status"]["local"].clone()
+pub fn local_status_only(
+    journal: &Path,
+    config: &Map<String, Value>,
+    confidential_operation: Value,
+) -> Value {
+    payload(
+        journal,
+        config,
+        local::default_model(),
+        confidential_operation,
+    )["provider_status"]["local"]
+        .clone()
 }
 
 pub trait ManagedKeyValidator {
@@ -508,7 +523,12 @@ pub fn update_providers(
     }
     let config = read_config(journal)
         .map_err(|error| ProviderUpdateError::Mutation(MutationError::Read(error)))?;
-    Ok(payload(journal, &config, local::default_model()))
+    Ok(payload(
+        journal,
+        &config,
+        local::default_model(),
+        Value::Null,
+    ))
 }
 
 fn object_at<'a>(parent: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
@@ -602,12 +622,6 @@ fn confidential_audio(config: &Map<String, Value>) -> bool {
         Some(Value::Bool(value)) => *value,
         Some(_) => false,
     }
-}
-
-fn confidential_operation() -> Value {
-    // The reference reads in-memory operation state; no native read API exists
-    // yet, so this read-only projection cannot observe it.
-    Value::Null
 }
 
 fn google_exact_model_advisory(config: &Map<String, Value>) -> Value {

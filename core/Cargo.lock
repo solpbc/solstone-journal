@@ -2839,6 +2839,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower",
+ "ureq",
  "x509-parser",
  "zip",
 ]
@@ -3757,8 +3758,10 @@ name = "solstone-core-thinking"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-brain",
  "solstone-core-facets",
  "solstone-core-generate",

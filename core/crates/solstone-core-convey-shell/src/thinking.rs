@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::{Body, Bytes};
@@ -15,14 +15,150 @@ use axum::extract::{Extension, Query};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
+use solstone_core_thinking::confidential::{
+    HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, ProvisionError,
+    SERVICE_SPP, TokenError, disable_confidential, handoff_result, mint_nonce, outcome_from_token,
+    provision_confidential_handoff,
+};
 use solstone_core_thinking::providers::ManagedKeyValidator;
 
 use crate::{JournalRoot, asset_response, not_found_response};
 
+const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
+const GENERIC_THINKING_ERROR: &str =
+    "something went wrong - try again, and if it persists, check the health dashboard";
+const NOT_VERIFIED_GUIDANCE: &str =
+    "Hardware attestation is not yet verified. Thinking stays blocked until verification finishes.";
+const PYTHON_QUOTE_COMPONENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'!')
+    .add(b'\"')
+    .add(b'#')
+    .add(b'$')
+    .add(b'%')
+    .add(b'&')
+    .add(b'\'')
+    .add(b'(')
+    .add(b')')
+    .add(b'*')
+    .add(b'+')
+    .add(b',')
+    .add(b'/')
+    .add(b':')
+    .add(b';')
+    .add(b'<')
+    .add(b'=')
+    .add(b'>')
+    .add(b'?')
+    .add(b'@')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
+    .add(b'`')
+    .add(b'{')
+    .add(b'|')
+    .add(b'}');
+
+#[derive(Debug, Clone)]
+pub enum PollOutcome {
+    Continue,
+    Failed {
+        token: String,
+        detail: Option<String>,
+    },
+    EarlyAccess,
+    Success(serde_json::Map<String, Value>),
+}
+
+pub trait ConfidentialPoll: Send + Sync {
+    fn poll(&self, base_url: &str, nonce: &str) -> PollOutcome;
+}
+
+#[derive(Clone)]
+pub struct ConfidentialRuntimeOverride {
+    pub portal_base_url: String,
+    pub poll: Arc<dyn ConfidentialPoll>,
+}
+
+#[derive(Clone)]
+struct ConfidentialRuntime {
+    portal_base_url: String,
+    poll: Arc<dyn ConfidentialPoll>,
+}
+
+struct PortalPoll;
+
+impl ConfidentialPoll for PortalPoll {
+    fn poll(&self, base_url: &str, nonce: &str) -> PollOutcome {
+        let url = format!("{base_url}/handoff/{SERVICE_SPP}?nonce={nonce}");
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(35)))
+            .timeout_recv_response(Some(Duration::from_secs(35)))
+            .timeout_recv_body(Some(Duration::from_secs(35)))
+            .timeout_global(Some(Duration::from_secs(35)))
+            .build();
+        let agent = ureq::Agent::new_with_config(config);
+        let response = match agent.get(&url).header("Connection", "close").call() {
+            Ok(response) => response,
+            Err(ureq::Error::Timeout(_)) => return PollOutcome::Continue,
+            Err(error) => {
+                return PollOutcome::Failed {
+                    token: "portal_unreachable".to_owned(),
+                    detail: Some(error.to_string()),
+                };
+            }
+        };
+        match response.status().as_u16() {
+            204 => PollOutcome::Continue,
+            400 => PollOutcome::Failed {
+                token: "nonce_invalid".to_owned(),
+                detail: None,
+            },
+            410 => PollOutcome::Failed {
+                token: "consent_link_expired".to_owned(),
+                detail: None,
+            },
+            200 => match response
+                .into_body()
+                .read_to_string()
+                .ok()
+                .and_then(|body| serde_json::from_str::<Value>(&body).ok())
+                .and_then(|value| value.as_object().cloned())
+            {
+                Some(payload)
+                    if payload.get("state").and_then(Value::as_str) == Some("early_access") =>
+                {
+                    PollOutcome::EarlyAccess
+                }
+                Some(payload) => PollOutcome::Success(payload),
+                None => PollOutcome::Failed {
+                    token: "unexpected_payload".to_owned(),
+                    detail: None,
+                },
+            },
+            _ => PollOutcome::Failed {
+                token: "unexpected_payload".to_owned(),
+                detail: None,
+            },
+        }
+    }
+}
+
 pub fn router(journal: Arc<JournalRoot>) -> Router {
+    let confidential_runtime = ConfidentialRuntime {
+        portal_base_url: std::env::var("SERVICES_PORTAL_URL")
+            .unwrap_or_else(|_| DEFAULT_PORTAL_URL.to_owned())
+            .trim_end_matches('/')
+            .to_owned(),
+        poll: Arc::new(PortalPoll),
+    };
     Router::new()
         .route("/app/thinking/", get(shell))
         .route("/app/thinking", get(shell_redirect))
@@ -59,6 +195,18 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         )
         .route("/app/thinking/api/brain/check", post(check_brain))
         .route(
+            "/app/thinking/api/confidential/enable",
+            post(confidential_enable),
+        )
+        .route(
+            "/app/thinking/api/confidential/disable",
+            post(confidential_disable),
+        )
+        .route(
+            "/app/thinking/api/confidential/recheck",
+            post(confidential_recheck),
+        )
+        .route(
             "/app/thinking/api/local/endpoint",
             get(endpoint_get_not_allowed)
                 .post(update_endpoint)
@@ -75,6 +223,8 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         )
         .route("/app/thinking/api/validate-model", post(validate_model))
         .layer(Extension(journal))
+        .layer(Extension(Arc::new(OperationRegistry::default())))
+        .layer(Extension(confidential_runtime))
 }
 
 async fn shell() -> Response {
@@ -114,17 +264,21 @@ async fn background_not_found() -> Response {
     not_found_response()
 }
 
-async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+async fn state(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
+) -> Response {
     let journal = journal.as_ref();
     match config(&journal.0) {
         Ok(config) => json_response(
-            json!({"providers":solstone_core_thinking::providers::payload(&journal.0,&config,solstone_core_thinking::local::default_model()),"keys":solstone_core_thinking::providers::keys(&config),"copy":solstone_core_thinking_copy::thinking_copy_payload()}),
+            json!({"providers":solstone_core_thinking::providers::payload(&journal.0,&config,solstone_core_thinking::local::default_model(),operations.operation(SERVICE_SPP)),"keys":solstone_core_thinking::providers::keys(&config),"copy":solstone_core_thinking_copy::thinking_copy_payload()}),
         ),
         Err(response) => *response,
     }
 }
 async fn providers(
     Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     let journal = journal.as_ref();
@@ -140,7 +294,10 @@ async fn providers(
     };
     match config(&journal.0) {
         Ok(config) => json_response(solstone_core_thinking::providers::payload(
-            &journal.0, &config, model,
+            &journal.0,
+            &config,
+            model,
+            operations.operation(SERVICE_SPP),
         )),
         Err(response) => *response,
     }
@@ -152,11 +309,16 @@ async fn keys(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
         Err(response) => *response,
     }
 }
-async fn local_status(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+async fn local_status(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
+) -> Response {
     let journal = journal.as_ref();
     match config(&journal.0) {
         Ok(config) => json_response(solstone_core_thinking::providers::local_status_only(
-            &journal.0, &config,
+            &journal.0,
+            &config,
+            operations.operation(SERVICE_SPP),
         )),
         Err(response) => *response,
     }
@@ -305,6 +467,218 @@ async fn check_brain(Extension(journal): Extension<Arc<JournalRoot>>) -> Respons
     json_response(solstone_core_thinking::brain::check_response(
         &journal.0, &config, sent,
     ))
+}
+
+async fn confidential_enable(
+    Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
+    Extension(runtime): Extension<ConfidentialRuntime>,
+    override_runtime: Option<Extension<ConfidentialRuntimeOverride>>,
+) -> Response {
+    let journal = journal.as_ref();
+    let config = match solstone_core_thinking::read_config(&journal.0) {
+        Ok(config) => config,
+        Err(_) => return thinking_failure(),
+    };
+    if confidential_configured(&config) {
+        return invalid_state("confidential processing is already set up.");
+    }
+    let (portal_base_url, poll) = match override_runtime {
+        Some(Extension(value)) => (
+            value.portal_base_url.trim_end_matches('/').to_owned(),
+            value.poll,
+        ),
+        None => (runtime.portal_base_url, runtime.poll),
+    };
+    let instance_id = match confidential_instance_id(&journal.0) {
+        Some(instance_id) => instance_id,
+        None => return thinking_failure(),
+    };
+    let nonce = match mint_nonce() {
+        Ok(nonce) => nonce,
+        Err(_) => return thinking_failure(),
+    };
+    let portal_url = format!(
+        "{portal_base_url}/enable/{SERVICE_SPP}?nonce={nonce}&instance={}",
+        utf8_percent_encode(&instance_id, PYTHON_QUOTE_COMPONENT),
+    );
+    let (handle, operation) =
+        match operations.start_operation(SERVICE_SPP, "enable", Some(portal_url)) {
+            Ok(value) => value,
+            Err(_) => return service_busy(),
+        };
+    spawn_confidential_handoff(
+        journal.0.clone(),
+        operations,
+        handle,
+        portal_base_url,
+        nonce,
+        poll,
+    );
+    json_response_with_status(
+        StatusCode::ACCEPTED,
+        json!({"success":true,"service":SERVICE_SPP,"operation":remap_operation(operation)}),
+    )
+}
+
+async fn confidential_disable(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    match disable_confidential(&journal.0) {
+        Ok(outcome) => json_response(json!({
+            "success": true,
+            "service": SERVICE_SPP,
+            "result": {
+                "was_enabled": outcome.was_enabled,
+                "credential_preserved": outcome.credential_preserved,
+            },
+        })),
+        Err(error) => mutation_error(error),
+    }
+}
+
+async fn confidential_recheck(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
+    let journal = journal.as_ref();
+    let config = match config(&journal.0) {
+        Ok(config) => config,
+        Err(response) => return *response,
+    };
+    if !solstone_core_thinking::confidential::confidential_enabled(&config) {
+        return invalid_state("confidential processing is not active.");
+    }
+    let sent = send_brain_refresh_request(&journal.0);
+    json_response(solstone_core_thinking::brain::check_response(
+        &journal.0, &config, sent,
+    ))
+}
+
+fn confidential_configured(config: &serde_json::Map<String, Value>) -> bool {
+    config
+        .get("services")
+        .and_then(Value::as_object)
+        .is_some_and(|services| services.get("confidential").is_some_and(Value::is_object))
+}
+
+fn confidential_instance_id(journal: &Path) -> Option<String> {
+    let ca_dir = journal.join("link").join("ca");
+    let derived = std::fs::read_to_string(ca_dir.join("cert.pem"))
+        .ok()
+        .zip(std::fs::read_to_string(ca_dir.join("private.pem")).ok())
+        .and_then(|(certificate, private_key)| load_ca(&certificate, &private_key).ok())
+        .and_then(|ca| jid_from_spki(ca.spki_der()).ok());
+    derived.or_else(|| {
+        std::fs::read_to_string(journal.join("link").join("state.json"))
+            .ok()
+            .and_then(|contents| serde_json::from_str::<Value>(&contents).ok())
+            .and_then(|state| {
+                state
+                    .get("instance_id")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+            })
+    })
+}
+
+fn spawn_confidential_handoff(
+    journal: std::path::PathBuf,
+    operations: Arc<OperationRegistry>,
+    handle: OperationHandle,
+    portal_base_url: String,
+    nonce: String,
+    poll: Arc<dyn ConfidentialPoll>,
+) {
+    let worker_operations = operations.clone();
+    let worker = tokio::spawn(async move {
+        if !worker_operations.mark_waiting(SERVICE_SPP, handle) {
+            return true;
+        }
+        let deadline = Instant::now() + Duration::from_secs(15 * 60);
+        let result = loop {
+            let poll = poll.clone();
+            let base_url = portal_base_url.clone();
+            let nonce = nonce.clone();
+            let poll_result =
+                tokio::task::spawn_blocking(move || poll.poll(&base_url, &nonce)).await;
+            match poll_result {
+                Ok(PollOutcome::Continue) if Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+                Ok(PollOutcome::Continue) => break handoff_error("consent_timeout", None),
+                Ok(PollOutcome::Failed { token, detail }) => break handoff_error(&token, detail),
+                Ok(PollOutcome::EarlyAccess) => {
+                    break HandoffResult {
+                        phase: Phase::EarlyAccess,
+                        guidance: None,
+                        retryable: false,
+                    };
+                }
+                Ok(PollOutcome::Success(payload)) => {
+                    break match provision_confidential_handoff(&journal, &payload) {
+                        Ok(()) => HandoffResult {
+                            phase: Phase::Enabled,
+                            guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
+                            retryable: false,
+                        },
+                        Err(ProvisionError::Invalid) => handoff_error("unexpected_payload", None),
+                        Err(ProvisionError::Mutation(_)) => handoff_error("write_failed", None),
+                    };
+                }
+                Err(_) => return false,
+            }
+        };
+        worker_operations.finish(SERVICE_SPP, handle, result)
+    });
+    tokio::spawn(async move {
+        if !worker.await.unwrap_or(false) {
+            let _ = operations.finish(
+                SERVICE_SPP,
+                handle,
+                HandoffResult {
+                    phase: Phase::Error,
+                    guidance: None,
+                    retryable: true,
+                },
+            );
+        }
+    });
+}
+
+fn handoff_error(token: &str, detail: Option<String>) -> HandoffResult {
+    match outcome_from_token(token, detail) {
+        Ok((code, _)) => handoff_result(code),
+        Err(TokenError::OutOfDomain) => handoff_result(HandoffCode::LocalError),
+    }
+}
+
+fn remap_operation(mut operation: Value) -> Value {
+    let Some(phase) = operation
+        .get("phase")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return operation;
+    };
+    let product = [
+        ("starting", "starting"),
+        ("waiting", "waiting"),
+        ("enabled", "not_verified"),
+        ("early_access", "early_access"),
+        ("error", "repair_needed"),
+    ]
+    .into_iter()
+    .find_map(|(raw, product)| (phase == raw).then_some(product))
+    .unwrap_or(&phase);
+    operation["phase"] = Value::String(product.to_owned());
+    operation
+}
+
+fn service_busy() -> Response {
+    envelope(
+        "service_busy",
+        "The service operation is already running. Try again in a moment.",
+        "operation already running",
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
 }
 
 fn send_brain_refresh_request(journal_root: &Path) -> bool {
@@ -1000,9 +1374,7 @@ fn invalid_state(detail: impl Into<String>) -> Response {
     )
 }
 fn thinking_failure() -> Response {
-    thinking_failure_with_detail(
-        "something went wrong - try again, and if it persists, check the health dashboard",
-    )
+    thinking_failure_with_detail(GENERIC_THINKING_ERROR)
 }
 fn thinking_failure_with_detail(detail: impl Into<String>) -> Response {
     envelope(

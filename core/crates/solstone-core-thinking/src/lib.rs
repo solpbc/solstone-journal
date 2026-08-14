@@ -4,6 +4,7 @@
 //! Read-only projections for the native Thinking surface.
 
 pub mod brain;
+pub mod confidential;
 pub mod generators;
 pub mod local;
 pub mod providers;

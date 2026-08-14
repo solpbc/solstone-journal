@@ -141,6 +141,8 @@ mod sse;
 mod system;
 #[cfg(feature = "host")]
 mod thinking;
+#[cfg(feature = "host")]
+pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};
 
 use assets::lookup;
 use refusal::AppNotConverted;

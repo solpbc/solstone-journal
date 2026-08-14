@@ -4,15 +4,21 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use chrono::{Duration, Utc};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_brain::{begin_refresh, finish_refresh};
-use solstone_core_convey_shell::router;
+use solstone_core_convey_shell::{
+    ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome, router,
+};
+use solstone_core_sol_link::ca::generate_ca;
 use tower::ServiceExt;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -76,6 +82,188 @@ fn confidential() -> Value {
         "credential_fingerprint_sha256": sha256(b"corpus-confidential-credential"),
         "prior_active": {"provider": "openai", "model": "gpt-5"},
     })
+}
+
+fn write_link_ca(journal: &Path) {
+    let ca = generate_ca().expect("test CA generates");
+    let directory = journal.join("link/ca");
+    fs::create_dir_all(&directory).expect("CA directory creates");
+    fs::write(directory.join("cert.pem"), ca.certificate_pem()).expect("certificate writes");
+    fs::write(directory.join("private.pem"), ca.private_key_pem()).expect("private key writes");
+}
+
+fn write_link_state(journal: &Path, instance_id: &str) {
+    let directory = journal.join("link");
+    fs::create_dir_all(&directory).expect("link directory creates");
+    fs::write(
+        directory.join("state.json"),
+        serde_json::to_vec_pretty(&json!({
+            "instance_id": instance_id,
+            "home_label": "solstone",
+        }))
+        .expect("link state serializes"),
+    )
+    .expect("link state writes");
+}
+
+fn link_snapshot(journal: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn collect(root: &Path, directory: &Path, entries: &mut Vec<(PathBuf, Vec<u8>)>) {
+        let Ok(children) = fs::read_dir(directory) else {
+            return;
+        };
+        for child in children {
+            let child = child.expect("link entry reads");
+            let path = child.path();
+            if path.is_dir() {
+                collect(root, &path, entries);
+            } else {
+                entries.push((
+                    path.strip_prefix(root)
+                        .expect("link-relative path")
+                        .to_owned(),
+                    fs::read(&path).expect("link file reads"),
+                ));
+            }
+        }
+    }
+
+    let root = journal.join("link");
+    let mut entries = Vec::new();
+    collect(&root, &root, &mut entries);
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries
+}
+
+fn write_runtime_health(journal: &Path, revision: u64, phase: &str, reason_code: Value) {
+    let directory = journal.join("health/providers/runtime");
+    fs::create_dir_all(&directory).expect("runtime directory creates");
+    fs::write(
+        directory.join("local.json"),
+        serde_json::to_vec(&json!({
+            "schema_version": 1,
+            "provider": "local",
+            "revision": revision,
+            "phase": phase,
+            "reason_code": reason_code,
+            "detail": {},
+            "desired_fingerprint_sha256": "desired-fingerprint",
+            "incarnation": null,
+            "generation": 0,
+            "attempt": 0,
+            "process": null,
+            "updated_at": null,
+            "display_deadline_at": null,
+            "owner": null,
+        }))
+        .expect("health record serializes"),
+    )
+    .expect("health record writes");
+}
+
+fn write_runtime_retry(journal: &Path, revision: u64) {
+    let directory = journal.join("health/providers/runtime");
+    fs::create_dir_all(&directory).expect("runtime directory creates");
+    fs::write(
+        directory.join("local.retry-token.json"),
+        serde_json::to_vec(&json!({
+            "schema_version": 1,
+            "revision": revision,
+            "token_id": "requested-token",
+            "desired_fingerprint_sha256": "desired-fingerprint",
+            "requested_at": "2026-01-01T00:00:00+00:00",
+            "reason_code": "retry-token-requested",
+            "owner": {},
+        }))
+        .expect("retry record serializes"),
+    )
+    .expect("retry record writes");
+}
+
+struct ParkedPoll {
+    started: Sender<()>,
+    release: Mutex<Receiver<()>>,
+}
+
+impl ConfidentialPoll for ParkedPoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> PollOutcome {
+        self.started.send(()).expect("test observes poll");
+        self.release
+            .lock()
+            .expect("release lock")
+            .recv()
+            .expect("test releases poll");
+        PollOutcome::EarlyAccess
+    }
+}
+
+struct PanicPoll;
+
+impl ConfidentialPoll for PanicPoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> PollOutcome {
+        panic!("test poll panic")
+    }
+}
+
+struct EarlyAccessPoll;
+
+impl ConfidentialPoll for EarlyAccessPoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> PollOutcome {
+        PollOutcome::EarlyAccess
+    }
+}
+
+struct SuccessPoll {
+    payload: Map<String, Value>,
+}
+
+impl ConfidentialPoll for SuccessPoll {
+    fn poll(&self, _base_url: &str, _nonce: &str) -> PollOutcome {
+        PollOutcome::Success(self.payload.clone())
+    }
+}
+
+fn router_with_runtime(
+    journal: PathBuf,
+    portal_base_url: &str,
+    poll: Arc<dyn ConfidentialPoll>,
+) -> axum::Router {
+    router(journal).layer(Extension(ConfidentialRuntimeOverride {
+        portal_base_url: portal_base_url.to_owned(),
+        poll,
+    }))
+}
+
+fn consent_identity_and_nonce(
+    response: &(StatusCode, String, Option<String>, Vec<u8>),
+) -> (String, String) {
+    let body: Value = serde_json::from_slice(&response.3).expect("enable JSON");
+    let url = body["operation"]["portal_url"]
+        .as_str()
+        .expect("consent URL");
+    let nonce = url
+        .split("?nonce=")
+        .nth(1)
+        .and_then(|value| value.split('&').next())
+        .expect("nonce")
+        .to_owned();
+    let instance = url
+        .split_once("&instance=")
+        .expect("mandatory instance")
+        .1
+        .to_owned();
+    (instance, nonce)
+}
+
+async fn wait_for_operation_phase(app: axum::Router, phase: &str) {
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+        let response = request(app.clone(), "GET", "/app/thinking/api/providers").await;
+        let body: Value = serde_json::from_slice(&response.3).expect("providers JSON");
+        if body["active_lane"]["confidential_operation"]["phase"] == phase {
+            return;
+        }
+    }
+    panic!("operation settles to {phase}")
 }
 
 fn established(extra: Value) -> Value {
@@ -900,4 +1088,441 @@ async fn validate_keys_is_non_persisting_and_has_the_exact_contract_shape() {
             ["openai"]["reason_code"],
         "provider_rejected"
     );
+}
+
+#[tokio::test]
+async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operation() {
+    let first_journal = journal_for_phase("none");
+    write_link_ca(&first_journal.0);
+    let second_journal = journal_for_phase("confidential_inactive");
+    let (started_sender, started_receiver) = channel();
+    let (release_sender, release_receiver) = channel();
+    let first = router_with_runtime(
+        first_journal.0.clone(),
+        "https://portal.example/",
+        Arc::new(ParkedPoll {
+            started: started_sender,
+            release: Mutex::new(release_receiver),
+        }),
+    );
+    let second = router_with_runtime(
+        second_journal.0.clone(),
+        "https://portal.example/",
+        Arc::new(PanicPoll),
+    );
+
+    let enable = request(
+        first.clone(),
+        "POST",
+        "/app/thinking/api/confidential/enable",
+    )
+    .await;
+    assert_eq!(enable.0, StatusCode::ACCEPTED);
+    let enable_body: Value = serde_json::from_slice(&enable.3).expect("enable JSON");
+    assert_eq!(enable_body["operation"]["phase"], "starting");
+    assert_eq!(enable_body["operation"]["elapsed_ms"], 0);
+    let url = enable_body["operation"]["portal_url"]
+        .as_str()
+        .expect("consent URL");
+    assert!(url.starts_with("https://portal.example/enable/spp?nonce="));
+    let (_, instance) = url.split_once("&instance=").expect("mandatory instance");
+    assert_eq!(instance.len(), 36);
+    assert_eq!(instance.matches('-').count(), 4);
+    let nonce = url
+        .split("?nonce=")
+        .nth(1)
+        .and_then(|value| value.split('&').next())
+        .expect("nonce");
+    assert_eq!(nonce.len(), 52);
+    assert!(
+        nonce
+            .bytes()
+            .all(|byte| b"23456789ABCDEFGHJKMNPQRSTUVWXYZ".contains(&byte))
+    );
+    let mut began = false;
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+        match started_receiver.try_recv() {
+            Ok(()) => {
+                began = true;
+                break;
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => panic!("poll sender disconnected"),
+        }
+    }
+    assert!(began, "poll began");
+
+    let providers = request(first.clone(), "GET", "/app/thinking/api/providers").await;
+    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    assert_eq!(
+        providers_body["active_lane"]["confidential_operation"]["phase"],
+        "waiting"
+    );
+    let busy = request(
+        first.clone(),
+        "POST",
+        "/app/thinking/api/confidential/enable",
+    )
+    .await;
+    assert_eq!(busy.0, StatusCode::SERVICE_UNAVAILABLE);
+    let busy_body: Value = serde_json::from_slice(&busy.3).expect("busy JSON");
+    assert_top_level_keys(&busy_body, vec!["detail", "error", "reason_code"]);
+    assert_eq!(
+        busy_body["error"],
+        "The service operation is already running. Try again in a moment."
+    );
+    assert_eq!(busy_body["reason_code"], "service_busy");
+    assert_eq!(busy_body["detail"], "operation already running");
+
+    let second_providers = request(second, "GET", "/app/thinking/api/providers").await;
+    let second_body: Value =
+        serde_json::from_slice(&second_providers.3).expect("second providers JSON");
+    assert_eq!(
+        second_body["active_lane"]["confidential_operation"],
+        Value::Null
+    );
+    let cases = corpus();
+    let case = &cases["phases"]["confidential_inactive"][5];
+    replay_full_recorded_case(
+        "confidential_inactive",
+        5,
+        &second_journal.0,
+        case,
+        &second_providers,
+    );
+    release_sender.send(()).expect("release poll");
+}
+
+#[tokio::test]
+async fn confidential_enable_reads_identity_without_mutating_link_state() {
+    let journal = journal_for_phase("none");
+    write_link_ca(&journal.0);
+    let app = router_with_runtime(
+        journal.0.clone(),
+        "https://portal.example",
+        Arc::new(EarlyAccessPoll),
+    );
+
+    let before = link_snapshot(&journal.0);
+    let first = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(first.0, StatusCode::ACCEPTED);
+    let (derived, first_nonce) = consent_identity_and_nonce(&first);
+    assert_eq!(link_snapshot(&journal.0), before);
+    wait_for_operation_phase(app.clone(), "early_access").await;
+
+    let second = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(second.0, StatusCode::ACCEPTED);
+    let (second_identity, second_nonce) = consent_identity_and_nonce(&second);
+    assert_eq!(second_identity, derived);
+    assert_ne!(second_nonce, first_nonce);
+    assert_eq!(link_snapshot(&journal.0), before);
+    wait_for_operation_phase(app.clone(), "early_access").await;
+
+    write_link_state(&journal.0, &derived);
+    let before = link_snapshot(&journal.0);
+    let matching = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(matching.0, StatusCode::ACCEPTED);
+    assert_eq!(consent_identity_and_nonce(&matching).0, derived);
+    assert_eq!(link_snapshot(&journal.0), before);
+    wait_for_operation_phase(app.clone(), "early_access").await;
+
+    let drifted = "11111111-1111-8111-8111-111111111111";
+    write_link_state(&journal.0, drifted);
+    let before = link_snapshot(&journal.0);
+    let repaired = request(app, "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(repaired.0, StatusCode::ACCEPTED);
+    assert_eq!(consent_identity_and_nonce(&repaired).0, derived);
+    assert_ne!(consent_identity_and_nonce(&repaired).0, drifted);
+    assert_eq!(link_snapshot(&journal.0), before);
+
+    let fallback_journal = journal_for_phase("none");
+    let stored = "22222222-2222-8222-8222-222222222222";
+    write_link_state(&fallback_journal.0, stored);
+    let fallback = router_with_runtime(
+        fallback_journal.0.clone(),
+        "https://portal.example",
+        Arc::new(EarlyAccessPoll),
+    );
+    let before = link_snapshot(&fallback_journal.0);
+    let response = request(fallback, "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(response.0, StatusCode::ACCEPTED);
+    assert_eq!(consent_identity_and_nonce(&response).0, stored);
+    assert_eq!(link_snapshot(&fallback_journal.0), before);
+}
+
+#[tokio::test]
+async fn confidential_enable_refuses_missing_identity_without_starting_an_operation() {
+    let journal = journal_for_phase("none");
+    let app = router(journal.0.clone());
+    let before = link_snapshot(&journal.0);
+    let response = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
+    assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+    assert_eq!(body["error"], "I couldn't save those settings.");
+    assert_eq!(body["reason_code"], "settings_operation_failed");
+    assert_eq!(
+        body["detail"],
+        "something went wrong - try again, and if it persists, check the health dashboard"
+    );
+    assert_eq!(link_snapshot(&journal.0), before);
+    let providers = request(app, "GET", "/app/thinking/api/providers").await;
+    let providers_body: Value = serde_json::from_slice(&providers.3).expect("providers JSON");
+    assert_eq!(
+        providers_body["active_lane"]["confidential_operation"],
+        Value::Null
+    );
+}
+
+#[tokio::test]
+async fn confidential_handoff_provisions_and_disable_restores_the_prior_provider() {
+    let journal = TempDir::new("confidential-provision");
+    let prior_local = json!({
+        "endpoint_url": "https://prior.example/v1",
+        "served_model_id": "prior-model",
+        "credential": "prior-credential",
+        "unrelated": "preserved",
+    });
+    let prior_active = json!({"provider": "openai", "model": "gpt-5"});
+    journal.config(established(json!({
+        "providers": {"local": prior_local.clone(), "active": prior_active.clone()},
+        "services": {"other": {"kept": true}},
+    })));
+    write_link_ca(&journal.0);
+    let handoff = json!({
+        "endpoint_url": "https://handoff.example/v1",
+        "served_model_id": "handoff-model",
+        "credential": "handoff-credential",
+        "account_id": "account",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    })
+    .as_object()
+    .expect("handoff object")
+    .clone();
+    let app = router_with_runtime(
+        journal.0.clone(),
+        "https://portal.example",
+        Arc::new(SuccessPoll { payload: handoff }),
+    );
+
+    let enable = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(enable.0, StatusCode::ACCEPTED);
+    wait_for_operation_phase(app.clone(), "not_verified").await;
+    let provisioned = solstone_core_thinking::read_config(&journal.0).expect("config reads");
+    assert_eq!(
+        provisioned["providers"]["active"],
+        json!({"provider": "local", "model": "local/qwen3.5-4b"})
+    );
+    assert_eq!(
+        provisioned["providers"]["local"],
+        json!({
+            "endpoint_url": "https://handoff.example",
+            "served_model_id": "handoff-model",
+            "credential": "handoff-credential",
+            "unrelated": "preserved",
+        })
+    );
+    assert_eq!(
+        provisioned["services"]["confidential"]["prior_active"],
+        prior_active
+    );
+    assert_eq!(
+        provisioned["services"]["confidential"]["prior_local_endpoint"],
+        prior_local
+    );
+
+    let disable = request(app, "POST", "/app/thinking/api/confidential/disable").await;
+    assert_eq!(disable.0, StatusCode::OK);
+    let disable_body: Value = serde_json::from_slice(&disable.3).expect("disable JSON");
+    assert_eq!(
+        disable_body["result"],
+        json!({"was_enabled": true, "credential_preserved": false})
+    );
+    let restored = solstone_core_thinking::read_config(&journal.0).expect("config rereads");
+    assert_eq!(restored["providers"]["active"], prior_active);
+    assert_eq!(restored["providers"]["local"], prior_local);
+    assert_eq!(restored["services"], json!({"other": {"kept": true}}));
+}
+
+#[tokio::test]
+async fn confidential_worker_panic_is_supervised_and_allows_a_later_enable() {
+    let journal = journal_for_phase("none");
+    write_link_ca(&journal.0);
+    let app = router_with_runtime(
+        journal.0.clone(),
+        "https://portal.example",
+        Arc::new(PanicPoll),
+    );
+    let first = request(app.clone(), "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(first.0, StatusCode::ACCEPTED);
+    let mut body = Value::Null;
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+        let response = request(app.clone(), "GET", "/app/thinking/api/providers").await;
+        body = serde_json::from_slice(&response.3).expect("providers JSON");
+        if body["active_lane"]["confidential_operation"]["phase"] == "repair_needed" {
+            break;
+        }
+    }
+    assert_eq!(
+        body["active_lane"]["confidential_operation"]["phase"],
+        "repair_needed"
+    );
+    assert_eq!(
+        body["active_lane"]["confidential_operation"]["retryable"],
+        true
+    );
+    let second = request(app, "POST", "/app/thinking/api/confidential/enable").await;
+    assert_eq!(second.0, StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
+async fn confidential_disable_and_recheck_refusals_preserve_the_exact_envelope() {
+    let journal = journal_for_phase("none");
+    let before = fs::read(journal.0.join("config/journal.json")).expect("config reads");
+    let disable = request(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/confidential/disable",
+    )
+    .await;
+    assert_eq!(disable.0, StatusCode::OK);
+    let disable_body: Value = serde_json::from_slice(&disable.3).expect("disable JSON");
+    assert_eq!(
+        disable_body,
+        json!({
+            "success": true,
+            "service": "spp",
+            "result": {"was_enabled": false, "credential_preserved": false},
+        })
+    );
+    assert_eq!(
+        fs::read(journal.0.join("config/journal.json")).expect("config rereads"),
+        before
+    );
+
+    let recheck = request(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/confidential/recheck",
+    )
+    .await;
+    assert_eq!(recheck.0, StatusCode::BAD_REQUEST);
+    let recheck_body: Value = serde_json::from_slice(&recheck.3).expect("recheck JSON");
+    assert_top_level_keys(&recheck_body, vec!["detail", "error", "reason_code"]);
+    assert_eq!(recheck_body["reason_code"], "invalid_operation_for_state");
+    assert_eq!(
+        recheck_body["detail"],
+        "confidential processing is not active."
+    );
+
+    let configured = journal_for_phase("confidential_inactive");
+    let enable = request(
+        router(configured.0.clone()),
+        "POST",
+        "/app/thinking/api/confidential/enable",
+    )
+    .await;
+    assert_eq!(enable.0, StatusCode::BAD_REQUEST);
+    let enable_body: Value = serde_json::from_slice(&enable.3).expect("enable JSON");
+    assert_top_level_keys(&enable_body, vec!["detail", "error", "reason_code"]);
+    assert_eq!(enable_body["reason_code"], "invalid_operation_for_state");
+    assert_eq!(
+        enable_body["detail"],
+        "confidential processing is already set up."
+    );
+}
+
+#[tokio::test]
+async fn provider_runtime_projection_derives_retry_state_in_both_directions() {
+    let journal = journal_for_phase("none");
+    write_runtime_health(&journal.0, 7, "failed", Value::Null);
+    let app = router(journal.0.clone());
+    let first = request(app.clone(), "GET", "/app/thinking/api/providers").await;
+    let first_body: Value = serde_json::from_slice(&first.3).expect("providers JSON");
+    let first_runtime = &first_body["local_runtime"];
+    assert_eq!(first_runtime["health_revision"], 7);
+    assert_eq!(first_runtime["retry_revision"], 0);
+    assert_eq!(first_runtime["retry_pending"], false);
+    assert_eq!(first_runtime["can_retry"], true);
+    assert_eq!(first_runtime["poll"], false);
+
+    write_runtime_health(
+        &journal.0,
+        8,
+        "retry-requested",
+        json!("retry-token-requested"),
+    );
+    write_runtime_retry(&journal.0, 4);
+    let second = request(app, "GET", "/app/thinking/api/providers").await;
+    let second_body: Value = serde_json::from_slice(&second.3).expect("providers JSON");
+    let second_runtime = &second_body["local_runtime"];
+    assert_eq!(second_runtime["phase"], "retry-requested");
+    assert_eq!(second_runtime["reason_code"], "retry-token-requested");
+    assert_eq!(second_runtime["health_revision"], 8);
+    assert_eq!(second_runtime["retry_revision"], 4);
+    assert_eq!(second_runtime["retry_pending"], true);
+    assert_eq!(second_runtime["can_retry"], false);
+    assert_eq!(second_runtime["poll"], true);
+}
+
+#[tokio::test]
+async fn confidential_routes_are_session_gated_and_registered_404s_stay_unchanged() {
+    let sibling = "/app/thinking/api/brain/check";
+    for path in [
+        "/app/thinking/api/confidential/enable",
+        "/app/thinking/api/confidential/disable",
+        "/app/thinking/api/confidential/recheck",
+    ] {
+        let unestablished = TempDir::new("confidential-unestablished");
+        let response = request(router(unestablished.0.clone()), "POST", path).await;
+        let sibling_response = request(router(unestablished.0.clone()), "POST", sibling).await;
+        assert_eq!(response.0, StatusCode::FOUND, "{path} unestablished");
+        assert_eq!(
+            response.0, sibling_response.0,
+            "{path} unestablished sibling"
+        );
+        assert_eq!(response.2.as_deref(), Some("/init"));
+        let corrupt = TempDir::new("confidential-corrupt");
+        corrupt.corrupt_config();
+        let response = request(router(corrupt.0.clone()), "POST", path).await;
+        let sibling_response = request(router(corrupt.0.clone()), "POST", sibling).await;
+        assert_eq!(
+            response.0,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{path} corrupt"
+        );
+        assert_eq!(response.0, sibling_response.0, "{path} corrupt sibling");
+        let body: Value = serde_json::from_slice(&response.3).expect("corrupt envelope JSON");
+        assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+        assert_eq!(body["reason_code"], "corrupt_config");
+    }
+    for phase in [
+        "none",
+        "bundled_local",
+        "byo_cloud",
+        "byo_endpoint",
+        "confidential_inactive",
+        "confidential",
+    ] {
+        let journal = journal_for_phase(phase);
+        for path in [
+            "/app/thinking/background",
+            "/app/thinking/static/nope.js",
+            "/app/thinking/static/../../../etc/passwd",
+        ] {
+            let response = request(router(journal.0.clone()), "GET", path).await;
+            assert_eq!(response.0, StatusCode::NOT_FOUND, "{phase} {path}");
+        }
+    }
+}
+
+#[test]
+fn thinking_conversion_is_still_limited_to_the_catch_all_decision() {
+    let shell = include_str!("../src/lib.rs");
+    let registry = include_str!("../src/registry.rs");
+    assert_eq!(shell.matches(".converted").count(), 1);
+    assert!(!shell.contains("struct ShellApp {\n    pub converted"));
+    assert!(registry.contains("converted: false"));
 }
