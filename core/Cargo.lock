@@ -2858,6 +2858,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-entity-matching",
  "solstone-core-facets",
+ "solstone-core-facets-web",
  "solstone-core-health-web",
  "solstone-core-import-web",
  "solstone-core-journal-config-write",
@@ -3018,6 +3019,23 @@ dependencies = [
  "solstone-core-entity-matching",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+]
+
+[[package]]
+name = "solstone-core-facets-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-convey-http",
+ "solstone-core-convey-shell",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
