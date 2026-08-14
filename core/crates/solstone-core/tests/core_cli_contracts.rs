@@ -7,6 +7,8 @@ mod assets_cli;
 mod check_no_python_spawn;
 #[path = "check_vulkan_absence.rs"]
 mod check_vulkan_absence;
+#[path = "engage_cli.rs"]
+mod engage_cli;
 #[path = "facet_candidates_cli.rs"]
 mod facet_candidates_cli;
 #[path = "health_logs_cli.rs"]

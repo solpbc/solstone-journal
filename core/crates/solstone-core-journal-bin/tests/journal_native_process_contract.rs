@@ -150,6 +150,12 @@ const PROBES: &[Probe] = &[
         stderr_anchor: Some(b"usage: journal heartbeat [-h] [--force]\n"),
     },
     Probe {
+        token: "engage",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal engage [-h] [--wait]"),
+    },
+    Probe {
         token: "top",
         argv: &["--nonsense"],
         expected_exit: 2,

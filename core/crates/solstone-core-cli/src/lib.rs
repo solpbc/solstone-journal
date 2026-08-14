@@ -70,6 +70,32 @@ pub const HEARTBEAT_HELP: &str = concat!(
     "  --force     Run full check regardless of recency\n",
 );
 
+pub const ENGAGE_USAGE: &str =
+    "usage: journal engage [-h] [--wait] [--facet FACET] [--day DAY] NAME\n";
+
+pub const ENGAGE_HELP: &str = concat!(
+    "usage: journal engage [-h] [--wait] [--facet FACET] [--day DAY] NAME\n",
+    "\n",
+    "Delegate work to a cogitate agent.\n",
+    "\n",
+    "positional arguments:\n",
+    "  NAME           Agent name to delegate to (e.g. partner).\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  --wait         Block until the agent completes and print its result.\n",
+    "  --facet FACET  Facet context for the agent.\n",
+    "  --day DAY      Day context for the agent (e.g. 20260404).\n",
+);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngageOptions {
+    pub name: String,
+    pub wait: bool,
+    pub facet: Option<String>,
+    pub day: Option<String>,
+}
+
 /// `journal navigate --help` in the owner-facing command vocabulary.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
 /// the command the owner typed.
@@ -721,6 +747,9 @@ pub enum Command {
     },
     HeartbeatUsage,
     HeartbeatHelp,
+    Engage(EngageOptions),
+    EngageUsage,
+    EngageHelp,
     Service(ServiceParseOutcome),
     Observer(ObserverCommand),
     Navigate {
@@ -1569,6 +1598,11 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 },
             )
         }
+        [command, rest @ ..] if command == OsStr::new("engage") => Ok(match parse_engage(rest) {
+            Ok(EngageParse::Run(options)) => Command::Engage(options),
+            Ok(EngageParse::Help) => Command::EngageHelp,
+            Err(UsageError) => Command::EngageUsage,
+        }),
         [command, rest @ ..] if command == OsStr::new("top") => {
             if rest.iter().any(is_help) {
                 return Ok(Command::TopHelp);
@@ -1639,6 +1673,80 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         _ => Err(UsageError),
     }
+}
+
+enum EngageParse {
+    Run(EngageOptions),
+    Help,
+}
+
+fn parse_engage(args: &[OsString]) -> Result<EngageParse, UsageError> {
+    let mut wait = false;
+    let mut facet = None;
+    let mut day = None;
+    let mut name = None;
+    let mut index = 0;
+    let mut positional_only = false;
+
+    while index < args.len() {
+        let argument = &args[index];
+        if !positional_only && argument == OsStr::new("--") {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+        if !positional_only && argument == OsStr::new("--wait") {
+            wait = true;
+            index += 1;
+            continue;
+        }
+        if !positional_only && is_help(argument) {
+            return Ok(EngageParse::Help);
+        }
+        if !positional_only
+            && (argument == OsStr::new("--facet") || argument == OsStr::new("--day"))
+        {
+            let value = args
+                .get(index + 1)
+                .and_then(|value| value.to_str())
+                .ok_or(UsageError)?;
+            if argument == OsStr::new("--facet") {
+                facet = Some(value.to_owned());
+            } else {
+                day = Some(value.to_owned());
+            }
+            index += 2;
+            continue;
+        }
+        if !positional_only {
+            let text = argument.to_str().ok_or(UsageError)?;
+            if let Some(value) = text.strip_prefix("--facet=") {
+                facet = Some(value.to_owned());
+                index += 1;
+                continue;
+            }
+            if let Some(value) = text.strip_prefix("--day=") {
+                day = Some(value.to_owned());
+                index += 1;
+                continue;
+            }
+            if text.starts_with('-') {
+                return Err(UsageError);
+            }
+        }
+        let value = argument.to_str().ok_or(UsageError)?;
+        if name.replace(value.to_owned()).is_some() {
+            return Err(UsageError);
+        }
+        index += 1;
+    }
+
+    Ok(EngageParse::Run(EngageOptions {
+        name: name.ok_or(UsageError)?,
+        wait,
+        facet,
+        day,
+    }))
 }
 
 fn parse_settings(args: &[OsString]) -> Result<Command, UsageError> {
