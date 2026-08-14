@@ -1553,7 +1553,7 @@ async fn confidential_routes_are_session_gated_and_registered_404s_stay_unchange
 }
 
 #[test]
-fn thinking_conversion_is_still_limited_to_the_catch_all_decision() {
+fn thinking_conversion_is_explicit_at_the_catch_all_boundary() {
     let shell = include_str!("../src/lib.rs");
     let registry = include_str!("../src/registry.rs");
     assert_eq!(shell.matches(".converted").count(), 1);
@@ -1563,5 +1563,5 @@ fn thinking_conversion_is_still_limited_to_the_catch_all_decision() {
         .nth(1)
         .and_then(|tail| tail.split("    },\n    AppDefinition").next())
         .expect("thinking registry entry");
-    assert!(thinking.contains("converted: false"));
+    assert!(thinking.contains("converted: true"));
 }
