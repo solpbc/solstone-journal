@@ -44,6 +44,7 @@ const LANE_AU_REQUIRED_NATIVE_TOKENS: &[&str] =
     &["engage", "maintenance", "heartbeat", "maint", "backup"];
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
 const THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
+const TALENT_LIFECYCLE_NATIVE_TOKENS: &[&str] = &["cortex", "talent"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -111,6 +112,36 @@ fn think_and_setup_are_registered_for_native_dispatch() {
     assert!(
         missing.is_empty(),
         "required native process tokens are missing: {missing:?}"
+    );
+}
+
+// This test is committed to fail: `cortex` and `talent` are still
+// Python-routed today, and TALENT_LIFECYCLE_NATIVE_TOKENS records that as a
+// gate for a future native cutover, not a description of current behavior.
+// native_process_dispatch_and_poison_liveness_contract requires PROBES to
+// equal NATIVE_PROCESS_SPECS exactly, so registering these tokens here
+// without a native dispatch path and a matching PROBES row would just move
+// the red into that contract instead of resolving it. What resolves this
+// test: landing a native `cortex`/`talent` dispatch path, adding their rows
+// to NATIVE_PROCESS_SPECS in production_processes (processes.rs), and adding
+// matching PROBES entries so the poison-liveness contract stays green. What
+// does not resolve it: do not #[ignore] this test, and do not change
+// TALENT_LIFECYCLE_NATIVE_TOKENS to shrink or reword the token list.
+#[test]
+fn talent_lifecycle_tokens_are_registered_for_native_dispatch() {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    let missing = TALENT_LIFECYCLE_NATIVE_TOKENS
+        .iter()
+        .copied()
+        .filter(|token| !native_tokens.contains(token))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "talent lifecycle process tokens are still Python-routed: {missing:?}"
     );
 }
 
