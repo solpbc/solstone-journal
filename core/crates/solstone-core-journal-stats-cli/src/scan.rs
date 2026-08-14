@@ -38,7 +38,12 @@ where
     scan.stats.percept_duration = percept.duration;
 
     scan.stats.pending_segments = pending_segments(request.journal_root, request.day)?;
-    let outputs = daily_output_counts(day_dir, request.system_talent_root, request.apps_root)?;
+    let outputs = daily_output_counts(
+        day_dir,
+        request.system_talent_root,
+        request.apps_root,
+        request.talent_overrides,
+    )?;
     scan.stats.outputs_processed = outputs.processed;
     scan.stats.outputs_pending = outputs.pending;
 

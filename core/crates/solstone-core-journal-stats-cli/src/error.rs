@@ -44,11 +44,4 @@ impl JournalStatsError {
             source,
         }
     }
-
-    pub(crate) fn json(path: impl Into<PathBuf>, source: serde_json::Error) -> Self {
-        Self::Json {
-            path: path.into(),
-            source,
-        }
-    }
 }

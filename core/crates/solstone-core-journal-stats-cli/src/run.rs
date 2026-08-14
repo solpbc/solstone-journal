@@ -5,11 +5,12 @@ use std::{collections::BTreeMap, ffi::OsString, path::Path};
 
 use chrono::{DateTime, Utc};
 use solstone_core_system_health::{FilesystemHealthLogSource, FilesystemSegmentSource};
+use solstone_core_talent_config::read_talent_overrides;
 
 use crate::{
     BacklogViewReader, CacheStatus, DayScanRequest, DocumentWriter, FilesystemDayCacheWriter,
-    backlog::degraded_backlog_view, cli, document::assemble_document, scan_day_with_cache,
-    tokens::scan_tokens,
+    JournalStatsError, backlog::degraded_backlog_view, cli, document::assemble_document,
+    scan_day_with_cache, tokens::scan_tokens,
 };
 
 /// Observable result of a journal-level CLI invocation.
@@ -92,6 +93,8 @@ fn run(
     let segments = FilesystemSegmentSource;
     let health = FilesystemHealthLogSource::new(journal_root);
     let cache_writer = FilesystemDayCacheWriter;
+    let talent_overrides = read_talent_overrides(journal_root)
+        .map_err(|message| JournalStatsError::Validation(message).to_string())?;
     let mut scans = BTreeMap::new();
     let mut diagnostics = Vec::new();
     for (day, _) in days {
@@ -102,6 +105,7 @@ fn run(
                 now,
                 system_talent_root,
                 apps_root,
+                talent_overrides: talent_overrides.as_ref(),
                 segment_source: &segments,
                 health_source: &health,
                 cache_writer: &cache_writer,
