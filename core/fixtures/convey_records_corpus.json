@@ -5,6 +5,36 @@
     "supervisor_marker_state": "not applicable — is_supervisor_up() has no capturable behavior under the no-successful-delete rule, record this as a note not a probed value",
     "tz": "UTC"
   },
+  "coverage_limits": {
+    "hazards_a_replay_cannot_see": [
+      "Write success paths: the three transcripts write routes are probed for refusals only, because a successful delete removes an owner's media on a deferred timer and reprocess launches a detached process that outlives the capture.",
+      "Fill-only-when-absent guards: this class is entirely about what a successful SECOND call does, so a corpus with no successful mutating probe is blind to it.",
+      "Index-absent behavior: the seeded journal has a search index, so no case reaches the search failure branch."
+    ],
+    "refusal_path_only": [
+      "DELETE /app/transcripts/api/segment/20260731/BAD/090000_300",
+      "DELETE /app/transcripts/api/segment/20260731/field/235959_1",
+      "DELETE /app/transcripts/api/segment/20260731/field/not-a-key",
+      "DELETE /app/transcripts/api/segment/notaday/field/090000_300",
+      "GET /app/chat/",
+      "GET /app/chat/api/stats/202613",
+      "GET /app/chat/api/stats/nope",
+      "GET /app/chat/notaday",
+      "GET /app/transcripts/",
+      "GET /app/transcripts/api/serve_file/20260731/../config/journal.json",
+      "GET /app/transcripts/api/serve_file/20260731/field/090000_300/absent.exe",
+      "GET /app/transcripts/api/serve_file/20260731/field/090000_300/mic_audio.xyz",
+      "GET /app/transcripts/api/stats/nope",
+      "GET /app/transcripts/notaday",
+      "POST /app/transcripts/api/cancel-delete/00000000000000000000000000000000",
+      "POST /app/transcripts/api/cancel-delete/not-a-pending-id",
+      "POST /app/transcripts/api/segment/20260731/BAD/090000_300/reprocess",
+      "POST /app/transcripts/api/segment/20260731/field/090000_300/reprocess",
+      "POST /app/transcripts/api/segment/20260731/field/120000_120/reprocess",
+      "POST /app/transcripts/api/segment/20260731/field/not-a-key/reprocess",
+      "POST /app/transcripts/api/segment/notaday/field/090000_300/reprocess"
+    ]
+  },
   "generator": "scripts/convey_records_corpus.py",
   "host_dependent": {
     "baseline_locale": "C",
@@ -14,6 +44,57 @@
       "search.days[0].date"
     ],
     "perturbed_locale": "de_DE.utf8"
+  },
+  "mutation_census": {
+    "note": "A green replay is not evidence about any success path whose mutated_2xx is 0. Those paths are unprobed by construction and only reading the producer, or driving a running server, can say anything about them.",
+    "routes": {
+      "DELETE /app/transcripts/api/segment/20260731/BAD/090000_300": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "DELETE /app/transcripts/api/segment/20260731/field/235959_1": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "DELETE /app/transcripts/api/segment/20260731/field/not-a-key": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "DELETE /app/transcripts/api/segment/notaday/field/090000_300": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "POST /app/transcripts/api/cancel-delete/00000000000000000000000000000000": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "POST /app/transcripts/api/cancel-delete/not-a-pending-id": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "POST /app/transcripts/api/segment/20260731/BAD/090000_300/reprocess": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "POST /app/transcripts/api/segment/20260731/field/090000_300/reprocess": {
+        "mutated_2xx": 0,
+        "probes": 2
+      },
+      "POST /app/transcripts/api/segment/20260731/field/120000_120/reprocess": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "POST /app/transcripts/api/segment/20260731/field/not-a-key/reprocess": {
+        "mutated_2xx": 0,
+        "probes": 1
+      },
+      "POST /app/transcripts/api/segment/notaday/field/090000_300/reprocess": {
+        "mutated_2xx": 0,
+        "probes": 1
+      }
+    },
+    "total_mutating_probes": 12,
+    "total_that_mutated": 0
   },
   "native_deviations": [
     {

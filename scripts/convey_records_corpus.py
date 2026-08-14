@@ -765,6 +765,8 @@ def _build_corpus(temporary_roots: list[Path]) -> dict[str, Any]:
         ],
         "host_dependent": {"baseline_locale": "C", "perturbed_locale": "de_DE.utf8", "fields": sorted(locale_fields)},
         "seeder_manifest": {**manifest, "today_day": PLACEHOLDER_TODAY},
+        "mutation_census": _mutation_census(phases),
+        "coverage_limits": _coverage_limits(phases),
     }
     rendered = json.dumps(corpus, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     corpus_scrub.assert_publishable(rendered, label="records corpus")
@@ -772,6 +774,78 @@ def _build_corpus(temporary_roots: list[Path]) -> dict[str, Any]:
     corpus_scrub.assert_no_egress_attempted("records corpus", ignore=guard_positive_attempts)
     return corpus
 
+
+
+MUTATING_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+
+
+def _walk_cases(node):
+    """Yield every recorded case, whatever nesting the phases dict uses."""
+    if isinstance(node, dict):
+        if "status" in node and ("path" in node or "method" in node):
+            yield node
+            return
+        for value in node.values():
+            yield from _walk_cases(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _walk_cases(value)
+
+
+def _mutation_census(phases):
+    """Per mutating route: probes attempted, and probes that ACTUALLY MUTATED.
+
+    Computed from the recorded cases, never hand written. A hand written zero is
+    correct until someone adds a probe, and then it is a false negative inside the
+    artifact everyone trusts.
+    """
+    routes = {}
+    for case in _walk_cases(phases):
+        method = str(case.get("method", "GET")).upper()
+        if method not in MUTATING_METHODS:
+            continue
+        key = f"{method} {str(case.get('path', '')).split('?')[0]}"
+        entry = routes.setdefault(key, {"probes": 0, "mutated_2xx": 0})
+        entry["probes"] += 1
+        if 200 <= int(case.get("status", 0)) < 300:
+            entry["mutated_2xx"] += 1
+    total = sum(e["probes"] for e in routes.values())
+    mutated = sum(e["mutated_2xx"] for e in routes.values())
+    return {
+        "note": (
+            "A green replay is not evidence about any success path whose mutated_2xx is 0. "
+            "Those paths are unprobed by construction and only reading the producer, or "
+            "driving a running server, can say anything about them."
+        ),
+        "routes": dict(sorted(routes.items())),
+        "total_mutating_probes": total,
+        "total_that_mutated": mutated,
+    }
+
+
+def _coverage_limits(phases):
+    """What this corpus does NOT cover, stated in the artifact rather than inferred."""
+    by_route = {}
+    for case in _walk_cases(phases):
+        path = str(case.get("path", "")).split("?")[0]
+        method = str(case.get("method", "GET")).upper()
+        entry = by_route.setdefault(f"{method} {path}", {"probes": 0, "success": 0})
+        entry["probes"] += 1
+        if 200 <= int(case.get("status", 0)) < 300:
+            entry["success"] += 1
+    refusal_only = sorted(k for k, v in by_route.items() if v["success"] == 0)
+    return {
+        "refusal_path_only": refusal_only,
+        "hazards_a_replay_cannot_see": [
+            "Write success paths: the three transcripts write routes are probed for refusals "
+            "only, because a successful delete removes an owner's media on a deferred timer and "
+            "reprocess launches a detached process that outlives the capture.",
+            "Fill-only-when-absent guards: this class is entirely about what a successful SECOND "
+            "call does, so a corpus with no successful mutating probe is blind to it.",
+            "Index-absent behavior: the seeded journal has a search index, so no case reaches the "
+            "search failure branch.",
+        ],
+    }
 
 def build_corpus() -> dict[str, Any]:
     with _temporary_roots() as temporary_roots:
