@@ -62,21 +62,6 @@ def test_resolve_icon_svg_precedence_and_fallback() -> None:
     assert resolve_icon_svg("coins", "🪮") == lucide_svg("coins")
 
 
-def test_data_driven_l3_icon_names_resolve() -> None:
-    import importlib
-
-    import_routes = importlib.import_module("solstone.apps.import.routes")
-    from solstone.think.activities import DEFAULT_ACTIVITIES
-
-    import_icon_names = [source["icon"] for source in import_routes.SOURCE_METADATA]
-    activity_icon_names = [activity["icon"] for activity in DEFAULT_ACTIVITIES]
-
-    for icon_name in import_icon_names:
-        assert lucide_svg(icon_name), f"import icon not found: {icon_name}"
-    for icon_name in activity_icon_names:
-        assert lucide_svg(icon_name), f"activity icon not found: {icon_name}"
-
-
 def test_activity_icon_overrides_use_explicit_lucide_names() -> None:
     from solstone.think.activities import DEFAULT_ACTIVITIES
 

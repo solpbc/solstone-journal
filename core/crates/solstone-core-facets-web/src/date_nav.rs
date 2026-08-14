@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-// Deliberate local copy: sibling ports keep date-nav helpers private and this timeline-only arity must stay three-key.
+// Deliberate local copy: sibling ports keep date-nav helpers private. The grid helper
+// accepts an optional coverage override so ports can share its three payload keys.
 pub fn date_nav_index(counts: &BTreeMap<String, usize>) -> Value {
     let mut months = BTreeMap::<String, usize>::new();
     let days = counts
@@ -23,7 +24,11 @@ pub fn date_nav_index(counts: &BTreeMap<String, usize>) -> Value {
     json!({"coverage": coverage, "months": months})
 }
 
-pub fn day_grid_payload(counts: &BTreeMap<String, usize>, watermark: Option<&str>) -> Value {
+pub fn day_grid_payload(
+    counts: &BTreeMap<String, usize>,
+    watermark: Option<&str>,
+    coverage_override: Option<(&str, &str)>,
+) -> Value {
     let mut days = serde_json::Map::new();
     let mut pending = serde_json::Map::new();
     for (day, count) in counts {
@@ -35,10 +40,14 @@ pub fn day_grid_payload(counts: &BTreeMap<String, usize>, watermark: Option<&str
         target.insert(day.clone(), json!(count));
     }
     let all_days = counts.keys().collect::<Vec<_>>();
-    let coverage = all_days
-        .first()
-        .zip(all_days.last())
-        .map(|(start, end)| json!({"start": start, "end": end}));
+    let coverage = coverage_override
+        .map(|(start, end)| json!({"start": start, "end": end}))
+        .or_else(|| {
+            all_days
+                .first()
+                .zip(all_days.last())
+                .map(|(start, end)| json!({"start": start, "end": end}))
+        });
     json!({"coverage": coverage, "days": days, "pending": pending})
 }
 
@@ -52,7 +61,7 @@ mod tests {
 
     #[test]
     fn ac7_established_empty_grid_has_exactly_three_keys() {
-        let payload = day_grid_payload(&BTreeMap::new(), None);
+        let payload = day_grid_payload(&BTreeMap::new(), None, None);
         assert_eq!(
             payload,
             json!({"coverage": null, "days": {}, "pending": {}})
@@ -63,7 +72,7 @@ mod tests {
     #[test]
     fn ac8_none_watermark_leaves_all_days_pending_and_nav_drops_zeroes() {
         let counts = BTreeMap::from([("20260510".to_owned(), 3), ("20260511".to_owned(), 1)]);
-        let payload = day_grid_payload(&counts, None);
+        let payload = day_grid_payload(&counts, None, None);
         assert_eq!(payload["days"], json!({}));
         assert_eq!(payload["pending"], json!({"20260510": 3, "20260511": 1}));
         let index = date_nav_index(&BTreeMap::from([

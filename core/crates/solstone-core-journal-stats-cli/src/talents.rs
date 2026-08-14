@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value};
+use solstone_core_talent_config::{TalentFilter, get_output_path, load_talent_configs};
 
 use crate::JournalStatsError;
 
@@ -18,29 +18,30 @@ pub(crate) fn daily_output_counts(
     day_dir: &Path,
     system_root: &Path,
     apps_root: &Path,
+    talent_overrides: Option<&Map<String, Value>>,
 ) -> Result<DailyOutputCounts, JournalStatsError> {
-    let mut configs = Vec::new();
-    discover_system_configs(system_root, &mut configs)?;
-    discover_app_configs(apps_root, &mut configs)?;
+    let configs = load_talent_configs(
+        system_root,
+        apps_root,
+        talent_overrides,
+        TalentFilter {
+            r#type: Some("generate"),
+            schedule: Some("daily"),
+            include_disabled: true,
+        },
+    )
+    .map_err(JournalStatsError::Validation)?;
     let mut counts = DailyOutputCounts::default();
     for config in configs {
-        validate_config(&config.path, &config.metadata)?;
-        if config.metadata.get("type").and_then(Value::as_str) != Some("generate")
-            || config.metadata.get("schedule").and_then(Value::as_str) != Some("daily")
-        {
-            continue;
-        }
-        let output = config.metadata.get("output").and_then(Value::as_str);
-        let extension = if output == Some("json") { "json" } else { "md" };
-        let output_name = match &config.app {
-            Some(app) => format!("_{app}_{}", config.name),
-            None => config.name.clone(),
-        };
-        if day_dir
-            .join("talents")
-            .join(format!("{output_name}.{extension}"))
-            .exists()
-        {
+        let output_path = get_output_path(
+            day_dir,
+            &config.key,
+            None,
+            config.metadata.get("output").and_then(Value::as_str),
+            None,
+            None,
+        );
+        if output_path.exists() {
             counts.processed += 1;
         } else {
             counts.pending += 1;
@@ -49,211 +50,112 @@ pub(crate) fn daily_output_counts(
     Ok(counts)
 }
 
-struct TalentConfig {
-    path: PathBuf,
-    app: Option<String>,
-    name: String,
-    metadata: Map<String, Value>,
-}
+#[cfg(test)]
+mod tests {
+    use std::fs;
 
-fn discover_system_configs(
-    root: &Path,
-    configs: &mut Vec<TalentConfig>,
-) -> Result<(), JournalStatsError> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for path in markdown_entries(root)? {
-        let Some(metadata) = read_frontmatter(&path)? else {
-            continue;
-        };
-        configs.push(TalentConfig {
-            name: stem(&path)?,
-            path,
-            app: None,
-            metadata,
-        });
-    }
-    Ok(())
-}
+    use super::*;
 
-fn discover_app_configs(
-    root: &Path,
-    configs: &mut Vec<TalentConfig>,
-) -> Result<(), JournalStatsError> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for app_path in directories(root)? {
-        let app = app_path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| invalid(&app_path, "app directory name is not UTF-8"))?
-            .to_owned();
-        if app.starts_with('_') {
-            continue;
-        }
-        let talent_root = app_path.join("talent");
-        for path in markdown_entries(&talent_root)? {
-            let Some(metadata) = read_frontmatter(&path)? else {
-                continue;
-            };
-            configs.push(TalentConfig {
-                name: stem(&path)?,
-                path,
-                app: Some(app.clone()),
-                metadata,
-            });
-        }
-    }
-    Ok(())
-}
+    // §7 criteria 1, 2, and 4: counts are this consumer's nearest observable.
+    const CASES: [(&str, &str, bool); 11] = [
+        (
+            "lf",
+            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            true,
+        ),
+        (
+            "leading_blank",
+            "\n{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\n}\nbody",
+            true,
+        ),
+        ("unclosed", "{\n\"type\":\"generate\"\nbody", false),
+        (
+            "crlf",
+            "{\r\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50\r\n}\r\nbody",
+            true,
+        ),
+        ("opening_space", "{ \n\"type\":\"generate\"\n}\nbody", false),
+        (
+            "nested_column_zero",
+            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n}\n}\nbody",
+            false,
+        ),
+        (
+            "nested_indented",
+            "{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":50,\n\"nested\": {\n\"x\":1\n }\n}\nbody",
+            true,
+        ),
+        ("invalid", "{\n\"type\": generate\n}\nbody", false),
+        ("none", "body", false),
+        ("empty", "", false),
+        ("array", "[\"generate\"]\nbody", false),
+    ];
 
-fn read_frontmatter(path: &Path) -> Result<Option<Map<String, Value>>, JournalStatsError> {
-    let text = fs::read_to_string(path).map_err(|error| JournalStatsError::io(path, error))?;
-    let mut lines = text.lines();
-    if lines.next() != Some("{") {
-        return Ok(None);
+    fn roots() -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("talent")).unwrap();
+        fs::create_dir_all(root.path().join("apps")).unwrap();
+        fs::create_dir_all(root.path().join("day")).unwrap();
+        root
     }
-    let mut frontmatter = String::from("{\n");
-    let mut closed = false;
-    for line in lines {
-        frontmatter.push_str(line);
-        frontmatter.push('\n');
-        if line == "}" {
-            closed = true;
-            break;
-        }
-    }
-    if !closed {
-        return Err(invalid(
-            path,
-            "frontmatter opening brace has no closing brace",
-        ));
-    }
-    let value: Value =
-        serde_json::from_str(&frontmatter).map_err(|error| JournalStatsError::json(path, error))?;
-    value
-        .as_object()
-        .cloned()
-        .ok_or_else(|| invalid(path, "frontmatter must be a JSON object"))
-        .map(Some)
-}
 
-fn validate_config(path: &Path, metadata: &Map<String, Value>) -> Result<(), JournalStatsError> {
-    let config_type = metadata.get("type");
-    let type_name = match config_type {
-        None => None,
-        Some(Value::String(value)) if matches!(value.as_str(), "generate" | "cogitate") => {
-            Some(value.as_str())
+    #[test]
+    fn criterion_1_2_4_count_conformance() {
+        for (name, contents, counted) in CASES {
+            let root = roots();
+            fs::write(root.path().join("talent/case.md"), contents).unwrap();
+            let result = daily_output_counts(
+                &root.path().join("day"),
+                &root.path().join("talent"),
+                &root.path().join("apps"),
+                None,
+            );
+            if matches!(name, "nested_column_zero" | "invalid") {
+                assert!(result.is_err(), "{name}");
+            } else {
+                assert_eq!(result.unwrap().pending, u64::from(counted), "{name}");
+            }
         }
-        Some(_) => return Err(invalid(path, "type must be 'generate' or 'cogitate'")),
-    };
-    if metadata.get("schedule").is_some_and(is_truthy) && !metadata.contains_key("priority") {
-        return Err(invalid(path, "scheduled prompt is missing priority"));
     }
-    if metadata.contains_key("output") && type_name.is_none() {
-        return Err(invalid(path, "prompt with output is missing type"));
-    }
-    if type_name == Some("generate") && !metadata.contains_key("output") {
-        return Err(invalid(path, "generate prompt is missing output"));
-    }
-    if metadata.get("schedule").and_then(Value::as_str) == Some("activity")
-        && !metadata
-            .get("activities")
-            .and_then(Value::as_array)
-            .is_some_and(|activities| !activities.is_empty())
-    {
-        return Err(invalid(
-            path,
-            "activity prompt has no non-empty activities list",
-        ));
-    }
-    let has_cogitate_field = ["write", "access_tier", "cwd"]
-        .into_iter()
-        .any(|field| metadata.contains_key(field));
-    if type_name != Some("cogitate") && has_cogitate_field {
-        return Err(invalid(
-            path,
-            "cogitate-only field set on non-cogitate prompt",
-        ));
-    }
-    if type_name == Some("cogitate") {
-        if metadata.get("write").is_some_and(is_truthy) {
-            return Err(invalid(path, "cogitate prompt cannot set write"));
-        }
-        if let Some(access_tier) = metadata.get("access_tier").and_then(Value::as_str)
-            && !matches!(
-                access_tier,
-                "normal" | "system-read" | "outbound" | "synthesis"
+
+    #[test]
+    fn criterion_2_crlf_equals_lf_and_disabled_still_counts() {
+        let lf = roots();
+        let crlf = roots();
+        fs::write(lf.path().join("talent/case.md"), CASES[0].1).unwrap();
+        fs::write(crlf.path().join("talent/case.md"), CASES[3].1).unwrap();
+        assert_eq!(
+            daily_output_counts(
+                &lf.path().join("day"),
+                &lf.path().join("talent"),
+                &lf.path().join("apps"),
+                None
             )
-        {
-            return Err(invalid(path, "cogitate prompt has invalid access_tier"));
-        }
-        if let Some(cwd) = metadata.get("cwd").and_then(Value::as_str)
-            && cwd != "journal"
-        {
-            return Err(invalid(path, "cogitate prompt has invalid cwd"));
-        }
-        if metadata
-            .get("access_tier")
-            .is_some_and(|value| !value.is_string())
-        {
-            return Err(invalid(path, "cogitate prompt has invalid access_tier"));
-        }
-        if metadata.get("cwd").is_some_and(|value| !value.is_string()) {
-            return Err(invalid(path, "cogitate prompt has invalid cwd"));
-        }
-    }
-    Ok(())
-}
-
-fn markdown_entries(root: &Path) -> Result<Vec<PathBuf>, JournalStatsError> {
-    if !root.is_dir() {
-        return Ok(Vec::new());
-    }
-    let mut entries = fs::read_dir(root)
-        .map_err(|error| JournalStatsError::io(root, error))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| JournalStatsError::io(root, error))?;
-    entries.retain(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "md"));
-    entries.sort();
-    Ok(entries)
-}
-
-fn directories(root: &Path) -> Result<Vec<PathBuf>, JournalStatsError> {
-    let mut entries = fs::read_dir(root)
-        .map_err(|error| JournalStatsError::io(root, error))?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| JournalStatsError::io(root, error))?;
-    entries.retain(|path| path.is_dir());
-    entries.sort();
-    Ok(entries)
-}
-
-fn stem(path: &Path) -> Result<String, JournalStatsError> {
-    path.file_stem()
-        .and_then(|value| value.to_str())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| invalid(path, "talent filename has no UTF-8 stem"))
-}
-
-fn invalid(path: &Path, message: &str) -> JournalStatsError {
-    JournalStatsError::TalentConfig {
-        path: path.to_path_buf(),
-        message: message.to_owned(),
-    }
-}
-
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
+            .unwrap()
+            .pending,
+            daily_output_counts(
+                &crlf.path().join("day"),
+                &crlf.path().join("talent"),
+                &crlf.path().join("apps"),
+                None
+            )
+            .unwrap()
+            .pending
+        );
+        let overrides = Map::from_iter([(
+            "talent.system.case".to_owned(),
+            serde_json::json!({"disabled":true}),
+        )]);
+        assert_eq!(
+            daily_output_counts(
+                &lf.path().join("day"),
+                &lf.path().join("talent"),
+                &lf.path().join("apps"),
+                Some(&overrides)
+            )
+            .unwrap()
+            .pending,
+            1
+        );
     }
 }

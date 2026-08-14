@@ -58,10 +58,10 @@ pub use schema_prep::{prepare_provider_schema, unsupported_keyword_hits};
 pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
 pub use session::{SessionConfig, SessionHost, SessionOutcome, run_session};
 pub use token_budget::generate_token_budget;
-pub use token_log::{GenerateUsageMetadata, record_generate_usage};
+pub use token_log::{GenerateUsageMetadata, record_generate_usage, record_usage, usage_for_log};
 pub use validation::{
     ProviderResultAssessment, ProviderResultView, SanitizedFinishReason, ValidationFailure,
-    assess_provider_result, usage_for_log,
+    assess_provider_result,
 };
 
 #[cfg(test)]

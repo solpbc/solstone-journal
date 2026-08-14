@@ -20,6 +20,9 @@ use axum::{
 // would have broken five other lanes.
 const SHELL: &[u8] = include_bytes!("../assets/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/timeline/workspace.html");
+const NEWS_WORKSPACE: &[u8] = include_bytes!("../assets/news/workspace.html");
+const CURATION_WORKSPACE: &[u8] = include_bytes!("../assets/curation/workspace.html");
+const CURATION_EVIDENCE_JS: &[u8] = include_bytes!("../assets/curation/curation_evidence.js");
 const BACKGROUND: &[u8] = include_bytes!("../assets/timeline/background.html");
 const TIMELINE_JS: &[u8] = include_bytes!("../assets/timeline/timeline.js");
 const TIMELINE_CSS: &[u8] = include_bytes!("../assets/timeline/timeline.css");
@@ -31,6 +34,18 @@ pub fn shell() -> axum::response::Response {
 
 pub fn workspace() -> axum::response::Response {
     asset(WORKSPACE, "text/html; charset=utf-8")
+}
+
+pub fn news_workspace() -> axum::response::Response {
+    asset(NEWS_WORKSPACE, "text/html; charset=utf-8")
+}
+
+pub fn curation_workspace() -> axum::response::Response {
+    asset(CURATION_WORKSPACE, "text/html; charset=utf-8")
+}
+
+pub fn curation_evidence_js() -> axum::response::Response {
+    asset(CURATION_EVIDENCE_JS, "text/javascript; charset=utf-8")
 }
 
 pub fn background() -> axum::response::Response {

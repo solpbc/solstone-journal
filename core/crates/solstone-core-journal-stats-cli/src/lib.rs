@@ -29,6 +29,7 @@ mod journal_stats;
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Utc};
+use serde_json::{Map, Value};
 use solstone_core_system_health::{HealthLogSource, SegmentSource};
 
 pub use backlog::{BacklogViewReader, FilesystemBacklogViewReader};
@@ -51,6 +52,7 @@ pub struct DayScanRequest<'a, S, H, W> {
     pub now: DateTime<Utc>,
     pub system_talent_root: &'a Path,
     pub apps_root: &'a Path,
+    pub talent_overrides: Option<&'a Map<String, Value>>,
     pub segment_source: &'a S,
     pub health_source: &'a H,
     pub cache_writer: &'a W,

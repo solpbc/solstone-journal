@@ -608,7 +608,7 @@ fn day_cache_save_failure_is_debug_only() {
 fn run_errors_identify_the_failed_operation() {
     let (temporary, system, apps) = setup();
     fs::create_dir_all(&system).unwrap();
-    fs::write(system.join("invalid.md"), "{\n").unwrap();
+    fs::write(system.join("invalid.md"), "{\n\"type\": generate\n}\n").unwrap();
     let reader = EmptyBacklog;
     let writer = RecordingWriter::default();
 

@@ -13,19 +13,22 @@
   ],
   "generator": "scripts/convey_facets_corpus.py",
   "mutation_census": {
-    "actually_mutated_2xx": 10,
-    "cases_total": 26,
-    "mutating_method_cases": 19,
+    "actually_mutated_2xx": 12,
+    "cases_total": 29,
+    "mutating_method_cases": 22,
     "post_state_reads": 7,
-    "refusals": 9,
-    "routes_called_twice_with_same_input": [],
-    "routes_called_twice_with_same_input_count": 0,
+    "refusals": 10,
+    "routes_called_twice_with_same_input": [
+      "/app/activities/api/day/20260510/record/{created}/mute?facet=work",
+      "/app/activities/api/day/20260510/record/{created}/unmute?facet=work"
+    ],
+    "routes_called_twice_with_same_input_count": 2,
     "routes_refused_only": [
       "/app/activities/api/day/20260510/record/nosuchid/mute"
     ],
     "routes_that_mutated": {
-      "/app/activities/api/day/20260510/record/{created}/mute": 1,
-      "/app/activities/api/day/20260510/record/{created}/unmute": 1,
+      "/app/activities/api/day/20260510/record/{created}/mute": 2,
+      "/app/activities/api/day/20260510/record/{created}/unmute": 2,
       "/app/activities/api/day/20260510/record/{created}/update": 1,
       "/app/activities/api/day/20260510/records": 1,
       "/app/awareness/api/imports": 3,
@@ -302,6 +305,28 @@
       "why": "`sol activities create`, argv shape"
     },
     {
+      "body_bytes": 149,
+      "body_sha256": "3998e8e38b62f95611a062be65c0ced87d43c929dcbe580b650140092f781477",
+      "body_sha256_basis": "normalized-json",
+      "content_type": "application/json",
+      "json": {
+        "detail": "meeting_user_1778846400000",
+        "error": "I couldn't create that activity because it already exists.",
+        "reason_code": "activity_already_exists"
+      },
+      "method": "POST",
+      "normalized_fields": [],
+      "path": "/app/activities/api/day/20260510/records?facet=work",
+      "request_json": {
+        "activity": "meeting",
+        "source": "user",
+        "title": "Corpus activity"
+      },
+      "sequence": 10,
+      "status": 409,
+      "why": "the same create is fill-only and answers activity_already_exists"
+    },
+    {
       "body_bytes": 118,
       "body_sha256": "5e3579d5a9be61a777c12c32bcba0c2c9bbd83c1174de4873d3b6b522724c821",
       "body_sha256_basis": "normalized-json",
@@ -318,7 +343,7 @@
         "activity": "meeting",
         "title": ""
       },
-      "sequence": 10,
+      "sequence": 11,
       "status": 400,
       "why": "an empty title: activity_invalid"
     },
@@ -339,7 +364,7 @@
         "activity": "nosuchactivity",
         "title": "Bad activity"
       },
-      "sequence": 11,
+      "sequence": 12,
       "status": 404,
       "why": "an unknown activity type: activity_not_found"
     },
@@ -361,7 +386,7 @@
         "source": "robot",
         "title": "Bad source"
       },
-      "sequence": 12,
+      "sequence": 13,
       "status": 400,
       "why": "a source outside {user, cogitate}: activity_invalid"
     },
@@ -417,7 +442,7 @@
           "title": "Corpus activity, renamed"
         }
       },
-      "sequence": 13,
+      "sequence": 14,
       "status": 200,
       "why": "`sol activities update`: the edit trail grows"
     },
@@ -478,9 +503,70 @@
       "request_json": {
         "reason": "corpus mute"
       },
-      "sequence": 14,
+      "sequence": 15,
       "status": 200,
       "why": "`sol activities mute`"
+    },
+    {
+      "body_bytes": 695,
+      "body_sha256": "ed46735eaaa0be758f852d950fd812f0b99c056dcff8b7d8df7d9bbb62b4368f",
+      "body_sha256_basis": "normalized-json",
+      "content_type": "application/json",
+      "json": {
+        "markdown": "### Corpus activity, renamed\n- Activity: meeting\n- Description: Corpus activity\n- Hidden: yes",
+        "record": {
+          "active_entities": [],
+          "activity": "meeting",
+          "created_at": 1778846400000,
+          "description": "Corpus activity",
+          "details": "",
+          "edits": [
+            {
+              "actor": "cli:create",
+              "fields": [
+                "activity",
+                "title",
+                "description",
+                "details",
+                "source"
+              ],
+              "note": "created",
+              "timestamp": "2026-05-15T12:00:00Z"
+            },
+            {
+              "actor": "cli:update",
+              "fields": [
+                "title"
+              ],
+              "note": "corpus update",
+              "timestamp": "2026-05-15T12:00:00Z"
+            },
+            {
+              "actor": "cli:mute",
+              "fields": [
+                "hidden"
+              ],
+              "note": "corpus mute",
+              "timestamp": "2026-05-15T12:00:00Z"
+            }
+          ],
+          "hidden": true,
+          "id": "meeting_user_1778846400000",
+          "segments": [],
+          "source": "user",
+          "title": "Corpus activity, renamed"
+        }
+      },
+      "method": "POST",
+      "normalized_fields": [],
+      "path": "/app/activities/api/day/20260510/record/{created}/mute?facet=work",
+      "path_resolved_from": "<ACTIVITY_ID>",
+      "request_json": {
+        "reason": "corpus mute"
+      },
+      "sequence": 16,
+      "status": 200,
+      "why": "muting an already-muted record normalizes without another edit"
     },
     {
       "body_bytes": 559,
@@ -524,7 +610,7 @@
       "method": "GET",
       "normalized_fields": [],
       "path": "/app/activities/api/day/20260510/records?facet=work",
-      "sequence": 15,
+      "sequence": 17,
       "status": 200,
       "why": "a muted record is absent from the default list"
     },
@@ -647,7 +733,7 @@
       "method": "GET",
       "normalized_fields": [],
       "path": "/app/activities/api/day/20260510/records?facet=work&include_hidden=1",
-      "sequence": 16,
+      "sequence": 18,
       "status": 200,
       "why": "and present with include_hidden=1"
     },
@@ -716,9 +802,78 @@
       "request_json": {
         "reason": "corpus unmute"
       },
-      "sequence": 17,
+      "sequence": 19,
       "status": 200,
       "why": "`sol activities unmute`"
+    },
+    {
+      "body_bytes": 782,
+      "body_sha256": "b67ceb34a15d8b0e8aa3437d5c7ae1a564f3249a077374b122a50b47b966882d",
+      "body_sha256_basis": "normalized-json",
+      "content_type": "application/json",
+      "json": {
+        "markdown": "### Corpus activity, renamed\n- Activity: meeting\n- Description: Corpus activity",
+        "record": {
+          "active_entities": [],
+          "activity": "meeting",
+          "created_at": 1778846400000,
+          "description": "Corpus activity",
+          "details": "",
+          "edits": [
+            {
+              "actor": "cli:create",
+              "fields": [
+                "activity",
+                "title",
+                "description",
+                "details",
+                "source"
+              ],
+              "note": "created",
+              "timestamp": "2026-05-15T12:00:00Z"
+            },
+            {
+              "actor": "cli:update",
+              "fields": [
+                "title"
+              ],
+              "note": "corpus update",
+              "timestamp": "2026-05-15T12:00:00Z"
+            },
+            {
+              "actor": "cli:mute",
+              "fields": [
+                "hidden"
+              ],
+              "note": "corpus mute",
+              "timestamp": "2026-05-15T12:00:00Z"
+            },
+            {
+              "actor": "cli:unmute",
+              "fields": [
+                "hidden"
+              ],
+              "note": "corpus unmute",
+              "timestamp": "2026-05-15T12:00:00Z"
+            }
+          ],
+          "hidden": false,
+          "id": "meeting_user_1778846400000",
+          "segments": [],
+          "source": "user",
+          "title": "Corpus activity, renamed"
+        }
+      },
+      "method": "POST",
+      "normalized_fields": [],
+      "path": "/app/activities/api/day/20260510/record/{created}/unmute?facet=work",
+      "path_resolved_from": "<ACTIVITY_ID>",
+      "request_json": {
+        "reason": "corpus unmute"
+      },
+      "sequence": 20,
+      "status": 200,
+      "why": "unmuting an already-visible record normalizes without another edit"
     },
     {
       "body_bytes": 111,
@@ -734,7 +889,7 @@
       "normalized_fields": [],
       "path": "/app/activities/api/day/20260510/record/nosuchid/mute?facet=work",
       "request_json": {},
-      "sequence": 18,
+      "sequence": 21,
       "status": 404,
       "why": "mute on a missing record: activity_not_found"
     },
@@ -800,9 +955,9 @@
       "normalized_fields": [],
       "path": "/app/activities/api/day/20260510/record/{created}?facet=work",
       "path_resolved_from": "<ACTIVITY_ID>",
-      "sequence": 19,
+      "sequence": 22,
       "status": 200,
-      "why": "`sol activities get` on the record this replay built"
+      "why": "the post-repeat state has the same edit trail"
     },
     {
       "body_bytes": 410,
@@ -841,7 +996,7 @@
       "request_json": {
         "name_key": "atlas"
       },
-      "sequence": 20,
+      "sequence": 23,
       "status": 200,
       "why": "`sol facets accept`: promote a facet candidate"
     },
@@ -882,7 +1037,7 @@
       "request_json": {
         "name_key": "ledger"
       },
-      "sequence": 21,
+      "sequence": 24,
       "status": 200,
       "why": "`sol facets dismiss`"
     },
@@ -900,7 +1055,7 @@
       "normalized_fields": [],
       "path": "/app/curation/api/facet/accept",
       "request_json": {},
-      "sequence": 22,
+      "sequence": 25,
       "status": 400,
       "why": "a missing name_key: missing_required_field"
     },
@@ -921,7 +1076,7 @@
       "request_json": {
         "name_key": "nosuchcandidate"
       },
-      "sequence": 23,
+      "sequence": 26,
       "status": 400,
       "why": "accepting a candidate that is not there"
     },
@@ -979,7 +1134,7 @@
       "method": "GET",
       "normalized_fields": [],
       "path": "/app/curation/api/facet/candidates",
-      "sequence": 24,
+      "sequence": 27,
       "status": 200,
       "why": "the candidate list after both decisions"
     },
@@ -1158,7 +1313,7 @@
       "method": "GET",
       "normalized_fields": [],
       "path": "/app/curation/api/state",
-      "sequence": 25,
+      "sequence": 28,
       "status": 200,
       "why": "the whole curation surface after both decisions"
     }
@@ -5006,8 +5161,8 @@
           "FACET NEWSLETTER\nwork \u00b7 Sun May 10, 2026\nWhat happened\nA short newsletter body with a list:\none item\ntwo item\nand a blockquote, because the PDF stylesheet has a rule for it.\n\u2022 \n\u2022 "
         ],
         "pin": "status, content_type, content_disposition and pdf_text are the contract; reference_body_sha256 is a record of what weasyprint emitted and must NOT be asserted by a port",
-        "reference_body_bytes": 8823,
-        "reference_body_sha256": "94fc5e0d4a30c84aa0077fd3b1f8418f87998dabfa93593799f0eaa33b407aad",
+        "reference_body_bytes": 10494,
+        "reference_body_sha256": "ca8792cf1fbe7c8e34c9b74628870e353cb1901a67710353528cbdfb7e018855",
         "reference_renderer": "weasyprint",
         "status": 200,
         "why": "the PDF export: headers and disposition are the contract"

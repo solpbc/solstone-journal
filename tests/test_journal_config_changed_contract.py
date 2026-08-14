@@ -779,36 +779,6 @@ def test_root_finalize_reports_changed_and_noop(
     assert changes[-1] is False
 
 
-def test_import_resolve_config_reports_changed_and_noop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    module = importlib.import_module("solstone.apps.import.resolve")
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    changes = _spy_changed(monkeypatch, module)
-
-    def write_diff() -> Path:
-        state_dir = tmp_path / "imports" / "pending"
-        module._write_config_diff(
-            state_dir / "config" / "diff.json",
-            {
-                "identity.name": {
-                    "source": "After",
-                    "target": "Before",
-                    "category": "preference",
-                }
-            },
-        )
-        return state_dir
-
-    seed_journal_config(_base_config(identity={"name": "Before"}), tmp_path)
-    module.resolve_config(write_diff(), "identity.name", "apply")
-    assert changes[-1] is True
-
-    seed_journal_config(_base_config(identity={"name": "After"}), tmp_path)
-    module.resolve_config(write_diff(), "identity.name", "apply")
-    assert changes[-1] is False
-
-
 def test_maintenance_mutation_paths_report_changed_and_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

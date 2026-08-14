@@ -18,6 +18,7 @@ journal_sources = import_module("solstone.apps.import.journal_sources")
 journal_source_cli = import_module("solstone.think.importers.journal_source_cli")
 
 generate_key = journal_sources.generate_key
+load_journal_source_by_fingerprint = journal_sources.load_journal_source_by_fingerprint
 save_journal_source = journal_sources.save_journal_source
 
 FINGERPRINT = "sha256:" + "e" * 64
@@ -97,6 +98,30 @@ def _cmd_list_human(capsys, mode: str | None = None) -> str:
     rc = journal_source_cli.cmd_list(argparse.Namespace(json_output=False, mode=mode))
     assert rc == 0
     return capsys.readouterr().out.strip()
+
+
+def test_cli_status_and_revoke_cannot_target_pl_fingerprint_by_name(
+    journal_env, capsys
+) -> None:
+    _save_dl_and_pl()
+
+    status_rc = journal_source_cli.cmd_status(
+        argparse.Namespace(name=FINGERPRINT, json_output=True)
+    )
+    status = capsys.readouterr()
+
+    revoke_rc = journal_source_cli.cmd_revoke(
+        argparse.Namespace(name=FINGERPRINT, json_output=True)
+    )
+    revoke = capsys.readouterr()
+
+    assert status_rc == 1
+    assert f"journal source '{FINGERPRINT}' not found" in status.err
+    assert revoke_rc == 1
+    assert f"journal source '{FINGERPRINT}' not found" in revoke.err
+    pl_record = load_journal_source_by_fingerprint(FINGERPRINT)
+    assert pl_record is not None
+    assert pl_record["revoked"] is False
 
 
 def _row_by_mode(rows: list[dict], mode: str) -> dict:

@@ -9,6 +9,10 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_system::catchup::{
+    SegmentRepairOutcome, record_daily_catchup_progress, record_segment_repair_attempt,
+    record_segment_repair_outcome,
+};
 use solstone_core_system_health::{
     CAP, DETERMINISTIC_FAILURE_REASON_CODES, DataStateMap, FilesystemHealthLogSource, FoldRead,
     HealthLogSource, MIN_SPAN_MS, SEGMENT_FLOOR_TALENTS, SEGMENT_NO_PROCESSING_MODALITIES,
@@ -45,6 +49,78 @@ fn python(root: &std::path::Path, day: &str) -> Value {
         String::from_utf8_lossy(&output.stderr)
     );
     serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn python_writer(root: &std::path::Path, day: &str) -> Value {
+    let repository = corpus::repository_root();
+    let executable = repository.join(".venv/bin/python3");
+    let executable = executable
+        .is_file()
+        .then_some(executable)
+        .unwrap_or_else(|| "python3".into());
+    let output = Command::new(executable)
+        .arg(repository.join(
+            "core/crates/solstone-core-system-health/tests/support/python_catchup_writer_oracle.py",
+        ))
+        .env("SOLSTONE_JOURNAL", root)
+        .env("SOLSTONE_REPO_ROOT", &repository)
+        .env("ORACLE_DAY", day)
+        .output()
+        .expect("start Python writer oracle");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn copy_tree(source: &std::path::Path, destination: &std::path::Path) {
+    std::fs::create_dir_all(destination).unwrap();
+    for entry in std::fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        let kind = entry.file_type().unwrap();
+        if kind.is_symlink() {
+            continue;
+        }
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn catchup_writers_match_the_python_oracle_on_a_disposable_fixture_copy() {
+    let repository = corpus::repository_root();
+    let source = repository.join("tests/fixtures/journal");
+    let python_root = tempfile::tempdir().unwrap();
+    let native_root = tempfile::tempdir().unwrap();
+    copy_tree(&source, python_root.path());
+    copy_tree(&source, native_root.path());
+    let day = "20250101";
+    let expected = python_writer(python_root.path(), day);
+    record_daily_catchup_progress(native_root.path(), day, 1, 2);
+    record_segment_repair_attempt(native_root.path(), day, 1.0);
+    record_segment_repair_outcome(
+        native_root.path(),
+        day,
+        SegmentRepairOutcome {
+            success: false,
+            timed_out: true,
+            timeout_seconds: Some(3.0),
+            ended_at: 4.0,
+            cleared: Some(1),
+            remaining: Some(2),
+        },
+    );
+    let actual: Value = serde_json::from_slice(
+        &std::fs::read(native_root.path().join("health/catchup-state.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(actual, expected);
 }
 
 fn terminal_states(

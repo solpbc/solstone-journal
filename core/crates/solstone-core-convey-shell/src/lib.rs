@@ -830,6 +830,11 @@ mod tests {
     use super::{ConveyServeOptions, authorization_gate, bind_with_authorization, router};
     use crate::registry::APP_REGISTRY;
 
+    #[test]
+    fn activities_remains_a_known_native_app() {
+        assert!(crate::registry::known_app("activities").is_some());
+    }
+
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     #[test]

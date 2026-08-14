@@ -88,6 +88,33 @@ pub fn segment_parse(value: &str) -> Option<SegmentTimes> {
     })
 }
 
+/// Clamp a segment end to the final second of its day, matching Python's
+/// `segment_parse` rollover rule.
+pub fn clamped_segment_end_seconds(start_seconds: u64, length_seconds: u64) -> u64 {
+    start_seconds.saturating_add(length_seconds).min(86_399)
+}
+
+/// Parse the reference segment spelling and return its start plus its clamped
+/// end-of-day seconds. Chronological and display callers share this rollover
+/// rule from Python's `segment_parse`.
+pub fn segment_start_and_end_seconds(value: &str) -> Option<(SegmentTimes, u64)> {
+    let (time, length) = value.split_once('_')?;
+    if time.len() != 6
+        || !time.bytes().all(|byte| byte.is_ascii_digit())
+        || length.is_empty()
+        || !length.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let times = segment_parse(value)?;
+    let start_seconds =
+        u64::from(times.hour) * 3_600 + u64::from(times.minute) * 60 + u64::from(times.second);
+    Some((
+        times,
+        clamped_segment_end_seconds(start_seconds, length.parse().ok()?),
+    ))
+}
+
 pub fn time_bucket(rel: &str) -> String {
     match segment_parse(rel).map(|times| times.hour) {
         Some(6..=11) => "morning".to_string(),
@@ -163,6 +190,21 @@ mod tests {
         assert_eq!(
             segment_parse("20240101/default/143022_300_summary.txt/talents/audio.md"),
             None
+        );
+    }
+
+    #[test]
+    fn segment_end_clamps_at_the_end_of_day() {
+        assert_eq!(
+            segment_start_and_end_seconds("235000_7200"),
+            Some((
+                SegmentTimes {
+                    hour: 23,
+                    minute: 50,
+                    second: 0,
+                },
+                86_399,
+            ))
         );
     }
 

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-think-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+autobins = false
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+log.workspace = true
+serde_json.workspace = true
+solstone-core-cli.workspace = true
+solstone-core-identity.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-journal-io.workspace = true
+solstone-core-local.workspace = true
+solstone-core-segment.workspace = true
+solstone-core-system.workspace = true
+
+[dev-dependencies]
+filetime = "0.2.29"
+tempfile = "3.24.0"

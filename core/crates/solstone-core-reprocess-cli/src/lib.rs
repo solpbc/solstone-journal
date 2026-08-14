@@ -3,18 +3,19 @@
 
 //! Native `journal reprocess` command body.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use chrono_tz::Tz;
-use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
-use solstone_core_system::catchup::read_raw_input_fingerprint;
+use solstone_core_system::catchup::{
+    KIND_DAILY_CATCHUP, KIND_SEGMENT_REPAIR, catchup_state_key, catchup_state_path,
+    normalized_catchup_entries, read_raw_input_fingerprint,
+};
 use solstone_core_system_health::{FilesystemSegmentSource, day_is_complete, scan_day};
 
 const UNREACHABLE_MESSAGE: &str = "supervisor not reachable - start it (journal start), then retry";
@@ -65,12 +66,6 @@ pub enum DayOutcome {
     Held(f64),
     Unreachable,
     Failed(String),
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct CatchupState {
-    #[serde(default)]
-    entries: HashMap<String, Value>,
 }
 
 #[derive(Debug)]
@@ -486,13 +481,14 @@ fn send_envelope(journal: &Path, envelope: &CallosumEnvelope) -> bool {
 }
 
 fn read_drain_hold_retry_at(journal: &Path, day: &str, now: DateTime<Utc>) -> Option<f64> {
-    let state = std::fs::read(journal.join("health").join("catchup-state.json"))
+    let entries = std::fs::read(catchup_state_path(journal))
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<CatchupState>(&bytes).ok())
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .map(|value| normalized_catchup_entries(&value))
         .unwrap_or_default();
-    let records = ["daily-catchup", "segment-repair"]
+    let records = [KIND_DAILY_CATCHUP, KIND_SEGMENT_REPAIR]
         .into_iter()
-        .filter_map(|kind| state.entries.get(&format!("{day}:{kind}")))
+        .filter_map(|kind| entries.get(&catchup_state_key(day, kind)))
         .filter_map(catchup_entry)
         .collect::<Vec<_>>();
     // Python uses `record.get("active")`: null, false, 0, empty strings, and
@@ -649,6 +645,78 @@ mod tests {
         let path = root.join("chronicle").join(day).join(name);
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn copy_tree(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).unwrap();
+        for entry in fs::read_dir(source).unwrap() {
+            let entry = entry.unwrap();
+            let target = destination.join(entry.file_name());
+            let kind = entry.file_type().unwrap();
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn wave_two_writers_reach_every_repair_and_drain_projection() {
+        use solstone_core_system::catchup::{
+            CatchupKind, SegmentRepairOutcome, record_daily_catchup_progress,
+            record_segment_repair_attempt, record_segment_repair_outcome,
+        };
+
+        let root = TempDir::new().unwrap();
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
+        copy_tree(&repository.join("tests/fixtures/journal"), root.path());
+        let day = "20250101";
+        record_daily_catchup_progress(root.path(), day, 1, 2);
+        record_segment_repair_attempt(root.path(), day, 1.0);
+        record_segment_repair_outcome(
+            root.path(),
+            day,
+            SegmentRepairOutcome {
+                success: false,
+                timed_out: true,
+                timeout_seconds: Some(3.0),
+                ended_at: 4.0,
+                cleared: Some(1),
+                remaining: Some(2),
+            },
+        );
+        assert!(solstone_core_system_health::read_segment_repair_attempted(
+            root.path(),
+            day
+        ));
+        assert_eq!(
+            solstone_core_system_health::read_segment_repair_summary(root.path(), day)
+                .unwrap()
+                .status,
+            "progressing"
+        );
+        assert!(
+            !solstone_core_system::catchup::day_eligible_to_drain(
+                root.path(),
+                day,
+                CatchupKind::SegmentRepair,
+                std::time::UNIX_EPOCH
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            read_drain_hold_retry_at(root.path(), day, Utc.timestamp_opt(0, 0).unwrap()),
+            Some(604.0)
+        );
+        // `read_backoff_summary` remains intentionally unasserted: only the
+        // out-of-scope daily `record_outcome` sets entered_backoff_at.
     }
 
     #[test]

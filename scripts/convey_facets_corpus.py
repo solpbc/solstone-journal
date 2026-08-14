@@ -81,6 +81,7 @@ import argparse
 import datetime as _datetime
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import sys
@@ -161,6 +162,7 @@ def _install_injected_clock() -> None:
 
 
 _install_injected_clock()
+mimetypes.add_type("text/javascript", ".js", strict=True)
 
 
 # ---------------------------------------------------------------------------
@@ -574,6 +576,12 @@ MUTATION_PROBES: list[tuple[str, str, Any, str]] = [
     (
         "POST",
         f"/app/activities/api/day/{SEED_DAY}/records?facet={SEED_FACET}",
+        {"title": "Corpus activity", "activity": "meeting", "source": "user"},
+        "the same create is fill-only and answers activity_already_exists",
+    ),
+    (
+        "POST",
+        f"/app/activities/api/day/{SEED_DAY}/records?facet={SEED_FACET}",
         {"title": "", "activity": "meeting"},
         "an empty title: activity_invalid",
     ),
@@ -602,6 +610,12 @@ MUTATION_PROBES: list[tuple[str, str, Any, str]] = [
         "`sol activities mute`",
     ),
     (
+        "POST",
+        f"/app/activities/api/day/{SEED_DAY}/record/{{created}}/mute?facet={SEED_FACET}",
+        {"reason": "corpus mute"},
+        "muting an already-muted record normalizes without another edit",
+    ),
+    (
         "GET",
         f"/app/activities/api/day/{SEED_DAY}/records?facet={SEED_FACET}",
         None,
@@ -621,6 +635,12 @@ MUTATION_PROBES: list[tuple[str, str, Any, str]] = [
     ),
     (
         "POST",
+        f"/app/activities/api/day/{SEED_DAY}/record/{{created}}/unmute?facet={SEED_FACET}",
+        {"reason": "corpus unmute"},
+        "unmuting an already-visible record normalizes without another edit",
+    ),
+    (
+        "POST",
         f"/app/activities/api/day/{SEED_DAY}/record/nosuchid/mute?facet={SEED_FACET}",
         {},
         "mute on a missing record: activity_not_found",
@@ -629,7 +649,7 @@ MUTATION_PROBES: list[tuple[str, str, Any, str]] = [
         "GET",
         f"/app/activities/api/day/{SEED_DAY}/record/{{created}}?facet={SEED_FACET}",
         None,
-        "`sol activities get` on the record this replay built",
+        "the post-repeat state has the same edit trail",
     ),
     (
         "POST",

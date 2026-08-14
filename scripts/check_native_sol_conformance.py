@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import inspect
 import sys
 import tomllib
@@ -53,8 +52,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-import_bp = importlib.import_module("solstone.apps.import.routes").import_bp
-RUST_CONVEY_OPERATION_PREFIXES = ("body.", "speakers.", "transcripts.")
+RUST_CONVEY_OPERATION_PREFIXES = ("body.", "import.", "speakers.", "transcripts.")
 REASON_CODES_BY_NAME = {
     name: value.code
     for name, value in vars(reasons).items()
@@ -303,7 +301,6 @@ def register_native_blueprints(app: Flask) -> None:
         ledger_bp,
         profile_bp,
         profiles_bp,
-        import_bp,
         network_bp,
         settings_bp,
         thinking_bp,

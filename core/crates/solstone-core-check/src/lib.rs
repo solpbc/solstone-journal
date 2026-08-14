@@ -3,6 +3,11 @@
 
 //! Pure readiness verdict shared by the native `solstone-core check` adapter and tests.
 
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+
+use nix::sys::statvfs::statvfs;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_local::{
@@ -92,6 +97,172 @@ pub struct Check {
     pub detail: String,
     pub required_bytes: Option<u64>,
     pub available_bytes: Option<u64>,
+}
+
+fn command_text(program: &str, args: &[&str]) -> Option<String> {
+    Command::new(program)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|text| text.trim().to_owned())
+        .filter(|text| !text.is_empty())
+}
+fn host_platform() -> PlatformInput {
+    let raw_os = std::env::consts::OS;
+    let os = match raw_os {
+        "macos" => "Darwin",
+        "linux" => "Linux",
+        other => other,
+    };
+    let arch = if raw_os == "macos" && std::env::consts::ARCH == "aarch64" {
+        "arm64"
+    } else {
+        std::env::consts::ARCH
+    };
+    let os_version = if raw_os == "macos" {
+        command_text("/usr/bin/sw_vers", &["-productVersion"])
+            .or_else(|| command_text("sw_vers", &["-productVersion"]))
+    } else {
+        command_text("uname", &["-r"])
+    }
+    .unwrap_or_default();
+    PlatformInput {
+        os: os.into(),
+        os_version,
+        arch: arch.into(),
+    }
+}
+#[cfg(target_os = "linux")]
+fn meminfo() -> Option<(u64, u64)> {
+    let text = fs::read_to_string("/proc/meminfo").ok()?;
+    let mut total = None;
+    let mut available = None;
+    for line in text.lines() {
+        let (key, value) = line.split_once(':')?;
+        let kib = value.split_whitespace().next()?.parse::<u64>().ok()?;
+        match key {
+            "MemTotal" => total = Some(kib * 1024),
+            "MemAvailable" => available = Some(kib * 1024),
+            _ => {}
+        }
+    }
+    Some((total?, available?))
+}
+fn memory() -> MemoryInput {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some((total, available)) = meminfo() {
+            return MemoryInput {
+                total_bytes: (total > 0).then_some(total),
+                available_bytes: (total > 0 && available > 0 && available <= total)
+                    .then_some(available),
+            };
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let total = command_text("/usr/sbin/sysctl", &["-n", "hw.memsize"])
+            .and_then(|text| text.parse().ok());
+        let available = command_text("/usr/bin/vm_stat", &[]).and_then(|text| {
+            let page = text
+                .split("page size of ")
+                .nth(1)?
+                .split_whitespace()
+                .next()?
+                .parse::<u64>()
+                .ok()?;
+            let mut count = 0;
+            for line in text.lines() {
+                if line.starts_with("Pages free") || line.starts_with("Pages inactive") {
+                    count += line
+                        .split(':')
+                        .nth(1)?
+                        .trim()
+                        .trim_end_matches('.')
+                        .parse::<u64>()
+                        .ok()?;
+                }
+            }
+            Some(count * page)
+        });
+        return MemoryInput {
+            total_bytes: total,
+            available_bytes: available,
+        };
+    }
+    MemoryInput {
+        total_bytes: None,
+        available_bytes: None,
+    }
+}
+fn free_disk(path: &Path) -> Result<u64, String> {
+    let mut root = path.to_path_buf();
+    while !root.exists() && root != root.parent().unwrap_or(&root) {
+        root = root.parent().unwrap_or(&root).to_path_buf();
+    }
+    let stat = statvfs(&root).map_err(|error| error.to_string())?;
+    (stat.blocks_available() as u64)
+        .checked_mul(stat.fragment_size() as u64)
+        .ok_or_else(|| "free space overflow".into())
+}
+fn render_nodes_present_but_inaccessible(root: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(root) else {
+        return false;
+    };
+    let nodes = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("renderD"))
+        })
+        .collect::<Vec<_>>();
+    !nodes.is_empty()
+        && nodes.iter().all(|path| {
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)
+                .is_err()
+        })
+}
+
+/// Gather the same real host state used by `journal check` for all native consumers.
+#[must_use]
+pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
+    let nvidia = solstone_core_local::probe_nvidia_gpu();
+    let (tiering_memory_mib, memory_source) = if let Some(vram) = nvidia.vram_mib {
+        (Some(vram), "nvidia_vram")
+    } else if let Some(unified) = nvidia.unified_memory_mib {
+        (Some(unified), "system_available")
+    } else {
+        (None, "unavailable")
+    };
+    CheckInputs {
+        platform: host_platform(),
+        memory: memory(),
+        disk: free_disk(journal)
+            .map(|free_bytes| DiskInput::Ok { free_bytes })
+            .unwrap_or_else(|message| DiskInput::Error { message }),
+        journal_path: journal.display().to_string(),
+        nvidia: NvidiaInput {
+            detected: nvidia.detected,
+            vram_mib: nvidia.vram_mib,
+            tiering_memory_mib,
+            memory_source: memory_source.into(),
+        },
+        vulkan: VulkanInput {
+            probe_ok: solstone_core_local::gpu_probe_ok(),
+            devices: solstone_core_local::detect_gpus(),
+        },
+        render_nodes_present_but_inaccessible: render_nodes_present_but_inaccessible(Path::new(
+            "/dev/dri",
+        )),
+        gpu_evaluation_error: None,
+        version: version.into(),
+    }
 }
 fn check(
     name: &'static str,
@@ -466,6 +637,22 @@ pub fn human_output(report: &CheckReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gathered_host_inputs_use_the_actual_platform_identity() {
+        let inputs = gather_host_inputs(Path::new("."), "test-version");
+        #[cfg(target_os = "linux")]
+        assert_eq!(inputs.platform.os, "Linux");
+        #[cfg(target_os = "macos")]
+        assert_eq!(inputs.platform.os, "Darwin");
+        let expected_arch = if cfg!(target_os = "macos") && std::env::consts::ARCH == "aarch64" {
+            "arm64"
+        } else {
+            std::env::consts::ARCH
+        };
+        assert_eq!(inputs.platform.arch, expected_arch);
+        assert_eq!(inputs.version, "test-version");
+    }
     #[test]
     fn json_platform_python_is_null() {
         let inputs = CheckInputs {

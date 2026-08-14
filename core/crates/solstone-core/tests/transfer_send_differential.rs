@@ -7,21 +7,45 @@ use crate::stub_peer;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use stub_peer::{CapturedRequest, Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
 
 /// What the server actually registers, and what the native client now posts to.
-const NATIVE_INGEST_PATH: &str = "/app/import/journal/remote-i/ingest/segments";
+const IMPORT_INGEST_DOOR_ROUTES: &str =
+    include_str!("../../../fixtures/import_ingest_door_routes.json");
 /// What the dead Python reference posts to. ⛔ Not a route the server has.
 const LEGACY_PYTHON_INGEST_PATH: &str = "/app/import/journal/remote-i/ingest/segments/20260203";
 
+fn native_ingest_path() -> String {
+    let fixture: Value =
+        serde_json::from_str(IMPORT_INGEST_DOOR_ROUTES).expect("route fixture is valid JSON");
+    let rule = fixture["rules"]
+        .as_array()
+        .expect("route fixture contains a rules array")
+        .iter()
+        .find_map(|entry| {
+            let rule = entry["rule"].as_str()?;
+            let methods = entry["methods"].as_array()?;
+            methods
+                .iter()
+                .any(|method| method.as_str() == Some("POST"))
+                .then(|| rule.rsplit('/').next() == Some("segments"))
+                .filter(|matches| *matches)
+                .map(|_| rule)
+        })
+        .expect("route fixture contains the segments POST rule");
+    rule.replace("<key_prefix>", "remote-i")
+}
+
 fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan {
+    let native_ingest_path = native_ingest_path();
     PeerPlan::new([
         (
             RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
             manifest,
         ),
-        (RequestRoute::post(NATIVE_INGEST_PATH), ingest.clone()),
+        (RequestRoute::post(native_ingest_path), ingest.clone()),
         // ⚠ DECLARED DIVERGENCE, 2026-08-13. The Python reference posts a
         // day-suffixed path the server has NEVER registered, so every upload
         // through it answered 404. The native client was ported from it and
@@ -108,6 +132,7 @@ fn assert_same_child_result(native: &Output, python: &Output) {
 }
 
 fn assert_equivalent_requests(left: &[CapturedRequest], right: &[CapturedRequest]) {
+    let native_ingest_path = native_ingest_path();
     assert_eq!(left.len(), right.len());
     for (native, python) in left.iter().zip(right) {
         assert_eq!(native.method, python.method);
@@ -119,7 +144,7 @@ fn assert_equivalent_requests(left: &[CapturedRequest], right: &[CapturedRequest
         // to a shape, so any other path difference still fails.
         assert_eq!(
             (native.path.as_str(), python.path.as_str()),
-            (NATIVE_INGEST_PATH, LEGACY_PYTHON_INGEST_PATH),
+            (native_ingest_path.as_str(), LEGACY_PYTHON_INGEST_PATH),
             "the only permitted path divergence is the segment-ingest door, where \
              the Python reference builds a day-suffixed path the server never \
              registered; anything else is an unintended divergence"
@@ -133,13 +158,14 @@ fn assert_equivalent_requests(left: &[CapturedRequest], right: &[CapturedRequest
 /// compared native and Python paths to each other, so pinning them together pinned
 /// the bug. Assert the boundary directly instead.
 fn assert_native_uses_the_served_route(requests: &[CapturedRequest]) {
+    let native_ingest_path = native_ingest_path();
     let posts: Vec<&CapturedRequest> = requests
         .iter()
         .filter(|request| request.method == "POST")
         .collect();
     for request in &posts {
         assert_eq!(
-            request.path, NATIVE_INGEST_PATH,
+            request.path, native_ingest_path,
             "native segment upload must target the server's registered rule"
         );
     }

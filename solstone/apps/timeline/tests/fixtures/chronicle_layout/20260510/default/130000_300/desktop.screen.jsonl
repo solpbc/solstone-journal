@@ -1,3 +1,0 @@
-{"setting":"desktop","raw":"screen.webm"}
-{"frame_id":1,"timestamp":1,"analysis":{"primary":"code","visual_description":"Timeline route tests are open."},"content":{"text":"test_routes.py"}}
-{"frame_id":2,"timestamp":120,"analysis":{"primary":"terminal","visual_description":"The route output is visible."},"content":{}}

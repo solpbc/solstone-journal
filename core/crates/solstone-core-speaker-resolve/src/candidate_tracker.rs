@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
@@ -325,6 +326,133 @@ impl CandidateTracker {
         }
         best
     }
+    /// Manually merge two review-approved candidates addressed by source anchors.
+    pub fn merge_candidate_pair(
+        &mut self,
+        anchor_a: &str,
+        anchor_b: &str,
+    ) -> Result<Value, CandidateTrackerError> {
+        let _lock = hold_lock(&self.store_path, LockOptions::default())?;
+        self.load_tolerant();
+        let Some(left_id) = self.candidate_id_for_anchor(anchor_a) else {
+            return Ok(json!({"status":"error","error":"candidate anchor not found"}));
+        };
+        let Some(right_id) = self.candidate_id_for_anchor(anchor_b) else {
+            return Ok(json!({"status":"error","error":"candidate anchor not found"}));
+        };
+        if left_id == right_id {
+            return Ok(json!({"status":"already_merged","survivor_id":left_id}));
+        }
+        let left = self
+            .candidates
+            .get(&left_id)
+            .expect("anchor candidate exists");
+        let right = self
+            .candidates
+            .get(&right_id)
+            .expect("anchor candidate exists");
+        if left.status == "rejected" || right.status == "rejected" {
+            return Ok(json!({"status":"error","error":"cannot merge rejected candidate"}));
+        }
+        let confirmed = [left, right]
+            .into_iter()
+            .filter(|candidate| {
+                candidate.status == "confirmed" || candidate.confirmed_entity.is_some()
+            })
+            .collect::<Vec<_>>();
+        if confirmed.len() > 1 {
+            return Ok(json!({"status":"error","error":"cannot merge two confirmed candidates"}));
+        }
+        let score = dot(&left.centroid, &right.centroid);
+        if score < CONSOLIDATE_SUGGEST_MIN {
+            return Ok(json!({
+                "status":"error",
+                "error":"candidate pair is below review threshold",
+                "score":score,
+            }));
+        }
+        let (survivor_id, absorbed_id) = (left_id.min(right_id), left_id.max(right_id));
+        let confirmed_entity = confirmed
+            .first()
+            .and_then(|candidate| candidate.confirmed_entity.clone());
+        let merge_event = self.merge_candidate_profile(survivor_id, absorbed_id, score);
+        let survivor = self
+            .candidates
+            .get_mut(&survivor_id)
+            .expect("survivor remains after merge");
+        if let Some(confirmed_entity) = &confirmed_entity {
+            survivor.status = "confirmed".to_owned();
+            survivor.confirmed_entity = Some(confirmed_entity.clone());
+        } else {
+            survivor.status = "pending".to_owned();
+            survivor.confirmed_entity = None;
+        }
+        self.write()?;
+        Ok(json!({
+            "status":"merged",
+            "survivor_id":survivor_id,
+            "absorbed_id":absorbed_id,
+            "score":score,
+            "merge_event":merge_event,
+            "confirmed_entity":confirmed_entity,
+        }))
+    }
+    fn candidate_id_for_anchor(&self, anchor: &str) -> Option<i64> {
+        self.candidates.values().find_map(|candidate| {
+            candidate
+                .source_segments
+                .iter()
+                .filter_map(source_segment_anchor)
+                .any(|candidate_anchor| candidate_anchor == anchor)
+                .then_some(candidate.cand_id)
+        })
+    }
+    fn merge_candidate_profile(&mut self, survivor_id: i64, absorbed_id: i64, score: f32) -> Value {
+        let absorbed = self
+            .candidates
+            .remove(&absorbed_id)
+            .expect("absorbed candidate exists");
+        let survivor = self
+            .candidates
+            .get_mut(&survivor_id)
+            .expect("survivor candidate exists");
+        let mut centers = Vec::with_capacity(survivor.n_intervals + absorbed.n_intervals);
+        centers.extend(std::iter::repeat_n(
+            survivor.centroid.clone(),
+            survivor.n_intervals,
+        ));
+        centers.extend(std::iter::repeat_n(
+            absorbed.centroid.clone(),
+            absorbed.n_intervals,
+        ));
+        if let Some(center) = centroid(&centers) {
+            survivor.centroid = center;
+        }
+        let mut existing_source_keys = survivor
+            .source_segments
+            .iter()
+            .map(source_key)
+            .collect::<HashSet<_>>();
+        for source_segment in absorbed.source_segments {
+            if existing_source_keys.insert(source_key(&source_segment)) {
+                survivor.source_segments.push(source_segment);
+            }
+        }
+        survivor.n_intervals += absorbed.n_intervals;
+        survivor.total_duration_s += absorbed.total_duration_s;
+        survivor.n_segments = unique_segment_count(&survivor.source_segments);
+        survivor.merge_events.extend(absorbed.merge_events);
+        let event = json!({
+            "survivor_id": survivor.cand_id,
+            "absorbed_id": absorbed_id,
+            "score": score,
+            "merged_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+            "absorbed_n_intervals": absorbed.n_intervals,
+            "survivor_n_intervals_after": survivor.n_intervals,
+        });
+        survivor.merge_events.push(event.clone());
+        event
+    }
     pub(crate) fn mark_confirmed(
         &mut self,
         cand_id: i64,
@@ -449,6 +577,15 @@ pub fn retroactive_voiceprint_metadata(
 fn source_key(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
+fn source_segment_anchor(value: &Value) -> Option<String> {
+    let object = value.as_object()?;
+    let day = object.get("day")?.as_str()?;
+    let segment_key = object.get("segment_key")?.as_str()?;
+    let stream = object.get("stream")?.as_str()?;
+    let source = object.get("source")?.as_str()?;
+    let cluster_label = object.get("cluster_label")?.as_i64()?;
+    Some(json!([day, segment_key, stream, source, cluster_label]).to_string())
+}
 fn unique_segment_count(items: &[Value]) -> usize {
     items
         .iter()
@@ -509,6 +646,55 @@ mod tests {
             durations_s: vec![1.0; embeddings.len()],
             embeddings,
         }
+    }
+
+    fn source(anchor: &str) -> Value {
+        json!({
+            "day": "20260101",
+            "segment_key": anchor,
+            "stream": "mic",
+            "source": "audio",
+            "cluster_label": 1,
+        })
+    }
+
+    fn candidate(id: i64, anchor: &str, centroid: Vec<f32>) -> CandidateProfile {
+        CandidateProfile {
+            cand_id: id,
+            centroid,
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![source(anchor)],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: Vec::new(),
+        }
+    }
+
+    fn anchor(anchor: &str) -> String {
+        source_segment_anchor(&source(anchor)).unwrap()
+    }
+
+    fn tracker_with_candidates(
+        name: &str,
+        candidates: Vec<CandidateProfile>,
+    ) -> (PathBuf, CandidateTracker) {
+        let journal = temporary_journal(name);
+        let mut tracker = CandidateTracker::new(&journal);
+        fs::create_dir_all(tracker.store_path.parent().unwrap()).unwrap();
+        tracker.next_id = candidates
+            .iter()
+            .map(|candidate| candidate.cand_id)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        tracker.candidates = candidates
+            .into_iter()
+            .map(|candidate| (candidate.cand_id, candidate))
+            .collect();
+        tracker.write().unwrap();
+        (journal, tracker)
     }
 
     #[test]
@@ -660,5 +846,121 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), before);
         assert!(tracker.candidates.is_empty());
         let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn merge_candidate_pair_returns_not_found_for_unknown_anchor() {
+        let (journal, mut tracker) = tracker_with_candidates("manual-not-found", vec![]);
+
+        assert_eq!(
+            tracker
+                .merge_candidate_pair("missing-a", "missing-b")
+                .unwrap(),
+            json!({"status":"error","error":"candidate anchor not found"})
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn merge_candidate_pair_short_circuits_when_anchors_share_a_candidate() {
+        let mut shared = candidate(2, "a", vec![1.0, 0.0]);
+        shared.source_segments.push(source("b"));
+        let (journal, mut tracker) = tracker_with_candidates("manual-same", vec![shared]);
+
+        assert_eq!(
+            tracker
+                .merge_candidate_pair(&anchor("a"), &anchor("b"))
+                .unwrap(),
+            json!({"status":"already_merged","survivor_id":2})
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn merge_candidate_pair_refuses_rejected_candidates() {
+        let mut rejected = candidate(1, "a", vec![1.0, 0.0]);
+        rejected.status = "rejected".to_owned();
+        let (journal, mut tracker) = tracker_with_candidates(
+            "manual-rejected",
+            vec![rejected, candidate(2, "b", vec![1.0, 0.0])],
+        );
+
+        assert_eq!(
+            tracker
+                .merge_candidate_pair(&anchor("a"), &anchor("b"))
+                .unwrap(),
+            json!({"status":"error","error":"cannot merge rejected candidate"})
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn merge_candidate_pair_refuses_two_confirmed_candidates() {
+        let mut left = candidate(1, "a", vec![1.0, 0.0]);
+        left.status = "confirmed".to_owned();
+        left.confirmed_entity = Some("entity-a".to_owned());
+        let mut right = candidate(2, "b", vec![1.0, 0.0]);
+        right.status = "confirmed".to_owned();
+        right.confirmed_entity = Some("entity-b".to_owned());
+        let (journal, mut tracker) = tracker_with_candidates("manual-confirmed", vec![left, right]);
+
+        assert_eq!(
+            tracker
+                .merge_candidate_pair(&anchor("a"), &anchor("b"))
+                .unwrap(),
+            json!({"status":"error","error":"cannot merge two confirmed candidates"})
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn merge_candidate_pair_refuses_scores_below_review_threshold() {
+        let (journal, mut tracker) = tracker_with_candidates(
+            "manual-low-score",
+            vec![
+                candidate(1, "a", vec![1.0, 0.0]),
+                candidate(2, "b", vec![0.0, 1.0]),
+            ],
+        );
+
+        assert_eq!(
+            tracker
+                .merge_candidate_pair(&anchor("a"), &anchor("b"))
+                .unwrap(),
+            json!({
+                "status":"error",
+                "error":"candidate pair is below review threshold",
+                "score":0.0,
+            })
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn merge_candidate_pair_keeps_lowest_id_and_persists_confirmed_entity() {
+        let mut confirmed = candidate(2, "b", vec![1.0, 0.0]);
+        confirmed.status = "confirmed".to_owned();
+        confirmed.confirmed_entity = Some("entity-b".to_owned());
+        let (journal, mut tracker) = tracker_with_candidates(
+            "manual-success",
+            vec![candidate(1, "a", vec![1.0, 0.0]), confirmed],
+        );
+
+        let response = tracker
+            .merge_candidate_pair(&anchor("b"), &anchor("a"))
+            .unwrap();
+
+        assert_eq!(response["status"], "merged");
+        assert_eq!(response["survivor_id"], 1);
+        assert_eq!(response["absorbed_id"], 2);
+        assert_eq!(response["confirmed_entity"], "entity-b");
+        let persisted = CandidateTracker::new(&journal).candidates();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].cand_id, 1);
+        assert_eq!(persisted[0].status, "confirmed");
+        assert_eq!(persisted[0].confirmed_entity.as_deref(), Some("entity-b"));
+        assert_eq!(persisted[0].n_intervals, 2);
+        assert_eq!(persisted[0].merge_events.len(), 1);
+        fs::remove_dir_all(journal).unwrap();
     }
 }

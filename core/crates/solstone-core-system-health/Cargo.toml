@@ -24,6 +24,7 @@ solstone-core-journal-io.workspace = true
 solstone-core-format.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-system.workspace = true
+sha2.workspace = true
 
 [[test]]
 name = "pipeline_health_oracle"
@@ -33,7 +34,6 @@ required-features = ["differential"]
 [dev-dependencies]
 solstone-core-cogitate.workspace = true
 tempfile = "3.24.0"
-sha2.workspace = true
 unicode-general-category.workspace = true
 
 [lints]

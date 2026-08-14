@@ -1,0 +1,104 @@
+{
+  "activities": [
+    {
+      "always_on": true,
+      "id": "meeting"
+    },
+    {
+      "always_on": false,
+      "id": "call"
+    },
+    {
+      "always_on": false,
+      "id": "deadline"
+    },
+    {
+      "always_on": false,
+      "id": "appointment"
+    },
+    {
+      "always_on": false,
+      "id": "event"
+    },
+    {
+      "always_on": false,
+      "id": "travel"
+    },
+    {
+      "always_on": false,
+      "id": "reminder"
+    },
+    {
+      "always_on": false,
+      "id": "errand"
+    },
+    {
+      "always_on": false,
+      "id": "celebration"
+    },
+    {
+      "always_on": false,
+      "id": "doctor_appointment"
+    },
+    {
+      "always_on": false,
+      "id": "coding"
+    },
+    {
+      "always_on": false,
+      "id": "browsing"
+    },
+    {
+      "always_on": true,
+      "id": "email"
+    },
+    {
+      "always_on": true,
+      "id": "messaging"
+    },
+    {
+      "always_on": false,
+      "id": "ai_conversation"
+    },
+    {
+      "always_on": false,
+      "id": "writing"
+    },
+    {
+      "always_on": false,
+      "id": "reading"
+    },
+    {
+      "always_on": false,
+      "id": "video"
+    },
+    {
+      "always_on": false,
+      "id": "gaming"
+    },
+    {
+      "always_on": false,
+      "id": "social"
+    },
+    {
+      "always_on": false,
+      "id": "planning"
+    },
+    {
+      "always_on": false,
+      "id": "productivity"
+    },
+    {
+      "always_on": false,
+      "id": "terminal"
+    },
+    {
+      "always_on": false,
+      "id": "design"
+    },
+    {
+      "always_on": false,
+      "id": "music"
+    }
+  ]
+}

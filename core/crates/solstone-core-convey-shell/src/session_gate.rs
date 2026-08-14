@@ -23,6 +23,7 @@ pub enum SessionExemption {
     Favicon,
     TopLevelStatic,
     UnknownAppPrefix,
+    ImportDoor,
     UnmatchedFallback,
 }
 
@@ -30,6 +31,7 @@ pub const SESSION_GATE_EXEMPTIONS: &[SessionExemption] = &[
     SessionExemption::Favicon,
     SessionExemption::TopLevelStatic,
     SessionExemption::UnknownAppPrefix,
+    SessionExemption::ImportDoor,
     SessionExemption::UnmatchedFallback,
 ];
 
@@ -52,6 +54,19 @@ fn is_exempt(path: &str) -> bool {
                     && segments
                         .next()
                         .is_some_and(|name| known_app(name).is_none())
+            }
+            SessionExemption::ImportDoor => {
+                let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
+                matches!(
+                    segments.as_slice(),
+                    ["app", "import", "journal", prefix, "manifest", area]
+                        if !prefix.is_empty() && !area.is_empty()
+                ) || matches!(
+                    segments.as_slice(),
+                    ["app", "import", "journal", prefix, "ingest", kind]
+                        if !prefix.is_empty()
+                            && matches!(*kind, "segments" | "entities" | "facets" | "imports" | "config")
+                )
             }
             // The router leaves unmatched paths outside its route layer. This
             // declarative entry records that structural exemption with the others.
@@ -114,7 +129,7 @@ fn corrupt_response(path: &str, detail: String) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::{SessionExemption, apply_layer};
+    use super::{SessionExemption, apply_layer, is_exempt};
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use axum::routing::get;
@@ -149,8 +164,33 @@ mod tests {
                 SessionExemption::Favicon,
                 SessionExemption::TopLevelStatic,
                 SessionExemption::UnknownAppPrefix,
+                SessionExemption::ImportDoor,
                 SessionExemption::UnmatchedFallback,
             ]
         );
+    }
+
+    #[test]
+    fn import_door_exemption_is_closed_to_six_route_shapes() {
+        for path in [
+            "/app/import/journal/prefix01/manifest/entities",
+            "/app/import/journal/prefix01/ingest/segments",
+            "/app/import/journal/prefix01/ingest/entities",
+            "/app/import/journal/prefix01/ingest/facets",
+            "/app/import/journal/prefix01/ingest/imports",
+            "/app/import/journal/prefix01/ingest/config",
+        ] {
+            assert!(is_exempt(path), "{path}");
+        }
+        for path in [
+            "/app/import/api/save",
+            "/app/import/api/journal-sources/create",
+            "/app/import/api/list",
+            "/app/import/",
+            "/app/import/journal/prefix01/ingest/segments/20260813",
+            "/app/import/journal/prefix01/ingest/unknown",
+        ] {
+            assert!(!is_exempt(path), "{path}");
+        }
     }
 }

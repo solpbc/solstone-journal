@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-cortex"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+nix = { workspace = true, features = ["process", "signal"] }
+serde_json.workspace = true
+solstone-core-brain.workspace = true
+solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-generate-wire.workspace = true
+solstone-core-journal-cli.workspace = true
+solstone-core-journal.workspace = true
+solstone-core-spp-ratls.workspace = true
+solstone-core-talent-cli.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

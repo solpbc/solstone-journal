@@ -10,6 +10,7 @@ publish = false
 chrono = { workspace = true }
 rustix = { workspace = true }
 serde_json = { workspace = true }
+solstone-core-format = { workspace = true }
 spl-core = { workspace = true }
 ureq = { workspace = true }
 

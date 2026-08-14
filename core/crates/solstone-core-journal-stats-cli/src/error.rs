@@ -25,12 +25,6 @@ pub enum JournalStatsError {
         #[source]
         source: io::Error,
     },
-    #[error("invalid JSON in {path}: {source}")]
-    Json {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("invalid talent configuration {path}: {message}")]
     TalentConfig { path: PathBuf, message: String },
     #[error("stats validation failed: {0}")]
@@ -40,13 +34,6 @@ pub enum JournalStatsError {
 impl JournalStatsError {
     pub(crate) fn io(path: impl Into<PathBuf>, source: io::Error) -> Self {
         Self::Io {
-            path: path.into(),
-            source,
-        }
-    }
-
-    pub(crate) fn json(path: impl Into<PathBuf>, source: serde_json::Error) -> Self {
-        Self::Json {
             path: path.into(),
             source,
         }

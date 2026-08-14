@@ -47,7 +47,7 @@ pub(crate) async fn workspace() -> Response {
     bytes(WORKSPACE, "text/html; charset=utf-8").into_response()
 }
 
-pub(crate) async fn detail_shell() -> Response {
+pub(crate) async fn shell() -> Response {
     bytes(SHELL, "text/html; charset=utf-8").into_response()
 }
 
@@ -95,26 +95,4 @@ pub(crate) async fn guide(Path(source): Path<String>) -> Response {
         );
     };
     bytes(guide, "text/markdown; charset=utf-8").into_response()
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn ac2_assets_match_python_sources() {
-        // Retire this half when the import Python surface is deleted; until then it makes that cut safe.
-        assert_eq!(
-            include_bytes!("../assets/workspace.html"),
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/import/workspace.html"
-            )),
-        );
-        assert_eq!(
-            include_bytes!("../assets/import_detail.js"),
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/import/static/import_detail.js"
-            )),
-        );
-    }
 }

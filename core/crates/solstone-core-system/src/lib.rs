@@ -3,10 +3,12 @@
 
 //! Typed system-process and task-request primitives.
 
+pub mod activity_state;
 pub mod cap;
 pub mod catchup;
 pub mod error;
 pub mod lifecycle;
+pub mod memory_admission;
 pub mod operational_log_parse;
 pub mod partition;
 pub mod process;

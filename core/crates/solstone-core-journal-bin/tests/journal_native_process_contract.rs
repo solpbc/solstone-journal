@@ -248,6 +248,14 @@ const PROBES: &[Probe] = &[
         stderr_anchor: Some(TOP_USAGE.as_bytes()),
     },
     Probe {
+        token: "talent",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(
+            b"usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...",
+        ),
+    },
+    Probe {
         token: "service",
         argv: &["--nonsense"],
         expected_exit: 1,
@@ -274,6 +282,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(b"usage: journal doctor [-h]"),
+    },
+    Probe {
+        token: "setup",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal setup [-h] [--journal PATH] [--port INT]"),
     },
     // Exit 2 and the parser-owned usage anchors distinguish each present verb
     // from top-level exit 64, which would also result if the sibling lacked it.
@@ -1359,6 +1373,56 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
 }
 
 #[test]
+fn native_setup_full_run_never_reaches_a_poisoned_interpreter() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    let fixture = locate_workspace_binary("solstone-core-journal-bin", "setup-fixture-journal");
+    let journal = context.sibling_dir.join("journal");
+    let sol = context.sibling_dir.join("sol");
+    fs::remove_file(&journal).expect("replace dispatcher journal link");
+    copy_executable(&fixture, &journal);
+    copy_executable(&fixture, &sol);
+    let run = |path: &Path, journal_path: &Path| {
+        let _ = fs::remove_file(context.poison_marker);
+        let output = Command::new(&journal)
+            .args(["setup", "--yes"])
+            .env("HOME", context.home)
+            .env("SOLSTONE_JOURNAL", journal_path)
+            .env("SETUP_FIXTURE_BIN_DIR", context.sibling_dir)
+            .env("PATH", path)
+            .env("POISON_MARKER", context.poison_marker)
+            .output()
+            .expect("run native setup fixture");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !context.poison_marker.exists(),
+            "setup reached poisoned interpreter"
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal_path.join("health/setup-state.json")).expect("setup manifest"),
+        )
+        .expect("manifest JSON");
+        assert_eq!(manifest["steps"].as_array().map(Vec::len), Some(8));
+        assert!(manifest["completed_at"].is_string());
+    };
+    run(context.sibling_dir, context.journal);
+    let empty_path = context
+        .sibling_dir
+        .parent()
+        .expect("fixture parent")
+        .join("empty-path");
+    fs::create_dir(&empty_path).expect("create empty PATH");
+    let second_journal = context.journal.join("second");
+    run(&empty_path, &second_journal);
+}
+
+#[test]
 fn brain_internal_protocol_verbs_are_closed_at_the_real_owner_dispatcher() {
     let harness = Harness::new();
     let context = harness.context();
@@ -1509,7 +1573,7 @@ fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
 }
 
 #[test]
-fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_blocked() {
+fn native_sense_batch_keeps_transcribe_and_describe_free_of_any_interpreter() {
     let harness = Harness::new();
     let context = harness.context();
     let day = "20990101";
@@ -1525,9 +1589,11 @@ fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_
     fs::write(directory.join("audio.flac"), b"not a flac file").expect("write garbage audio");
     fs::write(directory.join("screen.webm"), b"not a webm file").expect("write garbage video");
 
-    // AJ-D has not landed: describe still resolves through the Python process
-    // table and must touch the poisoned sibling python3. When AJ-D becomes a
-    // native process spec, tighten this expectation to require no shim touch.
+    // describe now resolves through NATIVE_PROCESS_SPECS, so this batch must
+    // touch no interpreter at all. Tightening it is what the comment that
+    // stood here asked for by name; it was not done when the cutover landed,
+    // so the assertion went on requiring a shim touch that no longer happens
+    // and failed on precisely the outcome it exists to protect.
     let output = run_dispatcher_with_output_and_environment(
         &context,
         "sense",
@@ -1553,8 +1619,11 @@ fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_
         "corrupt_input"
     );
 
-    let poison = fs::read_to_string(context.poison_marker).expect("describe Python poison marker");
-    assert_eq!(poison.lines().collect::<Vec<_>>(), ["reached:python3"]);
+    assert!(
+        !context.poison_marker.exists(),
+        "native sense batch reached a poisoned interpreter: {}",
+        fs::read_to_string(context.poison_marker).unwrap_or_default()
+    );
 }
 
 #[test]

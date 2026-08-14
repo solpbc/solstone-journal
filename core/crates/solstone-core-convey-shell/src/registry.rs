@@ -104,7 +104,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "entities",
@@ -144,7 +144,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: true,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "network",
@@ -168,7 +168,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         )),
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "devices",
@@ -179,24 +179,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         facets_enabled: false,
         has_background: false,
         converted: true,
-    },
-    AppDefinition {
-        name: "reflections",
-        icon: "🌙",
-        label: "reflections",
-        lucide_icon: "moon",
-        date_nav: Some(DateNav {
-            allow_future: false,
-            step: Some("week"),
-            unit: DateNavUnit::Content {
-                one: "reflection",
-                other: "reflections",
-                none: "no reflection",
-            },
-        }),
-        facets_enabled: false,
-        has_background: false,
-        converted: false,
     },
     AppDefinition {
         name: "search",

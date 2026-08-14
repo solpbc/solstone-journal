@@ -13,3 +13,6 @@ mod service_legacy_gate_purity;
 #[cfg(test)]
 #[path = "contracts/settings_native_linkage.rs"]
 mod settings_native_linkage;
+#[cfg(test)]
+#[path = "contracts/talent_config_reader_architecture.rs"]
+mod talent_config_reader_architecture;

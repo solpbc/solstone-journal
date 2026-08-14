@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 solstone-core-observer.workspace = true
 solstone-core-doctor.workspace = true
+solstone-core-setup.workspace = true
 unicode-general-category.workspace = true
 solstone-core-format.workspace = true
 solstone-core-operational-logs.workspace = true

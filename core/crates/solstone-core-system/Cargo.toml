@@ -33,6 +33,7 @@ solstone-core-journal-config = { workspace = true }
 solstone-core-brain = { workspace = true }
 solstone-core-local = { workspace = true }
 solstone-core-assets = { workspace = true }
+solstone-core-format = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

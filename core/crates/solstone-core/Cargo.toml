@@ -47,6 +47,10 @@ name = "identity_cli"
 path = "tests/identity_cli.rs"
 
 [[test]]
+name = "think_verb_fidelity"
+path = "tests/think_verb_fidelity.rs"
+
+[[test]]
 name = "supervisor_app_stack"
 path = "tests/supervisor_app_stack.rs"
 
@@ -93,6 +97,7 @@ solstone-core-backup-cli.workspace = true
 solstone-core-maintenance.workspace = true
 solstone-core-maint.workspace = true
 solstone-core-doctor.workspace = true
+solstone-core-setup.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-import.workspace = true
@@ -112,11 +117,13 @@ solstone-core-cogitate.workspace = true
 solstone-core-grab.workspace = true
 solstone-core-spl.workspace = true
 solstone-core-sense.workspace = true
+solstone-core-cortex.workspace = true
 solstone-core-spp-ratls.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-think-cli.workspace = true
 solstone-core-top.workspace = true
 solstone-core-operational-logs.workspace = true
 solstone-core-service-unit.workspace = true
@@ -126,6 +133,7 @@ solstone-core-transcribe.workspace = true
 solstone-core-streams-cli.workspace = true
 solstone-core-segment-cli.workspace = true
 solstone-core-journal-stats-cli.workspace = true
+solstone-core-talent-cli.workspace = true
 solstone-core-reprocess-cli.workspace = true
 solstone-core-backfill-cli.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }

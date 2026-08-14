@@ -51,43 +51,23 @@ mod tests {
     const DOOR_PATHS: &[&str] = &[
         "/app/import/journal/corpusSo/manifest/entities",
         "/app/import/journal/00000000/manifest/entities",
+        "/app/import/journal/corpusSo/ingest/segments",
         "/app/import/journal/corpusSo/ingest/entities",
+        "/app/import/journal/corpusSo/ingest/imports",
+        "/app/import/journal/corpusSo/ingest/config",
+        "/app/import/journal/corpusSo/ingest/facets",
     ];
     const BROWSER_WRITE_PATHS: &[&str] = &[
+        "/app/import/api/save",
         "/app/import/api/save-path",
         "/app/import/api/meta",
+        "/app/import/api/start",
         "/app/import/api/journal-sources/create",
+        "/app/import/api/journal-sources/corpus_peer/revoke",
+        "/app/import/api/journal-sources/corpus_peer/resolve-entity",
+        "/app/import/api/journal-sources/corpus_peer/resolve-facet",
         "/app/import/api/journal-sources/corpus_peer/resolve-config",
-    ];
-    const UNREGISTERED: &[(&str, &str)] = &[
-        ("POST", "/app/import/api/save"),
-        ("POST", "/app/import/api/save-path"),
-        ("POST", "/app/import/api/meta"),
-        ("POST", "/app/import/api/start"),
-        ("POST", "/app/import/api/journal-sources/create"),
-        ("POST", "/app/import/api/journal-sources/corpus_peer/revoke"),
-        (
-            "POST",
-            "/app/import/api/journal-sources/corpus_peer/resolve-entity",
-        ),
-        (
-            "POST",
-            "/app/import/api/journal-sources/corpus_peer/resolve-facet",
-        ),
-        (
-            "POST",
-            "/app/import/api/journal-sources/corpus_peer/resolve-config",
-        ),
-        (
-            "POST",
-            "/app/import/api/journal-sources/corpus_peer/resolve-config-all",
-        ),
-        ("GET", "/app/import/journal/corpusSo/manifest/entities"),
-        ("POST", "/app/import/journal/corpusSo/ingest/segments"),
-        ("POST", "/app/import/journal/corpusSo/ingest/entities"),
-        ("POST", "/app/import/journal/corpusSo/ingest/facets"),
-        ("POST", "/app/import/journal/corpusSo/ingest/imports"),
-        ("POST", "/app/import/journal/corpusSo/ingest/config"),
+        "/app/import/api/journal-sources/corpus_peer/resolve-config-all",
     ];
 
     async fn request(
@@ -192,19 +172,10 @@ mod tests {
         }
     }
 
-    fn declared_deviation(phase: &str, method: &str, path: &str) -> bool {
-        (matches!(phase, "empty" | "populated") && method == "GET" && path == "/app/import/")
-            || (DOOR_PATHS.contains(&path))
-            || (matches!(phase, "empty" | "populated")
-                && method == "POST"
-                && BROWSER_WRITE_PATHS.contains(&path))
-    }
-
     #[tokio::test]
-    async fn ac4_corpus_replay_has_only_the_declared_28_deviations() {
+    async fn ac4_corpus_replay_matches_every_recorded_case() {
         let corpus: Value = serde_json::from_str(CORPUS).expect("corpus JSON");
         let mut passed = 0;
-        let mut declared = Vec::new();
         let mut unexpected = Vec::new();
         for phase in ["unestablished", "corrupt", "empty", "populated"] {
             let root = phase_root(phase);
@@ -239,19 +210,32 @@ mod tests {
                     && body_matches;
                 if matches {
                     passed += 1;
-                } else if declared_deviation(phase, method, path) {
-                    declared.push(format!("{phase} {method} {path}"));
                 } else {
                     unexpected.push(format!("{phase} {method} {path}"));
                 }
             }
         }
-        assert_eq!(passed, 108, "unexpected replay cases: {unexpected:?}");
-        assert_eq!(declared.len(), 28, "declared roster changed: {declared:?}");
+        assert_eq!(passed, 136, "unexpected replay cases: {unexpected:?}");
         assert!(
             unexpected.is_empty(),
             "unexpected replay cases: {unexpected:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn ac5_import_shell_matches_real_shell_bytes_in_established_phases() {
+        let shell = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../solstone/convey/static/shell.html"
+        ));
+        for phase in ["empty", "populated"] {
+            let root = phase_root(phase);
+            let (status, content_type, _, body) =
+                request(root.path(), "GET", "/app/import/", None).await;
+            assert_eq!(status, StatusCode::OK, "{phase}");
+            assert_eq!(content_type, "text/html; charset=utf-8", "{phase}");
+            assert_eq!(body.as_slice(), shell, "{phase}");
+        }
     }
 
     #[tokio::test]
@@ -788,64 +772,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ac15_unregistered_paths_keep_their_phase_specific_fallbacks() {
-        assert_eq!(UNREGISTERED.len(), 16);
-        for phase in ["empty", "unestablished", "corrupt"] {
+    async fn ac15_registered_write_routes_preserve_phase_and_door_auth_guards() {
+        for phase in ["empty", "populated", "unestablished", "corrupt"] {
             let root = phase_root(phase);
-            for (method, path) in UNREGISTERED {
-                let (status, content_type, location, body) =
-                    request(root.path(), method, path, None).await;
-                match phase {
-                    "empty" if *method == "POST" => assert_eq!(
-                        (status, body.len()),
-                        (StatusCode::METHOD_NOT_ALLOWED, 0),
-                        "{phase} {method} {path}"
+            for path in DOOR_PATHS {
+                let method = if path.contains("/manifest/") {
+                    "GET"
+                } else {
+                    "POST"
+                };
+                let (status, content_type, _, _) = request(root.path(), method, path, None).await;
+                assert_eq!(
+                    (status, content_type),
+                    (
+                        StatusCode::UNAUTHORIZED,
+                        "text/html; charset=utf-8".to_owned()
                     ),
-                    "empty" => assert_eq!(
-                        status,
-                        StatusCode::NOT_IMPLEMENTED,
-                        "{phase} {method} {path}"
-                    ),
-                    "unestablished" => assert_eq!(
+                    "{phase} {path}"
+                );
+            }
+        }
+        for phase in ["unestablished", "corrupt"] {
+            let root = phase_root(phase);
+            for path in BROWSER_WRITE_PATHS {
+                let (status, content_type, location, _) =
+                    request(root.path(), "POST", path, None).await;
+                if phase == "unestablished" {
+                    assert_eq!(
                         (status, location.as_deref()),
                         (StatusCode::FOUND, Some("/init")),
-                        "{phase} {method} {path}"
-                    ),
-                    "corrupt" if path.contains("/api/") => {
-                        assert_eq!(
-                            (status, content_type),
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "application/json".to_owned()
-                            ),
-                            "{phase} {method} {path}"
-                        );
-                        let actual: Value = serde_json::from_slice(&body).unwrap();
-                        assert_eq!(
-                            actual,
-                            json!({"error":"I couldn't read your settings.","reason_code":"corrupt_config","detail":format!("I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.", root.path().join("config/journal.json").display())}),
-                            "{phase} {method} {path}"
-                        );
-                    }
-                    "corrupt" => {
-                        assert_eq!(
-                            (status, content_type),
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "text/plain; charset=utf-8".to_owned()
-                            ),
-                            "{phase} {method} {path}"
-                        );
-                        assert_eq!(
-                            String::from_utf8(body).unwrap(),
-                            format!(
-                                "I couldn't read your settings file at {}. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-                                root.path().join("config/journal.json").display()
-                            ),
-                            "{phase} {method} {path}"
-                        );
-                    }
-                    _ => unreachable!(),
+                        "{path}"
+                    );
+                } else {
+                    assert_eq!(
+                        (status, content_type),
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "application/json".to_owned()
+                        ),
+                        "{path}"
+                    );
                 }
             }
         }

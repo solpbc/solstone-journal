@@ -246,7 +246,7 @@ fn export_entities(
         result.skipped = unchanged;
         return Ok(result);
     }
-    let path = format!("/app/import/journal/{key_prefix}/ingest/entities");
+    let path = crate::manifest::entities_ingest_path(key_prefix);
     let body = python_compatible_wire_json(&json!({"entities": to_send})).into_bytes();
     let Some(response) = post_with_retry(loopback, &path, "application/json", body)? else {
         result.error = Some("Entity upload failed after all retries".to_string());
@@ -329,7 +329,7 @@ fn export_imports(
     }
     let Some(response) = post_with_retry(
         loopback,
-        &format!("/app/import/journal/{key_prefix}/ingest/imports"),
+        &crate::manifest::imports_ingest_path(key_prefix),
         "application/json",
         python_compatible_wire_json(&json!({"imports": to_send})).into_bytes(),
     )?
@@ -401,7 +401,7 @@ fn export_facets(
         let (body, boundary) = multipart_body(&metadata, &multipart_files);
         match post_with_retry(
             loopback,
-            &format!("/app/import/journal/{key_prefix}/ingest/facets"),
+            &crate::manifest::facets_ingest_path(key_prefix),
             &format!("multipart/form-data; boundary={boundary}"),
             body,
         ) {
@@ -458,7 +458,7 @@ fn export_config(
     }
     let Some(response) = post_with_retry(
         loopback,
-        &format!("/app/import/journal/{key_prefix}/ingest/config"),
+        &crate::manifest::config_ingest_path(key_prefix),
         "application/json",
         python_compatible_wire_json(&json!({"config": config})).into_bytes(),
     )?
@@ -504,7 +504,7 @@ fn query_manifest(
     key_prefix: &str,
     area: &str,
 ) -> Result<Value, TransferError> {
-    let response = loopback.get(&format!("/app/import/journal/{key_prefix}/manifest/{area}"))?;
+    let response = loopback.get(&crate::manifest::manifest_path(key_prefix, area))?;
     match response.status {
         200 => serde_json::from_slice(&response.body)
             .map_err(|error| TransferError::ManifestQuery(error.to_string())),

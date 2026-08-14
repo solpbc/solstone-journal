@@ -25,7 +25,7 @@ CONVEY_ICONS_JS = ROOT / "solstone" / "convey" / "static" / "convey_icons.js"
 
 CONVERTED_FILES = (
     ROOT / "solstone" / "apps" / "sol" / "workspace.html",
-    ROOT / "solstone" / "apps" / "import" / "workspace.html",
+    ROOT / "core" / "crates" / "solstone-core-import-web" / "assets" / "workspace.html",
     ROOT / "solstone" / "apps" / "settings" / "workspace.html",
     ROOT / "solstone" / "apps" / "support" / "workspace.html",
     ROOT / "solstone" / "apps" / "support" / "static" / "support.js",
@@ -111,16 +111,18 @@ L2_ICON_SLOT_CSS_FILES = {
     "col-activity": ROOT / "solstone" / "apps" / "sol" / "workspace.html",
     "activity-item": ROOT / "solstone" / "apps" / "sol" / "workspace.html",
     "summary-item": ROOT / "solstone" / "apps" / "sol" / "workspace.html",
-    "import-source-card-icon": ROOT / "solstone" / "apps" / "import" / "workspace.html",
+    "import-source-card-icon": ROOT / "core" / "crates" / "solstone-core-import-web" / "assets" / "workspace.html",
     "import-source-inline-icon": ROOT
-    / "solstone"
-    / "apps"
-    / "import"
+    / "core"
+    / "crates"
+    / "solstone-core-import-web"
+    / "assets"
     / "workspace.html",
     "import-content-summary-icon": ROOT
-    / "solstone"
-    / "apps"
-    / "import"
+    / "core"
+    / "crates"
+    / "solstone-core-import-web"
+    / "assets"
     / "workspace.html",
     "occ-activity-icon": ROOT / "solstone" / "apps" / "activities" / "workspace.html",
     "act-icon": ROOT / "solstone" / "apps" / "activities" / "workspace.html",
@@ -145,7 +147,7 @@ CONVERTED_GLYPH_RESIDUE = {
         "tools.innerHTML = `🔧 ${agent.tool_count}`;",
         "cost.innerHTML = `💰 ${costInfo.text}`;",
     ),
-    "solstone/apps/import/workspace.html": (
+    "core/crates/solstone-core-import-web/assets/workspace.html": (
         '<div class="no-imports-icon">📥</div>',
         '<div class="no-imports-icon">🔍</div>',
         "source.emoji",

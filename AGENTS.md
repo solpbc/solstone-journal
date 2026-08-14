@@ -406,6 +406,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Facets (`facets/*/facet.json`, `facets/*/relationships/`) | `solstone/think/facets.py` + `core/crates/solstone-core-facets/` for native Settings writes + `solstone/apps/facets/*` (if/when created) |
 | Observations (`observations.jsonl`) | `solstone/think/entities/observations.py` |
 | Activities (`facets/*/activities/*.jsonl`) | `solstone/think/activities.py` + `core/crates/solstone-core-facets/` for native Settings writes |
+| Activity records (`facets/*/activities/{day}.jsonl`) | `core/crates/solstone-core-facets/src/store/activity_records.rs` |
 | Action logs (`config/actions/*.jsonl`, `facets/*/logs/*.jsonl`) | `solstone/apps/utils.py` + `core/crates/solstone-core-facets/` for native Settings writes |
 | Timeline (`chronicle/<day>/timeline.json`, `chronicle/**/<seg>/timeline.json`, root `timeline.json`) | `solstone/apps/timeline/maintenance.py` + `solstone/apps/timeline/talent/segment_summary.py` |
 | Per-segment sense outputs (`chronicle/**/<seg>/talents/{sense.json,facets.json,speakers.json,density.json,change.json,activity.md,sense.md}`) | `solstone/think/sense_splitter.py` |

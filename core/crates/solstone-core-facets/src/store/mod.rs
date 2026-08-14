@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 mod activities;
+mod activity_records;
+mod awareness;
 mod declaration;
 mod detected_entities;
 mod detected_entity_activity;
@@ -29,6 +31,15 @@ mod write;
 pub use activities::{
     ActivityIconMigrationReport, add_activity, migrate_custom_activity_icons_to_emoji,
     read_activity_file, remove_activity, update_activity, write_activity_file,
+};
+pub use activity_records::{
+    ActivityRecord, ActivityRecordStoreError, AppendOutcome, activity_is_available,
+    activity_value_or_empty, activity_value_string, activity_value_truthy, append_activity_record,
+    get_activity_record, load_activity_records, set_activity_hidden, update_activity_record,
+};
+pub use awareness::{
+    AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
+    record_import_nudge, record_import_offer_declined,
 };
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
@@ -63,7 +74,7 @@ pub use lifecycle::{
     delete_journal_entity,
 };
 pub use logs::{read_log_file, write_log_file};
-pub use map::{list_facet_directories, list_facet_entity_directories};
+pub use map::{list_declared_facet_names, list_facet_directories, list_facet_entity_directories};
 pub use news::{read_news_file, write_news_file};
 pub use observations::{
     ObservationEntityResolution, ObservationLookup, ObservationOperationCounts, add_observation,

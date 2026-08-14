@@ -6,7 +6,7 @@ use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
 use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use std::{
     env,
     ffi::{OsStr, OsString},
@@ -22,19 +22,19 @@ use solstone_core_cli::{
     BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP,
     CHECK_USAGE, CONFIG_HELP, CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE,
     CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP,
-    CONVEY_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, ENGAGE_HELP,
-    ENGAGE_USAGE, EXPORT_HELP, EXPORT_USAGE, ExportOptions, FACET_CANDIDATES_HELP,
-    FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
-    GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
-    IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE,
-    IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE,
-    INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
-    IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
-    IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
-    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
-    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
-    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    CONVEY_USAGE, CORTEX_HELP, CORTEX_USAGE, CogitateCommand, Command, ContractCommand,
+    ConveyOptions, ENGAGE_HELP, ENGAGE_USAGE, EXPORT_HELP, EXPORT_USAGE, ExportOptions,
+    FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand,
+    GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP,
+    HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP,
+    IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE,
+    IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP,
+    INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
+    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
+    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand,
+    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
+    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
+    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SPL_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
@@ -76,7 +76,7 @@ use solstone_core_indexer_store::scan::{
 };
 use solstone_core_journal::{
     ConfigError, HomeError, Source, discover_home, ensure_journal_dir_with_label,
-    read_config_journal, resolve_journal_path,
+    read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
 use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
@@ -159,6 +159,16 @@ fn main() -> ExitCode {
             eprintln!("journal doctor: error: {}", error.0);
             ExitCode::from(2)
         }
+        Ok(Command::Setup(args)) => run_setup(args),
+        Ok(Command::SetupHelp) => {
+            print!("{}", solstone_core_setup::args::USAGE);
+            ExitCode::SUCCESS
+        }
+        Ok(Command::SetupUsage(error)) => {
+            eprint!("{}", solstone_core_setup::args::USAGE);
+            eprintln!("journal setup: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
             Ok(line) => {
                 println!("{}\t{}", line.label, line.path.display());
@@ -207,6 +217,10 @@ fn main() -> ExitCode {
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Export(options)) => run_export(options),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
+        Ok(Command::Think(args)) => run_storage_ops_verb("think", args, |arguments, journal| {
+            let run = solstone_core_think_cli::run_cli(arguments, journal);
+            (run.stdout, run.stderr, run.exit_code)
+        }),
         Ok(Command::Streams(args)) => run_streams(args),
         Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),
@@ -216,6 +230,7 @@ fn main() -> ExitCode {
         Ok(Command::MaintWorker(args)) => run_maint_worker(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
+        Ok(Command::Talent(args)) => run_talent(args),
         Ok(Command::Backfill(args)) => run_backfill(args),
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
@@ -275,6 +290,16 @@ fn main() -> ExitCode {
         Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "journal sense"),
         Ok(Command::SenseHelp) => {
             print!("{SENSE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Cortex(options)) => run_cortex_service(options),
+        Ok(Command::CortexUsage(error)) => {
+            eprint!("{CORTEX_USAGE}");
+            eprintln!("journal cortex: error: {}", error.0);
+            ExitCode::from(2)
+        }
+        Ok(Command::CortexHelp) => {
+            print!("{CORTEX_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::Supervisor(options)) => supervisor::run(options),
@@ -779,6 +804,54 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
         &backlog_reader,
         &document_writer,
     );
+    print!("{}", run.stdout);
+    eprint!("{}", run.stderr);
+    ExitCode::from(run.exit_code as u8)
+}
+
+fn run_talent(args: Vec<OsString>) -> ExitCode {
+    let is_help = args
+        .iter()
+        .any(|argument| argument == OsStr::new("-h") || argument == OsStr::new("--help"));
+    let run = if is_help {
+        solstone_core_talent_cli::run_cli(
+            &args,
+            Path::new(""),
+            Path::new(""),
+            Path::new(""),
+            SystemTime::UNIX_EPOCH,
+        )
+    } else {
+        let journal_root = match resolve_process_journal_path() {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error(error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        };
+        let executable = match env::current_exe() {
+            Ok(executable) => executable,
+            Err(error) => {
+                eprintln!("talent failed: could not inspect current executable: {error}");
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        };
+        let Some(executable_dir) = executable.parent() else {
+            eprintln!("talent failed: could not locate installed solstone package");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        };
+        let Some(root) = resolve_installation_root_from_executable_dir(executable_dir) else {
+            eprintln!("talent failed: could not locate installed solstone package");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        };
+        solstone_core_talent_cli::run_cli(
+            &args,
+            &root.join("solstone/talent"),
+            &root.join("solstone/apps"),
+            &journal_root,
+            SystemTime::now(),
+        )
+    };
     print!("{}", run.stdout);
     eprint!("{}", run.stderr);
     ExitCode::from(run.exit_code as u8)
@@ -3481,6 +3554,10 @@ fn run_brain(command: BrainCommand) -> ExitCode {
     }
 }
 
+fn run_setup(args: solstone_core_setup::args::SetupArgs) -> ExitCode {
+    solstone_core_setup::run_owner_setup_native(args)
+}
+
 fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {
     let context = match solstone_core_doctor::context::CheckContext::production(args.port) {
         Ok(context) => context,
@@ -4678,6 +4755,36 @@ fn run_sense_service(options: ServiceOptions) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("sense service failed: {}", error.class());
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+    }
+}
+
+fn run_cortex_service(options: ServiceOptions) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(_) => return ExitCode::from(EXIT_TEMPFAIL),
+    };
+    match runtime.block_on(solstone_core_cortex::run_native_service(
+        journal.path,
+        solstone_core_cortex::CortexOptions {
+            verbose: options.verbose,
+            debug: options.debug,
+        },
+    )) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("cortex service failed: {}", error.class());
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }

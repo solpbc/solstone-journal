@@ -35,11 +35,13 @@ pub const USAGE: &str = concat!(
     "  solstone-core segment [args...]\n",
     "  solstone-core backup [args...]\n",
     "  solstone-core journal-stats [args...]\n",
+    "  solstone-core talent [args...]\n",
     "  solstone-core reprocess [args...]\n",
     "  solstone-core backfill-processing-records [args...]\n"
 );
 
 pub const SPEAKER_RESOLVE_USAGE: &str = speaker_resolve_usage!();
+pub const THINK_USAGE: &str = "usage: journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [-v] [-d]\n";
 /// The usage line the ERROR path prints, verbatim from the reference.
 /// It names `journal grab`, not `solstone-core grab`: the owner-facing verb
 /// is `journal grab`, and the native dispatch is a POSIX exec into the same
@@ -553,6 +555,19 @@ pub const SENSE_HELP: &str = concat!(
     "  -d, --debug           Enable debug logging\n",
 );
 
+pub const CORTEX_USAGE: &str = "usage: journal cortex [-h] [-v] [-d]\n";
+
+pub const CORTEX_HELP: &str = concat!(
+    "usage: journal cortex [-h] [-v] [-d]\n",
+    "\n",
+    "solstone Cortex Talent Manager\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
+
 pub const CHECK_USAGE: &str = "usage: journal check [-h] [--json]\n";
 
 pub const CHECK_HELP: &str = concat!(
@@ -670,6 +685,9 @@ pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
 /// The parse-error usage for `journal spl`.
 pub const SPL_USAGE: &str = "usage: journal spl [-v] [-d]\n";
 
+pub const TALENT_USAGE: &str =
+    "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -711,6 +729,9 @@ pub enum Command {
     Doctor(solstone_core_doctor::args::DoctorArgs),
     DoctorUsage(solstone_core_doctor::args::DoctorUsageError),
     DoctorHelp,
+    Setup(solstone_core_setup::args::SetupArgs),
+    SetupUsage(solstone_core_setup::args::UsageError),
+    SetupHelp,
     Version,
     Assets,
     Warm {
@@ -735,6 +756,7 @@ pub enum Command {
     Transfer(TransferCommand),
     Export(ExportOptions),
     Transcribe(TranscribeOptions),
+    Think(Vec<OsString>),
     Streams(Vec<OsString>),
     Importer(Vec<OsString>),
     Segment(Vec<OsString>),
@@ -744,6 +766,7 @@ pub enum Command {
     MaintWorker(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
+    Talent(Vec<OsString>),
     Backfill(Vec<OsString>),
     FacetCandidates,
     InstallModels(InstallModelsOptions),
@@ -767,6 +790,9 @@ pub enum Command {
     Sense(SenseOptions),
     SenseUsage,
     SenseHelp,
+    Cortex(ServiceOptions),
+    CortexUsage(CortexUsageError),
+    CortexHelp,
     Supervisor(SupervisorOptions),
     SupervisorUsage,
     SupervisorHelp,
@@ -1064,6 +1090,9 @@ pub struct ConveyOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConveyUsageError(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CortexUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RestartConveyOptions {
@@ -1433,6 +1462,17 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                     .map_or_else(Command::DoctorUsage, Command::Doctor))
             }
         }
+        [command, rest @ ..] if command == OsStr::new("setup") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                Ok(Command::SetupHelp)
+            } else {
+                Ok(solstone_core_setup::args::parse_args(rest)
+                    .map_or_else(Command::SetupUsage, Command::Setup))
+            }
+        }
         [flag] if flag == OsStr::new("--version") => Ok(Command::Version),
         [command] if command == OsStr::new("assets") => Ok(Command::Assets),
         [command] if command == OsStr::new("warm") => Ok(Command::Warm { json: false }),
@@ -1540,6 +1580,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("settings") => parse_settings(rest),
         [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
+        [command, rest @ ..] if command == OsStr::new("think") => Ok(Command::Think(rest.to_vec())),
         [command, rest @ ..] if command == OsStr::new("streams") => {
             Ok(Command::Streams(rest.to_vec()))
         }
@@ -1564,6 +1605,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("journal-stats") => {
             Ok(Command::JournalStats(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("talent") => {
+            Ok(Command::Talent(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("backfill-processing-records") => {
             Ok(Command::Backfill(rest.to_vec()))
@@ -1626,6 +1670,11 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(SenseParse::Run(options)) => Ok(Command::Sense(options)),
             Ok(SenseParse::Help) => Ok(Command::SenseHelp),
             Err(()) => Ok(Command::SenseUsage),
+        },
+        [command, rest @ ..] if command == OsStr::new("cortex") => match parse_cortex(rest) {
+            Ok(CortexParse::Run(options)) => Ok(Command::Cortex(options)),
+            Ok(CortexParse::Help) => Ok(Command::CortexHelp),
+            Err(error) => Ok(Command::CortexUsage(error)),
         },
         [command, rest @ ..] if command == OsStr::new("supervisor") => {
             let help = |argument: &OsString| {
@@ -3883,6 +3932,36 @@ fn parse_service(args: &[OsString]) -> Result<ServiceOptions, UsageError> {
 enum SenseParse {
     Run(SenseOptions),
     Help,
+}
+
+enum CortexParse {
+    Run(ServiceOptions),
+    Help,
+}
+
+fn parse_cortex(args: &[OsString]) -> Result<CortexParse, CortexUsageError> {
+    let mut verbose = false;
+    let mut debug = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].to_str() {
+            Some("-h" | "--help") => return Ok(CortexParse::Help),
+            Some("-v" | "--verbose") if !verbose => verbose = true,
+            Some("-d" | "--debug") if !debug => debug = true,
+            _ => {
+                return Err(CortexUsageError(format!(
+                    "unrecognized arguments: {}",
+                    args[index..]
+                        .iter()
+                        .map(|value| value.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )));
+            }
+        }
+        index += 1;
+    }
+    Ok(CortexParse::Run(ServiceOptions { verbose, debug }))
 }
 
 fn parse_sense(args: &[OsString]) -> Result<SenseParse, ()> {
@@ -8050,5 +8129,27 @@ mod tests {
                 "{values:?}"
             );
         }
+    }
+
+    #[test]
+    fn cortex_nonsense_is_detail_carrying_usage_error() {
+        assert_eq!(
+            evaluate_args(&args(&["cortex", "--nonsense"])),
+            Ok(Command::CortexUsage(CortexUsageError(
+                "unrecognized arguments: --nonsense".into()
+            )))
+        );
+    }
+
+    #[test]
+    fn cortex_help_matches_argparse_body_verbatim() {
+        assert_eq!(
+            evaluate_args(&args(&["cortex", "--help"])),
+            Ok(Command::CortexHelp)
+        );
+        assert_eq!(
+            CORTEX_HELP,
+            "usage: journal cortex [-h] [-v] [-d]\n\nsolstone Cortex Talent Manager\n\noptions:\n  -h, --help     show this help message and exit\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n"
+        );
     }
 }

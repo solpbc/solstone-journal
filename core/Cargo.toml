@@ -34,6 +34,7 @@ members = [
     "crates/solstone-core-convey-config",
     "crates/solstone-core-talents",
     "crates/solstone-core-doctor",
+    "crates/solstone-core-setup",
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-identity",
     "crates/solstone-core-callosum",
@@ -66,6 +67,7 @@ members = [
     "crates/solstone-core-ingest-resolve",
     "crates/solstone-core-spl",
     "crates/solstone-core-sense",
+    "crates/solstone-core-cortex",
     "crates/solstone-core-service-unit",
     "crates/solstone-core-speaker-id",
     "crates/solstone-core-speaker-resolve",
@@ -95,12 +97,15 @@ members = [
     "crates/solstone-core-convey-body",
     "crates/solstone-core-records-web",
     "crates/solstone-core-system",
+    "crates/solstone-core-think-cli",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
     "crates/solstone-core-import-sources",
     "crates/solstone-core-import-web",
     "crates/solstone-core-segment-cli",
+    "crates/solstone-core-talent-config",
     "crates/solstone-core-journal-stats-cli",
+    "crates/solstone-core-talent-cli",
     "crates/solstone-core-reprocess-cli",
     "crates/solstone-core-backfill-cli",
     "crates/solstone-core-backup-web",
@@ -158,13 +163,16 @@ solstone-core-maint = { path = "crates/solstone-core-maint" }
 solstone-core-convey-config = { path = "crates/solstone-core-convey-config" }
 solstone-core-talents = { path = "crates/solstone-core-talents" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }
+solstone-core-setup = { path = "crates/solstone-core-setup" }
 solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
 solstone-core-system = { path = "crates/solstone-core-system" }
 solstone-core-system-health = { path = "crates/solstone-core-system-health" }
+solstone-core-think-cli = { path = "crates/solstone-core-think-cli" }
 solstone-core-top = { path = "crates/solstone-core-top" }
 solstone-core-operational-logs = { path = "crates/solstone-core-operational-logs" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
+solstone-core-talent-config = { path = "crates/solstone-core-talent-config" }
 solstone-core-cogitate-tools = { path = "crates/solstone-core-cogitate-tools" }
 solstone-core-cogitate-runtime = { path = "crates/solstone-core-cogitate-runtime" }
 solstone-core-cogitate-wire = { path = "crates/solstone-core-cogitate-wire" }
@@ -190,6 +198,7 @@ solstone-core-thinking = { path = "crates/solstone-core-thinking" }
 solstone-core-entities = { path = "crates/solstone-core-entities" }
 solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-sense = { path = "crates/solstone-core-sense" }
+solstone-core-cortex = { path = "crates/solstone-core-cortex" }
 solstone-core-service-unit = { path = "crates/solstone-core-service-unit" }
 solstone-core-steward-prune = { path = "crates/solstone-core-steward-prune" }
 solstone-core-health-web = { path = "crates/solstone-core-health-web" }
@@ -203,6 +212,7 @@ solstone-core-import-sources = { path = "crates/solstone-core-import-sources" }
 solstone-core-import-web = { path = "crates/solstone-core-import-web" }
 solstone-core-segment-cli = { path = "crates/solstone-core-segment-cli" }
 solstone-core-journal-stats-cli = { path = "crates/solstone-core-journal-stats-cli" }
+solstone-core-talent-cli = { path = "crates/solstone-core-talent-cli" }
 solstone-core-reprocess-cli = { path = "crates/solstone-core-reprocess-cli" }
 solstone-core-backfill-cli = { path = "crates/solstone-core-backfill-cli" }
 axum = { version = "0.8.9", default-features = false, features = ["json", "multipart", "query"] }
@@ -237,6 +247,7 @@ md5 = "0.8.1"
 nix = { version = "0.30.1", default-features = false, features = ["fs", "term", "user"] }
 plist = "1.8.0"
 ort = { version = "=2.0.0-rc.12", default-features = false }
+pdf-extract = "0.12.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"
