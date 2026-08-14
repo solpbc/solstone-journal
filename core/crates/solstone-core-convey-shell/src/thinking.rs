@@ -1449,9 +1449,8 @@ mod tests {
     }
 
     #[test]
-    /// This exists only while the embedded and Python assets coexist; the cut
-    /// wave must remove this test with the Python copies.
-    fn thinking_asset_copies_match_the_source_until_the_cut_wave_removes_both() {
+    /// The Python thinking tree stays as a reference; this is the parity gate that keeps the reference honest.
+    fn thinking_embedded_assets_match_the_python_reference() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root = manifest.ancestors().nth(3).expect("repository root");
         for (copied, source) in [
@@ -1467,8 +1466,25 @@ mod tests {
             assert_eq!(
                 fs::read(manifest.join(copied)).expect("embedded copy reads"),
                 fs::read(root.join(source))
-                    .expect("source must exist until the cut wave deletes this test too")
+                    .expect("Python reference asset reads for shipped-copy parity")
             );
+        }
+    }
+
+    #[test]
+    fn thinking_embedded_assets_are_generated_from_crate_copies() {
+        let generated = include_str!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
+        for path in [
+            "/app/thinking/workspace",
+            "/app/thinking/static/thinking.js",
+        ] {
+            let entry = generated
+                .lines()
+                .find(|line| line.contains(&format!("path: \"{path}\"")))
+                .expect("thinking asset is embedded");
+            assert!(entry.contains(env!("CARGO_MANIFEST_DIR")));
+            assert!(entry.contains("assets/thinking/"));
+            assert!(!entry.contains("solstone/apps/"));
         }
     }
 
