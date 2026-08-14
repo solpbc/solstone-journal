@@ -12,6 +12,8 @@ workspace = true
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
+getrandom.workspace = true
+nix = { workspace = true, features = ["fs"] }
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-callosum.workspace = true

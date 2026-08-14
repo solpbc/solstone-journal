@@ -23,7 +23,8 @@ mod validation;
 use measurement::SharedMeasurementCache;
 
 pub fn routes(journal_root: PathBuf) -> Router {
-    routes_with_cache(journal_root, measurement::new())
+    let cache = measurement::new(&journal_root);
+    routes_with_cache(journal_root, cache)
 }
 
 fn routes_with_cache(journal_root: PathBuf, cache: SharedMeasurementCache) -> Router {
@@ -151,8 +152,14 @@ async fn get_offload(root: PathBuf, cache: SharedMeasurementCache) -> axum::resp
 }
 
 async fn generate_keys(root: PathBuf) -> axum::response::Response {
-    let generated_daily = keys::generated_key();
-    let generated_recovery = keys::generated_key();
+    let generated_daily = match keys::generated_key() {
+        Ok(key) => key,
+        Err(_) => return internal_error(),
+    };
+    let generated_recovery = match keys::generated_key() {
+        Ok(key) => key,
+        Err(_) => return internal_error(),
+    };
     let outcome = config::mutate(&root, |backup| {
         let daily = backup.get("daily_key").cloned().unwrap_or(Value::Null);
         let recovery = backup.get("recovery_key").cloned().unwrap_or(Value::Null);
@@ -182,6 +189,15 @@ async fn generate_keys(root: PathBuf) -> axum::response::Response {
             "",
         ),
     }
+}
+
+fn internal_error() -> axum::response::Response {
+    response::error(
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        "I couldn't complete that request.",
+        "internal_error",
+        "",
+    )
 }
 async fn reveal(root: PathBuf) -> axum::response::Response {
     match config::backup(&root).and_then(|config| keys::keys(&config)) {

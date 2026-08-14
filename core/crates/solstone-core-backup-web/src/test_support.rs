@@ -1,8 +1,10 @@
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::fs;
 use tempfile::TempDir;
 
 pub const RECOVERY_KEY: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+pub const DEVICE_TOTAL_BYTES: u64 = 1_000_000_000_000;
+pub const DEVICE_FREE_BYTES: u64 = 250_000_000_000;
 pub fn corpus() -> Value {
     serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -17,27 +19,43 @@ pub fn root(phase: &str) -> TempDir {
     }
     let config = root.path().join("config");
     fs::create_dir_all(&config).expect("config");
+    fs::write(
+        config.join("journal.json"),
+        python_build_journal_bytes(phase),
+    )
+    .expect("config");
+    root
+}
+pub fn python_build_journal_bytes(phase: &str) -> Vec<u8> {
     if phase == "corrupt" {
-        fs::write(
-            config.join("journal.json"),
-            b"{\"setup\": {\"completed_at\": 17672256",
-        )
-        .expect("corrupt");
-        return root;
+        return b"{\"setup\": {\"completed_at\": 17672256".to_vec();
     }
     let mut document = json!({"setup":{"completed_at":1767225600}});
     if phase != "fresh" {
         document["backup"] = backup(phase);
     }
-    fs::write(
-        config.join("journal.json"),
-        format!(
-            "{}\n",
-            serde_json::to_string_pretty(&document).expect("json")
-        ),
+    format!(
+        "{}\n",
+        serde_json::to_string_pretty(&sort_json_keys(document)).expect("json")
     )
-    .expect("config");
-    root
+    .into_bytes()
+}
+
+fn sort_json_keys(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(sort_json_keys).collect()),
+        Value::Object(values) => {
+            let mut entries: Vec<_> = values.into_iter().collect();
+            entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, sort_json_keys(value)))
+                    .collect::<Map<_, _>>(),
+            )
+        }
+        value => value,
+    }
 }
 fn backup(phase: &str) -> Value {
     let mut value = json!({"enabled":true,"mode":"byo","destination":{"repository":"s3:s3.example.invalid/journal-corpus","backend":"s3","credentials":{"access_key_id":"CORPUSKEYID","secret_access_key":"corpus-secret"}},"daily_key":"corpus-daily-key","recovery_key":RECOVERY_KEY,"confirmed_recovery_key":true,"retention":{"hourly":24,"daily":7,"weekly":4,"monthly":12},"offload":{"enabled":false,"budget_bytes":null,"floor_bytes":null},"schedule":{"every":"daily","enabled":true},"last_prune":{"time":1769996400,"status":"ok","error_reason":null}});

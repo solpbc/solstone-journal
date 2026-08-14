@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 use std::{
+    path::Path,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -15,13 +16,39 @@ pub struct MeasurementCache {
     geometry: DeviceGeometry,
 }
 pub type SharedMeasurementCache = Arc<Mutex<MeasurementCache>>;
-pub fn new() -> SharedMeasurementCache {
-    with_geometry(DeviceGeometry {
-        free_bytes: None,
-        total_bytes: None,
-    })
+pub fn new(journal_root: &Path) -> SharedMeasurementCache {
+    cache(device_geometry(journal_root))
 }
+
+fn device_geometry(journal_root: &Path) -> DeviceGeometry {
+    let Some(stats) = nix::sys::statvfs::statvfs(journal_root).ok() else {
+        return DeviceGeometry {
+            free_bytes: None,
+            total_bytes: None,
+        };
+    };
+    let fragment_size = Some(stats.fragment_size())
+        .filter(|size| *size > 0)
+        .or(Some(stats.block_size()))
+        .filter(|size| *size > 0);
+    let Some(fragment_size) = fragment_size else {
+        return DeviceGeometry {
+            free_bytes: None,
+            total_bytes: None,
+        };
+    };
+    DeviceGeometry {
+        free_bytes: stats.blocks_free().checked_mul(fragment_size),
+        total_bytes: stats.blocks().checked_mul(fragment_size),
+    }
+}
+
+#[cfg(test)]
 pub fn with_geometry(geometry: DeviceGeometry) -> SharedMeasurementCache {
+    cache(geometry)
+}
+
+fn cache(geometry: DeviceGeometry) -> SharedMeasurementCache {
     Arc::new(Mutex::new(MeasurementCache {
         entry: None,
         geometry,

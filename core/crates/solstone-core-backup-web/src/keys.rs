@@ -45,19 +45,12 @@ pub fn keys(config: &Map<String, Value>) -> Result<Option<(String, String)>, ()>
     }
 }
 
-pub fn generated_key() -> String {
-    // The exact random source is not observable other than entropy. The native route
-    // keeps the Python fill-only state transition; this 64-char Crockford value is valid.
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let mut value = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    (0..64)
-        .map(|_| {
-            let character = ALPHABET.as_bytes()[(value & 31) as usize] as char;
-            value = value.rotate_left(7).wrapping_add(0x9e3779b97f4a7c15);
-            character
-        })
-        .collect()
+pub fn generated_key() -> Result<String, getrandom::Error> {
+    let mut bytes = [0_u8; 64];
+    getrandom::fill(&mut bytes)?;
+    Ok(bytes
+        .into_iter()
+        // 256 is divisible by the 32-character Crockford alphabet.
+        .map(|byte| ALPHABET.as_bytes()[(byte & 31) as usize] as char)
+        .collect())
 }

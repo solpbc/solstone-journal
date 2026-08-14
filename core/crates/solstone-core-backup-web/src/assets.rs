@@ -42,3 +42,34 @@ pub async fn static_asset(axum::extract::Path(name): axum::extract::Path<String>
         _ => background().await,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{CSS, JS, WORKSPACE};
+
+    #[test]
+    fn embedded_assets_match_the_python_source_until_that_surface_is_removed() {
+        // Retire this assertion with the Python backup surface it deliberately protects.
+        assert_eq!(
+            WORKSPACE,
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../solstone/apps/backup/workspace.html"
+            ))
+        );
+        assert_eq!(
+            JS,
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../solstone/apps/backup/static/backup.js"
+            ))
+        );
+        assert_eq!(
+            CSS,
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../solstone/apps/backup/static/backup.css"
+            ))
+        );
+    }
+}
