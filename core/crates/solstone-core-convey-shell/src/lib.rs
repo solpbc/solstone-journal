@@ -40,8 +40,8 @@
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Body, Speakers, Devices, and entities are converted workspaces in this wave. Network's shell,
-//! workspace, static, and state routes are natively served while its other routes remain unconverted.
+//! Body, Devices, Entities, Health, Settings, and Speakers are converted workspaces in this wave.
+//! Network's shell, workspace, static, and state routes are natively served while its other routes remain unconverted.
 //! Every other known app receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
 //!
@@ -694,6 +694,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/entities/workspace", get(entities::workspace))
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
+        .merge(solstone_core_health_web::routes(journal_root.clone()))
         .merge(solstone_core_backup_web::routes(journal_root.clone()))
         .route("/app/body/", get(body::shell))
         .route("/app/body/trends", get(body::trends))

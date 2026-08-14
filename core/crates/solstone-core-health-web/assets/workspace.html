@@ -1,0 +1,1620 @@
+<style>
+/*
+ * Health Dashboard Color Convention
+ * ──────────────────────────────────
+ * Status signals use a traffic-light palette:
+ *   Green  (#16a34a / #22c55e) — healthy, active, ok
+ *   Amber  (#d97706 / #f59e0b) — warning, stale, in-progress
+ *   Red    (#dc2626 / #ef4444) — error, crashed, disconnected
+ *
+ * The vitals bar background is always neutral (#f9fafb).
+ * Only the status badge carries saturated color.
+ * Purple is reserved for non-status decorative use (e.g. log syntax).
+ */
+/* Health Dashboard Layout */
+.health-dashboard {
+  padding: 1em;
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+
+/* Vitals Bar (Full Width) */
+.vitals-bar {
+  display: flex;
+  flex-direction: column;
+  background: #f9fafb;
+  color: #374151;
+  border-radius: 12px;
+  padding: 0.75em 1em;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  transition: background 0.5s ease;
+}
+
+.health-glance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 0.85em 1.1em;
+  color: #374151;
+}
+
+.glance-sentence {
+  margin: 0;
+  color: #374151;
+  font-size: 1.05em;
+  line-height: 1.4;
+}
+
+.glance-metrics {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0.6em;
+  flex-shrink: 0;
+}
+
+.glance-metric {
+  min-width: 5.75em;
+  padding: 0.35em 0.65em;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  color: #374151;
+  text-align: right;
+  text-decoration: none;
+}
+
+.glance-metric-value {
+  display: block;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.glance-metric-label {
+  display: block;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.2;
+}
+
+.glance-metric-link:hover,
+.glance-metric-cost:hover,
+.glance-metric-errors:hover {
+  border-color: #d1d5db;
+  background: #f3f4f6;
+}
+
+.glance-metric-errors .glance-metric-value {
+  color: #dc2626;
+}
+
+.glance-metric-cost .glance-metric-value {
+  color: #374151;
+}
+
+.vitals-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5em;
+}
+
+.vitals-title {
+  font-size: 1.2em;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.vitals-status {
+  background: #16a34a;
+  color: #fff;
+  padding: 0.4em 0.8em;
+  border-radius: 20px;
+  font-size: 0.9em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.vitals-status.warning {
+  background: #d97706;
+  color: #fff;
+}
+
+.vitals-status.error {
+  background: #dc2626;
+  color: #fff;
+}
+
+.connection-indicator {
+  font-size: 0.8em;
+  color: #374151;
+  margin-left: 0.5em;
+}
+
+.connection-indicator.stale {
+  color: #d97706;
+  opacity: 1;
+  font-weight: 500;
+}
+
+.connection-indicator.disconnected {
+  color: #dc2626;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.vitals-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 1.5em;
+  font-size: 0.95em;
+  padding-bottom: 0.75em;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.vitals-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  min-width: 80px;
+}
+
+.vitals-content > .vitals-section + .vitals-section {
+  border-left: 1px solid #f0f1f3;
+  padding-left: 1.5em;
+}
+
+.vitals-label {
+  font-size: 0.75em;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+#vitalsCheckBtn {
+  margin-left: 0.5em;
+  padding: 0.15em 0.5em;
+  font-size: 0.8em;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: white;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+#vitalsCheckBtn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+#vitalsCheckBtn:active:not(:disabled) {
+  background: #e5e7eb;
+}
+#vitalsCheckBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vitals-value {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 1.5em;
+}
+
+.service-dots {
+  display: flex;
+  gap: 0.4em;
+  flex-wrap: wrap;
+}
+
+.service-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  background: #e5e7eb;
+  padding: 0.15em 0.45em;
+  border-radius: 12px;
+  font-size: 0.75em;
+}
+
+.service-dot.crashed {
+  background: rgba(220, 38, 38, 0.15);
+}
+
+.vitals-section .vitals-value,
+.vitals-section .vitals-label,
+.service-dot {
+  font-size: 13px;
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Active: filled circle (default) */
+.status-indicator.active {
+  background: #4ade80;
+}
+
+/* Crashed: filled diamond (rotated square) */
+.status-indicator.crashed {
+  background: #f87171;
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+/* Restarting: pulsing ring */
+.status-indicator.restarting {
+  background: transparent;
+  border: 2px solid #fbbf24;
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* Inactive: hollow circle */
+.status-indicator.inactive {
+  background: transparent;
+  border: 2px solid #9ca3af;
+}
+
+/* Stale: dashed circle */
+.status-indicator.stale {
+  background: transparent;
+  border: 2px dashed #f59e0b;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+.skeleton {
+  background: #e5e7eb;
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  display: inline-block;
+}
+.skeleton-dark {
+  background: #e5e7eb;
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  display: inline-block;
+}
+
+.severity-label {
+  font-size: 0.75em;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 0.5em;
+}
+
+/* Shared card base */
+.dashboard-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5em;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Processing backlog */
+.backlog-verdict-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #d97706;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 1em 1.25em;
+}
+
+.backlog-verdict-line {
+  color: #111827;
+  font-size: 1.15em;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.backlog-needs-hand {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #d97706;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 1.25em 1.5em;
+}
+
+.backlog-needs-hand h2 {
+  color: #92400e;
+  font-size: 1.1em;
+  margin: 0 0 0.5em;
+}
+
+.backlog-needs-hand-desc {
+  color: #78350f;
+  line-height: 1.4;
+  margin: 0 0 1em;
+}
+
+.backlog-rows {
+  display: grid;
+  gap: 0.75em;
+}
+
+.backlog-row {
+  align-items: center;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  display: flex;
+  gap: 1em;
+  justify-content: space-between;
+  padding: 0.85em 1em;
+}
+
+.backlog-row-main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.backlog-row-day {
+  color: #111827;
+  font-weight: 700;
+}
+
+.backlog-badge {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  color: #92400e;
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 0.2em 0.6em;
+}
+
+.backlog-row-reason {
+  color: #374151;
+}
+
+.backlog-depth {
+  color: #92400e;
+  font-weight: 700;
+}
+
+.backlog-row-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.backlog-action {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.75em;
+  padding: 0.25em 0.55em;
+}
+
+.backlog-action:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.backlog-action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.backlog-action-status {
+  color: #6b7280;
+  font-size: 0.75em;
+}
+
+/* Observe Card (Prominent) */
+.observe-card {
+  border-left: 4px solid #22c55e;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1em;
+}
+
+.card-title {
+  font-size: 1.2em;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+h2.card-title {
+  margin: 0;
+}
+
+.health-badge {
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  padding: 0.2em 0.6em;
+  border-radius: 12px;
+  font-size: 0.75em;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  animation: none;
+  position: relative;
+  top: 1px;
+}
+
+.health-badge.recording {
+  background: #16a34a;
+  animation: pulse 2s infinite;
+  color: white;
+  border-color: transparent;
+}
+
+.health-badge.idle {
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  animation: none;
+}
+
+.health-badge.tmux {
+  background: #16a34a;
+  animation: none;
+  color: white;
+  border-color: transparent;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.observe-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1em;
+}
+
+.observe-content.hidden {
+  display: none;
+}
+
+#observeEmpty.hidden {
+  display: none;
+}
+
+.observe-source-note {
+  color: #92400e;
+  font-size: 0.82em;
+  margin: -0.45em 0 0.85em;
+}
+
+.observe-source-note.hidden {
+  display: none;
+}
+
+.observe-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+.observe-section-title {
+  font-size: 0.75em;
+  color: #6b7280;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+.observe-section-value {
+  font-size: 1em;
+  color: #111827;
+  font-weight: 500;
+}
+
+.observe-section-value.idle {
+  color: #9ca3af;
+}
+
+.observe-section-detail {
+  font-size: 0.75em;
+  color: #6b7280;
+  padding-left: 1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Observations card */
+.observers-card {
+  border-left: 4px solid #22c55e;
+}
+
+.observers-card.hidden {
+  display: none;
+}
+
+.observers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1em;
+}
+
+.observer-host-card {
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  border: 2px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.observer-host-card.active {
+  background: #f3f4f6;
+  border-left-color: #22c55e;
+}
+
+.observer-host-card.stale {
+  background: #fefce8;
+  border-left-color: #f59e0b;
+}
+
+.observer-host-name {
+  font-size: 0.95em;
+  font-weight: 600;
+  color: #111827;
+}
+
+.observer-host-platform {
+  font-size: 0.8em;
+  color: #6b7280;
+}
+
+.observer-stream-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 0.7em;
+}
+
+.observer-stream-qualifier {
+  color: #6b7280;
+  min-width: 48px;
+}
+
+.observer-stream-mode {
+  color: #374151;
+}
+
+.stale-badge {
+  color: #6b7280;
+  font-size: 0.7em;
+}
+
+.registered-observers-card { border-left: 4px solid #9ca3af; }
+.registered-observers-card.hidden { display: none; }
+.registered-observers-strip { display: flex; flex-direction: column; gap: 0.5em; }
+.registered-observer-row { display: flex; align-items: center; gap: 0.6em; padding: 0.65em 0.75em; background: #f9fafb; border-radius: 8px; }
+.registered-observer-name { font-weight: 600; color: #111827; }
+
+.registered-observer-label,
+.registered-observer-skew {
+  font-size: 0.72em;
+  border-radius: 999px;
+  padding: 0.2em 0.55em;
+}
+
+.registered-observer-label.connected { background: #dcfce7; color: #15803d; }
+.registered-observer-label.stale { background: #fef3c7; color: #b45309; }
+.registered-observer-label.disconnected,
+.registered-observer-label.revoked { background: #e5e7eb; color: #4b5563; }
+.registered-observer-label.failing { background: #fee2e2; color: #b91c1c; }
+.registered-observer-detail { color: #b91c1c; font-size: 0.78em; margin-left: 0.5em; }
+.registered-observer-recovery { color: #6b7280; font-size: 0.78em; margin-left: 0.5em; }
+
+.registered-observer-meta { color: #6b7280; font-size: 0.78em; margin-left: auto; }
+.registered-observer-skew { background: #fef3c7; color: #b45309; }
+.registered-observer-skew.hidden { display: none; }
+.registered-observer-action {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.75em;
+  padding: 0.25em 0.55em;
+}
+.registered-observer-action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.registered-observer-result {
+  color: #6b7280;
+  font-size: 0.75em;
+}
+.registered-observer-error .surface-state {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+}
+
+/* Activity Grids Container */
+.activity-grids {
+  display: contents;
+}
+
+.activity-section.hidden {
+  display: none;
+}
+
+.activity-section-header {
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #4b5563;
+  margin-bottom: 1em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.activity-section-header.error {
+  color: #dc2626;
+}
+
+.idle-card {
+  text-align: left;
+  padding: 1.5em;
+}
+
+.idle-card-title {
+  font-size: 0.9em;
+  font-weight: 500;
+  color: #9ca3af;
+  margin-bottom: 0.75em;
+}
+
+.idle-card-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4em;
+}
+
+.idle-stat {
+  color: #6b7280;
+  font-size: 0.9em;
+}
+
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1em;
+}
+
+/* Agent/Import Cards (Square) */
+.activity-card {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: 8px;
+  padding: 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  border: 2px solid #e5e7eb;
+  transition: all 0.3s ease;
+  min-height: 120px;
+}
+
+.activity-card.agent-active {
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  border-color: #22c55e;
+}
+
+.activity-card.import-active {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: #f59e0b;
+}
+
+.activity-card.import-error {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  border-color: #ef4444;
+}
+
+.activity-card-id {
+  font-size: 0.75em;
+  color: #6b7280;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+}
+
+.activity-card-name {
+  font-size: 0.95em;
+  font-weight: 500;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-card-state {
+  font-size: 0.85em;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.activity-card-error {
+  font-size: 0.75em;
+  color: #dc2626;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-card-elapsed {
+  font-size: 0.8em;
+  color: #6b7280;
+  margin-top: auto;
+}
+
+.activity-card-provider {
+  font-size: 0.75em;
+  color: #6b7280;
+}
+
+.activity-card-progress {
+  width: 100%;
+  height: 4px;
+  background: rgba(0,0,0,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.activity-card-progress-bar {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.3s ease;
+}
+
+/* Service Logs */
+.logs-card.logs-collapsed .logs-viewport,
+.logs-card.logs-collapsed .logs-controls {
+  display: none;
+}
+
+.logs-card.logs-collapsed .logs-header {
+  margin-bottom: 0;
+}
+
+.logs-card {
+  border-left: 4px solid #6b7280;
+}
+
+.logs-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.75em;
+  row-gap: 0.75em;
+  margin-bottom: 1em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.logs-header:focus-visible {
+  outline: 2px solid var(--facet-color, #b06a1a);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.logs-header:hover {
+  background: #f9fafb;
+  border-radius: 4px;
+}
+
+.logs-header:active {
+  background: #f3f4f6;
+}
+
+.logs-title {
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.logs-summary-badge {
+  color: #6b7280;
+  font-size: 0.9em;
+  font-weight: 400;
+  margin-left: 0.5em;
+}
+
+.logs-error-badge {
+  background: #ef4444;
+  color: white;
+  padding: 0.15em 0.5em;
+  border-radius: 10px;
+  font-size: 0.85em;
+  margin-left: 0.5em;
+}
+
+.logs-error-badge.hidden {
+  display: none;
+}
+
+.logs-connection-note {
+  color: #d97706;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.logs-connection-note.hidden {
+  display: none;
+}
+
+.logs-collapse-indicator {
+  font-size: 0.8em;
+  color: #6b7280;
+  margin-left: auto;
+}
+
+.logs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75em;
+  row-gap: 0.75em;
+}
+
+.logs-controls label {
+  color: #6b7280;
+  font-size: 0.75em;
+}
+
+.logs-controls select {
+  padding: 0.3em 0.5em;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.8em;
+  background: white;
+}
+
+.logs-controls select:hover {
+  border-color: #9ca3af;
+}
+
+.logs-controls select:focus {
+  outline: none;
+  border-color: var(--facet-color, #b06a1a);
+  box-shadow: 0 0 0 3px rgba(176, 106, 26, 0.1);
+}
+
+.logs-controls button {
+  padding: 0.3em 0.6em;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.8em;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.logs-controls button.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.logs-controls button:hover:not(.active) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.logs-controls button.active:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.logs-controls button:active:not(.active) {
+  background: #e5e7eb;
+}
+
+.logs-controls button.active:active {
+  background: #1d4ed8;
+}
+
+#logBackBtn {
+  padding: 0.3em 0.6em;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.8em;
+  transition: background 0.1s ease;
+}
+
+#logBackBtn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+#logBackBtn:active {
+  background: #e5e7eb;
+}
+
+.logs-viewport {
+  max-height: 400px;
+  min-height: 200px;
+  height: 40vh;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75em 1em;
+  background: #1e1e1e;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+  color: #d4d4d4;
+}
+
+.logs-viewport:empty::before {
+  content: 'waiting for log output...';
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.logs-service-header {
+  color: #9ca3af;
+  padding: 0.5em 0 0.2em;
+  font-size: 0.7em;
+  letter-spacing: 0.5px;
+}
+
+.logs-service-header[role="button"] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.logs-service-header[role="button"]:focus-visible {
+  outline: 2px solid var(--facet-color, #b06a1a);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.logs-service-header[aria-expanded="false"] {
+  color: #d1d5db;
+}
+
+.logs-service-header:first-child {
+  padding-top: 0;
+}
+
+.logs-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 3px;
+  line-height: 1.6;
+}
+
+.logs-line.logs-level-error {
+  color: #fca5a5;
+  border-left: 3px solid #dc2626;
+}
+
+.logs-line.logs-level-warning {
+  color: #fcd34d;
+  border-left: 2px solid #d97706;
+}
+
+.logs-line.logs-level-info {
+  color: #d1d5db;
+}
+
+.logs-line.logs-level-debug {
+  color: #9ca3af;
+}
+
+.logs-line.logs-svc-collapsed {
+  display: none;
+}
+
+.logs-line[data-hhmmss]::before {
+  content: attr(data-hhmmss) " ";
+  color: #6b7280;
+  font-family: inherit;
+  margin-right: 8px;
+  user-select: none;
+}
+
+.logs-line.log-row-anchored {
+  background: rgba(250, 204, 21, 0.24);
+  transition: background 1.2s ease;
+}
+
+.logs-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Think Card */
+.think-card {
+  border-left: 4px solid #f59e0b;
+}
+
+.think-card.hidden {
+  display: none;
+}
+
+.think-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5em;
+  margin-bottom: 1em;
+  font-size: 0.9em;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+
+.info-label {
+  font-size: 0.8em;
+  color: #6b7280;
+}
+
+.think-progress {
+  margin-bottom: 0.75em;
+}
+
+.think-progress-label {
+  font-size: 0.85em;
+  color: #374151;
+  margin-bottom: 0.3em;
+}
+
+.think-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.think-progress-fill {
+  height: 100%;
+  background: #f59e0b;
+  transition: width 0.3s ease;
+}
+
+.think-agents {
+  font-size: 0.85em;
+  color: #6b7280;
+  margin-top: 0.5em;
+}
+
+/* Stale heartbeats list */
+.stale-list {
+  font-size: 0.85em;
+  color: #374151;
+}
+
+.vitals-chips {
+  display: flex;
+  gap: 0.3em;
+  flex-wrap: wrap;
+}
+
+.vitals-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.25em;
+  background: #e5e7eb;
+  color: #374151;
+  padding: 0.15em 0.5em;
+  border-radius: 10px;
+  font-size: 0.8em;
+  overflow-wrap: anywhere;
+}
+
+.vitals-chip svg,
+.trust-indicator svg {
+  width: 1em;
+  height: 1em;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  flex: 0 0 auto;
+  vertical-align: -0.125em;
+}
+
+.trust-indicator {
+  font-size: 0.75em;
+  opacity: 1.0;
+  color: #374151;
+  padding: 0.4em 0.8em;
+  text-align: left;
+  background: #e5e7eb;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  align-self: flex-start;
+  margin-top: 0.5em;
+}
+
+#cortexGrid .activity-card-id,
+#cortexGrid .activity-card-provider,
+#importerGrid .activity-card-id,
+#importerGrid .activity-card-provider {
+  display: none;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .health-dashboard {
+    padding: 0.5em;
+    gap: 0.75em;
+  }
+
+  .vitals-bar {
+    padding: 0.75em 1em;
+  }
+
+  .vitals-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5em;
+  }
+
+  .vitals-content {
+    gap: 0.75em;
+  }
+
+  .dashboard-card {
+    padding: 1em;
+    border-radius: 8px;
+  }
+
+  .observe-content {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75em;
+  }
+
+  .observers-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .activity-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
+.error-action-btn {
+  padding: 0.1em 0.4em;
+  font-size: 0.8em;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: white;
+  color: #3b82f6;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.error-action-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.error-action-btn:active:not(:disabled) {
+  background: #dbeafe;
+}
+
+.error-dismiss-btn {
+  padding: 0.1em 0.4em;
+  font-size: 0.8em;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: white;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.error-dismiss-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+.error-dismiss-btn:active {
+  background: #e5e7eb;
+}
+
+.error-advice-link {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 1em;
+  padding: 0;
+  text-decoration: underline;
+}
+.error-advice-link:hover {
+  color: #2563eb;
+}
+.error-advice-link:active {
+  color: #1d4ed8;
+}
+
+.import-retry-btn {
+  padding: 0.15em 0.5em;
+  font-size: 0.78em;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: white;
+  color: #3b82f6;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.import-retry-btn:hover:not(:disabled) {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.import-retry-btn:active:not(:disabled) {
+  background: #dbeafe;
+}
+.import-retry-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .health-dashboard {
+    padding: 0.25em;
+    gap: 0.5em;
+  }
+
+  .vitals-content {
+    gap: 0.5em;
+  }
+
+  .backlog-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .vitals-content > .vitals-section + .vitals-section {
+    border-left: none;
+    padding-left: 0;
+  }
+
+  .observe-content {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .observers-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .card-title {
+    font-size: 1em;
+  }
+
+  .vitals-title {
+    font-size: 1.05em;
+  }
+
+  .health-glance {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 0.8em 1.2em;
+  }
+
+  .glance-metrics {
+    justify-content: flex-start;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .glance-metric {
+    text-align: left;
+  }
+}
+
+@media (max-width: 375px) {
+  .trust-indicator {
+    display: block;
+    width: 100%;
+    font-size: 0.7em;
+    text-align: center;
+  }
+
+  .trust-indicator svg {
+    display: inline-block;
+    margin-right: 0.4em;
+  }
+}
+</style>
+
+<div class="health-dashboard">
+  <div class="health-glance" id="healthGlance">
+    <p class="glance-sentence" id="healthGlanceSentence" aria-live="polite"></p>
+    <div class="glance-metrics" aria-label="health summary metrics">
+      <a class="glance-metric glance-metric-cost" href="/app/tokens/" id="glanceCost">
+        <span class="glance-metric-value" id="glanceCostValue">—</span>
+        <span class="glance-metric-label">today</span>
+      </a>
+      <div class="glance-metric glance-metric-activity" id="glanceActivity">
+        <span class="glance-metric-value" id="glanceActivityValue">0</span>
+        <span class="glance-metric-label">events last hour</span>
+      </div>
+      <a class="glance-metric glance-metric-errors" href="#focus=recent-errors" id="glanceErrors">
+        <span class="glance-metric-value" id="glanceErrorsValue">—</span>
+        <span class="glance-metric-label" id="glanceErrorsLabel">errors today</span>
+      </a>
+    </div>
+  </div>
+
+  <section class="dashboard-card brain-health-card" id="brain">
+    <div class="section-header">
+      <h2 class="card-title">brain health</h2>
+      <button id="brainCheckBtn" hidden>check again</button>
+    </div>
+    <div id="brainHealthStatus" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="backlog-verdict-card" id="backlogVerdict">
+    <p class="backlog-verdict-line">checking journal backlog...</p>
+    <div class="backlog-state-error" data-health-state-error hidden></div>
+  </section>
+
+  <!-- Vitals Bar -->
+  <div class="vitals-bar">
+    <div class="vitals-header">
+      <div class="vitals-title">
+        system vitals
+      </div>
+      <div class="vitals-status" id="vitalsStatus" role="status" aria-live="polite">
+        <span class="skeleton" style="width: 120px; height: 1em;">&nbsp;</span>
+      </div>
+      <span class="connection-indicator" id="connectionIndicator"></span>
+      <button id="vitalsCheckBtn">check now</button>
+    </div>
+    <div class="vitals-content">
+      <div class="vitals-section" role="group" aria-label="Services: loading">
+        <div class="vitals-label" aria-hidden="true">services</div>
+        <div class="vitals-value" aria-hidden="true">
+          <div class="service-dots" id="serviceDots">
+            <span class="skeleton" style="width: 80px; height: 0.9em;">&nbsp;</span>
+          </div>
+        </div>
+      </div>
+      <div class="vitals-section" role="group" aria-label="Talents: 0 running">
+        <div class="vitals-label" aria-hidden="true">talents</div>
+        <div class="vitals-value" id="agentsValue" aria-hidden="true">
+          <span>0 running</span>
+        </div>
+      </div>
+      <div class="vitals-section" role="group" aria-label="Tasks: 0 active">
+        <div class="vitals-label" aria-hidden="true">tasks</div>
+        <div class="vitals-value" id="tasksValue" aria-hidden="true">
+          <span>0 active</span>
+        </div>
+      </div>
+      <div class="vitals-section" role="group" aria-label="Health: loading">
+        <div class="vitals-label" aria-hidden="true">health</div>
+        <div class="vitals-value" id="healthValue" aria-hidden="true">
+          <span class="skeleton" style="width: 100px; height: 0.9em;">&nbsp;</span>
+        </div>
+      </div>
+      <div class="vitals-section" id="queuesSection" role="group" aria-label="Queues: none">
+        <div class="vitals-label" aria-hidden="true">queues</div>
+        <div class="vitals-value" id="queuesValue" aria-hidden="true"></div>
+      </div>
+      <div class="vitals-section" id="schedulesSection" role="group" aria-label="Schedules: none">
+        <div class="vitals-label" aria-hidden="true">schedules</div>
+        <div class="vitals-value" id="schedulesValue" aria-hidden="true"></div>
+      </div>
+    </div>
+    <div class="trust-indicator" id="trustIndicator"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <rect width="18" height="11" x="3" y="11" rx="2" ry="2" /> <path d="M7 11V7a5 5 0 0 1 10 0v4" /> </svg></span> all data stored locally on your device</div>
+  </div>
+
+  <div class="dashboard-card activity-section hidden" id="errorSummary">
+    <div class="activity-section-header error">
+      Recent errors
+    </div>
+    <div id="errorSummaryContent"></div>
+  </div>
+
+  <!-- Observe Card -->
+  <div class="dashboard-card observe-card">
+    <div class="card-header">
+      <div class="card-title">
+        what sol is taking in
+      </div>
+      <div class="health-badge idle" id="observeModeBadge">
+        <span id="observeModeLabel">waiting...</span>
+      </div>
+    </div>
+    <div class="observe-source-note hidden" id="observeSourceNote"></div>
+    <div id="observeEmpty">
+      <div class="surface-state surface-state--empty">
+        <h2 class="surface-state-heading">sol isn't running on any device yet.</h2>
+        <div class="surface-state-action"><a href="/app/observer/">set up a device →</a></div>
+      </div>
+    </div>
+    <div class="observe-content hidden" id="observeContent">
+      <div class="observe-section">
+        <div class="observe-section-title">screen</div>
+        <div class="observe-section-value" id="screencastStatus">waiting...</div>
+        <div class="observe-section-detail" id="screencastDetail"></div>
+      </div>
+      <div class="observe-section">
+        <div class="observe-section-title">terminal sessions</div>
+        <div class="observe-section-value" id="tmuxStatus">waiting...</div>
+        <div class="observe-section-detail" id="tmuxDetail"></div>
+      </div>
+      <div class="observe-section">
+        <div class="observe-section-title">audio</div>
+        <div class="observe-section-value" id="audioStatus">waiting...</div>
+        <div class="observe-section-detail" id="audioDetail"></div>
+      </div>
+      <div class="observe-section">
+        <div class="observe-section-title">system activity</div>
+        <div class="observe-section-value" id="activityStatus">waiting...</div>
+        <div class="observe-section-detail" id="activityDetail"></div>
+      </div>
+      <div class="observe-section">
+        <div class="observe-section-title">scene analysis</div>
+        <div class="observe-section-value" id="describeStatus">idle</div>
+        <div class="observe-section-detail" id="describeDetail"></div>
+      </div>
+      <div class="observe-section">
+        <div class="observe-section-title">audio transcription</div>
+        <div class="observe-section-value" id="transcribeStatus">idle</div>
+        <div class="observe-section-detail" id="transcribeDetail"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Observations card -->
+  <div class="dashboard-card observers-card hidden" id="observersCard">
+    <div class="card-header">
+      <div class="card-title">
+        what sol is taking in
+      </div>
+    </div>
+    <div class="observers-grid" id="observersGrid"></div>
+  </div>
+
+  <div class="dashboard-card registered-observers-card hidden" id="registeredObserversCard">
+    <div class="card-header">
+      <div class="card-title">your devices</div>
+    </div>
+    <div class="registered-observers-strip" id="registeredObserversStrip"></div>
+  </div>
+
+  <section class="backlog-needs-hand" id="backlogNeedsHand" data-backlog-stuck-rows hidden>
+    <h2 data-backlog-heading></h2>
+    <p class="backlog-needs-hand-desc" data-backlog-description></p>
+    <div class="backlog-rows" data-backlog-rows></div>
+  </section>
+
+  <!-- Activity Grids -->
+  <div class="activity-grids">
+    <!-- Cortex Agents -->
+    <div class="dashboard-card activity-section hidden" id="cortexSection">
+      <div class="activity-section-header">
+        Active talents
+      </div>
+      <div class="activity-grid" id="cortexGrid"></div>
+    </div>
+
+    <!-- Importers -->
+    <div class="dashboard-card activity-section hidden" id="importerSection">
+      <div class="activity-section-header">
+        Active imports
+      </div>
+      <div class="activity-grid" id="importerGrid"></div>
+    </div>
+  </div>
+
+  <div class="dashboard-card activity-section hidden" id="allQuietCard">
+    <div class="idle-card">
+      <div class="idle-card-title">everything is idle</div>
+      <div class="idle-card-stats" id="idleCardStats"></div>
+    </div>
+  </div>
+
+  <!-- Think Card (hidden when idle) -->
+  <div class="dashboard-card think-card hidden" id="thinkCard">
+    <div class="card-header">
+      <div class="card-title">background analysis</div>
+    </div>
+    <div class="think-info" id="thinkInfo"></div>
+    <div id="thinkProgress"></div>
+    <div class="think-agents" id="thinkAgents"></div>
+  </div>
+
+  <!-- Service Logs -->
+  <div class="dashboard-card logs-card logs-collapsed">
+    <div class="logs-header" role="button" tabindex="0" aria-expanded="false" aria-controls="logsViewport">
+      <div class="logs-title">service logs</div>
+      <span class="logs-summary-badge" id="logsSummaryBadge" aria-live="polite"></span>
+      <span class="logs-error-badge hidden" id="logErrorBadge"></span>
+      <span class="logs-connection-note hidden" id="logsConnectionNote"></span>
+      <span class="logs-collapse-indicator" id="logsCollapseIndicator">▶ show</span>
+      <div class="logs-controls">
+        <label for="logServiceFilter" data-health-copy="LOGS_SERVICE_FILTER_LABEL"></label>
+        <select id="logServiceFilter">
+          <option value="all">all services</option>
+        </select>
+        <label for="logLevelFilter" data-health-copy="LOGS_LEVEL_FILTER_LABEL"></label>
+        <select id="logLevelFilter">
+          <option value="all" data-health-copy="LOGS_LEVEL_OPTION_ALL"></option>
+          <option value="error" data-health-copy="LOGS_LEVEL_OPTION_ERROR"></option>
+          <option value="warning" data-health-copy="LOGS_LEVEL_OPTION_WARNING"></option>
+          <option value="info" data-health-copy="LOGS_LEVEL_OPTION_INFO"></option>
+        </select>
+        <label for="logStreamFilter" data-health-copy="LOGS_STREAM_FILTER_LABEL"></label>
+        <select id="logStreamFilter">
+          <option value="all">all streams</option>
+          <option value="stdout">stdout</option>
+          <option value="stderr">stderr</option>
+          <option value="log">log</option>
+        </select>
+        <button id="logFollowBtn" class="active">follow</button>
+        <button id="logClearBtn">clear</button>
+        <button id="logExportBtn">export</button>
+      </div>
+    </div>
+    <div class="logs-viewport" id="logsViewport" role="log"></div>
+    <div id="logsAnnouncer" class="logs-announcer" role="status" aria-live="polite"></div>
+
+  </div>
+</div>
+
+<script src="/app/health/static/health.js"></script>
