@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use axum::{Router, routing::get};
 
 mod chat;
-pub mod chat_state;
+pub(crate) mod chat_state;
 mod journal_read;
 mod search;
 mod talent_outputs;

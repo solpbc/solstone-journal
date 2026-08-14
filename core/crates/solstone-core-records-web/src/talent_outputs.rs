@@ -45,6 +45,7 @@ pub fn find(
     segment: Option<&str>,
 ) -> Result<String, FindError> {
     validate_day(day).map_err(FindError::Invalid)?;
+    validate_agent(agent).map_err(FindError::Invalid)?;
     let talents = if let Some(segment) = segment {
         validate_segment(segment).map_err(FindError::Invalid)?;
         journal_root
@@ -78,22 +79,50 @@ fn records(directory: &Path) -> Vec<Value> {
     let Ok(entries) = fs::read_dir(directory) else {
         return Vec::new();
     };
-    let mut records = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let path = entry.path();
-            let extension = path.extension()?.to_str()?;
-            if !matches!(extension, "md" | "json" | "jsonl") || !path.is_file() {
-                return None;
+    let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name());
+    let mut records = Vec::new();
+    for entry in entries {
+        let entry_name = entry.file_name();
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(record) = record(&path, entry_name.to_string_lossy().into_owned()) {
+                records.push(record);
             }
-            Some(json!({
-                "name": path.file_name()?.to_string_lossy(),
-                "bytes": path.metadata().ok()?.len(),
-            }))
-        })
-        .collect::<Vec<_>>();
-    records.sort_by(|left, right| left["name"].as_str().cmp(&right["name"].as_str()));
+            continue;
+        }
+        if !path.is_dir() {
+            continue;
+        }
+        let Ok(children) = fs::read_dir(&path) else {
+            continue;
+        };
+        let mut children = children.filter_map(Result::ok).collect::<Vec<_>>();
+        children.sort_by_key(|child| child.file_name());
+        for child in children {
+            let child_path = child.path();
+            let name = format!(
+                "{}/{}",
+                entry_name.to_string_lossy(),
+                child.file_name().to_string_lossy()
+            );
+            if let Some(record) = record(&child_path, name) {
+                records.push(record);
+            }
+        }
+    }
     records
+}
+
+fn record(path: &Path, name: impl Into<String>) -> Option<Value> {
+    let extension = path.extension()?.to_str()?;
+    if !path.is_file() || !matches!(extension, "md" | "json" | "jsonl") {
+        return None;
+    }
+    Some(json!({
+        "name": name.into(),
+        "bytes": path.metadata().ok()?.len(),
+    }))
 }
 
 fn validate_day(day: &str) -> Result<(), String> {
@@ -116,5 +145,18 @@ fn validate_segment(segment: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err("invalid segment key".into())
+    }
+}
+
+fn validate_agent(agent: &str) -> Result<(), String> {
+    if agent.is_empty()
+        || agent.contains(['/', '\\'])
+        || std::path::Path::new(agent)
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        Err("agent must be a bare talent name".into())
+    } else {
+        Ok(())
     }
 }

@@ -277,6 +277,21 @@ async fn read_cases_match_the_recorded_reason_codes() {
 }
 
 #[tokio::test]
+async fn read_rejects_path_like_agent() {
+    let fixture = seeded_journal();
+    let response = request(
+        &fixture.root,
+        "/app/search/api/read?agent=..%2F..%2Fetc%2Fpasswd&day=20260731",
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(response).await["reason_code"],
+        "invalid_request_value"
+    );
+}
+
+#[tokio::test]
 async fn agents_day_segment_and_invalid_segment_match_the_fixture_contract() {
     let fixture = seeded_journal();
     let day =
@@ -307,6 +322,31 @@ async fn agents_day_segment_and_invalid_segment_match_the_fixture_contract() {
     assert_eq!(
         response_json(invalid).await["reason_code"],
         "invalid_request_value"
+    );
+}
+
+#[tokio::test]
+async fn agents_list_nested_daily_outputs_in_reference_order() {
+    let fixture = seeded_journal();
+    write(
+        &fixture
+            .root
+            .join("chronicle/20260731/talents/nested/child.md"),
+        "child\n",
+    );
+    write(
+        &fixture.root.join("chronicle/20260731/talents/nested.md"),
+        "nested\n",
+    );
+    let response =
+        response_json(request(&fixture.root, "/app/search/api/agents?day=20260731").await).await;
+    assert_eq!(
+        response["daily"],
+        json!([
+            {"name": "flow.md", "bytes": 35},
+            {"name": "nested/child.md", "bytes": 6},
+            {"name": "nested.md", "bytes": 7},
+        ])
     );
 }
 

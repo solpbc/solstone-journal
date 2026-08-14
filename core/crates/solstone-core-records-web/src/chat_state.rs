@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{Local, TimeZone};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 const KIND_OWNER_CHAT_OPEN: &str = "owner_chat_open";
 const KIND_OWNER_CHAT_DISMISSED: &str = "owner_chat_dismissed";
@@ -56,7 +56,7 @@ pub(crate) fn read_events(journal_root: &Path, day: &str) -> Result<Vec<Value>, 
     Ok(ordered.into_iter().map(|(_, _, _, event)| event).collect())
 }
 
-pub fn day_counts(journal_root: &Path) -> BTreeMap<String, usize> {
+pub(crate) fn day_counts(journal_root: &Path) -> BTreeMap<String, usize> {
     let Ok(days) = solstone_core_journal_io::day_dirs(journal_root) else {
         return BTreeMap::new();
     };
@@ -68,7 +68,11 @@ pub fn day_counts(journal_root: &Path) -> BTreeMap<String, usize> {
         .collect()
 }
 
-pub fn sol_open_request_id(events: &[Value], requested_day: &str, today: &str) -> Option<String> {
+pub(crate) fn sol_open_request_id(
+    events: &[Value],
+    requested_day: &str,
+    today: &str,
+) -> Option<String> {
     if requested_day != today {
         return None;
     }
@@ -81,7 +85,7 @@ pub fn sol_open_request_id(events: &[Value], requested_day: &str, today: &str) -
         .and_then(|request| request["request_id"].as_str().map(ToOwned::to_owned))
 }
 
-pub fn message_origins(events: &[Value]) -> BTreeMap<String, Value> {
+pub(crate) fn message_origins(events: &[Value]) -> BTreeMap<String, Value> {
     let mut origins = BTreeMap::new();
     let mut origins_by_request_id = HashMap::new();
     let mut pending: Option<Map<String, Value>> = None;
@@ -140,63 +144,6 @@ pub fn message_origins(events: &[Value]) -> BTreeMap<String, Value> {
         }
     }
     origins
-}
-
-pub fn reduced_state(events: &[Value]) -> Value {
-    let mut latest_sol_message = Value::Null;
-    let mut active = BTreeMap::new();
-    let mut queued = BTreeMap::new();
-    let mut completed = Vec::new();
-    let mut errored = Vec::new();
-    let mut chat_error = Value::Null;
-    let mut queue_depth = 0;
-
-    for event in events {
-        match event["kind"].as_str() {
-            Some("chat_queue_depth") => queue_depth = event["depth"].as_i64().unwrap_or(0),
-            Some("sol_message") => {
-                latest_sol_message = json!({
-                    "ts": event["ts"], "use_id": event["use_id"], "text": event["text"],
-                    "notes": event["notes"], "requested_target": event["requested_target"],
-                    "requested_task": event["requested_task"], "offer": event["offer"],
-                    "draft": event["draft"], "origin": event["origin"],
-                    "sources": event.get("sources").cloned().unwrap_or_else(|| json!([])),
-                    "answer_state": event.get("answer_state").cloned().unwrap_or_else(|| json!("answered")),
-                });
-                chat_error = Value::Null;
-            }
-            Some("talent_queued") => {
-                queued.insert(event["use_id"].as_str().unwrap_or_default().to_owned(), json!({"use_id": event["use_id"], "name": event["name"], "task": event["task"], "queued_at": event["queued_at"]}));
-            }
-            Some("talent_spawned") => {
-                queued.remove(event["use_id"].as_str().unwrap_or_default());
-                active.insert(event["use_id"].as_str().unwrap_or_default().to_owned(), json!({"use_id": event["use_id"], "name": event["name"], "task": event["task"], "started_at": event["started_at"], "label": event["name"]}));
-            }
-            Some("talent_finished") => {
-                queued.remove(event["use_id"].as_str().unwrap_or_default());
-                let started = active.remove(event["use_id"].as_str().unwrap_or_default());
-                completed.push(json!({"use_id": event["use_id"], "name": event["name"], "task": started.as_ref().map(|value| value["task"].clone()).unwrap_or(Value::Null), "summary": event["summary"], "finished_at": event["ts"], "label": event["name"]}));
-            }
-            Some("talent_errored") => {
-                queued.remove(event["use_id"].as_str().unwrap_or_default());
-                active.remove(event["use_id"].as_str().unwrap_or_default());
-                errored.push(json!({"use_id": event["use_id"], "name": event["name"], "finished_at": event["ts"], "label": event["name"]}));
-            }
-            Some("chat_error") => {
-                chat_error = json!({"reason": event["reason"], "provider": event.get("provider").cloned().unwrap_or_else(|| json!("")), "detail": event.get("detail").cloned().unwrap_or_else(|| json!(""))})
-            }
-            _ => {}
-        }
-    }
-    json!({
-        "latest_sol_message": latest_sol_message,
-        "active_talents": active.into_values().collect::<Vec<_>>(),
-        "queued_talents": queued.into_values().collect::<Vec<_>>(),
-        "completed_talents": completed,
-        "errored_talents": errored,
-        "chat_error": chat_error,
-        "queue_depth": queue_depth,
-    })
 }
 
 fn latest_unresolved_request(events: &[Value]) -> Option<Value> {
