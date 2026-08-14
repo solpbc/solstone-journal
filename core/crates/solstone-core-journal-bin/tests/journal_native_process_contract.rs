@@ -45,6 +45,16 @@ const LANE_AU_REQUIRED_NATIVE_TOKENS: &[&str] =
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
 const THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
 const TALENT_LIFECYCLE_NATIVE_TOKENS: &[&str] = &["cortex", "talent"];
+// Lane BB's done condition. Carried under a lane-scoped name for the same
+// reason Lane AW's is: REQUIRED_NATIVE_TOKENS is already bound to ["brain"] on
+// this tree, so redefining it would not compile and would delete that
+// assertion. The value is the contract; the binding name is not.
+const LANE_BB_REQUIRED_NATIVE_TOKENS: &[&str] = &["think"];
+// The dispatcher is the one interpreter-resolution site the shipped tree is
+// allowed to have, and `processes.rs` is the census that measures conversion
+// progress. Any other crate that resolves an interpreter is a second,
+// uncensused site. This is the crate that owns the dispatcher.
+const INTERPRETER_RESOLUTION_OWNER: &str = "solstone-core-journal-cli";
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -2452,6 +2462,263 @@ fn native_start_help_uses_supervisor_program_name() {
     assert_eq!(output.stderr, b"");
     assert!(output.stdout.starts_with(b"usage: journal supervisor"));
     assert!(!context.poison_marker.exists());
+}
+
+// --- Lane BB: `journal think` dispatches natively, and the talent runtime it
+// --- reaches loads no Python module.
+//
+// Three assertions, because no one of them is sufficient:
+//
+//   1. the census row      -- `think` is registered for native dispatch;
+//   2. the runtime         -- a real run-mode argv enters a run mode and reaches
+//                             the talent plane with no interpreter touched;
+//   3. the plugin host     -- no crate outside the dispatcher resolves an
+//                             interpreter, which is what "no Python module is
+//                             loaded or executed by the talent runtime" means
+//                             mechanically.
+//
+// (1) alone is the failure mode this lane exists to avoid: the poison-liveness
+// probe for a run-mode verb exits at ARGUMENT PARSING, before any spawn, so a
+// registration can go green over a run path that still execs an interpreter.
+// (2) is red until a run mode exists; (3) is red until the talent runtime is
+// native. Do not resolve any of them by relaxing the others.
+
+#[test]
+fn lane_bb_think_is_registered_for_native_dispatch() {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    let missing = LANE_BB_REQUIRED_NATIVE_TOKENS
+        .iter()
+        .copied()
+        .filter(|token| !native_tokens.contains(token))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "required Lane BB native process tokens are missing: {missing:?}"
+    );
+}
+
+/// A real `journal think` run mode, driven through the real dispatcher under
+/// both interpreter poisons, must enter the run mode and reach the talent
+/// plane without touching an interpreter.
+///
+/// `--cadence` is the cheapest mode that proves it: the reference creates its
+/// run-log sidecar only AFTER mode selection and only when at least one cadence
+/// talent is configured, and it names every considered talent in that log. So a
+/// log at `chronicle/<day>/health/<ref>_cadence.jsonl` carrying `run.start`
+/// with `"mode":"cadence"` and naming both seeded talents cannot be produced by
+/// argument parsing, by the unavailable-run boundary, or by an empty run.
+///
+/// Both seeded talents declare a frontmatter `hook` object, so reaching them is
+/// reaching the surface this lane converts. No model endpoint is configured and
+/// the journal has no completed work, so the run resolves them and does not
+/// call a provider -- the test is hermetic and makes no network claim.
+#[test]
+fn lane_bb_native_think_cadence_run_reaches_the_talent_plane_without_python() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+
+    // A fake installation root beside the sibling directory, in BOTH shapes the
+    // tree already uses to locate shipped talents: `discover_package_roots`
+    // walks the executable's ancestors for `<ancestor>/solstone/{talent,apps}`,
+    // and `is_solstone_checkout_root` additionally wants `pyproject.toml` and
+    // `.git`. Satisfying both leaves the resolution choice to the port.
+    let install_root = context
+        .sibling_dir
+        .parent()
+        .expect("sibling directory parent");
+    let talent_root = install_root.join("solstone/talent");
+    let apps_root = install_root.join("solstone/apps");
+    fs::create_dir_all(&talent_root).expect("create fixture talent root");
+    fs::create_dir_all(&apps_root).expect("create fixture apps root");
+    fs::create_dir_all(install_root.join(".git")).expect("create fixture checkout marker");
+    fs::write(install_root.join("pyproject.toml"), b"").expect("create fixture project marker");
+
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .expect("repository root")
+        .to_path_buf();
+    for name in ["pulse", "steward"] {
+        let source = repository.join(format!("solstone/talent/{name}.md"));
+        let body = fs::read(&source)
+            .unwrap_or_else(|error| panic!("read shipped talent {}: {error}", source.display()));
+        // Both shipped cadence talents declare a hook object; if that ever
+        // stops being true this fixture stops testing what it claims to.
+        assert!(
+            String::from_utf8_lossy(&body).contains("\"hook\""),
+            "{name}: shipped cadence talent no longer declares a hook"
+        );
+        fs::write(talent_root.join(format!("{name}.md")), &body).expect("seed fixture talent");
+    }
+
+    fs::create_dir_all(context.journal).expect("create cadence journal root");
+    let output = run_dispatcher_with_output_and_environment(
+        &context,
+        "think",
+        &["--cadence"],
+        &[("SOL_SKIP_SUPERVISOR_CHECK", "1")],
+    )
+    .expect("run native think cadence through the dispatcher");
+
+    assert!(
+        !context.poison_marker.exists(),
+        "journal think --cadence reached a poisoned interpreter; exit={:?} stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_ne!(
+        output.status.code(),
+        Some(69),
+        "journal think --cadence is still refusing at the unavailable-run boundary"
+    );
+
+    let logs = cadence_run_logs(context.journal);
+    assert_eq!(
+        logs.len(),
+        1,
+        "expected exactly one cadence run log under {}; stderr={}",
+        context.journal.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let recorded = fs::read_to_string(&logs[0]).expect("read cadence run log");
+    let first = recorded.lines().next().unwrap_or_default();
+    let start: serde_json::Value =
+        serde_json::from_str(first).expect("first run-log line is a JSON event");
+    assert_eq!(start["event"], "run.start");
+    assert_eq!(start["mode"], "cadence");
+    for name in ["pulse", "steward"] {
+        assert!(
+            recorded
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .any(|event| event["name"] == name),
+            "{name}: cadence run never reached the talent plane; log={recorded}"
+        );
+    }
+}
+
+/// Collect `chronicle/<day>/health/<ref>_cadence.jsonl` sidecars.
+fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(days) = fs::read_dir(journal.join("chronicle")) else {
+        return found;
+    };
+    for day in days.filter_map(Result::ok) {
+        let Ok(entries) = fs::read_dir(day.path().join("health")) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .ends_with("_cadence.jsonl")
+            {
+                found.push(entry.path());
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// The talent runtime must not be a plugin host: outside the dispatcher's own
+/// crate, no crate in the shipped tree may resolve an interpreter.
+///
+/// Exhaustive over `core/crates/*/src` rather than over an enumerated list of
+/// `think`'s reach, because an enumeration silently stops covering a module
+/// added after it was written. Production-half only: an occurrence at or after
+/// a file's first `#[cfg(test)]` is test scaffolding, and several crates
+/// legitimately write interpreter stubs there.
+#[test]
+fn lane_bb_only_the_dispatcher_crate_resolves_an_interpreter() {
+    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory")
+        .to_path_buf();
+    let sources = rust_sources_under(&crates);
+    // A walk that found nothing would report a clean tree. This lower bound is
+    // far below the current count and only has to exclude "the walk broke".
+    assert!(
+        sources.len() > 200,
+        "source walk found only {} files under {}",
+        sources.len(),
+        crates.display()
+    );
+
+    let owners = |needle: &str| {
+        let mut owners = BTreeSet::new();
+        for path in &sources {
+            let Ok(body) = fs::read_to_string(path) else {
+                continue;
+            };
+            let cutoff = body.find("#[cfg(test)]").unwrap_or(body.len());
+            if body[..cutoff].contains(needle)
+                && let Ok(relative) = path.strip_prefix(&crates)
+                && let Some(owner) = relative.components().next()
+            {
+                owners.insert(owner.as_os_str().to_string_lossy().into_owned());
+            }
+        }
+        owners
+    };
+
+    // Positive control aimed at the defect's own shape: the dispatcher crate
+    // resolves an interpreter in its production half, so the instrument is
+    // proven to see exactly the thing being counted.
+    let resolvers = owners("sibling_python");
+    assert!(
+        resolvers.contains(INTERPRETER_RESOLUTION_OWNER),
+        "instrument saw no interpreter resolution at all; found {resolvers:?}"
+    );
+    // Negative control: a token that cannot occur must return nothing over the
+    // same walk, so a nonempty answer is not an artefact of the reader.
+    assert!(
+        owners("sibling_pythonium_resolver").is_empty(),
+        "impossible token matched; the scan is not reading what it claims to"
+    );
+
+    let extra = resolvers
+        .iter()
+        .filter(|owner| owner.as_str() != INTERPRETER_RESOLUTION_OWNER)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        extra.is_empty(),
+        "crates outside the dispatcher resolve an interpreter: {extra:?}"
+    );
+}
+
+fn rust_sources_under(crates: &Path) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    let mut pending = match fs::read_dir(crates) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("src"))
+            .filter(|path| path.is_dir())
+            .collect::<Vec<_>>(),
+        Err(error) => panic!("read {}: {error}", crates.display()),
+    };
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|kind| kind == "rs") {
+                sources.push(path);
+            }
+        }
+    }
+    sources.sort();
+    sources
 }
 
 #[test]

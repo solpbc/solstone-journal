@@ -1,0 +1,257 @@
+### `journal think --dry-run` — reference output, captured by EXECUTION
+###
+### Every block below is the reference's real stdout for the argv line above
+### it, captured against a throwaway journal. It is the oracle for the native
+### planner: assert against these bytes rather than against a hand-written
+### expectation of them.
+###
+### Two deviations are DECLARED, not defects. The reference is reached as a
+### module, so it prints its module name in usage lines; the native verb
+### presents as `journal think`. And sibling paths resolve from the
+### interpreter's directory in the reference and from the running
+### executable's directory natively. State each per case rather than
+### normalising it away.
+###
+### ⚠ `--dry-run` is NOT read-only: it creates the day directory and runs
+### the identity bootstrap. That is reference behaviour and is contract.
+###
+### The coverage boundary of this capture is stated at the foot of the file.
+
+### journal think --day 20260101
+Day 2026-01-01
+
+Pre-phase:  journal sense --day 20260101 -j 4
+Priority 10:
+  gen  daily_schedule (new)
+  gen  schedule (new)
+
+Priority 40:
+
+Priority 50:
+  gen  morning_briefing (new)
+
+Priority 56:
+
+Priority 57:
+
+Total: 3 agents
+Post-phase: journal indexer --rescan
+Post-phase: journal journal-stats
+(exit 0)
+
+### journal think --day 20260101 --segment 010203_60
+Day 2026-01-01 segment 010203_60
+
+Sense orchestrator (linear):
+  1. sense (gen/json) (new) — mandatory
+  2. timeline:segment_summary (gen/json) (new) — always for non-idle
+  3. screen (gen/json) (new) — if recommend.screen_record
+  4. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+
+  idle segments: write stubs + early return (unless --refresh)
+  activity state machine: updates per segment
+(exit 0)
+
+### journal think --day 20260101 --segment 010203_60 --refresh
+Day 2026-01-01 segment 010203_60 (refresh)
+
+Sense orchestrator (linear):
+  1. sense (gen/json) (new) — mandatory
+  2. timeline:segment_summary (gen/json) (new) — always for non-idle
+  3. screen (gen/json) (new) — if recommend.screen_record
+  4. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+
+  idle segments: write stubs + early return (unless --refresh)
+  activity state machine: updates per segment
+(exit 0)
+
+### journal think --day 20260101 --segments
+No segments found for 20260101
+(exit 0)
+
+### journal think --day 20260101 --weekly
+Day 2026-01-01 — weekly agents
+
+Priority 90:
+  agent  weekly_reflection
+
+Priority 95:
+  agent  partner
+
+Total: 2 agents
+(exit 0)
+
+### journal think --day 20260101 --cadence
+Day 2026-01-01 — cadence agents
+
+  no-op steward — no new work since last cadence run
+  no-op pulse — no new work since last cadence run
+(exit 0)
+
+### journal think --day 20260101 --segment 010203_60 --flush
+Day 2026-01-01 --flush segment 010203_60
+
+  No flush-eligible agents
+(exit 0)
+
+### journal think --day 20260101 --activity work --facet personal
+Activity not found: work in facet 'personal' on 20260101
+(exit 0)
+### SCENARIO B: journal with two enabled facets, no activity on either
+### (scenario A above is a journal with NO facets at all)
+
+### journal think --day 20260101 --dry-run
+Day 2026-01-01
+
+Pre-phase:  journal sense --day 20260101 -j 4
+Priority 10:
+  gen  daily_schedule (new)
+  gen  schedule (new)
+
+Priority 40:
+  skip facet_newsletter — no activity: personal, work
+
+Priority 50:
+  gen  morning_briefing (new)
+
+Priority 56:
+  skip entities:entities_review — no activity: personal, work
+
+Priority 57:
+  skip entities:entity_observer — no activity: personal, work
+
+Total: 3 agents
+Post-phase: journal indexer --rescan
+Post-phase: journal journal-stats
+(exit 0)
+
+### journal think --day 20260101 --weekly --dry-run
+Day 2026-01-01 — weekly agents
+
+Priority 90:
+  agent  weekly_reflection
+
+Priority 95:
+  agent  partner
+
+Total: 2 agents
+(exit 0)
+
+### journal think --day 20260101 --segment 010203_60 --dry-run
+Day 2026-01-01 segment 010203_60
+
+Sense orchestrator (linear):
+  1. sense (gen/json) (new) — mandatory
+  2. timeline:segment_summary (gen/json) (new) — always for non-idle
+  3. screen (gen/json) (new) — if recommend.screen_record
+  4. speaker_attribution (gen/json) (new) — if recommend.speaker_attribution + audio embeddings
+
+  idle segments: write stubs + early return (unless --refresh)
+  activity state machine: updates per segment
+(exit 0)
+
+################################################################################
+### 🔴 MEASURED SIDE EFFECT — `--dry-run` IS NOT READ-ONLY
+################################################################################
+###
+### Fresh journal, tree captured before and after `think --day X --dry-run`:
+###
+###   BEFORE: <journal>/
+###   AFTER:  <journal>/chronicle/20260101/
+###           <journal>/identity/{health.md,history.jsonl,.identity.lock,partner.md}
+###
+### Two independent writers, both reached before anything is printed:
+###   - the identity bootstrap, which runs in main() ahead of the whole refusal
+###     matrix (same writer the argument-refusal path hits);
+###   - the day directory, created inside the per-talent output-status helper,
+###     because the path resolver it calls defaults to creating.
+###
+### BOTH HALVES ARE CONTRACT. A port that makes dry-run read-only stops creating
+### directories a first run depends on; a port that creates more than these two
+### exceeds the reference. Assert the exact set, in both directions.
+
+################################################################################
+### OUTPUT-PATH RESOLVER — known-answer validated, both directions
+################################################################################
+###
+### Daily layout is  <day>/talents/<name>.<ext>  where <ext> comes from the
+### TALENT'S DECLARED OUTPUT FORMAT, not from any file found on disk. App-scoped
+### keys mangle: "app:name" -> "_app_name".
+###
+###   baseline .................. all three daily gens report (new)
+###   place talents/morning_briefing.json ... ONLY morning_briefing -> (exists)
+###   place talents/daily_schedule.md  ...... NO CHANGE (that talent is json)
+###
+### The third line is the negative control and it is the one worth keeping: it
+### fails if an implementation resolves the status by listing the directory
+### instead of constructing the path. A resolver that matches on stem alone
+### passes the second line and fails this one.
+###
+### Status vocabulary: " (exists)" | " (new)" | "" (empty for the <each> target).
+
+################################################################################
+### SCENARIO C — a day that HAS segments (two, seeded with browser content)
+################################################################################
+
+### journal think --day 20260101 --segments --dry-run
+Day 2026-01-01 — re-process 2 segments
+
+  [1/2] 093000_600 (09:30-09:40) stream=_default
+  [2/2] 141500_900 (14:15-14:30) stream=_default
+
+Sense orchestrator (linear):
+  1. sense (gen/json) — mandatory
+  2. timeline:segment_summary (gen/json) — always for non-idle
+  3. screen (gen/json) — if recommend.screen_record
+  4. speaker_attribution (gen/json) — if recommend.speaker_attribution + audio embeddings
+
+  idle segments: write stubs + early return (unless --refresh)
+  activity state machine: updates per segment
+(exit 0)
+
+### 📌 Two details this scenario proves that no other capture shows:
+###   - NO status suffix on any orchestrator row here, where the SINGLE-segment
+###     capture shows " (new)" on all four. The multi-segment target suppresses
+###     the suffix. An implementation that always computes a status passes the
+###     single-segment case and fails this one.
+###   - "stream=_default" is printed even for the default stream. A port that
+###     omits the label when the stream is the default one diverges.
+
+################################################################################
+### SCENARIO D — cadence WITH state seeded (reaches a second row shape)
+################################################################################
+
+### health/cadence.json = {"steward": <now>, "pulse": <now - 1h>}
+### journal think --day 20260101 --cadence --dry-run
+Day 2026-01-01 — cadence agents
+
+  skip  steward — interval not elapsed (0s < 30m)
+  no-op pulse — no new work since last cadence run
+(exit 0)
+
+### 📌 The row label is a fixed-width 6-character field: "skip  ", "no-op ",
+### and (source-derived) "fire  ". Rows sort by (priority, name). No priority
+### headers and NO total line — cadence uses its own renderer, not the table.
+
+################################################################################
+### ⛔ COVERAGE BOUNDARY OF THIS ORACLE — read before treating it as complete
+################################################################################
+###
+### Captured by execution: the daily table (with and without facets), the single
+### segment orchestrator, the multi-segment listing, weekly, flush-with-nothing-
+### eligible, the absent activity/facet line, and the no-segments line.
+###
+### NOT captured, and therefore NOT verified by execution:
+###   - cadence has THREE row shapes; TWO are now captured (scenario D). The
+###     remaining one is the fire row carrying segment and activity counts. It
+###     needs real completion records in the window -- seeding raw segments and
+###     an epoch-old cadence timestamp still yields no-op, so the counter reads
+###     completion records rather than segment directories.
+###   - the flush path with agents actually eligible.
+###   - a facet that HAS activity, which is the branch where multi-facet talents
+###     render one row per facet instead of a single skip line.
+###
+### ⚠ A build environment cannot close these gaps itself: it has no installed
+### interpreter, so it cannot execute the reference. Treat the three bullets above
+### as source-derived and say so in the code, rather than asserting them as
+### measured.

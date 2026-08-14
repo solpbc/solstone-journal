@@ -9,6 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 autobins = false
+autotests = false
 
 [lints]
 workspace = true
@@ -46,11 +47,22 @@ test = false
 bench = false
 
 [[test]]
-name = "partition_differential"
-path = "tests/partition_differential.rs"
-required-features = ["differential"]
+name = "system_contracts"
+path = "tests/system_contracts.rs"
 
 [[test]]
-name = "stt_backend_choice_differential"
-path = "tests/stt_backend_choice_differential.rs"
+name = "system_lifecycle"
+path = "tests/system_lifecycle.rs"
+
+[[test]]
+name = "system_provider_runtime"
+path = "tests/system_provider_runtime.rs"
+
+[[test]]
+name = "system_schedule_queue"
+path = "tests/system_schedule_queue.rs"
+
+[[test]]
+name = "system_differentials"
+path = "tests/system_differentials.rs"
 required-features = ["differential"]
