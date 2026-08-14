@@ -130,27 +130,31 @@ impl OneShotKeyValidator {
     }
 
     pub fn validate_model(&self, provider: &str, model: &str, key: &str) -> Result<Value, String> {
-        self.probe(provider, Some(model), key)
+        Ok(classify_model_probe(self.probe(provider, Some(model), key)))
     }
 
-    fn probe(&self, provider: &str, model: Option<&str>, key: &str) -> Result<Value, String> {
+    fn probe(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+        key: &str,
+    ) -> Result<GenerateResponse, ClientError> {
         let mut client = self.client.clone().with_env(API_KEY_OVERRIDE_ENV, key);
         if let Some(model) = model {
             client = client
                 .with_env(PROVIDER_OVERRIDE_ENV, provider)
                 .with_env(MODEL_OVERRIDE_ENV, model);
         }
-        Ok(classify_probe_result(client.execute(&validation_request())))
+        client.execute(&validation_request())
     }
 }
 
-/// The three-way key/model validation classification (AC4): a successful
-/// generation, or a refusal whose reason code is an accepted probe outcome
-/// (the provider understood the credential but rejected the request for an
-/// unrelated reason), are both "valid"; every other refusal or transport
-/// failure is "invalid". Pulled out of `probe()` so it is testable without
-/// spawning a child process.
-fn classify_probe_result(result: Result<GenerateResponse, ClientError>) -> Value {
+/// Key validation accepts `model_not_found` and `provider_quota_exceeded`:
+/// either response proves the provider accepted the credential, even though
+/// the canned request cannot establish that a particular model is available.
+/// Model validation rejects those outcomes because it is the definitive,
+/// model-specific probe. This mirrors `solstone/think/cogitate_client.py`.
+fn classify_key_probe(result: Result<GenerateResponse, ClientError>) -> Value {
     match result {
         Ok(GenerateResponse::Generated(_)) => json!({"valid":true}),
         Ok(GenerateResponse::Refused(refusal)) => {
@@ -172,17 +176,32 @@ fn classify_probe_result(result: Result<GenerateResponse, ClientError>) -> Value
     }
 }
 
+fn classify_model_probe(result: Result<GenerateResponse, ClientError>) -> Value {
+    match result {
+        Ok(GenerateResponse::Generated(_)) => json!({"valid":true}),
+        Ok(GenerateResponse::Refused(refusal)) => {
+            let reason_code = refusal
+                .reason_code
+                .as_ref()
+                .map(|value| value.as_wire().to_owned())
+                .unwrap_or_else(|| "provider_response_invalid".to_owned());
+            json!({"valid":false,"reason_code":reason_code,"error":refusal.detail})
+        }
+        Err(error) => client_failure(error),
+    }
+}
+
 fn validation_request() -> GenerateRequest {
     GenerateRequest {
         id: None,
         context: "settings.cloud.validate_key".to_owned(),
         contents: vec![ContentPart::Text {
-            text: "Reply with exactly OK.".to_owned(),
+            text: "Reply with the single word OK.".to_owned(),
         }],
         system_instruction: None,
         temperature: 0.0,
-        max_output_tokens: 16,
-        thinking_budget: None,
+        max_output_tokens: 512,
+        thinking_budget: Some(0),
         timeout_s: Some(30.0),
         json_output: false,
         json_schema: None,
@@ -212,14 +231,8 @@ fn client_failure(error: ClientError) -> Value {
 
 impl ManagedKeyValidator for OneShotKeyValidator {
     fn validate(&self, provider: &str, key: &str) -> Result<Value, String> {
-        self.probe(provider, None, key)
+        Ok(classify_key_probe(self.probe(provider, None, key)))
     }
-}
-
-pub fn validate_keys(config: &Map<String, Value>) -> Value {
-    // `OneShotClient::execute` accepts only a `GenerateRequest`, with no
-    // provider or key override, so native per-key validation has no seam yet.
-    validate_keys_with(config, &UnavailableValidator)
 }
 
 pub fn validate_keys_with(
@@ -727,17 +740,21 @@ fn reachable(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     use serde_json::{Map, Value, json};
 
     use solstone_core_generate::{
-        ClientError, GenerateResponse, GeneratedResponse, ProtocolError, ReasonCode,
-        ReasonCodeValue, RefusalReason, RefusedResponse,
+        ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse,
+        ProtocolError, ReasonCode, ReasonCodeValue, RefusalReason, RefusedResponse,
     };
+    #[cfg(unix)]
+    use solstone_core_generate::{encode_one_shot_request, encode_one_shot_response};
 
     use super::{
-        ManagedKeyValidator, ProviderUpdate, classify_probe_result, save_key, update_providers,
-        validate_keys_with,
+        ManagedKeyValidator, OneShotKeyValidator, ProviderUpdate, classify_key_probe,
+        classify_model_probe, save_key, update_providers, validate_keys_with, validation_request,
     };
     use crate::read_config;
 
@@ -812,6 +829,11 @@ mod tests {
     }
 
     #[test]
+    fn validation_request_matches_the_canned_generate_contract() {
+        assert_eq!(validation_request(), expected_validation_request());
+    }
+
+    #[test]
     fn confidential_prior_target_updates_only_the_remembered_prior_model() {
         let journal = temporary_journal(
             "restore-only",
@@ -877,14 +899,14 @@ mod tests {
     }
 
     #[test]
-    fn classify_generated_response_is_valid() {
-        let result = classify_probe_result(Ok(generated()));
+    fn classify_key_generated_response_is_valid() {
+        let result = classify_key_probe(Ok(generated()));
         assert_eq!(result, json!({"valid":true}));
     }
 
     #[test]
-    fn classify_model_not_found_refusal_is_valid_with_probe_reason_code() {
-        let result = classify_probe_result(Ok(refused("model_not_found")));
+    fn classify_key_model_not_found_refusal_is_valid_with_probe_reason_code() {
+        let result = classify_key_probe(Ok(refused("model_not_found")));
         assert_eq!(
             result,
             json!({"valid":true,"probe_reason_code":"model_not_found"})
@@ -892,8 +914,8 @@ mod tests {
     }
 
     #[test]
-    fn classify_quota_refusal_is_valid_with_probe_reason_code() {
-        let result = classify_probe_result(Ok(refused("provider_quota_exceeded")));
+    fn classify_key_quota_refusal_is_valid_with_probe_reason_code() {
+        let result = classify_key_probe(Ok(refused("provider_quota_exceeded")));
         assert_eq!(
             result,
             json!({"valid":true,"probe_reason_code":"provider_quota_exceeded"})
@@ -901,16 +923,16 @@ mod tests {
     }
 
     #[test]
-    fn classify_other_refusal_is_invalid() {
-        let result = classify_probe_result(Ok(refused("provider_key_invalid")));
+    fn classify_key_other_refusal_is_invalid() {
+        let result = classify_key_probe(Ok(refused("provider_key_invalid")));
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "provider_key_invalid");
         assert_eq!(result["error"], "refused: provider_key_invalid");
     }
 
     #[test]
-    fn classify_transport_failure_is_invalid() {
-        let result = classify_probe_result(Err(ClientError::Protocol(ProtocolError {
+    fn classify_key_transport_failure_is_invalid() {
+        let result = classify_key_probe(Err(ClientError::Protocol(ProtocolError {
             id: None,
             reason: "stub_failure".to_owned(),
             detail: "one-shot stub hard failure".to_owned(),
@@ -918,6 +940,203 @@ mod tests {
         assert_eq!(result["valid"], false);
         assert_eq!(result["reason_code"], "stub_failure");
         assert_eq!(result["error"], "one-shot stub hard failure");
+    }
+
+    #[test]
+    fn classify_model_generated_response_is_valid() {
+        let result = classify_model_probe(Ok(generated()));
+        assert_eq!(result, json!({"valid":true}));
+    }
+
+    #[test]
+    fn classify_model_model_not_found_refusal_is_invalid() {
+        let result = classify_model_probe(Ok(refused("model_not_found")));
+        assert_eq!(
+            result,
+            json!({"valid":false,"reason_code":"model_not_found","error":"refused: model_not_found"})
+        );
+    }
+
+    #[test]
+    fn classify_model_quota_refusal_is_invalid() {
+        let result = classify_model_probe(Ok(refused("provider_quota_exceeded")));
+        assert_eq!(
+            result,
+            json!({"valid":false,"reason_code":"provider_quota_exceeded","error":"refused: provider_quota_exceeded"})
+        );
+    }
+
+    #[test]
+    fn classify_model_other_refusal_is_invalid() {
+        let result = classify_model_probe(Ok(refused("provider_key_invalid")));
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["reason_code"], "provider_key_invalid");
+        assert_eq!(result["error"], "refused: provider_key_invalid");
+    }
+
+    #[test]
+    fn classify_model_transport_failure_is_invalid() {
+        let result = classify_model_probe(Err(ClientError::Protocol(ProtocolError {
+            id: None,
+            reason: "stub_failure".to_owned(),
+            detail: "one-shot stub hard failure".to_owned(),
+        })));
+        assert_eq!(result["valid"], false);
+        assert_eq!(result["reason_code"], "stub_failure");
+        assert_eq!(result["error"], "one-shot stub hard failure");
+    }
+
+    // The prompt, token budget, thinking budget, retry count, and timeout are
+    // pinned by `solstone/think/providers/shared.py:468-476`. The schema,
+    // responsiveness, attempt index, and exclusive admission values mirror
+    // defaults in `solstone/think/generate_client.py:313-319`.
+    fn expected_validation_request() -> GenerateRequest {
+        GenerateRequest {
+            id: None,
+            context: "settings.cloud.validate_key".to_owned(),
+            contents: vec![ContentPart::Text {
+                text: "Reply with the single word OK.".to_owned(),
+            }],
+            system_instruction: None,
+            temperature: 0.0,
+            max_output_tokens: 512,
+            thinking_budget: Some(0),
+            timeout_s: Some(30.0),
+            json_output: false,
+            json_schema: None,
+            enforce_responsiveness: true,
+            attempt_index: 0,
+            exclusive_admission: false,
+            transport_retries: Some(0),
+        }
+    }
+
+    #[cfg(unix)]
+    struct ValidationStub {
+        root: std::path::PathBuf,
+        executable: std::path::PathBuf,
+        raw_request: std::path::PathBuf,
+        environment: std::path::PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl ValidationStub {
+        fn new(name: &str, reason_code: &str) -> Self {
+            let root = std::env::temp_dir()
+                .join(format!("solstone-thinking-{name}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&root);
+            fs::create_dir_all(&root).expect("stub directory creates");
+            let executable = root.join("stub.sh");
+            let raw_request = root.join("request.json");
+            let environment = root.join("environment.txt");
+            let response =
+                encode_one_shot_response(&refused(reason_code)).expect("stub response encodes");
+            let script = format!(
+                "#!/bin/sh\ncat > {}\nenv > {}\ncat <<'SOLSTONE_RESPONSE'\n{}\nSOLSTONE_RESPONSE\n",
+                shell_quote(&raw_request),
+                shell_quote(&environment),
+                response,
+            );
+            fs::write(&executable, script).expect("stub script writes");
+            let mut permissions = fs::metadata(&executable)
+                .expect("stub metadata reads")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&executable, permissions).expect("stub script becomes executable");
+            Self {
+                root,
+                executable,
+                raw_request,
+                environment,
+            }
+        }
+
+        fn records(&self) -> (Vec<u8>, String) {
+            (
+                fs::read(&self.raw_request).expect("raw request records"),
+                fs::read_to_string(&self.environment).expect("environment records"),
+            )
+        }
+    }
+
+    #[cfg(unix)]
+    fn shell_quote(path: &std::path::Path) -> String {
+        format!(
+            "'{}'",
+            path.display().to_string().replace('\'', "'\\\"'\\\"'")
+        )
+    }
+
+    #[cfg(unix)]
+    fn assert_environment_line(environment: &str, name: &str, value: &str) {
+        assert!(
+            environment
+                .lines()
+                .any(|line| line == format!("{name}={value}")),
+            "environment includes {name}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn assert_split_probe(reason_code: &str) -> (Value, Value) {
+        const KEY: &str = "sk-w2c-candidate-not-in-request";
+        let stub = ValidationStub::new(reason_code, reason_code);
+        let validator = OneShotKeyValidator::at_path(&stub.executable);
+        let key_result = validator.validate("openai", KEY).expect("key probe runs");
+        let (key_request, key_environment) = stub.records();
+        let model_result = validator
+            .validate_model("openai", "w2c-model", KEY)
+            .expect("model probe runs");
+        let (model_request, model_environment) = stub.records();
+        let expected = encode_one_shot_request(&expected_validation_request())
+            .expect("expected request encodes");
+        for request in [&key_request, &model_request] {
+            assert!(
+                !request
+                    .windows(KEY.len())
+                    .any(|window| window == KEY.as_bytes()),
+                "candidate key is absent from raw request"
+            );
+            assert_eq!(request.as_slice(), expected.as_bytes());
+        }
+        assert_environment_line(&key_environment, "SOLSTONE_GENERATE_API_KEY_OVERRIDE", KEY);
+        assert_environment_line(
+            &model_environment,
+            "SOLSTONE_GENERATE_API_KEY_OVERRIDE",
+            KEY,
+        );
+        assert_environment_line(
+            &model_environment,
+            "SOLSTONE_GENERATE_PROVIDER_OVERRIDE",
+            "openai",
+        );
+        assert_environment_line(
+            &model_environment,
+            "SOLSTONE_GENERATE_MODEL_OVERRIDE",
+            "w2c-model",
+        );
+        let _ = fs::remove_dir_all(stub.root);
+        (key_result, model_result)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn key_probe_accepts_model_not_found_but_model_probe_rejects_it() {
+        let (key_result, model_result) = assert_split_probe("model_not_found");
+        assert_eq!(key_result["valid"], true);
+        assert_eq!(key_result["probe_reason_code"], "model_not_found");
+        assert_eq!(model_result["valid"], false);
+        assert_eq!(model_result["reason_code"], "model_not_found");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn key_probe_accepts_quota_but_model_probe_rejects_it() {
+        let (key_result, model_result) = assert_split_probe("provider_quota_exceeded");
+        assert_eq!(key_result["valid"], true);
+        assert_eq!(key_result["probe_reason_code"], "provider_quota_exceeded");
+        assert_eq!(model_result["valid"], false);
+        assert_eq!(model_result["reason_code"], "provider_quota_exceeded");
     }
 
     fn temporary_journal(name: &str, config: Value) -> std::path::PathBuf {

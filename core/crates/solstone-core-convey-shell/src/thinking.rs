@@ -25,7 +25,7 @@ use solstone_core_thinking::confidential::{
     SERVICE_SPP, TokenError, disable_confidential, handoff_result, mint_nonce, outcome_from_token,
     provision_confidential_handoff,
 };
-use solstone_core_thinking::providers::ManagedKeyValidator;
+use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};
 
 use crate::{JournalRoot, asset_response, not_found_response};
 
@@ -732,7 +732,14 @@ async fn generators(Extension(journal): Extension<Arc<JournalRoot>>) -> Response
 async fn validate_keys(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     let journal = journal.as_ref();
     match config(&journal.0) {
-        Ok(config) => json_response(solstone_core_thinking::providers::validate_keys(&config)),
+        // This GET deliberately does not probe providers, so configured keys
+        // report `validation_unavailable`. The reference GET probes live
+        // providers; that is a knowing divergence, not an unfinished stub.
+        // POST is the deliberate real-probe path.
+        Ok(config) => json_response(solstone_core_thinking::providers::validate_keys_with(
+            &config,
+            &UnavailableValidator,
+        )),
         Err(response) => *response,
     }
 }
