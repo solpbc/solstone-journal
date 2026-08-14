@@ -380,6 +380,7 @@ def _fixture(apps: tuple[str, ...], captured: dict[str, dict[str, list[dict[str,
         "phases": {phase: {app: captured[phase][app] for app in apps} for phase in PHASES},
         "rev": "1",
         "tz": "UTC",
+        "coverage_limits": _coverage_limits({p: {a: c for a, c in apps_.items() if a in apps} for p, apps_ in captured.items()}),
         "uncaptured": {app: UNCAPTURED[app] for app in apps},
     }
 
@@ -436,6 +437,73 @@ def _validate_counts(captured: dict[str, dict[str, list[dict[str, Any]]]]) -> No
 #: never produces it, so seeing it in a capture means the reference SWALLOWED an
 #: exception and handed back a plausible refusal envelope.
 _BRAIN_FALLBACK_REASON = "brain_record_unavailable"
+
+
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _coverage_limits(
+    captured: dict[str, dict[str, list[dict[str, Any]]]],
+) -> dict[str, Any]:
+    """State what this corpus does NOT cover, computed from the recorded cases.
+
+    🔴 The number that matters is not how many write-method cases a corpus
+    carries. It is how many of them **succeeded** — a refusal grades the refusal
+    envelope and the session gate, never mutation semantics. "N write cases
+    across M routes" is a true aggregate that reads as thorough and is not a
+    claim about the thing anyone cares about.
+
+    ⚠ For the fill-only-when-absent defect class this is decisive: that class is
+    entirely about what a successful SECOND call does, so a corpus with zero
+    successful mutations is exactly as blind to it as one with no write probes.
+
+    Computed rather than written down, so it cannot drift from the fixture: a
+    hand-written zero stays right until someone adds a probe, and is then a false
+    negative inside the artifact everyone trusts.
+    """
+    cases = [c for apps in captured.values() for cs in apps.values() for c in cs]
+    mutating = [c for c in cases if c.get("method") in _MUTATING_METHODS]
+    succeeded = [
+        c
+        for c in mutating
+        if 200 <= ((c.get("response") or {}).get("status") or 0) < 300
+    ]
+    routes: dict[str, list[str]] = {}
+    for phase, apps in captured.items():
+        for cs in apps.values():
+            for c in cs:
+                status = (c.get("response") or {}).get("status") or 0
+                if c.get("method") in _MUTATING_METHODS and 200 <= status < 300:
+                    routes.setdefault(f"{c.get('method')} {c.get('path')}", []).append(phase)
+    return {
+        "mutation_census": {
+            "total_cases": len(cases),
+            "mutating_method_cases": len(mutating),
+            "cases_that_actually_mutated": len(succeeded),
+            "routes_with_a_successful_mutation": routes,
+        },
+        "what_a_green_replay_is_not_evidence_about": (
+            "Every route in `uncaptured`, and every write route in this "
+            "conversion. This corpus is GET-only by design: a POST would mutate "
+            "the per-phase journal and contaminate later phases "
+            "nondeterministically. Reading the producer is not optional for any "
+            "of them."
+        ),
+        "named_hazards_a_replay_cannot_see": [
+            "mutate_journal_config returns before taking the lock and before "
+            "writing when the computed change is a no-op. A port that always "
+            "reports changed writes on every call.",
+            "sol api/set-owner guards bio with `is not None`. A port that writes "
+            "it unconditionally erases the owner's bio when the client omits the "
+            "field, and returns 200.",
+            "sol api/sol-init reaches ensure_identity_directory, which skips each "
+            "default file that already exists. An unconditional port overwrites "
+            "the owner-editable partner.md.",
+            "health api/state and sol api/badge-count are today-anchored with no "
+            "parameter, so their recorded counts depend on the seed landing on "
+            "the capture day.",
+        ],
+    }
 
 
 def _reject_swallowed_reference_failures(

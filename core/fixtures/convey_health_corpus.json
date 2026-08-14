@@ -2,6 +2,21 @@
   "apps": [
     "health"
   ],
+  "coverage_limits": {
+    "mutation_census": {
+      "cases_that_actually_mutated": 0,
+      "mutating_method_cases": 0,
+      "routes_with_a_successful_mutation": {},
+      "total_cases": 70
+    },
+    "named_hazards_a_replay_cannot_see": [
+      "mutate_journal_config returns before taking the lock and before writing when the computed change is a no-op. A port that always reports changed writes on every call.",
+      "sol api/set-owner guards bio with `is not None`. A port that writes it unconditionally erases the owner's bio when the client omits the field, and returns 200.",
+      "sol api/sol-init reaches ensure_identity_directory, which skips each default file that already exists. An unconditional port overwrites the owner-editable partner.md.",
+      "health api/state and sol api/badge-count are today-anchored with no parameter, so their recorded counts depend on the seed landing on the capture day."
+    ],
+    "what_a_green_replay_is_not_evidence_about": "Every route in `uncaptured`, and every write route in this conversion. This corpus is GET-only by design: a POST would mutate the per-phase journal and contaminate later phases nondeterministically. Reading the producer is not optional for any of them."
+  },
   "header_allowlist": [
     "Content-Type",
     "Location",
