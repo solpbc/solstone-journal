@@ -15,7 +15,10 @@ from solstone.convey.contract.assemble import build_document, rule_to_openapi_pa
 
 try:
     from scripts.build_native_sol_inventory import REPO_ROOT, AuthorityEntry, discover
-    from scripts.check_native_sol_conformance import register_native_blueprints
+    from scripts.check_native_sol_conformance import (
+        RUST_CONVEY_OPERATION_PREFIXES,
+        register_native_blueprints,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from build_native_sol_inventory import (  # type: ignore[no-redef]
         REPO_ROOT,
@@ -23,6 +26,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
         discover,
     )
     from check_native_sol_conformance import (  # type: ignore[no-redef]
+        RUST_CONVEY_OPERATION_PREFIXES,
         register_native_blueprints,
     )
 
@@ -70,12 +74,14 @@ def _expected_routes(
     expected: dict[tuple[str, str], str | None] = {}
     errors: list[str] = []
     for entry in authorities if authorities is not None else discover(REPO_ROOT):
+        # These authorities terminate in Rust Convey, so Flask and its OpenAPI
+        # document are not their route or contract owners. Keep this exemption
+        # identical to the sibling conformance gate.
+        if entry.operation_id.startswith(RUST_CONVEY_OPERATION_PREFIXES):
+            continue
         if entry.surface != "sol-call" or entry.entry_type != "http":
             continue
-        if (
-            entry.method is None
-            or entry.route is None
-        ):
+        if entry.method is None or entry.route is None:
             errors.append(
                 f"{entry.operation_id}: HTTP authority is missing method or route"
             )

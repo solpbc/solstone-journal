@@ -11,13 +11,12 @@ from pathlib import Path
 import scripts.check_conversion_retirements as checker
 
 MANIFEST = """\
-schema_version = 1
+schema_version = 2
 dependency_files = ["pyproject.toml"]
 content_roots = ["src"]
 content_exclusions = []
 
 [[waves]]
-id = "sample-wave"
 status = "done"
 distribution = "retired-dist"
 python_roots = ["src/legacy"]

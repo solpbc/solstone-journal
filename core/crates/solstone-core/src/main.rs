@@ -37,7 +37,7 @@ use solstone_core_cli::{
     OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
+    SETTINGS_USAGE, SPL_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
     SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
     SpeakerResolveCommand, SplCommand, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
     TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
@@ -263,6 +263,11 @@ fn main() -> ExitCode {
         }
         Ok(Command::Grab(command)) => run_grab(command),
         Ok(Command::Spl(command)) => run_spl_process(command),
+        Ok(Command::SplUsage(error)) => {
+            eprint!("{SPL_USAGE}");
+            eprintln!("journal spl: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::Sense(options)) => run_sense(options),
         Ok(Command::SenseUsage) => render_usage_error(SENSE_USAGE, "journal sense"),
         Ok(Command::SenseHelp) => {

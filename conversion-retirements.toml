@@ -1,4 +1,4 @@
-schema_version = 1
+schema_version = 2
 dependency_files = [
   "pyproject.toml",
   "packages/*/pyproject.toml",
@@ -17,7 +17,6 @@ content_exclusions = [
 ]
 
 [[waves]]
-id = "W1b-discovery-kernel"
 status = "done"
 distribution = "scikit-learn"
 python_roots = []
@@ -29,7 +28,6 @@ test_only_dependency_locations = [
 ]
 
 [[waves]]
-id = "spl-home-service"
 status = "done"
 distribution = "pyhpke"
 python_roots = ["solstone/think/spl"]
@@ -37,7 +35,6 @@ import_roots = ["pyhpke"]
 test_only_dependency_locations = []
 
 [[waves]]
-id = "R6b-2-cogitate-openhands-sdk"
 status = "done"
 distribution = "openhands-sdk"
 python_roots = [
@@ -50,7 +47,6 @@ import_roots = ["openhands"]
 test_only_dependency_locations = []
 
 [[waves]]
-id = "R6b-2-cogitate-litellm"
 status = "done"
 distribution = "litellm"
 python_roots = []
@@ -58,7 +54,6 @@ import_roots = ["litellm"]
 test_only_dependency_locations = []
 
 [[waves]]
-id = "AJ-C-config-cli"
 status = "done"
 # First-party Python-process retirement only: this wave retires no PyPI
 # distribution. `content_roots` intentionally excludes `core/`, so this
@@ -70,7 +65,6 @@ import_roots = ["solstone.think.config_cli"]
 test_only_dependency_locations = []
 
 [[waves]]
-id = "AJ-D-observe-describe-python-reference"
 status = "done"
 distribution = "solstone-observe-describe-python-reference"
 python_roots = [
@@ -83,7 +77,6 @@ import_roots = ["solstone.observe.describe"]
 test_only_dependency_locations = []
 
 [[waves]]
-id = "AJ-S2-sense"
 status = "done"
 # First-party Python-process retirement only: this wave retires no PyPI
 # distribution. `content_roots` intentionally excludes `core/`, so this

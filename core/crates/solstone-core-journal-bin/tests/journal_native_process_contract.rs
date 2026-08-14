@@ -22,7 +22,7 @@ mod production_processes;
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, TOP_USAGE,
+    INSTALL_MODELS_USAGE, SCHEDULE_USAGE, SPL_USAGE, TOP_USAGE,
 };
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
@@ -131,14 +131,14 @@ const PROBES: &[Probe] = &[
     Probe {
         token: "spl",
         argv: &["--nope"],
-        expected_exit: 64,
-        stderr_anchor: None,
+        expected_exit: 2,
+        stderr_anchor: Some(SPL_USAGE.as_bytes()),
     },
     Probe {
         token: "schedule",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: None,
+        stderr_anchor: Some(SCHEDULE_USAGE.as_bytes()),
     },
     Probe {
         token: "convey",
@@ -227,8 +227,7 @@ const PROBES: &[Probe] = &[
     // sibling entirely. parse_supervisor now has a verb-level usage path, so
     // both tokens exit 2 with supervisor's own usage and are registered against
     // that, with a stderr anchor. The red is resolved by proof, not by relaxing
-    // the guard. `spl` still carries the same defect -- its row above expects
-    // 64 -- and that fix is scoped separately.
+    // the guard. `spl` now carries the same verb-level proof in its row above.
     //
     // `supervisor` and `start` share one native invocation shape by design:
     // `native_process_args` prefixes both with `SUPERVISOR_SERVICE = ["supervisor"]`

@@ -20,6 +20,18 @@ _DISTRIBUTION_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _NORMALIZE_DISTRIBUTION = re.compile(r"[-_.]+")
 _DONE = "done"
 _KNOWN_STATUSES = frozenset({_DONE, "in_progress"})
+# Retirement declarations are identified only by their array position. The
+# exact field set prevents an author-supplied process label from re-entering
+# the schema under another name.
+_WAVE_KEYS = frozenset(
+    {
+        "status",
+        "distribution",
+        "python_roots",
+        "import_roots",
+        "test_only_dependency_locations",
+    }
+)
 _TEST_ONLY_GROUPS = frozenset(
     {
         "dependency-groups.dev",
@@ -82,8 +94,8 @@ def _load_manifest(path: Path) -> dict[str, Any]:
         manifest = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"could not read manifest {path}: {exc}") from exc
-    if manifest.get("schema_version") != 1:
-        raise ValueError("schema_version must be 1")
+    if manifest.get("schema_version") != 2:
+        raise ValueError("schema_version must be 2")
     _require_string_list(manifest.get("dependency_files"), "dependency_files")
     _require_string_list(manifest.get("content_roots"), "content_roots")
     exclusions = _require_string_list(
@@ -272,7 +284,6 @@ def check_repository(
     )
     checked: list[str] = []
     violations: list[str] = []
-    seen_ids: set[str] = set()
     tracked_set = set(paths)
 
     for exclusion in exclusions:
@@ -290,35 +301,33 @@ def check_repository(
         if not isinstance(raw_wave, dict):
             violations.append(f"{label} must be a table")
             continue
-        wave_id = raw_wave.get("id")
+        unexpected_keys = sorted(raw_wave.keys() - _WAVE_KEYS)
+        if unexpected_keys:
+            violations.append(
+                f"{label} has unsupported fields: {', '.join(unexpected_keys)}"
+            )
+            continue
         status = raw_wave.get("status")
         distribution = raw_wave.get("distribution")
-        if not isinstance(wave_id, str) or not wave_id:
-            violations.append(f"{label}.id must be a non-empty string")
-            continue
-        if wave_id in seen_ids:
-            violations.append(f"duplicate wave id: {wave_id}")
-            continue
-        seen_ids.add(wave_id)
         if status not in _KNOWN_STATUSES:
             violations.append(
-                f"{wave_id}: status must be one of {sorted(_KNOWN_STATUSES)}"
+                f"{label}.status must be one of {sorted(_KNOWN_STATUSES)}"
             )
             continue
         if not isinstance(distribution, str) or not distribution:
-            violations.append(f"{wave_id}: distribution must be a non-empty string")
+            violations.append(f"{label}.distribution must be a non-empty string")
             continue
         try:
             python_roots = _require_string_list(
-                raw_wave.get("python_roots"), f"{wave_id}.python_roots"
+                raw_wave.get("python_roots"), f"{label}.python_roots"
             )
             import_roots = _require_string_list(
-                raw_wave.get("import_roots"), f"{wave_id}.import_roots"
+                raw_wave.get("import_roots"), f"{label}.import_roots"
             )
             test_only_locations = set(
                 _require_string_list(
                     raw_wave.get("test_only_dependency_locations"),
-                    f"{wave_id}.test_only_dependency_locations",
+                    f"{label}.test_only_dependency_locations",
                 )
             )
         except ValueError as exc:
@@ -326,7 +335,12 @@ def check_repository(
             continue
         if not python_roots and not import_roots:
             violations.append(
-                f"{wave_id}: declare at least one Python path or import root"
+                f"{label}: declare at least one Python path or import root"
+            )
+            continue
+        if any(not value for value in [*python_roots, *import_roots]):
+            violations.append(
+                f"{label}: Python paths and import roots must not be empty"
             )
             continue
         if status != _DONE:
@@ -338,13 +352,13 @@ def check_repository(
         )
         if invalid_test_locations:
             violations.extend(
-                f"{wave_id}: test-only dependency exception is not a test group: "
+                f"{label}: test-only dependency exception is not a test group: "
                 f"{location}"
                 for location in invalid_test_locations
             )
             continue
 
-        checked.append(wave_id)
+        checked.append(label)
         for python_root in python_roots:
             survivors = _repository_paths_under(root, python_root)
             if survivors is None:
@@ -352,12 +366,12 @@ def check_repository(
                 # reporting a retirement we cannot prove.
                 if (root / python_root).exists():
                     violations.append(
-                        f"{wave_id}: declared Python root still exists: {python_root}"
+                        f"{label}: declared Python root still exists: {python_root}"
                     )
                 continue
             if survivors:
                 violations.append(
-                    f"{wave_id}: declared Python root still exists: {python_root} "
+                    f"{label}: declared Python root still exists: {python_root} "
                     f"({len(survivors)} file(s) in the repository, e.g. "
                     f"{survivors[0]})"
                 )
@@ -368,18 +382,17 @@ def check_repository(
             dependency_files,
             normalized_distribution,
         )
-        violations.extend(f"{wave_id}: {item}" for item in dependency_errors)
+        violations.extend(f"{label}: {item}" for item in dependency_errors)
         for location, requirements in sorted(locations.items()):
             if location in test_only_locations:
                 continue
             for requirement in requirements:
                 violations.append(
-                    f"{wave_id}: retired dependency remains at {location}: "
-                    f"{requirement}"
+                    f"{label}: retired dependency remains at {location}: {requirement}"
                 )
         stale_allowances = test_only_locations - locations.keys()
         violations.extend(
-            f"{wave_id}: allowed dependency location is stale: {location}"
+            f"{label}: allowed dependency location is stale: {location}"
             for location in sorted(stale_allowances)
         )
 
@@ -391,7 +404,7 @@ def check_repository(
             content_roots=content_roots,
             exclusions=exclusions,
         ):
-            violations.append(f"{wave_id}: {item}")
+            violations.append(f"{label}: {item}")
 
     return CheckResult(not violations, tuple(checked), tuple(violations))
 
