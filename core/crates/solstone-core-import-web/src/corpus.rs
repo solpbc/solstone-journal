@@ -53,14 +53,14 @@ mod tests {
         "/app/import/journal/00000000/manifest/entities",
     ];
     const BROWSER_WRITE_PATHS: &[&str] = &[
+        "/app/import/api/save",
+        "/app/import/api/save-path",
+        "/app/import/api/meta",
+        "/app/import/api/start",
         "/app/import/api/journal-sources/create",
         "/app/import/api/journal-sources/corpus_peer/revoke",
     ];
     const UNREGISTERED: &[(&str, &str)] = &[
-        ("POST", "/app/import/api/save"),
-        ("POST", "/app/import/api/save-path"),
-        ("POST", "/app/import/api/meta"),
-        ("POST", "/app/import/api/start"),
         (
             "POST",
             "/app/import/api/journal-sources/corpus_peer/resolve-entity",
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ac4_corpus_replay_has_only_the_declared_14_deviations() {
+    async fn ac4_corpus_replay_has_only_the_declared_8_deviations() {
         let corpus: Value = serde_json::from_str(CORPUS).expect("corpus JSON");
         let mut passed = 0;
         let mut declared = Vec::new();
@@ -237,8 +237,8 @@ mod tests {
                 }
             }
         }
-        assert_eq!(passed, 122, "unexpected replay cases: {unexpected:?}");
-        assert_eq!(declared.len(), 14, "declared roster changed: {declared:?}");
+        assert_eq!(passed, 128, "unexpected replay cases: {unexpected:?}");
+        assert_eq!(declared.len(), 8, "declared roster changed: {declared:?}");
         assert!(
             unexpected.is_empty(),
             "unexpected replay cases: {unexpected:?}"
@@ -780,7 +780,7 @@ mod tests {
 
     #[tokio::test]
     async fn ac15_unregistered_paths_keep_their_phase_specific_fallbacks() {
-        assert_eq!(UNREGISTERED.len(), 13);
+        assert_eq!(UNREGISTERED.len(), 9);
         assert_eq!(
             DOOR_PATHS,
             [
@@ -791,6 +791,10 @@ mod tests {
         assert_eq!(
             BROWSER_WRITE_PATHS,
             [
+                "/app/import/api/save",
+                "/app/import/api/save-path",
+                "/app/import/api/meta",
+                "/app/import/api/start",
                 "/app/import/api/journal-sources/create",
                 "/app/import/api/journal-sources/corpus_peer/revoke",
             ]

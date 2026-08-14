@@ -7,14 +7,18 @@ use std::path::PathBuf;
 
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{get, post},
 };
 
 mod assets;
+mod callosum;
 mod content;
 mod http;
 mod imports;
 mod journal_sources;
+mod lifecycle;
+mod multipart;
 
 #[cfg(test)]
 mod corpus;
@@ -34,6 +38,10 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/sources", get(imports::sources))
         .route("/app/import/api/list", get(imports::list))
         .route("/app/import/api/guide/{source}", get(assets::guide))
+        .route("/app/import/api/save", post(lifecycle::save))
+        .route("/app/import/api/save-path", post(lifecycle::save_path))
+        .route("/app/import/api/meta", post(lifecycle::meta))
+        .route("/app/import/api/start", post(lifecycle::start))
         .route(
             "/app/import/api/journal-sources/list",
             get(journal_sources::list),
@@ -65,5 +73,6 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/{timestamp}/content", get(content::list))
         .route("/app/import/api/{timestamp}", get(imports::detail))
         .route("/app/import/{timestamp}", get(assets::detail_shell))
+        .layer(DefaultBodyLimit::max(multipart::MAX_BODY_BYTES))
         .with_state(AppState { root: journal_root })
 }
