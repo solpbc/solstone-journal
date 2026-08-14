@@ -3,10 +3,11 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -20,7 +21,9 @@ use solstone_core_import::{
     ImportError, ImportMetadata, SourceHash, find_manifest_by_hash, hash_source,
     read_import_metadata, relocate_import, write_import_metadata,
 };
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, create_directory_with_mode};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode,
+};
 
 use crate::{
     AppState,
@@ -68,6 +71,7 @@ const METADATA_CREATION_FIELDS: [&str; 8] = [
     "TrackCreateDate",
     "ContentCreateDate",
 ];
+const EXIFTOOL_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn metadata_timestamp(value: &str) -> Option<String> {
     let mut normalized = value.trim().replace('T', " ");
@@ -103,16 +107,35 @@ fn metadata_timestamp_from_fields(metadata: &Map<String, Value>) -> Option<Strin
 }
 
 fn metadata_timestamp_from_file(path: &Path) -> Option<String> {
-    let output = Command::new("exiftool")
-        .arg("-json")
-        .arg(path)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let parsed = serde_json::from_slice::<Value>(&output.stdout).ok()?;
+    let mut command = Command::new("exiftool");
+    command.arg("-json").arg(path);
+    let output = command_stdout_before(&mut command, EXIFTOOL_TIMEOUT)?;
+    let parsed = serde_json::from_slice::<Value>(&output).ok()?;
     metadata_timestamp_from_fields(parsed.as_array()?.first()?.as_object()?)
+}
+
+fn command_stdout_before(command: &mut Command, timeout: Duration) -> Option<Vec<u8>> {
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn().ok()?;
+    let deadline = Instant::now().checked_add(timeout)?;
+    loop {
+        match child.try_wait().ok()? {
+            Some(status) => {
+                if !status.success() {
+                    return None;
+                }
+                let mut stdout = Vec::new();
+                child.stdout.take()?.read_to_end(&mut stdout).ok()?;
+                return Some(stdout);
+            }
+            None if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            None => thread::sleep(Duration::from_millis(10)),
+        }
+    }
 }
 
 fn deterministic_timestamp(bytes: &[u8], filename: &str) -> Option<String> {
@@ -342,12 +365,12 @@ fn stage_bytes(
     filename: &str,
     bytes: &[u8],
 ) -> Result<PathBuf, ImportError> {
-    let directory = root.join("imports").join(timestamp);
+    let target = contained_import_file(root, timestamp, filename)?;
+    let directory = target.parent().expect("import target parent").to_owned();
     create_directory_with_mode(&directory, 0o700).map_err(|error| ImportError::PathResolution {
         path: directory.clone(),
         message: error.to_string(),
     })?;
-    let target = directory.join(filename);
     atomic_replace(&target, bytes, AtomicWriteOptions { mode: Some(0o600) }).map_err(|error| {
         ImportError::PromotionFailed {
             path: target.clone(),
@@ -355,6 +378,18 @@ fn stage_bytes(
         }
     })?;
     Ok(target)
+}
+
+fn contained_import_file(
+    root: &Path,
+    timestamp: &str,
+    filename: &str,
+) -> Result<PathBuf, ImportError> {
+    let relative = format!("imports/{timestamp}/{filename}");
+    contained_path(root, &relative).map_err(|error| ImportError::PathResolution {
+        path: root.join(relative),
+        message: error.to_string(),
+    })
 }
 
 fn temporary_hash(bytes: &[u8]) -> Result<(SourceHash, bool), String> {
@@ -557,6 +592,9 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
     );
+    if let Err(error) = contained_import_file(&state.root, &timestamp, "import.json") {
+        return metadata_failed(error.to_string());
+    }
     if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
     }
@@ -606,6 +644,9 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
         is_local_path: true,
         method: "path_fallback",
     });
+    if let Err(error) = contained_import_file(&state.root, &timestamp, "import.json") {
+        return metadata_failed(error.to_string());
+    }
     if let Err(error) = write_import_metadata(&state.root, &timestamp, &metadata) {
         return metadata_failed(format!("Failed to write metadata: {error}"));
     }
@@ -624,6 +665,9 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
     else {
         return import_not_found("Import metadata not found");
     };
+    if contained_import_file(&state.root, timestamp, "import.json").is_err() {
+        return import_not_found("Import metadata not found");
+    }
     let mut metadata = match read_import_metadata(&state.root, timestamp) {
         Ok(metadata) => metadata,
         Err(_) => return import_not_found("Import metadata not found"),
@@ -773,6 +817,11 @@ where
             .and_then(|value| value.to_str())
             .unwrap_or(timestamp)
     };
+    if contained_import_file(root, original_timestamp, "import.json").is_err() {
+        return import_not_found(&format!(
+            "Import metadata not found for {original_timestamp}"
+        ));
+    }
     let mut metadata = match read_import_metadata(root, original_timestamp) {
         Ok(metadata) => metadata,
         Err(_) => {
@@ -790,6 +839,9 @@ where
     }
     let mut command_path = path.to_owned();
     if !is_local_path && original_timestamp != timestamp {
+        if let Err(error) = contained_import_file(root, timestamp, "import.json") {
+            return metadata_failed(error.to_string());
+        }
         let new_directory = match relocate_import(root, original_timestamp, timestamp) {
             Ok(path) => path,
             Err(error) => return relocation_error(error, original_timestamp, timestamp),
@@ -827,7 +879,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt, rc::Rc};
+    use std::{
+        cell::RefCell,
+        fs,
+        os::unix::fs::PermissionsExt,
+        process::Command,
+        rc::Rc,
+        time::{Duration, Instant},
+    };
 
     use axum::{
         body::{Body, to_bytes},
@@ -843,7 +902,7 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use super::{BusError, command, start_with, temporary_hash};
+    use super::{BusError, command, command_stdout_before, start_with, temporary_hash};
 
     fn staged(root: &std::path::Path, timestamp: &str, metadata: Value) {
         write_import_metadata(root, timestamp, &metadata.as_object().unwrap().clone()).unwrap();
@@ -1041,6 +1100,19 @@ mod tests {
             super::metadata_timestamp_from_fields(&fields),
             Some(expected)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn metadata_detection_times_out_like_an_unavailable_exiftool() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 1"]);
+        let started = Instant::now();
+        assert_eq!(
+            command_stdout_before(&mut command, Duration::from_millis(20)),
+            None
+        );
+        assert!(started.elapsed() < Duration::from_millis(500));
     }
 
     #[test]

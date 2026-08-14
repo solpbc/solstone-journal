@@ -819,6 +819,14 @@ async fn apply_config_field(
     }
     if action == "apply" {
         let value = entry.get("source").cloned().unwrap_or(Value::Null);
+        if contained(root, "config/journal.json").is_err() {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't use one of those values.",
+                "invalid_request_value",
+                "Invalid journal config path".into(),
+            );
+        }
         let result = mutate_journal_config(root, LockOptions::default(), |config| {
             set(config, field, value);
             JournalConfigMutation {
@@ -1674,6 +1682,18 @@ mod tests {
             .status()
         }
 
+        async fn config_status(root: &TempDir, body: Value) -> axum::http::StatusCode {
+            config(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await
+            .status()
+        }
+
         #[cfg(unix)]
         #[tokio::test]
         async fn symlinked_resolution_paths_are_refused_without_a_whole_tree_delta() {
@@ -1737,6 +1757,24 @@ mod tests {
                     json!({"staged_file":"work/facet_json/facet.json.staged.json","mode":"apply"}),
                 )
                 .await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);
+            assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
+
+            write_json(
+                &state_dir.join("config/diff.json"),
+                json!({"appearance.theme":{"source":"dark","target":"light","category":"preference"}}),
+            );
+            fs::create_dir_all(root.path().join("config")).unwrap();
+            symlink(
+                outside.path().join("journal.json"),
+                root.path().join("config/journal.json"),
+            )
+            .unwrap();
+            let before = Snapshot::capture(root.path(), &state_dir);
+            assert_eq!(
+                config_status(&root, json!({"field":"appearance.theme","action":"apply"})).await,
                 axum::http::StatusCode::BAD_REQUEST
             );
             assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);

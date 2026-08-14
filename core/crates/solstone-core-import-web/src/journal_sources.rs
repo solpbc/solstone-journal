@@ -18,7 +18,7 @@ use chrono::{Local, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockOptions, append_jsonl, atomic_replace, hold_lock,
+    AtomicWriteOptions, LockOptions, append_jsonl, atomic_replace, contained_path, hold_lock,
 };
 
 use crate::{
@@ -302,8 +302,21 @@ fn source_record_path(root: &Path, record: &Map<String, Value>) -> Option<std::p
     )
 }
 
-fn save_journal_source(root: &Path, record: &Map<String, Value>) -> Result<(), ()> {
+fn contained_source_record_path(
+    root: &Path,
+    record: &Map<String, Value>,
+) -> Result<std::path::PathBuf, ()> {
     let path = source_record_path(root, record).ok_or(())?;
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| ())?
+        .to_str()
+        .ok_or(())?;
+    contained_path(root, relative).map_err(|_| ())
+}
+
+fn save_journal_source(root: &Path, record: &Map<String, Value>) -> Result<(), ()> {
+    let path = contained_source_record_path(root, record)?;
     fs::create_dir_all(path.parent().ok_or(())?).map_err(|_| ())?;
     let bytes = serde_json::to_vec_pretty(&Value::Object(record.clone())).map_err(|_| ())?;
     atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) }).map_err(|_| ())
@@ -318,8 +331,8 @@ pub(crate) fn record_received(
     if amount == 0 {
         return Ok(());
     }
-    let path = source_record_path(root, &identity.source)
-        .ok_or_else(|| "Journal source has no safe record path".to_owned())?;
+    let path = contained_source_record_path(root, &identity.source)
+        .map_err(|_| "Journal source has no safe record path".to_owned())?;
     let _lock = hold_lock(
         &path,
         LockOptions {
@@ -349,16 +362,19 @@ pub(crate) fn record_received(
 }
 
 fn create_state_directory(root: &Path, key_prefix: &str) -> Result<(), ()> {
-    let state_dir = root.join("imports").join(key_prefix);
+    let state_dir = contained_path(root, &format!("imports/{key_prefix}")).map_err(|_| ())?;
     fs::create_dir_all(&state_dir).map_err(|_| ())?;
-    let source_state = state_dir.join("source.json");
+    let source_state =
+        contained_path(root, &format!("imports/{key_prefix}/source.json")).map_err(|_| ())?;
     if !source_state.exists() {
         atomic_replace(&source_state, b"{}", AtomicWriteOptions::default()).map_err(|_| ())?;
     }
     for area in STATE_AREAS {
-        let directory = state_dir.join(area);
+        let directory =
+            contained_path(root, &format!("imports/{key_prefix}/{area}")).map_err(|_| ())?;
         fs::create_dir_all(&directory).map_err(|_| ())?;
-        let state = directory.join("state.json");
+        let state = contained_path(root, &format!("imports/{key_prefix}/{area}/state.json"))
+            .map_err(|_| ())?;
         if !state.exists() {
             atomic_replace(&state, b"{}", AtomicWriteOptions::default()).map_err(|_| ())?;
         }
@@ -369,7 +385,7 @@ fn create_state_directory(root: &Path, key_prefix: &str) -> Result<(), ()> {
 fn append_action(root: &Path, action: &str, params: Value) -> Result<(), ()> {
     let day = Local::now().format("%Y%m%d").to_string();
     append_jsonl(
-        root.join("config/actions").join(format!("{day}.jsonl")),
+        contained_path(root, &format!("config/actions/{day}.jsonl")).map_err(|_| ())?,
         &json!({
             "timestamp": Utc::now().to_rfc3339(),
             "source": "app",
@@ -379,6 +395,63 @@ fn append_action(root: &Path, action: &str, params: Value) -> Result<(), ()> {
         }),
     )
     .map_err(|_| ())
+}
+
+#[derive(Debug)]
+enum RevokeSourceError {
+    Missing,
+    AlreadyRevoked,
+    Persist,
+}
+
+enum CreateSourceError {
+    Exists,
+    Persist,
+}
+
+fn create_source(root: &Path, record: &Map<String, Value>) -> Result<(), CreateSourceError> {
+    let path =
+        contained_source_record_path(root, record).map_err(|_| CreateSourceError::Persist)?;
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|_| CreateSourceError::Persist)?;
+    if path.exists() {
+        return Err(CreateSourceError::Exists);
+    }
+    save_journal_source(root, record).map_err(|_| CreateSourceError::Persist)
+}
+
+fn revoke_source(root: &Path, name: &str) -> Result<String, RevokeSourceError> {
+    let snapshot = source(root, name).ok_or(RevokeSourceError::Missing)?;
+    let path =
+        contained_source_record_path(root, &snapshot).map_err(|_| RevokeSourceError::Persist)?;
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|_| RevokeSourceError::Persist)?;
+    let mut record =
+        serde_json::from_slice::<Value>(&fs::read(&path).map_err(|_| RevokeSourceError::Persist)?)
+            .map_err(|_| RevokeSourceError::Persist)?
+            .as_object()
+            .cloned()
+            .ok_or(RevokeSourceError::Persist)?;
+    if record.get("revoked") == Some(&Value::Bool(true)) {
+        return Err(RevokeSourceError::AlreadyRevoked);
+    }
+    let key_prefix = state_prefix(&record).ok_or(RevokeSourceError::Missing)?;
+    record.insert("revoked".to_owned(), json!(true));
+    record.insert("revoked_at".to_owned(), json!(now_ms()));
+    save_journal_source(root, &record).map_err(|_| RevokeSourceError::Persist)?;
+    Ok(key_prefix)
 }
 
 pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
@@ -432,8 +505,26 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
             json!({"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}),
         ),
     ]);
-    if save_journal_source(&state.root, &record).is_err()
-        || create_state_directory(&state.root, &key_prefix).is_err()
+    match create_source(&state.root, &record) {
+        Ok(()) => {}
+        Err(CreateSourceError::Exists) => {
+            return error(
+                StatusCode::CONFLICT,
+                "I couldn't use that journal source.",
+                "journal_source_problem",
+                format!("Journal source '{name}' already exists"),
+            );
+        }
+        Err(CreateSourceError::Persist) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't use that journal source.",
+                "journal_source_problem",
+                "Failed to save journal source".to_owned(),
+            );
+        }
+    }
+    if create_state_directory(&state.root, &key_prefix).is_err()
         || append_action(
             &state.root,
             "journal_source_create",
@@ -458,29 +549,32 @@ pub(crate) async fn revoke(
     State(state): State<AppState>,
     AxumPath(name): AxumPath<String>,
 ) -> Response {
-    let Some(mut record) = source(&state.root, &name) else {
-        return problem_missing(&name);
+    let key_prefix = match revoke_source(&state.root, &name) {
+        Ok(prefix) => prefix,
+        Err(RevokeSourceError::Missing) => return problem_missing(&name),
+        Err(RevokeSourceError::AlreadyRevoked) => {
+            return error(
+                StatusCode::CONFLICT,
+                "I couldn't use that journal source.",
+                "journal_source_problem",
+                format!("Journal source '{name}' is already revoked"),
+            );
+        }
+        Err(RevokeSourceError::Persist) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't use that journal source.",
+                "journal_source_problem",
+                "Failed to save journal source".to_owned(),
+            );
+        }
     };
-    if record.get("revoked") == Some(&Value::Bool(true)) {
-        return error(
-            StatusCode::CONFLICT,
-            "I couldn't use that journal source.",
-            "journal_source_problem",
-            format!("Journal source '{name}' is already revoked"),
-        );
-    }
-    let Some(key_prefix) = state_prefix(&record) else {
-        return problem_missing(&name);
-    };
-    record.insert("revoked".to_owned(), json!(true));
-    record.insert("revoked_at".to_owned(), json!(now_ms()));
-    if save_journal_source(&state.root, &record).is_err()
-        || append_action(
-            &state.root,
-            "journal_source_revoke",
-            json!({"name": name, "key_prefix": key_prefix}),
-        )
-        .is_err()
+    if append_action(
+        &state.root,
+        "journal_source_revoke",
+        json!({"name": name, "key_prefix": key_prefix}),
+    )
+    .is_err()
     {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -670,7 +764,7 @@ mod tests {
 
     use super::{
         DoorIdentity, IngestIdentityCase, JournalSourceIdentity, authorize, bearer_identity,
-        create_state_directory, record_received,
+        create_state_directory, record_received, revoke_source,
     };
 
     fn source(key: &str, revoked: bool) -> serde_json::Map<String, serde_json::Value> {
@@ -880,6 +974,49 @@ mod tests {
         assert_eq!(saved["stats"]["entities_received"], 1);
     }
 
+    #[test]
+    fn concurrent_revoke_and_counter_update_preserve_both_changes() {
+        let root = TempDir::new().unwrap();
+        let record = source("prefix01-key-material", false);
+        write_source(
+            root.path(),
+            "source",
+            serde_json::Value::Object(record.clone()),
+        );
+        let root = Arc::new(root.path().to_owned());
+        let identity = Arc::new(JournalSourceIdentity {
+            source: record,
+            derived_prefix: "prefix01".to_owned(),
+        });
+        let barrier = Arc::new(Barrier::new(2));
+        let increment = {
+            let root = Arc::clone(&root);
+            let identity = Arc::clone(&identity);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                record_received(&root, &identity, "segments_received", 1).unwrap();
+            })
+        };
+        let revoke = {
+            let root = Arc::clone(&root);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                revoke_source(&root, "source").unwrap();
+            })
+        };
+        increment.join().unwrap();
+        revoke.join().unwrap();
+
+        let saved: serde_json::Value = serde_json::from_slice(
+            &fs::read(root.join("apps/import/journal_sources/source.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["revoked"], true);
+        assert_eq!(saved["stats"]["segments_received"], 1);
+    }
+
     #[tokio::test]
     async fn criterion_12_unknown_prefix_refuses_like_known_prefix() {
         let root = TempDir::new().unwrap();
@@ -970,6 +1107,33 @@ mod tests {
                 .exists()
         );
         assert!(root.path().join("config/actions").exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_journal_source_directory_is_refused_without_an_external_record() {
+        use std::os::unix::fs::symlink;
+
+        let root = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("apps/import")).unwrap();
+        symlink(
+            outside.path(),
+            root.path().join("apps/import/journal_sources"),
+        )
+        .unwrap();
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/journal-sources/create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"peer"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
     }
 
     #[tokio::test]

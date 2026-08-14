@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::Digest;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, append_jsonl as append_json_line, atomic_replace,
+    AtomicWriteOptions, append_jsonl as append_json_line, atomic_replace, contained_path,
 };
 
 #[cfg(test)]
@@ -73,10 +73,7 @@ pub(crate) fn stage_unmapped_entity(
     entity_id: &str,
     source_data: &str,
 ) -> Result<(), String> {
-    let path = staged
-        .join(facet)
-        .join(kind)
-        .join(format!("{}.staged.json", relative.replace('/', "__")));
+    let path = staged_path(staged, facet, kind, relative)?;
     write_value(
         &path,
         &json!({"reason":"unmapped_entity","source_entity_id":entity_id,"explanation":format!("Entity '{entity_id}' has no mapping in entities/state.json id_map"),"source_path":relative,"source_data":source_data,"staged_at":Utc::now().to_rfc3339()}),
@@ -90,14 +87,33 @@ pub(crate) fn stage_facet_json_conflict(
     source: &Value,
     target: &Value,
 ) -> Result<(), String> {
-    let path = staged
-        .join(facet)
-        .join("facet_json")
-        .join(format!("{}.staged.json", relative.replace('/', "__")));
+    let path = staged_path(staged, facet, "facet_json", relative)?;
     write_value(
         &path,
         &json!({"reason":"facet_json_conflict","source_content":source,"target_content":target,"staged_at":Utc::now().to_rfc3339()}),
     )
+}
+
+fn staged_path(
+    staged: &Path,
+    facet: &str,
+    kind: &str,
+    relative: &str,
+) -> Result<std::path::PathBuf, String> {
+    contained_path(
+        staged,
+        &format!("{facet}/{kind}/{}.staged.json", relative.replace('/', "__")),
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn contained_under(root: &Path, path: &Path) -> Result<std::path::PathBuf, String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| "Staged facet path is outside the journal root".to_owned())?
+        .to_str()
+        .ok_or_else(|| "Staged facet path is not valid UTF-8".to_owned())?;
+    contained_path(root, relative).map_err(|error| error.to_string())
 }
 
 fn write_value(path: &Path, value: &Value) -> Result<(), String> {
@@ -450,8 +466,8 @@ fn parse_facet_path(path: &str, kind: &str) -> Result<(String, Option<String>), 
     Ok((relative.to_owned(), output_dir))
 }
 
-fn ensure_facet_metadata(root: &Path, facet: &str) -> Result<(), String> {
-    let path = root.join("facets").join(facet).join("facet.json");
+fn ensure_facet_metadata(facet_dir: &Path, facet: &str) -> Result<(), String> {
+    let path = contained_path(facet_dir, "facet.json").map_err(|error| error.to_string())?;
     if path.exists() {
         return Ok(());
     }
@@ -481,8 +497,11 @@ pub(crate) fn process_facet(
     id_map: &serde_json::Map<String, Value>,
     received: &mut serde_json::Map<String, Value>,
 ) -> Result<ProcessResult, String> {
-    let facet_dir = roots.direct.join("facets").join(facet);
-    let ambient_facet_dir = roots.ambient.join("facets").join(facet);
+    let facet_dir = contained_path(roots.direct, &format!("facets/{facet}"))
+        .map_err(|error| error.to_string())?;
+    let ambient_facet_dir = contained_path(roots.ambient, &format!("facets/{facet}"))
+        .map_err(|error| error.to_string())?;
+    let staged = contained_under(roots.direct, staged)?;
     // This is intentionally the sole latch computation. Every merge receives this value.
     let new_facet = !facet_dir.exists();
     let mut result = ProcessResult {
@@ -512,7 +531,7 @@ pub(crate) fn process_facet(
             let mut bytes = item.bytes.to_vec();
             if let Some(unmapped) = unmapped_entity(item.kind, &relative, &bytes, id_map)? {
                 stage_unmapped_entity(
-                    staged,
+                    &staged,
                     facet,
                     item.kind,
                     &relative,
@@ -521,7 +540,7 @@ pub(crate) fn process_facet(
                 )?;
                 received.insert(item_id.clone(), json!(digest));
                 result.staged += 1;
-                result.decisions.push(json!({"ts":Utc::now().to_rfc3339(),"action":"facet_file_staged","item_type":item.kind,"item_id":item_id,"facet":facet,"reason":"unmapped_entity","staged_path":staged.join(facet).join(item.kind).join(format!("{}.staged.json", relative.replace('/', "__")))}));
+                result.decisions.push(json!({"ts":Utc::now().to_rfc3339(),"action":"facet_file_staged","item_type":item.kind,"item_id":item_id,"facet":facet,"reason":"unmapped_entity","staged_path":staged_path(&staged, facet, item.kind, &relative)?}));
                 return Ok(());
             }
             remap_entity_ids(item.kind, &mut relative, &mut bytes, id_map)?;
@@ -531,10 +550,11 @@ pub(crate) fn process_facet(
             } else {
                 &facet_dir
             };
-            let target = target_root.join(&relative);
+            let target =
+                contained_path(target_root, &relative).map_err(|error| error.to_string())?;
             let merge = match item.kind {
                 "facet_json" => {
-                    merge_facet_json(&target, &bytes, new_facet, staged, facet, &relative)
+                    merge_facet_json(&target, &bytes, new_facet, &staged, facet, &relative)
                 }
                 "entity_relationship" => merge_entity_relationship(&target, &bytes, new_facet),
                 "entity_observations" => merge_observations(&target, &bytes, new_facet),
@@ -544,7 +564,8 @@ pub(crate) fn process_facet(
                 "activity_output" => merge_activity_output(
                     &target,
                     &bytes,
-                    &facet_dir.join(output_dir.expect("activity output grammar")),
+                    &contained_path(&facet_dir, &output_dir.expect("activity output grammar"))
+                        .map_err(|error| error.to_string())?,
                     new_facet,
                 ),
                 "todos" => merge_todos(&target, &bytes, new_facet),
@@ -581,7 +602,7 @@ pub(crate) fn process_facet(
         }
     }
     if result.wrote_files {
-        ensure_facet_metadata(roots.direct, facet)?;
+        ensure_facet_metadata(&facet_dir, facet)?;
     }
     Ok(result)
 }
@@ -681,6 +702,8 @@ mod tests {
     use serde_json::{Value, json};
     use sha2::Digest;
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use std::sync::atomic::Ordering;
     use tempfile::TempDir;
 
@@ -1114,5 +1137,34 @@ mod tests {
         .unwrap();
         assert_eq!(metadata["title"], "Work Notes");
         assert_eq!(metadata["emoji"], "📦");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_facet_directory_is_refused_without_touching_the_outside_tree() {
+        let root = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("facets")).unwrap();
+        symlink(outside.path(), root.path().join("facets/work")).unwrap();
+        let mut received = serde_json::Map::new();
+
+        let result = process_facet(
+            FacetRoots {
+                direct: root.path(),
+                ambient: root.path(),
+            },
+            "work",
+            &[FacetItem {
+                path: "todos/20260101.jsonl",
+                kind: "todos",
+                bytes: b"{\"text\":\"must not escape\"}\n",
+            }],
+            &root.path().join("imports/prefix/facets/staged"),
+            &serde_json::Map::new(),
+            &mut received,
+        );
+
+        assert!(matches!(result, Err(error) if error.contains("escapes")));
+        assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
     }
 }

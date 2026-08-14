@@ -26,9 +26,6 @@ use std::{
 };
 
 const MAX_ATTEMPTS: usize = 32;
-fn state(root: &Path, prefix: &str, area: &str) -> std::path::PathBuf {
-    root.join("imports").join(prefix).join(area)
-}
 fn read_json(path: &Path) -> Value {
     fs::read(path)
         .ok()
@@ -81,6 +78,24 @@ fn safe_component(value: &str) -> bool {
 
 fn contained(root: &Path, relative: &str) -> Result<std::path::PathBuf, String> {
     contained_path(root, relative).map_err(|error| error.to_string())
+}
+
+fn import_file(
+    root: &Path,
+    prefix: &str,
+    area: &str,
+    file: &str,
+) -> Result<std::path::PathBuf, String> {
+    contained(root, &format!("imports/{prefix}/{area}/{file}"))
+}
+
+fn invalid_owned_path(detail: String) -> Response {
+    error(
+        StatusCode::BAD_REQUEST,
+        "I couldn't use one of those values.",
+        "invalid_request_value",
+        detail,
+    )
 }
 
 fn valid_stream(value: &str) -> bool {
@@ -161,8 +176,10 @@ async fn segments_with_attempts(
             "Missing segments array".to_owned(),
         );
     };
-    let base = state(&app.root, prefix, "segments");
-    let log = base.join("log.jsonl");
+    let log = match import_file(&app.root, prefix, "segments", "log.jsonl") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
     let mut new = Map::new();
     let (mut copied, mut skipped, mut deconflicted) = (0, 0, 0);
     let mut errors = Vec::new();
@@ -243,12 +260,9 @@ async fn segments_with_attempts(
             if action != "skipped" {
                 fs::create_dir_all(&target).map_err(|e| e.to_string())?;
                 for n in &names {
-                    atomic_replace(
-                        target.join(n),
-                        &payload[n],
-                        AtomicWriteOptions { mode: Some(0o600) },
-                    )
-                    .map_err(|e| e.to_string())?;
+                    let file = contained(&app.root, &format!("{stream_relative}/{final_key}/{n}"))?;
+                    atomic_replace(file, &payload[n], AtomicWriteOptions { mode: Some(0o600) })
+                        .map_err(|e| e.to_string())?;
                 }
             }
             let mut rec = json!({"files":names.iter().map(|n|json!({"name":n,"sha256":hash(&payload[n]),"size":payload[n].len()})).collect::<Vec<_>>()});
@@ -296,7 +310,10 @@ async fn segments_with_attempts(
         }
     }
     if !new.is_empty() {
-        let path = base.join("state.json");
+        let path = match import_file(&app.root, prefix, "segments", "state.json") {
+            Ok(path) => path,
+            Err(detail) => return invalid_owned_path(detail),
+        };
         let mut existing = read_json(&path);
         let obj = existing.as_object_mut().unwrap();
         for (k, v) in new {
@@ -376,14 +393,28 @@ pub(crate) async fn facets(
             "Missing facets array".into(),
         );
     };
-    let base = state(&app.root, identity.prefix(), "facets");
-    let entity_id_map =
-        read_json(&state(&app.root, identity.prefix(), "entities").join("state.json"))
-            .get("id_map")
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-    let state_path = base.join("state.json");
+    let entity_state_path =
+        match import_file(&app.root, identity.prefix(), "entities", "state.json") {
+            Ok(path) => path,
+            Err(detail) => return invalid_owned_path(detail),
+        };
+    let entity_id_map = read_json(&entity_state_path)
+        .get("id_map")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let state_path = match import_file(&app.root, identity.prefix(), "facets", "state.json") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
+    let staged_path = match import_file(&app.root, identity.prefix(), "facets", "staged") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
+    let log_path = match import_file(&app.root, identity.prefix(), "facets", "log.jsonl") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
     let mut facet_state = read_json(&state_path);
     let received = facet_state
         .as_object_mut()
@@ -437,14 +468,13 @@ pub(crate) async fn facets(
             }
             let outcome = crate::facet_ingest::process_facet(
                 crate::facet_ingest::FacetRoots {
-                    // The native app's `AppState.root` is the sole journal-root authority;
-                    // pass it explicitly for both Python resolution channels.
+                    // Native deliberately has one journal-root authority; see `FacetRoots`.
                     direct: &app.root,
                     ambient: &app.root,
                 },
                 name,
                 &items,
-                &base.join("staged"),
+                &staged_path,
                 &entity_id_map,
                 received,
             )?;
@@ -457,7 +487,7 @@ pub(crate) async fn facets(
                 received_facets.insert(name.to_owned());
             }
             for entry in outcome.decisions {
-                decision(&base.join("log.jsonl"), entry)?;
+                decision(&log_path, entry)?;
             }
             Ok(())
         })();
@@ -506,8 +536,14 @@ pub(crate) async fn entities(
             "Missing entities array".into(),
         );
     };
-    let base = state(&app.root, identity.prefix(), "entities");
-    let state_path = base.join("state.json");
+    let state_path = match import_file(&app.root, identity.prefix(), "entities", "state.json") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
+    let log_path = match import_file(&app.root, identity.prefix(), "entities", "log.jsonl") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
     let mut entity_state = read_json(&state_path);
     if !entity_state.is_object() {
         entity_state = json!({});
@@ -557,7 +593,7 @@ pub(crate) async fn entities(
             if received.get(&id).and_then(Value::as_str) == Some(&content_hash) {
                 skipped += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"skipped","item_type":"entity","item_id":id,"match_tier":null,"reason":"idempotent","source":source_value,"target":null,"fields_changed":[]}),
                 )?;
                 return Ok(());
@@ -572,15 +608,14 @@ pub(crate) async fn entities(
                         .is_some_and(|target_name| target_name.eq_ignore_ascii_case(&name))
                 })
                 .collect::<Vec<_>>();
-            let staged_path = base.join("staged").join(format!("{id}.json"));
+            let staged_path = contained(
+                &app.root,
+                &format!("imports/{}/entities/staged/{id}.json", identity.prefix()),
+            )?;
             if exact.len() == 1 {
                 let (target_id, target) = exact[0];
                 let (merged, fields_changed) = merge_entity_fields(target, &source);
-                let path = app
-                    .root
-                    .join("entities")
-                    .join(target_id)
-                    .join("entity.json");
+                let path = contained(&app.root, &format!("entities/{target_id}/entity.json"))?;
                 write_json(&path, &Value::Object(merged.clone()))?;
                 if let Err(error) = fs::remove_file(&staged_path)
                     && error.kind() != std::io::ErrorKind::NotFound
@@ -590,14 +625,14 @@ pub(crate) async fn entities(
                 id_map.insert(id.clone(), json!(target_id));
                 auto_merged += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"auto_merged","item_type":"entity","item_id":id,"match_tier":1,"reason":"high_confidence_match","source":source_value,"target":merged,"fields_changed":fields_changed}),
                 )?;
             } else if exact.len() > 1 {
-                stage_entity(&base, &id, &source_value, "low_confidence_match", exact.iter().map(|(target_id, target)| json!({"id":target_id,"name":target.get("name"),"tier":1})).collect())?;
+                stage_entity(&staged_path, &source_value, "low_confidence_match", exact.iter().map(|(target_id, target)| json!({"id":target_id,"name":target.get("name"),"tier":1})).collect())?;
                 staged += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"entity","item_id":id,"match_tier":1,"reason":"low_confidence_match","source":source_value,"target":null,"fields_changed":[]}),
                 )?;
             } else if targets.iter().any(|(target_id, _)| target_id == &id) {
@@ -607,15 +642,14 @@ pub(crate) async fn entities(
                     .unwrap()
                     .1;
                 stage_entity(
-                    &base,
-                    &id,
+                    &staged_path,
                     &source_value,
                     "id_collision",
                     vec![json!({"id":id,"name":target.get("name"),"tier":null})],
                 )?;
                 staged += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"entity","item_id":id,"match_tier":null,"reason":"id_collision","source":source_value,"target":null,"fields_changed":[]}),
                 )?;
             } else if source.get("is_principal") == Some(&Value::Bool(true))
@@ -623,20 +657,19 @@ pub(crate) async fn entities(
                     .iter()
                     .any(|(_, target)| target.get("is_principal") == Some(&Value::Bool(true)))
             {
-                stage_entity(&base, &id, &source_value, "principal_conflict", vec![])?;
+                stage_entity(&staged_path, &source_value, "principal_conflict", vec![])?;
                 staged += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"entity","item_id":id,"match_tier":null,"reason":"principal_conflict","source":source_value,"target":null,"fields_changed":[]}),
                 )?;
             } else {
-                let path = app.root.join("entities").join(&id).join("entity.json");
-                fs::create_dir_all(path.parent().unwrap()).map_err(|error| error.to_string())?;
+                let path = contained(&app.root, &format!("entities/{id}/entity.json"))?;
                 write_json(&path, &source_value)?;
                 id_map.insert(id.clone(), json!(id));
                 created += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"created","item_type":"entity","item_id":id,"match_tier":null,"reason":"no_match","source":source_value,"target":null,"fields_changed":[]}),
                 )?;
             }
@@ -774,16 +807,14 @@ fn earlier_created_at(source: &Value, target: &Value) -> bool {
 }
 
 fn stage_entity(
-    base: &Path,
-    id: &str,
+    staged: &Path,
     source: &Value,
     reason: &str,
     candidates: Vec<Value>,
 ) -> Result<(), String> {
-    let staged = base.join("staged").join(format!("{id}.json"));
     fs::create_dir_all(staged.parent().unwrap()).map_err(|error| error.to_string())?;
     write_json(
-        &staged,
+        staged,
         &json!({"source_entity":source,"match_candidates":candidates,"reason":reason,"staged_at":Utc::now().to_rfc3339()}),
     )
 }
@@ -802,8 +833,14 @@ pub(crate) async fn imports(
             "Missing imports array".into(),
         );
     };
-    let base = state(&app.root, identity.prefix(), "imports");
-    let state_path = base.join("state.json");
+    let state_path = match import_file(&app.root, identity.prefix(), "imports", "state.json") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
+    let log_path = match import_file(&app.root, identity.prefix(), "imports", "log.jsonl") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
     let mut imports_state = read_json(&state_path);
     if !imports_state.is_object() {
         imports_state = json!({});
@@ -846,31 +883,36 @@ pub(crate) async fn imports(
             if received_hashes[id].as_str() == Some(&content_hash) {
                 skipped += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"skipped","item_type":"import","item_id":id,"reason":"idempotent"}),
                 )?;
                 return Ok(());
             }
             let target = contained(&app.root, &format!("imports/{id}"))?;
             if target.is_dir() {
-                fs::create_dir_all(base.join("staged")).map_err(|error| error.to_string())?;
+                let staged_path = import_file(
+                    &app.root,
+                    identity.prefix(),
+                    "imports",
+                    &format!("staged/{id}.json"),
+                )?;
                 write_json(
-                    &base.join("staged").join(format!("{id}.json")),
+                    &staged_path,
                     &json!({"import_id":id,"import_json":import_json,"imported_json":imported_json,"content_manifest":manifest,"reason":"id_collision","staged_at":Utc::now().to_rfc3339()}),
                 )?;
                 staged += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"import","item_id":id,"reason":"id_collision"}),
                 )?;
             } else {
                 fs::create_dir_all(&target).map_err(|error| error.to_string())?;
                 write_json(
-                    &target.join("import.json"),
+                    &contained(&app.root, &format!("imports/{id}/import.json"))?,
                     &Value::Object(import_json.clone()),
                 )?;
                 write_json(
-                    &target.join("imported.json"),
+                    &contained(&app.root, &format!("imports/{id}/imported.json"))?,
                     &Value::Object(imported_json.clone()),
                 )?;
                 let rows = manifest
@@ -885,14 +927,14 @@ pub(crate) async fn imports(
                     format!("{rows}\n").into_bytes()
                 };
                 atomic_replace(
-                    target.join("content_manifest.jsonl"),
+                    contained(&app.root, &format!("imports/{id}/content_manifest.jsonl"))?,
                     &manifest_bytes,
                     AtomicWriteOptions { mode: Some(0o600) },
                 )
                 .map_err(|error| error.to_string())?;
                 copied += 1;
                 decision(
-                    &base.join("log.jsonl"),
+                    &log_path,
                     json!({"ts":Utc::now().to_rfc3339(),"action":"copied","item_type":"import","item_id":id,"reason":"new"}),
                 )?;
             }
@@ -943,13 +985,28 @@ pub(crate) async fn config(
             "Missing config object".into(),
         );
     };
-    let base = state(&app.root, identity.prefix(), "config");
     let hash = hash(serde_json::to_string(source).unwrap().as_bytes());
-    let state_path = base.join("state.json");
+    let state_path = match import_file(&app.root, identity.prefix(), "config", "state.json") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
+    let source_config_path =
+        match import_file(&app.root, identity.prefix(), "config", "source_config.json") {
+            Ok(path) => path,
+            Err(detail) => return invalid_owned_path(detail),
+        };
+    let diff_path = match import_file(&app.root, identity.prefix(), "config", "diff.json") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
+    let log_path = match import_file(&app.root, identity.prefix(), "config", "log.jsonl") {
+        Ok(path) => path,
+        Err(detail) => return invalid_owned_path(detail),
+    };
     let mut st = read_json(&state_path);
     if st.get("last_hash").and_then(Value::as_str) == Some(&hash) {
         if let Err(detail) = decision(
-            &base.join("log.jsonl"),
+            &log_path,
             json!({"ts":Utc::now().to_rfc3339(),"action":"skipped","item_type":"config","reason":"idempotent"}),
         ) {
             return error(
@@ -980,7 +1037,7 @@ pub(crate) async fn config(
         }
         diff.insert(field.to_owned(), json!({"source":source_flat.get(field),"target":target_flat.get(field),"category":if matches!(field.as_str(), "identity.name" | "identity.preferred" | "identity.bio" | "identity.pronouns" | "identity.aliases" | "identity.email_addresses" | "identity.timezone") { "transferable" } else { "preference" }}));
     }
-    if let Err(detail) = write_json(&base.join("source_config.json"), source) {
+    if let Err(detail) = write_json(&source_config_path, source) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "I couldn't save that import.",
@@ -988,7 +1045,7 @@ pub(crate) async fn config(
             detail,
         );
     }
-    if let Err(detail) = write_json(&base.join("diff.json"), &Value::Object(diff.clone())) {
+    if let Err(detail) = write_json(&diff_path, &Value::Object(diff.clone())) {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "I couldn't save that import.",
@@ -1006,7 +1063,7 @@ pub(crate) async fn config(
         );
     }
     if let Err(detail) = decision(
-        &base.join("log.jsonl"),
+        &log_path,
         json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"config"}),
     ) {
         return error(
@@ -1052,7 +1109,7 @@ fn flatten_config(value: &Value, prefix: &str) -> HashMap<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeMap, fs, path::Path};
 
     use axum::{
         body::{Body, to_bytes},
@@ -1103,6 +1160,37 @@ mod tests {
 
     fn segment_body(bytes: &[u8]) -> Body {
         segment_body_for("default", "120000_60", bytes)
+    }
+
+    fn whole_tree_snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
+        fn visit(root: &Path, path: &Path, snapshot: &mut BTreeMap<String, Vec<u8>>) {
+            let relative = path.strip_prefix(root).unwrap().display().to_string();
+            let metadata = fs::symlink_metadata(path).unwrap();
+            if !relative.is_empty() {
+                let bytes = if metadata.file_type().is_symlink() {
+                    fs::read_link(path)
+                        .unwrap()
+                        .as_os_str()
+                        .to_string_lossy()
+                        .into_owned()
+                        .into_bytes()
+                } else if metadata.is_file() {
+                    fs::read(path).unwrap()
+                } else {
+                    b"directory".to_vec()
+                };
+                snapshot.insert(relative, bytes);
+            }
+            if metadata.is_dir() {
+                for entry in fs::read_dir(path).unwrap().flatten() {
+                    visit(root, &entry.path(), snapshot);
+                }
+            }
+        }
+
+        let mut snapshot = BTreeMap::new();
+        visit(root, root, &mut snapshot);
+        snapshot
     }
 
     async fn multipart_for_test(body: Body) -> Multipart {
@@ -1461,6 +1549,50 @@ mod tests {
         assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_facet_directory_is_refused_without_a_whole_tree_delta() {
+        use std::os::unix::fs::symlink;
+
+        let root = phase_root("empty");
+        let outside = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("facets")).unwrap();
+        symlink(outside.path(), root.path().join("facets/work")).unwrap();
+        let state = root.path().join("imports/corpusSo/facets/state.json");
+        fs::write(
+            &state,
+            serde_json::to_vec_pretty(&json!({"received":{}})).unwrap(),
+        )
+        .unwrap();
+        let before = (
+            whole_tree_snapshot(root.path()),
+            whole_tree_snapshot(outside.path()),
+        );
+        let boundary = "facet-symlink";
+        let metadata = json!({"facets":[{"name":"work","files":[{"path":"todos/20260101.jsonl","type":"todos"}]}]});
+        let body = Body::from(format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0_0\"; filename=\"20260101.jsonl\"\r\n\r\n{{\"text\":\"must not escape\"}}\n\r\n--{boundary}--\r\n"
+        ));
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/facets"),
+            body,
+            &format!("multipart/form-data; boundary={boundary}"),
+            true,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            (
+                whole_tree_snapshot(root.path()),
+                whole_tree_snapshot(outside.path())
+            ),
+            before,
+        );
+    }
+
     fn write_entity(root: &std::path::Path, id: &str, value: Value) {
         let path = root.join("entities").join(id).join("entity.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1492,6 +1624,27 @@ mod tests {
         assert_eq!(response["created"], 0);
         assert_eq!(response["errors"][0]["error"], "Invalid entity id");
         assert_eq!(fs::read(outside).unwrap(), b"owner config");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_inbound_entity_directory_is_refused_without_writing_outside_the_journal() {
+        use std::os::unix::fs::symlink;
+
+        let root = phase_root("empty");
+        let outside = tempfile::TempDir::new().unwrap();
+        fs::write(outside.path().join("entity.json"), b"{\"name\":\"Peer\"}").unwrap();
+        fs::create_dir_all(root.path().join("entities")).unwrap();
+        symlink(outside.path(), root.path().join("entities/peer")).unwrap();
+
+        let response = post_entities(root.path(), json!([{"id":"peer","name":"Peer"}])).await;
+
+        assert_eq!(response["created"], 0);
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            fs::read(outside.path().join("entity.json")).unwrap(),
+            b"{\"name\":\"Peer\"}"
+        );
     }
 
     #[tokio::test]
