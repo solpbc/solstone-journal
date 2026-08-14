@@ -2670,6 +2670,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-backup-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-callosum",
+ "solstone-core-convey-shell",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "solstone-core-callosum"
 version = "1.0.22"
 dependencies = [
@@ -2816,6 +2834,7 @@ dependencies = [
  "socket2",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-backup-web",
  "solstone-core-convey-body",
  "solstone-core-convey-http",
  "solstone-core-entities",

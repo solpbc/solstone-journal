@@ -92,6 +92,7 @@ members = [
     "crates/solstone-core-journal-stats-cli",
     "crates/solstone-core-reprocess-cli",
     "crates/solstone-core-backfill-cli",
+    "crates/solstone-core-backup-web",
     "crates/solstone-core-steward-prune",
     "crates/solstone-core-settings-web",
 ]
@@ -158,6 +159,7 @@ solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
+solstone-core-backup-web = { path = "crates/solstone-core-backup-web" }
 solstone-core-describe-categories = { path = "crates/solstone-core-describe-categories" }
 solstone-core-thinking-copy = { path = "crates/solstone-core-thinking-copy" }
 solstone-core-thinking = { path = "crates/solstone-core-thinking" }

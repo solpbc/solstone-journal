@@ -57,6 +57,7 @@ sha2.workspace = true
 socket2 = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 solstone-core-callosum = { workspace = true, optional = true }
+solstone-core-backup-web.workspace = true
 solstone-core-convey-body.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-entities.workspace = true
