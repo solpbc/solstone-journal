@@ -667,6 +667,9 @@ pub const SCHEDULE_HELP: &str = concat!(
 /// The parse-error usage for `journal schedule`.
 pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
 
+/// The parse-error usage for `journal spl`.
+pub const SPL_USAGE: &str = "usage: journal spl [-v] [-d]\n";
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -757,6 +760,7 @@ pub enum Command {
     ScheduleUsage(ScheduleUsageError),
     Grab(GrabCommand),
     Spl(SplCommand),
+    SplUsage(SplUsageError),
     Sense(SenseOptions),
     SenseUsage,
     SenseHelp,
@@ -1078,6 +1082,9 @@ pub struct ScheduleOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduleUsageError(pub String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplUsageError(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupervisorOptions {
@@ -1601,7 +1608,10 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("grab") => {
             Ok(Command::Grab(parse_grab(rest)))
         }
-        [command, rest @ ..] if command == OsStr::new("spl") => parse_spl(rest).map(Command::Spl),
+        [command, rest @ ..] if command == OsStr::new("spl") => match parse_spl(rest) {
+            Ok(command) => Ok(Command::Spl(command)),
+            Err(error) => Ok(Command::SplUsage(error)),
+        },
         [command, rest @ ..] if command == OsStr::new("sense") => match parse_sense(rest) {
             Ok(SenseParse::Run(options)) => Ok(Command::Sense(options)),
             Ok(SenseParse::Help) => Ok(Command::SenseHelp),
@@ -3813,13 +3823,27 @@ fn is_journal_config_flag(value: &OsStr) -> bool {
     )
 }
 
-fn parse_spl(args: &[OsString]) -> Result<SplCommand, UsageError> {
-    match args {
-        [command, rest @ ..] if command == OsStr::new("service") => {
-            parse_service(rest).map(SplCommand::Service)
-        }
-        _ => Err(UsageError),
+fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
+    let [command, rest @ ..] = args else {
+        return Err(SplUsageError(
+            "the following arguments are required: service".to_owned(),
+        ));
+    };
+    if command != OsStr::new("service") {
+        return Err(SplUsageError(format!(
+            "invalid choice: {} (choose from service)",
+            command.to_string_lossy()
+        )));
     }
+    parse_service(rest).map(SplCommand::Service).map_err(|_| {
+        SplUsageError(format!(
+            "unrecognized arguments: {}",
+            rest.iter()
+                .map(|value| value.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ))
+    })
 }
 
 fn parse_service(args: &[OsString]) -> Result<ServiceOptions, UsageError> {
@@ -6610,7 +6634,10 @@ mod tests {
             &["spl", "service", "-d", "--debug"][..],
             &["spl", "service", "--unknown"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert!(
+                matches!(evaluate_args(&args(values)), Ok(Command::SplUsage(_))),
+                "{values:?}"
+            );
         }
     }
 
@@ -6620,14 +6647,20 @@ mod tests {
             &["spl", "service", "extra"][..],
             &["spl", "service", "service"][..],
         ] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert!(
+                matches!(evaluate_args(&args(values)), Ok(Command::SplUsage(_))),
+                "{values:?}"
+            );
         }
     }
 
     #[test]
     fn rejects_incomplete_unknown_and_extra_spl_args() {
         for values in [&["spl"][..], &["spl", "unknown"][..]] {
-            assert_eq!(evaluate_args(&args(values)), Err(UsageError), "{values:?}");
+            assert!(
+                matches!(evaluate_args(&args(values)), Ok(Command::SplUsage(_))),
+                "{values:?}"
+            );
         }
     }
 
