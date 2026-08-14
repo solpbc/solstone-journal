@@ -35,6 +35,8 @@ pub enum CortexServiceError {
     Runtime,
     #[error("could not inspect current executable: {0}")]
     CurrentExecutable(#[source] std::io::Error),
+    #[error("could not locate installed solstone package from {0}")]
+    InstallationRoot(PathBuf),
     #[error("could not initialize cortex journal storage: {0}")]
     Storage(#[source] std::io::Error),
 }
@@ -60,15 +62,36 @@ pub async fn run_native_service(
         .parent()
         .map(PathBuf::from)
         .ok_or(CortexServiceError::Runtime)?;
+    let root =
+        solstone_core_journal::resolve_installation_root_from_executable_dir(&executable_dir)
+            .ok_or_else(|| CortexServiceError::InstallationRoot(executable_dir.clone()))?;
+    let talent_root = root.join("solstone/talent");
+    let apps_root = root.join("solstone/apps");
+    let templates_dir = talent_root
+        .parent()
+        .map(|root| root.join("think/templates"))
+        .ok_or(CortexServiceError::Runtime)?;
     let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
-    run_until(journal, connection, executable_dir, shutdown_signal()).await
+    run_until(
+        journal,
+        connection,
+        executable_dir,
+        talent_root,
+        apps_root,
+        templates_dir,
+        shutdown_signal(),
+    )
+    .await
 }
 
 pub async fn run_until<F>(
     journal: PathBuf,
     connection: CallosumSocketConnection,
     executable_dir: PathBuf,
+    talent_root: PathBuf,
+    apps_root: PathBuf,
+    templates_dir: PathBuf,
     shutdown: F,
 ) -> Result<(), CortexServiceError>
 where
@@ -77,7 +100,12 @@ where
     run_until_with(
         journal,
         connection,
-        executable_dir,
+        TalentExecutionPaths {
+            executable_dir,
+            talent_root,
+            apps_root,
+            templates_dir,
+        },
         shutdown,
         ServiceDependencies::production(),
     )
@@ -98,6 +126,13 @@ enum ServiceLifecycle {
 
 type RenewalWorkerFactory = Arc<dyn Fn(RenewalHandle) -> RenewalWorkerStart + Send + Sync>;
 type LifecycleObserver = Arc<dyn Fn(ServiceLifecycle) + Send + Sync>;
+
+struct TalentExecutionPaths {
+    executable_dir: PathBuf,
+    talent_root: PathBuf,
+    apps_root: PathBuf,
+    templates_dir: PathBuf,
+}
 
 struct ServiceDependencies {
     now: Now,
@@ -120,7 +155,7 @@ impl ServiceDependencies {
 async fn run_until_with<F>(
     journal: PathBuf,
     mut connection: CallosumSocketConnection,
-    executable_dir: PathBuf,
+    execution_paths: TalentExecutionPaths,
     shutdown: F,
     dependencies: ServiceDependencies,
 ) -> Result<(), CortexServiceError>
@@ -135,7 +170,16 @@ where
     let (outbound_tx, outbound_rx) = mpsc::channel();
     let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx.clone());
     let spawn_state = state.clone();
-    thread::spawn(move || spawn_worker(spawn_state, executable_dir, spawn_rx));
+    thread::spawn(move || {
+        spawn_worker(
+            spawn_state,
+            execution_paths.executable_dir,
+            execution_paths.talent_root,
+            execution_paths.apps_root,
+            execution_paths.templates_dir,
+            spawn_rx,
+        )
+    });
     let cancel_state = state.clone();
     thread::spawn(move || cancel_worker(cancel_state, cancel_rx));
     connection.start();
@@ -280,7 +324,12 @@ mod tests {
             .block_on(run_until_with(
                 directory.path().to_path_buf(),
                 connection,
-                directory.path().join("bin"),
+                TalentExecutionPaths {
+                    executable_dir: directory.path().join("bin"),
+                    talent_root: directory.path().join("solstone/talent"),
+                    apps_root: directory.path().join("solstone/apps"),
+                    templates_dir: directory.path().join("solstone/think/templates"),
+                },
                 async { ShutdownMode::Immediate },
                 dependencies,
             ))

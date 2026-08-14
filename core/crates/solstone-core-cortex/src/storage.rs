@@ -224,7 +224,9 @@ impl CortexStore {
             "error_message": if status == "error" { error_message } else { Value::Null },
             "reason_code": if status == "error" { reason_code } else { Value::Null },
             "degraded": degraded,
-            "output_file": Value::Null,
+            "output_file": summarize_output_file(&self.journal.join(&day), &self.journal, request)
+                .map(Value::String)
+                .unwrap_or(Value::Null),
             "prompt": request.get("prompt").cloned().unwrap_or_else(|| Value::String(String::new())),
         });
         let path = self.talents.join(format!("{day}.jsonl"));
@@ -273,6 +275,65 @@ fn day_from_use_id(use_id: &str) -> String {
         .unwrap_or_default()
 }
 
+fn summarize_output_file(
+    day_dir: &Path,
+    journal_root: &Path,
+    request: &Map<String, Value>,
+) -> Option<String> {
+    let output_path = request
+        .get("output_path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .or_else(|| derived_output_path(day_dir, request))?;
+    if !output_path.exists() {
+        return None;
+    }
+    output_path
+        .strip_prefix(day_dir)
+        .or_else(|_| output_path.strip_prefix(journal_root))
+        .ok()
+        .map(|path| path.display().to_string())
+}
+
+fn derived_output_path(day_dir: &Path, request: &Map<String, Value>) -> Option<PathBuf> {
+    let output = request.get("output")?;
+    let name = request.get("name").and_then(Value::as_str)?;
+    let name = match name.split_once(':') {
+        Some((app, name)) => format!("_{app}_{name}"),
+        None => name.to_owned(),
+    };
+    let extension = if output == "json" { "json" } else { "md" };
+    let file = format!("{name}.{extension}");
+    let segment = request
+        .get("segment")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty());
+    let facet = request
+        .get("facet")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty());
+    let stream = request
+        .get("env")
+        .and_then(Value::as_object)
+        .and_then(|env| env.get("SOL_STREAM"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty());
+    let output_dir = match segment {
+        Some(segment) => {
+            let segment_dir = match stream {
+                Some(stream) => day_dir.join(stream).join(segment),
+                None => day_dir.join(segment),
+            };
+            segment_dir.join("talents")
+        }
+        None => day_dir.join("talents"),
+    };
+    Some(match facet {
+        Some(facet) => output_dir.join(facet).join(file),
+        None => output_dir.join(file),
+    })
+}
+
 pub(crate) fn safe_name(name: &str) -> String {
     name.replace(':', "--")
 }
@@ -311,6 +372,20 @@ mod tests {
     fn request() -> Map<String, Value> {
         serde_json::from_value(json!({"name":"chat","day":"19700101","ts":1000,"prompt":"p"}))
             .unwrap()
+    }
+
+    fn complete_with_request(store: &CortexStore, use_id: &str, request: &Map<String, Value>) {
+        let name = request["name"].as_str().expect("name");
+        let active = store.claim(name, use_id, request).unwrap().unwrap();
+        store.complete(use_id, &active, Some(request));
+    }
+
+    fn day_rows(store: &CortexStore, day: &str) -> Vec<Value> {
+        fs::read_to_string(store.talents().join(format!("{day}.jsonl")))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
     }
 
     #[test]
@@ -473,6 +548,99 @@ mod tests {
         assert!(row["output_file"].is_null());
         assert_eq!(row["model"], "priced-model");
         assert_eq!(row["runtime_seconds"], 1.3);
+    }
+
+    #[test]
+    fn day_index_summarizes_daily_plain_and_facet_output_files() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let day_dir = directory.path().join("19700101");
+        fs::create_dir_all(day_dir.join("talents/work")).unwrap();
+        fs::write(day_dir.join("talents/plain.md"), "plain").unwrap();
+        fs::write(day_dir.join("talents/work/_app_facet.json"), "{}").unwrap();
+        let plain = serde_json::from_value(json!({
+            "name":"plain", "day":"19700101", "output":"md"
+        }))
+        .unwrap();
+        let facet = serde_json::from_value(json!({
+            "name":"app:facet", "day":"19700101", "output":"json", "facet":"work"
+        }))
+        .unwrap();
+        complete_with_request(&store, "one", &plain);
+        complete_with_request(&store, "two", &facet);
+        let rows = day_rows(&store, "19700101");
+        assert_eq!(rows[0]["output_file"], "talents/plain.md");
+        assert_eq!(rows[1]["output_file"], "talents/work/_app_facet.json");
+    }
+
+    #[test]
+    fn day_index_summarizes_segment_and_segment_facet_output_files() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let day_dir = directory.path().join("19700101");
+        fs::create_dir_all(day_dir.join("segment/talents")).unwrap();
+        fs::create_dir_all(day_dir.join("focus/other/talents/work")).unwrap();
+        fs::write(day_dir.join("segment/talents/plain.md"), "plain").unwrap();
+        fs::write(
+            day_dir.join("focus/other/talents/work/_app_facet.json"),
+            "{}",
+        )
+        .unwrap();
+        let segment = serde_json::from_value(json!({
+            "name":"plain", "day":"19700101", "output":"md", "segment":"segment"
+        }))
+        .unwrap();
+        let facet = serde_json::from_value(json!({
+            "name":"app:facet", "day":"19700101", "output":"json", "segment":"other",
+            "facet":"work", "env":{"SOL_STREAM":"focus"}
+        }))
+        .unwrap();
+        complete_with_request(&store, "one", &segment);
+        complete_with_request(&store, "two", &facet);
+        let rows = day_rows(&store, "19700101");
+        assert_eq!(rows[0]["output_file"], "segment/talents/plain.md");
+        assert_eq!(
+            rows[1]["output_file"],
+            "focus/other/talents/work/_app_facet.json"
+        );
+    }
+
+    #[test]
+    fn day_index_summarizes_output_path_override_in_day_and_journal_root() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let day_dir = directory.path().join("19700101");
+        let day_override = day_dir.join("custom.md");
+        let root_override = directory.path().join("shared/output.json");
+        fs::create_dir_all(root_override.parent().unwrap()).unwrap();
+        fs::create_dir_all(&day_dir).unwrap();
+        fs::write(&day_override, "day").unwrap();
+        fs::write(&root_override, "root").unwrap();
+        let in_day = serde_json::from_value(json!({
+            "name":"one", "day":"19700101", "output_path":day_override
+        }))
+        .unwrap();
+        let in_root = serde_json::from_value(json!({
+            "name":"two", "day":"19700101", "output_path":root_override
+        }))
+        .unwrap();
+        complete_with_request(&store, "one", &in_day);
+        complete_with_request(&store, "two", &in_root);
+        let rows = day_rows(&store, "19700101");
+        assert_eq!(rows[0]["output_file"], "custom.md");
+        assert_eq!(rows[1]["output_file"], "shared/output.json");
+    }
+
+    #[test]
+    fn day_index_output_file_is_null_when_output_is_missing() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let request = serde_json::from_value(json!({
+            "name":"plain", "day":"19700101", "output":"md"
+        }))
+        .unwrap();
+        complete_with_request(&store, "one", &request);
+        assert!(day_rows(&store, "19700101")[0]["output_file"].is_null());
     }
 
     #[test]

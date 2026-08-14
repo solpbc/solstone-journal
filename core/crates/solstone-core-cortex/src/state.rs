@@ -24,6 +24,13 @@ pub(crate) struct Work {
     pub(crate) request: Map<String, Value>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResolvedTalent {
+    pub(crate) talent_type: Option<String>,
+    pub(crate) declared_cwd: Option<String>,
+    pub(crate) timeout_seconds: Option<u64>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct RunningUse {
     pub(crate) active: PathBuf,
@@ -35,6 +42,7 @@ pub(crate) struct RunningUse {
 #[derive(Default)]
 struct Inner {
     requests: HashMap<String, Map<String, Value>>,
+    resolved: HashMap<String, ResolvedTalent>,
     queued: HashMap<String, Work>,
     running: HashMap<String, RunningUse>,
     finalizers: HashSet<String>,
@@ -176,6 +184,22 @@ impl CortexState {
             .cloned()
     }
 
+    pub(crate) fn update_resolved_talent(&self, use_id: &str, resolved: ResolvedTalent) {
+        let mut inner = self.inner.lock().expect("cortex state lock poisoned");
+        if inner.requests.contains_key(use_id) {
+            inner.resolved.insert(use_id.to_owned(), resolved);
+        }
+    }
+
+    pub(crate) fn resolved_talent(&self, use_id: &str) -> Option<ResolvedTalent> {
+        self.inner
+            .lock()
+            .expect("cortex state lock poisoned")
+            .resolved
+            .get(use_id)
+            .cloned()
+    }
+
     pub(crate) fn update_start(&self, use_id: &str, event: &Map<String, Value>) {
         let mut inner = self.inner.lock().expect("cortex state lock poisoned");
         let Some(request) = inner.requests.get_mut(use_id) else {
@@ -231,6 +255,7 @@ impl CortexState {
         inner.queued.remove(use_id);
         let running = inner.running.remove(use_id);
         let request = inner.requests.remove(use_id);
+        inner.resolved.remove(use_id);
         Some(FinalizedUse { running, request })
     }
 
@@ -405,6 +430,29 @@ mod tests {
         );
         assert!(state.claim_finalize("one").is_some());
         assert!(state.claim_finalize("one").is_none());
+    }
+
+    #[test]
+    fn resolved_talent_state_is_available_until_finalization() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, _spawn_rx) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        state.request(
+            serde_json::from_value(serde_json::json!({"use_id":"one","name":"chat"})).unwrap(),
+        );
+        assert_eq!(state.resolved_talent("one"), None);
+        let resolved = ResolvedTalent {
+            talent_type: Some("cogitate".into()),
+            declared_cwd: Some("journal".into()),
+            timeout_seconds: Some(12),
+        };
+        state.update_resolved_talent("one", resolved.clone());
+        assert_eq!(state.resolved_talent("one"), Some(resolved));
+        assert!(state.claim_finalize("one").is_some());
+        assert_eq!(state.resolved_talent("one"), None);
     }
 
     #[test]

@@ -14,12 +14,15 @@ use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_generate_wire::{record_usage, usage_for_log};
 
-use crate::state::{CortexState, Work};
+use crate::state::{CortexState, ResolvedTalent, Work};
 use crate::storage::now_ms;
 
 pub(crate) fn spawn_worker(
     state: CortexState,
     executable_dir: PathBuf,
+    talent_root: PathBuf,
+    apps_root: PathBuf,
+    templates_dir: PathBuf,
     receiver: mpsc::Receiver<Work>,
 ) {
     while let Ok(work) = receiver.recv() {
@@ -28,7 +31,14 @@ pub(crate) fn spawn_worker(
             state.abort(work, "Cortex stopped before spawn".into());
         } else {
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                spawn_one(state.clone(), executable_dir.clone(), work.clone())
+                spawn_one(
+                    state.clone(),
+                    executable_dir.clone(),
+                    &talent_root,
+                    &apps_root,
+                    &templates_dir,
+                    work.clone(),
+                )
             })) {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => state.abort(work, format!("Failed to spawn talent: {error}")),
@@ -42,7 +52,37 @@ pub(crate) fn spawn_worker(
     }
 }
 
-fn spawn_one(state: CortexState, executable_dir: PathBuf, work: Work) -> Result<(), String> {
+fn spawn_one(
+    state: CortexState,
+    executable_dir: PathBuf,
+    talent_root: &std::path::Path,
+    apps_root: &std::path::Path,
+    templates_dir: &std::path::Path,
+    work: Work,
+) -> Result<(), String> {
+    let name = work
+        .request
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .ok_or("talent request missing name")?;
+    let resolved = solstone_core_talent_cli::resolve_execution_facts(
+        name,
+        talent_root,
+        apps_root,
+        state.journal(),
+        templates_dir,
+        None,
+    )
+    .map_err(|error| format!("failed to resolve talent {name}: {error}"))?
+    .map(|facts| ResolvedTalent {
+        talent_type: facts.talent_type,
+        declared_cwd: facts.declared_cwd,
+        timeout_seconds: facts.timeout_seconds,
+    });
+    if let Some(resolved) = resolved.as_ref() {
+        state.update_resolved_talent(&work.use_id, resolved.clone());
+    }
     // The child is Python. This is cortex's only interpreter-resolution site, so
     // the cortex verb is deliberately not registered in the native process table.
     let python = solstone_core_journal_cli::sibling_python_in_dir(&executable_dir)
@@ -54,6 +94,12 @@ fn spawn_one(state: CortexState, executable_dir: PathBuf, work: Work) -> Result<
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if resolved.as_ref().is_some_and(|facts| {
+        facts.talent_type.as_deref() == Some("cogitate")
+            && facts.declared_cwd.as_deref() == Some("journal")
+    }) {
+        command.current_dir(state.journal());
+    }
     if let Some(facet) = work
         .request
         .get("facet")
@@ -144,7 +190,10 @@ fn spawn_one(state: CortexState, executable_dir: PathBuf, work: Work) -> Result<
         let _ = done_rx.recv_timeout(Duration::from_millis(100));
         reaper_state.finish(&reaper_use_id, code);
     });
-    let timeout = timeout_for(&work.request);
+    let timeout = timeout_for(
+        &work.request,
+        resolved.as_ref().and_then(|facts| facts.timeout_seconds),
+    );
     let timeout_state = state;
     let timeout_id = work.use_id;
     thread::spawn(move || {
@@ -166,10 +215,11 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     "panic".to_owned()
 }
 
-fn timeout_for(request: &Map<String, Value>) -> u64 {
+fn timeout_for(request: &Map<String, Value>, resolved_timeout_seconds: Option<u64>) -> u64 {
     request
         .get("timeout_seconds")
         .and_then(Value::as_u64)
+        .or(resolved_timeout_seconds)
         .unwrap_or(600)
 }
 
@@ -226,6 +276,14 @@ fn handle_stdout(state: &CortexState, work: &Work, line: String) {
 }
 
 fn record_terminal_usage(state: &CortexState, use_id: &str, event: &Map<String, Value>) {
+    if state
+        .resolved_talent(use_id)
+        .and_then(|facts| facts.talent_type)
+        .as_deref()
+        != Some("cogitate")
+    {
+        return;
+    }
     let Some(usage) = event.get("usage") else {
         return;
     };
@@ -334,6 +392,26 @@ mod tests {
     use crate::storage::CortexStore;
     use tempfile::tempdir;
 
+    fn package_roots(root: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
+        fs::write(root.join("pyproject.toml"), "[project]\nname = \"test\"\n").expect("pyproject");
+        fs::create_dir_all(root.join(".git")).expect("git marker");
+        let talent_root = root.join("solstone/talent");
+        let apps_root = root.join("solstone/apps");
+        let templates_dir = root.join("solstone/think/templates");
+        fs::create_dir_all(&talent_root).expect("talent root");
+        fs::create_dir_all(&apps_root).expect("apps root");
+        fs::create_dir_all(&templates_dir).expect("templates root");
+        (talent_root, apps_root, templates_dir)
+    }
+
+    fn write_python_stub(executable_dir: &std::path::Path, body: &str) {
+        let python = executable_dir.join("python3");
+        fs::write(&python, body).expect("python stub");
+        let mut permissions = fs::metadata(&python).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&python, permissions).unwrap();
+    }
+
     #[test]
     fn context_for_matches_python_talent_key_shape() {
         assert_eq!(context_for("chat"), "talent.system.chat");
@@ -376,14 +454,14 @@ mod tests {
         let directory = tempdir().unwrap();
         let executable_dir = directory.path().join("bin");
         fs::create_dir(&executable_dir).unwrap();
+        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
         let marker = directory.path().join("marker");
         let argv = directory.path().join("argv");
         let environment = directory.path().join("environment");
-        let python = executable_dir.join("python3");
-        fs::write(&python, "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' \"$@\" > \"$CORTEX_ARGV\"\nenv > \"$CORTEX_ENV\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n").unwrap();
-        let mut permissions = fs::metadata(&python).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&python, permissions).unwrap();
+        write_python_stub(
+            &executable_dir,
+            "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' \"$@\" > \"$CORTEX_ARGV\"\nenv > \"$CORTEX_ENV\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
+        );
         assert!(!marker.exists());
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request: Map<String, Value> = serde_json::from_value(
@@ -398,6 +476,9 @@ mod tests {
         spawn_one(
             state,
             executable_dir,
+            &talent_root,
+            &apps_root,
+            &templates_dir,
             Work {
                 use_id: "one".into(),
                 active,
@@ -418,11 +499,84 @@ mod tests {
         );
     }
 
+    fn spawn_and_read_child_cwd(name: &str, frontmatter: &str) -> (PathBuf, String) {
+        let directory = tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let executable_dir = root.join("bin");
+        fs::create_dir(&executable_dir).unwrap();
+        let (talent_root, apps_root, templates_dir) = package_roots(&root);
+        fs::write(talent_root.join(format!("{name}.md")), frontmatter).unwrap();
+        let cwd = root.join("child-cwd");
+        write_python_stub(
+            &executable_dir,
+            "#!/bin/sh\npwd > \"$CORTEX_CWD\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
+        );
+        let journal = root.join("journal");
+        let store = CortexStore::new(journal.clone()).unwrap();
+        let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "use_id":"one",
+            "name":name,
+            "env":{"CORTEX_CWD":cwd},
+        }))
+        .unwrap();
+        let active = store.claim(name, "one", &request).unwrap().unwrap();
+        let (spawn_tx, _) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        spawn_one(
+            state,
+            executable_dir,
+            &talent_root,
+            &apps_root,
+            &templates_dir,
+            Work {
+                use_id: "one".into(),
+                active,
+                request,
+            },
+        )
+        .unwrap();
+        for _ in 0..100 {
+            if let Ok(value) = fs::read_to_string(&cwd) {
+                return (journal, value.trim().to_owned());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("child did not record its cwd");
+    }
+
+    #[test]
+    fn cogitate_with_declared_journal_cwd_runs_child_in_journal_root() {
+        let (journal, cwd) = spawn_and_read_child_cwd(
+            "declared",
+            "{\n\"type\": \"cogitate\",\n\"cwd\": \"journal\"\n}\nbody\n",
+        );
+        assert_eq!(PathBuf::from(cwd), journal);
+    }
+
+    #[test]
+    fn generate_talent_does_not_set_child_cwd() {
+        let (journal, cwd) = spawn_and_read_child_cwd(
+            "generate",
+            "{\n\"type\": \"generate\",\n\"output\": \"json\"\n}\nbody\n",
+        );
+        assert_ne!(PathBuf::from(cwd), journal);
+    }
+
+    #[test]
+    fn cogitate_without_declared_cwd_does_not_set_child_cwd() {
+        let (journal, cwd) =
+            spawn_and_read_child_cwd("defaulted", "{\n\"type\": \"cogitate\"\n}\nbody\n");
+        assert_ne!(PathBuf::from(cwd), journal);
+    }
+
     #[test]
     fn renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does() {
         let directory = tempdir().unwrap();
         let executable_dir = directory.path().join("bin");
         fs::create_dir(&executable_dir).unwrap();
+        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
         let marker = directory.path().join("marker");
         for name in ["python", "python3", "pytest", "uv", "ruff"] {
             let shim = executable_dir.join(name);
@@ -499,6 +653,9 @@ mod tests {
         spawn_one(
             state,
             executable_dir,
+            &talent_root,
+            &apps_root,
+            &templates_dir,
             Work {
                 use_id: "one".into(),
                 active,
@@ -552,12 +709,16 @@ mod tests {
     }
 
     #[test]
-    fn synthesized_error_messages_and_timeout_default_are_exact() {
-        assert_eq!(timeout_for(&Map::new()), 600);
+    fn timeout_prefers_request_then_resolved_talent_then_default() {
+        assert_eq!(timeout_for(&Map::new(), Some(9)), 9);
         assert_eq!(
-            timeout_for(&serde_json::from_value(serde_json::json!({"timeout_seconds":7})).unwrap()),
+            timeout_for(
+                &serde_json::from_value(serde_json::json!({"timeout_seconds":7})).unwrap(),
+                Some(9),
+            ),
             7
         );
+        assert_eq!(timeout_for(&Map::new(), None), 600);
         assert_eq!(
             panic_message(Box::new(String::from("worker failed"))),
             "worker failed"
@@ -580,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_usage_writes_cogitate_records_with_model_fallback_and_segment() {
+    fn cogitate_terminal_usage_writes_record() {
         for (use_id, name, model_version, expected_model, expected_context) in [
             (
                 "one",
@@ -606,6 +767,14 @@ mod tests {
                 }))
                 .unwrap(),
             );
+            state.update_resolved_talent(
+                use_id,
+                ResolvedTalent {
+                    talent_type: Some("cogitate".into()),
+                    declared_cwd: None,
+                    timeout_seconds: None,
+                },
+            );
             let mut usage = serde_json::json!({"input_tokens": 3});
             if let Some(model_version) = model_version {
                 usage["model_version"] = Value::String(model_version.into());
@@ -625,6 +794,36 @@ mod tests {
             assert_eq!(record["segment"], "segment-a");
             assert_eq!(record["type"], "cogitate");
         }
+    }
+
+    #[test]
+    fn generate_terminal_usage_does_not_write_record() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, _spawn_rx) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        state.request(
+            serde_json::from_value(
+                serde_json::json!({"use_id":"one","name":"chat","model":"model"}),
+            )
+            .unwrap(),
+        );
+        state.update_resolved_talent(
+            "one",
+            ResolvedTalent {
+                talent_type: Some("generate".into()),
+                declared_cwd: None,
+                timeout_seconds: None,
+            },
+        );
+        record_terminal_usage(
+            &state,
+            "one",
+            &serde_json::from_value(serde_json::json!({"usage":{"input_tokens":3}})).unwrap(),
+        );
+        assert!(!directory.path().join("tokens").exists());
     }
 
     #[test]
@@ -696,16 +895,12 @@ mod tests {
         let directory = tempdir().unwrap();
         let executable_dir = directory.path().join("bin");
         fs::create_dir(&executable_dir).unwrap();
+        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
         let child_pid = directory.path().join("child-pid");
-        let python = executable_dir.join("python3");
-        fs::write(
-            &python,
+        write_python_stub(
+            &executable_dir,
             "#!/bin/sh\necho $$ > \"$CORTEX_CHILD_PID\"\nexec 0<&-\nsleep 30\n",
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&python).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&python, permissions).unwrap();
+        );
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
             "use_id":"one",
@@ -723,6 +918,9 @@ mod tests {
             spawn_one(
                 state,
                 executable_dir,
+                &talent_root,
+                &apps_root,
+                &templates_dir,
                 Work {
                     use_id: "one".into(),
                     active,

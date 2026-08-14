@@ -8,6 +8,8 @@ use std::io::IsTerminal;
 use std::path::Path;
 use std::time::SystemTime;
 
+use serde_json::Value;
+
 mod args;
 mod compose;
 mod facets_context;
@@ -28,6 +30,41 @@ pub struct CliRun {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutionFacts {
+    pub talent_type: Option<String>,
+    pub declared_cwd: Option<String>,
+    pub timeout_seconds: Option<u64>,
+}
+
+pub fn resolve_execution_facts(
+    name: &str,
+    talent_root: &Path,
+    apps_root: &Path,
+    journal_root: &Path,
+    templates_dir: &Path,
+    focused_facet: Option<&str>,
+) -> Result<Option<ExecutionFacts>, String> {
+    let configs = solstone_core_talent_config::discover(talent_root, apps_root)?;
+    let Some(config) = configs.iter().find(|config| config.key == name) else {
+        return Ok(None);
+    };
+    let declared_cwd = config
+        .metadata
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let composed = compose::compose_talent(config, journal_root, templates_dir, focused_facet)?;
+    Ok(Some(ExecutionFacts {
+        talent_type: composed
+            .get("type")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        declared_cwd,
+        timeout_seconds: composed.get("timeout_seconds").and_then(Value::as_u64),
+    }))
 }
 
 pub fn run_cli(
@@ -133,6 +170,68 @@ mod tests {
             root.path(),
             UNIX_EPOCH + Duration::from_secs(1_000),
         )
+    }
+
+    #[test]
+    fn resolve_execution_facts_keeps_raw_cwd_distinct_from_composer_default() {
+        let root = roots();
+        fs::create_dir_all(root.path().join("think/templates")).expect("templates");
+        fs::write(
+            root.path().join("talent/declared.md"),
+            "{\n\"type\": \"cogitate\",\n\"cwd\": \"journal\",\n\"timeout_seconds\": 42\n}\nbody\n",
+        )
+        .expect("declared talent");
+        fs::write(
+            root.path().join("talent/defaulted.md"),
+            "{\n\"type\": \"cogitate\"\n}\nbody\n",
+        )
+        .expect("defaulted talent");
+
+        let declared = resolve_execution_facts(
+            "declared",
+            &root.path().join("talent"),
+            &root.path().join("apps"),
+            root.path(),
+            &root.path().join("think/templates"),
+            None,
+        )
+        .expect("resolve")
+        .expect("declared facts");
+        assert_eq!(declared.talent_type.as_deref(), Some("cogitate"));
+        assert_eq!(declared.declared_cwd.as_deref(), Some("journal"));
+        assert_eq!(declared.timeout_seconds, Some(42));
+
+        let defaulted = resolve_execution_facts(
+            "defaulted",
+            &root.path().join("talent"),
+            &root.path().join("apps"),
+            root.path(),
+            &root.path().join("think/templates"),
+            None,
+        )
+        .expect("resolve")
+        .expect("defaulted facts");
+        assert_eq!(defaulted.talent_type.as_deref(), Some("cogitate"));
+        assert_eq!(defaulted.declared_cwd, None);
+        assert_eq!(defaulted.timeout_seconds, None);
+    }
+
+    #[test]
+    fn resolve_execution_facts_returns_none_for_unknown_name() {
+        let root = roots();
+        fs::create_dir_all(root.path().join("think/templates")).expect("templates");
+        assert_eq!(
+            resolve_execution_facts(
+                "missing",
+                &root.path().join("talent"),
+                &root.path().join("apps"),
+                root.path(),
+                &root.path().join("think/templates"),
+                None,
+            )
+            .expect("resolve"),
+            None
+        );
     }
 
     #[test]

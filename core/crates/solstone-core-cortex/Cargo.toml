@@ -20,7 +20,9 @@ solstone-core-brain.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-generate-wire.workspace = true
 solstone-core-journal-cli.workspace = true
+solstone-core-journal.workspace = true
 solstone-core-spp-ratls.workspace = true
+solstone-core-talent-cli.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
