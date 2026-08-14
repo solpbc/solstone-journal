@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::args::SetupArgs;
-use crate::steps::{CommandRequest, CommandRunner};
+use crate::steps::{CommandRequest, CommandRunner, service_artifact_path};
 use crate::wrapper::{AliasState, WrapperEnvironment, uninstall_wrappers, wrapper_paths};
 
 pub const CLEAN_UNINSTALL_STEP_NAMES: [&str; 4] = ["service", "wrapper", "config", "manifest"];
@@ -116,14 +116,66 @@ pub fn clean_uninstall_refusal(args: &SetupArgs) -> Option<String> {
 fn present(path: &Path) -> bool {
     path.exists() || path.is_symlink()
 }
-fn service_path(home: &Path) -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
-        Some(home.join("Library/LaunchAgents/org.solpbc.solstone.plist"))
-    } else if cfg!(target_os = "linux") {
-        Some(home.join(".config/systemd/user/solstone.service"))
-    } else {
-        None
+/// Owner-facing inventory shown before destructive confirmation.
+#[must_use]
+pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -> Vec<String> {
+    let service = service_artifact_path(&context.home_dir);
+    let wrappers = wrapper_paths(&context.home_dir);
+    let marker = |path: &Path| if present(path) { "present" } else { "absent" };
+    let mut lines = vec![
+        "journal setup --clean-uninstall will remove these runtime artifacts:".into(),
+        String::new(),
+    ];
+    if let Some(path) = service {
+        lines.push(format!(
+            "  [{:<7}] service: {}",
+            marker(&path),
+            path.display()
+        ));
     }
+    for path in [&wrappers.sol, &wrappers.journal] {
+        lines.push(format!(
+            "  [{:<7}] wrapper: {}",
+            marker(path),
+            path.display()
+        ));
+    }
+    lines.extend([
+        format!(
+            "  [{:<7}] config: {}",
+            marker(&context.config_path),
+            context.config_path.display()
+        ),
+        format!(
+            "  [{:<7}] manifest: {}",
+            marker(&context.manifest_path),
+            context.manifest_path.display()
+        ),
+        String::new(),
+        "will not remove:".into(),
+        format!("  - journal directory: {}", context.journal_path.display()),
+        "  - /Applications/solstone.app".into(),
+        "  - ~/Library/Application Support/solstone/".into(),
+        "  - macOS microphone or screen recording permissions".into(),
+        "  - the python package".into(),
+        String::new(),
+    ]);
+    lines
+}
+
+#[must_use]
+pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) -> bool {
+    let wrappers = wrapper_paths(&context.home_dir);
+    [
+        service_artifact_path(&context.home_dir),
+        Some(wrappers.sol),
+        Some(wrappers.journal),
+        Some(context.config_path.clone()),
+        Some(context.manifest_path.clone()),
+    ]
+    .iter()
+    .flatten()
+    .any(|path| present(path))
 }
 fn result(
     name: &'static str,
@@ -251,16 +303,9 @@ fn remove_wrappers(
 }
 
 pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUninstallOutcome {
-    let service = service_path(&context.home_dir);
+    let service = service_artifact_path(&context.home_dir);
     let wrappers = wrapper_paths(&context.home_dir);
-    let all = [
-        service.clone(),
-        Some(wrappers.sol.clone()),
-        Some(wrappers.journal.clone()),
-        Some(context.config_path.clone()),
-        Some(context.manifest_path.clone()),
-    ];
-    if !all.iter().flatten().any(|path| present(path)) {
+    if !clean_uninstall_has_managed_paths(context) {
         return CleanUninstallOutcome {
             exit_code: 0,
             message: "nothing to remove (all paths already absent)".into(),
@@ -468,5 +513,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             CLEAN_UNINSTALL_STEP_NAMES
         );
+    }
+
+    #[test]
+    fn confirmation_inventory_marks_managed_paths_and_preserves_owner_data() {
+        let root = root("confirmation");
+        let home = root.join("home");
+        let config = root.join("config.toml");
+        let manifest = root.join("journal/health/setup-state.json");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::write(home.join(".local/bin/sol"), "managed").unwrap();
+        fs::write(&config, "journal = \"x\"\n").unwrap();
+        let mut runner = Runner(VecDeque::new());
+        let mut confirm = || true;
+        let context = CleanUninstallContext {
+            journal_path: root.join("journal"),
+            home_dir: home.clone(),
+            config_path: config.clone(),
+            manifest_path: manifest.clone(),
+            curdir: root.join("repo"),
+            executable_dir: root.join("bin"),
+            yes: false,
+            stdin_is_tty: true,
+            confirm: &mut confirm,
+            runner: &mut runner,
+        };
+        let lines = clean_uninstall_confirmation_lines(&context).join("\n");
+        assert!(lines.contains("[present] wrapper: "));
+        assert!(lines.contains(&format!("[present] config: {}", config.display())));
+        assert!(lines.contains(&format!("[absent ] manifest: {}", manifest.display())));
+        assert!(lines.contains(&format!(
+            "  - journal directory: {}",
+            context.journal_path.display()
+        )));
+        assert!(lines.contains("  - the python package"));
     }
 }

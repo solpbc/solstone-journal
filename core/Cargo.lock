@@ -3745,6 +3745,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solstone-core-check",
+ "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",

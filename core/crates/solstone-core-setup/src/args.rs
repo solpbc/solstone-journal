@@ -634,6 +634,13 @@ mod tests {
                 .0,
             "--port must be in 1024-65535 (got no)"
         );
+        let out_of_range_port = vec![OsString::from("--port"), OsString::from("80")];
+        assert_eq!(
+            parse_args_at(&out_of_range_port, &context.current_dir)
+                .unwrap_err()
+                .0,
+            "--port must be in 1024-65535 (got 80)"
+        );
         let blank = vec![OsString::from("--journal"), OsString::from("  ")];
         assert_eq!(
             parse_args_at(&blank, &context.current_dir).unwrap_err().0,

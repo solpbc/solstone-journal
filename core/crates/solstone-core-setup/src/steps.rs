@@ -470,6 +470,7 @@ pub struct RunOutcome {
     pub exit_code: i32,
     pub ran_steps: Vec<StepName>,
     pub dead_end: Option<DeadEndOutcome>,
+    pub duration_ms: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -480,11 +481,13 @@ pub struct DeadEndOutcome {
 }
 
 pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutcome {
+    let setup_started = Instant::now();
     if context.jsonl() {
         context.emit(
             EventType::SetupStarted,
             Map::from_iter([
                 ("started_at".into(), json!((context.now)())),
+                ("version".into(), json!(env!("CARGO_PKG_VERSION"))),
                 ("mode".into(), json!(mode_name(context.mode))),
                 (
                     "args_resolved".into(),
@@ -497,13 +500,20 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
         if context.jsonl() {
             context.emit(
                 EventType::SetupCompleted,
-                Map::from_iter([("status".into(), json!("ok"))]),
+                Map::from_iter([
+                    ("status".into(), json!("ok")),
+                    (
+                        "duration_ms".into(),
+                        json!(setup_started.elapsed().as_millis()),
+                    ),
+                ]),
             );
         }
         return RunOutcome {
             exit_code: 0,
             ran_steps: Vec::new(),
             dead_end: None,
+            duration_ms: setup_started.elapsed().as_millis(),
         };
     }
 
@@ -517,6 +527,7 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                 .collect()
         })
     };
+    narrate_prior_run(context, read_manifest(&context.manifest_path).as_ref());
     let mut manifest = SetupManifest::initial(
         (context.now)(),
         mode_name(context.mode).to_owned(),
@@ -526,14 +537,37 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
     let mut ran_steps = Vec::new();
     for (offset, spec) in steps.iter().enumerate() {
         let index = offset + 1;
-        context.emit(
-            EventType::StepStarted,
-            Map::from_iter([
-                ("step".into(), json!(spec.name.as_str())),
-                ("index".into(), json!(index)),
-                ("total".into(), json!(ALL_STEP_NAMES.len())),
-            ]),
-        );
+        let step_started = Instant::now();
+        let command = command_for_step(context, spec.name);
+        if let Some(command) = &command {
+            narrate(
+                context,
+                &format!(
+                    "[step {index}/{}] running {}: {}",
+                    ALL_STEP_NAMES.len(),
+                    spec.name.as_str(),
+                    command.join(" ")
+                ),
+            );
+        } else {
+            narrate(
+                context,
+                &format!(
+                    "[step {index}/{}] running {}...",
+                    ALL_STEP_NAMES.len(),
+                    spec.name.as_str()
+                ),
+            );
+        }
+        let mut started_fields = Map::from_iter([
+            ("step".into(), json!(spec.name.as_str())),
+            ("index".into(), json!(index)),
+            ("total".into(), json!(ALL_STEP_NAMES.len())),
+        ]);
+        if let Some(command) = command {
+            started_fields.insert("command".into(), json!(command));
+        }
+        context.emit(EventType::StepStarted, started_fields);
         let result = if let Some(prior_step) = prior.get(spec.name.as_str()) {
             if can_skip(Some(prior_step)) {
                 let paths = prior_step
@@ -562,7 +596,12 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                                 error_code,
                             }) => {
                                 return dead_end_outcome(
-                                    exit_code, ran_steps, message, step_name, error_code,
+                                    exit_code,
+                                    ran_steps,
+                                    message,
+                                    step_name,
+                                    error_code,
+                                    setup_started,
                                 );
                             }
                             Err(StepExecutionError::Unhandled { message }) => StepResult::failed(
@@ -595,7 +634,12 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                             error_code,
                         }) => {
                             return dead_end_outcome(
-                                exit_code, ran_steps, message, step_name, error_code,
+                                exit_code,
+                                ran_steps,
+                                message,
+                                step_name,
+                                error_code,
+                                setup_started,
                             );
                         }
                     }
@@ -615,7 +659,12 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                         error_code,
                     }) => {
                         return dead_end_outcome(
-                            exit_code, ran_steps, message, step_name, error_code,
+                            exit_code,
+                            ran_steps,
+                            message,
+                            step_name,
+                            error_code,
+                            setup_started,
                         );
                     }
                     Err(StepExecutionError::Unhandled { message }) => StepResult::failed(
@@ -640,7 +689,14 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                     step_name,
                     error_code,
                 }) => {
-                    return dead_end_outcome(exit_code, ran_steps, message, step_name, error_code);
+                    return dead_end_outcome(
+                        exit_code,
+                        ran_steps,
+                        message,
+                        step_name,
+                        error_code,
+                        setup_started,
+                    );
                 }
                 Err(StepExecutionError::Unhandled { message }) => StepResult::failed(
                     spec.name,
@@ -660,7 +716,8 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
             .steps
             .push(serde_json::to_value(&result).expect("step result is serializable"));
         write_manifest(&context.manifest_path, &manifest);
-        emit_step_result(context, &result);
+        emit_step_result(context, &result, step_started.elapsed().as_millis());
+        narrate_step_result(context, index, &result);
         if result.status == StepStatus::Failed {
             if CONTINUE_AFTER_FAILURE.contains(&result.name) {
                 aggregate.push(result);
@@ -673,12 +730,20 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
                 .unwrap_or(1);
             context.emit(
                 EventType::SetupCompleted,
-                Map::from_iter([("status".into(), json!("failed"))]),
+                Map::from_iter([
+                    ("status".into(), json!("failed")),
+                    ("failed_step".into(), json!(result.name.as_str())),
+                    (
+                        "duration_ms".into(),
+                        json!(setup_started.elapsed().as_millis()),
+                    ),
+                ]),
             );
             return RunOutcome {
                 exit_code,
                 ran_steps,
                 dead_end: None,
+                duration_ms: setup_started.elapsed().as_millis(),
             };
         }
     }
@@ -698,24 +763,37 @@ pub fn run_setup(context: &mut SetupContext<'_>, steps: &[StepSpec]) -> RunOutco
             Map::from_iter([
                 ("status".into(), json!("failed")),
                 ("failed_step".into(), json!(first.name.as_str())),
+                (
+                    "duration_ms".into(),
+                    json!(setup_started.elapsed().as_millis()),
+                ),
             ]),
         );
         return RunOutcome {
             exit_code,
             ran_steps,
             dead_end: None,
+            duration_ms: setup_started.elapsed().as_millis(),
         };
     }
     manifest.completed_at = Some((context.now)());
     write_manifest(&context.manifest_path, &manifest);
     context.emit(
         EventType::SetupCompleted,
-        Map::from_iter([("status".into(), json!("ok"))]),
+        Map::from_iter([
+            ("status".into(), json!("ok")),
+            (
+                "duration_ms".into(),
+                json!(setup_started.elapsed().as_millis()),
+            ),
+        ]),
     );
+    narrate_success(context, &manifest);
     RunOutcome {
         exit_code: 0,
         ran_steps,
         dead_end: None,
+        duration_ms: setup_started.elapsed().as_millis(),
     }
 }
 
@@ -725,6 +803,7 @@ fn dead_end_outcome(
     message: String,
     step_name: Option<StepName>,
     error_code: Option<ErrorCode>,
+    setup_started: Instant,
 ) -> RunOutcome {
     RunOutcome {
         exit_code,
@@ -734,10 +813,216 @@ fn dead_end_outcome(
             step_name,
             error_code,
         }),
+        duration_ms: setup_started.elapsed().as_millis(),
     }
 }
 
-fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult) {
+fn narrate(context: &SetupContext<'_>, line: &str) {
+    if !context.jsonl() {
+        println!("{line}");
+    }
+}
+
+fn narrate_error(context: &SetupContext<'_>, line: &str) {
+    if !context.jsonl() {
+        eprintln!("{line}");
+    }
+}
+
+fn narrate_prior_run(context: &SetupContext<'_>, previous: Option<&SetupManifest>) {
+    let Some(previous) = previous else {
+        return;
+    };
+    if previous.completed_at.is_some() {
+        let suffix = if context.args.force {
+            "re-running all steps (--force)."
+        } else {
+            "verifying current state."
+        };
+        narrate(
+            context,
+            &format!(
+                "journal setup last ran cleanly on {}; {suffix}",
+                previous.completed_at.as_deref().unwrap_or_default()
+            ),
+        );
+        if !context.args.force {
+            narrate(context, "Use --force to re-run all steps unconditionally.");
+        }
+        return;
+    }
+    let failed = previous
+        .steps
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|step| step.get("status").and_then(Value::as_str) == Some("failed"))
+        .filter_map(|step| step.get("name").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    if failed.is_empty() {
+        return;
+    }
+    narrate(
+        context,
+        &format!(
+            "journal setup last run on {} left these steps incomplete:",
+            previous.started_at
+        ),
+    );
+    for name in failed {
+        narrate(context, &format!("  - {name} (failed)"));
+    }
+    narrate(
+        context,
+        "Re-running will verify state and re-run incomplete steps.",
+    );
+}
+
+fn narrate_step_result(context: &SetupContext<'_>, index: usize, result: &StepResult) {
+    if result.status == StepStatus::Skipped {
+        narrate(
+            context,
+            &format!(
+                "[step {index}/{}] skipped {}: {}",
+                ALL_STEP_NAMES.len(),
+                result.name.as_str(),
+                result.reason.as_deref().unwrap_or("skipped")
+            ),
+        );
+    } else if result.status == StepStatus::Failed {
+        let message = match result.error.as_ref() {
+            Some(StepErrorPayload::Failure(error)) => error.message.as_str(),
+            _ => "step failed",
+        };
+        narrate_error(
+            context,
+            &format!("journal setup: {} failed: {message}", result.name.as_str()),
+        );
+    }
+}
+
+fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
+    if context.jsonl() {
+        return;
+    }
+    println!();
+    println!("solstone is set up.");
+    println!();
+    let skipped_prior = manifest
+        .steps
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|step| step.get("reason").and_then(Value::as_str) == Some("prior_run_ok"))
+        .count();
+    let skipped_other = manifest
+        .steps
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|step| {
+            step.get("status").and_then(Value::as_str) == Some("skipped")
+                && step.get("reason").and_then(Value::as_str) != Some("prior_run_ok")
+        })
+        .count();
+    println!(
+        "{skipped_prior} of {} steps already done; ran {}",
+        ALL_STEP_NAMES.len(),
+        ALL_STEP_NAMES
+            .len()
+            .saturating_sub(skipped_prior + skipped_other)
+    );
+    println!();
+    println!("artifacts:");
+    let mut paths = Vec::new();
+    for step in &manifest.steps {
+        if let Some(items) = step.get("paths").and_then(Value::as_array) {
+            for path in items.iter().filter_map(Value::as_str) {
+                if !paths.iter().any(|seen: &String| seen == path) {
+                    paths.push(path.to_owned());
+                }
+            }
+        }
+    }
+    let manifest_path = context.manifest_path.to_string_lossy().into_owned();
+    if !paths.contains(&manifest_path) {
+        paths.push(manifest_path);
+    }
+    if paths.is_empty() {
+        println!("  none");
+    } else {
+        for path in paths {
+            println!("  {path}");
+        }
+    }
+}
+
+fn command_for_step(context: &SetupContext<'_>, name: StepName) -> Option<Vec<String>> {
+    let journal = |args: Vec<String>| {
+        std::iter::once(
+            context
+                .install_bin_dir
+                .join("journal")
+                .to_string_lossy()
+                .into_owned(),
+        )
+        .chain(args)
+        .collect::<Vec<_>>()
+    };
+    let sol = |args: Vec<String>| {
+        std::iter::once(
+            context
+                .install_bin_dir
+                .join("sol")
+                .to_string_lossy()
+                .into_owned(),
+        )
+        .chain(args)
+        .collect::<Vec<_>>()
+    };
+    match name {
+        StepName::Doctor => Some(journal(vec![
+            "doctor".into(),
+            "--readiness".into(),
+            if context.jsonl() { "--jsonl" } else { "--json" }.into(),
+            "--port".into(),
+            context.args.port.to_string(),
+        ])),
+        StepName::InstallModels => Some(journal(vec![
+            "install-models".into(),
+            "--variant".into(),
+            context.args.variant.clone(),
+        ])),
+        StepName::SkillsUser => Some(sol(vec![
+            "skills".into(),
+            "install".into(),
+            "--agent".into(),
+            "all".into(),
+        ])),
+        StepName::SkillsJournal => Some(sol(vec![
+            "skills".into(),
+            "install".into(),
+            "--project".into(),
+            context.journal_path.to_string_lossy().into_owned(),
+            "--agent".into(),
+            "all".into(),
+        ])),
+        StepName::Service if !context.sol_already_keeps_journal() || context.args.skip_service => {
+            Some(journal(vec![
+                "service".into(),
+                "install".into(),
+                "--port".into(),
+                context.args.port.to_string(),
+            ]))
+        }
+        StepName::Brain => Some(sol(vec![
+            "call".into(),
+            "thinking".into(),
+            "local".into(),
+            "bootstrap".into(),
+        ])),
+        StepName::Journal | StepName::Wrapper | StepName::Service => None,
+    }
+}
+
+fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult, duration_ms: u128) {
     let outcome = if result.status == StepStatus::Skipped {
         "skipped"
     } else {
@@ -750,6 +1035,7 @@ fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult) {
                 EventType::StepFailed,
                 Map::from_iter([
                     ("step".into(), json!(result.name.as_str())),
+                    ("duration_ms".into(), json!(duration_ms)),
                     (
                         "error".into(),
                         serde_json::to_value(error).expect("error serializable"),
@@ -761,6 +1047,7 @@ fn emit_step_result(context: &mut SetupContext<'_>, result: &StepResult) {
             let mut fields = Map::from_iter([
                 ("step".into(), json!(result.name.as_str())),
                 ("outcome".into(), json!(outcome)),
+                ("duration_ms".into(), json!(duration_ms)),
             ]);
             if let Some(reason) = &result.reason {
                 fields.insert("reason".into(), json!(reason));
@@ -1133,7 +1420,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     let paths = wrapper_paths(&context.home_dir);
     match provision_wrappers(&environment, &context.journal_path) {
         Ok(_) => {
-            let _ = ensure_user_bin_on_path(&context.home_dir);
+            narrate(context, &ensure_user_bin_on_path(&context.home_dir));
             Ok(StepResult::new(
                 StepName::Wrapper,
                 StepStatus::Ok,
@@ -1160,7 +1447,9 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     }
 }
 
-fn service_artifact_path(home: &Path) -> Option<PathBuf> {
+/// The native service artifact shared by setup and clean-uninstall.
+#[must_use]
+pub(crate) fn service_artifact_path(home: &Path) -> Option<PathBuf> {
     if cfg!(target_os = "macos") {
         Some(home.join("Library/LaunchAgents/org.solpbc.solstone.plist"))
     } else if cfg!(target_os = "linux") {
@@ -1191,7 +1480,7 @@ fn step_service(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
         ));
     }
     if context.sol_already_keeps_journal() {
-        eprintln!("{SOL_ALREADY_KEEPS_JOURNAL_NARRATION}");
+        narrate(context, SOL_ALREADY_KEEPS_JOURNAL_NARRATION);
         return Ok(skipped_result(
             StepName::Service,
             Vec::new(),
@@ -1255,7 +1544,7 @@ fn resume_service(
     paths: Vec<PathBuf>,
 ) -> Result<Option<StepResult>, StepExecutionError> {
     if context.sol_already_keeps_journal() && !context.args.skip_service {
-        eprintln!("{SOL_ALREADY_KEEPS_JOURNAL_NARRATION}");
+        narrate(context, SOL_ALREADY_KEEPS_JOURNAL_NARRATION);
         return Ok(Some(skipped_result(
             StepName::Service,
             Vec::new(),
@@ -1889,7 +2178,7 @@ mod tests {
         let (args, resolved, root, home) = fixture("short", &["--jsonl", "--explain"]);
         let mut runner = FakeRunner::new(Vec::new());
         let mut prompt = Prompt(false);
-        let mut recorder = Recorder::default();
+        let mut recorder = FieldRecorder::default();
         let outcome = run_setup(
             &mut context(
                 &args,
@@ -1904,7 +2193,60 @@ mod tests {
         );
         assert_eq!(outcome.exit_code, 0);
         assert!(outcome.ran_steps.is_empty());
-        assert_eq!(*recorder.0.borrow(), ["setup.started", "setup.completed"]);
+        let events = recorder.0.borrow();
+        assert_eq!(
+            events.iter().map(|(event, _)| *event).collect::<Vec<_>>(),
+            [EventType::SetupStarted, EventType::SetupCompleted]
+        );
+        assert_eq!(events[0].1["version"], env!("CARGO_PKG_VERSION"));
+        assert!(events[1].1["duration_ms"].is_u64());
+    }
+
+    #[test]
+    fn jsonl_step_events_include_the_documented_command_and_duration() {
+        let (args, resolved, root, home) = fixture("jsonl-metadata", &["--jsonl"]);
+        let mut runner = FakeRunner::new(vec![Ok(CommandOutput {
+            exit_code: 0,
+            stdout: concat!(
+                "{\"event\":\"doctor.started\"}\n",
+                "{\"event\":\"check.completed\"}\n",
+                "{\"event\":\"doctor.completed\",\"status\":\"ok\"}\n"
+            )
+            .into(),
+            stderr: String::new(),
+            timed_out: false,
+        })]);
+        let mut prompt = Prompt(false);
+        let mut recorder = FieldRecorder::default();
+        let doctor = [StepSpec {
+            name: StepName::Doctor,
+            executor: Some(step_doctor),
+            plan: plan_doctor,
+        }];
+        run_setup(
+            &mut context(
+                &args,
+                &resolved,
+                &root,
+                &home,
+                &mut runner,
+                &mut prompt,
+                Some(&mut recorder),
+            ),
+            &doctor,
+        );
+        let events = recorder.0.borrow();
+        let started = events
+            .iter()
+            .find(|(event, _)| *event == EventType::StepStarted)
+            .unwrap();
+        assert_eq!(started.1["step"], "doctor");
+        assert_eq!(started.1["command"][1], "doctor");
+        let completed = events
+            .iter()
+            .find(|(event, _)| *event == EventType::StepCompleted)
+            .unwrap();
+        assert!(completed.1["duration_ms"].is_u64());
     }
     #[test]
     fn table_has_the_fixed_eight_step_order_and_complete_plan_shape() {
