@@ -29,7 +29,7 @@ pub fn routes(journal_root: PathBuf) -> Router {
     Router::new()
         .route("/app/health/", get(assets::shell))
         .route("/app/health/workspace", get(assets::workspace))
-        .route("/app/health/static/health.js", get(assets::health_js))
+        .route("/app/health/static/{*name}", get(assets::static_asset))
         .route(
             "/app/health/api/state",
             get(move || state(state_root.clone())),
