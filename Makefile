@@ -1329,6 +1329,7 @@ ci-full-under-poison:
 	@$(MAKE) check-rust-fmt
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
+	@$(MAKE) check-rust-deny
 	@$(MAKE) check-rust-test
 	@$(MAKE) check-rust-describe-cli-stubs
 	@$(MAKE) check-rust-onnx-test
@@ -1336,7 +1337,6 @@ ci-full-under-poison:
 	@$(MAKE) check-rust-shipped-binaries
 	@$(MAKE) check-rust-ios
 	@$(MAKE) check-rust-macos
-	@$(MAKE) check-rust-deny
 	@echo "All full CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
 	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement; run 'make check-rust-race' for concurrency-sensitive supervisor changes."
 

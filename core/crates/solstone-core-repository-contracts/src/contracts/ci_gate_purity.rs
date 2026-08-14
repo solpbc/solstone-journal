@@ -489,9 +489,11 @@ fn make_ci_never_executes_forbidden_interpreters() {
 
 #[test]
 fn make_ci_full_never_executes_forbidden_interpreters() {
-    // The trailing "test" is check-rust-describe-cli-stubs, immediately after
-    // the full workspace test leg. ONNX and PDF each add one Linux-only test.
-    let mut expected = vec!["fmt", "check", "clippy", "test", "test"];
+    // Dependency policy runs before the long workspace suite so a known test
+    // failure cannot hide it. The trailing "test" is
+    // check-rust-describe-cli-stubs, immediately after that workspace leg.
+    // ONNX and PDF each add one Linux-only test.
+    let mut expected = vec!["fmt", "check", "clippy", "fetch", "deny", "test", "test"];
     if cfg!(target_os = "linux") {
         expected.extend(["test", "test"]);
     }
@@ -500,8 +502,24 @@ fn make_ci_full_never_executes_forbidden_interpreters() {
     if cfg!(target_os = "macos") {
         expected.extend(["check", "test"]);
     }
-    expected.extend(["fetch", "deny"]);
     assert_gate_never_executes_forbidden_interpreters("ci-full", &expected);
+}
+
+#[test]
+fn make_ci_full_checks_dependency_policy_before_the_long_workspace_suite() {
+    let makefile = makefile_text(&repo_root());
+    let ci = target_body(&makefile, "ci-full-under-poison");
+    let deny = ci
+        .find("$(MAKE) check-rust-deny")
+        .expect("make ci-full must retain the dependency-policy gate");
+    let workspace_tests = ci
+        .find("$(MAKE) check-rust-test")
+        .expect("make ci-full must retain the full workspace test gate");
+
+    assert!(
+        deny < workspace_tests,
+        "dependency policy must run before the long workspace suite so a known test failure cannot hide it"
+    );
 }
 
 #[test]
