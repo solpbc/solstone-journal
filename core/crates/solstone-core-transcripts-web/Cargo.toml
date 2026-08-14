@@ -38,6 +38,7 @@ serde_json.workspace = true
 [dev-dependencies]
 sha2.workspace = true
 solstone-core-convey-shell.workspace = true
+temp-env = "0.3.6"
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros"] }
 tower.workspace = true

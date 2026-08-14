@@ -4050,6 +4050,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-system",
  "solstone-core-system-health",
+ "temp-env",
  "tempfile",
  "tokio",
  "tower",

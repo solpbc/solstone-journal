@@ -23,6 +23,43 @@ mod tests {
 
     const DAY: &str = "20260731";
 
+    /// The recorded cases carry owner-LOCAL wall-clock strings and timestamps, because the
+    /// reference renders them that way and this port is faithful to it. The corpus was
+    /// captured under UTC and records that in `capture_environment.tz`.
+    ///
+    /// So the replay must ESTABLISH the zone the recorded case depends on, rather than
+    /// inheriting whichever zone the host happens to sit in. Without this the suite is green
+    /// on a UTC machine and red on a developer's: measured on an America/Denver host, the
+    /// segment bodies came back six hours off, which also reordered the chunks and made the
+    /// diff look like a content defect rather than a harness one.
+    ///
+    /// The fix is to pin the condition, never to relax the expectation and never to declare a
+    /// UTC shell the contract.
+    /// The zone the corpus was captured under, recorded in the fixture itself.
+    ///
+    /// The recorded cases carry owner-LOCAL wall-clock strings and timestamps, because the
+    /// reference renders them that way and this port is faithful to it. So the replay must
+    /// ESTABLISH the zone its recorded cases depend on rather than inheriting the host's.
+    /// Measured on an America/Denver host, the segment bodies came back six hours off, which
+    /// also reordered the chunks and made a harness defect look like a content defect.
+    ///
+    /// Pin the condition; never relax the expectation, and never declare a UTC shell the
+    /// contract.
+    fn capture_timezone() -> &'static str {
+        let corpus: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/convey_records_corpus.json"
+        ));
+        let value: Value = serde_json::from_str(corpus).expect("corpus parses");
+        match value["capture_environment"]["tz"].as_str() {
+            Some("UTC") | None => "UTC",
+            Some(other) => panic!(
+                "corpus was captured under {other}; this replay only pins UTC. Teach it the new \
+                 zone rather than letting the host decide."
+            ),
+        }
+    }
+
     fn shell() -> axum::response::Response {
         axum::response::Response::new(Body::from("shell"))
     }
@@ -731,28 +768,39 @@ mod tests {
         fs::remove_dir_all(root).expect("seeded corpus cleanup");
     }
 
-    #[tokio::test]
-    async fn corpus_replay_matches_all_new_read_routes_and_is_read_only() {
-        let root = seeded_root();
-        let corpus: Value = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../fixtures/convey_records_corpus.json"
-        )))
-        .unwrap();
-        let cases = corpus["phases"]["populated"]["transcripts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|case| native_read_route_case(case))
-            .collect::<Vec<_>>();
-        assert_eq!(cases.len(), 42);
-        let before = snapshot(&root);
-        let router = app(&root);
-        for case in cases {
-            assert_native_read_route_case(router.clone(), &root, case).await;
-        }
-        assert_eq!(snapshot(&root), before);
-        fs::remove_dir_all(root).expect("seeded corpus cleanup");
+    #[test]
+    fn corpus_replay_matches_all_new_read_routes_and_is_read_only() {
+        // Wrapped rather than #[tokio::test] so the capture zone is established
+        // AROUND the whole replay: the recorded bodies carry owner-local times.
+        temp_env::with_var("TZ", Some(capture_timezone()), || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+                .block_on(async {
+                    let _tz = capture_timezone();
+                    let root = seeded_root();
+                    let corpus: Value = serde_json::from_str(include_str!(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/../../fixtures/convey_records_corpus.json"
+                    )))
+                    .unwrap();
+                    let cases = corpus["phases"]["populated"]["transcripts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|case| native_read_route_case(case))
+                        .collect::<Vec<_>>();
+                    assert_eq!(cases.len(), 42);
+                    let before = snapshot(&root);
+                    let router = app(&root);
+                    for case in cases {
+                        assert_native_read_route_case(router.clone(), &root, case).await;
+                    }
+                    assert_eq!(snapshot(&root), before);
+                    fs::remove_dir_all(root).expect("seeded corpus cleanup");
+                });
+        });
     }
 
     #[tokio::test]
