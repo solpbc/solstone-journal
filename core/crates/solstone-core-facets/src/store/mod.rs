@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 mod activities;
+mod awareness;
 mod declaration;
 mod detected_entities;
 mod detected_entity_activity;
@@ -26,6 +27,10 @@ mod write;
 
 pub use activities::{
     add_activity, read_activity_file, remove_activity, update_activity, write_activity_file,
+};
+pub use awareness::{
+    AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
+    record_import_nudge, record_import_offer_declined,
 };
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
