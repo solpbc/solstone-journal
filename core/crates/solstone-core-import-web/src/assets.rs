@@ -47,7 +47,7 @@ pub(crate) async fn workspace() -> Response {
     bytes(WORKSPACE, "text/html; charset=utf-8").into_response()
 }
 
-pub(crate) async fn detail_shell() -> Response {
+pub(crate) async fn shell() -> Response {
     bytes(SHELL, "text/html; charset=utf-8").into_response()
 }
 

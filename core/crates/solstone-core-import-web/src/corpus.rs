@@ -172,15 +172,10 @@ mod tests {
         }
     }
 
-    fn declared_deviation(phase: &str, method: &str, path: &str) -> bool {
-        (matches!(phase, "empty" | "populated") && method == "GET" && path == "/app/import/")
-    }
-
     #[tokio::test]
-    async fn ac4_corpus_replay_has_only_the_declared_2_deviations() {
+    async fn ac4_corpus_replay_matches_every_recorded_case() {
         let corpus: Value = serde_json::from_str(CORPUS).expect("corpus JSON");
         let mut passed = 0;
-        let mut declared = Vec::new();
         let mut unexpected = Vec::new();
         for phase in ["unestablished", "corrupt", "empty", "populated"] {
             let root = phase_root(phase);
@@ -215,19 +210,33 @@ mod tests {
                     && body_matches;
                 if matches {
                     passed += 1;
-                } else if declared_deviation(phase, method, path) {
-                    declared.push(format!("{phase} {method} {path}"));
                 } else {
                     unexpected.push(format!("{phase} {method} {path}"));
                 }
             }
         }
-        assert_eq!(passed, 134, "unexpected replay cases: {unexpected:?}");
-        assert_eq!(declared.len(), 2, "declared roster changed: {declared:?}");
+        assert_eq!(passed, 136, "unexpected replay cases: {unexpected:?}");
         assert!(
             unexpected.is_empty(),
             "unexpected replay cases: {unexpected:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn ac5_import_shell_matches_real_shell_bytes_in_established_phases() {
+        let shell = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../solstone/convey/static/shell.html"
+        ));
+        assert_eq!(shell.len(), 12_199);
+        for phase in ["empty", "populated"] {
+            let root = phase_root(phase);
+            let (status, content_type, _, body) =
+                request(root.path(), "GET", "/app/import/", None).await;
+            assert_eq!(status, StatusCode::OK, "{phase}");
+            assert_eq!(content_type, "text/html; charset=utf-8", "{phase}");
+            assert_eq!(body.as_slice(), shell, "{phase}");
+        }
     }
 
     #[tokio::test]

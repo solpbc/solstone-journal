@@ -35,6 +35,7 @@ pub(crate) struct AppState {
 
 pub fn routes(journal_root: PathBuf) -> Router {
     Router::new()
+        .route("/app/import/", get(assets::shell))
         .route("/app/import/workspace", get(assets::workspace))
         .route("/app/import/background", get(assets::background_not_found))
         .route("/app/import/static/{*path}", get(assets::static_asset))
@@ -111,7 +112,7 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route("/app/import/api/{timestamp}/content", get(content::list))
         .route("/app/import/api/{timestamp}", get(imports::detail))
-        .route("/app/import/{timestamp}", get(assets::detail_shell))
+        .route("/app/import/{timestamp}", get(assets::shell))
         .layer(DefaultBodyLimit::max(multipart::MAX_BODY_BYTES))
         .with_state(AppState { root: journal_root })
 }
