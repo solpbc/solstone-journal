@@ -585,6 +585,40 @@ async fn loopback_status(address: SocketAddr) -> std::io::Result<u16> {
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
+async fn collect_callosum_events(
+    listener: tokio::net::UnixListener,
+    expected_event: &str,
+    expected_count: usize,
+) -> Vec<serde_json::Value> {
+    let mut events = Vec::with_capacity(expected_count);
+    let mut reads = tokio::task::JoinSet::new();
+    while events.len() < expected_count {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (mut stream, _) = accepted.expect("Callosum accepts");
+                reads.spawn(async move {
+                    let mut line = String::new();
+                    stream
+                        .read_to_string(&mut line)
+                        .await
+                        .expect("Callosum line reads");
+                    serde_json::from_str::<serde_json::Value>(&line)
+                        .expect("Callosum JSON")
+                });
+            }
+            message = reads.join_next(), if !reads.is_empty() => {
+                let message = message
+                    .expect("Callosum read task")
+                    .expect("Callosum read task completes");
+                if message["event"] == expected_event {
+                    events.push(message);
+                }
+            }
+        }
+    }
+    events
+}
+
 async fn loopback_json_request(
     address: SocketAddr,
     method: &str,
@@ -2132,19 +2166,7 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     std::fs::create_dir(&health).expect("health directory");
     let socket = health.join("callosum.sock");
     let listener = tokio::net::UnixListener::bind(&socket).expect("Callosum listener");
-    let notices = tokio::spawn(async move {
-        let mut notices = Vec::new();
-        for _ in 0..2 {
-            let (mut stream, _) = listener.accept().await.expect("Callosum accepts");
-            let mut line = String::new();
-            stream
-                .read_to_string(&mut line)
-                .await
-                .expect("Callosum line");
-            notices.push(serde_json::from_str::<serde_json::Value>(&line).expect("notice JSON"));
-        }
-        notices
-    });
+    let notices = tokio::spawn(collect_callosum_events(listener, "pair_complete", 2));
     let handle = serve(options(
         &fixture,
         pairing_router(&fixture, pairing_snapshot()),
@@ -3035,23 +3057,19 @@ async fn ac21_handshake_touches_native_devices_ledger_and_emits_callosum() {
     std::fs::create_dir(&health).expect("health directory");
     let socket = health.join("callosum.sock");
     let listener = tokio::net::UnixListener::bind(&socket).expect("Callosum listener");
-    let received = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.expect("Callosum accepts");
-        let mut line = String::new();
-        stream
-            .read_to_string(&mut line)
-            .await
-            .expect("Callosum line reads");
-        line
-    });
+    let received = tokio::spawn(collect_callosum_events(listener, "last_seen", 1));
     let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
         .await
         .expect("serve");
     let port = door_port(handle.door_outcome());
     assert!(request_result(&fixture, 0, port).await.is_ok());
     let did = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
-    let message: serde_json::Value =
-        serde_json::from_str(&received.await.expect("Callosum task")).expect("Callosum JSON");
+    let message = received
+        .await
+        .expect("Callosum task")
+        .into_iter()
+        .next()
+        .expect("last_seen message");
     assert_eq!(message["tract"], "link");
     assert_eq!(message["event"], "last_seen");
     assert_eq!(message["fingerprint"], did);

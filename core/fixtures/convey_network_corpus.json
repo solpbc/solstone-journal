@@ -228,6 +228,7 @@
             "RECENT_SHOW_LESS_LABEL": "show less \u25be",
             "REFRESH_FAIL_NOTICE": "showing the last state we saw",
             "RENAME_FAIL_TOAST": "couldn't rename device",
+            "SPL_NOT_ENROLLED_REPAIR_CTA": "finish setting up private network",
             "STATUS_SENTENCES": {
               "checking": "checking your journal\u2026",
               "direct_online": "your journal is reachable on your network.",
@@ -236,6 +237,7 @@
               "offline": "can't reach your journal right now.",
               "reconnecting": "reconnecting to your journal\u2026",
               "spl_finishing_setup": "finishing setup with your private network\u2026",
+              "spl_not_enrolled": "your private network isn't set up yet \u2014 devices can't connect from away.",
               "spl_offline": "your journal isn't reaching the network right now \u2014 devices can't connect from away. on your home wifi they still work.",
               "spl_online": "your journal is reachable from anywhere."
             },

@@ -67,6 +67,7 @@ STATUS_SENTENCES = {
     "offline": "can't reach your journal right now.",
     "lan_unreachable": "your journal is running, but devices can't reach it to pair yet.",
     "spl_online": "your journal is reachable from anywhere.",
+    "spl_not_enrolled": "your private network isn't set up yet — devices can't connect from away.",
     "spl_finishing_setup": "finishing setup with your private network…",
     "spl_offline": (
         "your journal isn't reaching the network right now — devices can't connect "
@@ -74,6 +75,7 @@ STATUS_SENTENCES = {
     ),
     "checking": "checking your journal…",
 }
+SPL_NOT_ENROLLED_REPAIR_CTA = "finish setting up private network"
 BRANDLOCK_LINE = "your journal is always private, only yours."
 REACH_SELECTOR_TITLE = "how your devices reach your journal"
 REACH_SELECTOR_HINT = (

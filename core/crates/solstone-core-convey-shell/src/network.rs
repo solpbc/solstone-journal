@@ -955,6 +955,8 @@ mod tests {
             "link-host-address-error",
             "link-mode-hosted-setup",
             "link-private-link-setup",
+            "link-mode-hosted-not-enrolled",
+            "link-private-link-enroll",
             "link-mode-hosted-active",
             "link-private-link-disable",
             "link-spl-connecting-note",
@@ -992,6 +994,22 @@ mod tests {
             "showToast",
             "revealWorkspace",
             "showWorkspaceStateError",
+        ] {
+            assert!(NETWORK_WORKSPACE.contains(expected), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn network_not_enrolled_workspace_has_repair_and_hides_spl_affordances() {
+        for expected in [
+            "spl_not_enrolled",
+            "link-mode-hosted-not-enrolled",
+            "link-private-link-enroll",
+            "privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup)",
+            "reachability === 'finishing-setup'",
+            "reachability === 'offline'",
+            "posture === 'spl' && reachability === 'not-enrolled'",
+            "posture === 'spl' && !notEnrolled",
         ] {
             assert!(NETWORK_WORKSPACE.contains(expected), "missing {expected}");
         }

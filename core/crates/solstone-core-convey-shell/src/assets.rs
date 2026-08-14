@@ -111,9 +111,9 @@ mod tests {
     }
 
     #[test]
-    fn network_copy_payload_has_exactly_108_constants() {
+    fn network_copy_payload_has_exactly_109_constants() {
         let network = payload(network_copy_json());
-        assert_eq!(network.len(), 108);
+        assert_eq!(network.len(), 109);
     }
 
     #[test]
@@ -147,6 +147,7 @@ mod tests {
                 "offline",
                 "lan_unreachable",
                 "spl_online",
+                "spl_not_enrolled",
                 "spl_finishing_setup",
                 "spl_offline",
                 "checking",

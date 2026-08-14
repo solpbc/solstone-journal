@@ -16,6 +16,7 @@ def test_reach_shell_spec_fixed_copy_is_locked() -> None:
         "offline": "can't reach your journal right now.",
         "lan_unreachable": "your journal is running, but devices can't reach it to pair yet.",
         "spl_online": "your journal is reachable from anywhere.",
+        "spl_not_enrolled": "your private network isn't set up yet — devices can't connect from away.",
         "spl_finishing_setup": "finishing setup with your private network…",
         "spl_offline": (
             "your journal isn't reaching the network right now — devices can't "

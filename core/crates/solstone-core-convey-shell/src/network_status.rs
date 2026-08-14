@@ -30,6 +30,7 @@ use solstone_core_spl::{
 use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::JournalRoot;
+use crate::link_health_cache::{RelayHealthCache, RelayHealthCacheStore};
 use crate::network::{hardened_loopback, read_posture};
 use crate::network_writes::NetworkOperationsOverride;
 
@@ -115,6 +116,7 @@ impl RelayState {
 enum Reachability {
     LanUnreachable,
     Online,
+    NotEnrolled,
     FinishingSetup,
     Reconnecting,
     Offline,
@@ -125,6 +127,7 @@ impl Reachability {
         match self {
             Self::LanUnreachable => "lan-unreachable",
             Self::Online => "online",
+            Self::NotEnrolled => "not-enrolled",
             Self::FinishingSetup => "finishing-setup",
             Self::Reconnecting => "reconnecting",
             Self::Offline => "offline",
@@ -230,6 +233,7 @@ struct LocalEndpointsBody {
 
 pub(crate) async fn status(
     Extension(root): Extension<Arc<JournalRoot>>,
+    health_cache: Option<Extension<RelayHealthCacheStore>>,
     snapshot: Option<Extension<PairingSnapshot>>,
 ) -> Response {
     let posture = LinkPosture::from_read(read_posture(&root.0));
@@ -241,6 +245,14 @@ pub(crate) async fn status(
         load_link_service_token(&root.0),
         LinkServiceTokenRead::Present(_)
     );
+    let health = health_cache.and_then(|Extension(health_cache)| {
+        health_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+            .as_ref()
+            .map(project_relay_health)
+    });
     let body = build_status_body(StatusInputs {
         link_state: load_link_state(&root.0, "solstone"),
         token_present,
@@ -250,10 +262,10 @@ pub(crate) async fn status(
             config.as_ref(),
         ),
         ca_fingerprint: ca_fingerprint(load_committed_identity(&root.0).ok().as_ref()),
-        health: None,
+        health: health.as_ref(),
         home_address: configured_home_address(config.as_ref()),
         snapshot,
-        now_ms: 0,
+        now_ms: Utc::now().timestamp_millis(),
     });
     Json(body).into_response()
 }
@@ -370,9 +382,28 @@ fn derive_reachability(
             RelayState::Parked => Reachability::Online,
             RelayState::Reconnecting => Reachability::Reconnecting,
             RelayState::Offline => Reachability::Offline,
-            RelayState::NotEnrolled => Reachability::FinishingSetup,
+            RelayState::NotEnrolled => Reachability::NotEnrolled,
         },
     }
+}
+
+fn project_relay_health(cache: &RelayHealthCache) -> LinkHealthProjection {
+    LinkHealthProjection {
+        state: Some(cache.state.clone()),
+        last_link_event_at: Some(cache.ts),
+        relay_listen_generation: cache.listen_generation.and_then(to_i64),
+        last_successful_relay_tunnel_at: cache.last_successful_relay_tunnel_at.and_then(to_i64),
+        last_relay_tunnel_error: cache.last_relay_tunnel_error.clone(),
+        last_relay_tunnel_error_at: cache.last_relay_tunnel_error_at.and_then(to_i64),
+        last_relay_listener_ack_at: cache.last_relay_listener_ack_at.and_then(to_i64),
+        last_relay_listener_ack_generation: cache
+            .last_relay_listener_ack_generation
+            .and_then(to_i64),
+    }
+}
+
+fn to_i64(value: u64) -> Option<i64> {
+    i64::try_from(value).ok()
 }
 
 fn current_tunnel_error(health: &LinkHealthProjection) -> Option<&str> {
@@ -434,17 +465,20 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                         source: "override",
                     });
                 }
+                let candidates = snapshot
+                    .endpoints
+                    .iter()
+                    .filter(|endpoint| endpoint.scope == EndpointScope::Vpn)
+                    .map(|endpoint| VpnCandidate {
+                        label: endpoint_scope_name(endpoint.scope),
+                        address: format!("{}:{}", endpoint.ip, spl_core::DEFAULT_DIRECT_PORT),
+                    })
+                    .collect::<Vec<_>>();
                 let vpn = VpnStatus {
-                    active: None,
-                    candidates: snapshot
-                        .endpoints
-                        .iter()
-                        .filter(|endpoint| endpoint.scope == EndpointScope::Vpn)
-                        .map(|endpoint| VpnCandidate {
-                            label: endpoint_scope_name(endpoint.scope),
-                            address: format!("{}:{}", endpoint.ip, spl_core::DEFAULT_DIRECT_PORT),
-                        })
-                        .collect(),
+                    active: candidates
+                        .first()
+                        .map(|candidate| Value::String(candidate.address.clone())),
+                    candidates,
                 };
                 (
                     home_address.is_some() || !detected.is_empty(),
@@ -855,7 +889,7 @@ mod tests {
                 true,
                 LinkPosture::Spl,
                 RelayState::NotEnrolled,
-                Reachability::FinishingSetup,
+                Reachability::NotEnrolled,
             ),
         ];
         for (lan, posture, relay, expected) in cases {
@@ -883,6 +917,64 @@ mod tests {
     }
 
     #[test]
+    fn spl_health_state_uses_freshness_error_order_and_reconnect_state() {
+        let fresh = 1_000_000;
+        let base = LinkHealthProjection {
+            state: Some("connected".to_owned()),
+            last_link_event_at: Some(fresh),
+            last_successful_relay_tunnel_at: Some(700),
+            ..Default::default()
+        };
+        let mut equal_error = base.clone();
+        equal_error.last_relay_tunnel_error = Some(REASON_SERVICE_TOKEN_REJECTED.to_owned());
+        equal_error.last_relay_tunnel_error_at = Some(700);
+        assert_eq!(
+            derive_spl_relay_state(true, Some(&equal_error), fresh),
+            RelayState::Offline
+        );
+
+        let mut earlier_error = equal_error.clone();
+        earlier_error.last_relay_tunnel_error_at = Some(699);
+        assert_eq!(
+            derive_spl_relay_state(true, Some(&earlier_error), fresh),
+            RelayState::Parked
+        );
+
+        let mut missing_error_time = base.clone();
+        missing_error_time.last_successful_relay_tunnel_at = None;
+        missing_error_time.last_relay_tunnel_error = Some(REASON_SERVICE_TOKEN_REJECTED.to_owned());
+        assert_eq!(
+            derive_spl_relay_state(true, Some(&missing_error_time), fresh),
+            RelayState::Offline
+        );
+
+        let mut unrelated_error = equal_error;
+        unrelated_error.last_relay_tunnel_error = Some("unrelated".to_owned());
+        assert_eq!(
+            derive_spl_relay_state(true, Some(&unrelated_error), fresh),
+            RelayState::Parked
+        );
+
+        let reconnecting = LinkHealthProjection {
+            state: Some("reconnecting".to_owned()),
+            last_link_event_at: Some(fresh),
+            ..Default::default()
+        };
+        assert_eq!(
+            derive_spl_relay_state(true, Some(&reconnecting), fresh),
+            RelayState::Reconnecting
+        );
+    }
+
+    #[test]
+    fn direct_not_enrolled_remains_online_when_lan_is_reachable() {
+        assert_eq!(
+            derive_reachability(true, LinkPosture::Direct, RelayState::NotEnrolled),
+            Reachability::Online
+        );
+    }
+
+    #[test]
     fn health_fields_pass_through_to_status_body() {
         let health = LinkHealthProjection {
             state: Some("connected".into()),
@@ -905,6 +997,33 @@ mod tests {
     }
 
     #[test]
+    fn relay_health_projection_renames_generation_and_drops_raw_only_fields() {
+        let cache = RelayHealthCache {
+            state: "connected".to_owned(),
+            listen_generation: Some(41),
+            last_successful_relay_tunnel_at: Some(42),
+            last_relay_tunnel_error: Some("error-43".to_owned()),
+            last_relay_tunnel_error_at: Some(44),
+            relay_tunnel_error_status: Some(503),
+            relay_admission_saturated_count: 45,
+            last_relay_listener_ack_at: Some(46),
+            last_relay_listener_ack_generation: Some(47),
+            ts: 48,
+        };
+        let health = project_relay_health(&cache);
+        let body = status_json(None, Ok(snapshot(Vec::new())), Some(&health));
+        assert_eq!(body["last_link_event_at"], 48);
+        assert_eq!(body["relay_listen_generation"], 41);
+        assert_eq!(body["last_successful_relay_tunnel_at"], 42);
+        assert_eq!(body["last_relay_tunnel_error"], "error-43");
+        assert_eq!(body["last_relay_tunnel_error_at"], 44);
+        assert_eq!(body["last_relay_listener_ack_at"], 46);
+        assert_eq!(body["last_relay_listener_ack_generation"], 47);
+        assert!(body.get("relay_tunnel_error_status").is_none());
+        assert!(body.get("relay_admission_saturated_count").is_none());
+    }
+
+    #[test]
     fn status_vpn_candidates_are_direct_scope_projections() {
         let positive = status_json(
             None,
@@ -918,6 +1037,7 @@ mod tests {
             positive["vpn"]["candidates"],
             json!([{"label":"vpn","address":"203.0.113.9:7657"}])
         );
+        assert_eq!(positive["vpn"]["active"], "203.0.113.9:7657");
         let negative = status_json(
             None,
             Ok(snapshot(vec![(
@@ -927,6 +1047,7 @@ mod tests {
             None,
         );
         assert_eq!(negative["vpn"]["candidates"], json!([]));
+        assert_eq!(negative["vpn"]["active"], Value::Null);
     }
 
     #[test]
@@ -962,6 +1083,26 @@ mod tests {
         );
         let configured_only = status_json(Some("10.0.0.9:7657"), Ok(snapshot(Vec::new())), None);
         assert_eq!(configured_only["lan_accessible"], true);
+    }
+
+    #[test]
+    fn absent_health_keeps_configured_override_and_null_event_timestamp() {
+        let body = status_json(
+            Some("203.0.113.77:7657"),
+            Ok(snapshot(vec![(
+                Ipv4Addr::new(192, 168, 1, 2),
+                EndpointScope::Lan,
+            )])),
+            None,
+        );
+        assert_eq!(body["last_link_event_at"], Value::Null);
+        assert_eq!(
+            body["home_candidates"],
+            json!([
+                {"address":"192.168.1.2:7657","selected":false,"source":"detected"},
+                {"address":"203.0.113.77:7657","selected":true,"source":"override"}
+            ])
+        );
     }
 
     #[test]

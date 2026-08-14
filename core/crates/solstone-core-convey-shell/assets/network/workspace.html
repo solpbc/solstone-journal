@@ -64,7 +64,7 @@
         class="link-seg"
         role="radio"
         aria-checked="false"
-        aria-controls="link-mode-hosted-active link-mode-hosted-setup"
+        aria-controls="link-mode-hosted-active link-mode-hosted-setup link-mode-hosted-not-enrolled"
       >
         <span class="link-segtop">
           <span class="link-seg-radio" aria-hidden="true"></span>
@@ -123,6 +123,12 @@
       <p class="link-mode-note" data-copy="MODE_HOSTED_SETUP_NOTE"></p>
       <div class="link-handoff">
         <button type="button" id="link-private-link-setup" class="link-btn-primary" data-copy="MODE_HOSTED_SETUP_CTA"></button>
+      </div>
+    </div>
+
+    <div id="link-mode-hosted-not-enrolled" class="link-modebody" hidden>
+      <div class="link-handoff">
+        <button type="button" id="link-private-link-enroll" class="link-btn-primary" data-copy="SPL_NOT_ENROLLED_REPAIR_CTA"></button>
       </div>
     </div>
 
@@ -284,6 +290,7 @@
   const segHosted = document.getElementById('link-seg-hosted');
   const modeByoBody = document.getElementById('link-mode-byo-body');
   const modeHostedSetup = document.getElementById('link-mode-hosted-setup');
+  const modeHostedNotEnrolled = document.getElementById('link-mode-hosted-not-enrolled');
   const modeHostedActive = document.getElementById('link-mode-hosted-active');
   const splConnectingNote = document.getElementById('link-spl-connecting-note');
   const splCheckAgain = document.getElementById('link-spl-check-again');
@@ -300,6 +307,7 @@
   const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
   const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
   const privateLinkSetup = document.getElementById('link-private-link-setup');
+  const privateLinkEnroll = document.getElementById('link-private-link-enroll');
   const privateLinkDisable = document.getElementById('link-private-link-disable');
   const privateLinkOperation = document.getElementById('link-private-link-operation');
   const privateLinkOperationHeadline = document.getElementById('link-private-link-operation-headline');
@@ -407,6 +415,7 @@
     if (reachability === 'lan-unreachable') return 'lan_unreachable';
     if (posture === 'spl') {
       if (reachability === 'online') return 'spl_online';
+      if (reachability === 'not-enrolled') return 'spl_not_enrolled';
       if (reachability === 'finishing-setup') return 'spl_finishing_setup';
       if (reachability === 'offline') return 'spl_offline';
     }
@@ -561,11 +570,13 @@
     const posture = data?.posture;
     const reachability = data?.reachability;
     const mode = viewedMode || (posture === 'spl' ? 'hosted' : 'byo');
+    const notEnrolled = posture === 'spl' && reachability === 'not-enrolled';
     setSegmentSelected(segByo, mode === 'byo');
     setSegmentSelected(segHosted, mode === 'hosted');
     if (modeByoBody) modeByoBody.hidden = mode !== 'byo';
     if (modeHostedSetup) modeHostedSetup.hidden = !(mode === 'hosted' && posture !== 'spl');
-    if (modeHostedActive) modeHostedActive.hidden = !(mode === 'hosted' && posture === 'spl');
+    if (modeHostedNotEnrolled) modeHostedNotEnrolled.hidden = !(mode === 'hosted' && notEnrolled);
+    if (modeHostedActive) modeHostedActive.hidden = !(mode === 'hosted' && posture === 'spl' && !notEnrolled);
     if (appOnOff) {
       appOnOff.hidden = reachability !== 'online';
     }
@@ -666,7 +677,7 @@
   }
 
   function setPrivateLinkButtonsBusy(busy) {
-    [privateLinkSetup, privateLinkDisable, privateLinkOperationRetry]
+    [privateLinkSetup, privateLinkEnroll, privateLinkDisable, privateLinkOperationRetry]
       .filter(Boolean)
       .forEach((button) => {
         button.disabled = busy;
@@ -840,6 +851,7 @@
   segByo?.addEventListener('click', () => selectReachMode('byo'));
   segHosted?.addEventListener('click', () => selectReachMode('hosted'));
   privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
+  privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
   privateLinkDisable?.addEventListener('click', disablePrivateLink);
   privateLinkOperationRetry?.addEventListener('click', () => {
     if (privateLinkRetryAction) privateLinkRetryAction();
