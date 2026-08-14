@@ -134,7 +134,13 @@ pub(crate) fn layout(markdown: &str) -> Vec<Block> {
                     &styles,
                 );
             }
-            Event::Code(text) => push_run(&mut current, text.as_ref(), Face::Courier, 9.9),
+            Event::Code(text) => {
+                if in_table {
+                    table_cell.push_str(text.as_ref());
+                } else {
+                    push_run(&mut current, text.as_ref(), Face::Courier, 9.9);
+                }
+            }
             Event::SoftBreak | Event::HardBreak => push_run(
                 &mut current,
                 "\n",
@@ -239,13 +245,13 @@ mod tests {
 
     #[test]
     fn markdown_constructs_preserve_text() {
-        let markdown = "| left unique cell | right unique cell |\n| --- | --- |\n| body unique cell | final unique cell |\n\n![only alt text](https://example.invalid/image.png)\n\n<section>literal html block</section>\n";
+        let markdown = "| left unique cell | right unique cell |\n| --- | --- |\n| body unique cell | `coded unique cell` |\n\n![only alt text](https://example.invalid/image.png)\n\n<section>literal html block</section>\n";
         let text = rendered_text(markdown);
         for expected in [
             "left unique cell",
             "right unique cell",
             "body unique cell",
-            "final unique cell",
+            "coded unique cell",
             "only alt text",
             "<section>literal html block</section>",
         ] {

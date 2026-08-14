@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-pub const NEWS_SIDEBAR_LABEL: &str = "newsletters";
-const _: &str = NEWS_SIDEBAR_LABEL;
 pub const NEWS_KICKER: &str = "facet newsletter";
 pub const NEWS_INDEX_H1: &str = "newsletters";
 pub const NEWS_SUBTITLE: &str = "sol's daily per-facet summaries from your journal.";

@@ -179,7 +179,6 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         copy::NEWS_EMPTY_NO_DATE.to_owned()
     };
     let grid_lede = rows.last().map(|row| {
-        let date = chrono::NaiveDate::parse_from_str(&row.day, "%Y%m%d").expect("journal day");
         let template = if total_count == 1 {
             copy::NEWS_GRID_LEDE_ONE
         } else {
@@ -187,7 +186,7 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         };
         template
             .replace("{count}", &total_count.to_string())
-            .replace("{month}", &date.format("%B %Y").to_string())
+            .replace("{month}", &dates::format_news_month(&row.day))
     });
     json_response(
         json!({"newsletters": rows.iter().take(60).map(label_item).collect::<Vec<_>>(), "total_count": total_count,
@@ -286,12 +285,58 @@ async fn facet_feed(root: PathBuf, facet: String, RawQuery(query): RawQuery) -> 
     json_response(value)
 }
 fn query_map(query: Option<&str>) -> BTreeMap<String, String> {
-    query
-        .unwrap_or_default()
-        .split('&')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(key, value)| (key.to_owned(), value.to_owned()))
-        .collect()
+    let mut values = BTreeMap::new();
+    for pair in query.unwrap_or_default().split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        values
+            .entry(form_decode(key))
+            .or_insert_with(|| form_decode(value));
+    }
+    values
+}
+
+/// Mirrors Flask's request.args: form decoding, key-only values as empty, and
+/// the first occurrence of a duplicate key.
+fn form_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let Some(high) = hex_value(bytes[index + 1]) else {
+                    decoded.push(b'%');
+                    index += 1;
+                    continue;
+                };
+                let Some(low) = hex_value(bytes[index + 2]) else {
+                    decoded.push(b'%');
+                    index += 1;
+                    continue;
+                };
+                decoded.push(high << 4 | low);
+                index += 3;
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+const fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 async fn sample_api() -> Response {
     let content = store::split_frontmatter(copy::SAMPLE_CONTENT).expect("sample valid");

@@ -232,6 +232,10 @@ async fn ac1_replay_all_120_news_records() {
                 .await
                 .expect("body");
             if expected["body_sha256_basis"] == "reference-bytes-record-only" {
+                assert_eq!(
+                    path, "/app/news/work/20260510/pdf",
+                    "only the named PDF record is exempt from body hashing"
+                );
                 assert!(expected.get("body_sha256").is_none() || expected["body_sha256"].is_null());
                 continue;
             }
@@ -419,6 +423,18 @@ async fn ac3_ac4_ac5_paging_limits_and_facet_validation() {
             axum::http::StatusCode::OK
         );
     }
+    let (status, body) = news_json(root.path(), "/app/news/api/facet/work?limit").await;
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+    assert_eq!(body["detail"], "limit must be an integer");
+    assert_eq!(
+        news_json(root.path(), "/app/news/api/facet/work?limit=%31")
+            .await
+            .0,
+        axum::http::StatusCode::OK
+    );
+    let (status, body) = news_json(root.path(), "/app/news/api/facet/work?limit=0&limit=1").await;
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+    assert_eq!(body["detail"], "limit must be between 1 and 100");
     assert_eq!(
         news_json(root.path(), "/app/news/api/facet/nope").await.1["days"],
         serde_json::json!([])
@@ -472,6 +488,14 @@ async fn ac6_ac7_ac15_ac16_state_and_observer_contracts() {
     let (_, state) = news_json(capped.path(), "/app/news/api/state").await;
     assert_eq!(state["newsletters"].as_array().expect("news").len(), 60);
     assert_eq!(state["total_count"], 61);
+    let invalid_date = phase_root("established_empty");
+    write(
+        &invalid_date.path().join("facets/work/news/20261332.md"),
+        "invalid date",
+    );
+    let (status, state) = news_json(invalid_date.path(), "/app/news/api/state").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(state["copy"]["grid_lede"], "1 newsletter since 20261332.");
 }
 
 #[tokio::test]
