@@ -22,15 +22,15 @@ _BOTTOM_CLEARANCE = re.compile(
 
 
 def _backup_css() -> str:
-    return Path("solstone/apps/backup/static/backup.css").read_text(encoding="utf-8")
+    return Path("core/crates/solstone-core-backup-web/assets/backup.css").read_text(encoding="utf-8")
 
 
 def _backup_js() -> str:
-    return Path("solstone/apps/backup/static/backup.js").read_text(encoding="utf-8")
+    return Path("core/crates/solstone-core-backup-web/assets/backup.js").read_text(encoding="utf-8")
 
 
 def _backup_workspace_html() -> str:
-    return Path("solstone/apps/backup/workspace.html").read_text(encoding="utf-8")
+    return Path("core/crates/solstone-core-backup-web/assets/workspace.html").read_text(encoding="utf-8")
 
 
 def _media_spans(css: str) -> list[tuple[int, int, int, str]]:
@@ -125,135 +125,6 @@ class _OffloadDaysTemplateParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "div" and self._offload_days_depth > 0:
             self._offload_days_depth -= 1
-
-
-def test_narrow_rules_bound_to_rendered_surface(backup_env) -> None:
-    css = _backup_css()
-    html = _rendered_backup_html(backup_env)
-    blocks = _narrow_media_blocks(css)
-
-    left_tokens = _clearance_tokens(blocks, _LEFT_CLEARANCE)
-    assert left_tokens, "narrow Backup root rule must reserve menu-bar width"
-
-    bottom_tokens = _clearance_tokens(blocks, _BOTTOM_CLEARANCE)
-    assert bottom_tokens, "narrow Backup root rule must reserve app-bar height"
-
-    for token in left_tokens | bottom_tokens:
-        assert _root_token_present(html, token), f"{token} selector not rendered"
-
-
-def test_backup_panels_and_states_render(backup_env) -> None:
-    html = _rendered_backup_html(backup_env)
-
-    assert '<link rel="stylesheet" href="/app/backup/static/backup.css">' in html
-    assert _class_token_present(html, "backup-shell")
-    for name in (
-        "intro",
-        "educate",
-        "display",
-        "confirm",
-        "destination",
-        "management",
-        "restore",
-    ):
-        assert f'data-backup-panel="{name}"' in html
-    for marker in (
-        "data-empty-state",
-        "data-loading-state",
-        "data-enabling-state",
-        "data-error-state",
-        "data-operation-banner",
-        "data-operation-phase",
-        "data-recovery-grid",
-        "data-confirm-input",
-        "data-destination-form",
-        "data-last-backup",
-        "data-last-prune",
-        "data-storage-placeholder",
-        "data-snapshot-placeholder",
-        "data-retention-form",
-        "data-restore-form",
-        "data-restore-status",
-        "data-offload-section",
-        "data-offload-state",
-        "data-offload-readiness",
-        "data-offload-enable-form",
-        "data-offload-budget-input",
-        "data-offload-floor-input",
-        "data-offload-config-status",
-        "data-offload-summary",
-        "data-offload-proof",
-        "data-offload-device-free",
-        "data-offload-device-total",
-        "data-offload-raw-bytes",
-        "data-offload-backup-only-bytes",
-        "data-offload-budget",
-        "data-offload-floor",
-        "data-offload-on-chip",
-        "data-offload-stakes",
-        "data-offload-last-run",
-        "data-offload-last-verify",
-        "data-offload-last-restore",
-        "data-offload-days",
-        "data-offload-day-template",
-        "data-offload-day-value",
-        "data-offload-day-raw-bytes",
-        "data-offload-day-raw-row",
-        "data-offload-day-backup-only-bytes",
-        "data-offload-day-restore",
-        "data-offload-restore-status",
-        "data-offload-disable",
-        "data-offload-disable-note",
-        "data-offload-unavailable",
-        "data-offload-stall-reason",
-        "data-teardown-gate",
-        "data-teardown-stakes",
-        "data-teardown-input",
-        "data-teardown-status",
-    ):
-        assert marker in html
-    for hook in (
-        'data-copy="brand_lock"',
-        'data-copy="intro.title"',
-        'data-copy-list="intro.bullets"',
-        'data-copy="destination.modes.hosted.cta"',
-        'data-copy-href="hosted.manage_url"',
-        'data-copy-aria-label="management.status_labels.destination"',
-        "data-retention-grid",
-        'data-copy="offload.title"',
-        'data-copy="offload.stakes"',
-        'data-copy="offload.labels.gb_suffix"',
-        'data-copy="offload.labels.budget_short"',
-        'data-copy="offload.labels.floor_short"',
-        'data-copy="offload.disable_note"',
-        'data-copy="management.teardown_confirm_prompt"',
-        'data-copy="management.teardown_restore_first_action"',
-        'data-action="teardown-open"',
-        'data-action="teardown-confirm"',
-        'data-action="teardown-restore-first"',
-    ):
-        assert hook in html
-    assert 'class="backup-warning backup-offload-stakes"' not in html
-    assert 'class="backup-offload-stakes"' in html
-    assert html.count('class="backup-offload-summary"') == 2
-    assert html.index("data-offload-summary") < html.index("data-offload-proof")
-    assert (
-        html.index('class="backup-offload-tiering"')
-        < html.index("data-offload-restore-status")
-        < html.index("data-offload-disable-note")
-    )
-    assert 'min="0.01" step="any"' in html
-
-    css = _backup_css()
-    narrow_css = "\n".join(_narrow_media_blocks(css))
-    normalized = re.sub(r"\s*:\s*", ":", narrow_css.lower())
-    for forbidden in (
-        "display:none",
-        "text-overflow:ellipsis",
-        "visibility:hidden",
-        "font-size:0",
-    ):
-        assert forbidden not in normalized
 
 
 def test_backup_css_hidden_and_disabled_controls() -> None:
@@ -361,19 +232,26 @@ def test_offload_js_source_contracts() -> None:
     assert "offloadActionError(err)" in offload_catch
     assert "showError" not in offload_catch
 
-    timestamp_display = js[
-        js.index("function timestampDisplay(value)") : js.index("function formatDay")
+    timestamp_validity = js[
+        js.index("function formatTime(value)") : js.index("function validTimestamp")
     ]
-    relative_time_guard = "typeof relativeTime === 'function'"
     for guard in (
         "typeof value !== 'number'",
         "!Number.isFinite(value)",
         "value <= 0",
     ):
-        assert timestamp_display.index(guard) < timestamp_display.index(
-            relative_time_guard
+        assert guard in timestamp_validity
+    assert (
+        timestamp_validity.index("typeof value !== 'number'")
+        < timestamp_validity.index("!Number.isFinite(value)")
+        < timestamp_validity.index("value <= 0")
+    )
+    timestamp_relative_duration = js[
+        js.index("function timestampRelativeDuration(value)") : js.index(
+            "function timestampDisplay(value)"
         )
-    assert timestamp_display.index("elapsed >= 0") < timestamp_display.index(
+    ]
+    assert timestamp_relative_duration.index("elapsed >= 0") < timestamp_relative_duration.index(
         "relativeTime(elapsed)"
     )
 

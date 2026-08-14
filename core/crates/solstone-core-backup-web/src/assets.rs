@@ -7,19 +7,13 @@ use axum::{
     response::Response,
 };
 
-const WORKSPACE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/backup/workspace.html"
-));
+const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const SHELL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../solstone/convey/static/shell.html"
 ));
 const JS: &[u8] = include_bytes!("../assets/backup.js");
-const CSS: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/backup/static/backup.css"
-));
+const CSS: &[u8] = include_bytes!("../assets/backup.css");
 const NOT_FOUND: &str = "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n";
 
 fn bytes(status: StatusCode, bytes: &'static [u8], content_type: &'static str) -> Response {
@@ -54,7 +48,7 @@ pub async fn static_asset(axum::extract::Path(name): axum::extract::Path<String>
 mod tests {
     use serde_json::{Value, json};
 
-    use super::{CSS, JS, SHELL, WORKSPACE};
+    use super::{JS, SHELL};
 
     #[test]
     fn embedded_shell_matches_the_convey_shell_template() {
@@ -64,26 +58,6 @@ mod tests {
             include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../../solstone/convey/static/shell.html"
-            ))
-        );
-    }
-
-    #[test]
-    fn embedded_assets_match_the_python_source_until_that_surface_is_removed() {
-        // Retire these assertions with the Python backup surface they deliberately protect.
-        assert_eq!(
-            WORKSPACE,
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/backup/workspace.html"
-            ))
-        );
-        // backup.js now diverges by design (Lane AR W5 status-copy fix) — see assets/backup.js.
-        assert_eq!(
-            CSS,
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/backup/static/backup.css"
             ))
         );
     }

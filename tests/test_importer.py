@@ -9,18 +9,14 @@ import os
 import subprocess
 import sys
 import time
-import uuid
 import zipfile
-from io import BytesIO
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
-from flask import Flask, g
 from PIL import Image
 
 import solstone.think.utils as think_utils
-from solstone.convey.secure_listener import ConveyIdentity
 from solstone.think.importers.file_importer import ImportPreview, ImportResult
 from solstone.think.importers.shared import (
     find_manifest_by_hash,
@@ -127,60 +123,10 @@ def _read_action_entries(journal_root: Path) -> list[dict]:
     ]
 
 
-def _import_route_client(
-    tmp_path: Path,
-    monkeypatch,
-    identity: ConveyIdentity | None = None,
-):
-    import_routes = importlib.import_module("solstone.apps.import.routes")
-    monkeypatch.setattr(
-        import_routes.state, "journal_root", str(tmp_path), raising=False
-    )
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    think_utils._journal_path_cache = None
-    monkeypatch.setattr(import_routes, "detect_created", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        import_routes, "resolve_created_deterministic", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(import_routes, "now_ms", lambda: 1_765_000_000_000)
-
-    stamped = identity or ConveyIdentity(
-        mode="dl",
-        fingerprint=None,
-        device_label=None,
-        paired_at=None,
-        session_id=None,
-    )
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-
-    @app.before_request
-    def stamp_identity():
-        g.identity = stamped
-
-    app.register_blueprint(import_routes.import_bp)
-    return app.test_client()
 
 
-def _post_import_save(client, data: dict):
-    payload = {
-        "file": (BytesIO(b"hello"), "note.txt"),
-        "client_item_id": uuid.uuid4().hex,
-        **data,
-    }
-    return client.post(
-        "/app/import/api/save",
-        data=payload,
-        content_type="multipart/form-data",
-    )
 
 
-def _read_import_metadata(journal_root: Path, timestamp: str) -> dict:
-    return json.loads(
-        (journal_root / "imports" / timestamp / "import.json").read_text(
-            encoding="utf-8"
-        )
-    )
 
 
 def test_importer_deterministic_success_skips_model_without_flag(tmp_path, monkeypatch):
@@ -278,181 +224,18 @@ def test_import_one_explicit_timestamp_bypasses_resolver_and_model(
     assert result["processed_timestamp"] == "20240101_120000"
 
 
-def test_import_save_stamps_web_dashboard_provenance(tmp_path, monkeypatch):
-    client = _import_route_client(tmp_path, monkeypatch)
-
-    response = _post_import_save(client, {"observer_handle": "phone-share"})
-
-    assert response.status_code == 200
-    timestamp = response.get_json()["timestamp"]
-    metadata = json.loads(
-        (tmp_path / "imports" / timestamp / "import.json").read_text(encoding="utf-8")
-    )
-    assert metadata["imported_via"] == "web_dashboard"
-    assert metadata["link_id"] is None
-    assert metadata["observer_handle"] == "phone-share"
 
 
-def test_import_save_persists_imported_via_override(tmp_path, monkeypatch):
-    client = _import_route_client(tmp_path, monkeypatch)
-
-    response = _post_import_save(client, {"imported_via": "mobile_share"})
-
-    assert response.status_code == 200
-    timestamp = response.get_json()["timestamp"]
-    metadata = json.loads(
-        (tmp_path / "imports" / timestamp / "import.json").read_text(encoding="utf-8")
-    )
-    assert metadata["imported_via"] == "mobile_share"
 
 
-def test_import_save_stamps_pl_link_id(tmp_path, monkeypatch):
-    fingerprint = "sha256:" + ("a" * 64)
-    client = _import_route_client(
-        tmp_path,
-        monkeypatch,
-        ConveyIdentity(
-            mode="pl-direct",
-            fingerprint=fingerprint,
-            device_label="peer",
-            paired_at="2026-05-20T00:00:00Z",
-            session_id="session-1",
-        ),
-    )
-
-    response = _post_import_save(client, {})
-
-    assert response.status_code == 200
-    timestamp = response.get_json()["timestamp"]
-    metadata = json.loads(
-        (tmp_path / "imports" / timestamp / "import.json").read_text(encoding="utf-8")
-    )
-    assert metadata["link_id"] == fingerprint
 
 
-def test_import_save_deterministic_success_skips_model_and_audits(
-    tmp_path, monkeypatch
-):
-    client = _import_route_client(tmp_path, monkeypatch)
-    import_routes = importlib.import_module("solstone.apps.import.routes")
-    deterministic_result = {
-        "day": "20240115",
-        "time": "103000",
-        "confidence": "high",
-        "source": "filename_local",
-        "utc": False,
-    }
-    monkeypatch.setattr(
-        import_routes,
-        "resolve_created_deterministic",
-        lambda *args, **kwargs: deterministic_result,
-    )
-
-    def fail_detect(*args, **kwargs):
-        raise AssertionError("model detection should not be called")
-
-    monkeypatch.setattr(import_routes, "detect_created", fail_detect)
-
-    response = _post_import_save(client, {})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["timestamp"] == "20240115_103000"
-    assert body["diagnostics"]["timestamp_detection_method"] == "deterministic"
-    assert body["diagnostics"]["timestamp_detection_model_called"] is False
-    assert body["diagnostics"]["timestamp_detection_no_match_reason"] is None
-    metadata = _read_import_metadata(tmp_path, body["timestamp"])
-    assert metadata["detection_result"] == deterministic_result
-    assert metadata["detected_timestamp"] == "20240115_103000"
-    assert metadata["timestamp_detection_method"] == "deterministic"
-    assert metadata["timestamp_detection_model_called"] is False
-    assert metadata["timestamp_detection_no_match_reason"] is None
 
 
-def test_import_save_deterministic_only_no_match_uses_upload_fallback_and_audit(
-    tmp_path, monkeypatch
-):
-    client = _import_route_client(tmp_path, monkeypatch)
-    import_routes = importlib.import_module("solstone.apps.import.routes")
-    monkeypatch.setattr(
-        import_routes, "resolve_created_deterministic", lambda *args, **kwargs: None
-    )
-
-    def fail_detect(*args, **kwargs):
-        raise AssertionError("model detection should not be called")
-
-    monkeypatch.setattr(import_routes, "detect_created", fail_detect)
-
-    response = _post_import_save(client, {"deterministic_only": "true"})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    expected_timestamp = dt.datetime.fromtimestamp(1_765_000_000_000 / 1000).strftime(
-        "%Y%m%d_%H%M%S"
-    )
-    assert body["timestamp"] == expected_timestamp
-    assert body["diagnostics"]["timestamp_detection_method"] == "upload_fallback"
-    assert body["diagnostics"]["timestamp_detection_model_called"] is False
-    assert (
-        body["diagnostics"]["timestamp_detection_no_match_reason"]
-        == "no_deterministic_match"
-    )
-    metadata = _read_import_metadata(tmp_path, body["timestamp"])
-    assert metadata["detected_timestamp"] is None
-    assert metadata["user_timestamp"] == body["timestamp"]
-    assert metadata["timestamp_detection_method"] == "upload_fallback"
-    assert metadata["timestamp_detection_model_called"] is False
-    assert metadata["timestamp_detection_no_match_reason"] == "no_deterministic_match"
 
 
-def test_import_save_model_success_audits(tmp_path, monkeypatch):
-    client = _import_route_client(tmp_path, monkeypatch)
-    import_routes = importlib.import_module("solstone.apps.import.routes")
-    model_result = {"day": "20240115", "time": "103000"}
-    monkeypatch.setattr(
-        import_routes, "resolve_created_deterministic", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(
-        import_routes, "detect_created", lambda *args, **kwargs: model_result
-    )
-
-    response = _post_import_save(client, {})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["timestamp"] == "20240115_103000"
-    assert body["diagnostics"]["timestamp_detection_method"] == "model"
-    assert body["diagnostics"]["timestamp_detection_model_called"] is True
-    assert body["diagnostics"]["timestamp_detection_no_match_reason"] is None
-    metadata = _read_import_metadata(tmp_path, body["timestamp"])
-    assert metadata["detection_result"] == model_result
-    assert metadata["timestamp_detection_method"] == "model"
-    assert metadata["timestamp_detection_model_called"] is True
-    assert metadata["timestamp_detection_no_match_reason"] is None
 
 
-def test_import_save_model_no_match_audits_upload_fallback(tmp_path, monkeypatch):
-    client = _import_route_client(tmp_path, monkeypatch)
-    import_routes = importlib.import_module("solstone.apps.import.routes")
-    monkeypatch.setattr(
-        import_routes, "resolve_created_deterministic", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(import_routes, "detect_created", lambda *args, **kwargs: None)
-
-    response = _post_import_save(client, {})
-
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["diagnostics"]["timestamp_detection_method"] == "upload_fallback"
-    assert body["diagnostics"]["timestamp_detection_model_called"] is True
-    assert (
-        body["diagnostics"]["timestamp_detection_no_match_reason"] == "model_no_match"
-    )
-    metadata = _read_import_metadata(tmp_path, body["timestamp"])
-    assert metadata["detected_timestamp"] is None
-    assert metadata["timestamp_detection_method"] == "upload_fallback"
-    assert metadata["timestamp_detection_model_called"] is True
-    assert metadata["timestamp_detection_no_match_reason"] == "model_no_match"
 
 
 def test_cli_import_provenance_defaults(tmp_path, monkeypatch):

@@ -20,7 +20,7 @@ from solstone.think.offload_restore import OFFLOAD_RESTORE_REASONS
 
 
 def _backup_js_text() -> str:
-    return Path("solstone/apps/backup/static/backup.js").read_text(encoding="utf-8")
+    return Path("core/crates/solstone-core-backup-web/assets/backup.js").read_text(encoding="utf-8")
 
 
 def _backup_copy_literal() -> dict:
@@ -167,7 +167,7 @@ def test_offload_reason_copy_covers_closed_vocabularies() -> None:
 
 
 def test_no_literal_copy_in_workspace_template() -> None:
-    root = Path("solstone/apps/backup")
+    root = Path("core/crates/solstone-core-backup-web/assets")
     structural_values = {
         "B2",
         "S3",
@@ -202,13 +202,9 @@ def test_no_literal_copy_in_workspace_template() -> None:
     assert hits == []
 
 
-def test_backup_copy_json_round_trips_from_static_js() -> None:
-    assert _backup_copy_literal() == backup_copy_payload()
-
-
 def test_all_copy_constants_referenced_by_render_surface() -> None:
-    html = Path("solstone/apps/backup/workspace.html").read_text(encoding="utf-8")
-    static = Path("solstone/apps/backup/static/backup.js").read_text(encoding="utf-8")
+    html = Path("core/crates/solstone-core-backup-web/assets/workspace.html").read_text(encoding="utf-8")
+    static = Path("core/crates/solstone-core-backup-web/assets/backup.js").read_text(encoding="utf-8")
     surface = html + "\n" + static
 
     missing = [

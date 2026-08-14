@@ -652,7 +652,6 @@ def test_audited_mutation_owners_use_record_entity_resolution() -> None:
         ("solstone.apps.activities.routes", "_resolve_participation_entity_ids"),
         ("solstone.apps.entities.routes", "detect_entity_route"),
         ("solstone.apps.entities.talent.entity_observer", "_clean_relation"),
-        ("solstone.apps.import.ingest", "ingest_entities"),
         ("solstone.apps.speakers.attribution", "attribute_segment"),
         ("solstone.think.entities.seeding", "seed_entities"),
         ("solstone.think.merge", "_merge_entities"),
