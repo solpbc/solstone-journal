@@ -43,6 +43,7 @@ const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
 const LANE_AU_REQUIRED_NATIVE_TOKENS: &[&str] =
     &["engage", "maintenance", "heartbeat", "maint", "backup"];
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
+const LANE_AW_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
 
 #[derive(Debug, Clone, Copy)]
 struct Probe {
@@ -85,6 +86,31 @@ fn lane_av_brain_is_registered_for_native_dispatch() {
     assert!(
         missing.is_empty(),
         "required Lane AV native process tokens are missing: {missing:?}"
+    );
+}
+
+// Registration is the load-bearing half of this assertion, not a bookkeeping
+// one: `native_process_dispatch_and_poison_liveness_contract` requires the
+// PROBES token set to equal NATIVE_PROCESS_SPECS exactly, so a token added
+// here without a probe reddens that contract, and a probe runs the real
+// dispatcher against sibling- and PATH-poisoned interpreters. Registering a
+// token is therefore inseparable from proving its owner grammar reaches a
+// native sibling with no interpreter in its path.
+#[test]
+fn lane_aw_think_and_setup_are_registered_for_native_dispatch() {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    let missing = LANE_AW_REQUIRED_NATIVE_TOKENS
+        .iter()
+        .copied()
+        .filter(|token| !native_tokens.contains(token))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "required Lane AW native process tokens are missing: {missing:?}"
     );
 }
 
