@@ -702,6 +702,11 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/body/background", get(body::background))
         .merge(solstone_core_convey_body::api_router(journal_root.clone()))
         .merge(solstone_core_import_web::routes(journal_root.clone()))
+        .merge(solstone_core_transcripts_web::router(
+            journal_root.clone(),
+            solstone_core_transcripts_web::Clock::system(),
+            || asset_response("/static/shell.html"),
+        ))
         .route("/app/{app}", get(app_root))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
