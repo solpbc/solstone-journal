@@ -711,6 +711,9 @@ pub enum Command {
     Doctor(solstone_core_doctor::args::DoctorArgs),
     DoctorUsage(solstone_core_doctor::args::DoctorUsageError),
     DoctorHelp,
+    Setup(solstone_core_setup::args::SetupArgs),
+    SetupUsage(solstone_core_setup::args::UsageError),
+    SetupHelp,
     Version,
     Assets,
     Warm {
@@ -1429,6 +1432,17 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             } else {
                 Ok(solstone_core_doctor::args::parse_doctor_args(rest)
                     .map_or_else(Command::DoctorUsage, Command::Doctor))
+            }
+        }
+        [command, rest @ ..] if command == OsStr::new("setup") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                Ok(Command::SetupHelp)
+            } else {
+                Ok(solstone_core_setup::args::parse_args(rest)
+                    .map_or_else(Command::SetupUsage, Command::Setup))
             }
         }
         [flag] if flag == OsStr::new("--version") => Ok(Command::Version),

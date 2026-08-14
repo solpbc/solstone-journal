@@ -2565,6 +2565,7 @@ dependencies = [
  "solstone-core-segment-cli",
  "solstone-core-sense",
  "solstone-core-service-unit",
+ "solstone-core-setup",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
@@ -2787,6 +2788,7 @@ dependencies = [
 name = "solstone-core-check"
 version = "1.0.22"
 dependencies = [
+ "nix",
  "serde",
  "serde_json",
  "solstone-core-local",
@@ -2804,6 +2806,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-observer",
  "solstone-core-operational-logs",
+ "solstone-core-setup",
  "solstone-core-system-health",
  "unicode-general-category",
 ]
@@ -3358,6 +3361,7 @@ dependencies = [
  "sha2",
  "solstone-core-cli",
  "solstone-core-journal-cli",
+ "solstone-core-setup",
  "zip",
 ]
 
@@ -3730,6 +3734,22 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "solstone-core-setup"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "nix",
+ "serde",
+ "serde_json",
+ "solstone-core-check",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
+ "solstone-core-system",
+ "toml_edit",
 ]
 
 [[package]]

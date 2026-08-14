@@ -92,6 +92,7 @@ solstone-core-backup.workspace = true
 solstone-core-backup-cli.workspace = true
 solstone-core-maintenance.workspace = true
 solstone-core-doctor.workspace = true
+solstone-core-setup.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-import.workspace = true

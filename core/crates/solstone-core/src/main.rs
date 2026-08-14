@@ -159,6 +159,16 @@ fn main() -> ExitCode {
             eprintln!("journal doctor: error: {}", error.0);
             ExitCode::from(2)
         }
+        Ok(Command::Setup(args)) => run_setup(args),
+        Ok(Command::SetupHelp) => {
+            print!("{}", solstone_core_setup::args::USAGE);
+            ExitCode::SUCCESS
+        }
+        Ok(Command::SetupUsage(error)) => {
+            eprint!("{}", solstone_core_setup::args::USAGE);
+            eprintln!("journal setup: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::JournalPath(options)) => match run_journal_path(options) {
             Ok(line) => {
                 println!("{}\t{}", line.label, line.path.display());
@@ -3453,6 +3463,10 @@ fn run_brain(command: BrainCommand) -> ExitCode {
         BrainCommand::Inspect(options) => run_brain_inspect(options),
         BrainCommand::Fingerprint => run_brain_fingerprint(),
     }
+}
+
+fn run_setup(args: solstone_core_setup::args::SetupArgs) -> ExitCode {
+    solstone_core_setup::run_owner_setup_native(args)
 }
 
 fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {

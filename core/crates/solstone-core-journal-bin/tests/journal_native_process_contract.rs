@@ -268,6 +268,12 @@ const PROBES: &[Probe] = &[
         expected_exit: 2,
         stderr_anchor: Some(b"usage: journal doctor [-h]"),
     },
+    Probe {
+        token: "setup",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal setup [-h] [--journal PATH] [--port INT]"),
+    },
     // Exit 2 and the parser-owned usage anchors distinguish each present verb
     // from top-level exit 64, which would also result if the sibling lacked it.
     Probe {
@@ -1294,6 +1300,56 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
             "maintenance {argv:?} reached a poisoned interpreter"
         );
     }
+}
+
+#[test]
+fn native_setup_full_run_never_reaches_a_poisoned_interpreter() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    let fixture = locate_workspace_binary("solstone-core-journal-bin", "setup-fixture-journal");
+    let journal = context.sibling_dir.join("journal");
+    let sol = context.sibling_dir.join("sol");
+    fs::remove_file(&journal).expect("replace dispatcher journal link");
+    copy_executable(&fixture, &journal);
+    copy_executable(&fixture, &sol);
+    let run = |path: &Path, journal_path: &Path| {
+        let _ = fs::remove_file(context.poison_marker);
+        let output = Command::new(&journal)
+            .args(["setup", "--yes"])
+            .env("HOME", context.home)
+            .env("SOLSTONE_JOURNAL", journal_path)
+            .env("SETUP_FIXTURE_BIN_DIR", context.sibling_dir)
+            .env("PATH", path)
+            .env("POISON_MARKER", context.poison_marker)
+            .output()
+            .expect("run native setup fixture");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !context.poison_marker.exists(),
+            "setup reached poisoned interpreter"
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal_path.join("health/setup-state.json")).expect("setup manifest"),
+        )
+        .expect("manifest JSON");
+        assert_eq!(manifest["steps"].as_array().map(Vec::len), Some(8));
+        assert!(manifest["completed_at"].is_string());
+    };
+    run(context.sibling_dir, context.journal);
+    let empty_path = context
+        .sibling_dir
+        .parent()
+        .expect("fixture parent")
+        .join("empty-path");
+    fs::create_dir(&empty_path).expect("create empty PATH");
+    let second_journal = context.journal.join("second");
+    run(&empty_path, &second_journal);
 }
 
 #[test]
