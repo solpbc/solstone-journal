@@ -10,9 +10,9 @@ use solstone_core_journal_config_write::{
 };
 
 use crate::{
-    BackupError, BackupKeys, Destination, HostedBinding, backup_defaults,
-    format_recovery_key_display, generate_daily_key, generate_recovery_key, load_hosted_binding,
-    merge_backup_config,
+    BackupError, BackupKeys, Destination, HostedBinding, OFFLOAD_STATUSES, RESTORE_SCOPES,
+    RESTORE_STATUSES, VERIFICATION_STATUSES, backup_defaults, format_recovery_key_display,
+    generate_daily_key, generate_recovery_key, load_hosted_binding, merge_backup_config,
 };
 
 const RETENTION_KEYS: [&str; 4] = ["hourly", "daily", "weekly", "monthly"];
@@ -219,7 +219,7 @@ pub fn record_offload_result(
     bytes_marked: Value,
     ran_out_of_markable_media: Value,
 ) -> Result<(), BackupError> {
-    if !matches!(status, "ok" | "skipped" | "stalled" | "error") {
+    if !OFFLOAD_STATUSES.contains(&status) {
         return Err(BackupError::InvalidOffloadStatus);
     }
     mutate_backup_section(journal, |backup| {
@@ -258,7 +258,7 @@ pub fn record_verification_result(
     reason: Value,
     checked_subset: Value,
 ) -> Result<(), BackupError> {
-    if !matches!(status, "ok" | "skipped" | "error") {
+    if !VERIFICATION_STATUSES.contains(&status) {
         return Err(BackupError::InvalidVerificationStatus);
     }
     mutate_backup_section(journal, |backup| {
@@ -305,10 +305,10 @@ pub fn record_restore_result(
     bytes_expected: Value,
     bytes_restored: Value,
 ) -> Result<(), BackupError> {
-    if !matches!(status, "ok" | "no_op" | "refused" | "degraded" | "error") {
+    if !RESTORE_STATUSES.contains(&status) {
         return Err(BackupError::InvalidRestoreStatus);
     }
-    if !matches!(scope, "day" | "all") {
+    if !RESTORE_SCOPES.contains(&scope) {
         return Err(BackupError::InvalidRestoreScope);
     }
     if [
@@ -348,7 +348,7 @@ pub fn status_view(journal: &Path) -> Result<Map<String, Value>, BackupError> {
     let destination = config
         .get("destination")
         .and_then(Value::as_object)
-        .expect("merged destination object");
+        .ok_or(BackupError::InvalidDestinationShape)?;
     let hosted = match load_hosted_binding(journal) {
         Some(HostedBinding { bucket, prefix, .. }) => Map::from_iter([
             ("bound".into(), Value::Bool(true)),

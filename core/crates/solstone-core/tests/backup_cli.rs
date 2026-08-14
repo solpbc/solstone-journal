@@ -145,6 +145,29 @@ fn destination_show_matches_redacted_status_destination() {
 }
 
 #[test]
+fn status_reports_scalar_destination_as_a_clean_runtime_error() {
+    let journal = tempfile::tempdir().expect("journal");
+    let config = write_config(
+        &journal,
+        serde_json::to_string(&json!({"backup": {"destination": "not an object"}}))
+            .unwrap()
+            .as_bytes(),
+    );
+    let before = fs::read(&config).unwrap();
+    let modified = fs::metadata(&config).unwrap().modified().unwrap();
+
+    let result = output(&journal, &["status"]);
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert_eq!(stderr, "Error: backup destination must be a JSON object\n");
+    assert!(!stderr.contains("panicked"));
+    assert_eq!(fs::read(&config).unwrap(), before);
+    assert_eq!(fs::metadata(&config).unwrap().modified().unwrap(), modified);
+}
+
+#[test]
 fn status_redacts_config_and_hosted_binding_secrets() {
     let journal = tempfile::tempdir().expect("journal");
     let recovery = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";

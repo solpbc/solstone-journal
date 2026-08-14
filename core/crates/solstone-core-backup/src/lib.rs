@@ -30,20 +30,46 @@ pub use state::{
     set_recovery_key, set_recovery_key_confirmed, set_retention, status_view,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) const OFFLOAD_STATUSES: [&str; 4] = ["ok", "skipped", "stalled", "error"];
+pub(crate) const VERIFICATION_STATUSES: [&str; 3] = ["ok", "skipped", "error"];
+pub(crate) const RESTORE_STATUSES: [&str; 5] = ["ok", "no_op", "refused", "degraded", "error"];
+pub(crate) const RESTORE_SCOPES: [&str; 2] = ["day", "all"];
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct BackupKeys {
     pub daily_key: String,
     pub recovery_key: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl fmt::Debug for BackupKeys {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BackupKeys")
+            .field("daily_key", &"<redacted>")
+            .field("recovery_key", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct Destination {
     pub repository: String,
     pub backend: String,
     pub credentials: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+impl fmt::Debug for Destination {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Destination")
+            .field("repository", &self.repository)
+            .field("backend", &self.backend)
+            .field("credentials", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct HostedBinding {
     pub broker_endpoint: String,
     pub account_id: String,
@@ -51,6 +77,20 @@ pub struct HostedBinding {
     pub bucket: String,
     pub prefix: String,
     pub broker_token: String,
+}
+
+impl fmt::Debug for HostedBinding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HostedBinding")
+            .field("broker_endpoint", &self.broker_endpoint)
+            .field("account_id", &self.account_id)
+            .field("instance_id", &self.instance_id)
+            .field("bucket", &self.bucket)
+            .field("prefix", &self.prefix)
+            .field("broker_token", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -71,6 +111,7 @@ pub enum BackupError {
     InvalidRestoreStatus,
     InvalidRestoreScope,
     InvalidRestoreCounters,
+    InvalidDestinationShape,
     StoredKeys,
     CanonicalRecoveryLength,
     CanonicalRecoveryCharacters,
@@ -102,19 +143,29 @@ impl fmt::Display for BackupError {
             Self::InvalidOffloadBytes => {
                 formatter.write_str("backup offload byte values must be positive integers or null")
             }
-            Self::InvalidOffloadStatus => {
-                formatter.write_str("backup offload status must be ok, skipped, stalled, or error")
-            }
-            Self::InvalidVerificationStatus => {
-                formatter.write_str("backup verification status must be ok, skipped, or error")
-            }
-            Self::InvalidRestoreStatus => formatter
-                .write_str("backup restore status must be ok, no_op, refused, degraded, or error"),
+            Self::InvalidOffloadStatus => write_closed_vocabulary(
+                formatter,
+                "backup offload status must be ",
+                &OFFLOAD_STATUSES,
+            ),
+            Self::InvalidVerificationStatus => write_closed_vocabulary(
+                formatter,
+                "backup verification status must be ",
+                &VERIFICATION_STATUSES,
+            ),
+            Self::InvalidRestoreStatus => write_closed_vocabulary(
+                formatter,
+                "backup restore status must be ",
+                &RESTORE_STATUSES,
+            ),
             Self::InvalidRestoreScope => {
-                formatter.write_str("backup restore scope must be day or all")
+                write_closed_vocabulary(formatter, "backup restore scope must be ", &RESTORE_SCOPES)
             }
             Self::InvalidRestoreCounters => {
                 formatter.write_str("backup restore counters must be non-negative integers")
+            }
+            Self::InvalidDestinationShape => {
+                formatter.write_str("backup destination must be a JSON object")
             }
             Self::StoredKeys => formatter.write_str("backup keys must be strings when present"),
             Self::CanonicalRecoveryLength => {
@@ -133,3 +184,59 @@ impl fmt::Display for BackupError {
 }
 
 impl std::error::Error for BackupError {}
+
+fn write_closed_vocabulary(
+    formatter: &mut fmt::Formatter<'_>,
+    prefix: &str,
+    values: &[&str],
+) -> fmt::Result {
+    formatter.write_str(prefix)?;
+    match values {
+        [] => Ok(()),
+        [value] => formatter.write_str(value),
+        [first, second] => write!(formatter, "{first} or {second}"),
+        _ => {
+            for value in &values[..values.len() - 1] {
+                write!(formatter, "{value}, ")?;
+            }
+            write!(formatter, "or {}", values[values.len() - 1])
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn debug_redacts_secret_bearing_fields() {
+        let keys = BackupKeys {
+            daily_key: "DAILY_SECRET".into(),
+            recovery_key: "RECOVERY_SECRET".into(),
+        };
+        let destination = Destination {
+            repository: "repo".into(),
+            backend: "s3".into(),
+            credentials: serde_json::from_value(json!({"token": "CREDENTIAL_SECRET"})).unwrap(),
+        };
+        let binding = HostedBinding {
+            broker_endpoint: "endpoint".into(),
+            account_id: "account".into(),
+            instance_id: "instance".into(),
+            bucket: "bucket".into(),
+            prefix: "prefix".into(),
+            broker_token: "BROKER_TOKEN_SECRET".into(),
+        };
+
+        let rendered = format!("{keys:?}\n{destination:?}\n{binding:?}");
+        for secret in [
+            "DAILY_SECRET",
+            "RECOVERY_SECRET",
+            "CREDENTIAL_SECRET",
+            "BROKER_TOKEN_SECRET",
+        ] {
+            assert!(!rendered.contains(secret));
+        }
+    }
+}
