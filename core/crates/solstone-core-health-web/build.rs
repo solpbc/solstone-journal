@@ -27,9 +27,8 @@ fn main() {
         .collect();
     entries.sort();
 
-    let mut generated = String::from(
-        "pub(super) static STATIC_ASSETS: &[(&str, &str, &[u8])] = &[\n",
-    );
+    let mut generated =
+        String::from("pub(super) static STATIC_ASSETS: &[(&str, &str, &[u8])] = &[\n");
     for path in &entries {
         println!("cargo:rerun-if-changed={}", path.display());
         let name = path
