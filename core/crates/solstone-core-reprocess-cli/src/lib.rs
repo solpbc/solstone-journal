@@ -32,7 +32,7 @@ pub struct CliRun {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Flavor {
+pub enum Flavor {
     ProcessNow,
     FromScratch,
     MarkUpdated,
@@ -56,7 +56,7 @@ struct RangeDay {
 }
 
 #[derive(Debug)]
-enum DayOutcome {
+pub enum DayOutcome {
     Malformed,
     PastOnly,
     NoData,
@@ -141,13 +141,13 @@ where
 
     render_day_outcome(
         &parsed.day,
-        reprocess_day(
+        reprocess_day_with(
             journal_path,
             &parsed.day,
             parsed.flavor,
             now,
             zone,
-            &mut transport,
+            transport,
         ),
         now,
         zone,
@@ -223,13 +223,25 @@ enum ParseResult {
     Usage(String),
 }
 
-fn reprocess_day<F>(
+/// Reprocess one day using the host's current time and IANA local zone.
+pub fn reprocess_day(journal_path: &Path, day: &str, flavor: Flavor) -> DayOutcome {
+    let zone = iana_time_zone::get_timezone()
+        .ok()
+        .and_then(|name| Tz::from_str(&name).ok())
+        .unwrap_or(chrono_tz::UTC);
+    reprocess_day_with(journal_path, day, flavor, Utc::now(), zone, |envelope| {
+        send_envelope(journal_path, envelope)
+    })
+}
+
+/// Reprocess one day with explicit time, zone, and transport seams.
+pub fn reprocess_day_with<F>(
     journal: &Path,
     day: &str,
     flavor: Flavor,
     now: DateTime<Utc>,
     zone: Tz,
-    transport: &mut F,
+    mut transport: F,
 ) -> DayOutcome
 where
     F: FnMut(&CallosumEnvelope) -> bool,
@@ -376,13 +388,13 @@ where
     let data_days = data_days(days);
     let mut queued = Vec::new();
     for entry in days {
-        match reprocess_day(
+        match reprocess_day_with(
             journal,
             &entry.day,
             Flavor::FromScratch,
             now,
             zone,
-            transport,
+            &mut *transport,
         ) {
             DayOutcome::NoData => {}
             DayOutcome::Submitted(_) => queued.push(entry.day.clone()),

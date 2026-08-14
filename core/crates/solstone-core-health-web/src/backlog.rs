@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use crate::backlog_reasons;
+use serde_json::{Map, Value, json};
+
+const CANT_TELL: &str = "still checking — give me a moment to see where your journal stands.";
+const CAUGHT_UP: &str = "your journal's all caught up.";
+
+pub fn load(root: &std::path::Path) -> Option<Map<String, Value>> {
+    serde_json::from_slice::<Value>(&std::fs::read(root.join("stats.json")).ok()?)
+        .ok()?
+        .as_object()?
+        .get("backlog")?
+        .as_object()
+        .cloned()
+}
+
+pub fn count(value: Option<&Value>) -> f64 {
+    let Some(value) = value else {
+        return 0.0;
+    };
+    let value = match value {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.parse().ok(),
+        _ => None,
+    };
+    value
+        .filter(|n: &f64| n.is_finite() && *n > 0.0)
+        .unwrap_or(0.0)
+}
+
+fn number(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{}", value as i64)
+    } else {
+        value.to_string()
+    }
+}
+
+pub fn verdict(backlog: Option<&Map<String, Value>>) -> String {
+    let Some(backlog) = backlog else {
+        return CANT_TELL.to_owned();
+    };
+    if backlog.get("degraded") == Some(&Value::Bool(true)) {
+        return CANT_TELL.to_owned();
+    }
+    let pending = count(backlog.get("pending_days"));
+    let stuck = count(backlog.get("stuck_days"));
+    if pending == 0.0 && stuck == 0.0 {
+        return CAUGHT_UP.to_owned();
+    }
+    if stuck > 0.0 && pending == 0.0 {
+        return if stuck == 1.0 {
+            "caught up except 1 day that needs a hand.".to_owned()
+        } else {
+            format!("caught up except {} days that need a hand.", number(stuck))
+        };
+    }
+    if stuck == 0.0 {
+        return if pending == 1.0 {
+            "1 day is still catching up.".to_owned()
+        } else {
+            format!("{} days are still catching up.", number(pending))
+        };
+    }
+    let stuck = if stuck == 1.0 {
+        "1 day needs a hand".to_owned()
+    } else {
+        format!("{} days need a hand", number(stuck))
+    };
+    let pending = if pending == 1.0 {
+        "1 more day is still catching up".to_owned()
+    } else {
+        format!("{} more days are still catching up", number(pending))
+    };
+    format!("{stuck}. {pending}.")
+}
+
+fn reason(day: &Map<String, Value>) -> &'static str {
+    let marker = day
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| day.get("reason").and_then(Value::as_str));
+    if marker == Some("corrupt_raw") {
+        return "original raw media is missing or damaged — re-import it";
+    }
+    match backlog_reasons::category(marker) {
+        "setup" => "a setting's missing — check your journal's setup",
+        "provider" | "startup" => "the AI provider was unreachable. try again",
+        "request" => {
+            "the AI provider refused a request sol sent — retrying won't help; this is a defect in sol"
+        }
+        _ => "a processing step keeps failing — try again",
+    }
+}
+
+pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
+    let Some(backlog) = backlog else {
+        return Vec::new();
+    };
+    if backlog.get("degraded") == Some(&Value::Bool(true)) {
+        return Vec::new();
+    }
+    let errors = backlog.get("errors").and_then(Value::as_array);
+    backlog
+        .get("days")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .filter_map(|day| {
+            let error = day.get("error").filter(|v| !v.is_null()).or_else(|| {
+                errors
+                    .and_then(|errors| errors.iter().find(|item| item.get("day") == day.get("day")))
+            });
+            if day.get("state").and_then(Value::as_str) != Some("stuck") && error.is_none() {
+                return None;
+            }
+            let depth = count(day.get("segments")) + count(day.get("units"));
+            let mut row = Map::new();
+            row.insert(
+                "day".to_owned(),
+                day.get("day").cloned().unwrap_or(Value::Null),
+            );
+            row.insert("reason".to_owned(), Value::String(reason(day).to_owned()));
+            row.insert(
+                "depth".to_owned(),
+                if depth > 0.0 {
+                    if depth.fract() == 0.0 {
+                        json!(depth as i64)
+                    } else {
+                        json!(depth)
+                    }
+                } else {
+                    Value::Null
+                },
+            );
+            for key in ["reason_code", "provider", "model"] {
+                if day.get(key).is_some_and(|v| !v.is_null() && v != "") {
+                    row.insert(key.to_owned(), day[key].clone());
+                }
+            }
+            Some(Value::Object(row))
+        })
+        .collect()
+}
+
+pub fn copy() -> Value {
+    json!({"bucket_heading":"days that need a hand","bucket_description":"these days stopped on their own and can't pick back up without you — here's why, and what to try.","day_badge":"stuck","action_process_now":"process now","action_redo_scratch":"redo from scratch","confirm_redo_scratch":"redo this whole day from scratch? this re-does the parts sol already finished, so it'll take longer. the day you see now won't change until it's done.","queued_feedback":"queued, working on it now"})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{count, stuck_rows, verdict};
+    use serde_json::json;
+
+    #[test]
+    fn count_matches_python_coercions() {
+        assert_eq!(count(None), 0.0);
+        assert_eq!(count(Some(&json!("nope"))), 0.0);
+        assert_eq!(count(Some(&json!(f64::INFINITY))), 0.0);
+        assert_eq!(count(Some(&json!(-2))), 0.0);
+        assert_eq!(count(Some(&json!(2.5))), 2.5);
+        assert_eq!(count(Some(&json!("3"))), 3.0);
+    }
+
+    #[test]
+    fn verdict_covers_each_numeric_arm_and_degraded() {
+        assert_eq!(
+            verdict(None),
+            "still checking — give me a moment to see where your journal stands."
+        );
+        assert_eq!(
+            verdict(json!({"pending_days":1,"stuck_days":0}).as_object()),
+            "1 day is still catching up."
+        );
+        assert_eq!(
+            verdict(json!({"pending_days":0,"stuck_days":2}).as_object()),
+            "caught up except 2 days that need a hand."
+        );
+        assert_eq!(
+            verdict(json!({"pending_days":2,"stuck_days":1}).as_object()),
+            "1 day needs a hand. 2 more days are still catching up."
+        );
+        assert_eq!(
+            verdict(json!({"pending_days":2,"stuck_days":3,"degraded":true}).as_object()),
+            "still checking — give me a moment to see where your journal stands."
+        );
+    }
+
+    #[test]
+    fn rows_map_startup_and_provider_to_the_same_copy() {
+        let rows = stuck_rows(json!({"days":[{"day":"20240101","state":"stuck","reason_code":"local_model_loading","segments":1},{"day":"20240102","state":"stuck","reason_code":"provider_unavailable","units":2},{"day":"20240103","state":"stuck","reason_code":"provider_request_rejected"}]}).as_object());
+        assert_eq!(
+            rows[0]["reason"],
+            "the AI provider was unreachable. try again"
+        );
+        assert_eq!(
+            rows[1]["reason"],
+            "the AI provider was unreachable. try again"
+        );
+        assert_eq!(
+            rows[2]["reason"],
+            "the AI provider refused a request sol sent — retrying won't help; this is a defect in sol"
+        );
+        let generic = stuck_rows(
+            json!({"days":[{"day":"20240104","state":"stuck","reason_code":"local_artifact_proof_unavailable"},{"day":"20240105","state":"stuck","reason_code":"not_in_taxonomy"}]}).as_object(),
+        );
+        assert_eq!(
+            generic[0]["reason"],
+            "a processing step keeps failing — try again"
+        );
+        assert_eq!(
+            generic[1]["reason"],
+            "a processing step keeps failing — try again"
+        );
+    }
+}
