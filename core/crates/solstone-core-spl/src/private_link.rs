@@ -4,6 +4,7 @@
 //! Write-owning SPL enrollment and posture operations.
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config::{get_journal_config_path, read_journal_config};
@@ -87,6 +88,10 @@ pub fn enroll_home(
 ) -> Result<String, EnrollError> {
     let agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
+        .timeout_recv_body(Some(Duration::from_secs(30)))
+        .timeout_global(Some(Duration::from_secs(30)))
         .build()
         .new_agent();
     let payload = serde_json::to_string(
@@ -105,6 +110,20 @@ pub fn enroll_home(
         Err(error) => return Err(EnrollError::Unreachable(error.to_string())),
     };
     let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        let reason = response
+            .into_body()
+            .read_to_string()
+            .ok()
+            .and_then(|body| serde_json::from_str::<Value>(&body).ok())
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            });
+        return Err(EnrollError::Rejected { status, reason });
+    }
     let body = response.into_body().read_to_string().map_err(|error| {
         if matches!(error, ureq::Error::Timeout(_)) {
             EnrollError::Unreachable(error.to_string())
@@ -114,18 +133,9 @@ pub fn enroll_home(
     })?;
     let value: Value = serde_json::from_str(&body)
         .map_err(|_| EnrollError::Response("body was not JSON".to_owned()))?;
-    if !(200..300).contains(&status) {
-        return Err(EnrollError::Rejected {
-            status,
-            reason: value
-                .get("error")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-        });
-    }
     value
         .get("service_token")
-        .or_else(|| value.get("token"))
+        .or_else(|| value.get("account_token"))
         .and_then(Value::as_str)
         .filter(|token| !token.is_empty())
         .map(str::to_owned)
@@ -238,8 +248,11 @@ mod tests {
     use super::*;
     use std::{
         fs,
+        io::{Read, Write},
+        net::TcpListener,
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
+        thread,
     };
 
     struct TempJournal(PathBuf);
@@ -265,6 +278,52 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn relay_response(status: u16, body: &str) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("relay listener binds");
+        let address = listener.local_addr().expect("relay address reads");
+        let body = body.to_owned();
+        let worker = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("relay accepts request");
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).expect("relay reads request");
+            let reason = if status == 200 {
+                "OK"
+            } else {
+                "Service Unavailable"
+            };
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("relay response writes");
+        });
+        (format!("http://{address}"), worker)
+    }
+
+    #[test]
+    fn enroll_home_accepts_a_legacy_account_token() {
+        let (relay, worker) = relay_response(200, r#"{"account_token":"legacy-token"}"#);
+        let result = enroll_home(&relay, "instance", "ca", "home");
+        worker.join().expect("relay worker joins");
+        assert_eq!(result.unwrap(), "legacy-token");
+    }
+
+    #[test]
+    fn enroll_home_rejects_non_json_http_error_bodies() {
+        let (relay, worker) = relay_response(503, "temporarily unavailable");
+        let result = enroll_home(&relay, "instance", "ca", "home");
+        worker.join().expect("relay worker joins");
+        assert!(matches!(
+            result,
+            Err(EnrollError::Rejected {
+                status: 503,
+                reason: None,
+            })
+        ));
     }
 
     #[test]

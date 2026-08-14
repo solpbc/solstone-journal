@@ -197,6 +197,28 @@ impl OperationRegistry {
     }
 
     pub fn operation(&self, service: &str) -> Value {
+        self.operation_with_phase_vocabulary(service, true)
+    }
+
+    /// Returns an operation using its service-neutral lifecycle phase names.
+    ///
+    /// SPP's public UI intentionally uses product-specific replacements such
+    /// as `not_verified`; other services share this registry but retain the
+    /// Python operation registry's raw phase vocabulary.
+    pub fn operation_raw(&self, service: &str) -> Value {
+        self.operation_with_phase_vocabulary(service, false)
+    }
+
+    /// Removes one service operation, primarily for deterministic route tests.
+    pub fn clear_operation(&self, service: &str) {
+        self.state
+            .lock()
+            .expect("operation registry lock is not poisoned")
+            .entries
+            .remove(service);
+    }
+
+    fn operation_with_phase_vocabulary(&self, service: &str, product: bool) -> Value {
         let now = Instant::now();
         let mut state = self
             .state
@@ -206,7 +228,7 @@ impl OperationRegistry {
         state
             .entries
             .get(service)
-            .map(|entry| payload(entry, now, true))
+            .map(|entry| payload(entry, now, product))
             .unwrap_or(Value::Null)
     }
 }

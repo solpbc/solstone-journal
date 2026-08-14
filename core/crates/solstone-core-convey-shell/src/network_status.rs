@@ -272,7 +272,7 @@ pub(crate) async fn private_link(
         .unwrap_or(operations);
     Json(private_link_body(
         &root.0,
-        Some(operations.operation("spl")),
+        Some(operations.operation_raw("spl")),
     ))
     .into_response()
 }

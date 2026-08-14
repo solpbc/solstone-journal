@@ -28,7 +28,8 @@ use crate::network_status::private_link_body;
 
 const SERVICE: &str = "spl";
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
-const BUSY_DETAIL: &str = "The service operation is already running. Try again in a moment.";
+const BUSY_ERROR: &str = "The service operation is already running. Try again in a moment.";
+const BUSY_DETAIL: &str = "operation already running";
 
 #[derive(Clone, Debug)]
 pub enum SplPollOutcome {
@@ -228,7 +229,7 @@ async fn private_link_enable(
     let operations = override_operations
         .map(|Extension(value)| value.0)
         .unwrap_or(operations);
-    if private_link_body(&journal.0, Some(operations.operation(SERVICE))).state == "enabled" {
+    if private_link_body(&journal.0, Some(operations.operation_raw(SERVICE))).state == "enabled" {
         return refusal(
             "invalid_operation_for_state",
             &copy("SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL"),
@@ -266,11 +267,11 @@ async fn private_link_enable(
         "{}/enable/spl?nonce={nonce}&instance={}",
         runtime.portal_base_url, identity.instance_id
     );
-    let (handle, operation) = match operations.start_operation(SERVICE, "enable", Some(portal_url))
-    {
-        Ok(value) => value,
-        Err(_) => return refusal("service_busy", BUSY_DETAIL, StatusCode::SERVICE_UNAVAILABLE),
-    };
+    let (handle, operation) =
+        match operations.start_operation(SERVICE, "spl_enable", Some(portal_url)) {
+            Ok(value) => value,
+            Err(_) => return busy_refusal(),
+        };
     spawn_handoff(journal.0.clone(), operations, handle, runtime, nonce);
     (
         StatusCode::ACCEPTED,
@@ -299,7 +300,7 @@ async fn private_link_disable(
         Ok(result) => {
             let mut status = serde_json::to_value(private_link_body(
                 &journal.0,
-                Some(operations.operation(SERVICE)),
+                Some(operations.operation_raw(SERVICE)),
             ))
             .expect("status serializes");
             status
@@ -317,6 +318,19 @@ async fn private_link_disable(
             )
         }
     }
+}
+
+fn busy_refusal() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({
+            "reason_code": "service_busy",
+            "reason": "service_busy",
+            "error": BUSY_ERROR,
+            "detail": BUSY_DETAIL,
+        })),
+    )
+        .into_response()
 }
 
 fn spawn_handoff(

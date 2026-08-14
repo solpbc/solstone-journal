@@ -294,7 +294,7 @@ async fn enable_refuses_only_fully_enabled_and_has_exact_acceptance_shape() {
 async fn enable_busy_and_consent_preparation_failures_are_refusals() {
     let root = journal();
     let registry = Arc::new(OperationRegistry::default());
-    registry.start_operation("spl", "enable", None).unwrap();
+    registry.start_operation("spl", "spl_enable", None).unwrap();
     let (status, busy) = request(
         router(root.clone()).layer(Extension(NetworkOperationsOverride(registry))),
         Method::POST,
@@ -303,7 +303,15 @@ async fn enable_busy_and_consent_preparation_failures_are_refusals() {
     )
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(busy["reason_code"], "service_busy");
+    assert_eq!(
+        busy,
+        json!({
+            "reason_code": "service_busy",
+            "reason": "service_busy",
+            "error": "The service operation is already running. Try again in a moment.",
+            "detail": "operation already running",
+        })
+    );
     let isolated = journal();
     let pending = json!({"service":"spl","state":"pending"})
         .as_object()
@@ -365,7 +373,8 @@ async fn enable_approved_writes_identity_posture_and_token() {
         assert!(body.get(key).is_some());
     }
     operation_keys(&body["operation"]);
-    let operation = wait_operation(app, "not_verified").await;
+    assert_eq!(body["operation"]["kind"], "spl_enable");
+    let operation = wait_operation(app, "enabled").await;
     operation_keys(&operation);
     assert!(operation["portal_url"].is_null());
     assert!(root.join("link/state.json").is_file());
@@ -388,11 +397,11 @@ async fn enable_consent_and_relay_outcomes_are_mapped_without_egress() {
     let cases = [
         (SplPollOutcome::Success(json!({"service":"spl","state":"revoked"}).as_object().unwrap().clone()), Enrollment::Token, "revoked", Some("Consent was not granted")),
         (SplPollOutcome::Success(json!({"service":"spl","state":"needs_subscription","subscribe_url":"https://subscribe.test"}).as_object().unwrap().clone()), Enrollment::Token, "needs_subscription", Some("private network needs")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(409, Some("ca_pubkey already registered to another instance")), "repair_needed", Some("different identity")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(409, Some("ca_pubkey mismatch — rotation not supported in v1")), "repair_needed", Some("security key changed")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(503, None), "repair_needed", Some("isn't available")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Unreachable, "repair_needed", Some("could not be reached")),
-        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(502, None), "repair_needed", Some("error 502")),
+        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(409, Some("ca_pubkey already registered to another instance")), "error", Some("different identity")),
+        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(409, Some("ca_pubkey mismatch — rotation not supported in v1")), "error", Some("security key changed")),
+        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(503, None), "error", Some("isn't available")),
+        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Unreachable, "error", Some("could not be reached")),
+        (SplPollOutcome::Success(json!({"service":"spl","state":"approved","approved_at":1}).as_object().unwrap().clone()), Enrollment::Error(502, None), "error", Some("error 502")),
     ];
     for (poll_result, enrollment, phase, guidance) in cases {
         let root = journal();
@@ -485,7 +494,7 @@ async fn disable_shape_failure_and_get_operation_are_exact() {
     assert_eq!(status, StatusCode::OK);
     let registry = Arc::new(OperationRegistry::default());
     registry
-        .start_operation("spl", "enable", Some("https://portal.test".to_owned()))
+        .start_operation("spl", "spl_enable", Some("https://portal.test".to_owned()))
         .unwrap();
     let app = router(root.clone()).layer(Extension(NetworkOperationsOverride(registry.clone())));
     let (_, get) = request(
@@ -497,7 +506,7 @@ async fn disable_shape_failure_and_get_operation_are_exact() {
     .await;
     operation_keys(&get["operation"]);
     let (status, disabled) = request(
-        app,
+        app.clone(),
         Method::POST,
         "/app/network/private-link/disable",
         Body::empty(),
@@ -507,6 +516,15 @@ async fn disable_shape_failure_and_get_operation_are_exact() {
     assert_eq!(disabled.as_object().unwrap().len(), 4);
     assert_eq!(disabled["status"].as_object().unwrap().len(), 7);
     assert!(disabled["status"].get("success").is_none());
+    registry.clear_operation("spl");
+    let (_, cleared) = request(
+        app,
+        Method::GET,
+        "/app/network/api/private-link",
+        Body::empty(),
+    )
+    .await;
+    assert!(cleared["operation"].is_null());
     let failure_root = journal();
     let (status, failure) = request(
         router(failure_root.clone()).layer(Extension(SplDisableFailureOverride)),
@@ -517,23 +535,6 @@ async fn disable_shape_failure_and_get_operation_are_exact() {
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(failure["detail"], "");
-    let fresh = journal();
-    let (status, _) = post(
-        &fresh,
-        "/app/network/host-address",
-        Body::from(r#"{"home_address":"10.0.0.2:7657"}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let (_, none) = request(
-        router(fresh.clone()),
-        Method::GET,
-        "/app/network/api/private-link",
-        Body::empty(),
-    )
-    .await;
-    assert!(none["operation"].is_null());
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(failure_root);
-    let _ = fs::remove_dir_all(fresh);
 }

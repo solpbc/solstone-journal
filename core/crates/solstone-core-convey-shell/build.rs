@@ -386,10 +386,10 @@ fn main() {
         "pub(super) const NETWORK_COPY_JSON: &str = {network_copy_json:?};\n"
     ));
     generated.push_str(&format!(
-        "#[allow(dead_code)]\npub(super) const SPL_OUTCOME_STRINGS_JSON: &str = {spl_outcome_strings_json:?};\n"
+        "pub(super) const SPL_OUTCOME_STRINGS_JSON: &str = {spl_outcome_strings_json:?};\n"
     ));
     generated.push_str(&format!(
-        "#[allow(dead_code)]\npub(super) const HOME_ADDRESS_STRINGS_JSON: &str = {home_address_strings_json:?};\n"
+        "pub(super) const HOME_ADDRESS_STRINGS_JSON: &str = {home_address_strings_json:?};\n"
     ));
     generated.push_str(&format!(
         "pub(super) const NOT_IN_NEW_VOICES_COPY: &str = {not_in_new_voices};\n"
