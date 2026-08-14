@@ -376,13 +376,13 @@
                 "failing_component": null,
                 "headline": "thinking status unavailable",
                 "identity": {
-                  "lane": null,
+                  "lane": "none",
                   "model": null,
-                  "provider": null
+                  "provider": "none"
                 },
                 "progressing": false,
-                "reason_code": "brain_record_unavailable",
-                "reason_text": "brain record unavailable",
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
                 "state": "unknown"
               },
               "hostname": "corpus-host"
@@ -629,13 +629,13 @@
                 "failing_component": null,
                 "headline": "thinking status unavailable",
                 "identity": {
-                  "lane": null,
+                  "lane": "none",
                   "model": null,
-                  "provider": null
+                  "provider": "none"
                 },
                 "progressing": false,
-                "reason_code": "brain_record_unavailable",
-                "reason_text": "brain record unavailable",
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
                 "state": "unknown"
               },
               "hostname": "corpus-host"
@@ -860,13 +860,13 @@
                 "failing_component": null,
                 "headline": "thinking status unavailable",
                 "identity": {
-                  "lane": null,
+                  "lane": "none",
                   "model": null,
-                  "provider": null
+                  "provider": "none"
                 },
                 "progressing": false,
-                "reason_code": "brain_record_unavailable",
-                "reason_text": "brain record unavailable",
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
                 "state": "unknown"
               },
               "hostname": "corpus-host"
@@ -1078,13 +1078,13 @@
                 "failing_component": null,
                 "headline": "thinking status unavailable",
                 "identity": {
-                  "lane": null,
+                  "lane": "none",
                   "model": null,
-                  "provider": null
+                  "provider": "none"
                 },
                 "progressing": false,
-                "reason_code": "brain_record_unavailable",
-                "reason_text": "brain record unavailable",
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
                 "state": "unknown"
               },
               "hostname": "corpus-host"
@@ -1296,13 +1296,13 @@
                 "failing_component": null,
                 "headline": "thinking status unavailable",
                 "identity": {
-                  "lane": null,
+                  "lane": "none",
                   "model": null,
-                  "provider": null
+                  "provider": "none"
                 },
                 "progressing": false,
-                "reason_code": "brain_record_unavailable",
-                "reason_text": "brain record unavailable",
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
                 "state": "unknown"
               },
               "hostname": "corpus-host"
