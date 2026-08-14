@@ -96,11 +96,11 @@ async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> 
     base_request.agent = None;
     let base = match search_counts(&journal_root, &base_request, reference) {
         Ok(counts) => counts,
-        Err(_) => return search_failed(),
+        Err(error) => return search_failed(&error.to_string()),
     };
     let filtered = match search_counts(&journal_root, &request, reference) {
         Ok(counts) => counts,
-        Err(_) => return search_failed(),
+        Err(error) => return search_failed(&error.to_string()),
     };
     let mut days = filtered
         .days
@@ -125,7 +125,7 @@ async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> 
         per_day.limit = request.limit;
         let response = match search(&journal_root, &per_day, reference) {
             Ok(response) => response,
-            Err(_) => return search_failed(),
+            Err(error) => return search_failed(&error.to_string()),
         };
         let results = response
             .results
@@ -485,12 +485,43 @@ fn file_read_failed(detail: &str) -> Response {
     )
     .into_response()
 }
-fn search_failed() -> Response {
+fn search_failed(detail: &str) -> Response {
+    // The reference publishes the underlying error text here, and `sol call journal search`
+    // prints this body verbatim into a talent's context. Discarding it left an owner and a
+    // talent unable to tell an absent index from a corrupt one. Every other refusal helper in
+    // this file already carries a detail; this one was the outlier.
     error_envelope(
         "search_failed",
         "I couldn't search for that.",
-        "",
+        detail,
         StatusCode::BAD_REQUEST,
     )
     .into_response()
+}
+
+#[cfg(test)]
+mod search_failure_detail_tests {
+    use super::*;
+
+    // The reference publishes the underlying error text with this refusal, and the
+    // journal search command prints the response body verbatim into a talent's
+    // context. A port answering an empty detail leaves an owner and a talent unable
+    // to distinguish an absent index from a corrupt one.
+    //
+    // Caught in live validation against a running server, not by the frozen corpus:
+    // no captured case reaches this branch, because the seeded journal has an index.
+    // That is the coverage limit the corpus is meant to state rather than hide.
+    #[test]
+    fn search_failure_carries_its_detail() {
+        let response = search_failed("journal index is absent: /x/indexer/journal.sqlite");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn search_failure_helper_accepts_a_detail_at_all() {
+        // Guards the exact regression: the helper previously took no detail, and every
+        // call site discarded its error with a wildcard match.
+        let response = search_failed("journal index is unreadable");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 }
