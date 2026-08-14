@@ -42,11 +42,23 @@ pub const LOG_HELP: &str = concat!(
     "  --full      Expand event details\n",
 );
 
+pub const INVENTORY_HELP: &str = concat!(
+    "usage: journal talent inventory [-h] [--json]\n\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --json      Output as JSON\n",
+);
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct ListOptions {
     pub(crate) schedule: Option<String>,
     pub(crate) source: Option<String>,
     pub(crate) disabled: bool,
+    pub(crate) json: bool,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct InventoryOptions {
     pub(crate) json: bool,
 }
 
@@ -62,6 +74,7 @@ pub(crate) enum Command {
     Help(String),
     List(ListOptions),
     Log(LogOptions),
+    Inventory(InventoryOptions),
     Stub(&'static str),
     Error(String),
 }
@@ -95,7 +108,8 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         }
         "list" => parse_list(&args[index + 1..]),
         "log" => parse_log(&args[index + 1..]),
-        "show" | "logs" | "inventory" => {
+        "inventory" => parse_inventory(&args[index + 1..]),
+        "show" | "logs" => {
             let name = args[index];
             if args[index + 1..]
                 .iter()
@@ -108,7 +122,7 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
                 Command::Stub(match name {
                     "show" => "show",
                     "logs" => "logs",
-                    _ => "inventory",
+                    _ => unreachable!("stub command is matched above"),
                 })
             }
         }
@@ -123,6 +137,25 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
             ),
         ),
     }
+}
+
+fn parse_inventory(args: &[&str]) -> Command {
+    let mut options = InventoryOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "-h" | "--help" => return Command::Help(INVENTORY_HELP.to_owned()),
+            "--json" => options.json = true,
+            value => {
+                return error(
+                    "journal talent inventory",
+                    &format!("unrecognized arguments: {value}"),
+                );
+            }
+        }
+        index += 1;
+    }
+    Command::Inventory(options)
 }
 
 fn parse_list(args: &[&str]) -> Command {
@@ -214,6 +247,7 @@ fn error(program: &str, message: &str) -> Command {
     let usage = match program {
         "journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
         "journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
+        "journal talent inventory" => INVENTORY_HELP.lines().next().unwrap_or_default(),
         _ => HELP.lines().next().unwrap_or_default(),
     };
     Command::Error(format!("{usage}\n{program}: error: {message}\n"))
@@ -292,6 +326,30 @@ mod tests {
                 json: true,
                 full: true,
             })
+        );
+    }
+
+    #[test]
+    fn inventory_parses_options_help_and_errors() {
+        assert_eq!(
+            parse(&[OsString::from("inventory")]),
+            Command::Inventory(InventoryOptions::default())
+        );
+        assert_eq!(
+            parse(&[OsString::from("inventory"), OsString::from("--json")]),
+            Command::Inventory(InventoryOptions { json: true })
+        );
+        for help in ["-h", "--help"] {
+            assert_eq!(
+                parse(&[OsString::from("inventory"), OsString::from(help)]),
+                Command::Help(INVENTORY_HELP.to_owned())
+            );
+        }
+        assert_eq!(
+            parse(&[OsString::from("inventory"), OsString::from("--bad")]),
+            Command::Error(
+                "usage: journal talent inventory [-h] [--json]\njournal talent inventory: error: unrecognized arguments: --bad\n".to_owned()
+            )
         );
     }
 }

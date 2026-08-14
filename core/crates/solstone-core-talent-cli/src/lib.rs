@@ -8,6 +8,12 @@ use std::path::Path;
 use std::time::SystemTime;
 
 mod args;
+mod compose;
+mod facets_context;
+mod inventory;
+mod schema;
+mod templates;
+
 mod discovery;
 mod emit;
 mod last_run;
@@ -44,6 +50,16 @@ pub fn run_cli(
             exit_code: 1,
         },
         args::Command::Log(options) => log::run_log(&journal_root.join("talents"), &options),
+        args::Command::Inventory(options) => {
+            match inventory::run(talent_root, apps_root, journal_root, &options) {
+                Ok(output) => success(output),
+                Err(error) => CliRun {
+                    stdout: String::new(),
+                    stderr: format!("{error}\n"),
+                    exit_code: 1,
+                },
+            }
+        }
         args::Command::List(options) => match load_configs(talent_root, apps_root, journal_root) {
             Ok(configs) if options.json => success(emit::jsonl(&configs, &options)),
             Ok(configs) => success(list::render(&configs, &options, journal_root, now)),
@@ -318,6 +334,36 @@ mod tests {
             assert_eq!(output.exit_code, 1);
             assert_eq!(output.stderr, format!("{expected}\n"));
         }
+    }
+
+    #[test]
+    fn inventory_keeps_per_talent_compose_errors_in_successful_output() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/broken.md"),
+            "{\n\"type\": \"cogitate\",\n\"access_tier\": \"invalid\"\n}\nbroken\n",
+        )
+        .expect("broken prompt");
+        fs::write(
+            root.path().join("talent/healthy.md"),
+            "{\n\"type\": \"cogitate\"\n}\nhealthy\n",
+        )
+        .expect("healthy prompt");
+        let output = run(&root, &["inventory"]);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert!(output.stderr.is_empty());
+        assert!(output.stdout.contains("broken"));
+        assert!(output.stdout.contains("ERROR:"));
+        assert!(output.stdout.contains("  healthy"));
+        assert_eq!(output.stdout.matches("ERROR:").count(), 1);
+    }
+
+    #[test]
+    fn inventory_help_matches_the_parser_contract_exactly() {
+        let root = roots();
+        let output = run(&root, &["inventory", "--help"]);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert_eq!(output.stdout, args::INVENTORY_HELP);
     }
 
     #[test]

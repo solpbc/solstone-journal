@@ -13,6 +13,13 @@ pub(crate) struct TalentConfig {
     pub(crate) key: String,
     pub(crate) file: String,
     pub(crate) metadata: Map<String, Value>,
+    pub(crate) body: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ParsedFrontmatter {
+    pub(crate) metadata: Map<String, Value>,
+    pub(crate) body: String,
 }
 
 pub(crate) fn discover(talent_root: &Path, apps_root: &Path) -> Result<Vec<TalentConfig>, String> {
@@ -82,7 +89,7 @@ fn config(
     let mut metadata = Map::new();
     metadata.insert("path".to_owned(), Value::String(path.display().to_string()));
     metadata.insert("mtime".to_owned(), Value::Number(modified.into()));
-    metadata.extend(parsed);
+    metadata.extend(parsed.metadata);
     if !metadata.contains_key("color") {
         metadata.insert("color".to_owned(), Value::String("#6c757d".to_owned()));
     }
@@ -94,31 +101,47 @@ fn config(
         key,
         file,
         metadata,
+        body: parsed.body,
     })
 }
 
-fn read_frontmatter(path: &Path) -> Result<Map<String, Value>, String> {
+pub(crate) fn read_frontmatter(path: &Path) -> Result<ParsedFrontmatter, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
     let text = text.trim();
     let boundary = Regex::new(r"(?m)^(?:\{|\})$").expect("static regex");
     let Some(first) = boundary.find(text) else {
-        return Ok(Map::new());
+        return Ok(ParsedFrontmatter {
+            metadata: Map::new(),
+            body: text.to_owned(),
+        });
     };
     if first.start() != 0 || first.as_str() != "{" {
-        return Ok(Map::new());
+        return Ok(ParsedFrontmatter {
+            metadata: Map::new(),
+            body: text.to_owned(),
+        });
     }
     let mut parts = boundary.splitn(text, 3);
     let _ = parts.next();
     let Some(frontmatter) = parts.next() else {
-        return Ok(Map::new());
+        return Ok(ParsedFrontmatter {
+            metadata: Map::new(),
+            body: text.to_owned(),
+        });
     };
-    if parts.next().is_none() {
-        return Ok(Map::new());
-    }
+    let Some(body) = parts.next() else {
+        return Ok(ParsedFrontmatter {
+            metadata: Map::new(),
+            body: text.to_owned(),
+        });
+    };
     let value: Value = serde_json::from_str(&format!("{{{frontmatter}}}"))
         .map_err(|_| format!("failed to parse frontmatter from {}", path.display()))?;
-    Ok(value.as_object().cloned().unwrap_or_default())
+    Ok(ParsedFrontmatter {
+        metadata: value.as_object().cloned().unwrap_or_default(),
+        body: body.trim().to_owned(),
+    })
 }
 
 fn markdown_entries(root: &Path) -> Result<Vec<PathBuf>, String> {

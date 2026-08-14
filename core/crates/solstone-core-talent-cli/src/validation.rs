@@ -72,7 +72,10 @@ pub(crate) fn validate(configs: &mut [TalentConfig]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_write(config: &TalentConfig, talent_type: Option<&str>) -> Result<(), String> {
+pub(crate) fn validate_write(
+    config: &TalentConfig,
+    talent_type: Option<&str>,
+) -> Result<(), String> {
     if talent_type == Some("cogitate") && config.metadata.get("write").is_some_and(is_truthy) {
         return Err(format!(
             "Prompt '{}' declares unsupported 'write: true' (cogitate runs are read-only)",
@@ -82,7 +85,7 @@ fn validate_write(config: &TalentConfig, talent_type: Option<&str>) -> Result<()
     Ok(())
 }
 
-fn validate_access_tier(
+pub(crate) fn validate_access_tier(
     config: &mut TalentConfig,
     talent_type: Option<&str>,
 ) -> Result<(), String> {
@@ -113,7 +116,10 @@ fn validate_access_tier(
     Ok(())
 }
 
-fn validate_cwd(config: &mut TalentConfig, talent_type: Option<&str>) -> Result<(), String> {
+pub(crate) fn validate_cwd(
+    config: &mut TalentConfig,
+    talent_type: Option<&str>,
+) -> Result<(), String> {
     let raw = config.metadata.get("cwd").cloned();
     match talent_type {
         Some("cogitate") => match raw {
