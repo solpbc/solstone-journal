@@ -199,6 +199,17 @@ fn serialize_jsonl(items: &[Value]) -> Vec<u8> {
         .into_bytes()
 }
 
+fn python_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(values) => !values.is_empty(),
+        Value::Object(values) => !values.is_empty(),
+    }
+}
+
 pub(crate) fn merge_detected_entities(
     target: &Path,
     bytes: &[u8],
@@ -213,7 +224,7 @@ pub(crate) fn merge_detected_entities(
     let seen = owner
         .iter()
         .filter_map(|item| item.get("id"))
-        .filter(|id| !id.is_null() && id.as_str().is_some_and(|id| !id.is_empty()))
+        .filter(|id| python_truthy(id))
         .collect::<Vec<_>>();
     let append = source
         .into_iter()
@@ -635,39 +646,59 @@ mod tests {
     #[test]
     fn falsy_id_divergence_is_preserved_for_both_latch_values() {
         let temp = TempDir::new().unwrap();
-        let bytes = b"{\"id\":null,\"from\":\"source\"}\n";
-        for new_facet in [false, true] {
-            for (name, merge, expected) in [
-                (
-                    "detected",
-                    merge_detected_entities
-                        as fn(&std::path::Path, &[u8], bool) -> Result<super::MergeResult, String>,
-                    2,
-                ),
-                (
-                    "config",
-                    merge_activity_config
-                        as fn(&std::path::Path, &[u8], bool) -> Result<super::MergeResult, String>,
-                    1,
-                ),
-                (
-                    "records",
-                    merge_activity_records
-                        as fn(&std::path::Path, &[u8], bool) -> Result<super::MergeResult, String>,
-                    1,
-                ),
-            ] {
-                let target = temp.path().join(format!("{name}-{new_facet}.jsonl"));
-                if !new_facet {
-                    fs::write(&target, "{\"id\":null,\"from\":\"owner\"}\n").unwrap();
+        for falsy_id in ["null", "false", "0", "\"\""] {
+            let bytes = format!("{{\"id\":{falsy_id},\"from\":\"source\"}}\n");
+            let owner = format!("{{\"id\":{falsy_id},\"from\":\"owner\"}}\n");
+            for new_facet in [false, true] {
+                for (name, merge, expected) in [
+                    (
+                        "detected",
+                        merge_detected_entities
+                            as fn(
+                                &std::path::Path,
+                                &[u8],
+                                bool,
+                            )
+                                -> Result<super::MergeResult, String>,
+                        2,
+                    ),
+                    (
+                        "config",
+                        merge_activity_config
+                            as fn(
+                                &std::path::Path,
+                                &[u8],
+                                bool,
+                            )
+                                -> Result<super::MergeResult, String>,
+                        1,
+                    ),
+                    (
+                        "records",
+                        merge_activity_records
+                            as fn(
+                                &std::path::Path,
+                                &[u8],
+                                bool,
+                            )
+                                -> Result<super::MergeResult, String>,
+                        1,
+                    ),
+                ] {
+                    let target = temp
+                        .path()
+                        .join(format!("{name}-{falsy_id:?}-{new_facet}.jsonl"));
+                    if !new_facet {
+                        fs::write(&target, &owner).unwrap();
+                    }
+                    merge(&target, bytes.as_bytes(), new_facet).unwrap();
+                    let count = fs::read_to_string(target).unwrap().lines().count();
+                    assert_eq!(
+                        count,
+                        if new_facet { 1 } else { expected },
+                        "{name} {falsy_id} {new_facet}"
+                    );
                 }
-                merge(&target, bytes, new_facet).unwrap();
-                let count = fs::read_to_string(target).unwrap().lines().count();
-                assert_eq!(
-                    count,
-                    if new_facet { 1 } else { expected },
-                    "{name} {new_facet}"
-                );
             }
         }
     }

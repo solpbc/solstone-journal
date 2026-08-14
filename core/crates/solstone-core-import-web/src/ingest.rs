@@ -22,7 +22,7 @@ use solstone_core_journal_io::{
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::Path,
+    path::{Component, Path},
 };
 
 const MAX_ATTEMPTS: usize = 32;
@@ -45,8 +45,8 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())
 }
-fn decision(path: &Path, value: Value) {
-    let _ = append_jsonl(path, &value);
+fn decision(path: &Path, value: Value) -> Result<(), String> {
+    append_jsonl(path, &value).map_err(|error| error.to_string())
 }
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -57,6 +57,33 @@ fn clean_file(name: &str) -> Option<String> {
         .and_then(|x| x.to_str())
         .filter(|x| !x.is_empty())
         .map(str::to_owned)
+}
+
+fn safe_component(value: &str) -> bool {
+    matches!(
+        Path::new(value).components().collect::<Vec<_>>().as_slice(),
+        [Component::Normal(_)]
+    )
+}
+
+fn valid_stream(value: &str) -> bool {
+    value == "_default"
+        || (value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+            && value.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'.' | b'_' | b'-')
+            }))
+}
+
+fn valid_segment_key(value: &str) -> bool {
+    let Some((time, duration)) = value.split_once('_') else {
+        return false;
+    };
+    time.len() == 6
+        && time.bytes().all(|byte| byte.is_ascii_digit())
+        && !duration.is_empty()
+        && duration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 pub(crate) async fn segments(
@@ -127,12 +154,12 @@ async fn segments_with_attempts(
             let stream = obj
                 .get("stream")
                 .and_then(Value::as_str)
-                .filter(|x| !x.is_empty())
+                .filter(|stream| valid_stream(stream))
                 .ok_or("Invalid stream format")?;
             let key = obj
                 .get("segment_key")
                 .and_then(Value::as_str)
-                .filter(|x| x.contains('_'))
+                .filter(|key| valid_segment_key(key))
                 .ok_or("Invalid segment_key format")?;
             let names: Vec<String> = obj
                 .get("files")
@@ -212,7 +239,7 @@ async fn segments_with_attempts(
             if action == "deconflicted" {
                 entry["original_key"] = json!(original)
             }
-            decision(&log, entry);
+            decision(&log, entry)?;
             match action {
                 "copied" => copied += 1,
                 "skipped" => skipped += 1,
@@ -234,7 +261,14 @@ async fn segments_with_attempts(
                 .unwrap()
                 .extend(v.as_object().unwrap().clone());
         }
-        let _ = write_json(&path, &existing);
+        if let Err(detail) = write_json(&path, &existing) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
     }
     let written = copied + deconflicted;
     if written > 0 {
@@ -366,7 +400,7 @@ pub(crate) async fn facets(
             skipped += outcome.skipped;
             staged += outcome.staged;
             for entry in outcome.decisions {
-                decision(&base.join("log.jsonl"), entry);
+                decision(&base.join("log.jsonl"), entry)?;
             }
             Ok(())
         })();
@@ -374,7 +408,14 @@ pub(crate) async fn facets(
             errors.push(json!({"facet":facet.get("name").and_then(Value::as_str).unwrap_or(""),"error":error}));
         }
     }
-    let _ = write_json(&state_path, &facet_state);
+    if let Err(detail) = write_json(&state_path, &facet_state) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(
         StatusCode::OK,
         json!({"created":created,"merged":merged,"skipped":skipped,"staged":staged,"errors":errors}),
@@ -427,14 +468,14 @@ pub(crate) async fn entities(
                 .filter(|name| !name.is_empty())
                 .ok_or("Entity name is required")?
                 .to_owned();
-            let id = source
-                .get("id")
-                .and_then(Value::as_str)
-                .filter(|id| !id.is_empty())
-                .map(str::to_owned)
-                .unwrap_or_else(|| entity_slug(&name));
-            if id.is_empty() {
-                return Err("Entity id is required".into());
+            let id = match source.get("id") {
+                Some(Value::String(id)) if safe_component(id) => id.to_owned(),
+                Some(Value::String(_)) => return Err("Invalid entity id".into()),
+                Some(_) => return Err("Invalid entity id".into()),
+                None => entity_slug(&name),
+            };
+            if !safe_component(&id) {
+                return Err("Invalid entity id".into());
             }
             source.insert("id".into(), json!(id));
             let source_value = Value::Object(source.clone());
@@ -448,7 +489,7 @@ pub(crate) async fn entities(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"skipped","item_type":"entity","item_id":id,"match_tier":null,"reason":"idempotent","source":source_value,"target":null,"fields_changed":[]}),
-                );
+                )?;
                 return Ok(());
             }
             let targets = journal_entities(&app.root);
@@ -471,20 +512,24 @@ pub(crate) async fn entities(
                     .join(target_id)
                     .join("entity.json");
                 write_json(&path, &Value::Object(merged.clone()))?;
-                let _ = fs::remove_file(&staged_path);
+                if let Err(error) = fs::remove_file(&staged_path)
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    return Err(error.to_string());
+                }
                 id_map.insert(id.clone(), json!(target_id));
                 auto_merged += 1;
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"auto_merged","item_type":"entity","item_id":id,"match_tier":1,"reason":"high_confidence_match","source":source_value,"target":merged,"fields_changed":fields_changed}),
-                );
+                )?;
             } else if exact.len() > 1 {
                 stage_entity(&base, &id, &source_value, "low_confidence_match", exact.iter().map(|(target_id, target)| json!({"id":target_id,"name":target.get("name"),"tier":1})).collect())?;
                 staged += 1;
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"entity","item_id":id,"match_tier":1,"reason":"low_confidence_match","source":source_value,"target":null,"fields_changed":[]}),
-                );
+                )?;
             } else if targets.iter().any(|(target_id, _)| target_id == &id) {
                 let target = &targets
                     .iter()
@@ -502,7 +547,7 @@ pub(crate) async fn entities(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"entity","item_id":id,"match_tier":null,"reason":"id_collision","source":source_value,"target":null,"fields_changed":[]}),
-                );
+                )?;
             } else if source.get("is_principal") == Some(&Value::Bool(true))
                 && targets
                     .iter()
@@ -513,7 +558,7 @@ pub(crate) async fn entities(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"entity","item_id":id,"match_tier":null,"reason":"principal_conflict","source":source_value,"target":null,"fields_changed":[]}),
-                );
+                )?;
             } else {
                 let path = app.root.join("entities").join(&id).join("entity.json");
                 fs::create_dir_all(path.parent().unwrap()).map_err(|error| error.to_string())?;
@@ -523,7 +568,7 @@ pub(crate) async fn entities(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"created","item_type":"entity","item_id":id,"match_tier":null,"reason":"no_match","source":source_value,"target":null,"fields_changed":[]}),
-                );
+                )?;
             }
             received.insert(id, json!(content_hash));
             dirty = true;
@@ -535,7 +580,14 @@ pub(crate) async fn entities(
     }
     if dirty {
         entity_state = json!({"id_map":id_map,"received":received});
-        let _ = write_json(&state_path, &entity_state);
+        if let Err(detail) = write_json(&state_path, &entity_state) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
     }
     json_response(
         StatusCode::OK,
@@ -713,7 +765,7 @@ pub(crate) async fn imports(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"skipped","item_type":"import","item_id":id,"reason":"idempotent"}),
-                );
+                )?;
                 return Ok(());
             }
             let target = app.root.join("imports").join(id);
@@ -727,7 +779,7 @@ pub(crate) async fn imports(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"import","item_id":id,"reason":"id_collision"}),
-                );
+                )?;
             } else {
                 fs::create_dir_all(&target).map_err(|error| error.to_string())?;
                 write_json(
@@ -759,7 +811,7 @@ pub(crate) async fn imports(
                 decision(
                     &base.join("log.jsonl"),
                     json!({"ts":Utc::now().to_rfc3339(),"action":"copied","item_type":"import","item_id":id,"reason":"new"}),
-                );
+                )?;
             }
             received_hashes[id] = json!(content_hash);
             Ok(())
@@ -768,7 +820,14 @@ pub(crate) async fn imports(
             errors.push(json!({"import_id":item.get("id").and_then(Value::as_str).unwrap_or(""),"error":error}));
         }
     }
-    let _ = write_json(&state_path, &imports_state);
+    if let Err(detail) = write_json(&state_path, &imports_state) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(
         StatusCode::OK,
         json!({"copied":copied,"skipped":skipped,"staged":staged,"errors":errors}),
@@ -798,10 +857,17 @@ pub(crate) async fn config(
     let state_path = base.join("state.json");
     let mut st = read_json(&state_path);
     if st.get("last_hash").and_then(Value::as_str) == Some(&hash) {
-        decision(
+        if let Err(detail) = decision(
             &base.join("log.jsonl"),
             json!({"ts":Utc::now().to_rfc3339(),"action":"skipped","item_type":"config","reason":"idempotent"}),
-        );
+        ) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
         return json_response(
             StatusCode::OK,
             json!({"staged":false,"skipped":true,"reason":"idempotent"}),
@@ -823,15 +889,42 @@ pub(crate) async fn config(
         }
         diff.insert(field.to_owned(), json!({"source":source_flat.get(field),"target":target_flat.get(field),"category":if matches!(field.as_str(), "identity.name" | "identity.preferred" | "identity.bio" | "identity.pronouns" | "identity.aliases" | "identity.email_addresses" | "identity.timezone") { "transferable" } else { "preference" }}));
     }
-    let _ = fs::create_dir_all(&base);
-    let _ = write_json(&base.join("source_config.json"), source);
-    let _ = write_json(&base.join("diff.json"), &Value::Object(diff.clone()));
+    if let Err(detail) = write_json(&base.join("source_config.json"), source) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
+    if let Err(detail) = write_json(&base.join("diff.json"), &Value::Object(diff.clone())) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     st["last_hash"] = json!(hash);
-    let _ = write_json(&state_path, &st);
-    decision(
+    if let Err(detail) = write_json(&state_path, &st) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
+    if let Err(detail) = decision(
         &base.join("log.jsonl"),
         json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"config"}),
-    );
+    ) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(
         StatusCode::OK,
         json!({"staged":true,"skipped":false,"diff_fields":diff.len()}),
@@ -900,13 +993,17 @@ mod tests {
         )
     }
 
-    fn segment_body(bytes: &[u8]) -> Body {
+    fn segment_body_for(stream: &str, key: &str, bytes: &[u8]) -> Body {
         let boundary = "segment-boundary";
-        let metadata = json!({"segments":[{"day":"20260801","stream":"default","segment_key":"120000_60","files":["entry.jsonl"]}]}).to_string();
+        let metadata = json!({"segments":[{"day":"20260801","stream":stream,"segment_key":key,"files":["entry.jsonl"]}]}).to_string();
         Body::from(format!(
             "--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"files_0\"; filename=\"entry.jsonl\"\r\nContent-Type: application/json\r\n\r\n{}\r\n--{boundary}--\r\n",
             String::from_utf8_lossy(bytes)
         ))
+    }
+
+    fn segment_body(bytes: &[u8]) -> Body {
+        segment_body_for("default", "120000_60", bytes)
     }
 
     async fn multipart_for_test(body: Body) -> Multipart {
@@ -1075,6 +1172,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn traversal_segment_components_are_refused_without_touching_the_adjacent_chronicle_tree()
+    {
+        let root = phase_root("empty");
+        let outside = root.path().join("chronicle/escape/120000_60/entry.jsonl");
+        fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        fs::write(&outside, b"owner bytes").unwrap();
+
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_body_for("../escape", "120000_60", b"peer bytes"),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["errors"][0]["error"], "Invalid stream format");
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/segments"),
+            segment_body_for("default", "../escape", b"peer bytes"),
+            "multipart/form-data; boundary=segment-boundary",
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["errors"][0]["error"], "Invalid segment_key format");
+        assert_eq!(fs::read(outside).unwrap(), b"owner bytes");
+    }
+
+    #[tokio::test]
     async fn criterion_13_keyed_doors_write_their_owned_destinations() {
         let root = phase_root("empty");
         let entities = format!("/app/import/journal/{PREFIX}/ingest/entities");
@@ -1128,6 +1257,20 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         response
+    }
+
+    #[tokio::test]
+    async fn traversal_entity_id_is_refused_without_writing_outside_entities() {
+        let root = phase_root("empty");
+        let outside = root.path().join("config/entity.json");
+        fs::create_dir_all(outside.parent().unwrap()).unwrap();
+        fs::write(&outside, b"owner config").unwrap();
+
+        let response = post_entities(root.path(), json!([{"id":"../config","name":"Peer"}])).await;
+
+        assert_eq!(response["created"], 0);
+        assert_eq!(response["errors"][0]["error"], "Invalid entity id");
+        assert_eq!(fs::read(outside).unwrap(), b"owner config");
     }
 
     #[tokio::test]

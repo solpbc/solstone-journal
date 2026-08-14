@@ -62,8 +62,6 @@ enum DoorIdentity<'a> {
 }
 
 pub(crate) struct JournalSourceIdentity {
-    #[allow(dead_code)] // Subsequent door handlers use the authenticated source record.
-    source: Map<String, Value>,
     derived_prefix: String,
 }
 
@@ -93,13 +91,9 @@ impl FromRequestParts<AppState> for JournalSourceIdentity {
                     "Missing or invalid authentication",
                 )
             })?;
-        let (source, derived_prefix) =
-            authorize_bearer(&state.root, supplied_prefix, &parts.headers)
-                .map_err(|response| *response)?;
-        Ok(Self {
-            source,
-            derived_prefix,
-        })
+        let (_, derived_prefix) = authorize_bearer(&state.root, supplied_prefix, &parts.headers)
+            .map_err(|response| *response)?;
+        Ok(Self { derived_prefix })
     }
 }
 

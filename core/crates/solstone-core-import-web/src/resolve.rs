@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Component, Path},
+};
 
 use axum::{
     extract::{Json, Path as AxumPath, State},
@@ -21,6 +24,9 @@ use crate::{
 };
 
 fn source_state(root: &Path, name: &str) -> Option<std::path::PathBuf> {
+    if !safe_component(name) {
+        return None;
+    }
     let source: Value = serde_json::from_slice(
         &fs::read(
             root.join("apps/import/journal_sources")
@@ -29,8 +35,22 @@ fn source_state(root: &Path, name: &str) -> Option<std::path::PathBuf> {
         .ok()?,
     )
     .ok()?;
-    let key = source.get("key")?.as_str()?;
+    let key = source.get("key")?.as_str()?.get(..8)?;
     Some(root.join("imports").join(&key[..8]))
+}
+
+fn safe_component(value: &str) -> bool {
+    matches!(
+        Path::new(value).components().collect::<Vec<_>>().as_slice(),
+        [Component::Normal(_)]
+    )
+}
+
+fn safe_relative(value: &str) -> bool {
+    !value.is_empty()
+        && Path::new(value)
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 fn read(path: &Path) -> Value {
     fs::read(path)
@@ -49,8 +69,16 @@ fn write(path: &Path, value: &Value) -> Result<(), String> {
     )
     .map_err(|error| error.to_string())
 }
-fn log(state: &Path, area: &str, value: Value) {
-    let _ = append_jsonl(state.join(area).join("log.jsonl"), &value);
+fn append_resolution_log(state: &Path, area: &str, value: Value) -> Result<(), String> {
+    append_jsonl(state.join(area).join("log.jsonl"), &value).map_err(|error| error.to_string())
+}
+
+fn remove_derived(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 pub(crate) async fn entity(
@@ -66,7 +94,11 @@ pub(crate) async fn entity(
             format!("Journal source '{name}' not found"),
         );
     };
-    let Some(source_id) = data.get("source_id").and_then(Value::as_str) else {
+    let Some(source_id) = data
+        .get("source_id")
+        .and_then(Value::as_str)
+        .filter(|id| safe_component(id))
+    else {
         return error(
             StatusCode::BAD_REQUEST,
             "I couldn't use one of those values.",
@@ -117,7 +149,7 @@ pub(crate) async fn entity(
             let Some(target_id) = data
                 .get("target")
                 .and_then(Value::as_str)
-                .filter(|id| !id.is_empty())
+                .filter(|id| safe_component(id))
             else {
                 return error(
                     StatusCode::BAD_REQUEST,
@@ -152,12 +184,18 @@ pub(crate) async fn entity(
             target_id.to_owned()
         }
         "create" => {
-            let requested_id = source
-                .get("id")
-                .and_then(Value::as_str)
-                .filter(|id| !id.is_empty())
-                .unwrap_or(source_id)
-                .to_owned();
+            let requested_id = match source.get("id") {
+                Some(Value::String(id)) if safe_component(id) => id.to_owned(),
+                Some(Value::String(_)) | Some(_) => {
+                    return error(
+                        StatusCode::BAD_REQUEST,
+                        "I couldn't use one of those values.",
+                        "invalid_request_value",
+                        "Staged entity has an invalid id.".into(),
+                    );
+                }
+                None => source_id.to_owned(),
+            };
             let id = if reason == "id_collision"
                 || app.root.join("entities").join(&requested_id).exists()
             {
@@ -206,14 +244,35 @@ pub(crate) async fn entity(
             .unwrap()
             .entry("id_map")
             .or_insert_with(|| json!({}))[source_id] = json!(target_id);
-        let _ = write(&state_path, &entity_state);
+        if let Err(detail) = write(&state_path, &entity_state) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
     }
-    let _ = fs::remove_file(&staged);
-    log(
+    if let Err(detail) = remove_derived(&staged) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
+    if let Err(detail) = append_resolution_log(
         &state,
         "entities",
         json!({"action":format!("resolved_{action}"),"item_type":"entity","item_id":source_id,"reason":reason,"source":source,"target_id":if target_id.is_empty(){Value::Null}else{json!(target_id)}}),
-    );
+    ) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(
         StatusCode::OK,
         json!({"target_id":if target_id.is_empty(){Value::Null}else{json!(target_id)}}),
@@ -301,7 +360,7 @@ pub(crate) async fn facet(
     let Some(file) = data
         .get("staged_file")
         .and_then(Value::as_str)
-        .filter(|file| !file.contains(".."))
+        .filter(|file| safe_relative(file))
     else {
         return error(
             StatusCode::BAD_REQUEST,
@@ -489,14 +548,28 @@ pub(crate) async fn facet(
             format!("Unsupported staged facet reason '{reason}'."),
         );
     };
-    let _ = fs::remove_file(&staged);
+    if let Err(detail) = remove_derived(&staged) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     let mut entry =
         json!({"action":action,"item_type":file_type,"item_id":item_id,"reason":reason});
     entry
         .as_object_mut()
         .unwrap()
         .extend(extra.as_object().unwrap().clone());
-    log(&state, "facets", entry);
+    if let Err(detail) = append_resolution_log(&state, "facets", entry) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(StatusCode::OK, json!({}))
 }
 
@@ -543,7 +616,7 @@ pub(crate) async fn config(
     AxumPath(name): AxumPath<String>,
     Json(data): Json<Value>,
 ) -> Response {
-    resolve_config(&app.root, source_state(&app.root, &name), data).await
+    apply_config_field(&app.root, source_state(&app.root, &name), data).await
 }
 pub(crate) async fn config_all(
     State(app): State<AppState>,
@@ -577,7 +650,7 @@ pub(crate) async fn config_all(
         .collect::<Vec<_>>();
     let mut count = 0;
     for field in &fields {
-        let response = resolve_config(
+        let response = apply_config_field(
             &app.root,
             Some(state.clone()),
             json!({"field":field,"action":"apply"}),
@@ -590,7 +663,11 @@ pub(crate) async fn config_all(
     }
     json_response(StatusCode::OK, json!({"count":count}))
 }
-async fn resolve_config(root: &Path, state: Option<std::path::PathBuf>, data: Value) -> Response {
+async fn apply_config_field(
+    root: &Path,
+    state: Option<std::path::PathBuf>,
+    data: Value,
+) -> Response {
     let Some(state) = state else {
         return error(
             StatusCode::NOT_FOUND,
@@ -655,12 +732,33 @@ async fn resolve_config(root: &Path, state: Option<std::path::PathBuf>, data: Va
     }
     diff.as_object_mut().unwrap().remove(field);
     if diff.as_object().unwrap().is_empty() {
-        let _ = fs::remove_file(&path);
-        let _ = fs::remove_file(state.join("config/source_config.json"));
+        if let Err(detail) = remove_derived(&path) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
+        if let Err(detail) = remove_derived(&state.join("config/source_config.json")) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
     } else {
-        let _ = write(&path, &diff);
+        if let Err(detail) = write(&path, &diff) {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "I couldn't save that import.",
+                "import_metadata_failed",
+                detail,
+            );
+        }
     }
-    log(
+    if let Err(detail) = append_resolution_log(
         &state,
         "config",
         json!({
@@ -672,7 +770,14 @@ async fn resolve_config(root: &Path, state: Option<std::path::PathBuf>, data: Va
             "source":entry.get("source").cloned().unwrap_or(Value::Null),
             "target_previous":entry.get("target").cloned().unwrap_or(Value::Null),
         }),
-    );
+    ) {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "I couldn't save that import.",
+            "import_metadata_failed",
+            detail,
+        );
+    }
     json_response(StatusCode::OK, json!({}))
 }
 
@@ -687,11 +792,13 @@ fn set(config: &mut Map<String, Value>, field: &str, value: Value) {
             current.insert(part.into(), value);
             return;
         }
-        current = current
-            .entry(part.to_owned())
-            .or_insert_with(|| json!({}))
+        let child = current.entry(part.to_owned()).or_insert_with(|| json!({}));
+        if !child.is_object() {
+            *child = json!({});
+        }
+        current = child
             .as_object_mut()
-            .expect("object config path");
+            .expect("an object was installed immediately above");
     }
 }
 
@@ -727,7 +834,7 @@ mod tests {
         root.path().join("imports/prefix01")
     }
 
-    async fn resolve_entity(root: &TempDir, data: Value) -> Value {
+    async fn apply_entity_resolution(root: &TempDir, data: Value) -> Value {
         let response = entity(
             State(AppState {
                 root: root.path().to_owned(),
@@ -740,7 +847,7 @@ mod tests {
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
     }
 
-    async fn resolve_facet(root: &TempDir, data: Value) {
+    async fn apply_facet_resolution(root: &TempDir, data: Value) {
         let response = facet(
             State(AppState {
                 root: root.path().to_owned(),
@@ -752,7 +859,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    async fn resolve_config(root: &TempDir, data: Value) {
+    async fn apply_config_resolution(root: &TempDir, data: Value) {
         let response = config(
             State(AppState {
                 root: root.path().to_owned(),
@@ -764,7 +871,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    async fn resolve_config_all(root: &TempDir, data: Value) -> Value {
+    async fn apply_all_config_resolutions(root: &TempDir, data: Value) -> Value {
         let response = config_all(
             State(AppState {
                 root: root.path().to_owned(),
@@ -777,7 +884,7 @@ mod tests {
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
     }
 
-    async fn resolve_config_all_status(root: &TempDir, data: Value) -> StatusCode {
+    async fn apply_all_config_resolutions_status(root: &TempDir, data: Value) -> StatusCode {
         config_all(
             State(AppState {
                 root: root.path().to_owned(),
@@ -790,7 +897,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_entity_merge_preserves_owner_fields_and_cleans_up_proposal() {
+    async fn apply_entity_merge_preserves_owner_fields_and_cleans_up_proposal() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -803,7 +910,7 @@ mod tests {
             json!({"reason":"ambiguous","source_entity":{"id":"incoming","name":"Incoming","source_only":true,"shared":"source","aka":["old","New"],"emails":["owner@example.test","new@example.test"],"created_at":5}}),
         );
 
-        let body = resolve_entity(
+        let body = apply_entity_resolution(
             &root,
             json!({"source_id":"incoming","action":"merge","target":"owner"}),
         )
@@ -828,7 +935,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_entity_create_consumes_proposal_and_logs_resolution() {
+    async fn apply_entity_create_consumes_proposal_and_logs_resolution() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         let staged = state.join("entities/staged/incoming.json");
@@ -837,7 +944,7 @@ mod tests {
             json!({"reason":"principal_conflict","source_entity":{"id":"created","name":"Created","is_principal":true}}),
         );
 
-        resolve_entity(&root, json!({"source_id":"incoming","action":"create"})).await;
+        apply_entity_resolution(&root, json!({"source_id":"incoming","action":"create"})).await;
         assert!(!staged.exists(), "create consumes its derived proposal");
         let created: Value = serde_json::from_slice(
             &fs::read(root.path().join("entities/created/entity.json")).unwrap(),
@@ -852,7 +959,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_entity_create_allocates_slug_for_a_colliding_owner_id() {
+    async fn apply_entity_create_allocates_slug_for_a_colliding_owner_id() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -865,7 +972,7 @@ mod tests {
         );
 
         assert_eq!(
-            resolve_entity(&root, json!({"source_id":"incoming","action":"create"})).await,
+            apply_entity_resolution(&root, json!({"source_id":"incoming","action":"create"})).await,
             json!({"target_id":"alice_johnson"})
         );
         let owner: Value = serde_json::from_slice(
@@ -884,7 +991,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_entity_skip_consumes_proposal_and_logs_resolution() {
+    async fn apply_entity_skip_consumes_proposal_and_logs_resolution() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         let staged = state.join("entities/staged/incoming.json");
@@ -894,7 +1001,7 @@ mod tests {
         );
 
         assert_eq!(
-            resolve_entity(&root, json!({"source_id":"incoming","action":"skip"})).await,
+            apply_entity_resolution(&root, json!({"source_id":"incoming","action":"skip"})).await,
             json!({"target_id":null})
         );
         assert!(!staged.exists(), "skip consumes its derived proposal");
@@ -906,7 +1013,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_facet_skip_consumes_its_derived_proposal_and_logs() {
+    async fn apply_facet_skip_consumes_its_derived_proposal_and_logs() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         let staged = state.join("facets/staged/work/facet_json/facet.json.staged.json");
@@ -915,7 +1022,7 @@ mod tests {
             json!({"reason":"facet_json_conflict","source_content":{"name":"source"},"target_content":{"name":"owner"}}),
         );
 
-        resolve_facet(
+        apply_facet_resolution(
             &root,
             json!({"staged_file":"work/facet_json/facet.json.staged.json","mode":"skip"}),
         )
@@ -927,7 +1034,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_facet_unmapped_relationship_remaps_and_preserves_target_values() {
+    async fn apply_facet_unmapped_relationship_remaps_and_preserves_target_values() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -946,7 +1053,7 @@ mod tests {
             json!({"shared":"owner","owner_only":true}),
         );
 
-        resolve_facet(
+        apply_facet_resolution(
             &root,
             json!({"staged_file":"work/entity_relationship/entity.json.staged.json","mode":"apply"}),
         )
@@ -975,7 +1082,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_facet_conflict_apply_consumes_proposal_and_records_action() {
+    async fn apply_facet_conflict_apply_consumes_proposal_and_records_action() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         let staged = state.join("facets/staged/work/facet_json/facet.json.staged.json");
@@ -988,7 +1095,7 @@ mod tests {
             json!({"name":"owner"}),
         );
 
-        resolve_facet(
+        apply_facet_resolution(
             &root,
             json!({"staged_file":"work/facet_json/facet.json.staged.json","mode":"apply"}),
         )
@@ -1006,7 +1113,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_config_rewrites_nonempty_diff_and_appends_resolution_log() {
+    async fn apply_config_rewrites_nonempty_diff_and_appends_resolution_log() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -1025,7 +1132,7 @@ mod tests {
             json!({"appearance":{"theme":"source"}}),
         );
 
-        resolve_config(&root, json!({"field":"appearance.theme","action":"apply"})).await;
+        apply_config_resolution(&root, json!({"field":"appearance.theme","action":"apply"})).await;
         let config: Value =
             serde_json::from_slice(&fs::read(root.path().join("config/journal.json")).unwrap())
                 .unwrap();
@@ -1045,7 +1152,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn criterion_9_resolve_config_and_sibling_mutation_both_survive() {
+    async fn apply_config_replaces_a_scalar_intermediate_with_the_reviewed_object_path() {
+        let root = TempDir::new().unwrap();
+        let state = state(&root);
+        write_json(
+            &root.path().join("config/journal.json"),
+            json!({"appearance":"dark"}),
+        );
+        write_json(
+            &state.join("config/diff.json"),
+            json!({"appearance.theme":{"source":"light","target":"dark","category":"preference"}}),
+        );
+
+        apply_config_resolution(&root, json!({"field":"appearance.theme","action":"apply"})).await;
+
+        let config: Value =
+            serde_json::from_slice(&fs::read(root.path().join("config/journal.json")).unwrap())
+                .unwrap();
+        assert_eq!(config, json!({"appearance":{"theme":"light"}}));
+    }
+
+    #[tokio::test]
+    async fn resolution_log_write_failure_is_surfaced_instead_of_a_success_response() {
+        let root = TempDir::new().unwrap();
+        let state = state(&root);
+        write_json(
+            &root.path().join("config/journal.json"),
+            json!({"theme":"dark"}),
+        );
+        write_json(
+            &state.join("config/diff.json"),
+            json!({"theme":{"source":"light","target":"dark","category":"preference"}}),
+        );
+        fs::create_dir_all(state.join("config/log.jsonl")).unwrap();
+
+        let response = config(
+            State(AppState {
+                root: root.path().to_owned(),
+            }),
+            AxumPath("peer".to_owned()),
+            Json(json!({"field":"theme","action":"apply"})),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn criterion_9_apply_config_and_sibling_mutation_both_survive() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -1065,7 +1219,7 @@ mod tests {
         })
         .unwrap();
 
-        resolve_config(&root, json!({"field":"appearance.theme","action":"apply"})).await;
+        apply_config_resolution(&root, json!({"field":"appearance.theme","action":"apply"})).await;
         let config: Value =
             serde_json::from_slice(&fs::read(root.path().join("config/journal.json")).unwrap())
                 .unwrap();
@@ -1074,7 +1228,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_config_empty_diff_unlinks_both_config_proposals_and_logs() {
+    async fn apply_config_empty_diff_unlinks_both_config_proposals_and_logs() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -1089,7 +1243,7 @@ mod tests {
         );
         write_json(&source, json!({"appearance":{"theme":"source"}}));
 
-        resolve_config(&root, json!({"field":"appearance.theme","action":"keep"})).await;
+        apply_config_resolution(&root, json!({"field":"appearance.theme","action":"keep"})).await;
         assert!(
             !diff.exists(),
             "last resolved field removes config/diff.json"
@@ -1110,7 +1264,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_config_all_applies_each_matching_field_and_consumes_final_diff() {
+    async fn apply_all_config_resolutions_applies_each_matching_field_and_consumes_final_diff() {
         let root = TempDir::new().unwrap();
         let state = state(&root);
         write_json(
@@ -1130,7 +1284,7 @@ mod tests {
         write_json(&source, json!({"a":1,"b":2,"unrelated":3}));
 
         assert_eq!(
-            resolve_config_all(&root, json!({"category":"preference"})).await,
+            apply_all_config_resolutions(&root, json!({"category":"preference"})).await,
             json!({"count":2})
         );
         let config: Value =
@@ -1167,7 +1321,7 @@ mod tests {
         );
 
         assert_eq!(
-            resolve_config_all_status(&root, json!({"category":"preference"})).await,
+            apply_all_config_resolutions_status(&root, json!({"category":"preference"})).await,
             StatusCode::BAD_REQUEST
         );
         let config: Value =
@@ -1367,6 +1521,77 @@ mod tests {
             )
             .await;
             assert!(response.status().is_success());
+        }
+
+        async fn entity_status(root: &TempDir, body: Value) -> axum::http::StatusCode {
+            entity(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await
+            .status()
+        }
+
+        async fn facet_status(root: &TempDir, body: Value) -> axum::http::StatusCode {
+            facet(
+                State(AppState {
+                    root: root.path().to_owned(),
+                }),
+                AxumPath("peer".to_owned()),
+                Json(body),
+            )
+            .await
+            .status()
+        }
+
+        #[tokio::test]
+        async fn traversal_resolution_inputs_are_refused_without_a_whole_tree_delta() {
+            let root = TempDir::new().unwrap();
+            let state_dir = state(&root);
+            write_json(
+                &state_dir.join("entities/not.json"),
+                json!({"reason":"ambiguous","source_entity":{"id":"not","name":"Not"}}),
+            );
+            write_json(
+                &state_dir.join("entities/staged/incoming.json"),
+                json!({"reason":"ambiguous","source_entity":{"id":"incoming","name":"Incoming"}}),
+            );
+            write_json(
+                &root.path().join("config/entity.json"),
+                json!({"id":"owner","owner_only":true}),
+            );
+            let absolute = root.path().join("owner-proposal.staged.json");
+            write_json(
+                &absolute,
+                json!({"reason":"facet_json_conflict","source_content":{},"target_content":{}}),
+            );
+            let before = Snapshot::capture(root.path(), &state_dir);
+
+            assert_eq!(
+                entity_status(&root, json!({"source_id":"../not","action":"skip"})).await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_eq!(
+                entity_status(
+                    &root,
+                    json!({"source_id":"incoming","action":"merge","target":"../config"}),
+                )
+                .await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+            assert_eq!(
+                facet_status(
+                    &root,
+                    json!({"staged_file":absolute.to_string_lossy(),"mode":"skip"}),
+                )
+                .await,
+                axum::http::StatusCode::BAD_REQUEST
+            );
+
+            assert_delta(before, Snapshot::capture(root.path(), &state_dir), &[]);
         }
 
         #[tokio::test]

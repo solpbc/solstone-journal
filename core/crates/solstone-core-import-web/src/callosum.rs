@@ -44,8 +44,6 @@ pub(crate) fn request_required(root: &Path, task_id: &str, cmd: &[String]) -> Re
     )
 }
 
-/// Deliver a segment-ingest notification without changing ingest persistence on failure.
-#[allow(dead_code)] // Phase C's segment route is the first caller.
 pub(crate) fn emit_best_effort(root: &Path, value: Value) {
     let _ = send(root, value);
 }
