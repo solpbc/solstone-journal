@@ -589,6 +589,32 @@ async fn ac12_ac13_ac14_invalid_path_contracts() {
     }
 }
 
+#[tokio::test]
+async fn ac1d_convey_shell_uses_converted_news_registry_row() {
+    let root = phase_root("established_empty");
+    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+        .oneshot(
+            Request::get("/app/news/nosuch/deep/path")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/html; charset=utf-8"
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    assert_eq!(body.len(), 207);
+    assert!(
+        !std::str::from_utf8(&body)
+            .expect("HTML")
+            .contains("app_not_converted")
+    );
+}
 
 #[tokio::test]
 async fn ac4_clock_grows_populated_coverage_by_one_month() {

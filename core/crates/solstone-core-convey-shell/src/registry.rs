@@ -168,7 +168,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         )),
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "devices",
