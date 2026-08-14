@@ -394,6 +394,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "no_talent_runs_seeded",
           "method": "GET",
           "name": "api_talents",
           "normalized": [],
@@ -699,6 +700,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "no_talent_runs_seeded",
           "method": "GET",
           "name": "api_talents_work",
           "normalized": [],
@@ -1113,6 +1115,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "no_talent_day_indexes_seeded",
           "method": "GET",
           "name": "api_index",
           "normalized": [],
@@ -1130,6 +1133,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "no_talent_day_indexes_seeded",
           "method": "GET",
           "name": "api_stats",
           "normalized": [],
@@ -1144,6 +1148,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "no_failures_seeded",
           "method": "GET",
           "name": "api_badge_count",
           "normalized": [],
@@ -1160,6 +1165,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "seeded_empty",
           "method": "GET",
           "name": "api_updated_days",
           "normalized": [],
@@ -2099,17 +2105,20 @@
           "contract": "reference-record",
           "method": "GET",
           "name": "api_index",
-          "normalized": [],
+          "normalized": [
+            "response.body.coverage.end",
+            "response.body.months#capture_month_key"
+          ],
           "path": "/app/sol/api/index",
           "response": {
             "body": {
               "coverage": {
-                "end": "20260814",
+                "end": "<CAPTURE_TODAY>",
                 "start": "20260403"
               },
               "months": {
                 "202604": 1,
-                "202608": 3
+                "<CAPTURE_MONTH>": 3
               }
             },
             "headers": {
@@ -3096,17 +3105,20 @@
           "contract": "reference-record",
           "method": "GET",
           "name": "api_index",
-          "normalized": [],
+          "normalized": [
+            "response.body.coverage.end",
+            "response.body.months#capture_month_key"
+          ],
           "path": "/app/sol/api/index",
           "response": {
             "body": {
               "coverage": {
-                "end": "20260814",
+                "end": "<CAPTURE_TODAY>",
                 "start": "20260403"
               },
               "months": {
                 "202604": 1,
-                "202608": 1
+                "<CAPTURE_MONTH>": 1
               }
             },
             "headers": {
@@ -4093,12 +4105,14 @@
           "contract": "reference-record",
           "method": "GET",
           "name": "api_index",
-          "normalized": [],
+          "normalized": [
+            "response.body.coverage.end"
+          ],
           "path": "/app/sol/api/index",
           "response": {
             "body": {
               "coverage": {
-                "end": "20260403",
+                "end": "<CAPTURE_TODAY>",
                 "start": "20260403"
               },
               "months": {
@@ -4131,6 +4145,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "failures_explicitly_zero",
           "method": "GET",
           "name": "api_badge_count",
           "normalized": [],
@@ -5089,12 +5104,14 @@
           "contract": "reference-record",
           "method": "GET",
           "name": "api_index",
-          "normalized": [],
+          "normalized": [
+            "response.body.coverage.end"
+          ],
           "path": "/app/sol/api/index",
           "response": {
             "body": {
               "coverage": {
-                "end": "20260403",
+                "end": "<CAPTURE_TODAY>",
                 "start": "20260403"
               },
               "months": {
@@ -5127,6 +5144,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "failures_explicitly_zero",
           "method": "GET",
           "name": "api_badge_count",
           "normalized": [],

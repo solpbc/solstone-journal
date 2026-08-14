@@ -67,6 +67,26 @@ POPULATED_DAY = "20260403"
 # and solstone/convey/static/convey_icons.js:41; 438 and 662 are not IPv4 octets.
 AUTHORED_IPV4 = ("438.12.54.662",)
 
+EMPTY_REASONS = {
+    ("established_empty", "health", "api_state"): "no_agent_failures_seeded",
+    ("stats_absent", "health", "api_state"): "failures_explicitly_zero",
+    ("stats_unparseable", "health", "api_state"): "failure_scan_unreadable",
+    ("established_empty", "stats", "api_stats"): "seeded_empty",
+    ("stats_absent", "stats", "api_stats"): "stats_json_removed",
+    ("established_empty", "tokens", "api_usage"): "seeded_empty",
+    ("established_empty", "tokens", "api_daily"): "seeded_empty",
+    ("established_empty", "tokens", "api_index"): "seeded_empty",
+    ("established_empty", "tokens", "api_stats"): "seeded_empty",
+    ("established_empty", "sol", "api_talents"): "no_talent_runs_seeded",
+    ("established_empty", "sol", "api_talents_work"): "no_talent_runs_seeded",
+    ("established_empty", "sol", "api_index"): "no_talent_day_indexes_seeded",
+    ("established_empty", "sol", "api_stats"): "no_talent_day_indexes_seeded",
+    ("established_empty", "sol", "api_badge_count"): "no_failures_seeded",
+    ("stats_absent", "sol", "api_badge_count"): "failures_explicitly_zero",
+    ("stats_unparseable", "sol", "api_badge_count"): "failures_explicitly_zero",
+    ("established_empty", "sol", "api_updated_days"): "seeded_empty",
+}
+
 
 def _probe(name: str, path: str, contract: str) -> dict[str, str]:
     return {"contract": contract, "name": name, "path": path}
@@ -192,7 +212,36 @@ def _normalize(value: Any, *, path: str = "", root: str) -> tuple[Any, list[str]
     return value, []
 
 
-def _record(client: Any, probe: dict[str, str], root: Path) -> dict[str, Any]:
+def _normalize_sol_api_index(
+    body: Any, capture_day: str
+) -> tuple[Any, list[str]]:
+    """Replace Sol index fields derived from the real capture-day index filename."""
+    if not isinstance(body, dict):
+        return body, []
+    normalized = dict(body)
+    hits: list[str] = []
+    coverage = normalized.get("coverage")
+    if isinstance(coverage, dict) and isinstance(coverage.get("end"), str):
+        normalized["coverage"] = {**coverage, "end": "<CAPTURE_TODAY>"}
+        hits.append("response.body.coverage.end")
+    months = normalized.get("months")
+    capture_month = capture_day[:6]
+    if isinstance(months, dict) and capture_month in months:
+        normalized_months = dict(months)
+        normalized_months["<CAPTURE_MONTH>"] = normalized_months.pop(capture_month)
+        normalized["months"] = normalized_months
+        hits.append("response.body.months#capture_month_key")
+    return normalized, hits
+
+
+def _record(
+    client: Any,
+    app_name: str,
+    phase: str,
+    probe: dict[str, str],
+    root: Path,
+    capture_day: str,
+) -> dict[str, Any]:
     response = client.get(probe["path"], headers={"Host": HOST_HEADER}, follow_redirects=False)
     headers = {header: response.headers[header] for header in HEADER_ALLOWLIST if header in response.headers}
     content_type = response.headers.get("Content-Type", "")
@@ -202,13 +251,16 @@ def _record(client: Any, probe: dict[str, str], root: Path) -> dict[str, Any]:
     else:
         body = response.get_data(as_text=True)
     normalized, hits = _normalize(body, path="response.body", root=str(root))
+    if probe["path"] == "/app/sol/api/index":
+        normalized, index_hits = _normalize_sol_api_index(normalized, capture_day)
+        hits.extend(index_hits)
     if probe["name"] == "index" and probe["path"].startswith(("/app/tokens/", "/app/sol/")):
         redirect_body = re.sub(r"/(?:app/(?:tokens|sol))/\d{8}", lambda match: match.group(0)[:-8] + "<CAPTURE_TODAY>", normalized)
         if redirect_body != normalized:
             normalized = redirect_body
             hits.append("response.body#redirect_target")
     normalized_headers, header_hits = _normalize(headers, path="response.headers", root=str(root))
-    return {
+    case = {
         "contract": probe["contract"],
         "method": "GET",
         "name": probe["name"],
@@ -216,6 +268,10 @@ def _record(client: Any, probe: dict[str, str], root: Path) -> dict[str, Any]:
         "path": probe["path"],
         "response": {"body": normalized, "headers": normalized_headers, "status": response.status_code},
     }
+    empty_reason = EMPTY_REASONS.get((phase, app_name, probe["name"]))
+    if empty_reason:
+        case["empty_reason"] = empty_reason
+    return case
 
 
 def _run_phase_worker(phase: str, root: Path, capture_day: str) -> dict[str, list[dict[str, Any]]]:
@@ -250,7 +306,13 @@ def _run_phase_worker(phase: str, root: Path, capture_day: str) -> dict[str, lis
         app.config.update(TESTING=True)
         client = app.test_client()
         with patch("solstone.apps.health.routes.socket.gethostname", return_value="corpus-host"):
-            captured = {app_name: [_record(client, probe, root) for probe in probes] for app_name, probes in PROBES.items()}
+            captured = {
+                app_name: [
+                    _record(client, app_name, phase, probe, root, capture_day)
+                    for probe in probes
+                ]
+                for app_name, probes in PROBES.items()
+            }
     assert_egress_guard_can_see(f"convey-system child {phase}")
     assert_no_egress_attempted(
         f"convey-system child {phase}", ignore=("example.invalid", "198.51.100.7")

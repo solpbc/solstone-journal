@@ -236,6 +236,7 @@
         },
         {
           "contract": "contract",
+          "empty_reason": "no_agent_failures_seeded",
           "method": "GET",
           "name": "api_state",
           "normalized": [],
@@ -938,6 +939,7 @@
         },
         {
           "contract": "contract",
+          "empty_reason": "failures_explicitly_zero",
           "method": "GET",
           "name": "api_state",
           "normalized": [],
@@ -1155,6 +1157,7 @@
         },
         {
           "contract": "contract",
+          "empty_reason": "failure_scan_unreadable",
           "method": "GET",
           "name": "api_state",
           "normalized": [],

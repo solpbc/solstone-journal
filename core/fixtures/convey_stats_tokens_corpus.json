@@ -277,6 +277,7 @@
         },
         {
           "contract": "contract",
+          "empty_reason": "seeded_empty",
           "method": "GET",
           "name": "api_stats",
           "normalized": [
@@ -868,6 +869,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "seeded_empty",
           "method": "GET",
           "name": "api_usage",
           "normalized": [],
@@ -920,6 +922,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "seeded_empty",
           "method": "GET",
           "name": "api_daily",
           "normalized": [],
@@ -953,6 +956,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "seeded_empty",
           "method": "GET",
           "name": "api_index",
           "normalized": [],
@@ -970,6 +974,7 @@
         },
         {
           "contract": "reference-record",
+          "empty_reason": "seeded_empty",
           "method": "GET",
           "name": "api_stats",
           "normalized": [],
@@ -2824,6 +2829,7 @@
         },
         {
           "contract": "contract",
+          "empty_reason": "stats_json_removed",
           "method": "GET",
           "name": "api_stats",
           "normalized": [
