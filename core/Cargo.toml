@@ -100,6 +100,7 @@ members = [
     "crates/solstone-core-import-sources",
     "crates/solstone-core-import-web",
     "crates/solstone-core-segment-cli",
+    "crates/solstone-core-talent-config",
     "crates/solstone-core-journal-stats-cli",
     "crates/solstone-core-talent-cli",
     "crates/solstone-core-reprocess-cli",
@@ -165,6 +166,7 @@ solstone-core-think-cli = { path = "crates/solstone-core-think-cli" }
 solstone-core-top = { path = "crates/solstone-core-top" }
 solstone-core-operational-logs = { path = "crates/solstone-core-operational-logs" }
 solstone-core-cogitate = { path = "crates/solstone-core-cogitate" }
+solstone-core-talent-config = { path = "crates/solstone-core-talent-config" }
 solstone-core-cogitate-tools = { path = "crates/solstone-core-cogitate-tools" }
 solstone-core-cogitate-runtime = { path = "crates/solstone-core-cogitate-runtime" }
 solstone-core-cogitate-wire = { path = "crates/solstone-core-cogitate-wire" }

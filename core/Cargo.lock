@@ -3609,6 +3609,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-system-health",
+ "solstone-core-talent-config",
  "tempfile",
  "thiserror 2.0.20",
 ]
@@ -4194,6 +4195,16 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-journal-config",
+ "solstone-core-talent-config",
+ "tempfile",
+]
+
+[[package]]
+name = "solstone-core-talent-config"
+version = "1.0.22"
+dependencies = [
+ "serde_json",
+ "solstone-core-cogitate",
  "tempfile",
 ]
 
@@ -4232,6 +4243,8 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-local",
  "solstone-core-sense",
+ "solstone-core-talent-config",
+ "tempfile",
 ]
 
 [[package]]
