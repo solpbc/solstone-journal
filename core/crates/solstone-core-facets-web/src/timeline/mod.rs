@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::path::PathBuf;
+
+use axum::{
+    Router,
+    extract::Path,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::get,
+};
+use serde_json::{Value, json};
+
+use crate::{
+    assets,
+    clock::Clock,
+    date_nav, http,
+    segments::{
+        DEFAULT_STREAM, day_segment_counts, is_day, is_exact_segment_key, is_month, iter_segments,
+    },
+};
+
+mod browser;
+mod day;
+mod rollup;
+mod segment;
+
+pub fn routes(root: PathBuf, clock: Clock) -> Router {
+    let index_root = root.clone();
+    let index_clock = clock.clone();
+    let overview_root = root.clone();
+    let overview_clock = clock.clone();
+    let grid_root = root.clone();
+    let month_root = root.clone();
+    let day_root = root.clone();
+    let stats_root = root.clone();
+    let segment_root = root.clone();
+    let default_segment_root = root;
+    Router::new()
+        .route("/app/timeline/", get(move || index(index_clock.clone())))
+        .route(
+            "/app/timeline/workspace",
+            get(|| async { assets::workspace() }),
+        )
+        .route(
+            "/app/timeline/background",
+            get(|| async { assets::background() }),
+        )
+        .route("/app/timeline/year", get(|| async { assets::shell() }))
+        .route(
+            "/app/timeline/{value}",
+            get(|Path(value): Path<String>| async move {
+                if is_day(&value) || is_month(&value) {
+                    assets::shell()
+                } else {
+                    assets::empty_not_found()
+                }
+            }),
+        )
+        .route(
+            "/app/timeline/static/{name}",
+            get(|Path(name): Path<String>| async move { assets::static_asset(&name) }),
+        )
+        .route(
+            "/app/timeline/api/overview",
+            get(move || overview(overview_root.clone(), overview_clock.clone())),
+        )
+        .route(
+            "/app/timeline/api/grid",
+            get(move || grid(grid_root.clone())),
+        )
+        .route(
+            "/app/timeline/api/index",
+            get(move || index_api(index_root.clone())),
+        )
+        .route(
+            "/app/timeline/api/stats/{ym}",
+            get(move |Path(ym)| stats(stats_root.clone(), ym)),
+        )
+        .route(
+            "/app/timeline/api/month/{ym}",
+            get(move |Path(ym)| month(month_root.clone(), ym)),
+        )
+        .route(
+            "/app/timeline/api/day/{day}",
+            get(move |Path(value)| day(day_root.clone(), value)),
+        )
+        .route(
+            "/app/timeline/api/segment/{day}/{stream}/{segment}",
+            get(move |Path((day, stream, segment))| {
+                segment_api(segment_root.clone(), day, stream, segment)
+            }),
+        )
+        .route(
+            "/app/timeline/api/segment/{day}/{segment}",
+            get(move |Path((day, segment))| {
+                segment_api(
+                    default_segment_root.clone(),
+                    day,
+                    DEFAULT_STREAM.to_owned(),
+                    segment,
+                )
+            }),
+        )
+}
+
+async fn index(clock: Clock) -> Response {
+    let location = format!("/app/timeline/{}", clock.now().format("%Y%m%d"));
+    Response::builder()
+        .status(StatusCode::FOUND)
+        .header(header::LOCATION, &location)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .body(axum::body::Body::from(redirect_body(&location)))
+        .expect("redirect builds")
+}
+// Deliberate duplicate of convey-shell's redirect body: a production dependency on convey-shell would create a Cargo cycle (the shell normally depends on this crate).
+fn redirect_body(location: &str) -> String {
+    format!(
+        "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"{location}\">{location}</a>. If not, click the link.\n"
+    )
+}
+async fn overview(root: PathBuf, clock: Clock) -> Response {
+    rollup::overview(&root, &clock)
+        .map(json_response)
+        .unwrap_or_else(|_| http::internal_error())
+}
+async fn grid(root: PathBuf) -> Response {
+    match rollup::load_master(&root) {
+        Ok(master) => json_response(date_nav::day_grid_payload(
+            &day_segment_counts(&root, None),
+            rollup::rollup_watermark(&master).as_deref(),
+        )),
+        Err(_) => http::internal_error(),
+    }
+}
+async fn index_api(root: PathBuf) -> Response {
+    json_response(date_nav::date_nav_index(&day_segment_counts(&root, None)))
+}
+async fn stats(root: PathBuf, ym: String) -> Response {
+    if !is_month(&ym) {
+        return http::error(
+            "invalid_month",
+            "I couldn't use that month.",
+            "Invalid month format".to_owned(),
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    json_response(
+        serde_json::to_value(day_segment_counts(&root, Some(&ym))).unwrap_or_else(|_| json!({})),
+    )
+}
+async fn month(root: PathBuf, ym: String) -> Response {
+    if !is_month(&ym) {
+        return http::error(
+            "invalid_month",
+            "I couldn't use that month.",
+            "Invalid month format".to_owned(),
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    match rollup::month(&root, &ym) {
+        Ok(Some(value)) => json_response(value),
+        Ok(None) => http::error(
+            "timeline_month_not_found",
+            "I couldn't find that timeline month.",
+            format!("no data for {ym}"),
+            StatusCode::NOT_FOUND,
+        ),
+        Err(_) => http::internal_error(),
+    }
+}
+async fn day(root: PathBuf, value: String) -> Response {
+    if !is_day(&value) {
+        return http::error(
+            "invalid_day",
+            "I couldn't use that day.",
+            "Invalid day format".to_owned(),
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    match rollup::day_rollup(&root, &value) {
+        Ok(mut value_json) => {
+            value_json["day"] = Value::String(value.clone());
+            value_json["hours_avail"] =
+                day::hours_avail(&value, iter_segments(&root.join("chronicle").join(&value)));
+            json_response(value_json)
+        }
+        Err(_) => http::internal_error(),
+    }
+}
+async fn segment_api(root: PathBuf, day: String, stream: String, segment: String) -> Response {
+    if !is_day(&day)
+        || !is_exact_segment_key(&segment)
+        || (stream != DEFAULT_STREAM && stream.contains('/'))
+    {
+        return http::error(
+            "invalid_path",
+            "I couldn't use that path.",
+            "Invalid segment path".to_owned(),
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    json_response(segment::load(&root, &day, &stream, &segment))
+}
+fn json_response(value: Value) -> Response {
+    axum::Json(value).into_response()
+}

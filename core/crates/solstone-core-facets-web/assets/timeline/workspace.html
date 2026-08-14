@@ -1,0 +1,27 @@
+<link rel="stylesheet" href="/app/timeline/static/timeline.css">
+<script>
+(function() {
+  const { segment } = window.solPathContext();
+  let initial = { view: "day", day: segment, month: null };
+  if (segment === "year") {
+    initial = { view: "year", day: null, month: null };
+  } else if (/^\d{6}$/.test(segment || "")) {
+    initial = { view: "month", day: null, month: segment };
+  } else if (!/^\d{8}$/.test(segment || "")) {
+    initial = { view: "day", day: null, month: null };
+  }
+  window.timelineInitial = initial;
+})();
+</script>
+
+<div class="workspace-content-wide">
+  <div data-date-nav></div>
+  <div id="timeline-shell" class="timeline-shell">
+    <section aria-label="Interactive timeline">
+      <div id="timeline-root"></div>
+    </section>
+  </div>
+</div>
+
+<script defer src="/app/timeline/static/timeline_provenance.js"></script>
+<script defer src="/app/timeline/static/timeline.js"></script>
