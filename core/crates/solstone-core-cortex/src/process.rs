@@ -4,7 +4,7 @@
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -82,20 +82,24 @@ fn spawn_one(state: CortexState, executable_dir: PathBuf, work: Work) -> Result<
         }
     }
     command.process_group(0);
-    let mut child = command.spawn().map_err(|error| error.to_string())?;
     let request_line = serde_json::to_vec(&Value::Object(work.request.clone()))
         .map_err(|error| error.to_string())?;
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let pgid = i32::try_from(child.id()).map_err(|_| "child pid does not fit i32")?;
     let Some(mut stdin) = child.stdin.take() else {
+        terminate_and_reap(&mut child, pgid);
         return Err("child stdin unavailable".into());
     };
-    stdin
+    if let Err(error) = stdin
         .write_all(&request_line)
-        .map_err(|error| error.to_string())?;
-    stdin.write_all(b"\n").map_err(|error| error.to_string())?;
+        .and_then(|_| stdin.write_all(b"\n"))
+    {
+        terminate_and_reap(&mut child, pgid);
+        return Err(error.to_string());
+    }
     drop(stdin);
-    let pid = i32::try_from(child.id()).map_err(|_| "child pid does not fit i32")?;
     let stderr = Arc::new(Mutex::new(Vec::new()));
-    state.spawn_started(&work, pid, Arc::clone(&stderr));
+    state.spawn_started(&work, pgid, Arc::clone(&stderr));
     let Some(stdout) = child.stdout.take() else {
         return Err("child stdout unavailable".into());
     };
@@ -266,8 +270,44 @@ fn context_for(name: &str) -> String {
 
 pub(crate) fn stop_group(pgid: i32) {
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGTERM);
-    thread::sleep(Duration::from_millis(50));
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        if !group_has_live_processes(pgid) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
+}
+
+#[cfg(target_os = "linux")]
+fn group_has_live_processes(pgid: i32) -> bool {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return killpg(Pid::from_raw(pgid), None).is_ok();
+    };
+    entries.flatten().any(|entry| {
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            return false;
+        };
+        let Some((_, fields)) = stat.rsplit_once(") ") else {
+            return false;
+        };
+        let mut fields = fields.split_whitespace();
+        let state = fields.next();
+        let _parent = fields.next();
+        let group = fields.next().and_then(|value| value.parse::<i32>().ok());
+        group == Some(pgid) && state != Some("Z")
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn group_has_live_processes(pgid: i32) -> bool {
+    killpg(Pid::from_raw(pgid), None).is_ok()
+}
+
+fn terminate_and_reap(child: &mut Child, pgid: i32) {
+    stop_group(pgid);
+    let _ = child.wait();
 }
 
 pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String, String)>) {
@@ -529,5 +569,79 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         panic!("captured process group did not terminate its descendant");
+    }
+
+    #[test]
+    fn stop_group_waits_for_a_graceful_exit_within_ten_seconds() {
+        let directory = tempdir().unwrap();
+        let ready = directory.path().join("ready");
+        let mut child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("trap '' TERM; : > {}; sleep 0.2", ready.display()))
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(child.id()).unwrap();
+        let reaped = thread::spawn(move || child.wait().unwrap());
+        for _ in 0..100 {
+            if ready.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(ready.exists());
+        let started = std::time::Instant::now();
+        stop_group(pgid);
+        assert!(started.elapsed() >= Duration::from_millis(150));
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(reaped.join().unwrap().success());
+    }
+
+    #[test]
+    fn stdin_write_failure_terminates_and_reaps_spawned_child() {
+        let directory = tempdir().unwrap();
+        let executable_dir = directory.path().join("bin");
+        fs::create_dir(&executable_dir).unwrap();
+        let child_pid = directory.path().join("child-pid");
+        let python = executable_dir.join("python3");
+        fs::write(
+            &python,
+            "#!/bin/sh\necho $$ > \"$CORTEX_CHILD_PID\"\nexec 0<&-\nsleep 30\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&python).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&python, permissions).unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "use_id":"one",
+            "name":"chat",
+            "prompt":"x".repeat(1_048_576),
+            "env":{"CORTEX_CHILD_PID":child_pid}
+        }))
+        .unwrap();
+        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let (spawn_tx, _) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        assert!(
+            spawn_one(
+                state,
+                executable_dir,
+                Work {
+                    use_id: "one".into(),
+                    active,
+                    request,
+                },
+            )
+            .is_err()
+        );
+        let pid = fs::read_to_string(child_pid)
+            .unwrap()
+            .trim()
+            .parse::<i32>()
+            .unwrap();
+        assert!(nix::sys::signal::kill(Pid::from_raw(pid), None).is_err());
     }
 }

@@ -106,25 +106,22 @@ impl CortexState {
         let Ok(Some(active)) = self.store.claim(name, &use_id, &request) else {
             return;
         };
+        let work = Work {
+            use_id: use_id.clone(),
+            active: active.clone(),
+            request: request.clone(),
+        };
         {
             let mut inner = self.inner.lock().expect("cortex state lock poisoned");
             inner.requests.insert(use_id.clone(), request.clone());
             inner.finalizers.insert(use_id.clone());
             inner.pending_spawns += 1;
-            inner.queued.insert(
-                use_id.clone(),
-                Work {
-                    use_id: use_id.clone(),
-                    active: active.clone(),
-                    request: request.clone(),
-                },
-            );
+            inner.queued.insert(use_id.clone(), work.clone());
         }
-        let _ = self.spawn.send(Work {
-            use_id,
-            active,
-            request,
-        });
+        if self.spawn.send(work.clone()).is_err() {
+            self.abort(work, "Spawn worker error: spawn queue unavailable".into());
+            self.spawn_finished();
+        }
     }
 
     pub(crate) fn queue_cancel(&self, message: &Map<String, Value>) {
@@ -447,6 +444,29 @@ mod tests {
             fs::read_to_string(completed)
                 .unwrap()
                 .contains("Cortex stopped before spawn")
+        );
+    }
+
+    #[test]
+    fn failed_spawn_send_terminalizes_claim_and_leaves_drain_idle() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn_tx, spawn_rx) = mpsc::channel();
+        drop(spawn_rx);
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        state.request(
+            serde_json::from_value(
+                serde_json::json!({"use_id":"one","name":"chat","day":"20260101"}),
+            )
+            .unwrap(),
+        );
+        assert!(state.is_idle());
+        assert!(
+            fs::read_to_string(store.talents().join("chat/one.jsonl"))
+                .unwrap()
+                .contains("Spawn worker error: spawn queue unavailable")
         );
     }
 }

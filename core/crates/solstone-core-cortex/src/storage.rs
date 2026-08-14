@@ -219,6 +219,7 @@ impl CortexStore {
             // price table is generated Python source that a native artifact may not execute;
             // a bundled snapshot silently drifts, and a conservative fallback can trip a
             // budget ceiling early, making a measured-looking value worse than none.
+            // Dropping the field would break the exact-18-field contract.
             "cost": Value::Null,
             "error_message": if status == "error" { error_message } else { Value::Null },
             "reason_code": if status == "error" { reason_code } else { Value::Null },

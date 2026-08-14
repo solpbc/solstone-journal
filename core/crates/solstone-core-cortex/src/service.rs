@@ -45,8 +45,14 @@ impl CortexServiceError {
 
 pub async fn run_native_service(
     journal: PathBuf,
-    _options: CortexOptions,
+    options: CortexOptions,
 ) -> Result<(), CortexServiceError> {
+    if options.verbose {
+        eprintln!("cortex: starting native service");
+    }
+    if options.debug {
+        eprintln!("cortex: debug diagnostics enabled");
+    }
     let executable = std::env::current_exe().map_err(CortexServiceError::CurrentExecutable)?;
     let executable_dir = executable
         .parent()
@@ -151,9 +157,9 @@ mod tests {
 
     use super::*;
 
-    fn running_state() -> (CortexState, std::process::Child) {
+    fn running_state() -> (tempfile::TempDir, CortexState, std::process::Child) {
         let directory = tempfile::tempdir().unwrap();
-        let store = CortexStore::new(directory.keep()).unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let (spawn_tx, spawn_rx) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, _) = mpsc::channel();
@@ -174,7 +180,7 @@ mod tests {
             i32::try_from(child.id()).unwrap(),
             Arc::new(Mutex::new(Vec::new())),
         );
-        (state, child)
+        (directory, state, child)
     }
 
     #[test]
@@ -184,7 +190,7 @@ mod tests {
 
     #[test]
     fn drain_keeps_running_use_alive_until_its_own_exit_then_becomes_idle() {
-        let (state, mut child) = running_state();
+        let (_directory, state, mut child) = running_state();
         state.stop_accepting();
         assert!(child.try_wait().unwrap().is_none());
         let status = child.wait().unwrap();
@@ -196,7 +202,7 @@ mod tests {
 
     #[test]
     fn immediate_stop_terminalizes_queue_and_signals_running_group() {
-        let (state, mut child) = running_state();
+        let (_directory, state, mut child) = running_state();
         for running in state.stop_immediately() {
             stop_group(running.pgid);
         }
