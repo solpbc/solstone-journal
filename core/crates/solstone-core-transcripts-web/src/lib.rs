@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native read-only transcript day routes.
+//! Native transcript read and write routes.
 
 use std::path::PathBuf;
 use std::sync::Arc;

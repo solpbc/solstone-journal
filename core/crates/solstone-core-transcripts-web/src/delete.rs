@@ -36,7 +36,8 @@ pub(crate) async fn delete_segment(
         return invalid_segment("Segment not found", StatusCode::NOT_FOUND);
     }
     // valid_day/valid_stream/valid_key exclude a `..` path component, so this
-    // is defense in depth for a future validator regression, not reachable now.
+    // is defense in depth for a future validator regression, not reachable now;
+    // retention also refuses per-entry removals outside the journal.
     if segment_dir.strip_prefix(&day_dir).is_err() {
         return invalid_segment("Invalid segment path", StatusCode::FORBIDDEN);
     }
@@ -91,6 +92,7 @@ pub(crate) async fn cancel_delete(
     if !valid_pending_id(&pending_id) || !state.deferred_deletes.cancel(&pending_id) {
         return operation_unavailable();
     }
+    // Intentional Python divergence: this writer files by Local::now(), not segment day.
     let _ = solstone_core_facets::append_action_log(
         &state.journal_root,
         None,
@@ -168,6 +170,7 @@ fn append_action(journal_root: &Path, request: &DeleteRequest, phase: &str, deta
     if let Value::Object(detail) = detail {
         params.extend(detail);
     }
+    // Intentional Python divergence: this writer files by Local::now(), not segment day.
     let _ = solstone_core_facets::append_action_log(
         journal_root,
         None,

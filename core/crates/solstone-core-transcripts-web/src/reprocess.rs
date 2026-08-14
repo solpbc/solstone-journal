@@ -111,7 +111,8 @@ pub(crate) async fn reprocess_segment(
         return invalid_segment("Segment not found", StatusCode::NOT_FOUND);
     }
     // valid_day/valid_stream/valid_key exclude a `..` path component, so this
-    // is defense in depth for a future validator regression, not reachable now.
+    // is defense in depth for a future validator regression, not reachable now;
+    // retention also refuses per-entry removals outside the journal.
     if segment_dir.strip_prefix(&day_dir).is_err() {
         return invalid_segment("Invalid segment path", StatusCode::FORBIDDEN);
     }
@@ -350,13 +351,16 @@ fn watch_reprocess_completion(
 }
 
 fn tail(value: &str, limit: usize) -> String {
-    if value.len() <= limit {
+    if limit == 0 {
+        return String::new();
+    }
+    if value.chars().count() <= limit {
         return value.to_owned();
     }
     let start = value
         .char_indices()
         .rev()
-        .nth(limit)
+        .nth(limit.saturating_sub(1))
         .map(|(index, _)| index)
         .unwrap_or(0);
     value[start..].to_owned()
