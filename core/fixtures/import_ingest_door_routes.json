@@ -1,0 +1,50 @@
+{
+  "generator": "scripts/build_import_ingest_door_routes.py",
+  "rules": [
+    {
+      "methods": [
+        "POST"
+      ],
+      "path": "/app/import/journal/fixturekeyx7q/ingest/config",
+      "rule": "/app/import/journal/<key_prefix>/ingest/config"
+    },
+    {
+      "methods": [
+        "POST"
+      ],
+      "path": "/app/import/journal/fixturekeyx7q/ingest/entities",
+      "rule": "/app/import/journal/<key_prefix>/ingest/entities"
+    },
+    {
+      "methods": [
+        "POST"
+      ],
+      "path": "/app/import/journal/fixturekeyx7q/ingest/facets",
+      "rule": "/app/import/journal/<key_prefix>/ingest/facets"
+    },
+    {
+      "methods": [
+        "POST"
+      ],
+      "path": "/app/import/journal/fixturekeyx7q/ingest/imports",
+      "rule": "/app/import/journal/<key_prefix>/ingest/imports"
+    },
+    {
+      "methods": [
+        "POST"
+      ],
+      "path": "/app/import/journal/fixturekeyx7q/ingest/segments",
+      "rule": "/app/import/journal/<key_prefix>/ingest/segments"
+    },
+    {
+      "methods": [
+        "GET"
+      ],
+      "path": "/app/import/journal/fixturekeyx7q/manifest/segments",
+      "rule": "/app/import/journal/<key_prefix>/manifest/<area>"
+    }
+  ],
+  "sample_area": "segments",
+  "sample_key_prefix": "fixturekeyx7q",
+  "schema": "solstone-import-ingest-door-routes-v1"
+}

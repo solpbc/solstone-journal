@@ -125,7 +125,7 @@ fn send_over_bridge(
     loopback: &PeerLoopbackClient,
 ) -> Result<SendReport, TransferError> {
     let key_prefix: String = peer.instance_id.chars().take(8).collect();
-    let manifest_path = format!("/app/import/journal/{key_prefix}/manifest/segments");
+    let manifest_path = crate::manifest::manifest_path(&key_prefix, "segments");
     let remote_manifest = query_remote_manifest(loopback, &manifest_path);
     let mut report = SendReport {
         sent: 0,

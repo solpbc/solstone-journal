@@ -1235,6 +1235,8 @@ install-checks: .installed
 	@echo ""
 	@echo "=== Checking native sol contract-route coverage ==="
 	@$(MAKE) check-native-sol-contract-routes
+	@echo "=== Checking import ingest door routes ==="
+	@$(MAKE) check-import-ingest-door-routes
 	@echo ""
 	@echo "=== Checking native sol four-way conformance ==="
 	@$(MAKE) check-native-sol-conformance
@@ -1579,6 +1581,12 @@ check-native-sol-architecture:
 
 check-native-sol-contract-routes: .installed
 	$(VENV_BIN)/python scripts/check_native_sol_contract_routes.py
+
+build-import-ingest-door-routes: .installed
+	$(VENV_BIN)/python scripts/build_import_ingest_door_routes.py
+
+check-import-ingest-door-routes: .installed
+	$(VENV_BIN)/python scripts/build_import_ingest_door_routes.py --check
 
 check-native-sol-conformance: .installed
 	$(VENV_BIN)/python scripts/check_native_sol_conformance.py
