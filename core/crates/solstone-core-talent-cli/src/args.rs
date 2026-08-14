@@ -65,6 +65,25 @@ pub const LOGS_HELP: &str = concat!(
     "  --summary             Show grouped summary\n",
 );
 
+pub const SHOW_HELP: &str = concat!(
+    "usage: journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\n",
+    "                           [--segment HHMMSS_LEN] [--facet NAME]\n",
+    "                           [--activity ID] [--query TEXT] [--full]\n",
+    "                           name\n\n",
+    "positional arguments:\n",
+    "  name                  Prompt name\n\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --json                Output as JSONL\n",
+    "  --prompt              Show full prompt context (dry-run mode)\n",
+    "  --day YYYYMMDD        Day for prompt context\n",
+    "  --segment HHMMSS_LEN  Segment for segment-scheduled prompts\n",
+    "  --facet NAME          Facet for multi-facet prompts\n",
+    "  --activity ID         Activity ID for activity-scheduled prompts\n",
+    "  --query TEXT          Sample query for tool agents\n",
+    "  --full                Show full content without truncation\n",
+);
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct ListOptions {
     pub(crate) schedule: Option<String>,
@@ -95,6 +114,19 @@ pub(crate) struct LogsOptions {
     pub(crate) summary: bool,
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ShowOptions {
+    pub(crate) name: String,
+    pub(crate) json: bool,
+    pub(crate) prompt: bool,
+    pub(crate) day: Option<String>,
+    pub(crate) segment: Option<String>,
+    pub(crate) facet: Option<String>,
+    pub(crate) activity: Option<String>,
+    pub(crate) query: Option<String>,
+    pub(crate) full: bool,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Help(String),
@@ -102,7 +134,7 @@ pub(crate) enum Command {
     Log(LogOptions),
     Inventory(InventoryOptions),
     Logs(LogsOptions),
-    Stub(&'static str),
+    Show(ShowOptions),
     Error(String),
 }
 
@@ -137,19 +169,7 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         "log" => parse_log(&args[index + 1..]),
         "inventory" => parse_inventory(&args[index + 1..]),
         "logs" => parse_logs(&args[index + 1..]),
-        "show" => {
-            let name = args[index];
-            if args[index + 1..]
-                .iter()
-                .any(|arg| matches!(*arg, "-h" | "--help"))
-            {
-                Command::Help(format!(
-                    "usage: journal talent {name} [-h]\n\noptions:\n  -h, --help  show this help message and exit\n"
-                ))
-            } else {
-                Command::Stub("show")
-            }
-        }
+        "show" => parse_show(&args[index + 1..]),
         value if value.starts_with('-') => error(
             "journal talent",
             &format!("unrecognized arguments: {value}"),
@@ -180,6 +200,64 @@ fn parse_inventory(args: &[&str]) -> Command {
         index += 1;
     }
     Command::Inventory(options)
+}
+
+fn parse_show(args: &[&str]) -> Command {
+    let mut options = ShowOptions::default();
+    let mut unrecognized = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "-h" | "--help" => return Command::Help(SHOW_HELP.to_owned()),
+            "--json" => options.json = true,
+            "--prompt" => options.prompt = true,
+            "--full" => options.full = true,
+            "--day" | "--segment" | "--facet" | "--activity" | "--query" => {
+                let flag = args[index];
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    return error(
+                        "journal talent show",
+                        &format!("argument {flag}: expected one argument"),
+                    );
+                };
+                match flag {
+                    "--day" => options.day = Some((*value).to_owned()),
+                    "--segment" => options.segment = Some((*value).to_owned()),
+                    "--facet" => options.facet = Some((*value).to_owned()),
+                    "--activity" => options.activity = Some((*value).to_owned()),
+                    "--query" => options.query = Some((*value).to_owned()),
+                    _ => unreachable!("matched show value flag"),
+                }
+            }
+            value if value.starts_with("--day=") => options.day = Some(value[6..].to_owned()),
+            value if value.starts_with("--segment=") => {
+                options.segment = Some(value[10..].to_owned())
+            }
+            value if value.starts_with("--facet=") => options.facet = Some(value[8..].to_owned()),
+            value if value.starts_with("--activity=") => {
+                options.activity = Some(value[11..].to_owned())
+            }
+            value if value.starts_with("--query=") => options.query = Some(value[8..].to_owned()),
+            value if value.starts_with('-') => unrecognized.push(value),
+            value if options.name.is_empty() => options.name = value.to_owned(),
+            value => unrecognized.push(value),
+        }
+        index += 1;
+    }
+    if !unrecognized.is_empty() {
+        return error(
+            "journal talent show",
+            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
+        );
+    }
+    if options.name.is_empty() {
+        return error(
+            "journal talent show",
+            "the following arguments are required: name",
+        );
+    }
+    Command::Show(options)
 }
 
 fn parse_logs(args: &[&str]) -> Command {
@@ -339,6 +417,7 @@ fn error(program: &str, message: &str) -> Command {
         "journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
         "journal talent inventory" => INVENTORY_HELP.lines().next().unwrap_or_default(),
         "journal talent logs" => LOGS_HELP.lines().next().unwrap_or_default(),
+        "journal talent show" => SHOW_HELP.lines().next().unwrap_or_default(),
         _ => HELP.lines().next().unwrap_or_default(),
     };
     Command::Error(format!("{usage}\n{program}: error: {message}\n"))
@@ -417,6 +496,43 @@ mod tests {
                 json: true,
                 full: true,
             })
+        );
+    }
+
+    #[test]
+    fn show_parser_matches_help_and_interspersed_options() {
+        for arguments in [&["show", "--help"][..], &["show", "read", "--help"][..]] {
+            assert_eq!(
+                parse(
+                    &arguments
+                        .iter()
+                        .map(|value| OsString::from(*value))
+                        .collect::<Vec<_>>(),
+                ),
+                Command::Help(SHOW_HELP.to_owned())
+            );
+        }
+        assert_eq!(
+            parse(
+                &["show", "--prompt", "read", "--facet", "work", "--full"]
+                    .iter()
+                    .map(|value| OsString::from(*value))
+                    .collect::<Vec<_>>(),
+            ),
+            Command::Show(ShowOptions {
+                name: "read".to_owned(),
+                prompt: true,
+                facet: Some("work".to_owned()),
+                full: true,
+                ..ShowOptions::default()
+            })
+        );
+        let Command::Error(stderr) = parse(&[OsString::from("show")]) else {
+            panic!("expected missing name error");
+        };
+        assert_eq!(
+            stderr,
+            "usage: journal talent show [-h] [--json] [--prompt] [--day YYYYMMDD]\njournal talent show: error: the following arguments are required: name\n"
         );
     }
 

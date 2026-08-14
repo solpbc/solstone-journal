@@ -237,6 +237,38 @@ fn tier_summary(reads: bool, submit: bool) -> String {
     }
 }
 
+pub(crate) fn tool_surface_line(composed: &Map<String, Value>) -> Result<String, String> {
+    let access_tier = composed
+        .get("access_tier")
+        .and_then(Value::as_str)
+        .unwrap_or("normal");
+    let capabilities =
+        capabilities_for_access_tier(access_tier).map_err(|error| error.to_string())?;
+    let bound = bound_tools(access_tier, false).map_err(|error| error.to_string())?;
+    let (_, tools) = bound
+        .split_last()
+        .ok_or_else(|| format!("access tier {access_tier} has no finalization tool"))?;
+    let finalization = FinalizationConfig {
+        diagnostic: finalization_value(composed.get("diagnostic")),
+        output_path: finalization_value(composed.get("output_path")),
+        schedule: composed.get("schedule").and_then(Value::as_str),
+    };
+    let finalize = if expects_emit_final(finalization) {
+        "emit_final"
+    } else {
+        "FinishTool"
+    };
+    Ok(format!(
+        "tools: {}; finalize: {finalize}; tier: {access_tier} ({})",
+        tools
+            .iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>()
+            .join(", "),
+        tier_summary(capabilities.reads, capabilities.submit),
+    ))
+}
+
 fn render_table(rows: &[InventoryRow]) -> String {
     if rows.is_empty() {
         return "No cogitate talents found.\n".to_owned();

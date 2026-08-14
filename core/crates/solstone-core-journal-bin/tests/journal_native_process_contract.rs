@@ -241,6 +241,14 @@ const PROBES: &[Probe] = &[
         stderr_anchor: Some(TOP_USAGE.as_bytes()),
     },
     Probe {
+        token: "talent",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(
+            b"usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...",
+        ),
+    },
+    Probe {
         token: "service",
         argv: &["--nonsense"],
         expected_exit: 1,

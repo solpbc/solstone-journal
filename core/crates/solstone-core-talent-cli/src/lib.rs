@@ -23,6 +23,7 @@ mod log;
 mod logs;
 mod overrides;
 mod runs;
+mod show;
 mod validation;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -46,11 +47,7 @@ pub fn run_cli(
             stderr: text,
             exit_code: 2,
         },
-        args::Command::Stub(name) => CliRun {
-            stdout: String::new(),
-            stderr: format!("journal talent {name}: not implemented yet\n"),
-            exit_code: 1,
-        },
+        args::Command::Show(options) => show::run(talent_root, apps_root, journal_root, &options),
         args::Command::Log(options) => log::run_log(&journal_root.join("talents"), &options),
         args::Command::Inventory(options) => {
             match inventory::run(talent_root, apps_root, journal_root, &options) {
