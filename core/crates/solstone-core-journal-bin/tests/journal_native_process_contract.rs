@@ -1503,7 +1503,7 @@ fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
 }
 
 #[test]
-fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_blocked() {
+fn native_sense_batch_keeps_transcribe_and_describe_free_of_any_interpreter() {
     let harness = Harness::new();
     let context = harness.context();
     let day = "20990101";
@@ -1519,9 +1519,11 @@ fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_
     fs::write(directory.join("audio.flac"), b"not a flac file").expect("write garbage audio");
     fs::write(directory.join("screen.webm"), b"not a webm file").expect("write garbage video");
 
-    // AJ-D has not landed: describe still resolves through the Python process
-    // table and must touch the poisoned sibling python3. When AJ-D becomes a
-    // native process spec, tighten this expectation to require no shim touch.
+    // describe now resolves through NATIVE_PROCESS_SPECS, so this batch must
+    // touch no interpreter at all. Tightening it is what the comment that
+    // stood here asked for by name; it was not done when the cutover landed,
+    // so the assertion went on requiring a shim touch that no longer happens
+    // and failed on precisely the outcome it exists to protect.
     let output = run_dispatcher_with_output_and_environment(
         &context,
         "sense",
@@ -1547,8 +1549,11 @@ fn native_sense_batch_keeps_transcribe_native_while_describe_is_honestly_python_
         "corrupt_input"
     );
 
-    let poison = fs::read_to_string(context.poison_marker).expect("describe Python poison marker");
-    assert_eq!(poison.lines().collect::<Vec<_>>(), ["reached:python3"]);
+    assert!(
+        !context.poison_marker.exists(),
+        "native sense batch reached a poisoned interpreter: {}",
+        fs::read_to_string(context.poison_marker).unwrap_or_default()
+    );
 }
 
 #[test]
