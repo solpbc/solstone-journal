@@ -19,7 +19,7 @@ mod tests {
 
     use crate::attach::{TranscriptSegment, attach_visible_streams_to_ranges};
     use crate::shell::redirect_target;
-    use crate::{Clock, router, transcripts_copy_json};
+    use crate::{Clock, router};
 
     const DAY: &str = "20260731";
 
@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn corpus_has_the_thirteen_day_wave_cases_and_gets_are_read_only() {
+    async fn corpus_has_the_thirteen_scoped_transcripts_cases_and_gets_are_read_only() {
         let corpus: Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../fixtures/convey_records_corpus.json"
@@ -638,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn redirect_and_generated_copy_are_bounded_and_deterministic() {
+    fn redirect_target_and_workspace_asset_are_deterministic() {
         let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
         assert_eq!(
             redirect_target(
@@ -648,13 +648,6 @@ mod tests {
             "20260801"
         );
         assert_eq!(redirect_target(&BTreeMap::new(), now), "20260801");
-        let copy: Value = serde_json::from_str(transcripts_copy_json()).unwrap();
-        assert!(
-            copy.as_object()
-                .unwrap()
-                .keys()
-                .all(|key| key.starts_with("TR_"))
-        );
         let source = include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/transcripts/workspace.html"

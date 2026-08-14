@@ -68,10 +68,6 @@ struct EmbeddedAsset {
 
 include!(concat!(env!("OUT_DIR"), "/transcripts_assets.rs"));
 
-pub(crate) fn transcripts_copy_json() -> &'static str {
-    TRANSCRIPTS_COPY_JSON
-}
-
 pub(crate) struct TranscriptError(String);
 
 impl TranscriptError {
@@ -95,10 +91,6 @@ impl TranscriptError {
 fn workspace_response() -> Response {
     use axum::body::Body;
     use axum::http::header;
-    // Keep the generated browser-copy payload live alongside the workspace
-    // asset. The current day-wave workspace has no copy interpolation point,
-    // but later speaker controls consume this exact generated payload.
-    let _copy = transcripts_copy_json();
     Response::builder()
         .header(header::CONTENT_TYPE, WORKSPACE.content_type)
         .body(Body::from(WORKSPACE.bytes))
