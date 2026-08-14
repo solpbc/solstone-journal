@@ -192,3 +192,45 @@ fn validate_sha256(value: &str) -> Result<(), TransferError> {
     }
     Ok(())
 }
+
+/// The journal's segment-ingest door, for a journal source identified by `key_prefix`.
+///
+/// Both peer-export and transfer-send post here, and they must build it the same
+/// way. They did not: `send` appended `/{day}` and `peer_export` did not, so
+/// `send` addressed a path the server has never registered and every upload
+/// through it answered 404. The route rule is
+/// `/journal/<key_prefix>/ingest/segments` (`solstone/apps/import/ingest.py`),
+/// added once and never day-suffixed, and Flask's default converter does not
+/// span `/`.
+///
+/// ⚠ The day is NOT missing from the request — it travels in the multipart
+/// `metadata` body as `segments[].day`, which is the only place the handler
+/// reads it. The path suffix was surplus, copied from the observer app's
+/// genuinely day-keyed `/app/observer/ingest/segments/<day>`.
+///
+/// One constructor so the two call sites cannot drift again.
+pub(crate) fn segment_ingest_path(key_prefix: &str) -> String {
+    format!("/app/import/journal/{key_prefix}/ingest/segments")
+}
+
+#[cfg(test)]
+mod segment_ingest_path_tests {
+    use super::segment_ingest_path;
+
+    #[test]
+    fn segment_ingest_path_carries_no_day_suffix() {
+        let path = segment_ingest_path("abc12345");
+        assert_eq!(path, "/app/import/journal/abc12345/ingest/segments");
+        assert!(
+            !path.ends_with("/20260801"),
+            "a day suffix makes the server answer 404: {path}"
+        );
+        // app / import / journal / <key_prefix> / ingest / segments == 6.
+        // A day suffix would make it 7, which is the shape that 404s.
+        assert_eq!(
+            path.split('/').filter(|part| !part.is_empty()).count(),
+            6,
+            "served rule is /app/import/journal/<key_prefix>/ingest/segments"
+        );
+    }
+}

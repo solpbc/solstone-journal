@@ -169,7 +169,7 @@ fn send_over_bridge(
                 report.sent += 1;
                 continue;
             }
-            let path = format!("/app/import/journal/{key_prefix}/ingest/segments/{day}");
+            let path = crate::manifest::segment_ingest_path(&key_prefix);
             match upload_segment(loopback, &path, day, &segment.stream, &segment.key, &files)? {
                 UploadOutcome::Sent(bytes) => {
                     report.sent += 1;

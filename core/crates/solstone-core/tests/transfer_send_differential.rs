@@ -10,16 +10,28 @@ use std::process::{Command, Output};
 use sha2::{Digest, Sha256};
 use stub_peer::{CapturedRequest, Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
 
+/// What the server actually registers, and what the native client now posts to.
+const NATIVE_INGEST_PATH: &str = "/app/import/journal/remote-i/ingest/segments";
+/// What the dead Python reference posts to. ⛔ Not a route the server has.
+const LEGACY_PYTHON_INGEST_PATH: &str = "/app/import/journal/remote-i/ingest/segments/20260203";
+
 fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan {
     PeerPlan::new([
         (
             RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
             manifest,
         ),
-        (
-            RequestRoute::post("/app/import/journal/remote-i/ingest/segments/20260203"),
-            ingest,
-        ),
+        (RequestRoute::post(NATIVE_INGEST_PATH), ingest.clone()),
+        // ⚠ DECLARED DIVERGENCE, 2026-08-13. The Python reference posts a
+        // day-suffixed path the server has NEVER registered, so every upload
+        // through it answered 404. The native client was ported from it and
+        // inherited the bug; this stub registered only the suffixed path, so the
+        // fake matched the bug and no test could fail on it.
+        // The native client is fixed. The Python is a dead reference retained
+        // solely as this differential's oracle and is deliberately not changed,
+        // per the standing rule that the conversion is Rust-only. This route
+        // exists only so that oracle still runs; ⛔ it is not a server contract.
+        (RequestRoute::post(LEGACY_PYTHON_INGEST_PATH), ingest),
     ])
 }
 
@@ -97,10 +109,39 @@ fn assert_same_child_result(native: &Output, python: &Output) {
 
 fn assert_equivalent_requests(left: &[CapturedRequest], right: &[CapturedRequest]) {
     assert_eq!(left.len(), right.len());
-    for (left, right) in left.iter().zip(right) {
-        assert_eq!(left.method, right.method);
-        assert_eq!(left.path, right.path);
-        assert_eq!(left.body.is_empty(), right.body.is_empty());
+    for (native, python) in left.iter().zip(right) {
+        assert_eq!(native.method, python.method);
+        assert_eq!(native.body.is_empty(), python.body.is_empty());
+        if native.path == python.path {
+            continue;
+        }
+        // The ONE declared divergence, keyed to these two exact paths rather than
+        // to a shape, so any other path difference still fails.
+        assert_eq!(
+            (native.path.as_str(), python.path.as_str()),
+            (NATIVE_INGEST_PATH, LEGACY_PYTHON_INGEST_PATH),
+            "the only permitted path divergence is the segment-ingest door, where \
+             the Python reference builds a day-suffixed path the server never \
+             registered; anything else is an unintended divergence"
+        );
+    }
+}
+
+/// The native client posts to the path the server actually serves.
+///
+/// This is the assertion the parity check could not make: `assert_equivalent_requests`
+/// compared native and Python paths to each other, so pinning them together pinned
+/// the bug. Assert the boundary directly instead.
+fn assert_native_uses_the_served_route(requests: &[CapturedRequest]) {
+    let posts: Vec<&CapturedRequest> = requests
+        .iter()
+        .filter(|request| request.method == "POST")
+        .collect();
+    for request in &posts {
+        assert_eq!(
+            request.path, NATIVE_INGEST_PATH,
+            "native segment upload must target the server's registered rule"
+        );
     }
 }
 
@@ -134,6 +175,7 @@ fn native_and_python_send_match_normal_dry_run_and_skip() {
         let all_requests = peer.requests();
         let python_requests = &all_requests[native_requests.len()..];
         assert_same_child_result(&native, &python);
+        assert_native_uses_the_served_route(&native_requests);
         assert_equivalent_requests(&native_requests, python_requests);
     }
 }

@@ -15,7 +15,11 @@ fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan 
             manifest,
         ),
         (
-            RequestRoute::post("/app/import/journal/remote-i/ingest/segments/20260203"),
+            // The server's real rule is /journal/<key_prefix>/ingest/segments, added
+            // once and never day-suffixed. This stub previously registered a
+            // day-suffixed path copied from the CLIENT, so it matched the client's
+            // bug and could never fail on it.
+            RequestRoute::post("/app/import/journal/remote-i/ingest/segments"),
             ingest,
         ),
     ])

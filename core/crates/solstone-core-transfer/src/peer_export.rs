@@ -195,7 +195,7 @@ fn export_segments(
             );
             let multipart_files = read_multipart_files(&files, "files_0")?;
             let (body, boundary) = multipart_body(&metadata, &multipart_files);
-            let path = format!("/app/import/journal/{key_prefix}/ingest/segments");
+            let path = crate::manifest::segment_ingest_path(key_prefix);
             match post_with_retry(
                 loopback,
                 &path,
