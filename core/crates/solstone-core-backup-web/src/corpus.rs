@@ -343,7 +343,21 @@ async fn unreadable_and_zero_geometry_return_non_panicking_shapes() {
 fn listen(root: &Path) -> thread::JoinHandle<String> {
     let health = root.join("health");
     fs::create_dir_all(&health).expect("health");
-    let listener = UnixListener::bind(health.join("callosum.sock")).expect("listener");
+    let socket = health.join("callosum.sock");
+    // The production client looks for the socket at exactly this path, so the
+    // test cannot relocate it. But a Unix socket path is capped at SUN_LEN
+    // (108 bytes on Linux) and this one is rooted in TMPDIR, so a long TMPDIR
+    // makes `bind` fail with a message that names neither TMPDIR nor the cap.
+    // Fail with the cause instead: a cryptic red gets attributed to the code
+    // under test, which is exactly the wrong conclusion.
+    assert!(
+        socket.as_os_str().len() < 100,
+        "callosum socket path is {} bytes, which will exceed SUN_LEN (108) once bound: {}\n\
+         This is the harness, not the code under test. Re-run with a shorter TMPDIR.",
+        socket.as_os_str().len(),
+        socket.display(),
+    );
+    let listener = UnixListener::bind(&socket).expect("listener");
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("connection");
         let mut line = String::new();
