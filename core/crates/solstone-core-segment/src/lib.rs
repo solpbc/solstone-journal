@@ -11,13 +11,17 @@
 //! distinguishing a crash
 //! partial write from a legacy manifest-less segment requires an ingest writer
 //! and coordinated Python-reader change, both outside this wave.
-//! A `tombstone.json` sidecar marks a terminal content-identity state. Deletion
-//! itself is owned by a separate crate; this crate never removes segment files.
+//! A `tombstone.json` sidecar marks a terminal content-identity state. Ordinary
+//! segment deletion is owned by a separate crate; this crate removes bytes only
+//! inside the one-time layout migrations it owns, and only through journal-io's
+//! removal door.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod chronicle_migration;
 mod content_name;
 mod device;
+mod document_migration;
 mod error;
 mod identity;
 mod manifest;
@@ -32,11 +36,17 @@ pub(crate) mod test_support;
 mod tombstone;
 mod write;
 
+pub use chronicle_migration::{
+    ChronicleMigrationError, ChronicleMigrationReport, migrate_root_days_to_chronicle,
+};
 pub use content_name::{
     ContentName, ContentNameError, RESERVED_SEGMENT_FILENAMES, is_reserved_name,
 };
 pub use device::{
     AiChatSource, DeviceSidecarInput, ImportSource, Kind, is_valid_device_did, write_device,
+};
+pub use document_migration::{
+    PdfExtractionMigrationError, PdfExtractionMigrationReport, migrate_pdf_extractions,
 };
 pub use error::SegmentError;
 pub use identity::{
@@ -45,8 +55,9 @@ pub use identity::{
 };
 pub use projection::project_stream_name;
 pub use relocate::{
-    Relocation, RelocationEnd, RelocationError, RelocationOutcome, RelocationRefusal,
-    available_segment_key, relocate_segment,
+    AgentLayoutMigrationReport, Relocation, RelocationEnd, RelocationError, RelocationOutcome,
+    RelocationRefusal, SegmentRestructureReport, available_segment_key, migrate_agent_layout,
+    relocate_segment, restructure_segments_by_stream,
 };
 pub use segment_dir::{
     SegmentDir, is_safe_stream_component, list_days, list_segments, list_segments_in,
@@ -61,7 +72,8 @@ pub use stream_record::{
     lookup_stream, resolve_stream,
 };
 pub use stream_repair::{
-    MarkerTail, RepairOutcome, TolerantStreamRecords, UnchangedReason,
+    MarkerTail, RepairOutcome, StreamBackfillReport, StreamBackfillSignal, StreamClassification,
+    StreamRepairError, TolerantStreamRecords, UnchangedReason, backfill_stream_records,
     list_stream_records_tolerant, read_stream_record, repair_stream_tail_from_markers,
     set_stream_tail_unconditionally, touch_stream_health_marker,
 };
@@ -78,8 +90,10 @@ mod architecture_tests {
     // Textual structural checks intentionally mirror scripts/check_layer_hygiene.py.
     #[derive(Clone, Copy)]
     enum Source {
+        ChronicleMigration,
         ContentName,
         Device,
+        DocumentMigration,
         Error,
         Identity,
         Manifest,
@@ -93,8 +107,16 @@ mod architecture_tests {
     }
 
     const SOURCES: &[(Source, &str)] = &[
+        (
+            Source::ChronicleMigration,
+            include_str!("chronicle_migration.rs"),
+        ),
         (Source::ContentName, include_str!("content_name.rs")),
         (Source::Device, include_str!("device.rs")),
+        (
+            Source::DocumentMigration,
+            include_str!("document_migration.rs"),
+        ),
         (Source::Error, include_str!("error.rs")),
         (Source::Identity, include_str!("identity.rs")),
         (Source::Manifest, include_str!("manifest.rs")),
@@ -158,6 +180,39 @@ mod architecture_tests {
                 // appends to a log.
                 Source::Relocate => {
                     for primitive in ["rename_within", "atomic_replace", "write_json"] {
+                        assert!(
+                            source.contains(primitive),
+                            "missing permitted journal-io write primitive {primitive}"
+                        );
+                    }
+                    for primitive in ["write_bytes_exclusive", "append_jsonl"] {
+                        assert!(
+                            !source.contains(primitive),
+                            "unexpected journal-io write primitive {primitive}"
+                        );
+                    }
+                }
+                // A one-time layout migration relocates whole trees that already
+                // exist. It renames and removes; it never authors new content
+                // bytes or appends to a log.
+                Source::ChronicleMigration => {
+                    for primitive in ["rename_within", "remove_dir_all"] {
+                        assert!(
+                            source.contains(primitive),
+                            "missing permitted journal-io write primitive {primitive}"
+                        );
+                    }
+                    for primitive in ["write_bytes_exclusive", "append_jsonl", "write_json"] {
+                        assert!(
+                            !source.contains(primitive),
+                            "unexpected journal-io write primitive {primitive}"
+                        );
+                    }
+                }
+                // Converting a legacy extraction authors one markdown transcript
+                // and unlinks the superseded source. It never appends to a log.
+                Source::DocumentMigration => {
+                    for primitive in ["write_text", "remove_file"] {
                         assert!(
                             source.contains(primitive),
                             "missing permitted journal-io write primitive {primitive}"

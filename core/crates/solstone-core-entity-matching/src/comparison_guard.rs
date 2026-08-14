@@ -52,6 +52,12 @@ const ALLOWED: &[(&str, &str)] = &[
         "the inverse of that same dedupe, so undo removes exactly what merge added",
     ),
     (
+        "solstone-core-facets/src/store/legacy_entity_migration.rs",
+        "the retired one-time facet-entity migration's own merge keys, which decided historical \
+         canonical grouping on plain `.lower()`; changing the comparison would change which \
+         legacy records merge, so it reproduces the reference exactly",
+    ),
+    (
         "solstone-core-facets/src/store/seeding.rs",
         "the email lookup and a title-casing helper; the email half is pinned by a committed \
          test asserting it does NOT full-case-fold",

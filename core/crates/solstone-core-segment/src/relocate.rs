@@ -13,16 +13,20 @@
 //! failure is a refusal. Every later step can fail on its own without unwinding
 //! the move, so each reports separately and the caller decides what that means.
 
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, JsonWriteOptions, LockOptions, atomic_replace, ensure_directory,
-    find_available_segment, read_text, rename_within, write_json,
+    AtomicWriteOptions, DirEntryKind, JsonWriteOptions, LockOptions, PathOrDay, atomic_replace,
+    ensure_directory, find_available_segment, iter_segments, list_dir_entries, read_text,
+    remove_dir_all, remove_file, rename_within, write_json,
 };
 
+use crate::segment_dir::list_days;
 use crate::stream_repair::{MarkerTail, RepairOutcome, repair_stream_tail_from_markers};
 
 /// A relocation step that could not be completed.
@@ -221,6 +225,422 @@ fn patch_successor(
     object.insert("prev_segment".to_owned(), Value::String(segment.to_owned()));
     write_json(path, &marker, JsonWriteOptions::default())
         .map_err(|error| RelocationError(error.to_string()))
+}
+
+/// Sidecar names the restructure migration treats as non-content.
+///
+/// Deliberately the three names Python's `solstone/think/segment_files.py`
+/// defines, not this crate's wider six-name [`crate::RESERVED_SEGMENT_FILENAMES`].
+/// The wider set would classify a segment holding only `device.json`,
+/// `events.jsonl`, or `tombstone.json` as empty and delete it, which the
+/// migration being ported never does.
+const RESTRUCTURE_NON_CONTENT_NAMES: [&str; 3] = ["stream.json", "ingest.json", "ingest.json.lock"];
+
+/// Segment-root JSON outputs that always belong under the segment's `agents/`.
+const KNOWN_SEGMENT_AGENT_JSON: [&str; 3] = ["activity_state.json", "facets.json", "speakers.json"];
+
+/// What one day-to-stream restructure run found and did.
+///
+/// A missing marker is reported rather than returned as an error: the caller
+/// prints the migration's refusal text and exits nonzero, and `Err` stays
+/// reserved for genuine I/O failures.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SegmentRestructureReport {
+    /// The journal already nests every segment under a stream directory.
+    pub already_restructured: bool,
+    /// Non-empty segments found as direct day children.
+    pub total: usize,
+    /// Empty segment directories found as direct day children.
+    pub empty: usize,
+    /// Non-empty direct-child segments with no usable `stream.json` marker.
+    ///
+    /// Any nonzero count means nothing was moved or removed.
+    pub missing_markers: usize,
+    /// Segments moved (or, when `dry_run`, planned).
+    pub moved: usize,
+    /// Empty segment directories removed (or planned).
+    pub removed: usize,
+    /// Distinct stream directories the moved segments landed in.
+    pub streams: usize,
+    /// Post-move nested segment count, absent on a dry run or a refusal.
+    pub verified: Option<usize>,
+    /// Whether the run planned only.
+    pub dry_run: bool,
+}
+
+/// What one agent-layout migration run moved, deduplicated, and skipped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentLayoutMigrationReport {
+    /// Files moved (or, when `dry_run`, planned).
+    pub moved: usize,
+    /// Sources removed because the destination already held identical bytes.
+    pub cleaned: usize,
+    /// Files left alone: unrecognized, or a differing destination already there.
+    pub skipped: usize,
+    /// Individual moves that failed without stopping the run.
+    pub errors: usize,
+}
+
+/// Move every flat day-child segment under its marker's stream directory.
+///
+/// Preflight is total: when any non-empty direct-child segment lacks a usable
+/// marker the run reports that count and changes nothing at all, so a partially
+/// tagged journal can never be half-restructured.
+pub fn restructure_segments_by_stream(
+    journal: &Path,
+    dry_run: bool,
+) -> Result<SegmentRestructureReport, RelocationError> {
+    let mut report = SegmentRestructureReport {
+        dry_run,
+        ..SegmentRestructureReport::default()
+    };
+    let days = list_days(journal).map_err(|error| RelocationError(error.to_string()))?;
+    if days.is_empty() {
+        return Ok(report);
+    }
+
+    let mut plan = Vec::new();
+    let mut nested_seen = false;
+    let mut flat_seen = false;
+    for (_, day_dir) in &days {
+        let (direct, nested) = split_day_segments(journal, day_dir)?;
+        nested_seen |= !nested.is_empty();
+        flat_seen |= !direct.is_empty();
+        for segment in direct {
+            if is_empty_segment(&segment)? {
+                report.empty += 1;
+                plan.push((segment, None));
+                continue;
+            }
+            report.total += 1;
+            let stream = marker_stream(&segment)?;
+            if stream.is_none() {
+                report.missing_markers += 1;
+            }
+            plan.push((segment, stream));
+        }
+    }
+
+    // Python returns early only when nesting exists and nothing is still flat.
+    if !flat_seen && nested_seen {
+        report.already_restructured = true;
+        return Ok(report);
+    }
+    if report.total == 0 {
+        return Ok(report);
+    }
+    if report.missing_markers > 0 {
+        return Ok(report);
+    }
+
+    let mut streams = BTreeSet::new();
+    for (segment, stream) in plan {
+        let Some(stream) = stream else {
+            if !dry_run {
+                remove_dir_all(journal, &relative(journal, &segment)?)
+                    .map_err(|error| RelocationError(error.to_string()))?;
+            }
+            report.removed += 1;
+            continue;
+        };
+        let parent = segment
+            .parent()
+            .ok_or_else(|| RelocationError::new("segment directory has no day parent"))?;
+        let name = segment
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| RelocationError::new("segment directory has no name"))?;
+        streams.insert(stream.clone());
+        if !dry_run {
+            ensure_directory(&parent.join(&stream))
+                .map_err(|error| RelocationError(error.to_string()))?;
+            // Python's `shutil.move` performs no destination pre-check here;
+            // the restructure runs against a flat layout it has just proven
+            // has no stream directory of this name holding this key.
+            rename_within(
+                journal,
+                &relative(journal, &segment)?,
+                &format!("{}/{stream}/{name}", relative(journal, parent)?),
+            )
+            .map_err(|error| RelocationError(error.to_string()))?;
+        }
+        report.moved += 1;
+    }
+    report.streams = streams.len();
+
+    if !dry_run {
+        let mut nested = 0;
+        for (_, day_dir) in &days {
+            nested += split_day_segments(journal, day_dir)?.1.len();
+        }
+        report.verified = Some(nested);
+    }
+    Ok(report)
+}
+
+/// Move legacy agent outputs into the `agents/` layout.
+///
+/// An occupied destination is never overwritten: identical bytes retire the
+/// source, differing bytes leave both in place and are counted as skipped.
+pub fn migrate_agent_layout(
+    journal: &Path,
+    dry_run: bool,
+) -> Result<AgentLayoutMigrationReport, RelocationError> {
+    let mut report = AgentLayoutMigrationReport::default();
+    let facets = facet_names(journal)?;
+    for (_, day_dir) in list_days(journal).map_err(|error| RelocationError(error.to_string()))? {
+        let mut segments = iter_segments(journal, PathOrDay::Directory(&day_dir))
+            .map_err(|error| RelocationError(error.to_string()))?
+            .into_iter()
+            .map(|segment| segment.path)
+            .collect::<Vec<_>>();
+        segments.sort();
+        for segment in segments {
+            migrate_segment_outputs(journal, &segment, &facets, dry_run, &mut report)?;
+        }
+        migrate_daily_faceted_outputs(journal, &day_dir, &facets, dry_run, &mut report)?;
+    }
+    Ok(report)
+}
+
+/// Move one segment's root markdown and known JSON outputs into `agents/`.
+fn migrate_segment_outputs(
+    journal: &Path,
+    segment: &Path,
+    facets: &BTreeSet<String>,
+    dry_run: bool,
+    report: &mut AgentLayoutMigrationReport,
+) -> Result<(), RelocationError> {
+    let agents = segment.join("agents");
+    let mut markdown = Vec::new();
+    let mut json = Vec::new();
+    for entry in list_dir_entries(segment).map_err(|error| RelocationError(error.to_string()))? {
+        if entry.kind != DirEntryKind::File {
+            continue;
+        }
+        let name = entry.name.to_string_lossy().into_owned();
+        if name.ends_with(".md") {
+            markdown.push(name);
+        } else if name.ends_with(".json") {
+            json.push(name);
+        }
+    }
+    markdown.sort();
+    json.sort();
+
+    for name in markdown {
+        move_file(
+            journal,
+            &segment.join(&name),
+            &agents.join(&name),
+            dry_run,
+            report,
+        )?;
+    }
+    for name in json {
+        if KNOWN_SEGMENT_AGENT_JSON.contains(&name.as_str()) {
+            move_file(
+                journal,
+                &segment.join(&name),
+                &agents.join(&name),
+                dry_run,
+                report,
+            )?;
+            continue;
+        }
+        if let Some(facet) = name
+            .strip_prefix("activity_state_")
+            .and_then(|rest| rest.strip_suffix(".json"))
+            .filter(|facet| facets.contains(*facet))
+        {
+            move_file(
+                journal,
+                &segment.join(&name),
+                &agents.join(facet).join("activity_state.json"),
+                dry_run,
+                report,
+            )?;
+            continue;
+        }
+        report.skipped += 1;
+    }
+    Ok(())
+}
+
+/// Move `agents/<topic>_<facet>.<ext>` into `agents/<facet>/<topic>.<ext>`.
+fn migrate_daily_faceted_outputs(
+    journal: &Path,
+    day_dir: &Path,
+    facets: &BTreeSet<String>,
+    dry_run: bool,
+    report: &mut AgentLayoutMigrationReport,
+) -> Result<(), RelocationError> {
+    let agents = day_dir.join("agents");
+    if !agents.is_dir() {
+        return Ok(());
+    }
+    // Longest facet name first so `notes_work_travel` cannot be claimed by the
+    // shorter `travel` when `work_travel` also exists.
+    let mut ordered = facets.iter().cloned().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+
+    let mut names = list_dir_entries(&agents)
+        .map_err(|error| RelocationError(error.to_string()))?
+        .into_iter()
+        .filter(|entry| entry.kind == DirEntryKind::File)
+        .map(|entry| entry.name.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    names.sort();
+
+    for name in names {
+        let Some((stem, extension)) = split_agent_extension(&name) else {
+            continue;
+        };
+        let matched = ordered.iter().find_map(|facet| {
+            stem.strip_suffix(&format!("_{facet}"))
+                .filter(|topic| !topic.is_empty())
+                .map(|topic| (facet.as_str(), topic))
+        });
+        let Some((facet, topic)) = matched else {
+            report.skipped += 1;
+            continue;
+        };
+        move_file(
+            journal,
+            &agents.join(&name),
+            &agents.join(facet).join(format!("{topic}{extension}")),
+            dry_run,
+            report,
+        )?;
+    }
+    Ok(())
+}
+
+/// Split a `.md`/`.json` filename into stem and dotted extension.
+fn split_agent_extension(name: &str) -> Option<(&str, &str)> {
+    [".md", ".json"]
+        .into_iter()
+        .find_map(|extension| name.strip_suffix(extension).map(|stem| (stem, extension)))
+}
+
+/// Move one file, retiring an identical source and never overwriting.
+fn move_file(
+    journal: &Path,
+    source: &Path,
+    destination: &Path,
+    dry_run: bool,
+    report: &mut AgentLayoutMigrationReport,
+) -> Result<(), RelocationError> {
+    if destination.exists() {
+        let identical = match (fs::read(source), fs::read(destination)) {
+            (Ok(left), Ok(right)) => left == right,
+            _ => false,
+        };
+        if identical {
+            if !dry_run {
+                remove_file(journal, &relative(journal, source)?)
+                    .map_err(|error| RelocationError(error.to_string()))?;
+            }
+            report.cleaned += 1;
+        } else {
+            report.skipped += 1;
+        }
+        return Ok(());
+    }
+    if dry_run {
+        report.moved += 1;
+        return Ok(());
+    }
+    let outcome = destination
+        .parent()
+        .ok_or_else(|| RelocationError::new("destination has no parent"))
+        .and_then(|parent| {
+            ensure_directory(parent).map_err(|error| RelocationError(error.to_string()))
+        })
+        .and_then(|()| {
+            rename_within(
+                journal,
+                &relative(journal, source)?,
+                &relative(journal, destination)?,
+            )
+            .map_err(|error| RelocationError(error.to_string()))
+        });
+    // One unmovable file is counted and stepped over, exactly as the migration
+    // being ported does; the rest of the journal still migrates.
+    match outcome {
+        Ok(()) => report.moved += 1,
+        Err(_) => report.errors += 1,
+    }
+    Ok(())
+}
+
+/// Every facet directory name, or none when the journal has no `facets/`.
+fn facet_names(journal: &Path) -> Result<BTreeSet<String>, RelocationError> {
+    Ok(list_dir_entries(&journal.join("facets"))
+        .map_err(|error| RelocationError(error.to_string()))?
+        .into_iter()
+        .filter(|entry| entry.kind == DirEntryKind::Directory)
+        .map(|entry| entry.name.to_string_lossy().into_owned())
+        .collect())
+}
+
+/// Split one day's segments into direct children and stream-nested ones.
+fn split_day_segments(
+    journal: &Path,
+    day_dir: &Path,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), RelocationError> {
+    let mut direct = Vec::new();
+    let mut nested = Vec::new();
+    for segment in iter_segments(journal, PathOrDay::Directory(day_dir))
+        .map_err(|error| RelocationError(error.to_string()))?
+    {
+        if segment.path.parent() == Some(day_dir) {
+            direct.push(segment.path);
+        } else {
+            nested.push(segment.path);
+        }
+    }
+    direct.sort();
+    nested.sort();
+    Ok((direct, nested))
+}
+
+/// Whether a segment directory holds no content file.
+fn is_empty_segment(segment: &Path) -> Result<bool, RelocationError> {
+    Ok(!list_dir_entries(segment)
+        .map_err(|error| RelocationError(error.to_string()))?
+        .into_iter()
+        .any(|entry| {
+            entry.kind == DirEntryKind::File
+                && !RESTRUCTURE_NON_CONTENT_NAMES.contains(&entry.name.to_string_lossy().as_ref())
+        }))
+}
+
+/// The usable stream a segment's marker names, if it has one.
+///
+/// A marker naming a stream that is not a plain path component is reported as
+/// unusable rather than moved: the migration must not be a way to write outside
+/// the day directory.
+fn marker_stream(segment: &Path) -> Result<Option<String>, RelocationError> {
+    let text = read_text(segment.join("stream.json"), String::new())
+        .map_err(|error| RelocationError(error.to_string()))?;
+    let Ok(marker) = serde_json::from_str::<Value>(&text) else {
+        return Ok(None);
+    };
+    Ok(marker
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| crate::is_safe_stream_component(stream))
+        .map(str::to_owned))
+}
+
+/// The journal-relative form of a path inside the journal.
+fn relative(journal: &Path, path: &Path) -> Result<String, RelocationError> {
+    path.strip_prefix(journal)
+        .ok()
+        .and_then(|rel| rel.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| RelocationError::new(format!("path is outside the journal: {path:?}")))
 }
 
 #[cfg(test)]
@@ -499,6 +919,256 @@ mod tests {
 
         assert_eq!(outcome.tail, RepairOutcome::NoRecord);
         assert!(destination.path.is_dir());
+    }
+
+    /// Build one flat day-child segment with an optional marker and content.
+    fn flat_segment(root: &Path, day: &str, key: &str, stream: Option<&str>, content: bool) {
+        let dir = root.join("chronicle").join(day).join(key);
+        fs::create_dir_all(&dir).expect("segment directory");
+        if let Some(stream) = stream {
+            fs::write(
+                dir.join("stream.json"),
+                serde_json::to_string(&json!({"stream": stream, "seq": 1})).expect("marker"),
+            )
+            .expect("marker written");
+        }
+        if content {
+            fs::write(dir.join("audio.jsonl"), "{\"kind\":\"audio\"}\n").expect("content written");
+        }
+    }
+
+    #[test]
+    fn every_flat_segment_moves_under_its_marker_stream_and_empty_ones_are_removed() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        flat_segment(root, "20260304", "090000_60", Some("work"), true);
+        flat_segment(root, "20260304", "100000_60", Some("home"), true);
+        flat_segment(root, "20260305", "110000_60", Some("work"), true);
+        // Only a marker and no content file: this directory is empty.
+        flat_segment(root, "20260305", "120000_60", Some("work"), false);
+
+        let report = restructure_segments_by_stream(root, false).expect("restructure runs");
+
+        assert_eq!(report.total, 3);
+        assert_eq!(report.empty, 1);
+        assert_eq!(report.moved, 3);
+        assert_eq!(report.removed, 1);
+        assert_eq!(report.streams, 2, "work and home");
+        assert_eq!(report.verified, Some(3));
+        assert_eq!(report.missing_markers, 0);
+        for (day, stream, key) in [
+            ("20260304", "work", "090000_60"),
+            ("20260304", "home", "100000_60"),
+            ("20260305", "work", "110000_60"),
+        ] {
+            assert!(
+                root.join("chronicle")
+                    .join(day)
+                    .join(stream)
+                    .join(key)
+                    .is_dir(),
+                "{day}/{stream}/{key} did not land"
+            );
+            assert!(!root.join("chronicle").join(day).join(key).exists());
+        }
+        assert!(!root.join("chronicle/20260305/120000_60").exists());
+    }
+
+    #[test]
+    fn one_missing_marker_refuses_the_whole_run_before_anything_moves_or_is_removed() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        flat_segment(root, "20260304", "090000_60", Some("work"), true);
+        flat_segment(root, "20260304", "100000_60", None, true);
+        // An empty segment would otherwise have been deleted by this run.
+        flat_segment(root, "20260304", "110000_60", Some("work"), false);
+
+        let report = restructure_segments_by_stream(root, false).expect("restructure runs");
+
+        assert_eq!(report.missing_markers, 1);
+        assert_eq!(report.total, 2);
+        assert_eq!(report.moved, 0);
+        assert_eq!(report.removed, 0, "refusal precedes every deletion");
+        assert_eq!(report.verified, None);
+        for key in ["090000_60", "100000_60", "110000_60"] {
+            assert!(
+                root.join("chronicle/20260304").join(key).is_dir(),
+                "{key} was disturbed by a refused run"
+            );
+        }
+        assert!(!root.join("chronicle/20260304/work").exists());
+    }
+
+    #[test]
+    fn a_marker_naming_an_unusable_stream_is_a_refusal_not_a_move_outside_the_day() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        flat_segment(root, "20260304", "090000_60", Some("../escaped"), true);
+
+        let report = restructure_segments_by_stream(root, false).expect("restructure runs");
+
+        assert_eq!(report.missing_markers, 1);
+        assert_eq!(report.moved, 0);
+        assert!(root.join("chronicle/20260304/090000_60").is_dir());
+        assert!(!root.join("escaped").exists());
+    }
+
+    #[test]
+    fn a_dry_run_plans_the_same_counts_and_leaves_the_flat_layout_intact() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        flat_segment(root, "20260304", "090000_60", Some("work"), true);
+        flat_segment(root, "20260304", "100000_60", Some("work"), false);
+
+        let report = restructure_segments_by_stream(root, true).expect("restructure plans");
+
+        assert!(report.dry_run);
+        assert_eq!(report.moved, 1);
+        assert_eq!(report.removed, 1);
+        assert_eq!(report.verified, None, "nothing to verify on a plan");
+        assert!(root.join("chronicle/20260304/090000_60").is_dir());
+        assert!(root.join("chronicle/20260304/100000_60").is_dir());
+        assert!(!root.join("chronicle/20260304/work").exists());
+    }
+
+    #[test]
+    fn an_already_nested_journal_reports_no_work_and_an_empty_one_reports_nothing() {
+        let fixture = Fixture::new();
+        let nested = fixture.path().join("chronicle/20260304/work/090000_60");
+        fs::create_dir_all(&nested).expect("nested segment");
+        fs::write(nested.join("audio.jsonl"), "{}\n").expect("content written");
+
+        let report = restructure_segments_by_stream(fixture.path(), false).expect("runs");
+
+        assert!(report.already_restructured);
+        assert_eq!(report.moved, 0);
+        assert_eq!(report.total, 0);
+
+        let empty = Fixture::new();
+        let report = restructure_segments_by_stream(empty.path(), false).expect("runs");
+        assert_eq!(report, SegmentRestructureReport::default());
+    }
+
+    #[test]
+    fn segment_and_daily_agent_outputs_move_into_the_agents_layout() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        fs::create_dir_all(root.join("facets/work")).expect("facet directory");
+        fs::create_dir_all(root.join("facets/home")).expect("facet directory");
+        let segment = root.join("chronicle/20260304/090000_60");
+        fs::create_dir_all(&segment).expect("segment directory");
+        fs::write(segment.join("summary.md"), "body").expect("markdown written");
+        fs::write(segment.join("facets.json"), "{}").expect("known json written");
+        fs::write(segment.join("activity_state_work.json"), "{\"a\":1}").expect("faceted written");
+        fs::write(segment.join("activity_state_absent.json"), "{}").expect("unknown facet");
+        fs::write(segment.join("ingest.json"), "{}").expect("unrelated json");
+        let day_agents = root.join("chronicle/20260304/agents");
+        fs::create_dir_all(&day_agents).expect("day agents directory");
+        fs::write(day_agents.join("digest_work.md"), "digest").expect("faceted markdown");
+        fs::write(day_agents.join("notes_home.json"), "{}").expect("faceted json");
+        fs::write(day_agents.join("orphan.md"), "orphan").expect("unmatched markdown");
+
+        let report = migrate_agent_layout(root, false).expect("migration runs");
+
+        assert_eq!(report.moved, 5);
+        assert_eq!(report.cleaned, 0);
+        assert_eq!(
+            report.skipped, 3,
+            "the unknown-facet state JSON, `ingest.json`, and the unmatched daily file"
+        );
+        assert_eq!(report.errors, 0);
+        assert_eq!(
+            fs::read_to_string(segment.join("agents/summary.md")).expect("moved markdown"),
+            "body"
+        );
+        assert!(segment.join("agents/facets.json").is_file());
+        assert_eq!(
+            fs::read_to_string(segment.join("agents/work/activity_state.json"))
+                .expect("faceted state"),
+            "{\"a\":1}"
+        );
+        assert!(!segment.join("summary.md").exists());
+        assert!(
+            segment.join("activity_state_absent.json").is_file(),
+            "an unknown facet suffix is left alone"
+        );
+        assert!(segment.join("ingest.json").is_file());
+        assert_eq!(
+            fs::read_to_string(day_agents.join("work/digest.md")).expect("daily markdown"),
+            "digest"
+        );
+        assert!(day_agents.join("home/notes.json").is_file());
+        assert!(day_agents.join("orphan.md").is_file());
+    }
+
+    #[test]
+    fn an_identical_destination_retires_the_source_and_a_differing_one_keeps_both() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        let segment = root.join("chronicle/20260304/090000_60");
+        fs::create_dir_all(segment.join("agents")).expect("agents directory");
+        fs::write(segment.join("same.md"), "shared").expect("source written");
+        fs::write(segment.join("agents/same.md"), "shared").expect("identical destination");
+        fs::write(segment.join("differs.md"), "source").expect("source written");
+        fs::write(segment.join("agents/differs.md"), "destination").expect("other destination");
+
+        let report = migrate_agent_layout(root, false).expect("migration runs");
+
+        assert_eq!(report.cleaned, 1);
+        assert_eq!(report.skipped, 1);
+        assert_eq!(report.moved, 0);
+        assert!(
+            !segment.join("same.md").exists(),
+            "identical source retired"
+        );
+        assert_eq!(
+            fs::read_to_string(segment.join("differs.md")).expect("source retained"),
+            "source"
+        );
+        assert_eq!(
+            fs::read_to_string(segment.join("agents/differs.md")).expect("destination retained"),
+            "destination",
+            "a differing destination is never overwritten"
+        );
+    }
+
+    #[test]
+    fn an_agent_layout_dry_run_counts_the_same_work_and_writes_nothing() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        let segment = root.join("chronicle/20260304/090000_60");
+        fs::create_dir_all(segment.join("agents")).expect("agents directory");
+        fs::write(segment.join("summary.md"), "body").expect("source written");
+        fs::write(segment.join("same.md"), "shared").expect("source written");
+        fs::write(segment.join("agents/same.md"), "shared").expect("identical destination");
+
+        let report = migrate_agent_layout(root, true).expect("migration plans");
+
+        assert_eq!(report.moved, 1);
+        assert_eq!(report.cleaned, 1);
+        assert!(segment.join("summary.md").is_file());
+        assert!(segment.join("same.md").is_file(), "no source was retired");
+        assert!(!segment.join("agents/summary.md").exists());
+    }
+
+    #[test]
+    fn the_longest_facet_name_claims_a_daily_file_whose_stem_ends_in_both() {
+        let fixture = Fixture::new();
+        let root = fixture.path();
+        fs::create_dir_all(root.join("facets/travel")).expect("facet directory");
+        fs::create_dir_all(root.join("facets/work_travel")).expect("facet directory");
+        let day_agents = root.join("chronicle/20260304/agents");
+        fs::create_dir_all(&day_agents).expect("day agents directory");
+        fs::write(day_agents.join("notes_work_travel.md"), "notes").expect("faceted markdown");
+
+        let report = migrate_agent_layout(root, false).expect("migration runs");
+
+        assert_eq!(report.moved, 1);
+        assert!(
+            day_agents.join("work_travel/notes.md").is_file(),
+            "the longer facet name wins the suffix"
+        );
+        assert!(!day_agents.join("travel/notes_work.md").exists());
     }
 
     #[test]

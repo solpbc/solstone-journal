@@ -79,10 +79,6 @@ pub(super) fn facet_entity_observations_path(
     .map_err(Into::into)
 }
 
-pub(super) fn convey_config_path(journal_root: &Path) -> Result<PathBuf, FacetStoreError> {
-    contained_path(journal_root, "config/convey.json").map_err(Into::into)
-}
-
 pub(super) fn facet_entity_link_repair_marker_path(
     journal_root: &Path,
     facet_dir: &str,

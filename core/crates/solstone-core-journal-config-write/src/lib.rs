@@ -16,6 +16,8 @@
 
 mod commit;
 mod config;
+mod pairing_migration;
+mod thinking_migration;
 
 #[cfg(test)]
 mod test_support;
@@ -26,7 +28,12 @@ pub use commit::{
 pub use config::{
     ConfigMutationError, JournalConfigMutation, JournalConfigTransaction, mutate_journal_config,
 };
+pub use pairing_migration::{PairingAddressMigrationReport, migrate_pairing_home_address};
 pub use solstone_core_journal_config::ConfigLoadError;
 pub use solstone_core_journal_io::{
     AtomicWriteError, LockError, LockOptions, LockTimeout, hold_lock,
+};
+pub use thinking_migration::{
+    LegacyProviderCleanup, cleanup_legacy_provider_install_config, pin_google_model_aliases,
+    unify_provider_config,
 };

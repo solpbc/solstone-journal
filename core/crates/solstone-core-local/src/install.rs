@@ -18,6 +18,7 @@ pub mod fingerprint;
 pub mod fit_report;
 pub mod lease;
 pub mod manifest;
+pub mod migration;
 pub mod mlx;
 pub mod pins;
 pub mod readiness;

@@ -117,6 +117,31 @@ pub fn remove_schedule_entry(path: &Path, name: &str) -> Result<bool, ScheduleEr
     Ok(removed)
 }
 
+/// Mutate the raw schedules map while holding the schedule authority's stable
+/// sidecar lock for the complete read-modify-write transaction.
+///
+/// Migration callers use this instead of opening `schedules.json` themselves.
+/// Returning `changed: false` preserves an existing file byte-for-byte and does
+/// not materialize a missing file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleMutation<T> {
+    pub changed: bool,
+    pub value: T,
+}
+
+pub fn mutate_schedule_entries<T, F>(path: &Path, mutator: F) -> Result<T, ScheduleError>
+where
+    F: FnOnce(&mut Map<String, Value>) -> ScheduleMutation<T>,
+{
+    let _lock = hold_lock(path, Default::default()).map_err(io_error)?;
+    let mut raw = read_strict_raw(path)?;
+    let mutation = mutator(&mut raw);
+    if mutation.changed {
+        write_raw(path, raw)?;
+    }
+    Ok(mutation.value)
+}
+
 fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
     let raw = read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise).map_err(
         |error| match error {

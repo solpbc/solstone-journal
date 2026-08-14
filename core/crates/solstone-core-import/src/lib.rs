@@ -48,8 +48,9 @@ pub use contract::{
     SyncPreviewRequest, SyncSaveRequest, observe_source_immutability, should_write_manifest,
 };
 pub use dedupe::{
-    ManifestMatch, ManifestScan, ManifestSkip, ManifestSkipReason, ManifestWriteRequest,
-    find_manifest_by_hash, hash_source, windowed_source_hash, write_manifest,
+    ImportManifestBackfillReport, ManifestMatch, ManifestScan, ManifestSkip, ManifestSkipReason,
+    ManifestWriteRequest, backfill_retained_import_manifests, find_manifest_by_hash, hash_source,
+    windowed_source_hash, write_manifest,
 };
 pub use detect::{
     ManifestSummary, ModelDetectionError, RegistrySource, ResolutionError, ResolutionOptions,

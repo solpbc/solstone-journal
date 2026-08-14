@@ -15,9 +15,9 @@ use solstone_core_system::request::{
     BusTaskRequest, ExecutionRequest, ScheduledArgv, ScheduledRequest, WireTaskRequest,
 };
 use solstone_core_system::schedule::{
-    ScheduleConfig, ScheduleEngine, ScheduleEntry, ScheduleError, ScheduleNow,
+    ScheduleConfig, ScheduleEngine, ScheduleEntry, ScheduleError, ScheduleMutation, ScheduleNow,
     ScheduleSubmissionSink, add_missing_schedule_entries, baseline_cap_contributions, daily_mark,
-    hour_mark, is_due, remove_schedule_entry, weekly_mark,
+    hour_mark, is_due, mutate_schedule_entries, remove_schedule_entry, weekly_mark,
 };
 
 struct Bed {
@@ -142,6 +142,37 @@ fn schedule_entry_mutations_are_idempotent_and_preserve_raw_values() {
     assert_eq!(raw["daily_time"], "04:00");
     assert_eq!(raw["unrelated"]["custom"], json!([1, 2]));
     assert!(raw.get("maintenance:backup:run").is_some());
+}
+
+#[test]
+fn arbitrary_schedule_mutation_is_locked_and_skips_noop_rewrites() {
+    let bed = Bed::new("arbitrary-mutation");
+    bed.write_config(json!({
+        "daily_time":"04:00",
+        "legacy":{"cmd":["sol","dream","daily"],"every":"daily"},
+        "unrelated":{"keep":true}
+    }));
+    let rewritten = mutate_schedule_entries(&bed.config(), |raw| {
+        raw["legacy"]["cmd"][0] = json!("journal");
+        raw["legacy"]["cmd"][1] = json!("think");
+        ScheduleMutation {
+            changed: true,
+            value: "legacy",
+        }
+    })
+    .unwrap();
+    assert_eq!(rewritten, "legacy");
+    let before = fs::read(bed.config()).unwrap();
+    let changed = mutate_schedule_entries(&bed.config(), |_raw| ScheduleMutation {
+        changed: false,
+        value: false,
+    })
+    .unwrap();
+    assert!(!changed);
+    assert_eq!(fs::read(bed.config()).unwrap(), before);
+    let raw: Value = serde_json::from_slice(&before).unwrap();
+    assert_eq!(raw["legacy"]["cmd"], json!(["journal", "think", "daily"]));
+    assert_eq!(raw["unrelated"], json!({"keep":true}));
 }
 
 #[test]

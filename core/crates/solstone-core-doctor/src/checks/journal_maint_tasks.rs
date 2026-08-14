@@ -14,7 +14,9 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    let tasks = solstone_core_system_health::read_maint_task_states(&context.journal_path);
+    let definitions = solstone_core_maint::registry::task_definitions();
+    let tasks =
+        solstone_core_system_health::read_maint_task_states(&context.journal_path, &definitions);
     let failed = tasks
         .iter()
         .filter(|task| task.status == solstone_core_system_health::MaintTaskStatus::Failed)
@@ -56,7 +58,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let unreadable = tasks
         .iter()
         .filter(|task| {
-            task.status == solstone_core_system_health::MaintTaskStatus::Unreadable
+            task.integrity == solstone_core_system_health::MaintStateIntegrity::Unreadable
                 || (task.status == solstone_core_system_health::MaintTaskStatus::InProgress
                     && task.ran_ts.is_none())
         })

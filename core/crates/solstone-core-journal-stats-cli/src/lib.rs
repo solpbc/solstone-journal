@@ -11,6 +11,7 @@ mod document;
 mod document_writer;
 mod error;
 mod fold;
+mod migrations;
 mod model;
 mod run;
 mod scan;
@@ -37,6 +38,7 @@ pub use cache::{
 pub use document::StatsDocument;
 pub use document_writer::{DocumentWriter, FilesystemDocumentWriter};
 pub use error::JournalStatsError;
+pub use migrations::{StatsTopicMigrationReport, migrate_stats_topic_keys};
 pub use model::{
     ActivityTotals, CacheStatus, DayScan, DayStats, HeatmapData, SCHEMA_VERSION, ScanDayOutcome,
 };

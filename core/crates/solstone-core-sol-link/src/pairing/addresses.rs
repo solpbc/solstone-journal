@@ -127,6 +127,36 @@ pub fn is_usable_ipv4(address: Ipv4Addr) -> bool {
         || address.is_multicast())
 }
 
+/// Parse the retired HTTP pairing URL into the canonical direct home address.
+pub fn parse_legacy_pairing_home_address(raw: &str) -> Result<String, LegacyPairingAddressError> {
+    let raw = raw.trim();
+    let Some(rest) = raw.strip_prefix("http://") else {
+        return Err(LegacyPairingAddressError);
+    };
+    let rest = rest.strip_suffix('/').unwrap_or(rest);
+    if rest.contains(['/', '?', '#', '@']) {
+        return Err(LegacyPairingAddressError);
+    }
+    let (host, port) = rest.rsplit_once(':').ok_or(LegacyPairingAddressError)?;
+    let host = host
+        .parse::<Ipv4Addr>()
+        .map_err(|_| LegacyPairingAddressError)?;
+    let port = port.parse::<u16>().map_err(|_| LegacyPairingAddressError)?;
+    if port != 7657 || !is_usable_ipv4(host) {
+        return Err(LegacyPairingAddressError);
+    }
+    Ok(format!("{host}:{port}"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LegacyPairingAddressError;
+impl fmt::Display for LegacyPairingAddressError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid legacy pairing address")
+    }
+}
+impl std::error::Error for LegacyPairingAddressError {}
+
 /// Port of `resolve_pair_link_candidates`: filter first, put a matching route
 /// first within its class, de-duplicate before capping, then cap to four.
 pub fn resolve_pair_link_candidates(

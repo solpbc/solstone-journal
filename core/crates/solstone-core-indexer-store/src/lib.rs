@@ -3,6 +3,7 @@
 
 pub mod db;
 pub mod merge;
+pub mod migrations;
 pub mod scan;
 
 use std::fmt;

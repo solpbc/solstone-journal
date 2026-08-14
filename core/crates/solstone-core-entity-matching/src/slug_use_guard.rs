@@ -39,6 +39,12 @@ const ALLOWED: &[(&str, &str)] = &[
         "names a NEW journal entity and a NEW relationship directory on the create path",
     ),
     (
+        "solstone-core-facets/src/store/legacy_entity_migration.rs",
+        "names a NEW journal entity directory and a NEW facet-relationship directory for each \
+         canonical the one-time migration builds -- there is no prior identity to resolve, \
+         because creating the first one is what this migration does",
+    ),
+    (
         "solstone-core-facets/src/store/facet_entity_move.rs",
         "read-compat fallback only, after resolution through the stored link identity fails \
          -- a facet directory can legitimately have no resolvable identity yet",

@@ -212,6 +212,8 @@ fn main() -> ExitCode {
         Ok(Command::Segment(args)) => run_segment(args),
         Ok(Command::Backup(args)) => run_backup(args),
         Ok(Command::Maintenance(args)) => run_maintenance(args),
+        Ok(Command::Maint(args)) => run_maint(args),
+        Ok(Command::MaintWorker(args)) => run_maint_worker(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
         Ok(Command::Backfill(args)) => run_backfill(args),
@@ -716,6 +718,30 @@ fn run_maintenance(args: Vec<OsString>) -> ExitCode {
         let run = solstone_core_maintenance::run_cli(arguments, journal);
         (run.stdout, run.stderr, run.exit_code)
     })
+}
+
+fn run_maint(args: Vec<OsString>) -> ExitCode {
+    run_storage_ops_verb("maint", args, |arguments, journal| {
+        let run = solstone_core_maint::run_cli(arguments, journal);
+        (run.stdout, run.stderr, run.exit_code)
+    })
+}
+
+fn run_maint_worker(args: Vec<OsString>) -> ExitCode {
+    let arguments = match require_utf8_argv("maint worker", &args) {
+        Ok(arguments) => arguments,
+        Err(code) => return code,
+    };
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+    let run = solstone_core_maint::worker::run(&arguments, &journal);
+    for line in run.stdout {
+        println!("{line}");
+    }
+    eprint!("{}", run.stderr);
+    ExitCode::from(run.exit_code as u8)
 }
 
 fn run_reprocess(args: Vec<OsString>) -> ExitCode {

@@ -32,6 +32,162 @@ pub struct ManifestWriteRequest<'a> {
     pub raw_retention: Option<&'a str>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImportManifestBackfillReport {
+    pub scanned: usize,
+    pub backfilled: usize,
+    pub skipped_already_has_manifest: usize,
+    pub skipped_no_retained_original: usize,
+}
+
+/// Backfill manifests for old import directories that retained their source.
+pub fn backfill_retained_import_manifests(
+    journal_root: &Path,
+) -> Result<ImportManifestBackfillReport, ImportError> {
+    let mut report = ImportManifestBackfillReport::default();
+    let imports = journal_root.join("imports");
+    let entries = match fs::read_dir(&imports) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(report),
+        Err(error) => {
+            return Err(ImportError::PathResolution {
+                path: imports,
+                message: error.to_string(),
+            });
+        }
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        report.scanned += 1;
+        if dir.join("manifest.json").exists() {
+            report.skipped_already_has_manifest += 1;
+            continue;
+        }
+        let Ok(import_meta) = fs::read(dir.join("import.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .ok_or(())
+        else {
+            report.skipped_no_retained_original += 1;
+            continue;
+        };
+        let Some(file_path) = import_meta.get("file_path").and_then(Value::as_str) else {
+            report.skipped_no_retained_original += 1;
+            continue;
+        };
+        let Some(file_name) = Path::new(file_path).file_name() else {
+            report.skipped_no_retained_original += 1;
+            continue;
+        };
+        let retained = dir.join(file_name);
+        if !retained.is_file() {
+            report.skipped_no_retained_original += 1;
+            continue;
+        }
+        let imported = fs::read(dir.join("imported.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .unwrap_or(Value::Object(Map::new()));
+        let source_type = imported
+            .get("source_type")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| {
+                match retained
+                    .extension()
+                    .and_then(|v| v.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+                    .as_str()
+                {
+                    "m4a" => "apple",
+                    "txt" | "md" | "pdf" => "text",
+                    _ => "audio",
+                }
+            });
+        let files_created = imported
+            .get("all_created_files")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let days = imported
+            .get("target_day")
+            .and_then(Value::as_str)
+            .map(|day| vec![day.to_owned()])
+            .or_else(|| {
+                imported
+                    .get("date_range")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        let mut days = items
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>();
+                        days.sort();
+                        days.dedup();
+                        days
+                    })
+            })
+            .unwrap_or_default();
+        let hash = hash_source(&retained)?;
+        let import_id = dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        write_manifest(&ManifestWriteRequest {
+            journal_root,
+            import_id,
+            source_type,
+            source_hash: &hash,
+            entry_count: files_created.len() as u64,
+            days_affected: &days,
+            files_created: &files_created,
+            imported_via: "import",
+            link_id: None,
+            observer_handle: None,
+            raw_retention: None,
+        })?;
+        report.backfilled += 1;
+    }
+    Ok(report)
+}
+
+#[cfg(test)]
+mod backfill_tests {
+    use super::*;
+    use tempfile::tempdir;
+    #[test]
+    fn backfills_only_retained_legacy_original() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("imports/123");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("import.json"),
+            br#"{"file_path":"/old/audio.m4a"}"#,
+        )
+        .unwrap();
+        fs::write(dir.join("audio.m4a"), b"audio").unwrap();
+        let report = backfill_retained_import_manifests(temp.path()).unwrap();
+        assert_eq!(report.backfilled, 1);
+        assert!(dir.join("manifest.json").is_file());
+        assert_eq!(
+            backfill_retained_import_manifests(temp.path())
+                .unwrap()
+                .skipped_already_has_manifest,
+            1
+        );
+    }
+}
+
 /// A matching import manifest and its path.
 #[derive(Debug, Clone)]
 pub struct ManifestMatch {

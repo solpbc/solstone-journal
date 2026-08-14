@@ -203,7 +203,7 @@ fn inventory_entry(path: &Path, relative_path: String, role: &str) -> Result<Val
         json!({"relative_path":relative_path,"role":role,"size":fs::metadata(path).map_err(|error|error.to_string())?.len(),"sha256":sha256_file(path)?}),
     )
 }
-fn sha256_file(path: &Path) -> Result<String, String> {
+pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let mut digest = Sha256::new();
     std::io::copy(&mut file, &mut digest).map_err(|error| error.to_string())?;
@@ -212,6 +212,17 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect())
+}
+pub(crate) fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let actual = sha256_file(path)?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "sha256 mismatch for {}: expected {expected}, got {actual}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ))
+    }
 }
 fn normalize_source(source: Value) -> Result<Value, String> {
     let canonical = fingerprint::canonical(source)?;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::fs;
 use std::path::Path;
 
 use serde_json::Value;
@@ -108,6 +109,75 @@ pub fn remove_activity(
     Ok(before != rows.len())
 }
 
+/// Move legacy custom emoji glyphs from `icon` into `emoji`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActivityIconMigrationReport {
+    pub files_scanned: usize,
+    pub files_changed: usize,
+    pub records_changed: usize,
+}
+
+pub fn migrate_custom_activity_icons_to_emoji(
+    journal_root: &Path,
+    dry_run: bool,
+) -> Result<ActivityIconMigrationReport, FacetWriteError> {
+    let mut report = ActivityIconMigrationReport::default();
+    let facets = journal_root.join("facets");
+    let Ok(entries) = fs::read_dir(facets) else {
+        return Ok(report);
+    };
+    for entry in entries.flatten() {
+        let facet = entry.file_name().to_string_lossy().to_string();
+        let Some(text) = read_activity_file(journal_root, &facet, "activities.jsonl")? else {
+            continue;
+        };
+        report.files_scanned += 1;
+        let mut changed = false;
+        let mut rows = Vec::new();
+        for line in text.lines() {
+            let Ok(mut row) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            let Some(object) = row.as_object_mut() else {
+                rows.push(row);
+                continue;
+            };
+            let custom = object.get("custom").and_then(Value::as_bool) == Some(true);
+            if custom
+                && object
+                    .get("emoji")
+                    .and_then(Value::as_str)
+                    .is_none_or(str::is_empty)
+                && let Some(icon) = object
+                    .get("icon")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                && !is_lucide_name(&icon)
+            {
+                object.insert("emoji".to_owned(), Value::String(icon));
+                object.remove("icon");
+                changed = true;
+                report.records_changed += 1;
+            }
+            rows.push(row);
+        }
+        if changed {
+            report.files_changed += 1;
+            if !dry_run {
+                write_rows(journal_root, &facet, &rows)?;
+            }
+        }
+    }
+    Ok(report)
+}
+
+fn is_lucide_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
 fn activity_rows(journal_root: &Path, facet_dir: &str) -> Result<Vec<Value>, FacetWriteError> {
     Ok(
         read_activity_file(journal_root, facet_dir, "activities.jsonl")?
@@ -195,4 +265,24 @@ fn write_content_file(
     )?;
     write_text(&path, contents, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(FacetWriteError::ContentWrite)
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn migrates_custom_glyph_and_preserves_lucide_and_existing_emoji() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("facets/work/activities/activities.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "{\"id\": \"x\", \"custom\": true, \"icon\": \"🎯\"}\n{\"id\": \"y\", \"custom\": true, \"icon\": \"target\"}\n{\"id\": \"z\", \"custom\": true, \"emoji\": \"✅\", \"icon\": \"old\"}\n").unwrap();
+        let report = migrate_custom_activity_icons_to_emoji(temp.path(), false).unwrap();
+        assert_eq!(report.records_changed, 1);
+        let written = fs::read_to_string(path).unwrap();
+        assert!(written.contains("\"emoji\": \"🎯\""));
+        assert!(written.contains("\"icon\": \"target\""));
+        assert!(written.contains("\"icon\": \"old\""));
+    }
 }

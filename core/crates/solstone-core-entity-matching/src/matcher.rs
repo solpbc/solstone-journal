@@ -363,6 +363,14 @@ pub fn token_sort(text: &str) -> String {
     tokens.join(" ")
 }
 
+/// Score two names the way Python `rapidfuzz.fuzz.token_sort_ratio` does.
+///
+/// Rust `rapidfuzz::fuzz::ratio` returns 0.0..=1.0, so this scales to Python's
+/// 0..=100 range at the single scoring site callers compare thresholds against.
+pub fn token_sort_ratio(left: &str, right: &str) -> f64 {
+    rapidfuzz::fuzz::ratio(token_sort(left).chars(), token_sort(right).chars()) * 100.0
+}
+
 fn extract_one_fuzzy(
     query: &str,
     fuzzy_candidates: &OrderedFuzzyCandidates,

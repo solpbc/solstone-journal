@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-talents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+chrono.workspace = true
+serde_json.workspace = true
+solstone-core-journal-io.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"
+
+[lints]
+workspace = true

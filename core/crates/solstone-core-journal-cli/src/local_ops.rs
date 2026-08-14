@@ -19,6 +19,9 @@ use std::path::{Path, PathBuf};
 use chrono::Local;
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
+use solstone_core_convey_config::{
+    prepare_remove_facet_references, publish_update, restore_update,
+};
 use solstone_core_facets::{append_action_log, hold_facet_trust_lock, write_news_file};
 #[cfg(not(target_os = "ios"))]
 use solstone_core_indexer_query::{
@@ -913,11 +916,11 @@ fn facet_merge(args: &[OsString]) -> Outcome {
         let _ = fs::remove_dir_all(&stage);
         return failure("facet merge", &error, EXIT_IO);
     }
-    let convey_update = match prepare_convey_update(&journal, source) {
+    let convey_update = match prepare_remove_facet_references(&journal, source) {
         Ok(update) => update,
         Err(error) => {
             let _ = fs::remove_dir_all(&stage);
-            return failure("facet merge", &error, EXIT_DATA);
+            return failure("facet merge", &error.to_string(), EXIT_DATA);
         }
     };
     if let Err(error) = fs::rename(&destination_path, &backup) {
@@ -935,11 +938,7 @@ fn facet_merge(args: &[OsString]) -> Outcome {
         return failure("facet merge", &error.to_string(), EXIT_IO);
     }
     if let Some(update) = &convey_update
-        && let Err(error) = atomic_replace(
-            &update.path,
-            &update.replacement,
-            AtomicWriteOptions { mode: Some(0o600) },
-        )
+        && let Err(error) = publish_update(update)
     {
         let rollback =
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
@@ -951,12 +950,7 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     }
     if let Err(error) = append_action_log(&journal, None, "cli", "user", "facet_merge", params) {
         let config_rollback = convey_update.as_ref().map(|update| {
-            atomic_replace(
-                &update.path,
-                &update.original,
-                AtomicWriteOptions { mode: Some(0o600) },
-            )
-            .map_err(|rollback_error| rollback_error.to_string())
+            restore_update(update).map_err(|rollback_error| rollback_error.to_string())
         });
         let tree_rollback =
             rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
@@ -1043,56 +1037,6 @@ fn existing_path_kind(path: &Path) -> Result<Option<ExistingPathKind>, String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.to_string()),
     }
-}
-
-struct ConveyUpdate {
-    path: PathBuf,
-    original: Vec<u8>,
-    replacement: Vec<u8>,
-}
-
-fn prepare_convey_update(journal: &Path, source: &str) -> Result<Option<ConveyUpdate>, String> {
-    let path = journal.join("config/convey.json");
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) if metadata.file_type().is_file() => metadata,
-        Ok(_) => return Err(format!("unsafe convey config: {}", path.display())),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.to_string()),
-    };
-    if metadata.len() > 4 * 1024 * 1024 {
-        return Err("convey config is unexpectedly large".to_owned());
-    }
-    let original = fs::read(&path).map_err(|error| error.to_string())?;
-    let mut value: Value = serde_json::from_slice(&original).map_err(|error| error.to_string())?;
-    let Some(root) = value.as_object_mut() else {
-        return Err("convey config must be a JSON object".to_owned());
-    };
-    let Some(facets) = root.get_mut("facets").and_then(Value::as_object_mut) else {
-        return Ok(None);
-    };
-    let mut changed = false;
-    if facets.get("selected").and_then(Value::as_str) == Some(source) {
-        facets.insert("selected".to_owned(), Value::Null);
-        changed = true;
-    }
-    if let Some(order) = facets.get_mut("order") {
-        let Some(items) = order.as_array_mut() else {
-            return Err("convey facets.order must be an array".to_owned());
-        };
-        let before = items.len();
-        items.retain(|item| item.as_str() != Some(source));
-        changed |= items.len() != before;
-    }
-    if !changed {
-        return Ok(None);
-    }
-    let mut replacement = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
-    replacement.push(b'\n');
-    Ok(Some(ConveyUpdate {
-        path,
-        original,
-        replacement,
-    }))
 }
 
 fn rollback_facet_trees(

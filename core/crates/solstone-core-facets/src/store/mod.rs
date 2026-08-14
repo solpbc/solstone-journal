@@ -6,9 +6,11 @@ mod declaration;
 mod detected_entities;
 mod detected_entity_activity;
 mod error;
+mod event_topic_migration;
 mod facet_entities;
 mod facet_entity_move;
 mod identity;
+mod legacy_entity_migration;
 mod lifecycle;
 mod logs;
 mod map;
@@ -25,7 +27,8 @@ mod todos;
 mod write;
 
 pub use activities::{
-    add_activity, read_activity_file, remove_activity, update_activity, write_activity_file,
+    ActivityIconMigrationReport, add_activity, migrate_custom_activity_icons_to_emoji,
+    read_activity_file, remove_activity, update_activity, write_activity_file,
 };
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
@@ -41,6 +44,7 @@ pub use error::{
     FacetEntityWriteError, FacetRenameError, FacetStoreError, FacetWriteError,
     ObservationLookupError, ObservationWriteError,
 };
+pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
 pub use facet_entities::{
     FacetEntityAttachResult, ScopedFacetEntity, add_entity_aka, attach_or_reactivate_entity,
     detach_facet_entity, list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
@@ -48,6 +52,9 @@ pub use facet_entities::{
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
+pub use legacy_entity_migration::{
+    FacetEntityMigrationError, LegacyFacetEntityMigrationReport, migrate_legacy_facet_entities,
+};
 #[cfg(test)]
 pub(crate) use lifecycle::delete_created_entity_if_unreferenced_with_hook;
 pub use lifecycle::{

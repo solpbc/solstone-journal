@@ -792,6 +792,47 @@ fn w3c_maint_unreadable_state_uses_reference_detail() {
         "couldn't fully determine — maint state unreadable: settings.reindex"
     );
 }
+
+#[test]
+fn w3c_maint_static_task_preserves_failed_and_stale_classification() {
+    let failed = fixture();
+    let state = failed
+        .journal_path
+        .join("maint/settings/003_seed_default_app_navigation.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(
+        &state,
+        "{\"event\":\"exec\",\"ts\":1}\n{\"event\":\"exit\",\"exit_code\":7,\"ts\":2}\n",
+    )
+    .unwrap();
+    let row = result("journal_maint_tasks", &failed);
+    assert_eq!(row.status, Status::Fail);
+    assert_eq!(
+        row.detail,
+        "failed maint task(s): settings.003_seed_default_app_navigation (exit 7)"
+    );
+
+    let stale = fixture();
+    let state = stale
+        .journal_path
+        .join("maint/settings/003_seed_default_app_navigation.jsonl");
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(
+        &state,
+        format!(
+            "{{\"event\":\"exec\",\"ts\":{}}}\n",
+            stale.now.timestamp_millis() - 300_001
+        ),
+    )
+    .unwrap();
+    let row = result("journal_maint_tasks", &stale);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "started, no exit: settings.003_seed_default_app_navigation"
+    );
+}
+
 #[test]
 fn w3c_setup_json_and_jsonl_filters_receive_advisory_warning() {
     let warned = run(&args(), &fixture());

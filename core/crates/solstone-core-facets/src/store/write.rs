@@ -5,17 +5,15 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{
-    JsonWriteOptions, LockOptions, MalformedPolicy, hold_lock, path_lexists, read_json,
-    remove_dir_all, write_json,
-};
+use solstone_core_convey_config::{clear_facet_references, rename_facet_references};
+use solstone_core_journal_io::{JsonWriteOptions, path_lexists, remove_dir_all, write_json};
 
 use crate::hold_facet_trust_lock;
 
 use super::declaration::read_facet_declaration;
 use super::error::{FacetRenameError, FacetStoreError, FacetWriteError};
 use super::identity::read_facet_entity_link;
-use super::paths::{convey_config_path, declaration_path, facet_dir_path, facet_entity_link_path};
+use super::paths::{declaration_path, facet_dir_path, facet_entity_link_path};
 
 /// Structured successful result for a physical facet-directory rename.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,7 +55,7 @@ pub fn delete_facet(journal_root: &Path, facet_dir: &str) -> Result<bool, FacetW
     if read_facet_declaration(journal_root, facet_dir)?.is_none() {
         return Ok(false);
     }
-    clear_convey_facet_references(journal_root, facet_dir);
+    clear_facet_references(journal_root, facet_dir);
     remove_dir_all(journal_root, &format!("facets/{facet_dir}"))
         .map_err(FacetWriteError::EntityLinkRemoval)?;
     let _ = path;
@@ -229,7 +227,7 @@ pub fn rename_facet(
         new_path: new_path.clone(),
         source,
     })?;
-    update_convey_facet_references(journal_root, old_name, new_name);
+    rename_facet_references(journal_root, old_name, new_name);
     Ok(FacetRenameResult {
         old_name: old_name.to_owned(),
         new_name: new_name.to_owned(),
@@ -262,87 +260,4 @@ fn valid_facet_name(name: &str) -> bool {
                 || character.is_ascii_digit()
                 || matches!(character, '-' | '_')
         })
-}
-
-fn update_convey_facet_references(journal_root: &Path, old_name: &str, new_name: &str) {
-    let Ok(path) = convey_config_path(journal_root) else {
-        return;
-    };
-    if !path_lexists(&path).unwrap_or(false) {
-        return;
-    }
-    let Ok(_lock) = hold_lock(
-        &path,
-        LockOptions {
-            mode: Some(0o600),
-            ..LockOptions::default()
-        },
-    ) else {
-        return;
-    };
-    let Ok(mut config) = read_json(&path, Value::Null, MalformedPolicy::Raise) else {
-        return;
-    };
-    let mut changed = false;
-    if let Some(facets) = config.get_mut("facets").and_then(Value::as_object_mut) {
-        if facets.get("selected").and_then(Value::as_str) == Some(old_name) {
-            facets.insert("selected".to_owned(), Value::String(new_name.to_owned()));
-            changed = true;
-        }
-        if let Some(order) = facets.get_mut("order").and_then(Value::as_array_mut) {
-            for item in order {
-                if item.as_str() == Some(old_name) {
-                    *item = Value::String(new_name.to_owned());
-                    changed = true;
-                }
-            }
-        }
-    }
-    if changed {
-        let _ = write_json(
-            &path,
-            &config,
-            JsonWriteOptions {
-                mode: Some(0o600),
-                indent: Some(2),
-                sort_keys: false,
-            },
-        );
-    }
-}
-
-fn clear_convey_facet_references(journal_root: &Path, facet_name: &str) {
-    let Ok(path) = convey_config_path(journal_root) else {
-        return;
-    };
-    if !path_lexists(&path).unwrap_or(false) {
-        return;
-    }
-    let Ok(_lock) = hold_lock(
-        &path,
-        LockOptions {
-            mode: Some(0o600),
-            ..LockOptions::default()
-        },
-    ) else {
-        return;
-    };
-    let Ok(mut config) = read_json(&path, Value::Null, MalformedPolicy::Raise) else {
-        return;
-    };
-    let mut changed = false;
-    if let Some(facets) = config.get_mut("facets").and_then(Value::as_object_mut) {
-        if facets.get("selected").and_then(Value::as_str) == Some(facet_name) {
-            facets.insert("selected".to_owned(), Value::String(String::new()));
-            changed = true;
-        }
-        if let Some(order) = facets.get_mut("order").and_then(Value::as_array_mut) {
-            let before = order.len();
-            order.retain(|value| value.as_str() != Some(facet_name));
-            changed |= before != order.len();
-        }
-    }
-    if changed {
-        let _ = write_json(&path, &config, json_options());
-    }
 }

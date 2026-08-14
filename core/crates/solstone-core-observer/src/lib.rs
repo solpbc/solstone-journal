@@ -14,3 +14,6 @@ pub use service::{
 pub use store::delivery::{
     DeliveryDivergence, OBSERVER_DELIVERY_STALL_MS, OBSERVER_STALE_MS, delivery_divergence,
 };
+pub use store::{
+    RemoteObserverMigrationError, RemoteObserverMigrationReport, migrate_remote_observer_storage,
+};
