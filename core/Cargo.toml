@@ -97,6 +97,7 @@ members = [
     "crates/solstone-core-backup-web",
     "crates/solstone-core-steward-prune",
     "crates/solstone-core-settings-web",
+    "crates/solstone-core-transcripts-web",
 ]
 exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
@@ -172,6 +173,7 @@ solstone-core-sense = { path = "crates/solstone-core-sense" }
 solstone-core-service-unit = { path = "crates/solstone-core-service-unit" }
 solstone-core-steward-prune = { path = "crates/solstone-core-steward-prune" }
 solstone-core-settings-web = { path = "crates/solstone-core-settings-web" }
+solstone-core-transcripts-web = { path = "crates/solstone-core-transcripts-web" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
 solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
 solstone-core-import = { path = "crates/solstone-core-import" }

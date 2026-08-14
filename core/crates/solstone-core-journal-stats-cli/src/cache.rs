@@ -55,7 +55,7 @@ pub(crate) fn save_day_cache<W: DayCacheWriter>(
 }
 
 /// Return a cache payload only when it is schema-valid and strictly newer than inputs.
-pub(crate) fn load_fresh_day_cache(day_dir: &Path) -> Result<Option<DayScan>, JournalStatsError> {
+pub fn load_fresh_day_cache(day_dir: &Path) -> Result<Option<DayScan>, JournalStatsError> {
     let path = day_dir.join("stats.json");
     if !path.exists() {
         return Ok(None);
@@ -93,7 +93,7 @@ pub(crate) fn load_fresh_day_cache(day_dir: &Path) -> Result<Option<DayScan>, Jo
 }
 
 /// Latest mtime among precisely the Python day-cache bounded input set.
-pub(crate) fn bounded_input_mtime(day_dir: &Path) -> Result<Option<SystemTime>, JournalStatsError> {
+pub fn bounded_input_mtime(day_dir: &Path) -> Result<Option<SystemTime>, JournalStatsError> {
     if !day_dir.is_dir() {
         return Ok(None);
     }

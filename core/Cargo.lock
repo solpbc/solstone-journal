@@ -2869,6 +2869,7 @@ dependencies = [
  "solstone-core-spl",
  "solstone-core-thinking",
  "solstone-core-thinking-copy",
+ "solstone-core-transcripts-web",
  "spl-core",
  "spl-home",
  "spl-transport",
@@ -3882,6 +3883,25 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-transcribe",
  "tempfile",
+]
+
+[[package]]
+name = "solstone-core-transcripts-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-convey-http",
+ "solstone-core-convey-shell",
+ "solstone-core-journal-io",
+ "solstone-core-journal-stats-cli",
+ "solstone-core-system-health",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

@@ -31,7 +31,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_system_health::{HealthLogSource, SegmentSource};
 
 pub use backlog::{BacklogViewReader, FilesystemBacklogViewReader};
-pub use cache::{DayCacheWriter, FilesystemDayCacheWriter};
+pub use cache::{
+    DayCacheWriter, FilesystemDayCacheWriter, bounded_input_mtime, load_fresh_day_cache,
+};
 pub use document::StatsDocument;
 pub use document_writer::{DocumentWriter, FilesystemDocumentWriter};
 pub use error::JournalStatsError;
