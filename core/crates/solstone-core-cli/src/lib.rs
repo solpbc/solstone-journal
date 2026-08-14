@@ -6329,6 +6329,33 @@ mod tests {
             evaluate_args(&owner_internal),
             Ok(Command::JournalBrainOwner(JournalBrainOwnerCommand::Usage))
         );
+        use std::os::unix::ffi::OsStringExt;
+        let mut owner_non_utf8_name = vec![
+            OsString::from(JOURNAL_BRAIN_OWNER_SENTINEL),
+            OsString::from("brain"),
+            OsString::from("status"),
+        ];
+        owner_non_utf8_name.push(OsString::from_vec(vec![b'-', b'-', 0xff]));
+        assert_eq!(
+            evaluate_args(&owner_non_utf8_name),
+            Ok(Command::JournalBrainOwner(JournalBrainOwnerCommand::Usage))
+        );
+        let owner_non_utf8_value = vec![
+            OsString::from(JOURNAL_BRAIN_OWNER_SENTINEL),
+            OsString::from("brain"),
+            OsString::from("refresh"),
+            OsString::from("--expected-fingerprint"),
+            OsString::from_vec(vec![0xff]),
+        ];
+        assert!(matches!(
+            evaluate_args(&owner_non_utf8_value),
+            Ok(Command::JournalBrainOwner(
+                JournalBrainOwnerCommand::Refresh(JournalBrainRefreshOptions {
+                    expected_fingerprint: Some(_),
+                    ..
+                })
+            ))
+        ));
         for values in [
             &["brain"][..],
             &["brain", "unknown"][..],

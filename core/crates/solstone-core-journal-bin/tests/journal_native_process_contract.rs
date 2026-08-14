@@ -1051,6 +1051,43 @@ fn native_process_dispatch_and_poison_liveness_contract() {
 }
 
 #[test]
+fn brain_internal_protocol_verbs_are_closed_at_the_real_owner_dispatcher() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal).expect("create isolated brain journal");
+    let before = snapshot_tree(context.journal);
+
+    for argv in [
+        &["inspect"][..],
+        &["fingerprint"][..],
+        &["record-runtime-failure"][..],
+        &["refresh", "--session"][..],
+        &["prerequisite-renewal", "--session"][..],
+    ] {
+        let output = run_dispatcher_with_bounded_output(&context, "brain", argv, PROBE_TIMEOUT)
+            .expect("run internal brain spelling")
+            .expect("internal brain spelling completes");
+        assert_eq!(output.status.code(), Some(2), "argv={argv:?}");
+        assert!(output.stdout.is_empty(), "argv={argv:?}");
+        assert!(
+            output.stderr.starts_with(b"usage: journal brain"),
+            "argv={argv:?} stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !context.poison_marker.exists(),
+            "argv={argv:?} reached poisoned interpreter"
+        );
+        assert_eq!(
+            snapshot_tree(context.journal),
+            before,
+            "argv={argv:?} mutated durable state"
+        );
+    }
+}
+
+#[test]
 fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
     let harness = Harness::new();
     let context = harness.context();

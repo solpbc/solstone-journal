@@ -3,6 +3,11 @@
 
 use std::process::{Command, Output};
 
+use std::fs;
+use std::os::unix::ffi::OsStringExt;
+
+use tempfile::TempDir;
+
 const BINARY: &str = env!("CARGO_BIN_EXE_solstone-core");
 const SENTINEL: &str = "\x1fsolstone-journal-brain-owner-v1";
 
@@ -36,4 +41,27 @@ fn owner_brain_help_and_errors_never_fall_through_to_aggregate_usage() {
     assert_eq!(invalid.status.code(), Some(2));
     assert!(invalid.stdout.is_empty());
     assert!(invalid.stderr.starts_with(b"usage: journal brain"));
+}
+
+#[test]
+fn owner_non_utf8_expected_fingerprint_resolves_stale_instead_of_usage() {
+    let journal = TempDir::new_in("/var/tmp").expect("journal");
+    fs::create_dir_all(journal.path().join("config")).expect("config directory");
+    fs::write(journal.path().join("config/journal.json"), b"{}").expect("config");
+    let output = Command::new(BINARY)
+        .arg(SENTINEL)
+        .arg("brain")
+        .arg("refresh")
+        .arg("--expected-fingerprint")
+        .arg(std::ffi::OsString::from_vec(vec![0xff]))
+        .env("SOLSTONE_JOURNAL", journal.path())
+        .output()
+        .expect("run owner brain with non-UTF-8 expected fingerprint");
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        output.stdout,
+        b"Brain unknown: stale expected fingerprint\n"
+    );
+    assert!(!solstone_core_brain::brain_state_path(journal.path()).exists());
 }

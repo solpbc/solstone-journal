@@ -20,7 +20,7 @@ use nix::unistd::Pid;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{JournalBrainOwnerCommand, JournalBrainRefreshOptions};
 use solstone_core_generate::{
-    ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
+    ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, OneShotClient,
 };
 
 use crate::{EXIT_UNAVAILABLE, resolve_journal_config_path};
@@ -84,6 +84,25 @@ fn run_status(json_output: bool) -> ExitCode {
     brain_exit_code(&view)
 }
 
+fn current_bundled_runtime_fingerprint(journal: &Path) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    let (verb, model) = (
+        solstone_core_local::InstallVerb::FingerprintMlx,
+        "qwen3.5:9b",
+    );
+    #[cfg(not(target_os = "macos"))]
+    let (verb, model) = (
+        solstone_core_local::InstallVerb::FingerprintLocal,
+        "local/qwen3.5-4b",
+    );
+    solstone_core_local::dispatch_install(verb, json!({"journal": journal, "model_id": model}))
+        .ok()?
+        .result?
+        .get("target_fingerprint_sha256")?
+        .as_str()
+        .map(ToOwned::to_owned)
+}
+
 /// The one full refresh path.  Unsafe prerequisite renewal delegates here.
 fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
     let now = Utc::now();
@@ -94,10 +113,23 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
         return ExitCode::from(EXIT_UNAVAILABLE);
     };
     let before = view(&journal, &config, now);
-    if options.expected_fingerprint.is_some()
-        && before.fingerprint_sha256.as_deref() != options.expected_fingerprint.as_deref()
-    {
-        return render_transient("stale_expected_fingerprint", options.json);
+    let initial_resolution = solstone_core_brain::derive_active_brain_lane(&config);
+    // The Python writer wrapper always supplies the current bundled target,
+    // even when another lane is active. The writer ignores it for non-bundled
+    // lanes, while having it already captured closes a config-change race into
+    // bundled between this read and `begin_refresh`.
+    let bundled_runtime_fingerprint = current_bundled_runtime_fingerprint(&journal);
+    if let Some(expected) = options.expected_fingerprint.as_deref() {
+        let actual = if options.expected_active_fingerprint {
+            before.fingerprint_sha256.as_deref()
+        } else {
+            (initial_resolution.lane.as_deref() == Some("bundled"))
+                .then_some(bundled_runtime_fingerprint.as_deref())
+                .flatten()
+        };
+        if actual != Some(expected) {
+            return render_transient("stale_expected_fingerprint", options.json);
+        }
     }
     if before.reason_code.as_deref() == Some("configuration_invalid") {
         render(&before, options.json);
@@ -120,9 +152,7 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
             None
         },
         options.expect_active_fingerprint_absent,
-        (!options.expected_active_fingerprint)
-            .then(|| options.expected_fingerprint.clone())
-            .flatten(),
+        bundled_runtime_fingerprint.clone(),
     ) {
         Ok(Some(permit)) => permit,
         Ok(None) => {
@@ -150,23 +180,70 @@ fn run_owner_refresh(options: &JournalBrainRefreshOptions) -> ExitCode {
         }
     };
 
-    let resolution = solstone_core_brain::derive_active_brain_lane(&config);
-    let Some(lane) = resolution.lane else {
-        let _ = solstone_core_brain::abandon_refresh(
-            &journal,
-            permit,
-            "probe_internal_error",
-            Map::new(),
-            now,
-        );
-        return render_transient("lost_fence", options.json);
+    let checking_config = match solstone_core_brain::read_journal_config(&journal) {
+        Ok(read) => read.config.unwrap_or_default(),
+        Err(_) => {
+            return abandon_probe_failure(&journal, &config, permit, options.json, Utc::now());
+        }
     };
-    let outcome = probe_outcome(&journal, &config, &lane, now);
-    if solstone_core_brain::finish_refresh(&journal, permit, outcome, Utc::now(), None).is_err() {
+    let checking_view = view(&journal, &checking_config, Utc::now());
+    let (Some(lane), Some(_provider), Some(_model)) = (
+        checking_view.lane.as_deref(),
+        checking_view.provider.as_deref(),
+        checking_view.model.as_deref(),
+    ) else {
+        return abandon_probe_failure(&journal, &checking_config, permit, options.json, Utc::now());
+    };
+    let outcome = probe_outcome(
+        &journal,
+        &checking_config,
+        lane,
+        bundled_runtime_fingerprint.as_deref(),
+        now,
+    );
+    let finish_bundled_runtime_fingerprint = (lane == "bundled")
+        .then(|| current_bundled_runtime_fingerprint(&journal))
+        .flatten();
+    if solstone_core_brain::finish_refresh(
+        &journal,
+        permit,
+        outcome,
+        Utc::now(),
+        finish_bundled_runtime_fingerprint,
+    )
+    .is_err()
+    {
         return render_transient("lost_fence", options.json);
     }
-    let committed = view(&journal, &config, Utc::now());
+    let committed = view(&journal, &checking_config, Utc::now());
     render(&committed, options.json);
+    brain_exit_code(&committed)
+}
+
+fn abandon_probe_failure(
+    journal: &Path,
+    fallback_config: &Map<String, Value>,
+    permit: solstone_core_brain::BrainRefreshPermit,
+    json_output: bool,
+    now: DateTime<Utc>,
+) -> ExitCode {
+    if solstone_core_brain::abandon_refresh(
+        journal,
+        permit,
+        "probe_internal_error",
+        Map::new(),
+        now,
+    )
+    .is_err()
+    {
+        return render_transient("lost_fence", json_output);
+    }
+    let config = solstone_core_brain::read_journal_config(journal)
+        .ok()
+        .and_then(|read| read.config)
+        .unwrap_or_else(|| fallback_config.clone());
+    let committed = view(journal, &config, Utc::now());
+    render(&committed, json_output);
     brain_exit_code(&committed)
 }
 
@@ -217,9 +294,11 @@ fn probe_outcome(
     journal: &Path,
     config: &Map<String, Value>,
     lane: &str,
+    bundled_runtime_fingerprint: Option<&str>,
     now: DateTime<Utc>,
 ) -> Value {
-    let lane_prerequisites = lane_prerequisite(journal, config, lane, now);
+    let lane_prerequisites =
+        lane_prerequisite(journal, config, lane, bundled_runtime_fingerprint, now);
     if let Some(reason) = lane_prerequisites
         .get("reason_code")
         .and_then(Value::as_str)
@@ -243,12 +322,15 @@ fn lane_prerequisite(
     journal: &Path,
     config: &Map<String, Value>,
     lane: &str,
+    bundled_runtime_fingerprint: Option<&str>,
     now: DateTime<Utc>,
 ) -> Value {
     match lane {
         "bundled" => {
-            let assessment =
-                solstone_core_brain::assess_bundled_runtime_prerequisite(journal, None);
+            let assessment = solstone_core_brain::assess_bundled_runtime_prerequisite(
+                journal,
+                bundled_runtime_fingerprint,
+            );
             assessment.reason_code.map_or_else(
                 || component_ok(now),
                 |reason| {
@@ -399,10 +481,12 @@ fn generate_component(now: DateTime<Utc>) -> Value {
         .map(|client| client.with_prefix_arguments(["generate".into()]))
         .and_then(|client| client.execute(&request));
     let reason = match result {
-        Ok(GenerateResponse::Generated(response)) if response.text.trim().is_empty() => {
-            "probe_output_starved".to_owned()
+        Ok(GenerateResponse::Generated(response)) => {
+            let Some(reason) = classify_canned_generate(&response) else {
+                return component_ok(now);
+            };
+            reason.to_owned()
         }
-        Ok(GenerateResponse::Generated(_)) => return component_ok(now),
         Ok(GenerateResponse::Refused(response)) => map_provider_reason(
             "generate",
             response.reason_code.as_ref().map(|value| value.as_wire()),
@@ -411,6 +495,35 @@ fn generate_component(now: DateTime<Utc>) -> Value {
         Err(_) => "probe_internal_error".to_owned(),
     };
     component_for_reason("generate", &reason, Map::new(), now)
+}
+
+fn classify_canned_generate(response: &GeneratedResponse) -> Option<&'static str> {
+    if response.finish_reason == "max_tokens" {
+        return Some("probe_output_starved");
+    }
+    if !response.text.trim().is_empty() {
+        return None;
+    }
+    if generated_response_has_reasoning(response) || response.finish_reason != "stop" {
+        Some("probe_output_starved")
+    } else {
+        Some("provider_response_invalid")
+    }
+}
+
+fn generated_response_has_reasoning(response: &GeneratedResponse) -> bool {
+    response
+        .thinking
+        .as_ref()
+        .and_then(Value::as_array)
+        .is_some_and(|thinking| !thinking.is_empty())
+        || response.usage.as_object().is_some_and(|usage| {
+            usage.iter().any(|(name, value)| {
+                name.contains("reasoning")
+                    && !value.is_boolean()
+                    && value.as_f64().is_some_and(|count| count > 0.0)
+            })
+        })
 }
 
 fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime<Utc>) -> Value {
@@ -440,7 +553,7 @@ fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime
                 "probe_internal_error".to_owned()
             }
         }),
-        Err(()) => "probe_internal_error".to_owned(),
+        Err(error) => cogitate_run_error_reason(error).to_owned(),
     };
     if reason == "ok" {
         component_ok(now)
@@ -452,7 +565,7 @@ fn cogitate_component(journal: &Path, config: &Map<String, Value>, now: DateTime
 fn run_cogitate_with_outer_timeout(
     executable: PathBuf,
     input: Vec<u8>,
-) -> Result<std::process::Output, ()> {
+) -> Result<std::process::Output, CogitateRunError> {
     let deadline = Instant::now() + StdDuration::from_secs(60);
     let (pid_sender, pid_receiver) = mpsc::sync_channel(1);
     let (result_sender, result_receiver) = mpsc::sync_channel(1);
@@ -487,19 +600,36 @@ fn run_cogitate_with_outer_timeout(
     });
     let pid = match pid_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
         Ok(Ok(pid)) => pid,
-        Ok(Err(_)) | Err(_) => {
+        Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
             kill_cogitate_child(&child_pid);
-            return Err(());
+            return Err(CogitateRunError::Io);
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            kill_cogitate_child(&child_pid);
+            return Err(CogitateRunError::Timeout);
         }
     };
     match result_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
         Ok(Ok(output)) => Ok(output),
-        Ok(Err(_)) => Err(()),
+        Ok(Err(_)) => Err(CogitateRunError::Io),
         Err(mpsc::RecvTimeoutError::Timeout) => {
             let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
-            Err(())
+            Err(CogitateRunError::Timeout)
         }
-        Err(mpsc::RecvTimeoutError::Disconnected) => Err(()),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(CogitateRunError::Io),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CogitateRunError {
+    Timeout,
+    Io,
+}
+
+fn cogitate_run_error_reason(error: CogitateRunError) -> &'static str {
+    match error {
+        CogitateRunError::Timeout => "chat_timeout",
+        CogitateRunError::Io => "probe_internal_error",
     }
 }
 
@@ -918,6 +1048,79 @@ mod tests {
         );
         assert_eq!(
             map_provider_reason("generate", Some("not-in-contract")),
+            "probe_internal_error"
+        );
+    }
+
+    fn generated_response(
+        text: &str,
+        finish_reason: &str,
+        usage: Value,
+        thinking: Option<Value>,
+    ) -> GeneratedResponse {
+        GeneratedResponse {
+            id: None,
+            text: text.to_owned(),
+            model: "test-model".to_owned(),
+            usage,
+            finish_reason: finish_reason.to_owned(),
+            thinking,
+            schema_validation: None,
+            input_budget: None,
+            request_budget: None,
+            inference: None,
+            hints_applied: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn owner_generate_classification_matches_the_canned_oracle() {
+        let cases = [
+            (
+                "OK",
+                "max_tokens",
+                json!({}),
+                None,
+                Some("probe_output_starved"),
+            ),
+            ("OK", "stop", json!({}), None, None),
+            (
+                "",
+                "stop",
+                json!({}),
+                None,
+                Some("provider_response_invalid"),
+            ),
+            (
+                "",
+                "stop",
+                json!({"reasoning_tokens": 1}),
+                None,
+                Some("probe_output_starved"),
+            ),
+            (
+                "",
+                "stop",
+                json!({}),
+                Some(json!([{"summary":"reasoned"}])),
+                Some("probe_output_starved"),
+            ),
+            ("", "unknown", json!({}), None, Some("probe_output_starved")),
+        ];
+        for (text, finish_reason, usage, thinking, expected) in cases {
+            let response = generated_response(text, finish_reason, usage, thinking);
+            assert_eq!(classify_canned_generate(&response), expected);
+        }
+    }
+
+    #[test]
+    fn owner_cogitate_outer_timeout_is_distinct_from_process_failure() {
+        assert_eq!(
+            cogitate_run_error_reason(CogitateRunError::Timeout),
+            "chat_timeout"
+        );
+        assert_eq!(
+            cogitate_run_error_reason(CogitateRunError::Io),
             "probe_internal_error"
         );
     }

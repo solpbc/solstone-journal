@@ -33,6 +33,29 @@ fn owner_refresh(journal: &TempDir) {
     );
 }
 
+fn bundled_runtime_fingerprint(journal: &TempDir) -> String {
+    #[cfg(target_os = "macos")]
+    let (verb, model) = (
+        solstone_core_local::InstallVerb::FingerprintMlx,
+        "qwen3.5:9b",
+    );
+    #[cfg(not(target_os = "macos"))]
+    let (verb, model) = (
+        solstone_core_local::InstallVerb::FingerprintLocal,
+        "local/qwen3.5-4b",
+    );
+    solstone_core_local::dispatch_install(
+        verb,
+        serde_json::json!({"journal": journal.path(), "model_id": model}),
+    )
+    .expect("resolve bundled runtime fingerprint")
+    .result
+    .expect("fingerprint result")["target_fingerprint_sha256"]
+        .as_str()
+        .expect("fingerprint string")
+        .to_owned()
+}
+
 #[test]
 fn owner_status_json_has_the_python_sorted_key_shape() {
     let journal = TempDir::new_in("/var/tmp").expect("journal");
@@ -95,5 +118,52 @@ fn owner_refresh_creates_and_reuses_the_fingerprint_key() {
         fs::read(&prepopulated_key).expect("read reused key"),
         distinctive,
         "owner refresh must preserve the existing fingerprint key"
+    );
+}
+
+#[test]
+fn owner_refresh_default_fence_compares_the_bundled_runtime_fingerprint() {
+    let journal = TempDir::new_in("/var/tmp").expect("journal");
+    write_bundled_config(&journal);
+    let expected = bundled_runtime_fingerprint(&journal);
+    let matching = Command::new(BINARY)
+        .args([
+            SENTINEL,
+            "brain",
+            "refresh",
+            "--json",
+            "--expected-fingerprint",
+            &expected,
+        ])
+        .env("SOLSTONE_JOURNAL", journal.path())
+        .output()
+        .expect("run matching bundled fence");
+    assert_ne!(
+        matching.status.code(),
+        Some(3),
+        "matching runtime fence was treated as stale: stdout={} stderr={}",
+        String::from_utf8_lossy(&matching.stdout),
+        String::from_utf8_lossy(&matching.stderr)
+    );
+
+    let state_path = solstone_core_brain::brain_state_path(journal.path());
+    let before = fs::read(&state_path).expect("matching refresh writes state");
+    let stale = Command::new(BINARY)
+        .args([
+            SENTINEL,
+            "brain",
+            "refresh",
+            "--json",
+            "--expected-fingerprint",
+            &"b".repeat(64),
+        ])
+        .env("SOLSTONE_JOURNAL", journal.path())
+        .output()
+        .expect("run stale bundled fence");
+    assert_eq!(stale.status.code(), Some(3));
+    assert_eq!(
+        fs::read(state_path).expect("read state after stale fence"),
+        before,
+        "stale bundled fence must not mutate durable state"
     );
 }
