@@ -24,6 +24,7 @@ members = [
     "crates/solstone-core-top",
     "crates/solstone-core-operational-logs",
     "crates/solstone-core-brain",
+    "crates/solstone-core-backup",
     "crates/solstone-core-doctor",
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-identity",
@@ -133,6 +134,7 @@ solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
+solstone-core-backup = { path = "crates/solstone-core-backup" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }
 solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }

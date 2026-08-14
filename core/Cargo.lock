@@ -2515,6 +2515,7 @@ dependencies = [
  "sha2",
  "solstone-core-assets",
  "solstone-core-backfill-cli",
+ "solstone-core-backup",
  "solstone-core-body-ingest",
  "solstone-core-body-rebuild",
  "solstone-core-brain",
@@ -2586,6 +2587,20 @@ dependencies = [
  "serde_json",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "tempfile",
+]
+
+[[package]]
+name = "solstone-core-backup"
+version = "1.0.22"
+dependencies = [
+ "getrandom 0.3.4",
+ "log",
+ "serde",
+ "serde_json",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
  "tempfile",
 ]
 

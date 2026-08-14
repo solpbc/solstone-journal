@@ -3,6 +3,8 @@
 
 #[path = "assets_cli.rs"]
 mod assets_cli;
+#[path = "backup_cli.rs"]
+mod backup_cli;
 #[path = "check_no_python_spawn.rs"]
 mod check_no_python_spawn;
 #[path = "check_vulkan_absence.rs"]

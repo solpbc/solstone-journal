@@ -33,6 +33,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core streams [args...]\n",
     "  solstone-core importer [args...]\n",
     "  solstone-core segment [args...]\n",
+    "  solstone-core backup [args...]\n",
     "  solstone-core journal-stats [args...]\n",
     "  solstone-core reprocess [args...]\n",
     "  solstone-core backfill-processing-records [args...]\n"
@@ -699,6 +700,7 @@ pub enum Command {
     Streams(Vec<OsString>),
     Importer(Vec<OsString>),
     Segment(Vec<OsString>),
+    Backup(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Backfill(Vec<OsString>),
@@ -1469,6 +1471,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("segment") => {
             Ok(Command::Segment(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("backup") => {
+            Ok(Command::Backup(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("reprocess") => {
             Ok(Command::Reprocess(rest.to_vec()))
@@ -6725,6 +6730,7 @@ mod tests {
             "streams",
             "importer",
             "segment",
+            "backup",
             "journal-stats",
             "reprocess",
             "backfill-processing-records",

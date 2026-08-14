@@ -1,0 +1,22 @@
+[package]
+name = "solstone-core-backup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+getrandom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-journal-config-write.workspace = true
+solstone-core-journal-io.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"
