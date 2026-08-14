@@ -8,6 +8,27 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
+
+[[test]]
+name = "speaker_bootstrap_contracts"
+path = "tests/speaker_bootstrap_contracts.rs"
+
+[[test]]
+name = "speaker_resolution_contracts"
+path = "tests/speaker_resolution_contracts.rs"
+
+[[test]]
+name = "speaker_identification_contracts"
+path = "tests/speaker_identification_contracts.rs"
+
+[[test]]
+name = "speaker_owner_contracts"
+path = "tests/speaker_owner_contracts.rs"
+
+[[test]]
+name = "speaker_voiceprint_contracts"
+path = "tests/speaker_voiceprint_contracts.rs"
 
 [lints]
 workspace = true
