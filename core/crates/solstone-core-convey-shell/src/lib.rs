@@ -115,6 +115,8 @@ mod entities;
 mod network;
 #[cfg(feature = "host")]
 mod network_status;
+#[cfg(feature = "host")]
+mod network_writes;
 pub mod refusal;
 pub mod registry;
 #[cfg(feature = "host")]
@@ -143,6 +145,11 @@ mod sse;
 mod system;
 #[cfg(feature = "host")]
 mod thinking;
+#[cfg(feature = "host")]
+pub use network_writes::{
+    NetworkOperationsOverride, SplDisableFailureOverride, SplEnrollment, SplPoll, SplPollOutcome,
+    SplRuntimeOverride,
+};
 #[cfg(feature = "host")]
 pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};
 

@@ -3,8 +3,22 @@
     "machine": "x86_64",
     "platform": "linux"
   },
+  "coverage_limitations": [
+    "POST /app/network/host-address, POST /app/network/private-link/enable, and POST /app/network/private-link/disable are not exercised by this GET-only corpus; tests/network_write_routes.rs covers them."
+  ],
   "established_deferred_native_responses": [],
   "generator": "scripts/convey_network_corpus.py",
+  "mutation_census": {
+    "actually_mutated_2xx": 0,
+    "cases_total": 18,
+    "mutating_method_cases": 0,
+    "post_state_reads": 18,
+    "refusals": 0,
+    "routes_called_twice_with_same_input": [],
+    "routes_called_twice_with_same_input_count": 0,
+    "routes_refused_only": [],
+    "routes_that_mutated": {}
+  },
   "native_deviations": [],
   "phases": {
     "corrupt": [
@@ -450,6 +464,6 @@
     "host": "<HOST_DEPENDENT>",
     "journal_root": "<JOURNAL_ROOT>"
   },
-  "rev": "c075fe1ade29df92711042c360026f5c52119cb4",
+  "rev": "27160caa145e1d31e5b05559a4098ac09e778217",
   "schema": "solstone-convey-network-corpus-v1"
 }

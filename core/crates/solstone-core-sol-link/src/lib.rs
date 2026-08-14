@@ -36,6 +36,8 @@ pub mod pairing;
 mod pairing_entry;
 #[cfg(feature = "client")]
 mod serve;
+#[cfg(feature = "host")]
+pub mod service_identity;
 
 #[cfg(feature = "host")]
 pub use acceptor::{

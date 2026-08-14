@@ -13,6 +13,7 @@ mod health;
 mod link_state_files;
 mod loopback_pipe;
 mod posture_gate;
+mod private_link;
 mod reconnect_backoff;
 mod relay_client;
 mod relay_control;
@@ -43,6 +44,10 @@ pub use loopback_pipe::{
 };
 pub use posture_gate::{
     PostureGate, PostureInput, RelayBlocked, RelayDecision, RelayPermit, ServiceToken, TokenInput,
+};
+pub use private_link::{
+    DEFAULT_RELAY_URL, EnableSplError, EnrollError, SplDisableOutcome, disable_spl, enable_spl,
+    enable_spl_with, enroll_home, relay_url, save_service_token,
 };
 pub use reconnect_backoff::{
     INITIAL_RECONNECT_BASE, MAX_RECONNECT_BASE, ReconnectBackoffError, ReconnectSchedule,

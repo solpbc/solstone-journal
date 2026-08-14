@@ -27,9 +27,11 @@ use solstone_core_spl::{
     LinkServiceTokenRead, LinkStateRead, OFFLINE_TUNNEL_REASONS, load_link_service_token,
     load_link_state,
 };
+use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::JournalRoot;
 use crate::network::{hardened_loopback, read_posture};
+use crate::network_writes::NetworkOperationsOverride;
 
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
 const HOME_CANDIDATES_ERROR: &str = "couldn't check home addresses";
@@ -200,10 +202,10 @@ struct PrivateLinkActions {
 }
 
 #[derive(Serialize)]
-struct PrivateLinkBody {
+pub(crate) struct PrivateLinkBody {
     success: bool,
     service: &'static str,
-    state: &'static str,
+    pub(crate) state: &'static str,
     posture: &'static str,
     enrolled: bool,
     relay_url: String,
@@ -260,21 +262,39 @@ pub(crate) async fn identity(Extension(root): Extension<Arc<JournalRoot>>) -> Re
     Json(build_identity_body(load_committed_identity(&root.0))).into_response()
 }
 
-pub(crate) async fn private_link(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let posture = LinkPosture::from_read(read_posture(&root.0));
+pub(crate) async fn private_link(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
+    override_operations: Option<Extension<NetworkOperationsOverride>>,
+) -> Response {
+    let operations = override_operations
+        .map(|Extension(value)| value.0)
+        .unwrap_or(operations);
+    Json(private_link_body(
+        &root.0,
+        Some(operations.operation("spl")),
+    ))
+    .into_response()
+}
+
+pub(crate) fn private_link_body(
+    journal_root: &std::path::Path,
+    operation: Option<Value>,
+) -> PrivateLinkBody {
+    let posture = LinkPosture::from_read(read_posture(journal_root));
     let token_present = matches!(
-        load_link_service_token(&root.0),
+        load_link_service_token(journal_root),
         LinkServiceTokenRead::Present(_)
     );
-    Json(build_private_link_body(
+    build_private_link_body(
         posture,
         token_present,
         relay_url(
             std::env::var("SOL_LINK_RELAY_URL").ok().as_deref(),
-            read_config(&root.0).as_ref(),
+            read_config(journal_root).as_ref(),
         ),
-    ))
-    .into_response()
+        operation,
+    )
 }
 
 pub(crate) async fn local_endpoints(
@@ -527,6 +547,7 @@ fn build_private_link_body(
     posture: LinkPosture,
     token_present: bool,
     relay_url: String,
+    operation: Option<Value>,
 ) -> PrivateLinkBody {
     let state = derive_spl_service_state(posture, token_present);
     PrivateLinkBody {
@@ -546,7 +567,7 @@ fn build_private_link_body(
                 SplServiceState::Enabled | SplServiceState::Inconsistent
             ),
         },
-        operation: None,
+        operation: operation.filter(|value| !value.is_null()),
     }
 }
 
@@ -968,11 +989,16 @@ mod tests {
 
     #[test]
     fn private_link_state_machine_offers_repair_actions() {
-        let enabled = build_private_link_body(LinkPosture::Spl, true, DEFAULT_RELAY_URL.to_owned());
+        let enabled =
+            build_private_link_body(LinkPosture::Spl, true, DEFAULT_RELAY_URL.to_owned(), None);
         let inconsistent =
-            build_private_link_body(LinkPosture::Spl, false, DEFAULT_RELAY_URL.to_owned());
-        let not_enabled =
-            build_private_link_body(LinkPosture::Direct, true, DEFAULT_RELAY_URL.to_owned());
+            build_private_link_body(LinkPosture::Spl, false, DEFAULT_RELAY_URL.to_owned(), None);
+        let not_enabled = build_private_link_body(
+            LinkPosture::Direct,
+            true,
+            DEFAULT_RELAY_URL.to_owned(),
+            None,
+        );
         assert_eq!(enabled.state, "enabled");
         assert!(!enabled.actions.enable && enabled.actions.disable);
         assert_eq!(inconsistent.state, "inconsistent");
@@ -1002,6 +1028,7 @@ mod tests {
             .layer(Extension(Arc::new(JournalRoot(
                 temporary.path().to_owned(),
             ))));
+        let app = app.layer(Extension(Arc::new(OperationRegistry::default())));
         let response = app
             .oneshot(
                 Request::get("/private-link")
