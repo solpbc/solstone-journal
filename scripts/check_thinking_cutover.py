@@ -92,8 +92,15 @@ def _python_findings(root: Path, path: Path) -> list[Finding]:
             for alias in node.names:
                 if _matches_python_module(alias.name):
                     add(node.lineno, "served-python-coupling", alias.name, "production import reaches the Python thinking module")
-        elif isinstance(node, ast.ImportFrom) and node.module and _matches_python_module(node.module):
-            add(node.lineno, "served-python-coupling", node.module, "production import reaches the Python thinking module")
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports_parent_thinking = (
+                node.module in {"solstone.apps", "apps"}
+                and any(alias.name == "thinking" for alias in node.names)
+            )
+            imports_thinking = _matches_python_module(node.module) or imports_parent_thinking
+            if imports_thinking:
+                detail = f"{node.module}.thinking" if imports_parent_thinking else node.module
+                add(node.lineno, "served-python-coupling", detail, "production import reaches the Python thinking module")
         elif isinstance(node, ast.Call):
             name = _call_name(node)
             first = _literal_string(node.args[0]) if node.args else None
@@ -119,25 +126,78 @@ def _python_findings(root: Path, path: Path) -> list[Finding]:
     return findings
 
 
+def _masked_rust_line(line: str) -> str | None:
+    """Mask double-quoted strings and line comments before counting braces."""
+    masked: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if in_string:
+            masked.append(" ")
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+        elif character == "/" and index + 1 < len(line) and line[index + 1] == "/":
+            masked.extend(" " * (len(line) - index))
+            break
+        elif character == '"':
+            masked.append(" ")
+            in_string = True
+        elif re.match(r"(?:br|r)#*\"", line[index:]):
+            return None
+        else:
+            masked.append(character)
+        index += 1
+    return None if in_string else "".join(masked)
+
+
 def _test_scope_by_line(lines: list[str]) -> set[int]:
-    """Mark lines lexically inside a Rust cfg(test) module."""
+    """Mark only confidently delimited Rust cfg(test) modules.
+
+    Ambiguous scopes are deliberately left unmarked so path findings fail closed
+    as blocking instead of being downgraded to recorded test fidelity.
+    """
     marked: set[int] = set()
     pending_test_module = False
     depth: int | None = None
-    braces = 0
+    module_re = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
     for number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if stripped == "#[cfg(test)]":
+        masked = _masked_rust_line(line)
+        stripped = masked.strip() if masked is not None else ""
+
+        if depth is not None:
+            if masked is None:
+                depth = None
+                continue
+            marked.add(number)
+            depth += masked.count("{") - masked.count("}")
+            if depth <= 0:
+                depth = None
+            continue
+
+        if pending_test_module:
+            if masked is None:
+                pending_test_module = False
+            elif not stripped or stripped.startswith("#["):
+                continue
+            elif module_re.match(stripped):
+                depth = masked.count("{") - masked.count("}")
+                pending_test_module = False
+                if depth > 0:
+                    marked.add(number)
+                else:
+                    depth = None
+                continue
+            else:
+                pending_test_module = False
+
+        if masked is not None and stripped == "#[cfg(test)]":
             pending_test_module = True
-        if pending_test_module and re.search(r"\bmod\s+\w+\s*\{", stripped):
-            depth = braces + line.count("{") - line.count("}")
-            pending_test_module = False
-            marked.add(number)
-        elif depth is not None:
-            marked.add(number)
-        braces += line.count("{") - line.count("}")
-        if depth is not None and braces < depth:
-            depth = None
     return marked
 
 
@@ -157,7 +217,7 @@ def _rust_findings(root: Path, path: Path) -> list[Finding]:
                         number,
                         "served-python-coupling",
                         path_match.group(1),
-                        f"Rust #[path] compile input resolves to {target}",
+                        f"Rust #[path] compile input resolves to {target.relative_to(root)}",
                     )
                 )
             continue
