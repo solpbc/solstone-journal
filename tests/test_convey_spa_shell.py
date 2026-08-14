@@ -63,13 +63,9 @@ def test_api_shell_shape_ordering_label_and_backgrounds(client, journal_copy):
     by_name = {app["name"]: app for app in apps}
 
     assert apps[0]["name"] == "home"
-    assert [app["name"] for app in apps[1:4]] == [
-        "activities",
-        "entities",
-        "search",
-    ]
+    assert [app["name"] for app in apps[1:3]] == ["activities", "entities"]
     assert by_name["sol"]["label"] == "Ada"
-    assert by_name["search"]["workspace_url"] == "/app/search/workspace"
+    assert "search" not in by_name
     assert by_name["network"]["workspace_url"] == "/app/network/workspace"
     assert by_name["timeline"]["background_url"] == "/app/timeline/background"
     assert by_name["support"]["background_url"] == "/app/support/background"
@@ -96,28 +92,6 @@ def test_api_shell_chat_seed_degrades_to_defaults(client, monkeypatch):
         "attention": None,
         "sol_request": None,
     }
-
-
-def test_search_spa_index_workspace_and_route_resolution(convey_app, client):
-    response = client.get("/app/search/")
-    assert response.status_code == 200
-    assert b'data-solstone-shell="spa"' in response.data
-
-    workspace_response = client.get("/app/search/workspace")
-    assert workspace_response.status_code == 200
-    assert (
-        workspace_response.data
-        == (APPS_ROOT / "search" / "workspace.html").read_bytes()
-    )
-
-    adapter = convey_app.url_map.bind("localhost")
-    for path in (
-        "/app/search/api/search",
-        "/app/search/api/day_results",
-        "/app/activities/",
-    ):
-        endpoint, _args = adapter.match(path, method="GET")
-        assert endpoint
 
 
 def test_network_spa_index_and_workspace(client):

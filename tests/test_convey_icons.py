@@ -24,7 +24,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CONVEY_ICONS_JS = ROOT / "solstone" / "convey" / "static" / "convey_icons.js"
 
 CONVERTED_FILES = (
-    ROOT / "solstone" / "apps" / "search" / "workspace.html",
     ROOT / "solstone" / "apps" / "sol" / "workspace.html",
     ROOT / "solstone" / "apps" / "import" / "workspace.html",
     ROOT / "solstone" / "apps" / "settings" / "workspace.html",
@@ -33,7 +32,13 @@ CONVERTED_FILES = (
     ROOT / "solstone" / "apps" / "stats" / "workspace.html",
     ROOT / "solstone" / "apps" / "stats" / "static" / "dashboard.js",
     ROOT / "solstone" / "apps" / "activities" / "workspace.html",
-    ROOT / "solstone" / "apps" / "transcripts" / "workspace.html",
+    ROOT
+    / "core"
+    / "crates"
+    / "solstone-core-transcripts-web"
+    / "assets"
+    / "transcripts"
+    / "workspace.html",
     ROOT
     / "core"
     / "crates"
@@ -69,8 +74,6 @@ L2_ICON_SLOT_CLASSES = (
     "import-source-card-icon",
     "import-source-inline-icon",
     "import-content-summary-icon",
-    "filter-icon",
-    "result-agent-icon",
     "occ-activity-icon",
     "act-icon",
     "activity-detail-icon",
@@ -119,8 +122,6 @@ L2_ICON_SLOT_CSS_FILES = {
     / "apps"
     / "import"
     / "workspace.html",
-    "filter-icon": ROOT / "solstone" / "apps" / "search" / "workspace.html",
-    "result-agent-icon": ROOT / "solstone" / "apps" / "search" / "workspace.html",
     "occ-activity-icon": ROOT / "solstone" / "apps" / "activities" / "workspace.html",
     "act-icon": ROOT / "solstone" / "apps" / "activities" / "workspace.html",
     "activity-detail-icon": ROOT
@@ -133,10 +134,6 @@ L2_ICON_SLOT_CSS_FILES = {
 }
 
 CONVERTED_GLYPH_RESIDUE = {
-    "solstone/apps/search/workspace.html": (
-        'aria-hidden="true">🔍</div>',
-        "icon: '🔍'",
-    ),
     "solstone/apps/sol/workspace.html": (
         '<div class="empty-state-icon">🤖</div>',
         '<div class="empty-state-icon">⚠️</div>',
@@ -183,19 +180,6 @@ CONVERTED_GLYPH_RESIDUE = {
     ),
     "solstone/apps/activities/workspace.html": (
         '<div class="timeline-empty"><div class="empty-icon"><svg',
-    ),
-    "solstone/apps/transcripts/workspace.html": (
-        '<div class="surface-state-icon" aria-hidden="true"><svg',
-        "day: '<svg",
-        "nothing: '<svg",
-        "transcript: '<svg",
-        "audio: '<svg",
-        "screen: '<svg",
-        "signals: '<svg",
-        "icon: '🗑️'",
-        "icon: '⚠️'",
-        "icon: '↩️'",
-        "icon: '⏱️'",
     ),
     "core/crates/solstone-core-convey-shell/assets/speakers/workspace.html": (
         '<div class="surface-state-icon" aria-hidden="true"><svg',
@@ -296,12 +280,6 @@ OUT_OF_SCOPE_GLYPHS = {
 }
 
 NOTIFICATION_ICON_EMITTERS = {
-    "solstone/apps/transcripts/workspace.html": (
-        ("icon: '🗑️'", "icon: 'trash-2'"),
-        ("icon: '⚠️'", "icon: 'triangle-alert'"),
-        ("icon: '↩️'", "icon: 'undo-2'"),
-        ("icon: '⏱️'", "icon: 'timer'"),
-    ),
     "solstone/apps/settings/workspace.html": (
         ("icon: '❌'", "icon: 'circle-x'"),
         ("icon: '✅'", "icon: 'circle-check'"),

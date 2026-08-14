@@ -35,7 +35,6 @@ FRAGMENT_MODULES = [
     "solstone.apps.import.contract",
     "solstone.apps.settings.contract",
     "solstone.apps.thinking.contract",
-    "solstone.apps.transcripts.contract",
 ]
 
 CALLOSUM_REGISTRY: dict[str, list[str]] = {

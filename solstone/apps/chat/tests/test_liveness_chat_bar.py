@@ -3,14 +3,15 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from solstone.convey import create_app
-
 CHAT_CHROME = Path("solstone/convey/static/chat_chrome.js")
+SHELL = Path("solstone/convey/static/shell.html")
+CHAT_WORKSPACE = Path(
+    "core/crates/solstone-core-records-web/assets/chat/workspace.html"
+)
 
 
 def _read(path: Path) -> str:
@@ -33,33 +34,12 @@ def _js_function_block(source: str, name: str) -> str:
 
 
 @pytest.fixture
-def chat_client(tmp_path, monkeypatch):
-    journal = tmp_path / "journal"
-    config_dir = journal / "config"
-    config_dir.mkdir(parents=True)
-    (config_dir / "journal.json").write_text(
-        json.dumps(
-            {
-                "setup": {"completed_at": 1700000000000},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+def chat_html():
+    return (
+        SHELL.read_text(encoding="utf-8")
+        + CHAT_WORKSPACE.read_text(encoding="utf-8")
+        + CHAT_CHROME.read_text(encoding="utf-8")
     )
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    app = create_app(str(journal))
-    app.config["TESTING"] = True
-    client = app.test_client()
-    return client
-
-
-@pytest.fixture
-def chat_html(chat_client):
-    response = chat_client.get("/app/chat/20990109")
-    assert response.status_code == 200
-    return response.get_data(as_text=True) + Path(
-        "solstone/convey/static/chat_chrome.js"
-    ).read_text(encoding="utf-8")
 
 
 def test_chat_bar_sets_phase_one_from_owner_message(chat_html):

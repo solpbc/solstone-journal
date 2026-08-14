@@ -191,23 +191,6 @@ ENDPOINTS = [
         "params": {},
         "status": 401,
     },
-    # apps/search/routes.py
-    {
-        "app": "search",
-        "name": "search",
-        "path": "/app/search/api/search",
-        "params": {"q": "romeo", "limit": "5", "offset": "0"},
-        "status": 200,
-        "sandbox_only": True,
-    },
-    {
-        "app": "search",
-        "name": "day-results",
-        "path": "/app/search/api/day_results",
-        "params": {"q": "meeting", "day": "20260304", "offset": "0", "limit": "5"},
-        "status": 200,
-        "sandbox_only": True,
-    },
     # apps/settings/routes.py
     {
         "app": "settings",
@@ -336,35 +319,6 @@ ENDPOINTS = [
         "name": "daily",
         "path": "/app/tokens/api/daily",
         "params": {"days": "14"},
-        "status": 200,
-    },
-    # apps/transcripts/routes.py
-    {
-        "app": "transcripts",
-        "name": "ranges",
-        "path": "/app/transcripts/api/ranges/20260304",
-        "params": {},
-        "status": 200,
-    },
-    {
-        "app": "transcripts",
-        "name": "segments",
-        "path": "/app/transcripts/api/segments/20260304",
-        "params": {},
-        "status": 200,
-    },
-    {
-        "app": "transcripts",
-        "name": "segment-detail",
-        "path": "/app/transcripts/api/segment/20260304/default/090000_300",
-        "params": {},
-        "status": 200,
-    },
-    {
-        "app": "transcripts",
-        "name": "stats-month",
-        "path": "/app/transcripts/api/stats/202603",
-        "params": {},
         "status": 200,
     },
 ]

@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import parse_qs, urlsplit
@@ -91,18 +91,6 @@ def _clear_journal_cache() -> None:
     import solstone.think.utils as think_utils
 
     think_utils._journal_path_cache = None
-
-
-def _set_capture_day(day: str) -> None:
-    """Make chat's route-local ``date.today`` agree with the seeded today day."""
-    import solstone.apps.chat.routes as chat_routes
-
-    class CaptureDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return datetime.strptime(day, "%Y%m%d").date()
-
-    chat_routes.date = CaptureDate
 
 
 def _headers(response: Any) -> dict[str, str]:
@@ -589,7 +577,6 @@ def _capture_phase(
     os.environ["SOLSTONE_JOURNAL"] = str(root)
     os.environ["SOLSTONE_DISABLE_CONVEY_SIDE_RUNTIMES"] = "1"
     _clear_journal_cache()
-    _set_capture_day(today)
     app = create_app(str(root))
     client = app.test_client()
     paths = [str(probe["path"]) for probe in probes if probe["app"] == "search"]

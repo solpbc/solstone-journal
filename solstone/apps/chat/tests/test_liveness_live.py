@@ -3,40 +3,18 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from solstone.convey import create_app
+CHAT_WORKSPACE = Path(
+    "core/crates/solstone-core-records-web/assets/chat/workspace.html"
+)
 
 
 @pytest.fixture
-def chat_client(tmp_path, monkeypatch):
-    journal = tmp_path / "journal"
-    config_dir = journal / "config"
-    config_dir.mkdir(parents=True)
-    (config_dir / "journal.json").write_text(
-        json.dumps(
-            {
-                "setup": {"completed_at": 1700000000000},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    app = create_app(str(journal))
-    app.config["TESTING"] = True
-    client = app.test_client()
-    return client
-
-
-@pytest.fixture
-def chat_html(chat_client):
-    response = chat_client.get("/app/chat/workspace")
-    assert response.status_code == 200
-    return response.get_data(as_text=True)
+def chat_html():
+    return CHAT_WORKSPACE.read_text(encoding="utf-8")
 
 
 def test_live_script_creates_phase_one_placeholder(chat_html):

@@ -115,7 +115,6 @@ EXCLUDED_FILES: frozenset[str] = frozenset(
         "solstone/think/journal_export.py",
         # UI/pipeline runtime state and generated source artifacts, not owner journal content.
         "solstone/apps/home/routes.py",
-        "solstone/apps/transcripts/routes.py",
         "solstone/think/data_state.py",
     }
 )

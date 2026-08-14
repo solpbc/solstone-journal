@@ -3,12 +3,8 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
-
-from solstone.convey import create_app
 from solstone.convey.sol_initiated.copy import (
     KIND_OWNER_CHAT_DISMISSED,
     KIND_OWNER_CHAT_OPEN,
@@ -17,32 +13,13 @@ from solstone.convey.sol_initiated.copy import (
 )
 
 
-@pytest.fixture
-def chat_client(tmp_path, monkeypatch):
-    journal = tmp_path / "journal"
-    config_dir = journal / "config"
-    config_dir.mkdir(parents=True)
-    (config_dir / "journal.json").write_text(
-        json.dumps(
-            {
-                "setup": {"completed_at": 1700000000000},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
-    app = create_app(str(journal))
-    app.config["TESTING"] = True
-    client = app.test_client()
-    return client
+CHAT_WORKSPACE = Path(
+    "core/crates/solstone-core-records-web/assets/chat/workspace.html"
+)
 
 
-def test_live_append_origin_tag_script_handles_sol_initiated_events(chat_client):
-    response = chat_client.get("/app/chat/workspace")
-
-    assert response.status_code == 200
-    fragment = response.get_data(as_text=True)
+def test_live_append_origin_tag_script_handles_sol_initiated_events():
+    fragment = CHAT_WORKSPACE.read_text(encoding="utf-8")
     renderer = Path("solstone/convey/static/chat_render.js").read_text(encoding="utf-8")
 
     assert "let pendingSolChatRequest = null;" in fragment
@@ -57,11 +34,8 @@ def test_live_append_origin_tag_script_handles_sol_initiated_events(chat_client)
     assert "item.dataset.requestId = event.origin.request_id;" in renderer
 
 
-def test_workspace_scopes_talent_events_column_rule(chat_client):
-    response = chat_client.get("/app/chat/workspace")
-
-    assert response.status_code == 200
-    fragment = response.get_data(as_text=True)
+def test_workspace_scopes_talent_events_column_rule():
+    fragment = CHAT_WORKSPACE.read_text(encoding="utf-8")
     css = Path("solstone/convey/static/app.css").read_text(encoding="utf-8")
     rule = """  .chat-transcript .chat-event--talent {
     align-items: center;
@@ -72,11 +46,8 @@ def test_workspace_scopes_talent_events_column_rule(chat_client):
     assert ".chat-transcript .chat-event--talent" not in css
 
 
-def test_workspace_scopes_hidden_origin_provenance_rule(chat_client):
-    response = chat_client.get("/app/chat/workspace")
-
-    assert response.status_code == 200
-    fragment = response.get_data(as_text=True)
+def test_workspace_scopes_hidden_origin_provenance_rule():
+    fragment = CHAT_WORKSPACE.read_text(encoding="utf-8")
     css = Path("solstone/convey/static/app.css").read_text(encoding="utf-8")
     rule = """  .chat-transcript .chat-origin-provenance[hidden] {
     display: none;
