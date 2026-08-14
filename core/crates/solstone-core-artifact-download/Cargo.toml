@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-artifact-download"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+sha2.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
+solstone-core-assets.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"

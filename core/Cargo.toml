@@ -25,6 +25,8 @@ members = [
     "crates/solstone-core-operational-logs",
     "crates/solstone-core-brain",
     "crates/solstone-core-backup",
+    "crates/solstone-core-artifact-download",
+    "crates/solstone-core-backup-runtime",
     "crates/solstone-core-doctor",
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-identity",
@@ -141,6 +143,8 @@ solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
 solstone-core-records-web = { path = "crates/solstone-core-records-web" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-backup = { path = "crates/solstone-core-backup" }
+solstone-core-artifact-download = { path = "crates/solstone-core-artifact-download" }
+solstone-core-backup-runtime = { path = "crates/solstone-core-backup-runtime" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }
 solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
@@ -263,6 +267,7 @@ unidecode = "0.3.0"
 ureq = { version = "3.3.0", default-features = false }
 tar = "0.4"
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+bzip2-rs = "0.1.2"
 
 # Dev-profile debug info. The cargo default (`debug = 2` for the workspace and
 # all 410 dependencies) put ~59G in target/debug against ~2.5G in
