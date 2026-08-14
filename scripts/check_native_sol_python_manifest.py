@@ -20,6 +20,12 @@ COMPAT_BRIDGE_DELETED_PATHS = (
     "solstone/think/call.py",
     "scripts/check_native_sol_compat.py",
     "tests/test_sol_compat_cli.py",
+    "solstone/apps/body/routes.py",
+    "solstone/apps/body/contract.py",
+    "solstone/apps/body/events.py",
+    "solstone/apps/body/workspace.html",
+    "solstone/apps/body/tests/test_body_app.py",
+    "solstone/apps/body/tests/conftest.py",
 )
 
 RUST_COMPAT_FORBIDDEN_SYMBOLS = (

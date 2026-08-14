@@ -382,3 +382,17 @@ pub fn shell_payload() -> ShellPayload {
         version: env!("CARGO_PKG_VERSION"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::APP_REGISTRY;
+
+    #[test]
+    fn body_remains_a_converted_native_registry_entry() {
+        assert!(
+            APP_REGISTRY
+                .iter()
+                .any(|app| app.name == "body" && app.converted)
+        );
+    }
+}

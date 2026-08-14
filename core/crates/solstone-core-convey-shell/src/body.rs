@@ -133,9 +133,6 @@ mod tests {
         assert_eq!(trends.2, root.2);
         let workspace = get(app.clone(), "/app/body/workspace").await;
         assert_eq!(workspace.0, StatusCode::OK);
-        // This byte oracle remains while the embedded asset and Python source coexist;
-        // the cut wave must delete it with the Python source.
-        assert_eq!(workspace.2, reference("solstone/apps/body/workspace.html"));
         let generated = include_str!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
         let entry = generated
             .lines()

@@ -22,7 +22,6 @@ from flask import Flask
 import solstone.convey.reasons as reasons
 from solstone.apps.activities.routes import activities_bp
 from solstone.apps.awareness.routes import awareness_bp
-from solstone.apps.body.routes import body_bp
 from solstone.apps.curation.routes import curation_bp
 from solstone.apps.entities.routes import entities_bp
 from solstone.apps.network.routes import network_bp
@@ -57,7 +56,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 import_bp = importlib.import_module("solstone.apps.import.routes").import_bp
-RUST_CONVEY_OPERATION_PREFIXES = ("speakers.",)
+RUST_CONVEY_OPERATION_PREFIXES = ("body.", "speakers.")
 REASON_CODES_BY_NAME = {
     name: value.code
     for name, value in vars(reasons).items()
@@ -299,7 +298,6 @@ def register_native_blueprints(app: Flask) -> None:
         health_bp,
         chat_bp,
         root_bp,
-        body_bp,
         curation_bp,
         entities_bp,
         sol_bp,

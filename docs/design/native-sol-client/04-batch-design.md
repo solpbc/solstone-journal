@@ -261,7 +261,7 @@ Add new fragment modules to `FRAGMENT_MODULES` for:
 | Area | Fragment module |
 |---|---|
 | awareness | `solstone.apps.awareness.contract` |
-| body | `solstone.apps.body.contract` |
+| body | retired Python contract fragment; native authority remains the command contract source |
 | entities | `solstone.apps.entities.contract` |
 | facets/curation | `solstone.apps.curation.contract` |
 | ledger | `solstone.convey.ledger_contract` |
@@ -298,7 +298,7 @@ sol-call HTTP leaves plus the existing top-level chat HTTP surface.
 | chat start/top-level chat | `solstone.convey.chat` | `chat_bp` |
 | root/top-level chat backing | `solstone.convey.root` | `bp as root_bp` |
 | awareness | `solstone.apps.awareness.routes` | `awareness_bp` |
-| body | `solstone.apps.body.routes` | `body_bp` |
+| body | retired Python blueprint | retired Python blueprint |
 | facets | `solstone.apps.curation.routes` | `curation_bp` |
 | entities | `solstone.apps.entities.routes` | `entities_bp` |
 | import | `solstone.apps.import.routes` | `import_bp` |

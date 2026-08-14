@@ -219,6 +219,19 @@ def test_discover_registers_every_workspace_app():
     assert set(registry.apps) == expected
 
 
+def test_body_native_surface_is_absent_from_python_discovery(caplog):
+    registry = AppRegistry()
+
+    with caplog.at_level("DEBUG", logger="solstone.apps"):
+        registry.discover()
+
+    assert "body" not in registry.apps
+    assert [blueprint.name for blueprint in registry.api_blueprints] == [
+        "app:awareness"
+    ]
+    assert "Skipping body/ - no workspace.html found" in caplog.text
+
+
 def test_shell_payload_emits_normalized_date_nav(monkeypatch):
     from solstone.convey.shell_data import build_shell_data
 
@@ -235,12 +248,10 @@ def test_shell_payload_emits_normalized_date_nav(monkeypatch):
 
     assert sorted(date_nav_apps) == [
         "activities",
-        "body",
         "chat",
         "news",
         "reflections",
         "sol",
-        "speakers",
         "timeline",
         "tokens",
         "transcripts",
