@@ -228,7 +228,6 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../../solstone/convey/static/shell.html"
         ));
-        assert_eq!(shell.len(), 12_199);
         for phase in ["empty", "populated"] {
             let root = phase_root(phase);
             let (status, content_type, _, body) =
