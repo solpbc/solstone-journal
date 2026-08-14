@@ -1,0 +1,16 @@
+{
+  "labels": [
+    {
+      "confidence": "high",
+      "method": "seed",
+      "sentence_id": 1,
+      "speaker": "owner"
+    },
+    {
+      "confidence": "medium",
+      "method": "seed",
+      "sentence_id": 2,
+      "speaker": "other"
+    }
+  ]
+}

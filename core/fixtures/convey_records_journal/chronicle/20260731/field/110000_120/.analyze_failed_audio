@@ -1,0 +1,8 @@
+{
+  "detail": "Seeded failed analysis.",
+  "failed_at": "2026-07-31T11:00:01Z",
+  "modality": "audio",
+  "reason": "analysis_failed",
+  "reason_code": "analysis_failed",
+  "started_at": "2026-07-31T11:00:00Z"
+}

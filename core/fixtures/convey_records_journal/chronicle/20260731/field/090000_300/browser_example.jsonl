@@ -1,0 +1,2 @@
+{"adapter": "browser", "site": "example.test", "t": "segment_start", "title": "Seeded browser page", "ts": 1785496400000, "url": "https://example.test/seeded"}
+{"op": "text", "t": "delta", "text": "Seeded browser percept.", "ts": 1785496401000}

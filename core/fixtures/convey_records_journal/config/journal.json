@@ -1,0 +1,12 @@
+{
+  "agent": {
+    "name": "Corpus Assistant"
+  },
+  "identity": {
+    "name": "Corpus Owner",
+    "preferred": "Corpus Owner"
+  },
+  "setup": {
+    "completed_at": 1700000000000
+  }
+}

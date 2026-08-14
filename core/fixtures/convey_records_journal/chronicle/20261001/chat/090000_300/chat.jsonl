@@ -1,0 +1,9 @@
+{"app": "chat", "facet": "work", "kind": "owner_message", "path": "/app/chat/20261001", "text": "Please summarize the seeded record.", "ts": 1790845200000}
+{"category": "follow_up", "dedupe": "seeded-threaded", "dedupe_window": "24h", "kind": "sol_chat_request", "message": "A seeded request is ready.", "request_id": "seeded-threaded-request", "since_ts": 1790845200000, "summary": "Offer a seeded follow-up.", "trigger_talent": "flow", "ts": 1790845201000}
+{"kind": "sol_message", "notes": "Seeded notes.", "requested_target": null, "requested_task": null, "text": "Here is the seeded response.", "ts": 1790845202000, "use_id": "seeded-sol-use"}
+{"kind": "sol_chat_request_superseded", "replaced_by": "seeded-unresolved-request", "request_id": "seeded-threaded-request", "ts": 1790845203000}
+{"kind": "owner_chat_open", "request_id": "seeded-unresolved-request", "surface": "chat", "ts": 1790845204000}
+{"ask": "Inspect seeded records", "chat_use_id": "seeded-sol-use", "context": "seed corpus", "kind": "talent_queued", "location": "chat", "name": "flow", "queued_at": 1790845205000, "task": "Inspect seeded records", "ts": 1790845205000, "use_id": "seeded-talent-use"}
+{"kind": "talent_spawned", "name": "flow", "started_at": 1790845206000, "task": "Inspect seeded records", "ts": 1790845206000, "use_id": "seeded-talent-use"}
+{"kind": "talent_finished", "name": "flow", "summary": "Seeded inspection completed.", "ts": 1790845207000, "use_id": "seeded-talent-use"}
+{"category": "follow_up", "dedupe": "seeded-unresolved", "dedupe_window": "24h", "kind": "sol_chat_request", "message": "Please open this unresolved request.", "request_id": "seeded-unresolved-request", "since_ts": 1790845207000, "summary": "An unresolved seeded request.", "trigger_talent": "flow", "ts": 1790845208000}

@@ -1,0 +1,25 @@
+{
+  "agent_data": {},
+  "facet_data": {},
+  "heatmap_data": {
+    "hours": {},
+    "weekday": 0
+  },
+  "schema_version": 8,
+  "stats": {
+    "browser_segments": 0,
+    "day_bytes": 0,
+    "outputs_pending": 0,
+    "outputs_processed": 0,
+    "pending_segments": 0,
+    "percept_duration": 0,
+    "percept_frames": 0,
+    "percept_ranges": 0,
+    "percept_sessions": 0,
+    "segments_pending_think": 0,
+    "transcript_duration": 0,
+    "transcript_ranges": 0,
+    "transcript_segments": 0,
+    "transcript_sessions": 0
+  }
+}

@@ -1,0 +1,1 @@
+{"context": "seed.records", "model": "local/test-model", "segment": "090000_300", "timestamp": 1785498000.0, "usage": {"input_tokens": 1000, "output_tokens": 250, "total_tokens": 1250}}

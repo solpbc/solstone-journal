@@ -1,0 +1,1 @@
+{"_solstone_processing": {"attempted_at": "2026-07-01T00:00:00Z", "handler": "transcribe", "input_size": 1, "reason_code": "ok", "schema": "solstone.processing.v1", "state": "analyzed"}, "raw": "mic_audio.flac"}

@@ -1,0 +1,4 @@
+core/fixtures/convey_records_journal/**/*.flac binary
+core/fixtures/convey_records_journal/**/*.m4a binary
+core/fixtures/convey_records_journal/**/*.npz binary
+core/fixtures/convey_records_journal/**/*.png binary

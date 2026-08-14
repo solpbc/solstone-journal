@@ -1,0 +1,2 @@
+{"_solstone_processing": {"attempted_at": "2026-07-01T00:00:00Z", "handler": "describe", "input_size": 1, "reason_code": "ok", "schema": "solstone.processing.v1", "state": "analyzed"}, "raw": "screen.png"}
+{"analysis": {"primary": "work", "visual_description": "A deterministic screen percept."}, "frame_id": "frame-1", "timestamp": 1}

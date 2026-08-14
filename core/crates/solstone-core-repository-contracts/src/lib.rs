@@ -5,6 +5,9 @@
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]
+#[path = "contracts/journal_io_deny_policy.rs"]
+mod journal_io_deny_policy;
+#[cfg(test)]
 #[path = "contracts/schedule_read_only_architecture.rs"]
 mod schedule_read_only_architecture;
 #[cfg(test)]

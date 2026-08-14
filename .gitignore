@@ -8,6 +8,7 @@ logs/
 *.ogg
 *.mp3
 *.flac
+!core/fixtures/convey_records_journal/**/*.flac
 .coverage*
 tests/fixtures/journal/agents/*/*.jsonl
 tests/fixtures/journal/tokens/*.json

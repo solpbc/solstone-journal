@@ -5,8 +5,9 @@
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
+    use std::panic;
     use std::path::{Path, PathBuf};
-    use std::time::{Duration, SystemTime};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode, header};
@@ -167,21 +168,204 @@ mod tests {
         (status, headers, body)
     }
 
-    fn seeded_root() -> PathBuf {
-        let output = std::process::Command::new("python")
-            .args([
-                "-c",
-                "from scripts.records_corpus_seed import build_populated_journal; print(build_populated_journal('20261001')[0])",
-            ])
-            .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."))
-            .output()
-            .expect("corpus seeder starts");
+    fn captured_fixture_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_records_journal")
+    }
+
+    fn captured_fixture_manifest() -> &'static str {
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/convey_records_journal.manifest"
+        ))
+    }
+
+    fn fixture_inventory() -> (BTreeMap<PathBuf, String>, BTreeSet<PathBuf>) {
+        let mut files = BTreeMap::new();
+        let mut empty_directories = BTreeSet::new();
+        for (line_number, line) in captured_fixture_manifest().lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut fields = line.splitn(3, ' ');
+            let kind = fields.next().expect("manifest entry kind");
+            let first = fields.next().expect("manifest entry value");
+            let (digest, relative) = match kind {
+                "file" => (
+                    Some(first),
+                    fields.next().expect("file manifest entry path"),
+                ),
+                "empty" => (None, first),
+                other => panic!("unsupported fixture manifest entry {other} on line {line_number}"),
+            };
+            let relative = PathBuf::from(relative);
+            assert!(
+                !relative.is_absolute()
+                    && relative
+                        .components()
+                        .all(|component| matches!(component, std::path::Component::Normal(_))),
+                "fixture manifest path must stay relative: {}",
+                relative.display()
+            );
+            if let Some(digest) = digest {
+                assert!(
+                    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                    "fixture digest must be lowercase SHA-256: {digest}"
+                );
+                assert_eq!(digest, digest.to_ascii_lowercase());
+                assert!(
+                    files.insert(relative.clone(), digest.to_owned()).is_none(),
+                    "duplicate fixture file: {}",
+                    relative.display()
+                );
+            } else {
+                assert!(
+                    empty_directories.insert(relative.clone()),
+                    "duplicate empty fixture directory: {}",
+                    relative.display()
+                );
+            }
+        }
+        assert!(!files.is_empty(), "fixture manifest must name files");
         assert!(
-            output.status.success(),
-            "corpus seeder: {}",
-            String::from_utf8_lossy(&output.stderr)
+            files.keys().all(|path| !empty_directories
+                .iter()
+                .any(|directory| path.starts_with(directory))),
+            "empty fixture directories must contain no files"
         );
-        PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+        (files, empty_directories)
+    }
+
+    fn collect_fixture_files(root: &Path, current: &Path, files: &mut BTreeSet<PathBuf>) {
+        let mut entries = fs::read_dir(current)
+            .unwrap_or_else(|error| panic!("fixture directory {}: {error}", current.display()))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("fixture entries read");
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let file_type = entry.file_type().expect("fixture entry type");
+            assert!(
+                !file_type.is_symlink(),
+                "captured fixture must not contain a symlink: {}",
+                path.display()
+            );
+            if file_type.is_dir() {
+                collect_fixture_files(root, &path, files);
+            } else {
+                assert!(
+                    file_type.is_file(),
+                    "captured fixture contains an unsupported entry: {}",
+                    path.display()
+                );
+                files.insert(
+                    path.strip_prefix(root)
+                        .expect("fixture-relative path")
+                        .into(),
+                );
+            }
+        }
+    }
+
+    fn materialize_captured_fixture(source: &Path) -> PathBuf {
+        let (expected_files, empty_directories) = fixture_inventory();
+        let mut actual_files = BTreeSet::new();
+        collect_fixture_files(source, source, &mut actual_files);
+        let expected_paths = expected_files.keys().cloned().collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual_files, expected_paths,
+            "captured fixture file inventory drifted"
+        );
+
+        for (relative, expected_digest) in &expected_files {
+            let bytes = fs::read(source.join(relative)).unwrap_or_else(|error| {
+                panic!("captured fixture file {}: {error}", relative.display())
+            });
+            assert_eq!(
+                format!("{:x}", Sha256::digest(&bytes)),
+                *expected_digest,
+                "captured fixture digest drifted: {}",
+                relative.display()
+            );
+        }
+
+        let root = TempDir::new().expect("captured journal root");
+        for relative in &empty_directories {
+            fs::create_dir_all(root.path().join(relative)).expect("empty fixture directory");
+        }
+        for relative in expected_files.keys() {
+            let target = root.path().join(relative);
+            fs::create_dir_all(target.parent().expect("fixture file parent"))
+                .expect("fixture file parent directory");
+            fs::copy(source.join(relative), &target).expect("captured fixture copy");
+        }
+        fs::File::open(root.path().join("chronicle/20260715/stats.json"))
+            .expect("fresh stats cache")
+            .set_modified(UNIX_EPOCH + Duration::from_secs(4_102_444_800))
+            .expect("fresh stats-cache mtime");
+        root.keep()
+    }
+
+    fn seeded_root() -> PathBuf {
+        materialize_captured_fixture(&captured_fixture_root())
+    }
+
+    fn assert_malformed_fixture_rejected(root: &Path, label: &str) {
+        let result = panic::catch_unwind(|| materialize_captured_fixture(root));
+        assert!(result.is_err(), "{label} must fail closed");
+    }
+
+    #[test]
+    fn captured_fixture_inventory_rejects_missing_extra_and_changed_files_before_replay() {
+        let missing = seeded_root();
+        fs::remove_file(missing.join("chronicle/20260731/notes/130000_60/note.md"))
+            .expect("remove required captured file");
+        assert_malformed_fixture_rejected(&missing, "missing captured file");
+        fs::remove_dir_all(missing).expect("missing fixture cleanup");
+
+        let extra = seeded_root();
+        fs::write(extra.join("ambient-extra"), b"not captured").expect("write extra fixture file");
+        assert_malformed_fixture_rejected(&extra, "extra captured file");
+        fs::remove_dir_all(extra).expect("extra fixture cleanup");
+
+        let changed = seeded_root();
+        fs::write(
+            changed.join("chronicle/20260731/notes/130000_60/note.md"),
+            b"changed bytes",
+        )
+        .expect("change captured file");
+        assert_malformed_fixture_rejected(&changed, "changed captured file");
+        fs::remove_dir_all(changed).expect("changed fixture cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn captured_fixture_inventory_rejects_symlinks_before_replay() {
+        use std::os::unix::fs::symlink;
+
+        let linked = seeded_root();
+        symlink("config/journal.json", linked.join("ambient-link")).expect("create fixture link");
+        assert_malformed_fixture_rejected(&linked, "captured fixture symlink");
+        fs::remove_dir_all(linked).expect("linked fixture cleanup");
+    }
+
+    #[test]
+    fn captured_fixture_materialization_restores_non_content_state() {
+        let root = seeded_root();
+        let empty = root.join("chronicle/20260915");
+        assert!(empty.is_dir(), "intentional empty day must exist");
+        assert_eq!(fs::read_dir(&empty).expect("empty day reads").count(), 0);
+        assert_eq!(
+            fs::metadata(root.join("chronicle/20260715/stats.json"))
+                .expect("fresh stats cache metadata")
+                .modified()
+                .expect("fresh stats cache mtime"),
+            UNIX_EPOCH + Duration::from_secs(4_102_444_800)
+        );
+        assert!(
+            !root.join("convey_records_journal.manifest").exists(),
+            "source manifest must stay outside the materialized journal"
+        );
+        fs::remove_dir_all(root).expect("materialized fixture cleanup");
     }
 
     fn native_read_route_case(case: &Value) -> bool {
@@ -713,20 +897,7 @@ mod tests {
 
     #[tokio::test]
     async fn corpus_replay_matches_recorded_json_for_each_migrated_api_case() {
-        let output = std::process::Command::new("python")
-            .args([
-                "-c",
-                "from scripts.records_corpus_seed import build_populated_journal; print(build_populated_journal('20261001')[0])",
-            ])
-            .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."))
-            .output()
-            .expect("corpus seeder starts");
-        assert!(
-            output.status.success(),
-            "corpus seeder: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let root = PathBuf::from(String::from_utf8(output.stdout).unwrap().trim());
+        let root = seeded_root();
         let corpus: Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../fixtures/convey_records_corpus.json"
@@ -859,9 +1030,7 @@ mod tests {
 
     #[tokio::test]
     async fn corpus_replay_matches_headers_and_bodies_for_shell_and_refusals() {
-        let output = std::process::Command::new("python").args(["-c", "from scripts.records_corpus_seed import build_populated_journal; print(build_populated_journal('20261001')[0])"]).current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../..")).output().unwrap();
-        assert!(output.status.success());
-        let root = PathBuf::from(String::from_utf8(output.stdout).unwrap().trim());
+        let root = seeded_root();
         let corpus: Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../fixtures/convey_records_corpus.json"

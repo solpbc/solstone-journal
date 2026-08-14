@@ -1,0 +1,2 @@
+{"app": "chat", "facet": "work", "kind": "owner_message", "path": "/app/chat/20260731", "text": "Historical seeded chat.", "ts": 1785476400000}
+{"kind": "sol_message", "notes": "", "requested_target": null, "requested_task": null, "text": "Historical seeded response.", "ts": 1785476401000, "use_id": "seeded-historical-use"}
