@@ -3258,6 +3258,7 @@ dependencies = [
  "solstone-core-entity-matching",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+ "tempfile",
 ]
 
 [[package]]
@@ -3276,7 +3277,10 @@ dependencies = [
  "solstone-core-convey-shell",
  "solstone-core-entity",
  "solstone-core-facets",
+ "solstone-core-format",
+ "solstone-core-journal-io",
  "solstone-core-speaker-resolve",
+ "solstone-core-system",
  "tempfile",
  "tokio",
  "tower",

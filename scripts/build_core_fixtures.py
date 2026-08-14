@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import copy
 import importlib.metadata
@@ -134,6 +135,30 @@ import install_status_corpus  # noqa: E402  — sibling module, not a package
 import talent_projection_corpus  # noqa: E402  — sibling module, not a package
 
 FIXTURE_DIR = ROOT / "core" / "fixtures"
+ACTIVITY_DEFAULTS_ARTIFACT_PATH = FIXTURE_DIR / "activity_defaults.json"
+
+
+def build_activity_defaults() -> dict[str, Any]:
+    """Extract the activity catalogue without importing application code."""
+    source = ROOT / "solstone" / "think" / "activities.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+    value = next(
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "DEFAULT_ACTIVITIES"
+    )
+    defaults = ast.literal_eval(value)
+    activities = [
+        {"id": str(item["id"]), "always_on": bool(item.get("always_on", False))}
+        for item in defaults
+    ]
+    if len(activities) != 25 or len({item["id"] for item in activities}) != 25:
+        raise ValueError("DEFAULT_ACTIVITIES must contain 25 unique ids")
+    return {"activities": activities}
+
+
 CONTENT_FAMILIES_ARTIFACT_PATH = FIXTURE_DIR / "content_families.json"
 TALENT_PROJECTIONS_ARTIFACT_PATH = FIXTURE_DIR / "talent_projections.json"
 CALLOSUM_ARTIFACT_PATH = FIXTURE_DIR / "callosum_registry.json"
@@ -1567,6 +1592,7 @@ def compare_artifact(
 
 def expected_outputs() -> dict[Path, ArtifactDescriptor]:
     return {
+        ACTIVITY_DEFAULTS_ARTIFACT_PATH: ArtifactDescriptor(build_activity_defaults),
         CALLOSUM_ARTIFACT_PATH: ArtifactDescriptor(
             build_callosum_registry_fixture,
         ),

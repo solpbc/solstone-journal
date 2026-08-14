@@ -46,6 +46,7 @@ pub fn phase_root(phase: &str) -> TempDir {
             news(root.path());
             curation(root.path());
             awareness(root.path());
+            activities(root.path());
         }
         _ => panic!("known phase: {phase}"),
     }
@@ -87,6 +88,17 @@ fn awareness(root: &Path) {
     write(
         &root.join("awareness/20260510.jsonl"),
         "{\"ts\":1778846400000,\"kind\":\"state\",\"key\":\"capture.first_segment\",\"message\":\"first segment seen\"}\n{\"ts\":1778846400000,\"kind\":\"observation\",\"message\":\"the owner works mornings\"}\n{\"ts\":1778846400000,\"kind\":\"nudge\",\"key\":\"imports.nudge_sent\"}\n",
+    );
+}
+
+fn activities(root: &Path) {
+    write(
+        &root.join("facets/work/activities/activities.jsonl"),
+        "{\"id\": \"meeting\", \"instructions\": \"Record meetings held during this span.\"}\n{\"id\": \"focus\", \"custom\": true, \"name\": \"Focus\", \"instructions\": \"Record focused work during this span.\", \"emoji\": \"🧠\"}\n",
+    );
+    write(
+        &root.join("facets/work/activities/20260510.jsonl"),
+        "{\"id\": \"meeting_100000_300\", \"activity\": \"meeting\", \"title\": \"Seeded meeting\", \"description\": \"A meeting the corpus seeded.\", \"details\": \"\", \"segments\": [\"100000_300\"], \"active_entities\": [], \"created_at\": 1770000400000, \"source\": \"user\", \"hidden\": false, \"edits\": [{\"timestamp\": \"2026-05-15T12:00:00Z\", \"actor\": \"corpus:seed\", \"fields\": [\"activity\", \"title\"], \"note\": \"created\"}]}\n{\"id\": \"focus_103000_300\", \"activity\": \"focus\", \"title\": \"Seeded muted focus block\", \"description\": \"A muted record, so include_hidden has something to reveal.\", \"details\": \"\", \"segments\": [\"103000_300\"], \"active_entities\": [], \"created_at\": 1770000500000, \"source\": \"user\", \"hidden\": true, \"edits\": [{\"timestamp\": \"2026-05-15T12:00:00Z\", \"actor\": \"corpus:seed\", \"fields\": [\"activity\", \"title\"], \"note\": \"created\"}]}\n",
     );
 }
 

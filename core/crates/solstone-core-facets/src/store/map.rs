@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use solstone_core_journal_io::{DirEntryKind, list_dir_entries, path_lexists};
+use solstone_core_journal_io::{DirEntryKind, list_dir_entries, path_lexists, read_text};
 
 use super::error::FacetStoreError;
 use super::paths::{facet_entities_dir, facet_entity_link_path, facets_dir};
@@ -17,6 +17,26 @@ pub fn list_facet_directories(journal_root: &Path) -> Result<Vec<String>, FacetS
         }
     }
     Ok(directories)
+}
+
+pub fn list_declared_facet_names(journal_root: &Path) -> Result<Vec<String>, FacetStoreError> {
+    let mut names = Vec::new();
+    for entry in list_dir_entries(&facets_dir(journal_root)?)? {
+        if entry.kind != DirEntryKind::Directory {
+            continue;
+        }
+        let name = entry.name.to_string_lossy().into_owned();
+        let declaration = entry.path.join("facet.json");
+        let Ok(contents) = read_text(&declaration, String::new()) else {
+            continue;
+        };
+        if serde_json::from_str::<serde_json::Value>(&contents).is_ok_and(|value| value.is_object())
+        {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// List immediate facet entity directories that contain an `entity.json` relationship.

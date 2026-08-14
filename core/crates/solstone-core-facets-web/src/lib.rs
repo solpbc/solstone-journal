@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use axum::Router;
 
+mod activities;
 mod assets;
 mod awareness;
 pub mod clock;
@@ -22,6 +23,7 @@ pub use clock::Clock;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
     timeline::routes(journal_root.clone(), clock.clone())
+        .merge(activities::routes(journal_root.clone(), clock.clone()))
         .merge(news::routes(journal_root.clone(), clock.clone()))
         .merge(curation::routes(journal_root.clone()))
         .merge(awareness::routes(journal_root, clock))

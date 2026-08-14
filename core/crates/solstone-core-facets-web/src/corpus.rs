@@ -252,6 +252,76 @@ async fn ac1_replay_all_10_in_scope_mutation_records() {
 }
 
 #[tokio::test]
+async fn ac1_replay_all_20_activities_phase_records_and_14_mutations() {
+    let fixture = corpus();
+    let mut phase_records = 0;
+    for (phase, records) in fixture["phases"].as_object().expect("phases") {
+        let root = phase_root(phase);
+        let router = gated(root.path());
+        for expected in records
+            .as_array()
+            .expect("records")
+            .iter()
+            .filter(|record| {
+                record["path"]
+                    .as_str()
+                    .is_some_and(|path| path.starts_with("/app/activities/api/"))
+            })
+        {
+            replay_record(router.clone(), root.path(), expected).await;
+            phase_records += 1;
+        }
+    }
+    assert_eq!(phase_records, 20);
+
+    let root = phase_root("populated");
+    let router = gated(root.path());
+    let created = fixture["mutations"]
+        .as_array()
+        .expect("mutations")
+        .iter()
+        .find_map(|record| {
+            record["path"]
+                .as_str()
+                .filter(|path| path.ends_with("/records?facet=work"))
+                .and_then(|_| record["json"]["record"]["id"].as_str())
+        })
+        .expect("created activity id");
+    let mut mutations = fixture["mutations"]
+        .as_array()
+        .expect("mutations")
+        .iter()
+        .filter(|record| {
+            record["path"]
+                .as_str()
+                .is_some_and(|path| path.starts_with("/app/activities/api/"))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    mutations.sort_by_key(|record| record["sequence"].as_u64().expect("sequence"));
+    for mut expected in mutations {
+        let path = expected["path"]
+            .as_str()
+            .expect("path")
+            .replace("{created}", created);
+        expected["path"] = Value::String(path);
+        replay_record(router.clone(), root.path(), &expected).await;
+    }
+    // The implementation dispatch adds three repeat probes to the prior eleven rows.
+    assert_eq!(
+        fixture["mutations"]
+            .as_array()
+            .expect("mutations")
+            .iter()
+            .filter(|record| record["path"]
+                .as_str()
+                .is_some_and(|path| path.starts_with("/app/activities/api/")))
+            .count(),
+        14
+    );
+}
+
+#[tokio::test]
 async fn ac2_ac3_replay_all_108_timeline_records() {
     let fixture = corpus();
     let mut executed = 0;

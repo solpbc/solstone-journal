@@ -23,6 +23,30 @@ pub fn append_action_log(
     params: Value,
 ) -> Result<(), AppendError> {
     let day = Local::now().format("%Y%m%d").to_string();
+    append_action_log_at_day(journal_root, facet, source, actor, action, params, &day)
+}
+
+pub fn append_action_log_for_day(
+    journal_root: &Path,
+    facet: Option<&str>,
+    source: &str,
+    actor: &str,
+    action: &str,
+    params: Value,
+    day: &str,
+) -> Result<(), AppendError> {
+    append_action_log_at_day(journal_root, facet, source, actor, action, params, day)
+}
+
+fn append_action_log_at_day(
+    journal_root: &Path,
+    facet: Option<&str>,
+    source: &str,
+    actor: &str,
+    action: &str,
+    params: Value,
+    day: &str,
+) -> Result<(), AppendError> {
     let destination = match facet {
         Some(facet) => journal_root
             .join("facets")
