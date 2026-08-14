@@ -143,6 +143,41 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
             }
         }
         let outcome = run_clean_uninstall(&mut clean);
+        // This is the one irreversible path in the verb: it removes the
+        // service unit, both managed wrappers, the owner's user config and the
+        // manifest inside their journal. A bare count tells an owner that
+        // something was skipped or failed without telling them WHICH artifact
+        // or WHERE -- and the skip is the case that matters most, because it
+        // is how an owner-authored alias survives. Narrate each step.
+        let total = outcome.results.len();
+        for (index, result) in outcome.results.iter().enumerate() {
+            let step = index + 1;
+            let _ = writeln!(
+                stdout,
+                "[step {step}/{total}] running {} uninstall...",
+                result.name
+            );
+            let detail = match (&result.path, &result.reason) {
+                (_, Some(reason)) => reason.clone(),
+                (Some(path), None) => path.display().to_string(),
+                (None, None) => String::new(),
+            };
+            if detail.is_empty() {
+                let _ = writeln!(
+                    stdout,
+                    "[step {step}/{total}] {} {}",
+                    result.state.as_str(),
+                    result.name
+                );
+            } else {
+                let _ = writeln!(
+                    stdout,
+                    "[step {step}/{total}] {} {}: {detail}",
+                    result.state.as_str(),
+                    result.name
+                );
+            }
+        }
         let _ = writeln!(stdout, "{}", outcome.message);
         return ExitCode::from(outcome.exit_code as u8);
     }
@@ -525,5 +560,61 @@ mod tests {
         assert_eq!(exit, ExitCode::SUCCESS);
         assert!(!home.join(".local/bin/sol").exists());
         assert!(!home.join(".local/bin/journal").exists());
+    }
+
+    /// Clean-uninstall is the one irreversible path in the verb, and a bare
+    /// count cannot tell an owner WHICH artifact was skipped or failed. The
+    /// skip line in particular is how an owner-authored alias announces that
+    /// it survived, so it is the one that must reach them.
+    #[test]
+    fn clean_uninstall_narrates_every_step_not_only_the_count() {
+        let root = root("clean-narration");
+        let executable_dir = root.join(".venv/bin");
+        let home = root.join("home");
+        fs::create_dir_all(&executable_dir).unwrap();
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::write(home.join(".local/bin/sol"), "#!/bin/sh\necho owner\n").unwrap();
+        let args = parsed(&["--clean-uninstall".into(), "--yes".into()], &root);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        // The journal resolves from the sandboxed HOME rather than from an
+        // environment variable: `set_var` is process-global and racy under the
+        // default test runner, and this assertion is about narration, not
+        // about which journal was chosen.
+        let _ = run_owner_setup_with_io(
+            args,
+            home.clone(),
+            executable_dir,
+            root.clone(),
+            false,
+            false,
+            seams(vec![CommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            }]),
+            &mut stdout,
+            &mut stderr,
+        );
+        let text = String::from_utf8(stdout).unwrap();
+        for step in 1..=4 {
+            assert!(
+                text.contains(&format!("[step {step}/4] running ")),
+                "step {step} header missing from:\n{text}"
+            );
+        }
+        assert!(
+            text.contains("skipped wrapper: alias is not a managed symlink, not removing"),
+            "the owner-authored alias must announce that it survived:\n{text}"
+        );
+        assert!(
+            text.contains("clean uninstall complete:"),
+            "summary missing:\n{text}"
+        );
+        assert!(
+            home.join(".local/bin/sol").exists(),
+            "an owner-authored alias must never be removed"
+        );
     }
 }
