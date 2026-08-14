@@ -8,6 +8,27 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
+
+[[test]]
+name = "import_audio"
+path = "tests/import_audio.rs"
+
+[[test]]
+name = "import_cli"
+path = "tests/import_cli.rs"
+
+[[test]]
+name = "import_foundation"
+path = "tests/import_foundation.rs"
+
+[[test]]
+name = "import_sync"
+path = "tests/import_sync.rs"
+
+[[test]]
+name = "import_text"
+path = "tests/import_text.rs"
 
 [lints]
 workspace = true
