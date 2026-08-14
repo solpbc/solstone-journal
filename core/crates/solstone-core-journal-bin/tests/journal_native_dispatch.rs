@@ -136,10 +136,6 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         "solstone-core\ngrab\n--opaque\nhas space\n"
     );
     assert_eq!(
-        harness.run("convey"),
-        "solstone-core\nconvey\n--opaque\nhas space\n"
-    );
-    assert_eq!(
         harness.run("restart-convey"),
         "solstone-core\nrestart-convey\n--opaque\nhas space\n"
     );
@@ -179,5 +175,21 @@ fn native_process_verbs_exec_their_sibling_without_python() {
     assert!(
         harness.poison_marker.exists(),
         "backup did not invoke poison"
+    );
+}
+
+#[test]
+fn convey_bypasses_python_while_maintenance_reaches_the_poisoned_interpreter() {
+    let harness = Harness::new();
+    assert_eq!(
+        harness.run("convey"),
+        "solstone-core\nconvey\n--opaque\nhas space\n"
+    );
+
+    let maintenance = harness.run_process("maintenance");
+    assert_eq!(maintenance.status.code(), Some(97));
+    assert!(
+        harness.poison_marker.exists(),
+        "maintenance did not invoke poison"
     );
 }

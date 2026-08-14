@@ -818,7 +818,7 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{Request, StatusCode, header};
     use serde_json::{Map, Value, json};
     use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
     use solstone_core_sol_link::DeviceDoorAuthorization;
@@ -1040,7 +1040,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn converted_transcripts_write_routes_are_real_and_unserved_paths_are_404() {
+    async fn converted_transcripts_chat_and_search_routes_are_real_and_unserved_paths_are_404() {
         let root = std::env::temp_dir().join(format!(
             "solstone-convey-shell-transcripts-{}-{}",
             std::process::id(),
@@ -1109,15 +1109,75 @@ mod tests {
             .unwrap();
         assert_eq!(cancelled.status(), StatusCode::OK);
 
+        for (path, expected) in [
+            ("/app/transcripts/", StatusCode::FOUND),
+            ("/app/transcripts/workspace", StatusCode::OK),
+            ("/app/transcripts/20260731", StatusCode::OK),
+            ("/app/transcripts/api/index", StatusCode::OK),
+            ("/app/transcripts/api/stats/202607", StatusCode::OK),
+            ("/app/transcripts/api/ranges/20260731", StatusCode::OK),
+            ("/app/transcripts/api/segments/20260731", StatusCode::OK),
+            ("/app/transcripts/api/day/20260731", StatusCode::OK),
+            ("/app/transcripts/api/read/20260731", StatusCode::OK),
+            (
+                "/app/transcripts/api/segment/20260731/field/090000_300",
+                StatusCode::OK,
+            ),
+            (
+                "/app/transcripts/api/serve_file/20260731/field/090000_300/audio.flac",
+                StatusCode::OK,
+            ),
+            ("/app/chat/", StatusCode::FOUND),
+            ("/app/chat/workspace", StatusCode::OK),
+            ("/app/chat/20260731", StatusCode::OK),
+            ("/app/chat/api/state?day=20260731", StatusCode::OK),
+            ("/app/chat/api/index", StatusCode::OK),
+            ("/app/chat/api/stats/202607", StatusCode::OK),
+            ("/app/search/", StatusCode::OK),
+            ("/app/search", StatusCode::PERMANENT_REDIRECT),
+            ("/app/search/workspace", StatusCode::OK),
+            ("/app/search/api/agents?day=20260731", StatusCode::OK),
+            (
+                "/app/search/api/read?path=config/journal.json",
+                StatusCode::OK,
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{path}");
+        }
+        let search = app
+            .clone()
+            .oneshot(
+                Request::get("/app/search/api/search?q=native-route-registration-probe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(search.status(), StatusCode::NOT_FOUND);
+
         let missing = app
             .oneshot(
-                Request::get("/app/transcripts/not-a-registered-route")
+                // A path outside /app cannot match app_nested's unconverted-app refusal.
+                Request::get("/native-route-registration-probe")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            missing.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            to_bytes(missing.into_body(), usize::MAX).await.unwrap().as_ref(),
+            b"<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
