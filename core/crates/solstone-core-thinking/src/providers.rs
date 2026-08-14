@@ -400,6 +400,7 @@ pub enum ProviderUpdateError {
 pub fn update_providers(
     journal: &Path,
     update: ProviderUpdate,
+    confidential_operation: Value,
 ) -> Result<Value, ProviderUpdateError> {
     let transaction = mutate_journal_config(journal, Default::default(), |config| {
         let confidential_active = is_confidential_active(config);
@@ -527,7 +528,7 @@ pub fn update_providers(
         journal,
         &config,
         local::default_model(),
-        Value::Null,
+        confidential_operation,
     ))
 }
 
@@ -829,6 +830,7 @@ mod tests {
                 model: Some("gemini-3.5-flash".to_owned()),
                 resolution_targets: vec!["confidential_prior".to_owned()],
             },
+            Value::Null,
         );
         assert!(
             result.is_ok(),

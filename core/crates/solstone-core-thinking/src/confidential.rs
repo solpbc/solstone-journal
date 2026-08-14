@@ -142,7 +142,7 @@ impl OperationRegistry {
         {
             return Err(OperationBusy);
         }
-        state.next_generation = state.next_generation.wrapping_add(1);
+        state.next_generation = state.next_generation.checked_add(1).ok_or(OperationBusy)?;
         let generation = state.next_generation;
         let entry = OperationEntry {
             kind: kind.to_owned(),
@@ -514,6 +514,22 @@ mod tests {
         ));
         assert!(registry.mark_waiting(SERVICE_SPP, second));
         assert_eq!(registry.operation(SERVICE_SPP)["phase"], "waiting");
+    }
+
+    #[test]
+    fn exhausted_generation_refuses_to_reuse_an_identity() {
+        let registry = OperationRegistry {
+            state: Mutex::new(RegistryState {
+                next_generation: u64::MAX,
+                entries: HashMap::new(),
+            }),
+        };
+
+        assert!(
+            registry
+                .start_operation(SERVICE_SPP, "enable", None)
+                .is_err()
+        );
     }
 
     #[test]

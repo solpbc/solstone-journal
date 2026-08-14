@@ -1159,6 +1159,19 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
         providers_body["active_lane"]["confidential_operation"]["phase"],
         "waiting"
     );
+    let updated = request_with_body(
+        first.clone(),
+        "PUT",
+        "/app/thinking/api/providers",
+        Some(&json!({"lane":"byo","provider":"openai"})),
+    )
+    .await;
+    assert_eq!(updated.0, StatusCode::OK);
+    let updated_body: Value = serde_json::from_slice(&updated.3).expect("updated providers JSON");
+    assert_eq!(
+        updated_body["active_lane"]["confidential_operation"],
+        providers_body["active_lane"]["confidential_operation"]
+    );
     let busy = request(
         first.clone(),
         "POST",
@@ -1435,6 +1448,27 @@ async fn confidential_disable_and_recheck_refusals_preserve_the_exact_envelope()
 }
 
 #[tokio::test]
+async fn confidential_disable_config_lock_refusal_has_the_exact_envelope() {
+    let journal = journal_for_phase("none");
+    fs::create_dir(journal.0.join("config/journal.json.lock")).expect("lock obstruction creates");
+    let response = request(
+        router(journal.0.clone()),
+        "POST",
+        "/app/thinking/api/confidential/disable",
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
+    assert_top_level_keys(&body, vec!["detail", "error", "reason_code"]);
+    assert_eq!(body["reason_code"], "config_busy");
+    assert_eq!(
+        body["error"],
+        "I couldn't save those settings right now because they were busy. Try again in a moment."
+    );
+    assert_eq!(body["detail"], "settings are busy; try again");
+}
+
+#[tokio::test]
 async fn provider_runtime_projection_derives_retry_state_in_both_directions() {
     let journal = journal_for_phase("none");
     write_runtime_health(&journal.0, 7, "failed", Value::Null);
@@ -1524,5 +1558,10 @@ fn thinking_conversion_is_still_limited_to_the_catch_all_decision() {
     let registry = include_str!("../src/registry.rs");
     assert_eq!(shell.matches(".converted").count(), 1);
     assert!(!shell.contains("struct ShellApp {\n    pub converted"));
-    assert!(registry.contains("converted: false"));
+    let thinking = registry
+        .split("name: \"thinking\",")
+        .nth(1)
+        .and_then(|tail| tail.split("    },\n    AppDefinition").next())
+        .expect("thinking registry entry");
+    assert!(thinking.contains("converted: false"));
 }

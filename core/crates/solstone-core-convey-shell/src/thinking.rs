@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native read routes for Thinking.
+//! Native Thinking routes.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -125,29 +125,38 @@ impl ConfidentialPoll for PortalPoll {
                 token: "consent_link_expired".to_owned(),
                 detail: None,
             },
-            200 => match response
-                .into_body()
-                .read_to_string()
-                .ok()
-                .and_then(|body| serde_json::from_str::<Value>(&body).ok())
-                .and_then(|value| value.as_object().cloned())
-            {
-                Some(payload)
-                    if payload.get("state").and_then(Value::as_str) == Some("early_access") =>
-                {
-                    PollOutcome::EarlyAccess
-                }
-                Some(payload) => PollOutcome::Success(payload),
-                None => PollOutcome::Failed {
-                    token: "unexpected_payload".to_owned(),
-                    detail: None,
-                },
-            },
+            200 => poll_success_body(response.into_body().read_to_string()),
             _ => PollOutcome::Failed {
                 token: "unexpected_payload".to_owned(),
                 detail: None,
             },
         }
+    }
+}
+
+fn poll_success_body(body: Result<String, ureq::Error>) -> PollOutcome {
+    let body = match body {
+        Ok(body) => body,
+        Err(ureq::Error::Timeout(_)) => return PollOutcome::Continue,
+        Err(_) => {
+            return PollOutcome::Failed {
+                token: "unexpected_payload".to_owned(),
+                detail: None,
+            };
+        }
+    };
+    match serde_json::from_str::<Value>(&body)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+    {
+        Some(payload) if payload.get("state").and_then(Value::as_str) == Some("early_access") => {
+            PollOutcome::EarlyAccess
+        }
+        Some(payload) => PollOutcome::Success(payload),
+        None => PollOutcome::Failed {
+            token: "unexpected_payload".to_owned(),
+            detail: None,
+        },
     }
 }
 
@@ -890,6 +899,7 @@ async fn validate_model(Extension(journal): Extension<Arc<JournalRoot>>, body: B
 
 async fn update_providers(
     Extension(journal): Extension<Arc<JournalRoot>>,
+    Extension(operations): Extension<Arc<OperationRegistry>>,
     body: Bytes,
 ) -> Response {
     let Some(request) = request_object(&body).filter(|request| !request.is_empty()) else {
@@ -1048,6 +1058,7 @@ async fn update_providers(
             model,
             resolution_targets: targets,
         },
+        operations.operation(SERVICE_SPP),
     ) {
         Ok(value) => json_response(value),
         Err(solstone_core_thinking::providers::ProviderUpdateError::Mutation(error)) => {
@@ -1416,6 +1427,16 @@ mod tests {
     use serde_json::{Value, json};
     use solstone_core_brain::{begin_refresh, finish_refresh};
     use tower::ServiceExt;
+
+    use super::{PollOutcome, poll_success_body};
+
+    #[test]
+    fn portal_body_timeout_keeps_polling() {
+        assert!(matches!(
+            poll_success_body(Err(ureq::Error::Timeout(ureq::Timeout::RecvBody))),
+            PollOutcome::Continue
+        ));
+    }
 
     #[test]
     /// This exists only while the embedded and Python assets coexist; the cut
