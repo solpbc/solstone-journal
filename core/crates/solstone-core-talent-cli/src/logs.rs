@@ -230,6 +230,9 @@ fn output_size(request: &Value, journal_root: &Path) -> Option<u64> {
 
 fn output_path(request: &Value, journal_root: &Path) -> Option<PathBuf> {
     let output_format = request.get("output")?.as_str()?;
+    if output_format.is_empty() {
+        return None;
+    }
     if let Some(path) = request.get("output_path").and_then(Value::as_str) {
         return Some(PathBuf::from(path));
     }
@@ -345,7 +348,7 @@ fn render_table(
     let name_width = records
         .iter()
         .filter_map(|record| record.get("name").and_then(Value::as_str))
-        .map(str::len)
+        .map(|name| name.chars().count())
         .max()
         .unwrap_or(10)
         .max(10);
@@ -736,6 +739,7 @@ mod tests {
             output_path(&request(json!({"output_path":"custom/out"})), root),
             Some(PathBuf::from("custom/out"))
         );
+        assert_eq!(output_path(&request(json!({"output":""})), root), None);
 
         let temporary = tempfile::tempdir().expect("tempdir");
         let output = temporary.path().join("output.json");
@@ -767,6 +771,30 @@ mod tests {
         );
         assert_eq!(time_column(&today, now), "01:06");
         assert_eq!(time_column(&other, now), "Aug 06 01:06");
+    }
+
+    #[test]
+    fn table_name_width_uses_code_points() {
+        let unicode_name = "é".repeat(10);
+        let records = vec![
+            record("unicode", &unicode_name, "19700101", 0, "completed", 1.0),
+            record("ascii", "ascii", "19700101", 0, "completed", 1.0),
+        ];
+        let output = render_table(
+            Path::new("missing"),
+            Path::new("journal"),
+            &records,
+            SystemTime::UNIX_EPOCH,
+            false,
+        );
+        let mut lines = output.lines();
+        assert!(
+            lines
+                .next()
+                .expect("unicode row")
+                .contains(&format!("{unicode_name}  ✓"))
+        );
+        assert!(lines.next().expect("ascii row").contains("ascii       ✓"));
     }
 
     #[test]
