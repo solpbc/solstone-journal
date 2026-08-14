@@ -17,6 +17,7 @@ use solstone_core_format::content::{
     produce_raw_percept_chunks,
 };
 use solstone_core_format::segment::segment_parse;
+use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 
 use crate::day::valid_day;
 use crate::{AppState, legacy_error_response};
@@ -115,7 +116,7 @@ fn cluster(root: &Path, day: &str, sources: Sources) -> String {
     if !day_dir.is_dir() {
         return format!("Day folder not found: {}", day_dir.display());
     }
-    let entries = load_day(&day_dir, day, sources);
+    let entries = load_day(root, day, sources);
     if entries.is_empty() {
         format!(
             "No transcript, screen, or browser files found for date {day} in {}.",
@@ -191,15 +192,15 @@ fn cluster_range(
     let end =
         NaiveDateTime::parse_from_str(&format!("{}{end}", date.format("%Y%m%d")), "%Y%m%d%H%M%S")
             .map_err(error_response)?;
-    let entries = load_day(&day_dir(root, day), day, sources)
+    let entries = load_day(root, day, sources)
         .into_iter()
         .filter(|entry| entry.segment_start < end && entry.segment_end > start)
         .collect();
     Ok(groups_to_markdown(entries))
 }
 
-fn load_day(day_dir: &Path, day: &str, sources: Sources) -> Vec<Entry> {
-    let mut entries = all_segments(day_dir)
+fn load_day(root: &Path, day: &str, sources: Sources) -> Vec<Entry> {
+    let mut entries = all_segments(root, day)
         .into_iter()
         .flat_map(|segment| process_segment(&segment, day, sources))
         .collect::<Vec<_>>();
@@ -445,43 +446,21 @@ fn groups_to_markdown(mut entries: Vec<Entry>) -> String {
 fn day_dir(root: &Path, day: &str) -> PathBuf {
     root.join("chronicle").join(day)
 }
-fn all_segments(day_dir: &Path) -> Vec<Segment> {
-    let mut values = Vec::new();
-    for stream in fs::read_dir(day_dir).into_iter().flatten().flatten() {
-        if !stream.path().is_dir() {
-            continue;
-        }
-        let name = stream.file_name().to_string_lossy().into_owned();
-        for segment in fs::read_dir(stream.path()).into_iter().flatten().flatten() {
-            if segment.path().is_dir() {
-                values.push(Segment {
-                    path: segment.path(),
-                    stream_dir: name.clone(),
-                    key: segment.file_name().to_string_lossy().into_owned(),
-                });
-            }
-        }
-    }
-    values.sort_by(|left, right| {
-        left.stream_dir
-            .cmp(&right.stream_dir)
-            .then(left.key.cmp(&right.key))
-    });
-    values
+fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
+    iter_segments(root, PathOrDay::Day(day))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|segment| Segment {
+            path: segment.path,
+            stream_dir: segment.stream,
+            key: segment.key,
+        })
+        .collect()
 }
 fn find_segment(root: &Path, day: &str, key: &str, stream: Option<&str>) -> Option<Segment> {
-    let day_dir = day_dir(root, day);
-    if let Some(stream) = stream {
-        let path = day_dir.join(stream).join(key);
-        return path.is_dir().then(|| Segment {
-            path,
-            stream_dir: stream.into(),
-            key: key.into(),
-        });
-    }
-    all_segments(&day_dir)
-        .into_iter()
-        .find(|segment| segment.key == key)
+    all_segments(root, day).into_iter().find(|segment| {
+        segment.key == key && stream.is_none_or(|stream| segment.stream_dir == stream)
+    })
 }
 fn sorted_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = fs::read_dir(dir)
@@ -551,4 +530,33 @@ fn error_response(error: impl std::fmt::Display) -> Response {
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::all_segments;
+
+    #[test]
+    fn all_segments_includes_legacy_default_stream_segments() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260731/090000_60")).unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260731/field/100000_60")).unwrap();
+
+        let found = all_segments(root.path(), "20260731")
+            .into_iter()
+            .map(|segment| (segment.stream_dir, segment.key))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            found,
+            vec![
+                ("_default".to_owned(), "090000_60".to_owned()),
+                ("field".to_owned(), "100000_60".to_owned()),
+            ]
+        );
+    }
 }

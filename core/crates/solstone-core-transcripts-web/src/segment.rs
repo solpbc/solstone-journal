@@ -10,7 +10,7 @@ use axum::Json;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_format::content::{
@@ -588,20 +588,23 @@ fn wall_time(key: &str, offset: f64) -> String {
 fn day_timestamp(day: &str, time: &str, fallback: i64) -> i64 {
     chrono::NaiveDateTime::parse_from_str(&format!("{day} {time}"), "%Y%m%d %H:%M:%S")
         .ok()
-        .map(|value| value.and_utc())
+        .and_then(|value| Local.from_local_datetime(&value).earliest())
         .map(|value| value.timestamp_millis())
         .unwrap_or(fallback)
 }
 fn timestamp(value: Option<&Value>) -> i64 {
     match value {
-        Some(Value::Number(number)) => {
-            number.as_i64().unwrap_or_default()
-                * if number.as_i64().unwrap_or_default() > 10_000_000_000 {
-                    1
+        Some(Value::Number(number)) => number
+            .as_f64()
+            .map(|value| {
+                if value > 10_000_000_000.0 {
+                    value
                 } else {
-                    1000
+                    value * 1000.0
                 }
-        }
+            })
+            .map(|value| value as i64)
+            .unwrap_or_default(),
         Some(Value::String(value)) => chrono::DateTime::parse_from_rfc3339(value)
             .map(|value| value.timestamp_millis())
             .unwrap_or(0),
@@ -609,7 +612,11 @@ fn timestamp(value: Option<&Value>) -> i64 {
     }
 }
 fn local_time(milliseconds: i64) -> String {
-    Utc.timestamp_millis_opt(milliseconds)
+    if milliseconds <= 0 {
+        return String::new();
+    }
+    Local
+        .timestamp_millis_opt(milliseconds)
         .single()
         .map(|value| value.format("%H:%M:%S").to_string())
         .unwrap_or_default()
@@ -663,4 +670,32 @@ fn invalid(detail: &str) -> Response {
         detail,
         StatusCode::NOT_FOUND,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Local, NaiveDateTime, TimeZone};
+    use serde_json::json;
+
+    use super::{day_timestamp, local_time, timestamp};
+
+    #[test]
+    fn timestamps_accept_floats_and_non_positive_times_are_blank() {
+        assert_eq!(timestamp(Some(&json!(1.5))), 1500);
+        assert_eq!(timestamp(Some(&json!(10_000_000_001.5))), 10_000_000_001);
+        assert_eq!(local_time(0), "");
+        assert_eq!(local_time(-1), "");
+    }
+
+    #[test]
+    fn day_timestamps_use_the_local_timezone() {
+        let naive = NaiveDateTime::parse_from_str("20260731 09:00:00", "%Y%m%d %H:%M:%S").unwrap();
+        let expected = Local
+            .from_local_datetime(&naive)
+            .earliest()
+            .unwrap()
+            .timestamp_millis();
+
+        assert_eq!(day_timestamp("20260731", "09:00:00", 0), expected);
+    }
 }

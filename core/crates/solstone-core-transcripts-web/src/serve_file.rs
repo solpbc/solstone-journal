@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -55,8 +56,8 @@ pub(crate) async fn serve_file(
             StatusCode::BAD_REQUEST,
         );
     };
-    let bytes = match fs::read(&path) {
-        Ok(bytes) => bytes,
+    let total = match path.metadata().map(|metadata| metadata.len()) {
+        Ok(total) => total,
         Err(_) => {
             return error(
                 "file_not_found",
@@ -66,28 +67,63 @@ pub(crate) async fn serve_file(
             );
         }
     };
-    if bytes.is_empty() {
-        return media(StatusCode::OK, mime, &path, bytes, None);
+    if total == 0 {
+        return media(StatusCode::OK, mime, &path, Vec::new(), None);
     }
+    let Ok(total) = usize::try_from(total) else {
+        return error(
+            "file_not_found",
+            "I couldn't find that file.",
+            "File not found",
+            StatusCode::NOT_FOUND,
+        );
+    };
     match headers
         .get(header::RANGE)
         .and_then(|v| v.to_str().ok())
-        .map(|v| parse_range(v, bytes.len()))
+        .map(|v| parse_range(v, total))
     {
-        Some(ParsedRange::Valid { start, end }) => media(
-            StatusCode::PARTIAL_CONTENT,
-            mime,
-            &path,
-            bytes[start..=end].to_vec(),
-            Some(format!("bytes {start}-{end}/{}", bytes.len())),
+        Some(ParsedRange::Valid { start, end }) => {
+            match read_bytes(&path, start, end - start + 1) {
+                Ok(bytes) => media(
+                    StatusCode::PARTIAL_CONTENT,
+                    mime,
+                    &path,
+                    bytes,
+                    Some(format!("bytes {start}-{end}/{total}")),
+                ),
+                Err(_) => error(
+                    "file_not_found",
+                    "I couldn't find that file.",
+                    "File not found",
+                    StatusCode::NOT_FOUND,
+                ),
+            }
+        }
+        Some(ParsedRange::Unsatisfiable) => error(
+            "http_error",
+            "I couldn't complete that request.",
+            "",
+            StatusCode::RANGE_NOT_SATISFIABLE,
         ),
-        Some(ParsedRange::Unsatisfiable) => Response::builder()
-            .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .header(header::CONTENT_RANGE, format!("bytes */{}", bytes.len()))
-            .body(Body::empty())
-            .expect("response"),
-        _ => media(StatusCode::OK, mime, &path, bytes, None),
+        _ => match read_bytes(&path, 0, total) {
+            Ok(bytes) => media(StatusCode::OK, mime, &path, bytes, None),
+            Err(_) => error(
+                "file_not_found",
+                "I couldn't find that file.",
+                "File not found",
+                StatusCode::NOT_FOUND,
+            ),
+        },
     }
+}
+
+fn read_bytes(path: &Path, start: usize, length: usize) -> std::io::Result<Vec<u8>> {
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start as u64))?;
+    let mut bytes = vec![0; length];
+    file.read_exact(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn error(reason: &str, message: &str, detail: &str, status: StatusCode) -> Response {
