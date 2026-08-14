@@ -2228,7 +2228,7 @@
         },
         {
           "app": "search",
-          "body_sha256": "9bd4548dd99eedf2f94d79fc88d061224d3f48337cecd80c8363079f218949e9",
+          "body_sha256": "9636519610cd9ff1b6f1eca2af4a5c914308a331301e263e8089d6a1c47ac2d8",
           "body_sha256_basis": "normalized-json",
           "json": {
             "daily": [
@@ -2271,6 +2271,16 @@
               },
               {
                 "outputs": [],
+                "segment": "131000_60",
+                "stream": "import.notes"
+              },
+              {
+                "outputs": [],
+                "segment": "132000_60",
+                "stream": "import.apple_health"
+              },
+              {
+                "outputs": [],
                 "segment": "140000_300",
                 "stream": "chat"
               }
@@ -2282,7 +2292,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "429",
+            "Content-Length": "558",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2597,7 +2607,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "00e6c6d529f76f13c3473b16b652d81b16782ef0c2e19f774318a8425314eb00",
+          "body_sha256": "62c48cb47181bb891bd4b615ff0913716dfad9be8ca8a4ebb1290c3cbd7587f7",
           "body_sha256_basis": "normalized-json",
           "json": {
             "coverage": {
@@ -2605,7 +2615,7 @@
               "start": "20260731"
             },
             "months": {
-              "202607": 6,
+              "202607": 7,
               "202608": 1
             }
           },
@@ -2690,7 +2700,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "532c3b185955542172c77b23b853eded5898007bf59136e3c2834221821d3092",
+          "body_sha256": "035e1191e18e77a258c9ed5fc058983b571a89ddd46523506a0bc5e628e6917a",
           "body_sha256_basis": "normalized-json",
           "json": {
             "segments": [
@@ -2749,6 +2759,32 @@
                 "types": [
                   "audio"
                 ]
+              },
+              {
+                "data_state": {
+                  "markdown": "analyzed"
+                },
+                "end": "13:11",
+                "key": "131000_60",
+                "start": "13:10",
+                "stream": "import.notes",
+                "think": null,
+                "types": [
+                  "markdown"
+                ]
+              },
+              {
+                "data_state": {
+                  "markdown": "analyzed"
+                },
+                "end": "13:21",
+                "key": "132000_60",
+                "start": "13:20",
+                "stream": "import.apple_health",
+                "think": null,
+                "types": [
+                  "markdown"
+                ]
               }
             ]
           },
@@ -2758,7 +2794,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "611",
+            "Content-Length": "908",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2766,7 +2802,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "fb0a92260562d9f2bf24fb7a4228b9d1fe0d8514d89cf70427d7400dcc84cf1e",
+          "body_sha256": "cb6d6e1f980aadaa2414fbcd369331d25c2270c5b769df76085e703bdec65ce7",
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio": [
@@ -2874,6 +2910,32 @@
                 "types": [
                   "audio"
                 ]
+              },
+              {
+                "data_state": {
+                  "markdown": "analyzed"
+                },
+                "end": "13:11",
+                "key": "131000_60",
+                "start": "13:10",
+                "stream": "import.notes",
+                "think": null,
+                "types": [
+                  "markdown"
+                ]
+              },
+              {
+                "data_state": {
+                  "markdown": "analyzed"
+                },
+                "end": "13:21",
+                "key": "132000_60",
+                "start": "13:20",
+                "stream": "import.apple_health",
+                "think": null,
+                "types": [
+                  "markdown"
+                ]
               }
             ]
           },
@@ -2883,7 +2945,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "1063",
+            "Content-Length": "1360",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2891,10 +2953,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "56f66232dd9c20df71a4c5933613515c66c82be272feba40d8f66a0ef7517de6",
+          "body_sha256": "acfee18c66d6a5addb7098ad9e90dc59c6c25cad32058f69796f0e341216fb28",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2902,7 +2964,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "543",
+            "Content-Length": "736",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2929,10 +2991,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "0ca3462eca839ec598b8d5caaff24b04d19caf478c090c66fc0dd4835e993a5d",
+          "body_sha256": "81abb3aa5fd5b83f37ecd2625e13cfce5b3b4860274647a45c7188db19413f6b",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2940,7 +3002,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "481",
+            "Content-Length": "674",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2948,10 +3010,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "35a88aa5c01dea00527e40e006ed324252590abefa8693906263a3d39c9c8d74",
+          "body_sha256": "73cb210c4c585efdb552ea235a7acebd9177ec72d19fef4204289815ffcd6610",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2959,7 +3021,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "353",
+            "Content-Length": "546",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3216,10 +3278,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "cd0a2921f72499fedf34d8da8015b4e7e5682b25e341a9205f97371ef2e357e7",
+          "body_sha256": "3c094979463a06961c7e2a29226491bfffa6f3cfde2d4bf4181d6ad91f989c14",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "20260731": 6
+            "20260731": 7
           },
           "method": "GET",
           "normalized_fields": [],
@@ -4163,7 +4225,7 @@
     "journal_root": "<JOURNAL_ROOT>",
     "today": "<TODAY>"
   },
-  "rev": "0b981794dff9ad6f98f3433b70c540bd5114dd37",
+  "rev": "415db0bdd24219838c981571f91756e0ac60725d",
   "schema": "solstone-convey-records-corpus-v1",
   "seeder_manifest": {
     "agent_name_present": true,
@@ -4187,7 +4249,7 @@
     "identity_preferred_name_present": true,
     "identity_present": true,
     "image_media_present": true,
-    "markdown_only_segment_count": 1,
+    "markdown_only_segment_count": 3,
     "media_file_count": 6,
     "month_count": 3,
     "muted_facet_present": true,
@@ -4203,7 +4265,7 @@
     "stats_cache_absent_returns_none_asserted": true,
     "stats_cache_fresh_asserted": true,
     "stats_cache_present_day_count": 1,
-    "stream_count": 2,
+    "stream_count": 4,
     "talent_output_day_level_present": true,
     "talent_output_segment_level_present": true,
     "today_day": "<TODAY>",
