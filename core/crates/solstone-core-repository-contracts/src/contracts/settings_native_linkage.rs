@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! This integration test runs under `ci-full`, not `make ci`: the ordinary
-//! `--lib --bins` unit selection intentionally does not execute `tests/`.
+//! This repository contract is a unit test so the ordinary `make ci`
+//! `--lib --bins` selection executes it.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[path = "support/maturin_leaves.rs"]
+#[path = "../../../solstone-core/tests/support/maturin_leaves.rs"]
 mod maturin_leaves;
 
 use maturin_leaves::{host_packaged_binaries, package_name};

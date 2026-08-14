@@ -39,10 +39,6 @@ name = "core_journal_contracts"
 path = "tests/core_journal_contracts.rs"
 
 [[test]]
-name = "core_repository_contracts"
-path = "tests/core_repository_contracts.rs"
-
-[[test]]
 name = "core_supervisor_contracts"
 path = "tests/core_supervisor_contracts.rs"
 
