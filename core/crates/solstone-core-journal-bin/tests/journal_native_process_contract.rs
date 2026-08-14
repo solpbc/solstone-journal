@@ -149,6 +149,7 @@ const SUPERVISOR_USAGE_ANCHOR: &[u8] =
     b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
 const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: journal backup <command> [options]\n";
+const MAINTENANCE_USAGE_ANCHOR: &[u8] = b"usage: journal maintenance <command> [options]\n";
 
 const PROBES: &[Probe] = &[
     Probe {
@@ -156,6 +157,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(BACKUP_USAGE_ANCHOR),
+    },
+    Probe {
+        token: "maintenance",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(MAINTENANCE_USAGE_ANCHOR),
     },
     Probe {
         token: "brain",
@@ -1212,6 +1219,81 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
         !context.poison_marker.exists(),
         "native backup success reached a poisoned interpreter"
     );
+}
+
+#[test]
+fn native_maintenance_bodies_reach_real_native_owners_without_python() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal.join("config")).expect("create maintenance config parent");
+    fs::write(
+        context.journal.join("config/journal.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "retention": {
+                "raw_media": "keep",
+                "journal_logs": {"enabled": false}
+            }
+        }))
+        .expect("encode maintenance config"),
+    )
+    .expect("write maintenance config");
+    let shell = context.sibling_dir.join("sh");
+    fs::write(&shell, POISON_INTERPRETER).expect("write poison shell");
+    make_executable(&shell);
+
+    for (argv, expected_exit, witness) in [
+        (["list"].as_slice(), 0, "backup:run"),
+        (["sync"].as_slice(), 0, "added:"),
+        (["run", "backup:run"].as_slice(), 0, "backup:"),
+        (["run", "backup:prune"].as_slice(), 0, "backup prune:"),
+        (["run", "backup:verify"].as_slice(), 0, "backup verify:"),
+        (
+            ["run", "backup:offload", "--dry-run"].as_slice(),
+            0,
+            "backup offload:",
+        ),
+        (
+            ["run", "health:mark-raw"].as_slice(),
+            0,
+            "keep all original media",
+        ),
+        (
+            ["run", "health:prune-logs"].as_slice(),
+            0,
+            "prune-logs: disabled",
+        ),
+        (
+            ["run", "timeline:rollup-day", "20260301"].as_slice(),
+            66,
+            "no segment timeline.json",
+        ),
+        (
+            ["run", "timeline:rollup-master"].as_slice(),
+            66,
+            "no day-level timeline.json",
+        ),
+    ] {
+        let output =
+            run_dispatcher_with_bounded_output(&context, "maintenance", argv, PROBE_TIMEOUT)
+                .expect("dispatch native maintenance body")
+                .expect("native maintenance body completes before deadline");
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "maintenance {argv:?} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(witness),
+            "maintenance {argv:?} stdout: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(
+            !context.poison_marker.exists(),
+            "maintenance {argv:?} reached a poisoned interpreter"
+        );
+    }
 }
 
 #[test]

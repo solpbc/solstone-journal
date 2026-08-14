@@ -739,6 +739,7 @@ pub enum Command {
     Importer(Vec<OsString>),
     Segment(Vec<OsString>),
     Backup(Vec<OsString>),
+    Maintenance(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Backfill(Vec<OsString>),
@@ -1548,6 +1549,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("backup") => {
             Ok(Command::Backup(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("maintenance") => {
+            Ok(Command::Maintenance(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("reprocess") => {
             Ok(Command::Reprocess(rest.to_vec()))

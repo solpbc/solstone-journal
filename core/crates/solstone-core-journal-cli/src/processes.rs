@@ -63,6 +63,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["backup"],
     },
     NativeProcessSpec {
+        token: "maintenance",
+        binary: "solstone-core",
+        preset_argv: &["maintenance"],
+    },
+    NativeProcessSpec {
         token: "brain",
         binary: "solstone-core",
         preset_argv: &["\u{1f}solstone-journal-brain-owner-v1", "brain"],

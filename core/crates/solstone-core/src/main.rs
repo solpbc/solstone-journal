@@ -211,6 +211,7 @@ fn main() -> ExitCode {
         Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),
         Ok(Command::Backup(args)) => run_backup(args),
+        Ok(Command::Maintenance(args)) => run_maintenance(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
         Ok(Command::Backfill(args)) => run_backfill(args),
@@ -706,6 +707,13 @@ fn run_segment(args: Vec<OsString>) -> ExitCode {
 fn run_backup(args: Vec<OsString>) -> ExitCode {
     run_storage_ops_verb("backup", args, |arguments, journal| {
         let run = solstone_core_backup_cli::run_cli(arguments, journal);
+        (run.stdout, run.stderr, run.exit_code)
+    })
+}
+
+fn run_maintenance(args: Vec<OsString>) -> ExitCode {
+    run_storage_ops_verb("maintenance", args, |arguments, journal| {
+        let run = solstone_core_maintenance::run_cli(arguments, journal);
         (run.stdout, run.stderr, run.exit_code)
     })
 }

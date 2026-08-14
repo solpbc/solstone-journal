@@ -69,32 +69,52 @@ pub(crate) fn load_runtime(path: &Path) -> Result<ConfigLoad, ScheduleError> {
 
 pub(crate) fn register_defaults(
     path: &Path,
-    loaded: &ScheduleConfig,
+    _loaded: &ScheduleConfig,
 ) -> Result<bool, ScheduleError> {
-    let needs = default_entries()
-        .into_iter()
-        .filter(|(name, _)| !loaded.entries.contains_key(*name))
-        .collect::<Vec<_>>();
-    if needs.is_empty() {
-        return Ok(false);
-    }
+    let defaults = BTreeMap::from(default_entries().map(|(name, value)| (name.to_owned(), value)));
+    Ok(!add_missing_schedule_entries(path, &defaults)?.is_empty())
+}
 
+/// Add schedule entries that are absent from the raw schedules map.
+///
+/// The mutation holds the schedules lock for the complete read-modify-write
+/// transaction. Existing entries, including disabled or malformed entries, are
+/// deliberately left untouched.
+pub fn add_missing_schedule_entries(
+    path: &Path,
+    entries: &BTreeMap<String, Value>,
+) -> Result<Vec<String>, ScheduleError> {
     let _lock = hold_lock(path, Default::default()).map_err(io_error)?;
     let mut raw = read_strict_raw(path)?;
-    let mut changed = false;
-    for (name, value) in needs {
-        if !raw.contains_key(name) {
-            raw.insert(name.to_owned(), value);
-            changed = true;
-        }
+    let missing = entries
+        .iter()
+        .filter(|(name, _)| !raw.contains_key(name.as_str()))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    let added = missing
+        .into_iter()
+        .map(|(name, value)| {
+            raw.insert(name.clone(), value);
+            name
+        })
+        .collect::<Vec<_>>();
+    if !added.is_empty() {
+        write_raw(path, raw)?;
     }
-    if changed {
-        let mut bytes = serde_json::to_vec_pretty(&Value::Object(raw))
-            .map_err(|error| ScheduleError::Io(error.to_string()))?;
-        bytes.push(b'\n');
-        atomic_replace(path, &bytes, AtomicWriteOptions::default()).map_err(io_error)?;
+    Ok(added)
+}
+
+/// Remove one schedule entry, returning whether the raw map changed.
+///
+/// A missing entry is intentionally a no-op and does not rewrite the file.
+pub fn remove_schedule_entry(path: &Path, name: &str) -> Result<bool, ScheduleError> {
+    let _lock = hold_lock(path, Default::default()).map_err(io_error)?;
+    let mut raw = read_strict_raw(path)?;
+    let removed = raw.remove(name).is_some();
+    if removed {
+        write_raw(path, raw)?;
     }
-    Ok(changed)
+    Ok(removed)
 }
 
 fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
@@ -112,6 +132,13 @@ fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
             path: path.to_path_buf(),
         }),
     }
+}
+
+fn write_raw(path: &Path, raw: Map<String, Value>) -> Result<(), ScheduleError> {
+    let mut bytes = serde_json::to_vec_pretty(&Value::Object(raw))
+        .map_err(|error| ScheduleError::Io(error.to_string()))?;
+    bytes.push(b'\n');
+    atomic_replace(path, &bytes, AtomicWriteOptions::default()).map_err(io_error)
 }
 
 fn validate(raw: Map<String, Value>) -> ConfigLoad {

@@ -18,7 +18,10 @@ use chrono::NaiveDateTime;
 use thiserror::Error;
 
 pub use caps::baseline_cap_contributions;
-pub use config::{ConfigDiagnostic, ScheduleConfig, ScheduleEntry};
+pub use config::{
+    ConfigDiagnostic, ScheduleConfig, ScheduleEntry, add_missing_schedule_entries,
+    remove_schedule_entry,
+};
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};
 pub use report::{ScheduleReport, ScheduleReportRow, build_schedule_report};

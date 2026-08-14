@@ -2556,6 +2556,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-local",
+ "solstone-core-maintenance",
  "solstone-core-npy",
  "solstone-core-observer",
  "solstone-core-operational-logs",
@@ -3441,6 +3442,25 @@ dependencies = [
  "thiserror 2.0.20",
  "ureq",
  "uuid",
+]
+
+[[package]]
+name = "solstone-core-maintenance"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "serde_json",
+ "solstone-core-backup",
+ "solstone-core-backup-runtime",
+ "solstone-core-brain",
+ "solstone-core-generate",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-offload",
+ "solstone-core-retention",
+ "solstone-core-system",
+ "tempfile",
 ]
 
 [[package]]

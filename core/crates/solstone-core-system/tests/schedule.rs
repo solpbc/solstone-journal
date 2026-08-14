@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -15,7 +16,8 @@ use solstone_core_system::request::{
 };
 use solstone_core_system::schedule::{
     ScheduleConfig, ScheduleEngine, ScheduleEntry, ScheduleError, ScheduleNow,
-    ScheduleSubmissionSink, baseline_cap_contributions, daily_mark, hour_mark, is_due, weekly_mark,
+    ScheduleSubmissionSink, add_missing_schedule_entries, baseline_cap_contributions, daily_mark,
+    hour_mark, is_due, remove_schedule_entry, weekly_mark,
 };
 
 struct Bed {
@@ -104,6 +106,83 @@ fn entry(every: &str) -> ScheduleEntry {
         every: every.to_owned(),
         max_runtime: None,
     }
+}
+
+#[test]
+fn schedule_entry_mutations_are_idempotent_and_preserve_raw_values() {
+    let bed = Bed::new("entry-mutations");
+    bed.write_config(json!({
+        "daily_time": "04:00",
+        "unrelated": {"cmd": ["journal", "other"], "every": "daily", "custom": [1, 2]},
+        "retired": {"cmd": ["journal", "old"], "every": "weekly"}
+    }));
+    let additions = std::collections::BTreeMap::from([(
+        "maintenance:backup:run".to_owned(),
+        json!({"cmd": ["journal", "maintenance", "run", "backup:run"], "every": "hourly"}),
+    )]);
+
+    assert_eq!(
+        add_missing_schedule_entries(&bed.config(), &additions).expect("add"),
+        vec!["maintenance:backup:run"]
+    );
+    let after_add = fs::read(bed.config()).expect("after add");
+    assert!(
+        add_missing_schedule_entries(&bed.config(), &additions)
+            .expect("idempotent add")
+            .is_empty()
+    );
+    assert_eq!(fs::read(bed.config()).expect("no rewrite"), after_add);
+
+    assert!(remove_schedule_entry(&bed.config(), "retired").expect("remove"));
+    let after_remove = fs::read(bed.config()).expect("after remove");
+    assert!(!remove_schedule_entry(&bed.config(), "retired").expect("idempotent remove"));
+    assert_eq!(fs::read(bed.config()).expect("no rewrite"), after_remove);
+
+    let raw: Value = serde_json::from_slice(&after_remove).expect("raw json");
+    assert_eq!(raw["daily_time"], "04:00");
+    assert_eq!(raw["unrelated"]["custom"], json!([1, 2]));
+    assert!(raw.get("maintenance:backup:run").is_some());
+}
+
+#[test]
+fn schedule_entry_mutations_reject_malformed_json_with_path() {
+    let bed = Bed::new("entry-mutations-malformed");
+    fs::write(bed.config(), b"{").expect("malformed");
+    let additions = std::collections::BTreeMap::new();
+
+    let error = add_missing_schedule_entries(&bed.config(), &additions).expect_err("malformed");
+    assert!(
+        error
+            .to_string()
+            .contains(&bed.config().display().to_string())
+    );
+    assert!(error.to_string().contains("malformed"));
+}
+
+#[test]
+fn schedule_entry_mutations_wait_for_the_existing_schedule_lock() {
+    let bed = Bed::new("entry-mutations-contention");
+    let lock =
+        solstone_core_journal_io::hold_lock(bed.config(), Default::default()).expect("hold lock");
+    let path = bed.config();
+    let entries = std::collections::BTreeMap::from([(
+        "maintenance:backup:run".to_owned(),
+        json!({"cmd": ["journal", "maintenance", "run", "backup:run"], "every": "hourly"}),
+    )]);
+    let (sent, received) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        sent.send(add_missing_schedule_entries(&path, &entries))
+            .expect("send result");
+    });
+
+    assert!(received.recv_timeout(Duration::from_millis(100)).is_err());
+    drop(lock);
+    let added = received
+        .recv_timeout(Duration::from_secs(1))
+        .expect("released")
+        .expect("add after lock release");
+    assert_eq!(added, vec!["maintenance:backup:run"]);
+    worker.join().expect("worker");
 }
 
 #[test]

@@ -15,8 +15,9 @@ mod writer;
 mod corpus_tests;
 
 pub use fingerprint::{
-    CanonicalInput, FingerprintError, LaneResolution, build_active_brain_fingerprint,
-    canonical_fingerprint, canonical_json, derive_active_brain_lane, fingerprint_sha256,
+    CanonicalInput, FingerprintError, GenerateModelResolutionError, LaneResolution,
+    build_active_brain_fingerprint, canonical_fingerprint, canonical_json,
+    derive_active_brain_lane, fingerprint_sha256, resolve_generate_model,
 };
 pub use inspect::{
     BrainInspection, BrainProjection, BundledRuntimePrerequisiteAssessment, InspectionStatus,
