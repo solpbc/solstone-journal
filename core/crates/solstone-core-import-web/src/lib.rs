@@ -14,12 +14,14 @@ use axum::{
 mod assets;
 mod callosum;
 mod content;
+mod facet_ingest;
 mod http;
 mod imports;
 mod ingest;
 mod journal_sources;
 mod lifecycle;
 mod multipart;
+mod resolve;
 
 #[cfg(test)]
 mod corpus;
@@ -43,6 +45,10 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
         .route("/app/import/api/start", post(lifecycle::start))
+        .route(
+            "/app/import/journal/{prefix}/ingest/facets",
+            post(ingest::facets),
+        )
         .route(
             "/app/import/journal/{prefix}/ingest/segments",
             post(ingest::segments),
@@ -78,6 +84,22 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route(
             "/app/import/api/journal-sources/{name}/revoke",
             post(journal_sources::revoke),
+        )
+        .route(
+            "/app/import/api/journal-sources/{name}/resolve-entity",
+            post(resolve::entity),
+        )
+        .route(
+            "/app/import/api/journal-sources/{name}/resolve-facet",
+            post(resolve::facet),
+        )
+        .route(
+            "/app/import/api/journal-sources/{name}/resolve-config",
+            post(resolve::config),
+        )
+        .route(
+            "/app/import/api/journal-sources/{name}/resolve-config-all",
+            post(resolve::config_all),
         )
         .route(
             "/app/import/journal/{key_prefix}/manifest/{area}",

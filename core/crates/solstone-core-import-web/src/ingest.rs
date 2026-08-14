@@ -249,6 +249,131 @@ async fn segments_with_attempts(
     )
 }
 
+fn valid_facet_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        })
+}
+fn safe_relative(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.split('/').any(|part| matches!(part, "" | "." | ".."))
+}
+
+pub(crate) async fn facets(
+    State(app): State<AppState>,
+    AxumPath(_): AxumPath<String>,
+    identity: JournalSourceIdentity,
+    multipart_body: Multipart,
+) -> Response {
+    let parts = match multipart::collect(multipart_body).await {
+        Ok(parts) => parts,
+        Err(detail) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "I couldn't read that JSON request.",
+                "invalid_json_request",
+                detail.to_owned(),
+            );
+        }
+    };
+    let metadata = parts
+        .iter()
+        .find(|part| part.name == "metadata")
+        .and_then(|part| serde_json::from_slice::<Value>(&part.bytes).ok());
+    let Some(facets) = metadata
+        .as_ref()
+        .and_then(|value| value.get("facets"))
+        .and_then(Value::as_array)
+    else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "I couldn't find a required field.",
+            "missing_required_field",
+            "Missing facets array".into(),
+        );
+    };
+    let base = state(&app.root, identity.prefix(), "facets");
+    let state_path = base.join("state.json");
+    let mut facet_state = read_json(&state_path);
+    let received = facet_state
+        .as_object_mut()
+        .and_then(|state| {
+            state
+                .entry("received")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+        })
+        .expect("facet state object");
+    let (mut created, mut merged, mut skipped, mut staged) = (0, 0, 0, 0);
+    let mut errors = Vec::new();
+    for (facet_index, facet) in facets.iter().enumerate() {
+        let outcome = (|| -> Result<(), String> {
+            let facet = facet
+                .as_object()
+                .ok_or("Facet metadata must be an object")?;
+            let name = facet
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| valid_facet_name(name))
+                .ok_or("Invalid facet name")?;
+            let files = facet
+                .get("files")
+                .and_then(Value::as_array)
+                .ok_or("Facet files must be an array")?;
+            let mut items = Vec::new();
+            for (file_index, descriptor) in files.iter().enumerate() {
+                let descriptor = descriptor
+                    .as_object()
+                    .ok_or("Facet file metadata must be an object")?;
+                let relative = descriptor
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .filter(|path| safe_relative(path))
+                    .ok_or("Invalid path")?;
+                let kind = descriptor
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .ok_or("Facet file metadata must include path and type")?;
+                let bytes = &parts
+                    .iter()
+                    .find(|part| part.name == format!("files_{facet_index}_{file_index}"))
+                    .ok_or("Missing uploaded file")?
+                    .bytes;
+                items.push(crate::facet_ingest::FacetItem {
+                    path: relative,
+                    kind,
+                    bytes,
+                });
+            }
+            let outcome = crate::facet_ingest::process_facet(
+                &app.root,
+                name,
+                &items,
+                &base.join("staged"),
+                received,
+            )?;
+            created += outcome.created;
+            merged += outcome.merged;
+            skipped += outcome.skipped;
+            staged += outcome.staged;
+            for entry in outcome.decisions {
+                decision(&base.join("log.jsonl"), entry);
+            }
+            Ok(())
+        })();
+        if let Err(error) = outcome {
+            errors.push(json!({"facet":facet.get("name").and_then(Value::as_str).unwrap_or(""),"error":error}));
+        }
+    }
+    let _ = write_json(&state_path, &facet_state);
+    json_response(
+        StatusCode::OK,
+        json!({"created":created,"merged":merged,"skipped":skipped,"staged":staged,"errors":errors}),
+    )
+}
+
 pub(crate) async fn entities(
     State(app): State<AppState>,
     AxumPath(_): AxumPath<String>,

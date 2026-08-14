@@ -3250,6 +3250,7 @@ dependencies = [
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
  "solstone-core-import",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "tempfile",
  "tokio",
