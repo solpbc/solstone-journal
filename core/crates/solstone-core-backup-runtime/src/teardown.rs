@@ -197,6 +197,8 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::io;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     struct Script {
         outputs: RefCell<VecDeque<ToolOutput>>,
@@ -218,6 +220,15 @@ mod tests {
     impl crate::hosted_runtime::HttpTransport for Http {
         fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
             panic!("BYO teardown does not use broker")
+        }
+    }
+    struct BrokerFailure {
+        calls: RefCell<u64>,
+    }
+    impl crate::hosted_runtime::HttpTransport for BrokerFailure {
+        fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            *self.calls.borrow_mut() += 1;
+            Err(HttpError::Timeout)
         }
     }
     struct TestClock;
@@ -263,6 +274,36 @@ mod tests {
             version: "test",
             journal_maintenance: maintenance,
         }
+    }
+    fn broker_failure_services<'a>(
+        runner: &'a Script,
+        http: &'a BrokerFailure,
+        clock: &'a TestClock,
+        maintenance: &'a Maintenance,
+    ) -> BackupServices<'a> {
+        BackupServices {
+            runner,
+            http,
+            clock,
+            restic_path: Path::new("restic"),
+            rclone_path: None,
+            version: "test",
+            journal_maintenance: maintenance,
+        }
+    }
+    fn configured_byo() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        let destination = solstone_core_backup::Destination {
+            repository: "repo".into(),
+            backend: "s3".into(),
+            credentials: serde_json::json!({"access_key_id":"access","secret_access_key":"secret"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        };
+        solstone_core_backup::set_destination(journal.path(), &destination).unwrap();
+        solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+        journal
     }
     #[test]
     fn refuses_malformed_snapshot_records() {
@@ -328,6 +369,170 @@ mod tests {
             !solstone_core_backup::get_backup_config(journal.path()).unwrap()["enabled"]
                 .as_bool()
                 .unwrap()
+        );
+    }
+    #[test]
+    fn byo_malformed_listing_never_attempts_forget_and_keeps_config() {
+        let journal = configured_byo();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([output(
+                0,
+                "[{\"id\":\"ok\"},{\"id\":\"\"}]",
+            )])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            teardown_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(runner.commands.borrow().len(), 1);
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
+    fn byo_listing_failure_keeps_config() {
+        let journal = configured_byo();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([output(12, "")])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            teardown_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
+    fn byo_forget_failure_keeps_local_config_after_remote_work_begins() {
+        let journal = configured_byo();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, "[{\"id\":\"snap\"}]"),
+                output(12, ""),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            teardown_backup(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(
+            runner.commands.borrow()[1],
+            vec!["forget", "snap", "--prune"]
+        );
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn byo_clear_failure_keeps_config_after_successful_forget() {
+        let journal = configured_byo();
+        let config_dir = journal.path().join("config");
+        let before = std::fs::read(config_dir.join("journal.json")).unwrap();
+        std::fs::set_permissions(&config_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, "[{\"id\":\"snap\"}]"),
+                output(0, ""),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let result = teardown_backup(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+        std::fs::set_permissions(&config_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(result.status, "error");
+        assert_eq!(
+            runner.commands.borrow()[1],
+            vec!["forget", "snap", "--prune"]
+        );
+        assert_eq!(
+            std::fs::read(config_dir.join("journal.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
+    fn operated_broker_failure_keeps_binding_config_prefix_and_never_runs_restic() {
+        let journal = tempfile::tempdir().unwrap();
+        solstone_core_backup::set_mode(journal.path(), "operated").unwrap();
+        let binding = solstone_core_backup::HostedBinding {
+            broker_endpoint: "https://broker".into(),
+            account_id: "account".into(),
+            instance_id: "instance".into(),
+            bucket: "bucket".into(),
+            prefix: "a/b/".into(),
+            broker_token: "token".into(),
+        };
+        solstone_core_backup::save_hosted_binding(journal.path(), &binding).unwrap();
+        let config = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let binding_bytes =
+            std::fs::read(journal.path().join("backup/hosted/binding.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = BrokerFailure {
+            calls: RefCell::new(0),
+        };
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            teardown_backup(
+                journal.path(),
+                &broker_failure_services(&runner, &http, &clock, &maintenance)
+            )
+            .reason_code,
+            Some("broker_unreachable".into())
+        );
+        assert_eq!(*http.calls.borrow(), 1);
+        assert!(runner.commands.borrow().is_empty());
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            config
+        );
+        assert_eq!(
+            std::fs::read(journal.path().join("backup/hosted/binding.json")).unwrap(),
+            binding_bytes
         );
     }
 }

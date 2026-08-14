@@ -349,4 +349,69 @@ mod tests {
         );
         assert_eq!(before, fs::read(path(journal.path(), "20260101")).unwrap());
     }
+
+    #[test]
+    fn duplicate_and_reordered_events_fold_in_append_order() {
+        let journal = tempfile::tempdir().unwrap();
+        let file = OffloadFile {
+            name: "raw.webm".into(),
+            bytes: 7,
+            sha256: "b".repeat(64),
+        };
+        append_restore_event(journal.path(), "20260102", "_default", "020000_001", 99).unwrap();
+        append_offload_event(
+            journal.path(),
+            "20260102",
+            "_default",
+            "020000_001",
+            "first",
+            std::slice::from_ref(&file),
+            1,
+        )
+        .unwrap();
+        append_offload_event(
+            journal.path(),
+            "20260102",
+            "_default",
+            "020000_001",
+            "last",
+            &[file],
+            2,
+        )
+        .unwrap();
+
+        let summary =
+            summarize_segment(journal.path(), "20260102", "_default", "020000_001").unwrap();
+        assert!(summary.currently_offloaded);
+        assert_eq!(summary.snapshot_id.as_deref(), Some("last"));
+    }
+
+    #[test]
+    fn malformed_and_wrong_identity_records_degrade_without_summary_writes() {
+        let journal = tempfile::tempdir().unwrap();
+        let ledger = path(journal.path(), "20260103");
+        fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+        fs::write(
+            &ledger,
+            concat!(
+                "{\"event_kind\":\"offload\",\"time\":1,\"day\":\"20260103\",\"stream\":\"_default\",\"segment\":\"030000_001\",\"snapshot_id\":\"snapshot\",\"files\":[{\"name\":\"raw.webm\",\"bytes\":3,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}\n",
+                "{\"event_kind\":\"offload\",\"time\":2,\"day\":\"wrong\",\"stream\":\"_default\",\"segment\":\"030000_001\",\"snapshot_id\":\"snapshot\",\"files\":[]}\n",
+                "{\"event_kind\":\"offload\",\"time\":3,\"day\":\"20260103\",\"stream\":\"_default\",\"segment\":\"030000_001\",\"snapshot_id\":\"snapshot\",\"files\":[{\"name\":\"../wrong.webm\",\"bytes\":3,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]}\n",
+                "{\"event_kind\":\"offload\"\n"
+            ),
+        )
+        .unwrap();
+        let bytes = fs::read(&ledger).unwrap();
+        let modified = fs::metadata(&ledger).unwrap().modified().unwrap();
+
+        for _ in 0..2 {
+            let summary =
+                summarize_segment(journal.path(), "20260103", "_default", "030000_001").unwrap();
+            assert!(summary.currently_offloaded);
+            assert_eq!(summary.skipped_records, 3);
+            assert!(summary.degraded());
+        }
+        assert_eq!(fs::read(&ledger).unwrap(), bytes);
+        assert_eq!(fs::metadata(&ledger).unwrap().modified().unwrap(), modified);
+    }
 }

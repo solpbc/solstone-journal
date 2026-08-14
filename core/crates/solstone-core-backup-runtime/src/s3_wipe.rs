@@ -284,7 +284,8 @@ impl Client<'_> {
             }
             let body = self.request("GET", bucket, None, query, vec![], vec![])?;
             let page = xml_values(&body, "Contents", "Key");
-            if page.is_empty() && String::from_utf8_lossy(&body).contains("<Contents") {
+            let content_records = String::from_utf8_lossy(&body).matches("<Contents").count();
+            if page.len() != content_records {
                 return Err(failure("failed"));
             }
             keys.extend(page.into_iter().filter(|key| key.starts_with(prefix)));
@@ -542,6 +543,77 @@ mod tests {
             .reason_code,
             Some("timeout".into())
         );
+    }
+    #[test]
+    fn delete_batches_at_the_published_thousand_object_boundary() {
+        let mut page = String::from("<ListBucketResult>");
+        for index in 0..=DELETE_OBJECT_BATCH_SIZE {
+            page.push_str(&format!("<Contents><Key>a/b/{index}</Key></Contents>"));
+        }
+        page.push_str("<IsTruncated>false</IsTruncated></ListBucketResult>");
+        let fixture = Fixture {
+            responses: RefCell::new(VecDeque::from([
+                response(&page),
+                response("<DeleteResult/>"),
+                response("<DeleteResult/>"),
+                response(
+                    "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+                ),
+            ])),
+            requests: RefCell::new(vec![]),
+        };
+
+        assert_eq!(
+            wipe_prefix(
+                &fixture,
+                &credentials(),
+                "bucket",
+                "a/b/",
+                "20150830T123600Z"
+            )
+            .status,
+            "ok"
+        );
+        let requests = fixture.requests.borrow();
+        let deletes = requests
+            .iter()
+            .filter(|request| request.method == "POST")
+            .collect::<Vec<_>>();
+        assert_eq!(deletes.len(), 2);
+        assert_eq!(
+            String::from_utf8_lossy(&deletes[0].body)
+                .matches("<Object><Key>")
+                .count(),
+            DELETE_OBJECT_BATCH_SIZE
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&deletes[1].body)
+                .matches("<Object><Key>")
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn malformed_list_xml_fails_closed_before_delete() {
+        let fixture = Fixture {
+            responses: RefCell::new(VecDeque::from([response(
+                "<ListBucketResult><Contents><Key>a/b/one</Key></Contents><Contents><IsTruncated>false</IsTruncated></ListBucketResult>",
+            )])),
+            requests: RefCell::new(vec![]),
+        };
+
+        assert_eq!(
+            wipe_prefix(
+                &fixture,
+                &credentials(),
+                "bucket",
+                "a/b/",
+                "20150830T123600Z"
+            )
+            .reason_code,
+            Some("failed".into())
+        );
+        assert_eq!(fixture.requests.borrow().len(), 1);
     }
     #[test]
     fn debug_redacts_s3_values() {

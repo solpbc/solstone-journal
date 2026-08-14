@@ -147,6 +147,8 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::io;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     struct Script {
         outputs: RefCell<VecDeque<ToolOutput>>,
@@ -301,5 +303,163 @@ mod tests {
             "skipped"
         );
         assert!(runner.commands.borrow().is_empty());
+    }
+    #[test]
+    fn capture_failure_leaves_local_config_unchanged() {
+        let journal = journal();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([output(12, "")])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            rotate_recovery_key(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(runner.commands.borrow().len(), 1);
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
+    fn add_failure_leaves_local_config_unchanged() {
+        let journal = journal();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, "[{\"id\":\"old\",\"current\":true}]"),
+                output(12, ""),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            rotate_recovery_key(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(runner.commands.borrow().len(), 2);
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
+    fn verify_failure_keeps_candidate_remote_and_local_config_unchanged() {
+        let journal = journal();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, "[{\"id\":\"old\",\"current\":true}]"),
+                output(0, ""),
+                output(10, ""),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            rotate_recovery_key(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(runner.commands.borrow().len(), 3);
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[test]
+    fn remove_failure_keeps_both_remote_keys_and_local_config_unchanged() {
+        let journal = journal();
+        let before = std::fs::read(journal.path().join("config/journal.json")).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, "[{\"id\":\"old\",\"current\":true}]"),
+                output(0, ""),
+                output(0, ""),
+                output(12, ""),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        assert_eq!(
+            rotate_recovery_key(
+                journal.path(),
+                &services(&runner, &http, &clock, &maintenance)
+            )
+            .status,
+            "error"
+        );
+        assert_eq!(runner.commands.borrow().len(), 4);
+        assert_eq!(
+            std::fs::read(journal.path().join("config/journal.json")).unwrap(),
+            before
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn local_key_publication_failure_keeps_remote_change_without_rollback() {
+        let journal = journal();
+        let config_dir = journal.path().join("config");
+        let before = std::fs::read(config_dir.join("journal.json")).unwrap();
+        std::fs::set_permissions(&config_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, "[{\"id\":\"old\",\"current\":true}]"),
+                output(0, ""),
+                output(0, ""),
+                output(0, ""),
+            ])),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let result = rotate_recovery_key(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+        std::fs::set_permissions(&config_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(result.status, "error");
+        // The retained reference does not roll back after old-key removal: the
+        // candidate remains remote while local recovery material stays pre-rotation.
+        assert_eq!(
+            runner
+                .commands
+                .borrow()
+                .iter()
+                .map(|args| args[0].as_str())
+                .collect::<Vec<_>>(),
+            vec!["key", "key", "cat", "key"]
+        );
+        assert_eq!(
+            std::fs::read(config_dir.join("journal.json")).unwrap(),
+            before
+        );
     }
 }

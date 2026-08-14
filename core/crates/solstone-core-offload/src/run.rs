@@ -347,3 +347,273 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::io;
+
+    use serde_json::json;
+    use solstone_core_backup::{
+        Destination, generate_and_store_keys, record_backup_result, record_verification_result,
+        set_destination, set_enabled, set_offload,
+    };
+    use solstone_core_backup_runtime::hosted_runtime::HttpError;
+    use solstone_core_backup_runtime::{
+        Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
+        JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
+    };
+
+    struct Script {
+        outputs: RefCell<VecDeque<ToolOutput>>,
+        calls: RefCell<Vec<Vec<String>>>,
+    }
+    impl ToolRunner for Script {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            self.calls.borrow_mut().push(
+                request
+                    .argv
+                    .iter()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .collect(),
+            );
+            Ok(self
+                .outputs
+                .borrow_mut()
+                .pop_front()
+                .expect("fixture output"))
+        }
+    }
+    struct Http;
+    impl HttpTransport for Http {
+        fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            unreachable!("BYO offload does not use HTTP")
+        }
+    }
+    struct TestClock;
+    impl Clock for TestClock {
+        fn now_unix(&self) -> i64 {
+            100
+        }
+        fn iso_week(&self) -> u8 {
+            1
+        }
+    }
+    struct Maintenance;
+    impl JournalMaintenance for Maintenance {
+        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            Ok(())
+        }
+        fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            Ok(())
+        }
+    }
+    fn output(stdout: String) -> ToolOutput {
+        ToolOutput {
+            returncode: 0,
+            stdout: stdout.into_bytes(),
+            stderr: vec![],
+        }
+    }
+    fn services<'a>(
+        runner: &'a Script,
+        http: &'a Http,
+        clock: &'a TestClock,
+        maintenance: &'a Maintenance,
+    ) -> BackupServices<'a> {
+        BackupServices {
+            runner,
+            http,
+            clock,
+            restic_path: Path::new("restic"),
+            rclone_path: None,
+            version: "test",
+            journal_maintenance: maintenance,
+        }
+    }
+
+    fn successful_offload(
+        floor_bytes: u64,
+    ) -> (tempfile::TempDir, Vec<(PathBuf, Vec<u8>)>, OffloadResult) {
+        let journal = tempfile::tempdir().unwrap();
+        let first = journal
+            .path()
+            .join("chronicle/20260101/010000_001/raw.webm");
+        let second = journal
+            .path()
+            .join("chronicle/20260102/020000_002/raw.webm");
+        fs::create_dir_all(first.parent().unwrap()).unwrap();
+        fs::create_dir_all(second.parent().unwrap()).unwrap();
+        fs::write(&first, b"one").unwrap();
+        fs::write(&second, b"0123456").unwrap();
+        let first_bytes = fs::read(&first).unwrap();
+        let second_bytes = fs::read(&second).unwrap();
+
+        set_destination(
+            journal.path(),
+            &Destination {
+                repository: "s3:bucket/prefix".into(),
+                backend: "s3".into(),
+                credentials:
+                    serde_json::json!({"access_key_id":"ACCESS","secret_access_key":"SECRET"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+            },
+        )
+        .unwrap();
+        generate_and_store_keys(journal.path()).unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        record_backup_result(
+            journal.path(),
+            "ok",
+            json!(100),
+            json!("ready"),
+            Value::Null,
+        )
+        .unwrap();
+        record_verification_result(journal.path(), "ok", json!(100), Value::Null, json!("1/52"))
+            .unwrap();
+        // Marking releases no bytes. A huge floor would suppress work if this
+        // run path consulted it, so this fixture pins that it deliberately does not.
+        set_offload(
+            journal.path(),
+            &serde_json::json!({"enabled":true,"budget_bytes":null,"floor_bytes":floor_bytes})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+
+        let nodes = json!([
+            {"message_type":"snapshot","id":"snapshot"},
+            {"message_type":"node","path":first.display().to_string(),"size":3},
+            {"message_type":"node","path":second.display().to_string(),"size":7}
+        ]);
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(String::new()),
+                output("[{\"message_type\":\"summary\",\"snapshot_id\":\"snapshot\"}]".into()),
+                output(nodes.to_string()),
+                output(String::new()),
+                output("[{\"message_type\":\"summary\",\"snapshot_id\":\"snapshot\"}]".into()),
+                output(nodes.to_string()),
+            ])),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let result = run_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            false,
+        );
+
+        (
+            journal,
+            vec![(first, first_bytes), (second, second_bytes)],
+            result,
+        )
+    }
+
+    #[test]
+    fn floor_is_ignored_when_marking_raw_media() {
+        // Marking releases no bytes. A huge floor would suppress work if this
+        // run path consulted it, so this fixture pins that it deliberately does not.
+        let (_journal, _files, result) = successful_offload(999_999_999_999);
+
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.bytes_marked, 10);
+        assert_eq!(result.details.len(), 2);
+    }
+
+    #[test]
+    fn successful_offload_keeps_distinct_raw_media_bytes() {
+        let (_journal, files, result) = successful_offload(1);
+
+        assert_eq!(result.status, "ok");
+        // Success is pending owner-approved release, never deletion of raw media.
+        for (path, expected) in files {
+            assert_eq!(fs::read(path).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn partial_pruning_audit_failure_does_not_change_success() {
+        let journal = tempfile::tempdir().unwrap();
+        let raw = journal
+            .path()
+            .join("chronicle/20260103/030000_003/audit.webm");
+        fs::create_dir_all(raw.parent().unwrap()).unwrap();
+        fs::write(&raw, b"audit").unwrap();
+        // A file where the per-day health directory belongs makes that best-effort
+        // audit append fail, but a completed archive and mark must still succeed.
+        fs::write(journal.path().join("chronicle/20260103/health"), b"blocked").unwrap();
+
+        set_destination(
+            journal.path(),
+            &Destination {
+                repository: "s3:bucket/prefix".into(),
+                backend: "s3".into(),
+                credentials:
+                    serde_json::json!({"access_key_id":"ACCESS","secret_access_key":"SECRET"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+            },
+        )
+        .unwrap();
+        generate_and_store_keys(journal.path()).unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        record_backup_result(
+            journal.path(),
+            "ok",
+            json!(100),
+            json!("ready"),
+            Value::Null,
+        )
+        .unwrap();
+        record_verification_result(journal.path(), "ok", json!(100), Value::Null, json!("1/52"))
+            .unwrap();
+        set_offload(
+            journal.path(),
+            &serde_json::json!({"enabled":true,"budget_bytes":null,"floor_bytes":1})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+
+        let nodes = json!([
+            {"message_type":"snapshot","id":"snapshot"},
+            {"message_type":"node","path":raw.display().to_string(),"size":5}
+        ]);
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(String::new()),
+                output("[{\"message_type\":\"summary\",\"snapshot_id\":\"snapshot\"}]".into()),
+                output(nodes.to_string()),
+            ])),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let result = run_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            false,
+        );
+
+        assert_eq!(result.status, "ok");
+        assert!(
+            journal
+                .path()
+                .join("health/pruning-runs/19700101.jsonl")
+                .exists()
+        );
+    }
+}
