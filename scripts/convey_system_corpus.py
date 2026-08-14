@@ -431,12 +431,56 @@ def _validate_counts(captured: dict[str, dict[str, list[dict[str, Any]]]]) -> No
         raise AssertionError(f"probe total mismatch: {total} != 287")
 
 
+#: The literal `reason_code` `_safe_brain_snapshot` returns from its bare
+#: `except Exception` in `solstone/apps/health/routes.py`. `build_brain_snapshot`
+#: never produces it, so seeing it in a capture means the reference SWALLOWED an
+#: exception and handed back a plausible refusal envelope.
+_BRAIN_FALLBACK_REASON = "brain_record_unavailable"
+
+
+def _reject_swallowed_reference_failures(
+    captured: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    """Refuse to freeze a refusal the REFERENCE's own handler manufactured.
+
+    🔴 A capture-time exception aborting the run is not enough. `health`'s
+    `_safe_brain_snapshot` catches *every* exception and returns a fixed 10-key
+    object, so a broken environment records as reference behaviour behind a clean
+    exit 0 — and a port that hardcodes `state: "unknown"` then matches the oracle
+    exactly. The oracle would ratify the defect it exists to prevent.
+
+    Measured: a capture taken this way pinned the fallback in five of six
+    non-corrupt phases, and `--check` only disagreed once the same generator ran
+    in an environment where the real projection worked.
+    """
+    offenders = []
+    for phase, apps in captured.items():
+        for app, cases in apps.items():
+            for case in cases:
+                body = (case.get("response") or {}).get("body")
+                if not isinstance(body, dict):
+                    continue
+                brain = body.get("brain")
+                if isinstance(brain, dict) and brain.get("reason_code") == _BRAIN_FALLBACK_REASON:
+                    offenders.append(f"{phase}/{app}{case.get('path', '')}")
+    if offenders:
+        raise RuntimeError(
+            "convey-system refuses to freeze a swallowed reference failure: "
+            f"{len(offenders)} case(s) carry brain reason_code "
+            f"{_BRAIN_FALLBACK_REASON!r}, which only `_safe_brain_snapshot`'s "
+            "`except Exception` produces. The environment broke "
+            "`build_brain_snapshot`; fix that rather than recording its fallback. "
+            f"First offenders: {offenders[:5]}"
+        )
+
+
 def build_fixtures() -> dict[Path, str]:
     capture_day = datetime.now().strftime("%Y%m%d")
     if capture_day in FIXED_PAST_DAYS:
         raise RuntimeError(f"capture day collides with a fixed seed day: {capture_day}")
     captured = _collect_phases(capture_day)
     _validate_counts(captured)
+    _reject_swallowed_reference_failures(captured)
     fixtures = {
         FIXTURES["health"]: _fixture(("health",), captured),
         FIXTURES["stats_tokens"]: _fixture(("stats", "tokens"), captured),
