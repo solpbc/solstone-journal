@@ -109,6 +109,7 @@ fn prune_steward_log(health_dir: &Path, steward_path: &Path) {
         let lock = OpenOptions::new()
             .create(true)
             .write(true)
+            .truncate(false)
             .mode(0o600)
             .open(health_dir.join(".steward.lock"))?;
         let _lock = match Flock::lock(lock, FlockArg::LockExclusiveNonblock) {

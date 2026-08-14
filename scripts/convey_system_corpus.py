@@ -380,6 +380,7 @@ def _fixture(apps: tuple[str, ...], captured: dict[str, dict[str, list[dict[str,
         "phases": {phase: {app: captured[phase][app] for app in apps} for phase in PHASES},
         "rev": "1",
         "tz": "UTC",
+        "coverage_limits": _coverage_limits({p: {a: c for a, c in apps_.items() if a in apps} for p, apps_ in captured.items()}),
         "uncaptured": {app: UNCAPTURED[app] for app in apps},
     }
 
@@ -431,12 +432,123 @@ def _validate_counts(captured: dict[str, dict[str, list[dict[str, Any]]]]) -> No
         raise AssertionError(f"probe total mismatch: {total} != 287")
 
 
+#: The literal `reason_code` `_safe_brain_snapshot` returns from its bare
+#: `except Exception` in `solstone/apps/health/routes.py`. `build_brain_snapshot`
+#: never produces it, so seeing it in a capture means the reference SWALLOWED an
+#: exception and handed back a plausible refusal envelope.
+_BRAIN_FALLBACK_REASON = "brain_record_unavailable"
+
+
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _coverage_limits(
+    captured: dict[str, dict[str, list[dict[str, Any]]]],
+) -> dict[str, Any]:
+    """State what this corpus does NOT cover, computed from the recorded cases.
+
+    🔴 The number that matters is not how many write-method cases a corpus
+    carries. It is how many of them **succeeded** — a refusal grades the refusal
+    envelope and the session gate, never mutation semantics. "N write cases
+    across M routes" is a true aggregate that reads as thorough and is not a
+    claim about the thing anyone cares about.
+
+    ⚠ For the fill-only-when-absent defect class this is decisive: that class is
+    entirely about what a successful SECOND call does, so a corpus with zero
+    successful mutations is exactly as blind to it as one with no write probes.
+
+    Computed rather than written down, so it cannot drift from the fixture: a
+    hand-written zero stays right until someone adds a probe, and is then a false
+    negative inside the artifact everyone trusts.
+    """
+    cases = [c for apps in captured.values() for cs in apps.values() for c in cs]
+    mutating = [c for c in cases if c.get("method") in _MUTATING_METHODS]
+    succeeded = [
+        c
+        for c in mutating
+        if 200 <= ((c.get("response") or {}).get("status") or 0) < 300
+    ]
+    routes: dict[str, list[str]] = {}
+    for phase, apps in captured.items():
+        for cs in apps.values():
+            for c in cs:
+                status = (c.get("response") or {}).get("status") or 0
+                if c.get("method") in _MUTATING_METHODS and 200 <= status < 300:
+                    routes.setdefault(f"{c.get('method')} {c.get('path')}", []).append(phase)
+    return {
+        "mutation_census": {
+            "total_cases": len(cases),
+            "mutating_method_cases": len(mutating),
+            "cases_that_actually_mutated": len(succeeded),
+            "routes_with_a_successful_mutation": routes,
+        },
+        "what_a_green_replay_is_not_evidence_about": (
+            "Every route in `uncaptured`, and every write route in this "
+            "conversion. This corpus is GET-only by design: a POST would mutate "
+            "the per-phase journal and contaminate later phases "
+            "nondeterministically. Reading the producer is not optional for any "
+            "of them."
+        ),
+        "named_hazards_a_replay_cannot_see": [
+            "mutate_journal_config returns before taking the lock and before "
+            "writing when the computed change is a no-op. A port that always "
+            "reports changed writes on every call.",
+            "sol api/set-owner guards bio with `is not None`. A port that writes "
+            "it unconditionally erases the owner's bio when the client omits the "
+            "field, and returns 200.",
+            "sol api/sol-init reaches ensure_identity_directory, which skips each "
+            "default file that already exists. An unconditional port overwrites "
+            "the owner-editable partner.md.",
+            "health api/state and sol api/badge-count are today-anchored with no "
+            "parameter, so their recorded counts depend on the seed landing on "
+            "the capture day.",
+        ],
+    }
+
+
+def _reject_swallowed_reference_failures(
+    captured: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    """Refuse to freeze a refusal the REFERENCE's own handler manufactured.
+
+    🔴 A capture-time exception aborting the run is not enough. `health`'s
+    `_safe_brain_snapshot` catches *every* exception and returns a fixed 10-key
+    object, so a broken environment records as reference behaviour behind a clean
+    exit 0 — and a port that hardcodes `state: "unknown"` then matches the oracle
+    exactly. The oracle would ratify the defect it exists to prevent.
+
+    Measured: a capture taken this way pinned the fallback in five of six
+    non-corrupt phases, and `--check` only disagreed once the same generator ran
+    in an environment where the real projection worked.
+    """
+    offenders = []
+    for phase, apps in captured.items():
+        for app, cases in apps.items():
+            for case in cases:
+                body = (case.get("response") or {}).get("body")
+                if not isinstance(body, dict):
+                    continue
+                brain = body.get("brain")
+                if isinstance(brain, dict) and brain.get("reason_code") == _BRAIN_FALLBACK_REASON:
+                    offenders.append(f"{phase}/{app}{case.get('path', '')}")
+    if offenders:
+        raise RuntimeError(
+            "convey-system refuses to freeze a swallowed reference failure: "
+            f"{len(offenders)} case(s) carry brain reason_code "
+            f"{_BRAIN_FALLBACK_REASON!r}, which only `_safe_brain_snapshot`'s "
+            "`except Exception` produces. The environment broke "
+            "`build_brain_snapshot`; fix that rather than recording its fallback. "
+            f"First offenders: {offenders[:5]}"
+        )
+
+
 def build_fixtures() -> dict[Path, str]:
     capture_day = datetime.now().strftime("%Y%m%d")
     if capture_day in FIXED_PAST_DAYS:
         raise RuntimeError(f"capture day collides with a fixed seed day: {capture_day}")
     captured = _collect_phases(capture_day)
     _validate_counts(captured)
+    _reject_swallowed_reference_failures(captured)
     fixtures = {
         FIXTURES["health"]: _fixture(("health",), captured),
         FIXTURES["stats_tokens"]: _fixture(("stats", "tokens"), captured),

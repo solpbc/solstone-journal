@@ -694,6 +694,7 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/entities/workspace", get(entities::workspace))
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
+        .merge(solstone_core_backup_web::routes(journal_root.clone()))
         .route("/app/body/", get(body::shell))
         .route("/app/body/trends", get(body::trends))
         .route("/app/body/{day}", get(body::shell_for_day))

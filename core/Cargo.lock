@@ -2590,6 +2590,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-backup-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "getrandom 0.3.4",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-callosum",
+ "solstone-core-convey-shell",
+ "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "solstone-core-body-ingest"
 version = "1.0.22"
 dependencies = [
@@ -2814,6 +2834,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "socket2",
+ "solstone-core-backup-web",
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-convey-body",

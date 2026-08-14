@@ -1,0 +1,83 @@
+use serde_json::{Value, json};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+
+#[derive(Clone, Copy)]
+pub struct DeviceGeometry {
+    pub free_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+}
+
+pub struct MeasurementCache {
+    entry: Option<(Instant, Value)>,
+    geometry: DeviceGeometry,
+}
+pub type SharedMeasurementCache = Arc<Mutex<MeasurementCache>>;
+pub fn new(journal_root: &Path) -> SharedMeasurementCache {
+    cache(device_geometry(journal_root))
+}
+
+fn device_geometry(journal_root: &Path) -> DeviceGeometry {
+    let Some(stats) = nix::sys::statvfs::statvfs(journal_root).ok() else {
+        return DeviceGeometry {
+            free_bytes: None,
+            total_bytes: None,
+        };
+    };
+    let fragment_size = Some(stats.fragment_size())
+        .filter(|size| *size > 0)
+        .or(Some(stats.block_size()))
+        .filter(|size| *size > 0);
+    let Some(fragment_size) = fragment_size else {
+        return DeviceGeometry {
+            free_bytes: None,
+            total_bytes: None,
+        };
+    };
+    DeviceGeometry {
+        free_bytes: stats.blocks_free().checked_mul(fragment_size),
+        total_bytes: stats.blocks().checked_mul(fragment_size),
+    }
+}
+
+#[cfg(test)]
+pub fn with_geometry(geometry: DeviceGeometry) -> SharedMeasurementCache {
+    cache(geometry)
+}
+
+fn cache(geometry: DeviceGeometry) -> SharedMeasurementCache {
+    Arc::new(Mutex::new(MeasurementCache {
+        entry: None,
+        geometry,
+    }))
+}
+pub fn snapshot(cache: &SharedMeasurementCache) -> Value {
+    let mut cache = cache.lock().expect("measurement cache lock");
+    if let Some((at, value)) = &cache.entry
+        && at.elapsed() <= Duration::from_secs(60)
+    {
+        return value.clone();
+    }
+    // The Rust surface deliberately makes unavailable host geometry explicit rather
+    // than allowing a zero total to panic the whole handler.
+    let value = match cache.geometry.total_bytes {
+        Some(0) => {
+            json!({"free_bytes": cache.geometry.free_bytes, "total_bytes": 0, "suggested_defaults": Value::Null})
+        }
+        Some(total) => {
+            let floor = (total / 10).max(20_000_000_000).min(total / 4);
+            json!({"free_bytes": cache.geometry.free_bytes, "total_bytes": total, "suggested_defaults": {"budget_bytes": total / 2, "floor_bytes": floor}})
+        }
+        None => {
+            json!({"free_bytes": Value::Null, "total_bytes": Value::Null, "suggested_defaults": Value::Null})
+        }
+    };
+    cache.entry = Some((Instant::now(), value.clone()));
+    value
+}
+pub fn invalidate(cache: &SharedMeasurementCache) {
+    cache.lock().expect("measurement cache lock").entry = None;
+}
