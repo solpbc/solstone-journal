@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from solstone.observe.processing_record import (
     HANDLER_DESCRIBE,
     HANDLER_TRANSCRIBE,
@@ -46,6 +48,15 @@ PURGED_SEGMENT = "120000_120"
 MARKDOWN_SEGMENT = "130000_60"
 IMPORT_MARKDOWN_SEGMENT = "131000_60"
 HEALTH_RAW_MARKDOWN_SEGMENT = "132000_60"
+SPEAKER_LOADED_SEGMENT = "133000_60"
+SPEAKER_AMBIGUOUS_SEGMENT = "134000_60"
+SPEAKER_UNREADABLE_SEGMENT = "135000_60"
+SPEAKER_MALFORMED_SEGMENT = "141000_60"
+ORDINAL_BLANK_SEGMENT = "136000_60"
+ORDINAL_NONSTART_SEGMENT = "137000_60"
+ORDINAL_DISAGREE_SEGMENT = "138000_60"
+ORDINAL_HEADERLESS_SEGMENT = "139000_60"
+DUAL_SEGMENT = "140000_60"
 
 _TEMP_DIR = "/var/tmp"
 _FIXED_CACHE_MTIME = 4_102_444_800
@@ -104,6 +115,20 @@ def _write_analyzed_audio(segment: Path, *, raw_name: str | None = None) -> None
         segment / "mic_audio.jsonl",
         [header, {"start": "00:00:01", "end": "00:00:03", "text": "Seeded transcript."}],
     )
+
+
+def _write_speaker_segment(segment: Path, rows: list[dict[str, Any]], *, ambiguous: bool = False, malformed: bool = False) -> None:
+    _write_jsonl(segment / "mic_audio.jsonl", rows)
+    if ambiguous:
+        _write_jsonl(segment / "desk_audio.jsonl", rows)
+    else:
+        np.savez(segment / "mic_audio.npz", embeddings=np.zeros((2, 2), dtype=np.float32), statement_ids=np.array([1, 2], dtype=np.int64))
+    labels_path = segment / "talents" / "speaker_labels.json"
+    labels_path.parent.mkdir(parents=True, exist_ok=True)
+    if malformed:
+        labels_path.write_text("[broken", encoding="utf-8")
+    else:
+        _write_json(labels_path, {"labels": [{"sentence_id": 1, "speaker": "owner", "confidence": "high", "method": "seed"}, {"sentence_id": 2, "speaker": "other", "confidence": "medium", "method": "seed"}]})
 
 
 def _write_analyzed_screen(segment: Path) -> None:
@@ -359,6 +384,7 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
     (full / "mic_audio.xyz").write_bytes(b"unregistered seeded media")
     (full / "talents" / "flow.md").parent.mkdir(parents=True, exist_ok=True)
     (full / "talents" / "flow.md").write_text("# Segment flow\n\nSeeded segment output.\n", encoding="utf-8")
+    (full / "talents" / "audio.md").write_text("# Audio projection\n", encoding="utf-8")
     (chronicle / D_FULL / "talents").mkdir(parents=True, exist_ok=True)
     (chronicle / D_FULL / "talents" / "flow.md").write_text("# Daily flow\n\nSeeded daily output.\n", encoding="utf-8")
 
@@ -417,6 +443,8 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
 
     markdown_only = _segment(root, D_FULL, NOTES_STREAM, MARKDOWN_SEGMENT)
     (markdown_only / "note.md").write_text("# Seeded note\n\nMarkdown-only segment.\n", encoding="utf-8")
+    (markdown_only / "talents" / "audio.md").parent.mkdir(parents=True, exist_ok=True)
+    (markdown_only / "talents" / "audio.md").write_text("# Preserved audio projection\n", encoding="utf-8")
 
     import_markdown = _segment(root, D_FULL, "import.notes", IMPORT_MARKDOWN_SEGMENT)
     (import_markdown / "imported.md").write_text("# Imported note\n\nNormalizes as markdown.\n", encoding="utf-8")
@@ -424,6 +452,32 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
     health_raw_markdown = _segment(root, D_FULL, "import.apple_health", HEALTH_RAW_MARKDOWN_SEGMENT)
     (health_raw_markdown / "imported.md").write_text("# Health import\n\nRaw media remains.\n", encoding="utf-8")
     (health_raw_markdown / "retained.m4a").write_bytes(b"seeded raw media")
+
+    _write_json(root / "entities" / "owner" / "entity.json", {"id": "owner", "name": "Corpus Owner", "principal": True})
+    _write_json(root / "entities" / "owner" / "identity.json", {"id": "owner", "name": "Corpus Owner", "principal": True})
+    _write_json(root / "entities" / "other" / "entity.json", {"id": "other", "name": "Corpus Other"})
+    _write_json(root / "entities" / "other" / "identity.json", {"id": "other", "name": "Corpus Other"})
+    speaker_rows = [
+        {"raw": "mic_audio.flac"},
+        {"start": "00:00:01", "end": "00:00:02", "text": "First."},
+        {"start": "00:00:03", "end": "00:00:04", "text": "Second."},
+    ]
+    _write_speaker_segment(_segment(root, D_FULL, "speakers", SPEAKER_LOADED_SEGMENT), speaker_rows)
+    _write_speaker_segment(_segment(root, D_FULL, "speakers", SPEAKER_AMBIGUOUS_SEGMENT), speaker_rows, ambiguous=True)
+    _write_speaker_segment(_segment(root, D_FULL, "speakers", SPEAKER_UNREADABLE_SEGMENT), speaker_rows, ambiguous=True, malformed=True)
+    _write_speaker_segment(_segment(root, D_FULL, "speakers", SPEAKER_MALFORMED_SEGMENT), speaker_rows, malformed=True)
+    blank = _segment(root, D_FULL, "ordinals", ORDINAL_BLANK_SEGMENT)
+    _write_speaker_segment(blank, speaker_rows)
+    (blank / "mic_audio.jsonl").write_text((blank / "mic_audio.jsonl").read_text(encoding="utf-8").replace("\n{\"end\": \"00:00:03\"", "\n\n{\"end\": \"00:00:03\""), encoding="utf-8")
+    nonstart = [speaker_rows[0], {"metadata": "does not consume ordinal"}, *speaker_rows[1:]]
+    _write_speaker_segment(_segment(root, D_FULL, "ordinals", ORDINAL_NONSTART_SEGMENT), nonstart)
+    disagree = [speaker_rows[0], {"start": "00:00:01", "end": "00:00:02", "sentence_id": 99, "text": "First."}, speaker_rows[2]]
+    _write_speaker_segment(_segment(root, D_FULL, "ordinals", ORDINAL_DISAGREE_SEGMENT), disagree)
+    _write_speaker_segment(_segment(root, D_FULL, "ordinals", ORDINAL_HEADERLESS_SEGMENT), speaker_rows[1:])
+    # Python's no-stream lookup observes this creation order for equal keys.
+    for stream, text in [("dual.one", "# Dual one\n"), ("dual.two", "# Dual two\n")]:
+        dual = _segment(root, D_FULL, stream, DUAL_SEGMENT)
+        (dual / "imported.md").write_text(text, encoding="utf-8")
 
     cache_segment = _segment(root, D_CACHE, FULL_STREAM, "090000_60")
     _write_analyzed_audio(cache_segment)
@@ -461,7 +515,7 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
         [
             {
                 "timestamp": 1785498000.0,
-                "model": "gpt-5-mini",
+                "model": "local/test-model",
                 "context": "seed.records",
                 "segment": FULL_SEGMENT,
                 "usage": {"input_tokens": 1000, "output_tokens": 250, "total_tokens": 1250},

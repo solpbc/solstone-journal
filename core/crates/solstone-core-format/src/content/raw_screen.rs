@@ -35,6 +35,22 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
                 format!("### {hour:02}:{minute:02}:{second:02}"),
                 String::new(),
             ];
+            if let Some(analysis) = frame.get("analysis").and_then(Value::as_object) {
+                let category = analysis
+                    .get("primary")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                lines.push(format!("**Category:** {category}"));
+                lines.push(String::new());
+                if let Some(description) = analysis
+                    .get("visual_description")
+                    .and_then(Value::as_str)
+                    .filter(|description| !description.is_empty())
+                {
+                    lines.push(description.to_owned());
+                    lines.push(String::new());
+                }
+            }
             if let Some(content) = frame.get("content").and_then(Value::as_object) {
                 for (category, value) in content {
                     if !json_truthy(Some(value)) {

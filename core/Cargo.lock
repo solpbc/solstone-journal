@@ -3965,12 +3965,16 @@ dependencies = [
  "sha2",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
+ "solstone-core-entity",
+ "solstone-core-format",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
+ "solstone-core-npy",
  "solstone-core-system-health",
  "tempfile",
  "tokio",
  "tower",
+ "zip",
 ]
 
 [[package]]

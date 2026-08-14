@@ -128,6 +128,7 @@ def _normalize_json(value: Any, *, root: Path, today_day: str) -> tuple[Any, lis
             "events[].since_ts",
             "events[].queued_at",
             "events[].started_at",
+            "warning_details[].ts",
         } or (
             field_path.startswith("sol_message_origins.")
             and field_path.rsplit(".", 1)[-1] in {"ts", "since_ts", "superseded_at"}
@@ -168,6 +169,7 @@ def _normalize_json(value: Any, *, root: Path, today_day: str) -> tuple[Any, lis
                 "events[].since_ts",
                 "events[].queued_at",
                 "events[].started_at",
+                "warning_details[].ts",
             }:
                 if today_day in normalized or today_timestamp_path(path):
                     found.append(path)
@@ -501,11 +503,15 @@ def _populated_probes(today: str) -> list[dict[str, Any]]:
     for prefix, why, flags in source_variants:
         add(_probe("transcripts", "GET", f"/app/transcripts/api/read/{D_FULL}?{prefix}{flags}", why))
     add(_probe("transcripts", "GET", f"/app/transcripts/api/read/{D_FULL}?segments=090000_300,not-a-key&stream=field&transcripts=1", "malformed span refusal"))
+    add(_probe("transcripts", "GET", f"/app/transcripts/api/read/{D_FULL}?segments=,,,&transcripts=1", "empty span preserves reference nothing-found response"))
+    add(_probe("transcripts", "GET", f"/app/transcripts/api/read/{D_FULL}?segment=140000_60&transcripts=1", "dual-stream segment without stream"))
+    add(_probe("transcripts", "GET", f"/app/transcripts/api/read/{D_FULL}?segment=140000_60&stream=dual.two&transcripts=1", "dual-stream segment with stream"))
     for month, why in [("202607", "mixed fresh-cache and raw-scan month"), ("202608", "no-cache raw-scan month"), ("202609", "sparse no-cache month"), ("nope", "invalid month refusal")]:
         add(_probe("transcripts", "GET", f"/app/transcripts/api/stats/{month}", why))
     media = f"/app/transcripts/api/serve_file/{D_FULL}/field/090000_300"
     add(_probe("transcripts", "GET", f"{media}/mic_audio.flac", "registered media"))
     add(_probe("transcripts", "GET", f"{media}/mic_audio.flac", "registered ranged media", headers={"Range": "bytes=0-15"}))
+    add(_probe("transcripts", "GET", f"{media}/mic_audio.flac", "unsatisfiable ranged media", headers={"Range": "bytes=999-1000"}))
     for name, why in [("zero.flac", "zero-byte media"), ("mic_audio.xyz", "unregistered extension native deviation"), ("absent.exe", "missing file refusal")]:
         add(_probe(
             "transcripts",
@@ -517,7 +523,7 @@ def _populated_probes(today: str) -> list[dict[str, Any]]:
     add(_probe("transcripts", "GET", f"/app/transcripts/api/serve_file/{D_FULL}/../config/journal.json", "traversal refusal"))
     for stream, segment, why in [
         ("field", "090000_300", "analyzed segment"), ("field", "100000_120", "analyzing rendering only"),
-        ("field", "110000_120", "failed rendering only"), ("field", "120000_120", "purged rendering"), ("notes", "130000_60", "markdown-only segment"),
+        ("field", "110000_120", "failed rendering only"), ("field", "120000_120", "purged rendering"), ("notes", "130000_60", "markdown-only segment"), ("import.notes", "131000_60", "import markdown-only segment"), ("import.apple_health", "132000_60", "import raw markdown-only segment"), ("speakers", "133000_60", "loaded speaker labels"), ("speakers", "134000_60", "ambiguous speaker labels"), ("speakers", "135000_60", "unreadable ambiguous speaker labels"), ("speakers", "141000_60", "unreadable speaker labels"), ("ordinals", "136000_60", "blank-line speaker ordinal"), ("ordinals", "137000_60", "non-start speaker ordinal"), ("ordinals", "138000_60", "persisted sentence id disagreement"), ("ordinals", "139000_60", "headerless speaker ordinal"),
     ]:
         add(_probe("transcripts", "GET", f"/app/transcripts/api/segment/{D_FULL}/{stream}/{segment}", why))
     for path, body, why in [

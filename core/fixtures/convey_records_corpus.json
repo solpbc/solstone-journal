@@ -2228,7 +2228,7 @@
         },
         {
           "app": "search",
-          "body_sha256": "9636519610cd9ff1b6f1eca2af4a5c914308a331301e263e8089d6a1c47ac2d8",
+          "body_sha256": "ad5c513af09acb2c62249aebc758fd44b9e13579b4000229833a52806d2a75ad",
           "body_sha256_basis": "normalized-json",
           "json": {
             "daily": [
@@ -2241,6 +2241,10 @@
             "segments": [
               {
                 "outputs": [
+                  {
+                    "bytes": 19,
+                    "name": "audio.md"
+                  },
                   {
                     "bytes": 39,
                     "name": "flow.md"
@@ -2265,7 +2269,12 @@
                 "stream": "field"
               },
               {
-                "outputs": [],
+                "outputs": [
+                  {
+                    "bytes": 29,
+                    "name": "audio.md"
+                  }
+                ],
                 "segment": "130000_60",
                 "stream": "notes"
               },
@@ -2280,9 +2289,99 @@
                 "stream": "import.apple_health"
               },
               {
+                "outputs": [
+                  {
+                    "bytes": 251,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "133000_60",
+                "stream": "speakers"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 251,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "134000_60",
+                "stream": "speakers"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 7,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "135000_60",
+                "stream": "speakers"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 251,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "136000_60",
+                "stream": "ordinals"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 251,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "137000_60",
+                "stream": "ordinals"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 251,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "138000_60",
+                "stream": "ordinals"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 251,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "139000_60",
+                "stream": "ordinals"
+              },
+              {
                 "outputs": [],
                 "segment": "140000_300",
                 "stream": "chat"
+              },
+              {
+                "outputs": [],
+                "segment": "140000_60",
+                "stream": "dual.one"
+              },
+              {
+                "outputs": [],
+                "segment": "140000_60",
+                "stream": "dual.two"
+              },
+              {
+                "outputs": [
+                  {
+                    "bytes": 7,
+                    "name": "speaker_labels.json"
+                  }
+                ],
+                "segment": "141000_60",
+                "stream": "speakers"
               }
             ]
           },
@@ -2292,7 +2391,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "558",
+            "Content-Length": "1521",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2633,7 +2732,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "9ed81fed00f100c82895168053fb4fcbfd45cc7c70a8f7794ed023750d6f8055",
+          "body_sha256": "e6d69a0242a3893553128afdaa130ef99323c0f6f82a524d29b39834780d6e8b",
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio": [
@@ -2672,6 +2771,17 @@
                   "field"
                 ],
                 "think": null
+              },
+              {
+                "end": "14:15",
+                "start": "13:00",
+                "state": "analyzed",
+                "streams": [
+                  "dual.one",
+                  "dual.two",
+                  "speakers"
+                ],
+                "think": "awaiting"
               }
             ],
             "screen": [
@@ -2692,7 +2802,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "454",
+            "Content-Length": "569",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2700,7 +2810,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "035e1191e18e77a258c9ed5fc058983b571a89ddd46523506a0bc5e628e6917a",
+          "body_sha256": "2d93d17068a32fb22bbbf89e793e2416f41b236a7ae8501a9f4e01f31f565092",
           "body_sha256_basis": "normalized-json",
           "json": {
             "segments": [
@@ -2785,6 +2895,84 @@
                 "types": [
                   "markdown"
                 ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "13:31",
+                "key": "133000_60",
+                "start": "13:30",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "13:41",
+                "key": "134000_60",
+                "start": "13:40",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "13:51",
+                "key": "135000_60",
+                "start": "13:50",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "14:01",
+                "key": "140000_60",
+                "start": "14:00",
+                "stream": "dual.one",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "14:01",
+                "key": "140000_60",
+                "start": "14:00",
+                "stream": "dual.two",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "14:11",
+                "key": "141000_60",
+                "start": "14:10",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
               }
             ]
           },
@@ -2794,7 +2982,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "908",
+            "Content-Length": "1754",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2802,7 +2990,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "cb6d6e1f980aadaa2414fbcd369331d25c2270c5b769df76085e703bdec65ce7",
+          "body_sha256": "912f41a145eb86d9c3dc0c8b1e8002e993387e7150d42cda5b5469cbf68968e9",
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio": [
@@ -2841,6 +3029,17 @@
                   "field"
                 ],
                 "think": null
+              },
+              {
+                "end": "14:15",
+                "start": "13:00",
+                "state": "analyzed",
+                "streams": [
+                  "dual.one",
+                  "dual.two",
+                  "speakers"
+                ],
+                "think": "awaiting"
               }
             ],
             "screen": [
@@ -2936,6 +3135,84 @@
                 "types": [
                   "markdown"
                 ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "13:31",
+                "key": "133000_60",
+                "start": "13:30",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "13:41",
+                "key": "134000_60",
+                "start": "13:40",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "13:51",
+                "key": "135000_60",
+                "start": "13:50",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "14:01",
+                "key": "140000_60",
+                "start": "14:00",
+                "stream": "dual.one",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "14:01",
+                "key": "140000_60",
+                "start": "14:00",
+                "stream": "dual.two",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
+              },
+              {
+                "data_state": {
+                  "audio": "analyzed"
+                },
+                "end": "14:11",
+                "key": "141000_60",
+                "start": "14:10",
+                "stream": "speakers",
+                "think": "awaiting",
+                "types": [
+                  "audio"
+                ]
               }
             ]
           },
@@ -2945,7 +3222,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "1360",
+            "Content-Length": "2321",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2953,10 +3230,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "acfee18c66d6a5addb7098ad9e90dc59c6c25cad32058f69796f0e341216fb28",
+          "body_sha256": "d5a1225d82689af1d17b2504c1f23a7262ab999c4296e2f9a2253e6e368afbb7",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2964,7 +3241,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "736",
+            "Content-Length": "1614",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2972,10 +3249,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7370be4c4b84777ed2aea75bc4fbf8ecbde0d43fdb175c7bcd7662d502c770ba",
+          "body_sha256": "adce8fc9c5d875cedef3b63c85af8d55b0a811f89a57cf1a59258092328395f3",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -2983,7 +3260,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "113",
+            "Content-Length": "242",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -2991,10 +3268,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "81abb3aa5fd5b83f37ecd2625e13cfce5b3b4860274647a45c7188db19413f6b",
+          "body_sha256": "1ce60b49177736b81dd3dfbc2b1ec07b845edaf6b0723d7f65d035286c62c274",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3002,7 +3279,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "674",
+            "Content-Length": "1423",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3010,10 +3287,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "73cb210c4c585efdb552ea235a7acebd9177ec72d19fef4204289815ffcd6610",
+          "body_sha256": "8c9ea02df78d314442187b364795075ecbdbe89cc45ce206bfc8914a071c1d81",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n\n## 2026-07-31 11:00:00 - 11:02:00\n\n### Transcript\nStart: 2026-07-31 11:00am\n\n## 2026-07-31 12:00:00 - 12:02:00\n\n### Transcript\nStart: 2026-07-31 12:00pm\n\n## 2026-07-31 13:00:00 - 13:01:00\n\n### audio summary\n# Preserved audio projection\n\n## 2026-07-31 13:10:00 - 13:11:00\n\n### Transcript\n# Imported note\n\nNormalizes as markdown.\n\n## 2026-07-31 13:20:00 - 13:21:00\n\n### Transcript\n# Health import\n\nRaw media remains.\n\n## 2026-07-31 13:30:00 - 13:31:00\n\n### Transcript\nStart: 2026-07-31 01:30pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:40:00 - 13:41:00\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:40pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 13:50:00 - 13:51:00\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n### Transcript\nStart: 2026-07-31 01:50pm\n[00:00:01] First.\n[00:00:03] Second.\n\n## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n\n### Transcript\n# Dual two\n\n## 2026-07-31 14:10:00 - 14:11:00\n\n### Transcript\nStart: 2026-07-31 02:10pm\n[00:00:01] First.\n[00:00:03] Second.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3021,7 +3298,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "546",
+            "Content-Length": "1424",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3029,10 +3306,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7312664ea3597fffb7576af6f43d8e4362ef1b48893108bf2f69ec17fbe3934b",
+          "body_sha256": "e47896d80205c3eb43ccc4688691807233ca9e2d0022b18c1f01fc8ac69700d7",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3040,7 +3317,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "379",
+            "Content-Length": "420",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3048,10 +3325,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7370be4c4b84777ed2aea75bc4fbf8ecbde0d43fdb175c7bcd7662d502c770ba",
+          "body_sha256": "3143ac89f0daa352ba2210d60f7c1b9319c5b875c1f5473dc1528534f7494541",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3059,7 +3336,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "113",
+            "Content-Length": "154",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3086,10 +3363,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "ad58452552ee0aa6364c6223c87fb654bf35375c8687b91b1695bc4434d62cdd",
+          "body_sha256": "d63849d2d11025df8162121b19ca8f5e495d4e8524f32b4623c0d6e388b3f676",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3097,7 +3374,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "189",
+            "Content-Length": "230",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3105,10 +3382,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7312664ea3597fffb7576af6f43d8e4362ef1b48893108bf2f69ec17fbe3934b",
+          "body_sha256": "e47896d80205c3eb43ccc4688691807233ca9e2d0022b18c1f01fc8ac69700d7",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3116,7 +3393,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "379",
+            "Content-Length": "420",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3124,10 +3401,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7370be4c4b84777ed2aea75bc4fbf8ecbde0d43fdb175c7bcd7662d502c770ba",
+          "body_sha256": "3143ac89f0daa352ba2210d60f7c1b9319c5b875c1f5473dc1528534f7494541",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3135,7 +3412,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "113",
+            "Content-Length": "154",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3162,10 +3439,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "ad58452552ee0aa6364c6223c87fb654bf35375c8687b91b1695bc4434d62cdd",
+          "body_sha256": "d63849d2d11025df8162121b19ca8f5e495d4e8524f32b4623c0d6e388b3f676",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3173,7 +3450,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "189",
+            "Content-Length": "230",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3181,10 +3458,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7312664ea3597fffb7576af6f43d8e4362ef1b48893108bf2f69ec17fbe3934b",
+          "body_sha256": "e47896d80205c3eb43ccc4688691807233ca9e2d0022b18c1f01fc8ac69700d7",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### Screen Activity\n# Frame Analyses\n### 09:00:01\n\n**Category:** work\n\nA deterministic screen percept.\n\n### Browser Content\n## Seeded browser page\n\nbrowser · example.test\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3192,7 +3469,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "379",
+            "Content-Length": "420",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3200,10 +3477,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "7370be4c4b84777ed2aea75bc4fbf8ecbde0d43fdb175c7bcd7662d502c770ba",
+          "body_sha256": "3143ac89f0daa352ba2210d60f7c1b9319c5b875c1f5473dc1528534f7494541",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3211,7 +3488,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "113",
+            "Content-Length": "154",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3238,10 +3515,10 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "ad58452552ee0aa6364c6223c87fb654bf35375c8687b91b1695bc4434d62cdd",
+          "body_sha256": "d63849d2d11025df8162121b19ca8f5e495d4e8524f32b4623c0d6e388b3f676",
           "body_sha256_basis": "normalized-json",
           "json": {
-            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
+            "markdown": "## 2026-07-31 09:00:00 - 09:05:00\n\n### Transcript\nStart: 2026-07-31 09:00am\n[00:00:01] Seeded transcript.\n\n### audio summary\n# Audio projection\n\n### flow summary\n# Segment flow\n\nSeeded segment output.\n"
           },
           "method": "GET",
           "normalized_fields": [],
@@ -3249,7 +3526,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "189",
+            "Content-Length": "230",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3275,6 +3552,63 @@
           },
           "status": 400,
           "why": "malformed span refusal"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "1208a6544e423d3acfab3b52e630429a0b8862ef5ad742ea22334b1b92eec4d1",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "markdown": "No transcript, screen, or browser files found in span: "
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/read/20260731?segments=,,,&transcripts=1",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "71",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "empty span preserves reference nothing-found response"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "c7e85f3bc2be0a26d0adb87ea2ccecd50fd8fba5f61128ceef2ae2fad9df9eea",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "markdown": "## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual one\n"
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/read/20260731?segment=140000_60&transcripts=1",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "81",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "dual-stream segment without stream"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "63009147bcaed011a3929a4dd5ada02f0555fbb6a4553f6468accb961f654534",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "markdown": "## 2026-07-31 14:00:00 - 14:01:00\n\n### Transcript\n# Dual two\n"
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/read/20260731?segment=140000_60&stream=dual.two&transcripts=1",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "81",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "dual-stream segment with stream"
         },
         {
           "app": "transcripts",
@@ -3396,6 +3730,29 @@
         },
         {
           "app": "transcripts",
+          "body_sha256": "4cf5c0493e22bf44c8029afdf2b70edf3866856d8d8945327a031f4235c8a904",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "detail": "",
+            "error": "I couldn't complete that request.",
+            "reason_code": "http_error"
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/serve_file/20260731/field/090000_300/mic_audio.flac",
+          "phase": "populated",
+          "request_headers": {
+            "Range": "bytes=999-1000"
+          },
+          "response_headers": {
+            "Content-Length": "85",
+            "Content-Type": "application/json"
+          },
+          "status": 416,
+          "why": "unsatisfiable ranged media"
+        },
+        {
+          "app": "transcripts",
           "body_bytes": "",
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "body_sha256_basis": "raw-body",
@@ -3478,7 +3835,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "305c3e421d0745cc46f5fe7e9474e0aa25481793d1195d3a6740597c9f1963ce",
+          "body_sha256": "c187f8ab685187da639b579ccc3455c733732ea504fedb9dfa52eccdd9befc9b",
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": "/app/transcripts/api/serve_file/20260731/field/090000_300/mic_audio.flac",
@@ -3535,7 +3892,7 @@
                 "type": "browser"
               }
             ],
-            "cost": 0.00075,
+            "cost": 0.0,
             "data_state": {
               "audio": "analyzed",
               "browser": "analyzed",
@@ -3610,7 +3967,7 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "3080",
+            "Content-Length": "3076",
             "Content-Type": "application/json"
           },
           "status": 200,
@@ -3864,7 +4221,7 @@
         },
         {
           "app": "transcripts",
-          "body_sha256": "28df0934940226ace8a930cfb1a23f4bb07dfbb3c4ddc186d3e2d6aae02f6987",
+          "body_sha256": "e36bfe48a2eb8452c3528986ce97470a2f40c690fda0af6487257852b95b8615",
           "body_sha256_basis": "normalized-json",
           "json": {
             "audio_file": null,
@@ -3873,7 +4230,9 @@
             "data_state": {},
             "duration": 0.0,
             "image_files": {},
-            "md_files": {},
+            "md_files": {
+              "audio": "# Preserved audio projection"
+            },
             "media_purged": {
               "audio": false,
               "screen": false
@@ -3936,11 +4295,1295 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Content-Length": "1781",
+            "Content-Length": "1819",
             "Content-Type": "application/json"
           },
           "status": 200,
           "why": "markdown-only segment"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "0e3fe8433ddb143fdc83d53c14136c80161cb0b1aa8b1a0b4f29eb2703749341",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "markdown": "# Imported note\n\nNormalizes as markdown.",
+                "source_ref": {
+                  "filename": "imported.md"
+                },
+                "time": "13:10:00",
+                "timestamp": 1785503400000,
+                "type": "markdown"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "markdown": "analyzed"
+            },
+            "duration": 0.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": false,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "131000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": false,
+              "present": false,
+              "source": null
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/import.notes/131000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "1961",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "import markdown-only segment"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "3c99aeba0bee0b12f09bb24fd4a912700b4d5ddc9c387369d6fda60367dbade7",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "markdown": "# Health import\n\nRaw media remains.",
+                "source_ref": {
+                  "filename": "imported.md"
+                },
+                "time": "13:20:00",
+                "timestamp": 1785504000000,
+                "type": "markdown"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "markdown": "analyzed"
+            },
+            "duration": 0.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": false,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "132000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": false,
+              "present": false,
+              "source": null
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/import.apple_health/132000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "1956",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "import raw markdown-only segment"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "745414e719710a572802ad90718176a0a0c01743a79fd14df743ce9f3656459f",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": true,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "high",
+                  "confidence_state": "high",
+                  "entity_id": "owner",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Owner",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1785504601000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": true,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "medium",
+                  "confidence_state": "medium",
+                  "entity_id": "other",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Other",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 1785504603000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 60.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "133000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": true,
+              "present": true,
+              "source": "mic_audio"
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/speakers/133000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2684",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "loaded speaker labels"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "31337c3d4956a51babb12f0bbe20c5c31e437f09fe428a4cd0905ef098998389",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": false,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "desk_audio",
+                "time": "00:00:01",
+                "timestamp": 1785505201000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": false,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1785505201000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": false,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "desk_audio",
+                "time": "00:00:03",
+                "timestamp": 1785505203000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": false,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 1785505203000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 60.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "134000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": true,
+              "loaded": true,
+              "present": true,
+              "source": null
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [
+              {
+                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/134000_60/talents/speaker_labels.json",
+                "message": "speaker label source is ambiguous for this segment",
+                "ts": "<TODAY_TIMESTAMP>",
+                "type": "speaker_labels"
+              }
+            ],
+            "warnings": 1
+          },
+          "method": "GET",
+          "normalized_fields": [
+            "warning_details[].file",
+            "warning_details[].ts"
+          ],
+          "path": "/app/transcripts/api/segment/20260731/speakers/134000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2985",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "ambiguous speaker labels"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "2e321d89bbb59c9cc51cedd54eadff97afee0c5e5a4d251a6f89a51c5befe176",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": false,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "desk_audio",
+                "time": "00:00:01",
+                "timestamp": 1785505801000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": false,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1785505801000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": false,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "desk_audio",
+                "time": "00:00:03",
+                "timestamp": 1785505803000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": false,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 1785505803000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 60.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "135000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": true,
+              "loaded": false,
+              "present": true,
+              "source": null
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [
+              {
+                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/135000_60/talents/speaker_labels.json",
+                "message": "speaker label source is ambiguous for this segment",
+                "ts": "<TODAY_TIMESTAMP>",
+                "type": "speaker_labels"
+              },
+              {
+                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/135000_60/talents/speaker_labels.json",
+                "message": "speaker labels are unavailable for this segment",
+                "ts": "<TODAY_TIMESTAMP>",
+                "type": "speaker_labels"
+              }
+            ],
+            "warnings": 2
+          },
+          "method": "GET",
+          "normalized_fields": [
+            "warning_details[].file",
+            "warning_details[].ts"
+          ],
+          "path": "/app/transcripts/api/segment/20260731/speakers/135000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "3218",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "unreadable ambiguous speaker labels"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "40db8f2e7e73b102589c9439dac5a08036a981cf1a76e9639cf63be468a5b545",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": true,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1785507001000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": true,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": false,
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 1785507003000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 60.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "141000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": false,
+              "present": true,
+              "source": "mic_audio"
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [
+              {
+                "file": "<JOURNAL_ROOT>/chronicle/20260731/speakers/141000_60/talents/speaker_labels.json",
+                "message": "speaker labels are unavailable for this segment",
+                "ts": "<TODAY_TIMESTAMP>",
+                "type": "speaker_labels"
+              }
+            ],
+            "warnings": 1
+          },
+          "method": "GET",
+          "normalized_fields": [
+            "warning_details[].file",
+            "warning_details[].ts"
+          ],
+          "path": "/app/transcripts/api/segment/20260731/speakers/141000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2510",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "unreadable speaker labels"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "52f1462c12faf3d38e76b918a2cae527f54c76be83a1046fb550ef7857cd8ce0",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": true,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "high",
+                  "confidence_state": "high",
+                  "entity_id": "owner",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Owner",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": true,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "medium",
+                  "confidence_state": "medium",
+                  "entity_id": "other",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Other",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 3000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 0.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "136000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": true,
+              "present": true,
+              "source": "mic_audio"
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/ordinals/136000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2665",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "blank-line speaker ordinal"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "ba23e2682e94dad620069940ffc44755d520f0d764250b6e6b3024114be09da5",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": true,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "high",
+                  "confidence_state": "high",
+                  "entity_id": "owner",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Owner",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": true,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "medium",
+                  "confidence_state": "medium",
+                  "entity_id": "other",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Other",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 3000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 0.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "137000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": true,
+              "present": true,
+              "source": "mic_audio"
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/ordinals/137000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2665",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "non-start speaker ordinal"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "711a69d7f0e919ebac8e6592365e929eb785a5e426ef2f850df7421a3f79d3fc",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": true,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "high",
+                  "confidence_state": "high",
+                  "entity_id": "owner",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Owner",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": true,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "medium",
+                  "confidence_state": "medium",
+                  "entity_id": "other",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Other",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 3000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 0.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": true,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "138000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": true,
+              "present": true,
+              "source": "mic_audio"
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/ordinals/138000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2665",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "persisted sentence id disagreement"
+        },
+        {
+          "app": "transcripts",
+          "body_sha256": "00a8df80681162f0ae47ac404bddcad6e29d55071f89cb1a0364d707ef65e5db",
+          "body_sha256_basis": "normalized-json",
+          "json": {
+            "audio_file": null,
+            "chunks": [
+              {
+                "has_embedding": true,
+                "markdown": "First.",
+                "sentence_id": 1,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:01"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "high",
+                  "confidence_state": "high",
+                  "entity_id": "owner",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Owner",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:01",
+                "timestamp": 1000,
+                "type": "audio"
+              },
+              {
+                "has_embedding": true,
+                "markdown": "Second.",
+                "sentence_id": 2,
+                "source_ref": {
+                  "source": null,
+                  "speaker": null,
+                  "start": "00:00:03"
+                },
+                "speaker_actionable": true,
+                "speaker_label": {
+                  "acoustic_margin_declined": false,
+                  "confidence": "medium",
+                  "confidence_state": "medium",
+                  "entity_id": "other",
+                  "is_owner": false,
+                  "method": "seed",
+                  "name": "Corpus Other",
+                  "owner_margin_declined": false
+                },
+                "speaker_source": "mic_audio",
+                "time": "00:00:03",
+                "timestamp": 3000,
+                "type": "audio"
+              }
+            ],
+            "cost": 0.0,
+            "data_state": {
+              "audio": "analyzed"
+            },
+            "duration": 0.0,
+            "image_files": {},
+            "md_files": {},
+            "media_purged": {
+              "audio": false,
+              "screen": false
+            },
+            "media_sizes": {
+              "audio": 0,
+              "screen": 0
+            },
+            "segment_key": "139000_60",
+            "signals": {
+              "calendar": {
+                "events": [],
+                "total": 0,
+                "unique": 0
+              },
+              "counts": {},
+              "events": []
+            },
+            "speaker_labels": {
+              "ambiguous": false,
+              "loaded": true,
+              "present": true,
+              "source": "mic_audio"
+            },
+            "transcripts_copy": {
+              "TR_SPEAKER_ACTION_UNAVAILABLE": "speaker change unavailable",
+              "TR_SPEAKER_ALREADY_CORRECT": "already set",
+              "TR_SPEAKER_ASSIGN_LABEL": "add speaker",
+              "TR_SPEAKER_CHANGE_LABEL": "change speaker",
+              "TR_SPEAKER_CONFIDENCE_HIGH": "high confidence",
+              "TR_SPEAKER_CONFIDENCE_UNKNOWN": "confidence unavailable",
+              "TR_SPEAKER_CORRECT_BUSY": "speaker files are busy",
+              "TR_SPEAKER_CORRECT_RETRY": "retry speaker change",
+              "TR_SPEAKER_HEDGE_MAYBE": "maybe {name}?",
+              "TR_SPEAKER_HEDGE_PROBABLE": "probably {name}",
+              "TR_SPEAKER_MARGIN_ACOUSTIC": "close voice match",
+              "TR_SPEAKER_MARGIN_OWNER": "close owner match",
+              "TR_SPEAKER_NO_EMBEDDING": "voice sample unavailable",
+              "TR_SPEAKER_OWNER_IDENTITY_REQUIRED": "set your identity before tagging yourself",
+              "TR_SPEAKER_OWNER_TOO_CLOSE": "that voice is too close to yours to save there",
+              "TR_SPEAKER_PICKER_EMPTY": "no known voices yet",
+              "TR_SPEAKER_PICKER_NO_RESULTS": "no matching people",
+              "TR_SPEAKER_PICKER_OWNER": "this is me",
+              "TR_SPEAKER_PICKER_SEARCH_PLACEHOLDER": "find a person",
+              "TR_SPEAKER_PICKER_TITLE": "choose speaker",
+              "TR_SPEAKER_PROPAGATION_APPLIED": "changes applied",
+              "TR_SPEAKER_PROPAGATION_APPLY": "apply changes",
+              "TR_SPEAKER_PROPAGATION_DISMISS": "dismiss",
+              "TR_SPEAKER_PROPAGATION_OFFER": "{count} more statements may need this change",
+              "TR_SPEAKER_SOMEONE_ELSE": "someone else…",
+              "TR_SPEAKER_UNKNOWN_CHIP": "unknown voice"
+            },
+            "video_files": {},
+            "warning_details": [],
+            "warnings": 0
+          },
+          "method": "GET",
+          "normalized_fields": [],
+          "path": "/app/transcripts/api/segment/20260731/ordinals/139000_60",
+          "phase": "populated",
+          "request_headers": {},
+          "response_headers": {
+            "Content-Length": "2666",
+            "Content-Type": "application/json"
+          },
+          "status": 200,
+          "why": "headerless speaker ordinal"
         },
         {
           "app": "transcripts",
@@ -4225,7 +5868,7 @@
     "journal_root": "<JOURNAL_ROOT>",
     "today": "<TODAY>"
   },
-  "rev": "415db0bdd24219838c981571f91756e0ac60725d",
+  "rev": "2c486f43cdb903aaab24e2b4b89b37cb9acdfbfe",
   "schema": "solstone-convey-records-corpus-v1",
   "seeder_manifest": {
     "agent_name_present": true,
@@ -4265,12 +5908,12 @@
     "stats_cache_absent_returns_none_asserted": true,
     "stats_cache_fresh_asserted": true,
     "stats_cache_present_day_count": 1,
-    "stream_count": 4,
+    "stream_count": 8,
     "talent_output_day_level_present": true,
     "talent_output_segment_level_present": true,
     "today_day": "<TODAY>",
     "today_day_seeded": true,
-    "transcript_stream_count": 1,
+    "transcript_stream_count": 3,
     "unmuted_facet_present": true,
     "usage_record_count": 1,
     "zero_byte_media_present": true,

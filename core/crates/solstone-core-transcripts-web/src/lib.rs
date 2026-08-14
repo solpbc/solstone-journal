@@ -12,12 +12,18 @@ use axum::body::Body;
 use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, post};
 use chrono::{DateTime, Utc};
+use serde_json::json;
 
+mod assemble;
 mod attach;
 mod calendar;
 mod day;
+mod segment;
+mod segment_media;
+mod segment_speakers;
+mod serve_file;
 mod shell;
 
 #[cfg(test)]
@@ -50,11 +56,37 @@ pub fn router(journal_root: PathBuf, clock: Clock, shared_shell: fn() -> Respons
         .route("/app/transcripts/api/ranges/{day}", get(day::ranges))
         .route("/app/transcripts/api/segments/{day}", get(day::segments))
         .route("/app/transcripts/api/day/{day}", get(day::day))
+        .route("/app/transcripts/api/read/{day}", get(assemble::api_read))
+        .route(
+            "/app/transcripts/api/segment/{day}/{stream}/{segment_key}/reprocess",
+            post(unconverted_transcripts),
+        )
+        .route(
+            "/app/transcripts/api/segment/{day}/{stream}/{segment_key}",
+            get(segment::segment_content).delete(unconverted_transcripts),
+        )
+        .route(
+            "/app/transcripts/api/serve_file/{day}/{*rel_path}",
+            get(serve_file::serve_file),
+        )
         .with_state(Arc::new(AppState {
             journal_root: Arc::new(journal_root),
             clock,
             shared_shell,
         }))
+}
+
+async fn unconverted_transcripts() -> Response {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "error": "This app isn't available yet.",
+            "reason_code": "app_not_converted",
+            "detail": "The transcripts app has not been ported to the native shell.",
+            "app": "transcripts",
+        })),
+    )
+        .into_response()
 }
 
 struct AppState {

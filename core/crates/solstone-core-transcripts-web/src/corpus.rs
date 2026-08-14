@@ -9,7 +9,7 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode, header};
+    use axum::http::{Method, Request, StatusCode, header};
     use chrono::{TimeZone, Utc};
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
@@ -97,8 +97,21 @@ mod tests {
         app: axum::Router,
         path: &str,
     ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        request(app, Method::GET, path, &BTreeMap::new()).await
+    }
+
+    async fn request(
+        app: axum::Router,
+        method: Method,
+        path: &str,
+        request_headers: &BTreeMap<String, String>,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut builder = Request::builder().method(method).uri(path);
+        for (name, value) in request_headers {
+            builder = builder.header(name, value);
+        }
         let response = app
-            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .oneshot(builder.body(Body::empty()).unwrap())
             .await
             .unwrap();
         let status = response.status();
@@ -108,6 +121,149 @@ mod tests {
             .unwrap()
             .to_vec();
         (status, headers, body)
+    }
+
+    fn seeded_root() -> PathBuf {
+        let output = std::process::Command::new("python")
+            .args([
+                "-c",
+                "from scripts.records_corpus_seed import build_populated_journal; print(build_populated_journal('20261001')[0])",
+            ])
+            .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."))
+            .output()
+            .expect("corpus seeder starts");
+        assert!(
+            output.status.success(),
+            "corpus seeder: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+    }
+
+    fn native_read_route_case(case: &Value) -> bool {
+        case["method"] == "GET"
+            && matches!(
+                case["path"].as_str(),
+                Some(path)
+                    if path.contains("/api/read/")
+                        || path.contains("/api/segment/")
+                        || path.contains("/api/serve_file/")
+            )
+    }
+
+    fn normalize_native_json(value: &mut Value, root: &Path) {
+        match value {
+            Value::Array(values) => {
+                for value in values {
+                    normalize_native_json(value, root);
+                }
+            }
+            Value::Object(values) => {
+                if let Some(Value::Array(details)) = values.get_mut("warning_details") {
+                    for detail in details {
+                        if let Some(detail) = detail.as_object_mut() {
+                            detail.insert("ts".into(), Value::String("<TODAY_TIMESTAMP>".into()));
+                        }
+                    }
+                }
+                for value in values.values_mut() {
+                    normalize_native_json(value, root);
+                }
+            }
+            Value::String(text) => {
+                *text = text.replace(&root.display().to_string(), "<JOURNAL_ROOT>");
+            }
+            _ => {}
+        }
+    }
+
+    async fn assert_native_read_route_case(router: axum::Router, root: &Path, case: &Value) {
+        let request_headers = case["request_headers"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+            .collect();
+        let (status, headers, body) = request(
+            router,
+            Method::GET,
+            case["path"].as_str().unwrap(),
+            &request_headers,
+        )
+        .await;
+        if case["path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("/mic_audio.xyz"))
+        {
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{}", case["path"]);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap()["reason_code"],
+                "invalid_request_value",
+                "{}",
+                case["path"]
+            );
+            return;
+        }
+        assert_eq!(
+            status.as_u16(),
+            case["status"].as_u64().unwrap() as u16,
+            "{}",
+            case["path"]
+        );
+        if let Some(expected) = case.get("json") {
+            let mut actual = serde_json::from_slice::<Value>(&body).unwrap();
+            normalize_native_json(&mut actual, root);
+            if case["path"]
+                .as_str()
+                .is_some_and(|path| path.contains("/api/segment/"))
+                && status == StatusCode::OK
+            {
+                assert_eq!(
+                    actual
+                        .as_object()
+                        .unwrap()
+                        .keys()
+                        .cloned()
+                        .collect::<BTreeSet<_>>(),
+                    BTreeSet::from([
+                        "audio_file".into(),
+                        "chunks".into(),
+                        "cost".into(),
+                        "data_state".into(),
+                        "duration".into(),
+                        "image_files".into(),
+                        "md_files".into(),
+                        "media_purged".into(),
+                        "media_sizes".into(),
+                        "segment_key".into(),
+                        "signals".into(),
+                        "speaker_labels".into(),
+                        "transcripts_copy".into(),
+                        "video_files".into(),
+                        "warning_details".into(),
+                        "warnings".into(),
+                    ]),
+                    "{}",
+                    case["path"]
+                );
+            }
+            assert_eq!(actual, *expected, "{}", case["path"]);
+            return;
+        }
+        for (name, expected) in case["response_headers"].as_object().unwrap() {
+            assert_eq!(
+                headers[name],
+                expected.as_str().unwrap(),
+                "{} {name}",
+                case["path"]
+            );
+        }
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&body)),
+            case["body_sha256"].as_str().unwrap(),
+            "{}",
+            case["path"]
+        );
     }
 
     fn snapshot(root: &Path) -> BTreeMap<PathBuf, (u64, SystemTime, String)> {
@@ -339,6 +495,84 @@ mod tests {
                 case["path"]
             );
         }
+        fs::remove_dir_all(root).expect("seeded corpus cleanup");
+    }
+
+    #[tokio::test]
+    async fn corpus_replay_matches_all_new_read_routes_and_is_read_only() {
+        let root = seeded_root();
+        let corpus: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/convey_records_corpus.json"
+        )))
+        .unwrap();
+        let cases = corpus["phases"]["populated"]["transcripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| native_read_route_case(case))
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 42);
+        let before = snapshot(&root);
+        let router = app(&root);
+        for case in cases {
+            assert_native_read_route_case(router.clone(), &root, case).await;
+        }
+        assert_eq!(snapshot(&root), before);
+        fs::remove_dir_all(root).expect("seeded corpus cleanup");
+    }
+
+    #[tokio::test]
+    async fn warning_timestamps_depend_only_on_the_injected_clock() {
+        let root = seeded_root();
+        let path = "/app/transcripts/api/segment/20260731/speakers/134000_60";
+        let early = router(
+            root.clone(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
+            shell,
+        );
+        let late = router(
+            root.clone(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 3, 0, 0, 0).unwrap()),
+            shell,
+        );
+        let (_, _, early_body) = response(early, path).await;
+        let (_, _, late_body) = response(late, path).await;
+        let mut early: Value = serde_json::from_slice(&early_body).unwrap();
+        let mut late: Value = serde_json::from_slice(&late_body).unwrap();
+        let early_times = early["warning_details"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|detail| detail["ts"].clone())
+            .collect::<Vec<_>>();
+        let late_times = late["warning_details"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|detail| detail["ts"].clone())
+            .collect::<Vec<_>>();
+        assert!(!early_times.is_empty());
+        assert_ne!(early_times, late_times);
+        normalize_native_json(&mut early, &root);
+        normalize_native_json(&mut late, &root);
+        assert_eq!(
+            serde_json::to_vec(&early).unwrap(),
+            serde_json::to_vec(&late).unwrap()
+        );
+
+        let corpus: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/convey_records_corpus.json"
+        )))
+        .unwrap();
+        let captured_case = corpus["phases"]["populated"]["transcripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["path"] == path)
+            .unwrap();
+        assert_native_read_route_case(app(&root), &root, captured_case).await;
         fs::remove_dir_all(root).expect("seeded corpus cleanup");
     }
 
@@ -585,17 +819,31 @@ mod tests {
         );
         let full = solstone_core_convey_shell::router(root.path().to_path_buf());
         for path in [
-            "/app/transcripts/api/segment/x",
-            "/app/transcripts/api/read/x",
-            "/app/transcripts/api/serve_file/x",
+            "/app/transcripts/api/segment/notaday/field/090000_300",
+            "/app/transcripts/api/read/notaday",
+            "/app/transcripts/api/serve_file/notaday/field/mic_audio.flac",
         ] {
             let (status, _, body) = response(full.clone(), path).await;
-            assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+            assert_eq!(status, StatusCode::NOT_FOUND);
             assert_eq!(
                 serde_json::from_slice::<Value>(&body).unwrap()["reason_code"],
-                "app_not_converted"
+                "invalid_day"
             );
         }
+        let response = full
+            .oneshot(
+                Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                    .body(Body::from(r#"{"modality":"audio"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap()["reason_code"],
+            "app_not_converted"
+        );
     }
 
     #[tokio::test]
