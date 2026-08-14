@@ -16,6 +16,7 @@ chrono.workspace = true
 getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-import.workspace = true
@@ -24,7 +25,6 @@ tempfile = "3.24.0"
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
-sha2.workspace = true
 solstone-core-convey-shell.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

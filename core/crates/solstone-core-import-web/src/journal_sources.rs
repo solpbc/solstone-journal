@@ -67,6 +67,12 @@ pub(crate) struct JournalSourceIdentity {
     derived_prefix: String,
 }
 
+impl JournalSourceIdentity {
+    pub(crate) fn prefix(&self) -> &str {
+        &self.derived_prefix
+    }
+}
+
 impl FromRequestParts<AppState> for JournalSourceIdentity {
     type Rejection = Response;
 

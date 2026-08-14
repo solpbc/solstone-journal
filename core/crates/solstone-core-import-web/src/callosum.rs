@@ -3,6 +3,9 @@
 
 use std::{path::Path, time::Duration};
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use serde_json::{Value, json};
 use solstone_core_callosum::{CallosumOneShotError, CallosumOneShotSender};
 
@@ -11,7 +14,12 @@ pub(crate) enum BusError {
     Unavailable,
 }
 
+#[cfg(test)]
+static SEND_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
+
 fn send(root: &Path, value: Value) -> Result<(), BusError> {
+    #[cfg(test)]
+    SEND_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let line = format!(
         "{}\n",
         serde_json::to_string(&value).map_err(|_| BusError::Unavailable)?
@@ -40,4 +48,9 @@ pub(crate) fn request_required(root: &Path, task_id: &str, cmd: &[String]) -> Re
 #[allow(dead_code)] // Phase C's segment route is the first caller.
 pub(crate) fn emit_best_effort(root: &Path, value: Value) {
     let _ = send(root, value);
+}
+
+#[cfg(test)]
+pub(crate) fn take_send_attempts() -> usize {
+    SEND_ATTEMPTS.swap(0, Ordering::Relaxed)
 }

@@ -51,6 +51,10 @@ mod tests {
     const DOOR_PATHS: &[&str] = &[
         "/app/import/journal/corpusSo/manifest/entities",
         "/app/import/journal/00000000/manifest/entities",
+        "/app/import/journal/corpusSo/ingest/segments",
+        "/app/import/journal/corpusSo/ingest/entities",
+        "/app/import/journal/corpusSo/ingest/imports",
+        "/app/import/journal/corpusSo/ingest/config",
     ];
     const BROWSER_WRITE_PATHS: &[&str] = &[
         "/app/import/api/save",
@@ -77,11 +81,7 @@ mod tests {
             "POST",
             "/app/import/api/journal-sources/corpus_peer/resolve-config-all",
         ),
-        ("POST", "/app/import/journal/corpusSo/ingest/segments"),
-        ("POST", "/app/import/journal/corpusSo/ingest/entities"),
         ("POST", "/app/import/journal/corpusSo/ingest/facets"),
-        ("POST", "/app/import/journal/corpusSo/ingest/imports"),
-        ("POST", "/app/import/journal/corpusSo/ingest/config"),
     ];
 
     async fn request(
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ac4_corpus_replay_has_only_the_declared_8_deviations() {
+    async fn ac4_corpus_replay_has_only_the_declared_4_deviations() {
         let corpus: Value = serde_json::from_str(CORPUS).expect("corpus JSON");
         let mut passed = 0;
         let mut declared = Vec::new();
@@ -237,8 +237,8 @@ mod tests {
                 }
             }
         }
-        assert_eq!(passed, 128, "unexpected replay cases: {unexpected:?}");
-        assert_eq!(declared.len(), 8, "declared roster changed: {declared:?}");
+        assert_eq!(passed, 132, "unexpected replay cases: {unexpected:?}");
+        assert_eq!(declared.len(), 4, "declared roster changed: {declared:?}");
         assert!(
             unexpected.is_empty(),
             "unexpected replay cases: {unexpected:?}"
@@ -780,12 +780,16 @@ mod tests {
 
     #[tokio::test]
     async fn ac15_unregistered_paths_keep_their_phase_specific_fallbacks() {
-        assert_eq!(UNREGISTERED.len(), 9);
+        assert_eq!(UNREGISTERED.len(), 5);
         assert_eq!(
             DOOR_PATHS,
             [
                 "/app/import/journal/corpusSo/manifest/entities",
                 "/app/import/journal/00000000/manifest/entities",
+                "/app/import/journal/corpusSo/ingest/segments",
+                "/app/import/journal/corpusSo/ingest/entities",
+                "/app/import/journal/corpusSo/ingest/imports",
+                "/app/import/journal/corpusSo/ingest/config",
             ]
         );
         assert_eq!(

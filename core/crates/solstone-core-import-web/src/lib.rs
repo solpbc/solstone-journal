@@ -16,6 +16,7 @@ mod callosum;
 mod content;
 mod http;
 mod imports;
+mod ingest;
 mod journal_sources;
 mod lifecycle;
 mod multipart;
@@ -42,6 +43,22 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
         .route("/app/import/api/start", post(lifecycle::start))
+        .route(
+            "/app/import/journal/{prefix}/ingest/segments",
+            post(ingest::segments),
+        )
+        .route(
+            "/app/import/journal/{prefix}/ingest/entities",
+            post(ingest::entities),
+        )
+        .route(
+            "/app/import/journal/{prefix}/ingest/imports",
+            post(ingest::imports),
+        )
+        .route(
+            "/app/import/journal/{prefix}/ingest/config",
+            post(ingest::config),
+        )
         .route(
             "/app/import/api/journal-sources/list",
             get(journal_sources::list),
