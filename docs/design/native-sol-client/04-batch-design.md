@@ -219,7 +219,7 @@ where human parity requires stable object order.
 Decision: stage the work so each new gate is proven on small surfaces before the
 large domain ports.
 
-1. Body (3) first: new fragment, new `body_bp` registration, HTTP authority,
+1. Body (3) first: the native surface established its HTTP authority,
    applicability entries, request/success/failure parity, and static ownership
    with minimal command logic.
 2. Sol (4), then facets (3): sol exercises simple identity mutations; facets
