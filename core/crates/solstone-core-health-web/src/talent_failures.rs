@@ -61,14 +61,29 @@ pub fn today(root: &std::path::Path) -> (Vec<Value>, bool) {
         }
     }
     errors.sort_by_key(|(_, ts, _)| *ts);
-    (errors.into_iter().filter(|(name,ts,_)| successes.get(name).copied().unwrap_or(0)<=*ts).map(|(_,ts,obj)| json!({"type":"agent","id":obj.get("use_id").and_then(Value::as_str).unwrap_or(""),"name":obj.get("name"),"ts":ts,"service":"cortex","error":"talent error","reason_code":string_or_null(obj.get("reason_code")),"provider":string_or_null(obj.get("provider")),"model":string_or_null(obj.get("model"))})).collect(),ok)
+    (errors.into_iter().filter(|(name,ts,_)| successes.get(name).copied().unwrap_or(0)<=*ts).map(|(_,ts,obj)| json!({"type":"agent","id":use_id(obj.get("use_id")),"name":obj.get("name"),"ts":ts,"service":"cortex","error":"talent error","reason_code":string_or_null(obj.get("reason_code")),"provider":string_or_null(obj.get("provider")),"model":string_or_null(obj.get("model"))})).collect(),ok)
 }
 
 fn timestamp(value: Option<&Value>) -> Option<i64> {
     match value? {
         Value::Bool(_) => None,
-        Value::Number(n) => n.as_i64(),
-        Value::String(s) => s.parse().ok(),
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| {
+                number
+                    .as_u64()
+                    .and_then(|number| i64::try_from(number).ok())
+            })
+            .or_else(|| {
+                number
+                    .as_f64()
+                    .filter(|number| number.is_finite())
+                    .and_then(|number| {
+                        (number >= i64::MIN as f64 && number <= i64::MAX as f64)
+                            .then_some(number as i64)
+                    })
+            }),
+        Value::String(value) => value.trim().parse().ok(),
         _ => None,
     }
 }
@@ -87,4 +102,31 @@ fn string_or_null(value: Option<&Value>) -> Value {
         .and_then(Value::as_str)
         .map(|s| Value::String(s.to_owned()))
         .unwrap_or(Value::Null)
+}
+
+fn use_id(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(value)) if !value.is_empty() => value.to_owned(),
+        Some(Value::Bool(true)) => "True".to_owned(),
+        Some(Value::Number(value)) if value.as_f64().is_some_and(|value| value != 0.0) => {
+            value.to_string()
+        }
+        _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{timestamp, use_id};
+    use serde_json::json;
+
+    #[test]
+    fn timestamp_and_use_id_match_python_scalar_coercions() {
+        assert_eq!(timestamp(Some(&json!(12.9))), Some(12));
+        assert_eq!(timestamp(Some(&json!(-12.9))), Some(-12));
+        assert_eq!(timestamp(Some(&json!(" 12 "))), Some(12));
+        assert_eq!(use_id(Some(&json!(42))), "42");
+        assert_eq!(use_id(Some(&json!(true))), "True");
+        assert_eq!(use_id(Some(&json!(0))), "");
+    }
 }

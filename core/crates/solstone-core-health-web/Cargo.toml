@@ -28,6 +28,7 @@ solstone-core-thinking.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-convey-shell.workspace = true
 solstone-core-system.workspace = true
+filetime = "0.2.29"
 tempfile = "3.24.0"
 temp-env = "0.3.6"
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }

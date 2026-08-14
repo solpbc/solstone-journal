@@ -151,4 +151,30 @@ fn write(path: impl AsRef<Path>, bytes: &[u8]) {
     fs::create_dir_all(path.parent().expect("parent")).expect("parent");
     fs::write(path, bytes).expect("write");
 }
-fn set_mtime(_path: &Path, _seconds: i64) {}
+fn set_mtime(path: &Path, seconds: i64) {
+    filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(seconds, 0))
+        .expect("set fixture mtime");
+}
+
+#[test]
+fn populated_phase_preserves_seed_mtimes() {
+    let root = phase_root("established_populated");
+    let modified = |path: &Path| {
+        path.metadata()
+            .expect("metadata")
+            .modified()
+            .expect("mtime")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("post-epoch")
+            .as_secs()
+    };
+    assert_eq!(modified(&root.path().join("stats.json")), 1_700_000_000);
+    assert_eq!(
+        modified(&root.path().join("chronicle/20260315/health/daily.updated")),
+        1_700_000_200
+    );
+    assert_eq!(
+        modified(&root.path().join("chronicle/20260403/health/stream.updated")),
+        1_700_000_400
+    );
+}

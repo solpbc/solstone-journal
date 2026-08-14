@@ -21,6 +21,7 @@ pub fn count(value: Option<&Value>) -> f64 {
         return 0.0;
     };
     let value = match value {
+        Value::Bool(value) => Some(f64::from(*value)),
         Value::Number(n) => n.as_f64(),
         Value::String(s) => s.parse().ok(),
         _ => None,
@@ -96,6 +97,17 @@ fn reason(day: &Map<String, Value>) -> &'static str {
     }
 }
 
+fn truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(values) => !values.is_empty(),
+        Value::Object(values) => !values.is_empty(),
+    }
+}
+
 pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
     let Some(backlog) = backlog else {
         return Vec::new();
@@ -111,7 +123,7 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
         .flatten()
         .filter_map(Value::as_object)
         .filter_map(|day| {
-            let error = day.get("error").filter(|v| !v.is_null()).or_else(|| {
+            let error = day.get("error").filter(|value| truthy(value)).or_else(|| {
                 errors
                     .and_then(|errors| errors.iter().find(|item| item.get("day") == day.get("day")))
             });
@@ -138,7 +150,7 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
                 },
             );
             for key in ["reason_code", "provider", "model"] {
-                if day.get(key).is_some_and(|v| !v.is_null() && v != "") {
+                if day.get(key).is_some_and(truthy) {
                     row.insert(key.to_owned(), day[key].clone());
                 }
             }
@@ -162,6 +174,8 @@ mod tests {
         assert_eq!(count(Some(&json!("nope"))), 0.0);
         assert_eq!(count(Some(&json!(f64::INFINITY))), 0.0);
         assert_eq!(count(Some(&json!(-2))), 0.0);
+        assert_eq!(count(Some(&json!(true))), 1.0);
+        assert_eq!(count(Some(&json!(false))), 0.0);
         assert_eq!(count(Some(&json!(2.5))), 2.5);
         assert_eq!(count(Some(&json!("3"))), 3.0);
     }
@@ -216,5 +230,17 @@ mod tests {
             generic[1]["reason"],
             "a processing step keeps failing — try again"
         );
+    }
+
+    #[test]
+    fn falsey_day_errors_fall_through_to_backlog_errors() {
+        for error in [json!(false), json!("")] {
+            let without_fallback = json!({"days":[{"day":"20240101","error":error.clone()}]});
+            assert!(stuck_rows(without_fallback.as_object()).is_empty());
+
+            let with_fallback =
+                json!({"days":[{"day":"20240101","error":error}],"errors":[{"day":"20240101"}]});
+            assert_eq!(stuck_rows(with_fallback.as_object()).len(), 1);
+        }
     }
 }
