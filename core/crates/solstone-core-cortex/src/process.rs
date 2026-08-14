@@ -320,6 +320,7 @@ pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String
 
 #[cfg(test)]
 mod tests {
+    use chrono::TimeZone;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::process::CommandExt;
@@ -432,40 +433,57 @@ mod tests {
         }
 
         write_valid_test_journal(directory.path());
-        let cycle_now = chrono::Utc::now();
+        let cycle_now = chrono::Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap();
         let brain_path = directory.path().join("health/brain.json");
         let mut brain: Value = serde_json::from_slice(&fs::read(&brain_path).unwrap()).unwrap();
         let adapter = BrainAdapter::new(directory.path().to_path_buf());
         brain["fingerprint_sha256"] = Value::String(adapter.active_fingerprint().unwrap().unwrap());
-        brain["evidence"]["lane_prerequisites"]["observed_at"] =
-            Value::String((cycle_now - chrono::Duration::minutes(9)).to_rfc3339());
-        brain["evidence"]["lane_prerequisites"]["expires_at"] =
-            Value::String((cycle_now + chrono::Duration::seconds(30)).to_rfc3339());
+        brain["updated_at"] = Value::String(cycle_now.to_rfc3339());
+        for component in [
+            "cogitate",
+            "configuration",
+            "generate",
+            "lane_prerequisites",
+        ] {
+            brain["evidence"][component]["observed_at"] =
+                Value::String((cycle_now - chrono::Duration::minutes(9)).to_rfc3339());
+            brain["evidence"][component]["expires_at"] =
+                Value::String((cycle_now + chrono::Duration::seconds(30)).to_rfc3339());
+        }
         fs::write(&brain_path, serde_json::to_vec(&brain).unwrap()).unwrap();
 
         let (outbound, receiver) = mpsc::channel();
-        let renewal = RenewalHandle::production(directory.path().to_path_buf(), outbound);
+        let renewal = RenewalHandle::production(
+            directory.path().to_path_buf(),
+            outbound,
+            Arc::new(move || cycle_now),
+        );
         let _ = renewal.step(cycle_now);
         let request = receiver.recv().unwrap();
         let reference = request.fields["ref"].as_str().unwrap().to_owned();
         renewal.handle_supervisor(
-            cycle_now,
             "started",
             &Map::from_iter([("ref".into(), Value::String(reference.clone()))]),
         );
-        brain["evidence"]["lane_prerequisites"]["observed_at"] =
-            Value::String((cycle_now + chrono::Duration::seconds(1)).to_rfc3339());
-        brain["evidence"]["lane_prerequisites"]["expires_at"] =
-            Value::String((cycle_now + chrono::Duration::minutes(10)).to_rfc3339());
+        for component in [
+            "cogitate",
+            "configuration",
+            "generate",
+            "lane_prerequisites",
+        ] {
+            brain["evidence"][component]["observed_at"] = Value::String(cycle_now.to_rfc3339());
+            brain["evidence"][component]["expires_at"] =
+                Value::String((cycle_now + chrono::Duration::minutes(10)).to_rfc3339());
+        }
         fs::write(&brain_path, serde_json::to_vec(&brain).unwrap()).unwrap();
         renewal.handle_supervisor(
-            cycle_now,
             "stopped",
             &Map::from_iter([
                 ("ref".into(), Value::String(reference)),
                 ("exit_code".into(), Value::from(0)),
             ]),
         );
+        assert_eq!(renewal.snapshot().retry_index, 0);
         assert!(!marker.exists());
 
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();

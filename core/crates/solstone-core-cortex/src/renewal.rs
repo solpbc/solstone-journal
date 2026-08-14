@@ -447,7 +447,7 @@ impl RenewalMachine {
                 "scheduled",
                 vec![RenewalField::seconds(
                     "delay_s",
-                    (delay.as_millis() as f64 / 1000.0 * 1000.0).round() / 1000.0,
+                    (delay.as_secs_f64() * 1000.0).round() / 1000.0,
                 )],
             );
             self.last_mode = Some("wait");
@@ -619,8 +619,20 @@ pub(crate) fn exit_code(fields: &Map<String, Value>) -> i32 {
     fields
         .get("exit_code")
         .and_then(|value| match value {
-            Value::Number(value) => value.as_i64().and_then(|value| i32::try_from(value).ok()),
+            Value::Number(value) => value
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .or_else(|| {
+                    value.as_f64().and_then(|value| {
+                        value
+                            .is_finite()
+                            .then_some(value)
+                            .filter(|value| *value >= i32::MIN as f64 && *value <= i32::MAX as f64)
+                            .map(|value| value as i32)
+                    })
+                }),
             Value::String(value) => value.parse::<i32>().ok(),
+            Value::Bool(value) => Some(i32::from(*value)),
             _ => None,
         })
         .unwrap_or(-1)
@@ -667,14 +679,16 @@ pub(crate) struct RenewalHandle {
     brain: Arc<dyn RenewalBrain>,
     diagnostics: Arc<Mutex<Box<dyn RenewalDiagnostics>>>,
     outbound: mpsc::Sender<Outbound>,
+    now: Now,
 }
 
 impl RenewalHandle {
-    pub(crate) fn production(journal: PathBuf, outbound: mpsc::Sender<Outbound>) -> Self {
+    pub(crate) fn production(journal: PathBuf, outbound: mpsc::Sender<Outbound>, now: Now) -> Self {
         Self::new(
             Arc::new(BrainAdapter::new(journal)),
             Box::new(StderrRenewalDiagnostics::new(io::stderr())),
             outbound,
+            now,
         )
     }
 
@@ -682,16 +696,19 @@ impl RenewalHandle {
         brain: Arc<dyn RenewalBrain>,
         diagnostics: Box<dyn RenewalDiagnostics>,
         outbound: mpsc::Sender<Outbound>,
+        now: Now,
     ) -> Self {
         Self {
             machine: Arc::new(Mutex::new(RenewalMachine::default())),
             brain,
             diagnostics: Arc::new(Mutex::new(diagnostics)),
             outbound,
+            now,
         }
     }
 
-    pub(crate) fn startup_refresh_needed(&self, now: DateTime<Utc>) -> bool {
+    pub(crate) fn startup_refresh_needed(&self) -> bool {
+        let now = (self.now)();
         match self.brain.inspect(now) {
             Err(_) => true,
             Ok(inspection) => {
@@ -703,12 +720,22 @@ impl RenewalHandle {
         }
     }
 
-    pub(crate) fn startup_refresh(&self) {
-        let _ = self.outbound.send(Outbound {
+    pub(crate) fn startup_refresh(&self) -> Option<Outbound> {
+        let outbound = Outbound {
             tract: "supervisor",
             event: "request".into(),
             fields: Map::from_iter([("cmd".into(), json!(["journal", "brain", "refresh"]))]),
-        });
+        };
+        if self.outbound.send(outbound.clone()).is_err() {
+            self.machine
+                .lock()
+                .expect("renewal state lock poisoned")
+                .event("failed", vec![RenewalField::text("reason", "SendError")]);
+            self.flush();
+            None
+        } else {
+            Some(outbound)
+        }
     }
 
     fn flush(&self) {
@@ -842,12 +869,8 @@ impl RenewalHandle {
         Duration::from_secs(SPP_RENEWAL_RETRY_DELAYS_S[0])
     }
 
-    pub(crate) fn handle_supervisor(
-        &self,
-        now: DateTime<Utc>,
-        event: &str,
-        fields: &Map<String, Value>,
-    ) {
+    pub(crate) fn handle_supervisor(&self, event: &str, fields: &Map<String, Value>) {
+        let now = (self.now)();
         let reference = fields.get("ref").and_then(Value::as_str);
         let verification = {
             let mut machine = self.machine.lock().expect("renewal state lock poisoned");
@@ -892,14 +915,14 @@ impl RenewalHandle {
                         .get("reason")
                         .and_then(Value::as_str)
                         .unwrap_or("skipped");
-                    machine.event(
-                        "in_flight",
-                        vec![
-                            RenewalField::text("active_ref", active.clone().unwrap_or_default()),
-                            RenewalField::text("reason", reason),
-                            RenewalField::text("ref", pending.reference),
-                        ],
-                    );
+                    let mut fields = vec![
+                        RenewalField::text("reason", reason),
+                        RenewalField::text("ref", pending.reference),
+                    ];
+                    if let Some(active) = &active {
+                        fields.push(RenewalField::text("active_ref", active));
+                    }
+                    machine.event("in_flight", fields);
                     machine.successor_after_ref = active;
                     machine.successor_deadline = machine.successor_after_ref.as_ref().map(|_| {
                         now + chrono::Duration::seconds(SPP_REFRESH_OBSERVATION_BOUND_S as i64)
@@ -968,8 +991,8 @@ impl RenewalWorkerStart {
         let (stop, receiver) = mpsc::channel();
         let receiver = Arc::new(Mutex::new(receiver));
         Self {
+            now: handle.now.clone(),
             handle,
-            now: Arc::new(Utc::now),
             wait: Arc::new(move |duration| {
                 receiver
                     .lock()
@@ -982,8 +1005,9 @@ impl RenewalWorkerStart {
     }
 
     #[cfg(test)]
-    fn test(handle: RenewalHandle, now: Now, wait: Wait) -> Self {
+    pub(crate) fn test(handle: RenewalHandle, wait: Wait) -> Self {
         let (stop, _) = mpsc::channel();
+        let now = handle.now.clone();
         Self {
             handle,
             now,
@@ -1061,11 +1085,15 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::service::dispatch;
+    use crate::state::CortexState;
+    use crate::storage::CortexStore;
 
     #[derive(Clone)]
     struct FakeBrain {
         inspection: Arc<Mutex<Result<BrainInspection, RenewalBrainError>>>,
         fingerprint: Arc<Mutex<Result<Option<String>, RenewalBrainError>>>,
+        seed_on_active_fingerprint: Arc<Mutex<Option<Arc<Mutex<RenewalMachine>>>>>,
     }
 
     impl RenewalBrain for FakeBrain {
@@ -1073,6 +1101,9 @@ mod tests {
             self.inspection.lock().unwrap().clone()
         }
         fn active_fingerprint(&self) -> Result<Option<String>, RenewalBrainError> {
+            if let Some(machine) = self.seed_on_active_fingerprint.lock().unwrap().take() {
+                seed_machine_demand(&mut machine.lock().unwrap());
+            }
             self.fingerprint.lock().unwrap().clone()
         }
     }
@@ -1121,6 +1152,7 @@ mod tests {
         FakeBrain {
             inspection: Arc::new(Mutex::new(Ok(inspection))),
             fingerprint: Arc::new(Mutex::new(Ok(value))),
+            seed_on_active_fingerprint: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1137,6 +1169,7 @@ mod tests {
                 Arc::new(brain),
                 Box::new(StderrRenewalDiagnostics::new(SharedWriter(bytes.clone()))),
                 tx,
+                Arc::new(now),
             ),
             rx,
             bytes,
@@ -1256,7 +1289,6 @@ mod tests {
             machine.ack_deadline = Some(now() + chrono::Duration::seconds(15));
         }
         handle.handle_supervisor(
-            now(),
             "started",
             &Map::from_iter([("ref".into(), Value::String(reference.clone()))]),
         );
@@ -1264,7 +1296,6 @@ mod tests {
             advance(&brain);
         }
         handle.handle_supervisor(
-            now(),
             "stopped",
             &Map::from_iter([
                 ("ref".into(), Value::String(reference)),
@@ -1367,6 +1398,11 @@ mod tests {
             0,
         );
         assert_eq!(machine.retry_index, 0);
+        machine.schedule_retry(now());
+        assert_eq!(
+            seconds_until(machine.retry_after, now(), 0),
+            Duration::from_secs(5)
+        );
     }
     #[test]
     fn pending_attempt_fails_at_fifteen_second_ack_deadline() {
@@ -1444,7 +1480,6 @@ mod tests {
             .unwrap()
             .to_owned();
         handle.handle_supervisor(
-            now(),
             "skipped",
             &Map::from_iter([
                 ("ref".into(), Value::String(reference)),
@@ -1457,18 +1492,22 @@ mod tests {
     #[test]
     fn skipped_attempt_without_active_ref_schedules_retry() {
         let brain = fake(due(), Some(fingerprint()));
-        let (handle, rx, _) = handle(brain);
+        let (handle, rx, bytes) = handle(brain);
         let _ = handle.step(now());
         let reference = rx.recv().unwrap().fields["ref"]
             .as_str()
             .unwrap()
             .to_owned();
         handle.handle_supervisor(
-            now(),
             "skipped",
             &Map::from_iter([("ref".into(), Value::String(reference))]),
         );
         assert_eq!(handle.snapshot().retry_index, 1);
+        assert!(
+            !String::from_utf8(bytes.lock().unwrap().clone())
+                .unwrap()
+                .contains("active_ref=")
+        );
     }
     #[test]
     fn consecutive_disabled_steps_emit_one_disabled_line_per_transition() {
@@ -1498,28 +1537,29 @@ mod tests {
                 inspection("none", aggregate, now(), now()),
                 Some(fingerprint()),
             ));
-            assert!(controller.startup_refresh_needed(now()));
+            assert!(controller.startup_refresh_needed());
         }
         let (controller, _, _) = handle(FakeBrain {
             inspection: Arc::new(Mutex::new(Err(error_brain()))),
             fingerprint: Arc::new(Mutex::new(Ok(None))),
+            seed_on_active_fingerprint: Arc::new(Mutex::new(None)),
         });
-        assert!(controller.startup_refresh_needed(now()));
+        assert!(controller.startup_refresh_needed());
         let (controller, _, _) = handle(fake(
             inspection("spp", "unknown", now(), now()),
             Some(fingerprint()),
         ));
-        assert!(!controller.startup_refresh_needed(now()));
+        assert!(!controller.startup_refresh_needed());
         let (controller, _, _) = handle(fake(
             inspection("none", "checking", now(), now()),
             Some(fingerprint()),
         ));
-        assert!(!controller.startup_refresh_needed(now()));
+        assert!(!controller.startup_refresh_needed());
         let (controller, _, _) = handle(fake(
             inspection("none", "ready", now(), now()),
             Some(fingerprint()),
         ));
-        assert!(!controller.startup_refresh_needed(now()));
+        assert!(!controller.startup_refresh_needed());
     }
     #[test]
     fn shipped_stderr_sink_renders_and_writes_the_exact_renewal_line() {
@@ -1541,6 +1581,24 @@ mod tests {
             b"event=spp_renewal_retrying delay_s=5.0\n"
         );
     }
+    #[test]
+    fn startup_refresh_send_failure_is_diagnosed() {
+        let (outbound, receiver) = mpsc::channel();
+        drop(receiver);
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let handle = RenewalHandle::new(
+            Arc::new(fake(due(), Some(fingerprint()))),
+            Box::new(StderrRenewalDiagnostics::new(SharedWriter(bytes.clone()))),
+            outbound,
+            Arc::new(now),
+        );
+        assert!(handle.startup_refresh().is_none());
+        assert!(
+            String::from_utf8(bytes.lock().unwrap().clone())
+                .unwrap()
+                .contains("event=spp_renewal_failed reason=SendError")
+        );
+    }
     fn error_brain() -> RenewalBrainError {
         let directory = tempfile::tempdir().unwrap();
         fs::create_dir_all(directory.path().join("config")).unwrap();
@@ -1550,30 +1608,106 @@ mod tests {
             Ok(_) => panic!("corrupt config must fail"),
         }
     }
+
+    fn seed_demand(handle: &RenewalHandle) {
+        seed_machine_demand(&mut handle.machine.lock().unwrap());
+    }
+
+    fn seed_machine_demand(machine: &mut RenewalMachine) {
+        machine.pending = Some(Attempt {
+            kind: AttemptKind::Renew {
+                fingerprint: fingerprint(),
+            },
+            reference: "pending".into(),
+            observed_before: None,
+            expires_before: None,
+        });
+        machine.ack_deadline = Some(now() + chrono::Duration::seconds(15));
+        machine.running = Some(Attempt {
+            kind: AttemptKind::Renew {
+                fingerprint: fingerprint(),
+            },
+            reference: "running".into(),
+            observed_before: None,
+            expires_before: None,
+        });
+        machine.running_deadline = Some(now() + chrono::Duration::seconds(120));
+        machine.successor_after_ref = Some("successor".into());
+        machine.successor_deadline = Some(now() + chrono::Duration::seconds(300));
+    }
+
+    fn seed_on_active_fingerprint(brain: &FakeBrain, handle: &RenewalHandle) {
+        *brain.seed_on_active_fingerprint.lock().unwrap() = Some(handle.machine.clone());
+    }
+
+    fn assert_failed_step_clears_demand(handle: &RenewalHandle, bytes: &Arc<Mutex<Vec<u8>>>) {
+        assert_eq!(handle.snapshot().pending_ref, None);
+        assert_eq!(handle.snapshot().running_ref, None);
+        assert_eq!(handle.snapshot().successor_ref, None);
+        assert_eq!(handle.snapshot().retry_index, 1);
+        assert_eq!(
+            seconds_until(handle.machine.lock().unwrap().retry_after, now(), 0,),
+            Duration::from_secs(SPP_RENEWAL_RETRY_DELAYS_S[0])
+        );
+        assert!(
+            String::from_utf8(bytes.lock().unwrap().clone())
+                .unwrap()
+                .contains("event=spp_renewal_failed")
+        );
+    }
+
+    fn run_two_worker_iterations(handle: RenewalHandle, wait: Wait) {
+        let mut worker = RenewalWorkerStart::test(handle, wait).spawn();
+        worker.stop();
+    }
+
     #[test]
     fn brain_state_read_failure_does_not_stop_renewal_worker() {
         let brain = FakeBrain {
             inspection: Arc::new(Mutex::new(Err(error_brain()))),
             fingerprint: Arc::new(Mutex::new(Ok(None))),
+            seed_on_active_fingerprint: Arc::new(Mutex::new(None)),
         };
-        let (handle, _, bytes) = handle(brain);
-        assert_eq!(handle.step(now()), Duration::from_secs(5));
-        assert_eq!(handle.snapshot().retry_index, 1);
-        assert!(
-            String::from_utf8(bytes.lock().unwrap().clone())
-                .unwrap()
-                .contains("failed")
-        );
+        let (handle, _, bytes) = handle(brain.clone());
+        seed_demand(&handle);
+        let waits = Arc::new(Mutex::new(0));
+        let wait: Wait = {
+            let waits = waits.clone();
+            let brain = brain.clone();
+            Arc::new(move |_| {
+                let mut waits = waits.lock().unwrap();
+                *waits += 1;
+                if *waits == 1 {
+                    *brain.inspection.lock().unwrap() = Ok(due());
+                }
+                *waits >= 2
+            })
+        };
+        run_two_worker_iterations(handle.clone(), wait);
+        assert_eq!(*waits.lock().unwrap(), 2);
+        assert_failed_step_clears_demand(&handle, &bytes);
     }
     #[test]
     fn fingerprint_read_failure_does_not_stop_renewal_worker() {
         let brain = FakeBrain {
             inspection: Arc::new(Mutex::new(Ok(due()))),
             fingerprint: Arc::new(Mutex::new(Err(error_brain()))),
+            seed_on_active_fingerprint: Arc::new(Mutex::new(None)),
         };
-        let (handle, _, _) = handle(brain);
-        assert_eq!(handle.step(now()), Duration::from_secs(5));
-        assert_eq!(handle.snapshot().retry_index, 1);
+        let (handle, _, bytes) = handle(brain.clone());
+        seed_on_active_fingerprint(&brain, &handle);
+        let waits = Arc::new(Mutex::new(0));
+        let wait: Wait = {
+            let waits = waits.clone();
+            Arc::new(move |_| {
+                let mut waits = waits.lock().unwrap();
+                *waits += 1;
+                *waits >= 2
+            })
+        };
+        run_two_worker_iterations(handle.clone(), wait);
+        assert_eq!(*waits.lock().unwrap(), 2);
+        assert_failed_step_clears_demand(&handle, &bytes);
     }
     #[test]
     fn outbound_send_failure_does_not_stop_renewal_worker() {
@@ -1582,12 +1716,24 @@ mod tests {
         drop(rx);
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let handle = RenewalHandle::new(
-            Arc::new(brain),
-            Box::new(StderrRenewalDiagnostics::new(SharedWriter(bytes))),
+            Arc::new(brain.clone()),
+            Box::new(StderrRenewalDiagnostics::new(SharedWriter(bytes.clone()))),
             tx,
+            Arc::new(now),
         );
-        assert_eq!(handle.step(now()), Duration::from_secs(5));
-        assert_eq!(handle.snapshot().retry_index, 1);
+        seed_on_active_fingerprint(&brain, &handle);
+        let waits = Arc::new(Mutex::new(0));
+        let wait: Wait = {
+            let waits = waits.clone();
+            Arc::new(move |_| {
+                let mut waits = waits.lock().unwrap();
+                *waits += 1;
+                *waits >= 2
+            })
+        };
+        run_two_worker_iterations(handle.clone(), wait);
+        assert_eq!(*waits.lock().unwrap(), 2);
+        assert_failed_step_clears_demand(&handle, &bytes);
     }
     #[test]
     fn worker_caps_a_multi_hour_planned_wait_at_sixty_seconds() {
@@ -1604,7 +1750,7 @@ mod tests {
             Some(fingerprint()),
         );
         let (handle, _, _) = handle(brain);
-        let start = RenewalWorkerStart::test(handle, Arc::new(now), wait);
+        let start = RenewalWorkerStart::test(handle, wait);
         let mut worker = start.spawn();
         worker.stop();
         assert_eq!(
@@ -1621,13 +1767,19 @@ mod tests {
             .unwrap()
             .to_owned();
         let before = handle.snapshot();
-        if tract == "supervisor" {
-            handle.handle_supervisor(
-                now(),
-                event,
-                &Map::from_iter([("ref".into(), Value::String(reference + "x"))]),
-            );
-        }
+        let directory = tempfile::tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let (spawn, _) = mpsc::channel();
+        let (cancel, _) = mpsc::channel();
+        let (outbound, _) = mpsc::channel();
+        let state = CortexState::new(store, spawn, cancel, outbound);
+        dispatch(
+            &state,
+            &handle,
+            tract,
+            event,
+            Map::from_iter([("ref".into(), Value::String(reference + "x"))]),
+        );
         assert_eq!(handle.snapshot(), before);
     }
     #[test]
@@ -1650,6 +1802,14 @@ mod tests {
                 Value::String("bad".into())
             )])),
             -1
+        );
+        assert_eq!(
+            exit_code(&Map::from_iter([("exit_code".into(), json!(0.0))])),
+            0
+        );
+        assert_eq!(
+            exit_code(&Map::from_iter([("exit_code".into(), json!(true))])),
+            1
         );
         assert_eq!(
             completed(
