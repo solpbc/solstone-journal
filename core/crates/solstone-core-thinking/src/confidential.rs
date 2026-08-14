@@ -82,6 +82,7 @@ pub struct HandoffResult {
     pub phase: Phase,
     pub guidance: Option<String>,
     pub retryable: bool,
+    pub subscribe_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +97,7 @@ struct OperationEntry {
     guidance: Option<String>,
     retryable: bool,
     portal_url: Option<String>,
+    subscribe_url: Option<String>,
     started: Instant,
     ended: Option<Instant>,
     generation: u64,
@@ -150,6 +152,7 @@ impl OperationRegistry {
             guidance: None,
             retryable: false,
             portal_url,
+            subscribe_url: None,
             started: now,
             ended: None,
             generation,
@@ -188,11 +191,34 @@ impl OperationRegistry {
         entry.phase = result.phase;
         entry.guidance = result.guidance;
         entry.retryable = result.retryable;
+        entry.subscribe_url = result.subscribe_url;
         entry.ended = Some(Instant::now());
         true
     }
 
     pub fn operation(&self, service: &str) -> Value {
+        self.operation_with_phase_vocabulary(service, true)
+    }
+
+    /// Returns an operation using its service-neutral lifecycle phase names.
+    ///
+    /// SPP's public UI intentionally uses product-specific replacements such
+    /// as `not_verified`; other services share this registry but retain the
+    /// Python operation registry's raw phase vocabulary.
+    pub fn operation_raw(&self, service: &str) -> Value {
+        self.operation_with_phase_vocabulary(service, false)
+    }
+
+    /// Removes one service operation, primarily for deterministic route tests.
+    pub fn clear_operation(&self, service: &str) {
+        self.state
+            .lock()
+            .expect("operation registry lock is not poisoned")
+            .entries
+            .remove(service);
+    }
+
+    fn operation_with_phase_vocabulary(&self, service: &str, product: bool) -> Value {
         let now = Instant::now();
         let mut state = self
             .state
@@ -202,7 +228,7 @@ impl OperationRegistry {
         state
             .entries
             .get(service)
-            .map(|entry| payload(entry, now, true))
+            .map(|entry| payload(entry, now, product))
             .unwrap_or(Value::Null)
     }
 }
@@ -227,7 +253,7 @@ fn payload(entry: &OperationEntry, now: Instant, remap: bool) -> Value {
         "guidance": entry.guidance,
         "retryable": entry.retryable,
         "portal_url": if entry.phase.terminal() { Value::Null } else { entry.portal_url.clone().map(Value::String).unwrap_or(Value::Null) },
-        "subscribe_url": Value::Null,
+        "subscribe_url": entry.subscribe_url.clone().map(Value::String).unwrap_or(Value::Null),
         "elapsed_ms": now.duration_since(entry.started).as_millis() as u64,
     })
 }
@@ -286,13 +312,13 @@ pub fn outcome_from_token(
 
 pub fn handoff_result(code: HandoffCode) -> HandoffResult {
     match code {
-        HandoffCode::Approved => HandoffResult { phase: Phase::Enabled, guidance: None, retryable: false },
-        HandoffCode::Pending => HandoffResult { phase: Phase::Pending, guidance: Some("Keep the approval page open while the request finishes.".to_owned()), retryable: false },
-        HandoffCode::Revoked => HandoffResult { phase: Phase::Revoked, guidance: Some("Consent was not granted. Start a new enable flow when ready.".to_owned()), retryable: false },
-        HandoffCode::Expired => HandoffResult { phase: Phase::Error, guidance: Some("This enable link is no longer active. Start a new enable flow.".to_owned()), retryable: true },
-        HandoffCode::Malformed => HandoffResult { phase: Phase::Error, guidance: Some("The service response was not understood. Update solstone and try again.".to_owned()), retryable: false },
-        HandoffCode::NetworkError => HandoffResult { phase: Phase::Error, guidance: Some("The service could not be reached. Check network access and try again.".to_owned()), retryable: true },
-        HandoffCode::LocalError => HandoffResult { phase: Phase::Error, guidance: Some("Local service state could not be written. Check journal permissions and try again.".to_owned()), retryable: true },
+        HandoffCode::Approved => HandoffResult { phase: Phase::Enabled, guidance: None, retryable: false, subscribe_url: None },
+        HandoffCode::Pending => HandoffResult { phase: Phase::Pending, guidance: Some("Keep the approval page open while the request finishes.".to_owned()), retryable: false, subscribe_url: None },
+        HandoffCode::Revoked => HandoffResult { phase: Phase::Revoked, guidance: Some("Consent was not granted. Start a new enable flow when ready.".to_owned()), retryable: false, subscribe_url: None },
+        HandoffCode::Expired => HandoffResult { phase: Phase::Error, guidance: Some("This enable link is no longer active. Start a new enable flow.".to_owned()), retryable: true, subscribe_url: None },
+        HandoffCode::Malformed => HandoffResult { phase: Phase::Error, guidance: Some("The service response was not understood. Update solstone and try again.".to_owned()), retryable: false, subscribe_url: None },
+        HandoffCode::NetworkError => HandoffResult { phase: Phase::Error, guidance: Some("The service could not be reached. Check network access and try again.".to_owned()), retryable: true, subscribe_url: None },
+        HandoffCode::LocalError => HandoffResult { phase: Phase::Error, guidance: Some("Local service state could not be written. Check journal permissions and try again.".to_owned()), retryable: true, subscribe_url: None },
     }
 }
 
@@ -491,7 +517,8 @@ mod tests {
             HandoffResult {
                 phase: Phase::Error,
                 guidance: None,
-                retryable: true
+                retryable: true,
+                subscribe_url: None,
             },
         ));
         let (second, _) = registry
@@ -509,7 +536,8 @@ mod tests {
             HandoffResult {
                 phase: Phase::Enabled,
                 guidance: None,
-                retryable: false
+                retryable: false,
+                subscribe_url: None,
             },
         ));
         assert!(registry.mark_waiting(SERVICE_SPP, second));

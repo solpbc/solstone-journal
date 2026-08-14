@@ -46,6 +46,10 @@ impl LocalCa {
     pub fn spki_der(&self) -> &[u8] {
         &self.spki_der
     }
+
+    pub fn public_key_spki_pem(&self) -> String {
+        self.key.public_key_pem()
+    }
 }
 
 pub struct IssuedClientCertificate {

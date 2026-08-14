@@ -619,6 +619,7 @@ fn spawn_confidential_handoff(
                         phase: Phase::EarlyAccess,
                         guidance: None,
                         retryable: false,
+                        subscribe_url: None,
                     };
                 }
                 Ok(PollOutcome::Success(payload)) => {
@@ -627,6 +628,7 @@ fn spawn_confidential_handoff(
                             phase: Phase::Enabled,
                             guidance: Some(NOT_VERIFIED_GUIDANCE.to_owned()),
                             retryable: false,
+                            subscribe_url: None,
                         },
                         Err(ProvisionError::Invalid) => handoff_error("unexpected_payload", None),
                         Err(ProvisionError::Mutation(_)) => handoff_error("write_failed", None),
@@ -646,6 +648,7 @@ fn spawn_confidential_handoff(
                     phase: Phase::Error,
                     guidance: None,
                     retryable: true,
+                    subscribe_url: None,
                 },
             );
         }

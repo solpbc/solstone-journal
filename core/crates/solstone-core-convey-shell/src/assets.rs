@@ -25,6 +25,14 @@ pub fn network_copy_json() -> &'static str {
     NETWORK_COPY_JSON
 }
 
+pub fn spl_outcome_strings_json() -> &'static str {
+    SPL_OUTCOME_STRINGS_JSON
+}
+
+pub fn home_address_strings_json() -> &'static str {
+    HOME_ADDRESS_STRINGS_JSON
+}
+
 pub fn not_in_new_voices_copy() -> &'static str {
     NOT_IN_NEW_VOICES_COPY
 }

@@ -36,6 +36,7 @@ host = [
     "dep:solstone-core-spl",
     "dep:solstone-core-thinking",
     "dep:solstone-core-thinking-copy",
+    "dep:solstone-core-journal-config-write",
     "solstone-core-sol-link/host",
     "dep:rustls",
     "dep:socket2",
@@ -65,6 +66,7 @@ solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-journal-config-write = { workspace = true, optional = true }
 solstone-core-npy.workspace = true
 solstone-core-observer.workspace = true
 solstone-core-records-web.workspace = true

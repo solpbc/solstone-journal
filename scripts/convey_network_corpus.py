@@ -251,6 +251,33 @@ def _assert_status_content_pinned(phases: dict[str, list[dict[str, Any]]]) -> No
         raise AssertionError("relay_state must not be normalized away")
 
 
+def _mutation_census(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Describe mutation coverage actually present in this GET-only corpus."""
+    mutating = {"POST", "PUT", "PATCH", "DELETE"}
+    writes = [case for case in cases if case["method"] in mutating]
+    succeeded = [case for case in writes if 200 <= case["status"] < 300]
+    counts: dict[str, int] = {}
+    for case in succeeded:
+        route = case["path"].split("?")[0]
+        counts[route] = counts.get(route, 0) + 1
+    seen: dict[tuple[str, str], int] = {}
+    for case in succeeded:
+        key = (case["path"], json.dumps(case.get("request_json"), sort_keys=True))
+        seen[key] = seen.get(key, 0) + 1
+    repeated = sorted({path for (path, _), count in seen.items() if count > 1})
+    return {
+        "cases_total": len(cases),
+        "mutating_method_cases": len(writes),
+        "actually_mutated_2xx": len(succeeded),
+        "refusals": sum(case["status"] >= 400 for case in writes),
+        "post_state_reads": len(cases) - len(writes),
+        "routes_that_mutated": dict(sorted(counts.items())),
+        "routes_refused_only": sorted({case["path"].split("?")[0] for case in writes if case["status"] >= 400} - set(counts)),
+        "routes_called_twice_with_same_input": repeated,
+        "routes_called_twice_with_same_input_count": len(repeated),
+    }
+
+
 def build_corpus() -> dict[str, Any]:
     from solstone.apps.network import routes as network_routes
     from solstone.convey import create_app
@@ -286,6 +313,10 @@ def build_corpus() -> dict[str, Any]:
         },
         "capture_host": {"platform": sys.platform, "machine": platform.machine()},
         "native_deviations": [],
+        "coverage_limitations": [
+            "POST /app/network/host-address, POST /app/network/private-link/enable, and POST /app/network/private-link/disable are not exercised by this GET-only corpus; tests/network_write_routes.rs covers them."
+        ],
+        "mutation_census": _mutation_census([case for cases in phases.values() for case in cases]),
         "established_deferred_native_responses": ESTABLISHED_DEFERRED_NATIVE_RESPONSES,
         "phases": phases,
     }

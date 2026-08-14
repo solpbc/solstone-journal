@@ -30,6 +30,8 @@ use solstone_core_sol_link::pairing::{
 };
 
 use crate::network_status::{identity, local_endpoints, private_link, status};
+use crate::network_writes;
+use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::{JournalRoot, asset_response, assets};
 
@@ -69,7 +71,9 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         .route("/app/network/api/identity", get(identity))
         .route("/app/network/api/private-link", get(private_link))
         .route("/app/network/local-endpoints", get(local_endpoints))
+        .merge(network_writes::router())
         .layer(Extension(journal))
+        .layer(Extension(Arc::new(OperationRegistry::default())))
 }
 
 async fn shell() -> Response {
@@ -405,7 +409,7 @@ fn pairing_refusal(error: PairingError) -> Response {
     refusal(reason, detail, status)
 }
 
-fn refusal(reason_code: &str, detail: &str, status: StatusCode) -> Response {
+pub(crate) fn refusal(reason_code: &str, detail: &str, status: StatusCode) -> Response {
     (
         status,
         Json(json!({

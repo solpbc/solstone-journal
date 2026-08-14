@@ -2860,6 +2860,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-health-web",
  "solstone-core-import-web",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-npy",
@@ -3765,9 +3766,13 @@ dependencies = [
  "futures-util",
  "serde_json",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
+ "solstone-core-journal-io",
+ "solstone-core-sol-link",
  "thiserror 2.0.20",
  "tokio",
  "tokio-tungstenite",
+ "ureq",
 ]
 
 [[package]]

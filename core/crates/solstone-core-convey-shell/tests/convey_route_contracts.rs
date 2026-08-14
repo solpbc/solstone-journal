@@ -14,6 +14,8 @@ mod discovery_routes;
 mod media_routes;
 #[path = "network_corpus.rs"]
 mod network_corpus;
+#[path = "network_write_routes.rs"]
+mod network_write_routes;
 #[path = "populated_corpus.rs"]
 mod populated_corpus;
 #[path = "quality_known_routes.rs"]

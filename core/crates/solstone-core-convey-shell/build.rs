@@ -173,6 +173,16 @@ fn python_dict(expression: &str, constant_name: &str) -> serde_json::Map<String,
                     "copy constant {constant_name} dictionary member has an empty value"
                 );
                 let key_strings = python_strings(key_source, constant_name);
+                if value_source.trim() == "None" {
+                    let key = key_strings.concat();
+                    assert!(
+                        !key.is_empty(),
+                        "copy constant {constant_name} dictionary member has an empty key"
+                    );
+                    members.insert(key, Value::Null);
+                    member_start = member_end + usize::from(member_end < body.len());
+                    continue;
+                }
                 let value_strings = python_strings(value_source, constant_name);
                 assert!(
                     !key_strings.is_empty(),
@@ -266,6 +276,8 @@ fn main() {
     let speakers_root = manifest.join("assets/speakers");
     let speakers_copy = speakers_root.join("copy.py");
     let network_copy = root.join("solstone/apps/network/copy.py");
+    let outcomes = root.join("solstone/think/services/outcomes.py");
+    let pairing_config = root.join("solstone/think/pairing/config.py");
     let entities_workspace = manifest.join("assets/entities/workspace.html");
     let body_workspace = manifest.join("assets/body/workspace.html");
     let favicon = root.join("favicon.ico");
@@ -287,6 +299,8 @@ fn main() {
         &speakers_static,
         &speakers_copy,
         &network_copy,
+        &outcomes,
+        &pairing_config,
         &body_workspace,
         &devices_workspace,
         &entities_workspace,
@@ -339,6 +353,19 @@ fn main() {
     let network_copy_json =
         serde_json::to_string(&Value::Object(python_constants(&network_copy_source, None)))
             .expect("network copy serializes");
+    let outcomes_source = fs::read_to_string(&outcomes).expect("SPL outcome source is readable");
+    let spl_outcome_strings_json = serde_json::to_string(&Value::Object(python_constants(
+        &outcomes_source,
+        Some("SPL_"),
+    )))
+    .expect("SPL outcome copy serializes");
+    let pairing_config_source =
+        fs::read_to_string(&pairing_config).expect("pairing config source is readable");
+    let home_address_strings_json = serde_json::to_string(&Value::Object(python_constants(
+        &pairing_config_source,
+        Some("HOME_ADDRESS_"),
+    )))
+    .expect("home address copy serializes");
     let not_in_new_voices =
         serde_json::to_string(&python_constant(&copy_source, "TR_NOT_IN_NEW_VOICES"))
             .expect("copy string serializes");
@@ -357,6 +384,12 @@ fn main() {
     ));
     generated.push_str(&format!(
         "pub(super) const NETWORK_COPY_JSON: &str = {network_copy_json:?};\n"
+    ));
+    generated.push_str(&format!(
+        "pub(super) const SPL_OUTCOME_STRINGS_JSON: &str = {spl_outcome_strings_json:?};\n"
+    ));
+    generated.push_str(&format!(
+        "pub(super) const HOME_ADDRESS_STRINGS_JSON: &str = {home_address_strings_json:?};\n"
     ));
     generated.push_str(&format!(
         "pub(super) const NOT_IN_NEW_VOICES_COPY: &str = {not_in_new_voices};\n"

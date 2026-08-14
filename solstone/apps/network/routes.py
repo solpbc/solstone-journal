@@ -116,7 +116,7 @@ from solstone.think.pairing.config import (
     set_home_address,
     validate_home_address,
 )
-from solstone.think.services import operations, spl, spl_handoff
+from solstone.think.services import operations, outcomes, spl, spl_handoff
 from solstone.think.services import status as service_status
 from solstone.think.utils import get_journal, now_ms
 
@@ -614,14 +614,14 @@ def private_link_enable() -> tuple[Response, int]:
     if _private_link_status()["state"] == "enabled":
         return error_response(
             INVALID_OPERATION_FOR_STATE,
-            detail="your private network is already on",
+            detail=outcomes.SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL,
         )
     try:
         consent_url, nonce, base_url = spl_handoff.build_spl_handoff_url()
     except OSError:
         return error_response(
             SERVICE_OPERATION_FAILED,
-            detail="couldn't prepare the consent link",
+            detail=outcomes.SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL,
         )
     return _start_operation_response(
         "spl",
