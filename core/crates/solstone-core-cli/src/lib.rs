@@ -35,6 +35,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core segment [args...]\n",
     "  solstone-core backup [args...]\n",
     "  solstone-core journal-stats [args...]\n",
+    "  solstone-core talent [args...]\n",
     "  solstone-core reprocess [args...]\n",
     "  solstone-core backfill-processing-records [args...]\n"
 );
@@ -671,6 +672,9 @@ pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
 /// The parse-error usage for `journal spl`.
 pub const SPL_USAGE: &str = "usage: journal spl [-v] [-d]\n";
 
+pub const TALENT_USAGE: &str =
+    "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
+
 /// `journal transfer export --help`, verbatim from the reference.
 pub const TRANSFER_EXPORT_HELP: &str = concat!(
     "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
@@ -747,6 +751,7 @@ pub enum Command {
     Maintenance(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
+    Talent(Vec<OsString>),
     Backfill(Vec<OsString>),
     FacetCandidates,
     InstallModels(InstallModelsOptions),
@@ -1575,6 +1580,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("journal-stats") => {
             Ok(Command::JournalStats(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("talent") => {
+            Ok(Command::Talent(rest.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("backfill-processing-records") => {
             Ok(Command::Backfill(rest.to_vec()))

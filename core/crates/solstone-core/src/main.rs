@@ -6,7 +6,7 @@ use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
 use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use std::{
     env,
     ffi::{OsStr, OsString},
@@ -76,7 +76,7 @@ use solstone_core_indexer_store::scan::{
 };
 use solstone_core_journal::{
     ConfigError, HomeError, Source, discover_home, ensure_journal_dir_with_label,
-    read_config_journal, resolve_journal_path,
+    read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
 use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
@@ -228,6 +228,7 @@ fn main() -> ExitCode {
         Ok(Command::Maintenance(args)) => run_maintenance(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
+        Ok(Command::Talent(args)) => run_talent(args),
         Ok(Command::Backfill(args)) => run_backfill(args),
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
@@ -767,6 +768,54 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
         &backlog_reader,
         &document_writer,
     );
+    print!("{}", run.stdout);
+    eprint!("{}", run.stderr);
+    ExitCode::from(run.exit_code as u8)
+}
+
+fn run_talent(args: Vec<OsString>) -> ExitCode {
+    let is_help = args
+        .iter()
+        .any(|argument| argument == OsStr::new("-h") || argument == OsStr::new("--help"));
+    let run = if is_help {
+        solstone_core_talent_cli::run_cli(
+            &args,
+            Path::new(""),
+            Path::new(""),
+            Path::new(""),
+            SystemTime::UNIX_EPOCH,
+        )
+    } else {
+        let journal_root = match resolve_process_journal_path() {
+            Ok(journal) => journal.path,
+            Err(error) => {
+                eprint_journal_path_error(error);
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        };
+        let executable = match env::current_exe() {
+            Ok(executable) => executable,
+            Err(error) => {
+                eprintln!("talent failed: could not inspect current executable: {error}");
+                return ExitCode::from(EXIT_TEMPFAIL);
+            }
+        };
+        let Some(executable_dir) = executable.parent() else {
+            eprintln!("talent failed: could not locate installed solstone package");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        };
+        let Some(root) = resolve_installation_root_from_executable_dir(executable_dir) else {
+            eprintln!("talent failed: could not locate installed solstone package");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        };
+        solstone_core_talent_cli::run_cli(
+            &args,
+            &root.join("solstone/talent"),
+            &root.join("solstone/apps"),
+            &journal_root,
+            SystemTime::now(),
+        )
+    };
     print!("{}", run.stdout);
     eprint!("{}", run.stderr);
     ExitCode::from(run.exit_code as u8)

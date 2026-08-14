@@ -2728,6 +2728,7 @@ dependencies = [
  "solstone-core-streams-cli",
  "solstone-core-system",
  "solstone-core-system-health",
+ "solstone-core-talent-cli",
  "solstone-core-think-cli",
  "solstone-core-top",
  "solstone-core-transcribe",
@@ -3944,6 +3945,7 @@ dependencies = [
  "nix",
  "rustix",
  "serde_json",
+ "solstone-core-format",
  "spl-core",
  "ureq",
 ]
@@ -4154,6 +4156,17 @@ dependencies = [
  "unicode-general-category",
  "unicode-xid",
  "unicode_names2",
+]
+
+[[package]]
+name = "solstone-core-talent-cli"
+version = "1.0.22"
+dependencies = [
+ "regex",
+ "serde_json",
+ "solstone-core-cogitate",
+ "solstone-core-format",
+ "tempfile",
 ]
 
 [[package]]

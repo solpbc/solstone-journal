@@ -2,6 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 use serde_json::{Map, Value};
+use solstone_core_format::{
+    ensure_ascii, json_compact_ascii as format_json_compact_ascii,
+    json_compact_utf8 as format_json_compact_utf8,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JsonFormat {
@@ -59,17 +63,17 @@ pub fn json_pretty(value: &Value, format: JsonFormat) -> String {
 
 #[must_use]
 pub fn json_compact_ascii(value: &Value) -> String {
-    ensure_ascii(&json_compact(value))
+    format_json_compact_ascii(value)
 }
 
 #[must_use]
 pub fn sorted_json_compact_ascii(value: &Value) -> String {
-    ensure_ascii(&json_compact(&sort_json(value)))
+    format_json_compact_ascii(&sort_json(value))
 }
 
 #[must_use]
 pub fn json_compact_utf8(value: &Value) -> String {
-    json_compact(value)
+    format_json_compact_utf8(value)
 }
 
 fn sort_json(value: &Value) -> Value {
@@ -86,56 +90,6 @@ fn sort_json(value: &Value) -> Value {
         }
         _ => value.clone(),
     }
-}
-
-fn json_compact(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(true) => "true".to_string(),
-        Value::Bool(false) => "false".to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::String(value) => serde_json::to_string(value).expect("string JSON"),
-        Value::Array(items) => format!(
-            "[{}]",
-            items
-                .iter()
-                .map(json_compact)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Value::Object(object) => format!(
-            "{{{}}}",
-            object
-                .iter()
-                .map(|(key, value)| format!(
-                    "{}: {}",
-                    serde_json::to_string(key).expect("key JSON"),
-                    json_compact(value)
-                ))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-fn ensure_ascii(value: &str) -> String {
-    let mut output = String::new();
-    for ch in value.chars() {
-        if ch.is_ascii() {
-            output.push(ch);
-        } else {
-            let codepoint = ch as u32;
-            if codepoint <= 0xFFFF {
-                output.push_str(&format!("\\u{codepoint:04x}"));
-            } else {
-                let adjusted = codepoint - 0x1_0000;
-                let high = 0xD800 + (adjusted >> 10);
-                let low = 0xDC00 + (adjusted & 0x3FF);
-                output.push_str(&format!("\\u{high:04x}\\u{low:04x}"));
-            }
-        }
-    }
-    output
 }
 
 #[cfg(test)]

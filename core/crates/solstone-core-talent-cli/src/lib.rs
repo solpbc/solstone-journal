@@ -1,0 +1,361 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Read-only native implementation of `journal talent list`.
+
+use std::ffi::OsString;
+use std::path::Path;
+use std::time::SystemTime;
+
+mod args;
+mod discovery;
+mod emit;
+mod last_run;
+mod list;
+mod overrides;
+mod validation;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CliRun {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
+pub fn run_cli(
+    args: &[OsString],
+    talent_root: &Path,
+    apps_root: &Path,
+    journal_root: &Path,
+    now: SystemTime,
+) -> CliRun {
+    match args::parse(args) {
+        args::Command::Help(text) => success(text),
+        args::Command::Error(text) => CliRun {
+            stdout: String::new(),
+            stderr: text,
+            exit_code: 2,
+        },
+        args::Command::Stub(name) => CliRun {
+            stdout: String::new(),
+            stderr: format!("journal talent {name}: not implemented yet\n"),
+            exit_code: 1,
+        },
+        args::Command::List(options) => match load_configs(talent_root, apps_root, journal_root) {
+            Ok(configs) if options.json => success(emit::jsonl(&configs, &options)),
+            Ok(configs) => success(list::render(&configs, &options, journal_root, now)),
+            Err(error) => CliRun {
+                stdout: String::new(),
+                stderr: format!("{error}\n"),
+                exit_code: 1,
+            },
+        },
+    }
+}
+
+fn load_configs(
+    talent_root: &Path,
+    apps_root: &Path,
+    journal_root: &Path,
+) -> Result<Vec<discovery::TalentConfig>, String> {
+    let mut configs = discovery::discover(talent_root, apps_root)?;
+    overrides::merge(&mut configs, journal_root)?;
+    validation::validate(&mut configs)?;
+    Ok(configs)
+}
+
+fn success(stdout: String) -> CliRun {
+    CliRun {
+        stdout,
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+    use std::fs;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use super::*;
+
+    fn roots() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(root.path().join("talent")).expect("talent root");
+        fs::create_dir_all(root.path().join("apps/demo/talent")).expect("app root");
+        root
+    }
+
+    fn run(root: &tempfile::TempDir, args: &[&str]) -> CliRun {
+        run_cli(
+            &args.iter().map(OsString::from).collect::<Vec<_>>(),
+            &root.path().join("talent"),
+            &root.path().join("apps"),
+            root.path(),
+            UNIX_EPOCH + Duration::from_secs(1_000),
+        )
+    }
+
+    #[test]
+    fn no_frontmatter_is_discovered_and_json_uses_python_spacing() {
+        let root = roots();
+        fs::write(root.path().join("talent/plain.md"), "prompt body\n").expect("prompt");
+        let output = run(&root, &["list", "--json"]);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert_eq!(
+            output.stdout,
+            "{\"file\": \"talent/plain.md\", \"color\": \"#6c757d\", \"source\": \"system\"}\n"
+        );
+    }
+
+    #[test]
+    fn list_renders_weekly_without_widening_schedule_grammar() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/weekly.md"),
+            "{\n\"title\": \"Weekly\",\n\"schedule\": \"weekly\",\n\"priority\": 1\n}\n",
+        )
+        .expect("prompt");
+        let output = run(&root, &[]);
+        assert!(output.stdout.contains("weekly:\n  weekly"));
+        let invalid = run(&root, &["list", "--schedule", "weekly"]);
+        assert_eq!(invalid.exit_code, 2);
+        assert!(invalid.stderr.contains("invalid choice"));
+    }
+
+    #[test]
+    fn malformed_frontmatter_fails_without_partial_output() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/bad.md"),
+            "{\n\"title\": true,\n}\n",
+        )
+        .expect("prompt");
+        let output = run(&root, &["list"]);
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.contains("bad.md"));
+    }
+
+    #[test]
+    fn overrides_preserve_order_and_only_apply_supported_fields() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/system.md"),
+            "{\n\"type\": \"cogitate\",\n\"title\": \"System\",\n\"color\": \"#111111\"\n}\n",
+        )
+        .expect("system prompt");
+        fs::write(
+            root.path().join("apps/demo/talent/app.md"),
+            "{\n\"type\": \"cogitate\",\n\"title\": \"App\"\n}\n",
+        )
+        .expect("app prompt");
+        fs::create_dir_all(root.path().join("config")).expect("config");
+        fs::write(
+            root.path().join("config/journal.json"),
+            r#"{"talent_overrides":{"talent.system.system":{"disabled":true,"extract":true,"title":"ignored"},"talent.demo.app":{"extract":true},"talent.system.demo:app":{"disabled":true}}}"#,
+        )
+        .expect("overrides");
+        let output = run(&root, &["list", "--json", "--disabled"]);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert!(output.stdout.contains(r##"{"file": "talent/system.md", "type": "cogitate", "title": "System", "color": "#111111", "source": "system", "disabled": true, "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
+        assert!(output.stdout.contains(r##"{"file": "apps/demo/talent/app.md", "type": "cogitate", "title": "App", "color": "#6c757d", "source": "app", "app": "demo", "extract": true, "access_tier": "normal", "cwd": "journal"}"##));
+    }
+
+    #[test]
+    fn synthetic_records_keep_json_types_and_frontmatter_key_order() {
+        let root = roots();
+        fs::write(
+            root.path().join("talent/rich.md"),
+            "{\n\"type\": \"cogitate\",\n\"title\": \"Mañana — plan\",\n\"color\": \"#123456\",\n\"items\": [\"one\", 2],\n\"nested\": {\"enabled\": true},\n\"max_run_cost_usd\": 5.00\n}\n",
+        )
+        .expect("rich prompt");
+        fs::write(
+            root.path().join("talent/first.md"),
+            "{\n\"type\": \"cogitate\",\n\"title\": \"First\",\n\"color\": \"#010101\"\n}\n",
+        )
+        .expect("first prompt");
+        fs::write(
+            root.path().join("talent/second.md"),
+            "{\n\"type\": \"cogitate\",\n\"color\": \"#010101\",\n\"title\": \"First\"\n}\n",
+        )
+        .expect("second prompt");
+        let output = run(&root, &["list", "--json"]);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        let rows = output.stdout.lines().collect::<Vec<_>>();
+        assert!(rows.contains(&r##"{"file": "talent/rich.md", "type": "cogitate", "title": "Ma\u00f1ana \u2014 plan", "color": "#123456", "items": ["one", 2], "nested": {"enabled": true}, "max_run_cost_usd": 5.0, "source": "system", "access_tier": "normal", "cwd": "journal"}"##));
+        let first = rows
+            .iter()
+            .find(|row| row.contains("talent/first.md"))
+            .expect("first row");
+        let second = rows
+            .iter()
+            .find(|row| row.contains("talent/second.md"))
+            .expect("second row");
+        assert_ne!(first, second);
+        assert!(first.find("\"title\"").expect("title") < first.find("\"color\"").expect("color"));
+        assert!(
+            second.find("\"color\"").expect("color") < second.find("\"title\"").expect("title")
+        );
+    }
+
+    #[test]
+    fn validation_families_return_reference_messages() {
+        let cases = [
+            (
+                "priority",
+                "{\n\"schedule\": \"daily\"\n}\n",
+                "Scheduled prompt 'priority' is missing required 'priority' field. All prompts with 'schedule' must declare an explicit priority.",
+            ),
+            (
+                "type",
+                "{\n\"type\": \"invalid\"\n}\n",
+                "Prompt 'type' has invalid type 'invalid'. Expected 'generate' or 'cogitate'.",
+            ),
+            (
+                "activity",
+                "{\n\"schedule\": \"activity\",\n\"priority\": 1\n}\n",
+                "Activity-scheduled prompt 'activity' must have a non-empty 'activities' list (activity types to match, or [\"*\"] for all types).",
+            ),
+            (
+                "write",
+                "{\n\"type\": \"cogitate\",\n\"write\": true\n}\n",
+                "Prompt 'write' declares unsupported 'write: true' (cogitate runs are read-only)",
+            ),
+            (
+                "access",
+                "{\n\"type\": \"generate\",\n\"output\": \"json\",\n\"access_tier\": \"normal\"\n}\n",
+                "Prompt 'access' sets 'access_tier' but access_tier is only valid for type: cogitate",
+            ),
+        ];
+        for (name, content, expected) in cases {
+            let root = roots();
+            fs::write(root.path().join(format!("talent/{name}.md")), content).expect("prompt");
+            let output = run(&root, &["list"]);
+            assert_eq!(output.exit_code, 1);
+            assert_eq!(output.stderr, format!("{expected}\n"));
+        }
+    }
+
+    #[test]
+    fn real_corpus_list_fixtures_and_json_records_match() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repository = manifest.ancestors().nth(3).expect("repository root");
+        let journal = tempfile::tempdir().expect("journal");
+        let talent_root = repository.join("solstone/talent");
+        let apps_root = repository.join("solstone/apps");
+        let args = |items: &[&str]| items.iter().map(OsString::from).collect::<Vec<_>>();
+
+        let discovered = discovery::discover(&talent_root, &apps_root).expect("discover corpus");
+        assert!(discovered.iter().any(|config| config.key == "chat"));
+        assert!(
+            discovered
+                .iter()
+                .any(|config| config.key == "support:support")
+        );
+
+        let json = run_cli(
+            &args(&["list", "--json"]),
+            &talent_root,
+            &apps_root,
+            journal.path(),
+            UNIX_EPOCH,
+        );
+        assert_eq!(json.exit_code, 0, "{}", json.stderr);
+        let records = json.stdout.lines().collect::<Vec<_>>();
+        assert_eq!(records.len(), discovered.len());
+        for expected in [
+            r##"{"file": "talent/chat.md", "type": "generate", "title": "Chat", "description": "Structured conversational reply planner for the chat backend rewrite", "thinking_budget": 4096, "max_output_tokens": 2048, "output": "json", "schema": "chat.schema.json", "hook": {"pre": "chat_context"}, "color": "#6c757d", "source": "system"}"##,
+            r##"{"file": "talent/conversation.md", "type": "generate", "title": "Conversation Story", "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.", "color": "#00796b", "schedule": "activity", "activities": ["meeting", "call", "messaging", "email"], "priority": 20, "output": "json", "max_output_tokens": 12288, "schema": "story.schema.json", "hook": {"post": "story"}, "degradation_check": true, "load": {"transcripts": true, "percepts": true, "talents": false}, "source": "system"}"##,
+            r##"{"file": "talent/exec.md", "type": "cogitate", "access_tier": "normal", "title": "Exec", "description": "Sol \u2014 takes action and makes changes in the journal", "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
+            r##"{"file": "talent/read.md", "type": "cogitate", "title": "Read", "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)", "color": "#6c757d", "source": "system", "access_tier": "normal", "cwd": "journal"}"##,
+            r##"{"file": "talent/partner.md", "type": "cogitate", "access_tier": "synthesis", "title": "Partner Profile", "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise", "schedule": "weekly", "priority": 95, "max_turns": 100, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
+            r##"{"file": "talent/weekly_reflection.md", "type": "cogitate", "access_tier": "synthesis", "title": "Weekly Reflection", "description": "Sunday-start weekly reflection synthesized from the journal", "schedule": "weekly", "priority": 90, "output": "md", "degradation_check": true, "read_scope_span": 7, "max_turns": 100, "max_run_cost_usd": 5.0, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
+            r##"{"file": "apps/entities/talent/entity_assist.md", "type": "cogitate", "title": "Entity Assistant", "description": "Quick entity addition with intelligent type detection and automatic description generation", "color": "#00695c", "group": "Entities", "source": "app", "app": "entities", "access_tier": "normal", "cwd": "journal"}"##,
+            r##"{"file": "apps/support/talent/support.md", "type": "cogitate", "access_tier": "outbound", "title": "Support", "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.", "color": "#0288d1", "source": "app", "app": "support", "cwd": "journal"}"##,
+        ] {
+            assert!(
+                records.contains(&expected),
+                "missing JSON record: {expected}"
+            );
+        }
+
+        let list = run_cli(
+            &args(&["list"]),
+            &talent_root,
+            &apps_root,
+            journal.path(),
+            UNIX_EPOCH,
+        );
+        assert_eq!(list.exit_code, 0, "{}", list.stderr);
+        assert_eq!(list.stdout, LIST_FIXTURE);
+        assert_eq!(
+            run_cli(
+                &args(&["list", "--schedule", "daily"]),
+                &talent_root,
+                &apps_root,
+                journal.path(),
+                UNIX_EPOCH
+            )
+            .stdout,
+            DAILY_FIXTURE
+        );
+        assert_eq!(
+            run_cli(
+                &args(&["list", "--schedule", "activity", "--source", "app"]),
+                &talent_root,
+                &apps_root,
+                journal.path(),
+                UNIX_EPOCH
+            )
+            .stdout,
+            "No prompts found matching filters.\n"
+        );
+    }
+
+    const DAILY_FIXTURE: &str = concat!(
+        "  NAME                      TITLE                         LAST RUN            TAGS\n\n",
+        "  daily_schedule            Maintenance Window            -                   json pre post\n",
+        "  entities:entities_review  Entity Reviewer               -                   json pre post [entities]\n",
+        "  entities:entity_observer  Entity Observer               -                   json pre post [entities]\n",
+        "  facet_newsletter          Facet Newsletter Generator    -                   md pre post\n",
+        "  morning_briefing          Morning Briefing              -                   json pre\n",
+        "  schedule                  Upcoming Schedule             -                   json post\n",
+    );
+
+    const LIST_FIXTURE: &str = concat!(
+        "  NAME                      TITLE                         LAST RUN            TAGS\n\n",
+        "segment:\n",
+        "  documents                 Document Analysis             -                   json pre\n",
+        "  entities:detection        Entity Detection              -                   json pre post [entities]\n",
+        "  screen                    Screen Record                 -                   json\n",
+        "  sense                     Segment Sense                 -                   json\n",
+        "  speaker_attribution       Speaker Attribution           -                   json pre post\n",
+        "  timeline:segment_summary  Segment Summary               -                   json pre post [timeline]\n\n",
+        "daily:\n",
+        "  daily_schedule            Maintenance Window            -                   json pre post\n",
+        "  entities:entities_review  Entity Reviewer               -                   json pre post [entities]\n",
+        "  entities:entity_observer  Entity Observer               -                   json pre post [entities]\n",
+        "  facet_newsletter          Facet Newsletter Generator    -                   md pre post\n",
+        "  morning_briefing          Morning Briefing              -                   json pre\n",
+        "  schedule                  Upcoming Schedule             -                   json post\n\n",
+        "weekly:\n",
+        "  partner                   Partner Profile               -\n",
+        "  weekly_reflection         Weekly Reflection             -                   md\n\n",
+        "activity:\n",
+        "  conversation              Conversation Story            -                   json post\n",
+        "  event                     Event Story                   -                   json post\n",
+        "  participation             Participation                 -                   json post\n",
+        "  work                      Work Story                    -                   json post\n\n",
+        "unscheduled:\n",
+        "  chat                      Chat                          -                   json pre\n",
+        "  entities:entity_assist    Entity Assistant              -                  [entities]\n",
+        "  entities:entity_describe  Entity Description            -                   md pre [entities]\n",
+        "  exec                      Exec                          -\n",
+        "  pulse                     Pulse                         -                   json pre post\n",
+        "  read                      Read                          -\n",
+        "  steward                   Steward                       -                   json pre post\n",
+        "  support:support           Support                       -                  [support]\n\n",
+    );
+}
