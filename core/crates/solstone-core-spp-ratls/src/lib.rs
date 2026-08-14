@@ -5,6 +5,7 @@
 
 pub mod cadence;
 pub mod error;
+pub mod fresh;
 pub mod nvattest;
 pub mod ratls;
 pub mod state;
@@ -16,6 +17,7 @@ pub use cadence::{
 pub use error::{
     CompositeVerificationError, RatlsChannelError, RatlsContractError, RatlsVerificationError,
 };
+pub use fresh::{FreshAttestedChannel, perform_fresh_reattest};
 pub use nvattest::{
     NvattestEnsureStatus, classify_channel_failure, classify_nvattest_prerequisite,
 };

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use chrono::{DateTime, Utc};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::fixture::local_contract;
 
@@ -245,6 +245,34 @@ pub fn validate_refresh_probe_outcome(
     now: DateTime<Utc>,
 ) -> Result<(), ValidationError> {
     parse_evidence(Some(value), now).map(|_| ())
+}
+
+/// Whether a reason is admitted for one evidence component by the frozen
+/// brain-state contract.
+pub fn is_valid_evidence_reason(component: &str, reason: &str) -> bool {
+    local_contract()
+        .brain_state
+        .evidence_reason_codes
+        .get(component)
+        .is_some_and(|reasons| reasons.iter().any(|candidate| candidate == reason))
+}
+
+/// Construct a validated failed evidence component from the shared contract.
+pub fn evidence_component_for_reason(
+    component: &str,
+    reason: &str,
+    diagnostic: Map<String, Value>,
+    now: DateTime<Utc>,
+) -> Result<Value, ValidationError> {
+    let status = component_status_for_reason(reason)?;
+    let value = json!({
+        "status": status,
+        "observed_at": now.to_rfc3339(),
+        "reason_code": reason,
+        "diagnostic": diagnostic,
+    });
+    parse_component(component, &value, now)?;
+    Ok(value)
 }
 
 pub(crate) fn parse_component(

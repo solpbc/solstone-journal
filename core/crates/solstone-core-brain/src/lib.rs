@@ -19,13 +19,15 @@ pub use fingerprint::{
     canonical_fingerprint, canonical_json, derive_active_brain_lane, fingerprint_sha256,
 };
 pub use inspect::{
-    BrainInspection, BrainProjection, InspectionStatus, brain_fingerprint_key_path,
-    brain_refresh_lease_path, brain_state_path, inspect_brain_state, load_existing_fingerprint_key,
-    probe_file_lease_held, project_brain_state,
+    BrainInspection, BrainProjection, BundledRuntimePrerequisiteAssessment, InspectionStatus,
+    assess_bundled_runtime_prerequisite, brain_fingerprint_key_path, brain_refresh_lease_path,
+    brain_state_path, inspect_brain_state, load_existing_fingerprint_key, probe_file_lease_held,
+    project_brain_state,
 };
 pub use presentation::{BrainEvidencePresentation, BrainPresentation, present_brain_inspection};
 pub use record::{
-    BrainStateRecord, ValidationError, validate_brain_state_record, validate_refresh_probe_outcome,
+    BrainStateRecord, ValidationError, evidence_component_for_reason, is_valid_evidence_reason,
+    validate_brain_state_record, validate_refresh_probe_outcome,
 };
 pub use runtime_health::{
     RuntimeRecordInspection, RuntimeRetryError, RuntimeRetryRecord, inspect_runtime_health,

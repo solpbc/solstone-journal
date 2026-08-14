@@ -6,10 +6,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -91,6 +93,12 @@ const SUPERVISOR_USAGE_ANCHOR: &[u8] =
 const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
 
 const PROBES: &[Probe] = &[
+    Probe {
+        token: "brain",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal brain"),
+    },
     Probe {
         token: "config",
         argv: &["--nonsense"],
@@ -744,6 +752,130 @@ fn prove_poison_interpreters_live(context: &VerdictContext<'_>) {
     fs::remove_file(context.poison_marker).expect("clear poison liveness record");
 }
 
+struct BrainProbeStub {
+    url: String,
+    requests: Arc<Mutex<Vec<String>>>,
+    worker: thread::JoinHandle<()>,
+}
+
+impl BrainProbeStub {
+    fn start(expected_requests: usize) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind brain probe stub");
+        listener
+            .set_nonblocking(true)
+            .expect("make brain probe listener nonblocking");
+        let url = format!("http://{}", listener.local_addr().expect("stub address"));
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let worker_requests = Arc::clone(&requests);
+        let worker = thread::spawn(move || {
+            let deadline = Instant::now() + PROBE_TIMEOUT;
+            while Instant::now() < deadline
+                && worker_requests.lock().expect("stub request lock").len() < expected_requests
+            {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let request = read_http_request(&mut stream);
+                        let tool_call = request.contains("emit_final");
+                        worker_requests
+                            .lock()
+                            .expect("stub request lock")
+                            .push(request);
+                        let body = if tool_call {
+                            r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"final-1","type":"function","function":{"name":"emit_final","arguments":"{\"content\":\"OK\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
+                        } else {
+                            r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#
+                        };
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        stream
+                            .write_all(response.as_bytes())
+                            .expect("write stub response");
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("accept brain probe request: {error}"),
+                }
+            }
+        });
+        Self {
+            url,
+            requests,
+            worker,
+        }
+    }
+
+    fn finish(self) -> Vec<String> {
+        self.worker.join().expect("brain probe stub joins");
+        Arc::try_unwrap(self.requests)
+            .expect("brain probe request ownership")
+            .into_inner()
+            .expect("brain probe request lock")
+    }
+}
+
+fn read_http_request(stream: &mut TcpStream) -> String {
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 1024];
+    let header_end = loop {
+        let read = stream.read(&mut buffer).expect("read brain probe request");
+        assert!(read > 0, "brain probe request closed before headers");
+        bytes.extend_from_slice(&buffer[..read]);
+        if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+    let header = std::str::from_utf8(&bytes[..header_end]).expect("brain probe headers UTF-8");
+    let content_length = header.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("content-length")
+            .then(|| value.trim().parse::<usize>().ok())
+            .flatten()
+    });
+    if let Some(content_length) = content_length {
+        while bytes.len() < header_end + content_length {
+            let read = stream
+                .read(&mut buffer)
+                .expect("read brain probe request body");
+            assert!(read > 0, "brain probe request closed before body");
+            bytes.extend_from_slice(&buffer[..read]);
+        }
+    } else {
+        stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .expect("set chunked request timeout");
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => bytes.extend_from_slice(&buffer[..read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                    ) =>
+                {
+                    break;
+                }
+                Err(error) => panic!("read chunked brain probe request: {error}"),
+            }
+        }
+    }
+    String::from_utf8(bytes).expect("brain probe request UTF-8")
+}
+
+fn write_brain_byo_endpoint_config(journal: &Path, endpoint_url: &str) {
+    fs::create_dir_all(journal.join("config")).expect("create brain config directory");
+    fs::write(
+        journal.join("config/journal.json"),
+        format!(
+            r#"{{"providers":{{"active":{{"provider":"local"}},"local":{{"endpoint_url":"{endpoint_url}","served_model_id":"brain-stub"}}}}}}"#
+        ),
+    )
+    .expect("write brain endpoint config");
+}
+
 fn reference_block(name: &str) -> &str {
     let header = format!("=== {name}\n");
     let start = STORAGE_OPS_REFERENCE_GRAMMAR
@@ -915,6 +1047,119 @@ fn native_process_dispatch_and_poison_liveness_contract() {
     assert!(
         context.poison_marker.exists(),
         "{token}: poison-liveness expected the poisoned interpreter marker"
+    );
+}
+
+#[test]
+fn brain_owner_short_paths_are_poison_clean_through_the_real_dispatcher() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal).expect("create isolated brain journal");
+
+    // Status and a stale expected refresh are deliberately short paths. They
+    // establish that the owner grammar and fence short-circuit never recover
+    // through the retained Python owner.
+    let status = run_dispatcher_with_bounded_output(&context, "brain", &["status"], PROBE_TIMEOUT)
+        .expect("run brain status")
+        .expect("brain status completes");
+    assert_eq!(status.status.code(), Some(2));
+    assert!(status.stdout.starts_with(b"Brain unknown:"));
+    assert!(
+        !context.poison_marker.exists(),
+        "status reached poisoned interpreter"
+    );
+
+    let stale = run_dispatcher_with_bounded_output(
+        &context,
+        "brain",
+        &["refresh", "--expected-fingerprint", "not-a-fingerprint"],
+        PROBE_TIMEOUT,
+    )
+    .expect("run stale brain refresh")
+    .expect("stale brain refresh completes");
+    assert_eq!(stale.status.code(), Some(3));
+    assert_eq!(stale.stdout, b"Brain unknown: stale expected fingerprint\n");
+    assert!(
+        !context.poison_marker.exists(),
+        "stale refresh reached poisoned interpreter"
+    );
+
+    // The full owner refresh must cross the native generate and diagnostic
+    // cogitate child boundaries. The local server distinguishes cogitate by
+    // its `emit_final` tool declaration; both requests stay below the real
+    // journal dispatcher, with every possible interpreter poisoned.
+    let stub = BrainProbeStub::start(4);
+    write_brain_byo_endpoint_config(context.journal, &stub.url);
+    let refresh =
+        run_dispatcher_with_bounded_output(&context, "brain", &["refresh"], PROBE_TIMEOUT)
+            .expect("run full brain refresh")
+            .expect("full brain refresh completes");
+    assert!(
+        matches!(refresh.status.code(), Some(0..=2)),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&refresh.stdout),
+        String::from_utf8_lossy(&refresh.stderr)
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "full refresh reached poisoned interpreter"
+    );
+
+    // A BYO endpoint is not SPP-safe, so renewal delegates to the same full
+    // refresh path. The same stub must see its second generate/cogitate pair.
+    let renewal = run_dispatcher_with_bounded_output(
+        &context,
+        "brain",
+        &["renew-prerequisites"],
+        PROBE_TIMEOUT,
+    )
+    .expect("run unsafe prerequisite renewal")
+    .expect("unsafe prerequisite renewal completes");
+    assert!(
+        matches!(renewal.status.code(), Some(0..=2)),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&renewal.stdout),
+        String::from_utf8_lossy(&renewal.stderr)
+    );
+    assert!(
+        !context.poison_marker.exists(),
+        "unsafe renewal fallback reached poisoned interpreter"
+    );
+
+    let requests = stub.finish();
+    assert_eq!(requests.len(), 4, "two refreshes must each probe twice");
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.contains("emit_final")),
+        "cogitate request was not observed"
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|request| !request.contains("emit_final")),
+        "generate request was not observed"
+    );
+
+    // Hardware-backed SPP attestation cannot reach Started in this isolated
+    // dispatcher fixture. Its stale fence is still a real owner short path.
+    let spp_stale = run_dispatcher_with_bounded_output(
+        &context,
+        "brain",
+        &[
+            "renew-prerequisites",
+            "--expected-fingerprint",
+            "not-a-fingerprint",
+        ],
+        PROBE_TIMEOUT,
+    )
+    .expect("run stale prerequisite renewal")
+    .expect("stale prerequisite renewal completes");
+    assert_eq!(spp_stale.status.code(), Some(3));
+    assert!(
+        !context.poison_marker.exists(),
+        "renewal short path reached poisoned interpreter"
     );
 }
 

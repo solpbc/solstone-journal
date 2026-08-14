@@ -2556,6 +2556,7 @@ dependencies = [
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
+ "solstone-core-spp-ratls",
  "solstone-core-steward-prune",
  "solstone-core-streams-cli",
  "solstone-core-system",

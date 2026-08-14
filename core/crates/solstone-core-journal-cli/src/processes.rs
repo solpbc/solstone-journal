@@ -58,6 +58,11 @@ const DESCRIBE_MODE: &[&str] = &["--describe"];
 /// proof that the owner-facing grammar is ready to cut over.
 pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
     NativeProcessSpec {
+        token: "brain",
+        binary: "solstone-core",
+        preset_argv: &["\u{1f}solstone-journal-brain-owner-v1", "brain"],
+    },
+    NativeProcessSpec {
         token: "config",
         binary: "solstone-core",
         preset_argv: &["config"],

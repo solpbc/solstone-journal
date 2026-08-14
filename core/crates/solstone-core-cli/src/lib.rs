@@ -97,6 +97,40 @@ pub struct EngageOptions {
     pub day: Option<String>,
 }
 
+pub const JOURNAL_BRAIN_OWNER_SENTINEL: &str = "\u{1f}solstone-journal-brain-owner-v1";
+pub const BRAIN_OWNER_USAGE: &str = "usage: journal brain [-h] {status,refresh} ...\n";
+pub const BRAIN_OWNER_HELP: &str = concat!(
+    "usage: journal brain [-h] {status,refresh} ...\n\n",
+    "Active-brain status and bounded refresh CLI.\n\n",
+    "positional arguments:\n  {status,refresh}\n    status              Show active-brain status\n    refresh             Run one bounded active-brain check\n\n",
+    "options:\n  -h, --help          show this help message and exit\n",
+);
+pub const BRAIN_STATUS_HELP: &str = concat!(
+    "usage: journal brain status [-h] [--json]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --json      Emit JSON instead of plain output\n",
+);
+pub const BRAIN_REFRESH_HELP: &str = concat!(
+    "usage: journal brain refresh [-h] [--json] [--expected-fingerprint EXPECTED_FINGERPRINT]\n",
+    "                            [--expected-active-fingerprint]\n",
+    "                            [--expect-active-fingerprint-absent]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --json                Emit JSON instead of plain output\n",
+    "  --expected-fingerprint EXPECTED_FINGERPRINT\n",
+    "  --expected-active-fingerprint\n",
+    "  --expect-active-fingerprint-absent\n",
+);
+pub const BRAIN_RENEW_PREREQUISITES_HELP: &str = concat!(
+    "usage: journal brain renew-prerequisites [-h]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+);
+
 /// `journal navigate --help` in the owner-facing command vocabulary.
 /// It names `journal navigate`, not `solstone-core navigate`, because that is
 /// the command the owner typed.
@@ -693,6 +727,7 @@ pub enum Command {
     Generate(GenerateCommand),
     Cogitate(CogitateCommand),
     Brain(BrainCommand),
+    JournalBrainOwner(JournalBrainOwnerCommand),
     Body(BodyCommand),
     Transfer(TransferCommand),
     Export(ExportOptions),
@@ -793,6 +828,32 @@ pub enum Command {
     FacetCandidatesHelp,
     FacetCandidatesUsage,
     TransferHelp(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JournalBrainOwnerCommand {
+    Status {
+        json: bool,
+    },
+    Refresh(JournalBrainRefreshOptions),
+    RenewPrerequisites {
+        json: bool,
+        expected_fingerprint: Option<String>,
+    },
+    Help,
+    StatusHelp,
+    RefreshHelp,
+    RenewPrerequisitesHelp,
+    Bare,
+    Usage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalBrainRefreshOptions {
+    pub json: bool,
+    pub expected_fingerprint: Option<String>,
+    pub expected_active_fingerprint: bool,
+    pub expect_active_fingerprint_absent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1345,6 +1406,12 @@ pub struct UsageError;
 
 pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
     match args {
+        [sentinel, command, rest @ ..]
+            if sentinel == OsStr::new(JOURNAL_BRAIN_OWNER_SENTINEL)
+                && command == OsStr::new("brain") =>
+        {
+            Ok(Command::JournalBrainOwner(parse_journal_brain_owner(rest)))
+        }
         [command, rest @ ..] if command == OsStr::new("doctor") => {
             let help = |argument: &OsString| {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")
@@ -1752,6 +1819,102 @@ fn parse_engage(args: &[OsString]) -> Result<EngageParse, UsageError> {
         facet,
         day,
     }))
+}
+
+fn parse_journal_brain_owner(args: &[OsString]) -> JournalBrainOwnerCommand {
+    let mut start = 0;
+    // argparse attaches these parent options before selecting a subparser.
+    while matches!(args.get(start).map(OsString::as_os_str), Some(value) if value == OsStr::new("-v") || value == OsStr::new("--verbose") || value == OsStr::new("-d") || value == OsStr::new("--debug"))
+    {
+        start += 1;
+    }
+    let args = &args[start..];
+    if args.is_empty() {
+        return JournalBrainOwnerCommand::Bare;
+    }
+    if matches!(args.first(), Some(argument) if argument == OsStr::new("-h") || argument == OsStr::new("--help"))
+    {
+        return JournalBrainOwnerCommand::Help;
+    }
+    match args {
+        [command, rest @ ..] if command == OsStr::new("status") => {
+            if rest.iter().any(is_help) {
+                return JournalBrainOwnerCommand::StatusHelp;
+            }
+            let mut json = false;
+            for arg in rest {
+                if arg == OsStr::new("--json") {
+                    json = true;
+                } else {
+                    return JournalBrainOwnerCommand::Usage;
+                }
+            }
+            JournalBrainOwnerCommand::Status { json }
+        }
+        [command, rest @ ..] if command == OsStr::new("refresh") => {
+            if rest.iter().any(is_help) {
+                return JournalBrainOwnerCommand::RefreshHelp;
+            }
+            let mut options = JournalBrainRefreshOptions {
+                json: false,
+                expected_fingerprint: None,
+                expected_active_fingerprint: false,
+                expect_active_fingerprint_absent: false,
+            };
+            let mut index = 0;
+            while index < rest.len() {
+                match rest[index].to_str() {
+                    Some("--json") => options.json = true,
+                    Some("--expected-active-fingerprint") => {
+                        options.expected_active_fingerprint = true
+                    }
+                    Some("--expect-active-fingerprint-absent") => {
+                        options.expect_active_fingerprint_absent = true
+                    }
+                    Some("--expected-fingerprint") => {
+                        let Some(value) = rest.get(index + 1) else {
+                            return JournalBrainOwnerCommand::Usage;
+                        };
+                        // argparse accepts arbitrary argv bytes as an option
+                        // value; the writer later treats a non-SHA value as
+                        // stale rather than turning it into a usage error.
+                        options.expected_fingerprint = Some(value.to_string_lossy().into_owned());
+                        index += 1;
+                    }
+                    _ => return JournalBrainOwnerCommand::Usage,
+                }
+                index += 1;
+            }
+            JournalBrainOwnerCommand::Refresh(options)
+        }
+        [command, rest @ ..] if command == OsStr::new("renew-prerequisites") => {
+            if rest.iter().any(is_help) {
+                return JournalBrainOwnerCommand::RenewPrerequisitesHelp;
+            }
+            let mut json = false;
+            let mut expected_fingerprint = None;
+            let mut index = 0;
+            while index < rest.len() {
+                match rest[index].to_str() {
+                    Some("--json") => json = true,
+                    Some("--expected-fingerprint") => {
+                        let Some(value) = rest.get(index + 1) else {
+                            return JournalBrainOwnerCommand::Usage;
+                        };
+                        expected_fingerprint = Some(value.to_string_lossy().into_owned());
+                        index += 1;
+                    }
+                    _ => return JournalBrainOwnerCommand::Usage,
+                };
+                index += 1;
+            }
+            JournalBrainOwnerCommand::RenewPrerequisites {
+                json,
+                expected_fingerprint,
+            }
+        }
+        _ => JournalBrainOwnerCommand::Usage,
+    }
 }
 
 fn parse_settings(args: &[OsString]) -> Result<Command, UsageError> {
@@ -6102,11 +6265,70 @@ mod tests {
             evaluate_args(&args(&["brain", "fingerprint"])),
             Ok(Command::Brain(BrainCommand::Fingerprint))
         );
+        let owner = |tail: &[&str]| {
+            let mut values = vec![
+                OsString::from(JOURNAL_BRAIN_OWNER_SENTINEL),
+                OsString::from("brain"),
+            ];
+            values.extend(tail.iter().map(OsString::from));
+            evaluate_args(&values)
+        };
+        assert_eq!(
+            owner(&["status", "--json"]),
+            Ok(Command::JournalBrainOwner(
+                JournalBrainOwnerCommand::Status { json: true }
+            ))
+        );
+        assert_eq!(
+            owner(&[
+                "-v",
+                "refresh",
+                "--json",
+                "--expected-fingerprint",
+                hash,
+                "--expected-fingerprint",
+                "not-a-sha",
+                "--expected-active-fingerprint",
+                "--expect-active-fingerprint-absent"
+            ]),
+            Ok(Command::JournalBrainOwner(
+                JournalBrainOwnerCommand::Refresh(JournalBrainRefreshOptions {
+                    json: true,
+                    expected_fingerprint: Some("not-a-sha".to_owned()),
+                    expected_active_fingerprint: true,
+                    expect_active_fingerprint_absent: true
+                })
+            ))
+        );
+        assert_eq!(
+            owner(&[
+                "renew-prerequisites",
+                "--json",
+                "--expected-fingerprint",
+                hash
+            ]),
+            Ok(Command::JournalBrainOwner(
+                JournalBrainOwnerCommand::RenewPrerequisites {
+                    json: true,
+                    expected_fingerprint: Some(hash.to_owned())
+                }
+            ))
+        );
     }
 
     #[test]
     fn rejects_invalid_brain_args() {
         let hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert_eq!(evaluate_args(&args(&["brain", "status"])), Err(UsageError));
+        let owner_internal = vec![
+            OsString::from(JOURNAL_BRAIN_OWNER_SENTINEL),
+            OsString::from("brain"),
+            OsString::from("inspect"),
+        ];
+        assert_eq!(
+            evaluate_args(&owner_internal),
+            Ok(Command::JournalBrainOwner(JournalBrainOwnerCommand::Usage))
+        );
         for values in [
             &["brain"][..],
             &["brain", "unknown"][..],

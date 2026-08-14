@@ -13,9 +13,8 @@ use solstone_core_local::{ByoEndpoint, LocalEndpointResolution, resolve_local_en
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
 use solstone_core_spp_ratls::{
     AttestationFailureKind, AttestationSession, AttestationState, AttestationStateStore,
-    AttestedIo, CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, check_nvattest_readiness,
-    classify_channel_failure, classify_nvattest_prerequisite,
-    establish_production_attested_channel,
+    AttestedIo, CompositeVerdict, NvattestEnsureStatus, RatlsEndpoint, classify_channel_failure,
+    classify_nvattest_prerequisite, perform_fresh_reattest,
 };
 
 use crate::TranscribeError;
@@ -111,30 +110,33 @@ pub(crate) fn transcribe(
     }
     let wav = audio_to_wav_bytes(audio, SAMPLE_RATE)
         .map_err(|error| deferred("confidential_audio_encode_failed", error.to_string()))?;
-    confidential_transcribe_with(
-        ConfidentialCall {
-            wav: &wav,
-            journal_path,
-            endpoint: &endpoint,
-            config: config.config.as_ref().expect("endpoint requires config"),
-            state,
-            now: SystemTime::now(),
-            timeout: TRANSCRIBE_TIMEOUT,
-        },
-        check_nvattest_readiness,
-        |ratls_endpoint, nvattest_dir| {
-            establish_production_attested_channel(
-                ratls_endpoint,
-                nvattest_dir,
-                ATTESTED_CHANNEL_TIMEOUT,
-            )
-            .map(|channel| EstablishedChannel {
-                verdict: channel.verified.verdict.clone(),
-                stream: Box::new(channel),
-            })
-            .map_err(|error| error.reason_code)
-        },
+    let now = SystemTime::now();
+    if attestation_reason(&state.get_attestation_state(), now) == Some("attestation_stale") {
+        return Err(deferred(
+            "attestation_stale",
+            "the previous attestation session is stale",
+        ));
+    }
+    let nvattest_dir = resolve_nvattest_dir(
+        config.config.as_ref().expect("endpoint requires config"),
+        journal_path,
+    );
+    let mut channel = perform_fresh_reattest(
+        state,
+        &endpoint.base_url,
+        &nvattest_dir,
+        ATTESTED_CHANNEL_TIMEOUT,
     )
+    .map_err(|_| deferred_from_attestation(state, now))?;
+    let response = send_multipart_request(
+        &mut channel.stream,
+        &channel.host,
+        endpoint.credential.as_deref(),
+        &wav,
+        TRANSCRIBE_TIMEOUT,
+    )
+    .map_err(|error| deferred("hosted_transcribe_unreachable", error.to_string()))?;
+    hosted_response(response)
 }
 
 fn confidential_endpoint(config: &JournalConfigRead) -> Result<ByoEndpoint, TranscribeError> {

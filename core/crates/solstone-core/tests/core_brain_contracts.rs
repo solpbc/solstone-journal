@@ -13,6 +13,8 @@ mod await_outcome_contract;
 mod brain_fingerprint;
 #[path = "brain_inspect.rs"]
 mod brain_inspect;
+#[path = "brain_owner.rs"]
+mod brain_owner;
 #[path = "brain_prerequisite_renewal_session.rs"]
 mod brain_prerequisite_renewal_session;
 #[path = "brain_refresh_session.rs"]

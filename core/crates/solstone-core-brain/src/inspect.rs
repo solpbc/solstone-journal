@@ -34,6 +34,15 @@ pub struct BrainProjection {
     pub runtime_transition_in_progress: bool,
 }
 
+/// Read-only bundled-runtime prerequisite facts for owner orchestration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundledRuntimePrerequisiteAssessment {
+    pub reason_code: Option<String>,
+    pub desired_fingerprint_sha256: Option<String>,
+    pub phase: Option<String>,
+    pub runtime_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrainInspection {
     pub status: InspectionStatus,
@@ -355,6 +364,53 @@ fn record_projection(
     }
 }
 
+/// Read the bundled runtime health record for a prerequisite probe.
+///
+/// The result deliberately preserves the runtime's desired fingerprint so an
+/// owner can compare it with the fingerprint it is about to record.  This is
+/// the same decision table used by the brain projection.
+pub fn assess_bundled_runtime_prerequisite(
+    journal_path: &Path,
+    expected_desired_fingerprint: Option<&str>,
+) -> BundledRuntimePrerequisiteAssessment {
+    let runtime = inspect_runtime_health(journal_path);
+    let (mut reason_code, desired_fingerprint_sha256) = bundled_runtime_inputs(Some(&runtime));
+    let record = runtime.record.as_ref().and_then(Value::as_object);
+    let vocabulary = &local_contract().brain_state;
+    let phase = record
+        .and_then(|record| record.get("phase"))
+        .and_then(Value::as_str)
+        .filter(|phase| {
+            vocabulary
+                .runtime_phases
+                .iter()
+                .any(|candidate| candidate == phase)
+        })
+        .map(str::to_owned);
+    let runtime_reason = record
+        .and_then(|record| record.get("reason_code"))
+        .and_then(Value::as_str)
+        .filter(|reason| {
+            vocabulary
+                .runtime_reason_codes
+                .iter()
+                .any(|candidate| candidate == reason)
+        })
+        .map(str::to_owned);
+    if reason_code.is_none()
+        && expected_desired_fingerprint.is_some()
+        && desired_fingerprint_sha256.as_deref() != expected_desired_fingerprint
+    {
+        reason_code = Some("local_runtime_fingerprint_mismatch".to_owned());
+    }
+    BundledRuntimePrerequisiteAssessment {
+        reason_code,
+        desired_fingerprint_sha256,
+        phase,
+        runtime_reason,
+    }
+}
+
 fn bundled_runtime_inputs(
     runtime: Option<&RuntimeRecordInspection>,
 ) -> (Option<String>, Option<String>) {
@@ -465,5 +521,89 @@ fn inspection(
         projection,
         error,
         record,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use serde_json::json;
+
+    use super::*;
+
+    struct TempJournal(PathBuf);
+
+    impl TempJournal {
+        fn new() -> Self {
+            let path = PathBuf::from("/var/tmp").join(format!(
+                "solstone-brain-inspect-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("clock")
+                    .as_nanos(),
+            ));
+            fs::create_dir_all(&path).expect("create temporary journal");
+            Self(path)
+        }
+
+        fn write_runtime(&self, value: Value) {
+            let path = self.0.join("health/providers/runtime");
+            fs::create_dir_all(&path).expect("create runtime directory");
+            fs::write(path.join("local.json"), value.to_string()).expect("write runtime health");
+        }
+    }
+
+    impl Drop for TempJournal {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn bundled_runtime_prerequisite_covers_missing_invalid_phases_and_fingerprint() {
+        let journal = TempJournal::new();
+        let missing = assess_bundled_runtime_prerequisite(&journal.0, None);
+        assert_eq!(
+            missing.reason_code.as_deref(),
+            Some("local_runtime_not_ready")
+        );
+        assert_eq!(missing.phase.as_deref(), Some("stopped"));
+
+        journal.write_runtime(json!({"phase":"not-a-real-phase"}));
+        let invalid = assess_bundled_runtime_prerequisite(&journal.0, None);
+        assert_eq!(
+            invalid.reason_code.as_deref(),
+            Some("local_runtime_state_invalid")
+        );
+        assert_eq!(invalid.phase, None);
+
+        for phase in &local_contract().brain_state.runtime_phases {
+            journal.write_runtime(json!({
+                "phase": phase,
+                "desired_fingerprint_sha256": "a".repeat(64),
+            }));
+            let assessment = assess_bundled_runtime_prerequisite(&journal.0, None);
+            let expected = local_contract()
+                .brain_state
+                .runtime_phase_to_reason
+                .get(phase)
+                .and_then(Value::as_str);
+            assert_eq!(assessment.reason_code.as_deref(), expected, "{phase}");
+            assert_eq!(assessment.phase.as_deref(), Some(phase.as_str()), "{phase}");
+        }
+
+        journal.write_runtime(json!({
+            "phase": "ready",
+            "desired_fingerprint_sha256": "a".repeat(64),
+        }));
+        let matched = assess_bundled_runtime_prerequisite(&journal.0, Some(&"a".repeat(64)));
+        assert_eq!(matched.reason_code, None);
+        let mismatched = assess_bundled_runtime_prerequisite(&journal.0, Some(&"b".repeat(64)));
+        assert_eq!(
+            mismatched.reason_code.as_deref(),
+            Some("local_runtime_fingerprint_mismatch")
+        );
     }
 }

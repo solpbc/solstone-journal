@@ -5,6 +5,8 @@
 mod assets_cli;
 #[path = "backup_cli.rs"]
 mod backup_cli;
+#[path = "brain_owner_cli.rs"]
+mod brain_owner_cli;
 #[path = "check_no_python_spawn.rs"]
 mod check_no_python_spawn;
 #[path = "check_vulkan_absence.rs"]

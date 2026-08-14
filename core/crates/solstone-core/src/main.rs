@@ -31,19 +31,21 @@ use solstone_core_cli::{
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
     IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions,
     IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions,
-    IndexerSearchOptions, InstallCommand, JournalConfigCommand, JournalConfigCommitOptions,
-    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
-    NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE,
-    OBSERVER_USAGE, RESTART_CONVEY_HELP, RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP,
-    SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
-    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE,
-    ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions,
-    ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand, TOP_HELP,
-    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions,
-    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
-    evaluate_args, render_service_diagnostic, version_line,
+    IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand,
+    JournalConfigCommitOptions, JournalConfigExpectArg, JournalConfigReadOptions,
+    JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP,
+    OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
+    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
+    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
+    SpeakerResolveCommand, SplCommand, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
+    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
+    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic,
+    version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
+mod brain_owner;
 mod check;
 mod config;
 mod contract;
@@ -175,6 +177,32 @@ fn main() -> ExitCode {
         Ok(Command::Generate(command)) => run_generate(command),
         Ok(Command::Cogitate(command)) => run_cogitate(command),
         Ok(Command::Brain(command)) => run_brain(command),
+        Ok(Command::JournalBrainOwner(command)) => match command {
+            JournalBrainOwnerCommand::Help => {
+                print!("{}", solstone_core_cli::BRAIN_OWNER_HELP);
+                ExitCode::SUCCESS
+            }
+            JournalBrainOwnerCommand::StatusHelp => {
+                print!("{}", solstone_core_cli::BRAIN_STATUS_HELP);
+                ExitCode::SUCCESS
+            }
+            JournalBrainOwnerCommand::RefreshHelp => {
+                print!("{}", solstone_core_cli::BRAIN_REFRESH_HELP);
+                ExitCode::SUCCESS
+            }
+            JournalBrainOwnerCommand::RenewPrerequisitesHelp => {
+                print!("{}", solstone_core_cli::BRAIN_RENEW_PREREQUISITES_HELP);
+                ExitCode::SUCCESS
+            }
+            JournalBrainOwnerCommand::Bare => {
+                print!("{}", solstone_core_cli::BRAIN_OWNER_HELP);
+                ExitCode::from(2)
+            }
+            JournalBrainOwnerCommand::Usage => {
+                render_usage_error(solstone_core_cli::BRAIN_OWNER_USAGE, "journal brain")
+            }
+            command => brain_owner::run(command),
+        },
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
         Ok(Command::Export(options)) => run_export(options),
