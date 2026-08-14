@@ -4,9 +4,7 @@
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{
-    TalentFilter, get_output_name, load_talent_configs, output_extension,
-};
+use solstone_core_talent_config::{TalentFilter, get_output_path, load_talent_configs};
 
 use crate::JournalStatsError;
 
@@ -35,12 +33,15 @@ pub(crate) fn daily_output_counts(
     .map_err(JournalStatsError::Validation)?;
     let mut counts = DailyOutputCounts::default();
     for config in configs {
-        let filename = format!(
-            "{}.{}",
-            get_output_name(&config.key),
-            output_extension(config.metadata.get("output").and_then(Value::as_str))
+        let output_path = get_output_path(
+            day_dir,
+            &config.key,
+            None,
+            config.metadata.get("output").and_then(Value::as_str),
+            None,
+            None,
         );
-        if day_dir.join("talents").join(filename).exists() {
+        if output_path.exists() {
             counts.processed += 1;
         } else {
             counts.pending += 1;

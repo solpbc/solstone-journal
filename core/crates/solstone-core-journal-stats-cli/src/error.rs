@@ -25,12 +25,6 @@ pub enum JournalStatsError {
         #[source]
         source: io::Error,
     },
-    #[error("invalid JSON in {path}: {source}")]
-    Json {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("invalid talent configuration {path}: {message}")]
     TalentConfig { path: PathBuf, message: String },
     #[error("stats validation failed: {0}")]

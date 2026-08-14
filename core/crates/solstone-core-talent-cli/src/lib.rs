@@ -57,7 +57,7 @@ pub fn run_cli(
             }
         }
         args::Command::Logs(options) => {
-            let mut config_loader = || load_configs(talent_root, apps_root, journal_root);
+            let mut config_loader = || load_configs(talent_root, apps_root, journal_root, None);
             logs::run_logs(
                 journal_root,
                 &options,
@@ -66,7 +66,12 @@ pub fn run_cli(
                 &mut config_loader,
             )
         }
-        args::Command::List(options) => match load_configs(talent_root, apps_root, journal_root) {
+        args::Command::List(options) => match load_configs(
+            talent_root,
+            apps_root,
+            journal_root,
+            options.schedule.as_deref(),
+        ) {
             Ok(configs) if options.json => success(emit::jsonl(&configs, &options)),
             Ok(configs) => success(list::render(&configs, &options, journal_root, now)),
             Err(error) => CliRun {
@@ -82,6 +87,7 @@ fn load_configs(
     talent_root: &Path,
     apps_root: &Path,
     journal_root: &Path,
+    schedule: Option<&str>,
 ) -> Result<Vec<solstone_core_talent_config::TalentConfig>, String> {
     let overrides = solstone_core_talent_config::read_talent_overrides(journal_root)?;
     solstone_core_talent_config::load_talent_configs(
@@ -90,7 +96,7 @@ fn load_configs(
         overrides.as_ref(),
         solstone_core_talent_config::TalentFilter {
             r#type: None,
-            schedule: None,
+            schedule,
             include_disabled: true,
         },
     )

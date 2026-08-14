@@ -33,9 +33,7 @@ pub(crate) fn filtered<'a>(
     configs
         .iter()
         .filter(|config| {
-            options.schedule.as_deref().is_none_or(|schedule| {
-                config.metadata.get("schedule").and_then(Value::as_str) == Some(schedule)
-            }) && options.source.as_deref().is_none_or(|source| {
+            options.source.as_deref().is_none_or(|source| {
                 config.metadata.get("source").and_then(Value::as_str) == Some(source)
             }) && (options.disabled || !config.metadata.get("disabled").is_some_and(is_truthy))
         })

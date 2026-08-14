@@ -23,13 +23,18 @@ fn reimplements_talent_reader(source: &str) -> bool {
     let detects_brace_line = source
         .lines()
         .any(|line| line.contains("== \"{\"") || line.contains("!= Some(\"{\")"));
+    let collects_talent_markdown = source.contains("join(\"talent\")")
+        && source.contains("read_dir")
+        && source.contains("extension")
+        && source.contains("\"md\"");
     let defines_talent_validation_fn = source.lines().any(|line| {
         matches!(
             defined_function_name(line),
             Some("validate_access_tier" | "validate_cwd" | "validate_write")
         )
     });
-    (mentions_talent_domain && (defines_frontmatter_fn || detects_brace_line))
+    (mentions_talent_domain
+        && (defines_frontmatter_fn || detects_brace_line || collects_talent_markdown))
         || defines_talent_validation_fn
 }
 
@@ -79,6 +84,9 @@ fn predicate_catches_reader_shapes_and_clears_non_talent_shapes() {
     ));
     assert!(reimplements_talent_reader(
         "let path = \"talent/case.md\";\nif first != Some(\"{\") {}"
+    ));
+    assert!(reimplements_talent_reader(
+        "let root = source.join(\"talent\");\nfor entry in fs::read_dir(root)? { if entry.path().extension() == Some(\"md\") {} }"
     ));
     assert!(reimplements_talent_reader("fn validate_access_tier() {}"));
     assert!(!reimplements_talent_reader(
