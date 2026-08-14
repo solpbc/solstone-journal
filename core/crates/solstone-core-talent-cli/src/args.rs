@@ -49,6 +49,22 @@ pub const INVENTORY_HELP: &str = concat!(
     "  --json      Output as JSON\n",
 );
 
+pub const LOGS_HELP: &str = concat!(
+    "usage: journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\n",
+    "                           [--summary]\n",
+    "                           [agent]\n\n",
+    "positional arguments:\n",
+    "  agent                 Filter to a specific agent\n\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  -c COUNT, --count COUNT\n",
+    "                        Number of runs to show (default: 20)\n",
+    "  --day YYYYMMDD        Show only runs from this day\n",
+    "  --daily               Show only daily-scheduled runs\n",
+    "  --errors              Show only error runs\n",
+    "  --summary             Show grouped summary\n",
+);
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct ListOptions {
     pub(crate) schedule: Option<String>,
@@ -69,12 +85,23 @@ pub(crate) struct LogOptions {
     pub(crate) full: bool,
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct LogsOptions {
+    pub(crate) agent: Option<String>,
+    pub(crate) count: Option<i64>,
+    pub(crate) day: Option<String>,
+    pub(crate) daily: bool,
+    pub(crate) errors: bool,
+    pub(crate) summary: bool,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Help(String),
     List(ListOptions),
     Log(LogOptions),
     Inventory(InventoryOptions),
+    Logs(LogsOptions),
     Stub(&'static str),
     Error(String),
 }
@@ -109,7 +136,8 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
         "list" => parse_list(&args[index + 1..]),
         "log" => parse_log(&args[index + 1..]),
         "inventory" => parse_inventory(&args[index + 1..]),
-        "show" | "logs" => {
+        "logs" => parse_logs(&args[index + 1..]),
+        "show" => {
             let name = args[index];
             if args[index + 1..]
                 .iter()
@@ -119,11 +147,7 @@ pub(crate) fn parse(args: &[OsString]) -> Command {
                     "usage: journal talent {name} [-h]\n\noptions:\n  -h, --help  show this help message and exit\n"
                 ))
             } else {
-                Command::Stub(match name {
-                    "show" => "show",
-                    "logs" => "logs",
-                    _ => unreachable!("stub command is matched above"),
-                })
+                Command::Stub("show")
             }
         }
         value if value.starts_with('-') => error(
@@ -156,6 +180,72 @@ fn parse_inventory(args: &[&str]) -> Command {
         index += 1;
     }
     Command::Inventory(options)
+}
+
+fn parse_logs(args: &[&str]) -> Command {
+    let mut options = LogsOptions::default();
+    let mut unrecognized = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "-h" | "--help" => return Command::Help(LOGS_HELP.to_owned()),
+            "-c" | "--count" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    return error(
+                        "journal talent logs",
+                        "argument -c/--count: expected one argument",
+                    );
+                };
+                match value.parse::<i64>() {
+                    Ok(value) => options.count = Some(value),
+                    Err(_) => {
+                        return error(
+                            "journal talent logs",
+                            &format!("argument -c/--count: invalid int value: '{value}'"),
+                        );
+                    }
+                }
+            }
+            value if value.starts_with("--count=") => {
+                let value = &value[8..];
+                match value.parse::<i64>() {
+                    Ok(value) => options.count = Some(value),
+                    Err(_) => {
+                        return error(
+                            "journal talent logs",
+                            &format!("argument -c/--count: invalid int value: '{value}'"),
+                        );
+                    }
+                }
+            }
+            "--day" => {
+                index += 1;
+                let Some(value) = args.get(index) else {
+                    return error(
+                        "journal talent logs",
+                        "argument --day: expected one argument",
+                    );
+                };
+                options.day = Some((*value).to_owned());
+            }
+            value if value.starts_with("--day=") => options.day = Some(value[6..].to_owned()),
+            "--daily" => options.daily = true,
+            "--errors" => options.errors = true,
+            "--summary" => options.summary = true,
+            value if value.starts_with('-') => unrecognized.push(value),
+            value if options.agent.is_none() => options.agent = Some(value.to_owned()),
+            value => unrecognized.push(value),
+        }
+        index += 1;
+    }
+    if !unrecognized.is_empty() {
+        return error(
+            "journal talent",
+            &format!("unrecognized arguments: {}", unrecognized.join(" ")),
+        );
+    }
+    Command::Logs(options)
 }
 
 fn parse_list(args: &[&str]) -> Command {
@@ -248,6 +338,7 @@ fn error(program: &str, message: &str) -> Command {
         "journal talent list" => LIST_HELP.lines().next().unwrap_or_default(),
         "journal talent log" => LOG_HELP.lines().next().unwrap_or_default(),
         "journal talent inventory" => INVENTORY_HELP.lines().next().unwrap_or_default(),
+        "journal talent logs" => LOGS_HELP.lines().next().unwrap_or_default(),
         _ => HELP.lines().next().unwrap_or_default(),
     };
     Command::Error(format!("{usage}\n{program}: error: {message}\n"))
@@ -350,6 +441,46 @@ mod tests {
             Command::Error(
                 "usage: journal talent inventory [-h] [--json]\njournal talent inventory: error: unrecognized arguments: --bad\n".to_owned()
             )
+        );
+    }
+
+    #[test]
+    fn logs_parser_uses_its_own_help_and_integer_errors() {
+        assert_eq!(
+            parse(&[OsString::from("logs"), OsString::from("--help")]),
+            Command::Help(LOGS_HELP.to_owned())
+        );
+        let Command::Error(stderr) = parse(&[
+            OsString::from("logs"),
+            OsString::from("-c"),
+            OsString::from("nope"),
+        ]) else {
+            panic!("expected error");
+        };
+        assert_eq!(
+            stderr,
+            "usage: journal talent logs [-h] [-c COUNT] [--day YYYYMMDD] [--daily] [--errors]\njournal talent logs: error: argument -c/--count: invalid int value: 'nope'\n"
+        );
+        assert_eq!(
+            parse(&[
+                OsString::from("logs"),
+                OsString::from("app:daily"),
+                OsString::from("-c"),
+                OsString::from("-1"),
+                OsString::from("--daily"),
+                OsString::from("--errors"),
+                OsString::from("--summary"),
+                OsString::from("--day"),
+                OsString::from("20260101"),
+            ]),
+            Command::Logs(LogsOptions {
+                agent: Some("app:daily".to_owned()),
+                count: Some(-1),
+                day: Some("20260101".to_owned()),
+                daily: true,
+                errors: true,
+                summary: true,
+            })
         );
     }
 }

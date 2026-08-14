@@ -4,6 +4,7 @@
 //! Read-only native implementation of `journal talent` commands.
 
 use std::ffi::OsString;
+use std::io::IsTerminal;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -19,6 +20,7 @@ mod emit;
 mod last_run;
 mod list;
 mod log;
+mod logs;
 mod overrides;
 mod runs;
 mod validation;
@@ -59,6 +61,16 @@ pub fn run_cli(
                     exit_code: 1,
                 },
             }
+        }
+        args::Command::Logs(options) => {
+            let mut config_loader = || load_configs(talent_root, apps_root, journal_root);
+            logs::run_logs(
+                journal_root,
+                &options,
+                now,
+                std::io::stdout().is_terminal(),
+                &mut config_loader,
+            )
         }
         args::Command::List(options) => match load_configs(talent_root, apps_root, journal_root) {
             Ok(configs) if options.json => success(emit::jsonl(&configs, &options)),
