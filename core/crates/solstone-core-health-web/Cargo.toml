@@ -1,0 +1,35 @@
+[package]
+name = "solstone-core-health-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["tokio"] }
+chrono.workspace = true
+chrono-tz.workspace = true
+iana-time-zone = "0.1.65"
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-callosum.workspace = true
+solstone-core-convey-http.workspace = true
+solstone-core-reprocess-cli.workspace = true
+solstone-core-thinking.workspace = true
+
+[build-dependencies]
+
+[dev-dependencies]
+solstone-core-brain.workspace = true
+solstone-core-convey-shell.workspace = true
+solstone-core-system.workspace = true
+filetime = "0.2.29"
+tempfile = "3.24.0"
+temp-env = "0.3.6"
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
+tower.workspace = true

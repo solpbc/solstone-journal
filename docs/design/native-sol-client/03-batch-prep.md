@@ -33,14 +33,15 @@ Routes are owned by `solstone/apps/awareness/routes.py:44`. Commands are in
 
 ### body
 
-Routes are owned by `solstone/apps/body/routes.py:60`. Commands are in
-`solstone/apps/body/call.py:25`.
+The native body authority and handler declare the retained three-command
+surface in `solstone/apps/body/native/authority.toml` and
+`solstone/apps/body/native/command.rs`.
 
 | Leaf | Argv grammar | Request | Reason-code / stderr / exit | Render / consent-dry-run |
 |---|---|---|---|---|
-| `body day` | `<day_value>` required, `--json` | GET `/app/body/api/day/{day_value}`; path `day_value` (`solstone/apps/body/call.py:54`, `solstone/apps/body/routes.py:4441`). | Server: `invalid_day`. Local malformed payload prints `I couldn't read the response from the body app.`, exit 1 (`solstone/apps/body/call.py:72`). | `--json` pretty JSON; human prints day, entry count, glucose stats. |
-| `body status` | `--json` | GET `/app/body/api/status` (`solstone/apps/body/call.py:25`, `solstone/apps/body/routes.py:4380`). | No route-specific reason codes in the backing route. Local malformed payload exits 1. | `--json` pretty JSON; human prints imports/entries/coverage. |
-| `body window` | `--from VALUE` required, `--to VALUE` required, `--json` | GET `/app/body/api/window`; query `from`, `to` (`solstone/apps/body/call.py:88`, `solstone/apps/body/routes.py:4449`). | Server: `invalid_request_value` for malformed timestamps, end before start, or window too large (`solstone/apps/body/routes.py:4449`). | `--json` pretty JSON; human prints window, entries, brief label. |
+| `body day` | `<day_value>` required, `--json` | GET `/app/body/api/day/{day_value}`; path `day_value` (native authority and handler). | Server: `invalid_day`. Local malformed payload exits 1. | `--json` pretty JSON; human prints day, entry count, glucose stats. |
+| `body status` | `--json` | GET `/app/body/api/status` (native authority and handler). | No route-specific reason codes in the backing route. Local malformed payload exits 1. | `--json` pretty JSON; human prints imports/entries/coverage. |
+| `body window` | `--from VALUE` required, `--to VALUE` required, `--json` | GET `/app/body/api/window`; query `from`, `to` (native authority and handler). | Server: `invalid_request_value` for malformed timestamps, end before start, or window too large. | `--json` pretty JSON; human prints window, entries, brief label. |
 
 ### chat
 
@@ -431,7 +432,7 @@ Route reason-code sets for the batch, grouped by owning module:
 | Route set | Reason-code set |
 |---|---|
 | Awareness state/imports/log routes | `awareness_section_not_found`, `missing_request_body`, `invalid_json_request`, `invalid_request_value`, `missing_required_field`, `awareness_busy` (`solstone/apps/awareness/routes.py:65`). |
-| Body routes | `invalid_day`, `invalid_request_value` (`solstone/apps/body/routes.py:4441`). |
+| Body routes | `invalid_day`, `invalid_request_value` (native body surface). |
 | Chat start | `invalid_request_value` (`solstone/convey/chat.py:221`). |
 | Entities edge routes | `missing_required_field`, `invalid_request_value`, `edge_index_unavailable` (`solstone/apps/entities/routes.py:405`). |
 | Entities facet CRUD/call routes | `missing_request_body`, `missing_required_field`, `invalid_entity_type`, `entity_already_exists`, `entity_alias_conflict`, `entity_blocked`, `entity_not_found`, `entity_operation_failed`, `entity_busy`, `invalid_request_value` (`solstone/apps/entities/routes.py:482`). |
@@ -465,7 +466,7 @@ Additional registrations needed to cover this batch:
 | Area | Import | Blueprint symbol |
 |---|---|---|
 | awareness | `from solstone.apps.awareness.routes import awareness_bp` | `awareness_bp` (`solstone/apps/awareness/routes.py:44`) |
-| body | `from solstone.apps.body.routes import body_bp` | `body_bp` (`solstone/apps/body/routes.py:60`) |
+| body | retired Python blueprint | retired Python blueprint |
 | facets | `from solstone.apps.curation.routes import curation_bp` | `curation_bp` (`solstone/apps/curation/routes.py:47`) |
 | entities | `from solstone.apps.entities.routes import entities_bp` | `entities_bp` (`solstone/apps/entities/routes.py:124`) |
 | import | `from solstone.apps.import.routes import import_bp` | `import_bp` (`solstone/apps/import/routes.py:80`) |

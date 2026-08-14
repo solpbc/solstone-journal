@@ -88,7 +88,7 @@ Two words mean an internal thing and an owner-facing thing at once, and **both c
 
 **All owner physiological data is `body`** — *body data*, *body records*, *body sources*.
 
-⚠ `apps/body/routes.py:1985` defines `_activity_analysis` over *wearable* activity while `think/activities.py` owns the internal model — one word, two meanings, live today.
+The retired Python body presentation helper no longer creates a second meaning for “activity”; `think/activities.py` remains the internal facet-activity owner.
 
 ⛔ **Consequence for plate names:** `P-journal-health` is **system** health written durably. Owner body records are **`P-journal-body`**, a different plate. Never fold them.
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
+# Retained historical oracle: this generator requires the retired Flask body surface
+# and cannot run after its removal. Last verified at 3ae960f881f2d614871cd117a60f8dbbda317109.
 
 """Capture the Body Convey reference surface against a synthetic journal.
 

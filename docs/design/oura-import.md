@@ -42,7 +42,7 @@ The original stack recorded below is historical. Its current ownership is:
 | Native body store | `core/crates/solstone-core-body-store/` + `solstone-core-body-rebuild/` | Ordered replay and atomic `imports/health-dedupe.sqlite` reconstruction |
 | Python Oura reader | `solstone/think/importers/oura.py` | Preview and independent parse/normalization differential oracle only |
 | Process adapter | `solstone/think/body_native.py` | Version-matched native helper dispatch and result validation only |
-| Body app | `solstone/apps/body/` | Read-only archive + day pages over normalized shards and the dedupe DB |
+| Native body surface | `core/crates/solstone-core-convey-shell/` | Read-only archive and day presentation over normalized shards and the dedupe DB |
 
 Oura is the second body source family. Import preserves its source attribution;
 presentation may reconcile overlap with Apple Health later.
@@ -83,7 +83,7 @@ Other API facts to verify live at O2: OAuth2 endpoints (`cloud.ouraring.com/oaut
 
 ## 3. (b) Presentation — day pages, new card, overview, window API
 
-Oura values render as attributed facts with no medical interpretation. The body app (`solstone/apps/body/`) is another agent's surface; this section is the spec it implements.
+Oura values render as attributed facts with no medical interpretation. The native body surface presents them.
 
 ### Presentation rules
 
@@ -397,13 +397,12 @@ reporting that error each cycle. Resolution:
   never marked `backfill_complete` — re-enabling is one line (move the
   name back into `SYNC_ENDPOINTS`) and still backfills from the horizon.
 
-### Display-pass notes (body app — NOT changed by this lane)
+### Display-pass notes (native body surface)
 
 The same ring's workouts arrive through both pipes: `oura.workout` rows
 (this lane) and AH-mirror `HKWorkoutActivityType*` rows sourced "Oura".
-Day-level aggregation must keep one canonical pipe (O-5C). The exact
-one-line seam for `_MIRROR_SUPERSEDED_FRAGMENTS` in
-`solstone/apps/body/routes.py`:
+Day-level aggregation must keep one canonical pipe (O-5C). The retired Python
+mapping is not a source for future presentation changes:
 
 ```python
 OURA_WORKOUT_TYPE: ("WorkoutActivityType",),   # OURA_WORKOUT_TYPE = "oura.workout"

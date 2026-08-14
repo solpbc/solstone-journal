@@ -85,6 +85,7 @@ members = [
     "crates/solstone-core-body-rebuild",
     "crates/solstone-core-body-ingest",
     "crates/solstone-core-convey-body",
+    "crates/solstone-core-records-web",
     "crates/solstone-core-system",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
@@ -96,7 +97,9 @@ members = [
     "crates/solstone-core-backfill-cli",
     "crates/solstone-core-backup-web",
     "crates/solstone-core-steward-prune",
+    "crates/solstone-core-health-web",
     "crates/solstone-core-settings-web",
+    "crates/solstone-core-transcripts-web",
 ]
 exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
@@ -134,6 +137,7 @@ solstone-core-transfer = { path = "crates/solstone-core-transfer" }
 solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }
+solstone-core-records-web = { path = "crates/solstone-core-records-web" }
 solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-backup = { path = "crates/solstone-core-backup" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }
@@ -171,7 +175,9 @@ solstone-core-spl = { path = "crates/solstone-core-spl" }
 solstone-core-sense = { path = "crates/solstone-core-sense" }
 solstone-core-service-unit = { path = "crates/solstone-core-service-unit" }
 solstone-core-steward-prune = { path = "crates/solstone-core-steward-prune" }
+solstone-core-health-web = { path = "crates/solstone-core-health-web" }
 solstone-core-settings-web = { path = "crates/solstone-core-settings-web" }
+solstone-core-transcripts-web = { path = "crates/solstone-core-transcripts-web" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
 solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
 solstone-core-import = { path = "crates/solstone-core-import" }

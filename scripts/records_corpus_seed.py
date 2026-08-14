@@ -44,6 +44,8 @@ ANALYZING_SEGMENT = "100000_120"
 FAILED_SEGMENT = "110000_120"
 PURGED_SEGMENT = "120000_120"
 MARKDOWN_SEGMENT = "130000_60"
+IMPORT_MARKDOWN_SEGMENT = "131000_60"
+HEALTH_RAW_MARKDOWN_SEGMENT = "132000_60"
 
 _TEMP_DIR = "/var/tmp"
 _FIXED_CACHE_MTIME = 4_102_444_800
@@ -151,6 +153,9 @@ def _write_fresh_stats_cache(day_dir: Path) -> None:
         {
             "schema_version": SCHEMA_VERSION,
             "stats": {field: 0 for field in DAY_FIELDS},
+            "agent_data": {},
+            "facet_data": {},
+            "heatmap_data": {"weekday": 0, "hours": {}},
         },
     )
     cache = day_dir / "stats.json"
@@ -413,6 +418,13 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
     markdown_only = _segment(root, D_FULL, NOTES_STREAM, MARKDOWN_SEGMENT)
     (markdown_only / "note.md").write_text("# Seeded note\n\nMarkdown-only segment.\n", encoding="utf-8")
 
+    import_markdown = _segment(root, D_FULL, "import.notes", IMPORT_MARKDOWN_SEGMENT)
+    (import_markdown / "imported.md").write_text("# Imported note\n\nNormalizes as markdown.\n", encoding="utf-8")
+
+    health_raw_markdown = _segment(root, D_FULL, "import.apple_health", HEALTH_RAW_MARKDOWN_SEGMENT)
+    (health_raw_markdown / "imported.md").write_text("# Health import\n\nRaw media remains.\n", encoding="utf-8")
+    (health_raw_markdown / "retained.m4a").write_bytes(b"seeded raw media")
+
     cache_segment = _segment(root, D_CACHE, FULL_STREAM, "090000_60")
     _write_analyzed_audio(cache_segment)
     _write_fresh_stats_cache(chronicle / D_CACHE)
@@ -511,7 +523,14 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
         "transcript_stream_count": len(transcript_stream_names),
         "screen_stream_count": len(screen_stream_names),
         "browser_stream_count": len(browser_stream_names),
-        "markdown_only_segment_count": int((markdown_only / "note.md").is_file()),
+        "markdown_only_segment_count": sum(
+            path.is_file()
+            for path in (
+                markdown_only / "note.md",
+                import_markdown / "imported.md",
+                health_raw_markdown / "imported.md",
+            )
+        ),
         "api_read_transcripts_source_present": (full / "mic_audio.jsonl").is_file(),
         "api_read_percepts_source_present": (full / "screen.jsonl").is_file() and (full / "browser_example.jsonl").is_file(),
         "api_read_agents_source_present": (full / "talents" / "flow.md").is_file(),
@@ -629,7 +648,7 @@ def build_populated_journal(today_day: str) -> tuple[Path, dict[str, int | bool 
         ("transcript_stream_count", 1),
         ("screen_stream_count", 1),
         ("browser_stream_count", 1),
-        ("markdown_only_segment_count", 1),
+        ("markdown_only_segment_count", 3),
         ("api_read_source_family_count", 3),
         ("processing_state_count", 4),
         ("stats_cache_present_day_count", 1),

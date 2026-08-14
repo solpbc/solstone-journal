@@ -520,7 +520,6 @@ Delete:
 
 - `solstone/apps/activities/call.py`
 - `solstone/apps/awareness/call.py`
-- `solstone/apps/body/call.py`
 - `solstone/apps/chat/call.py`
 - `solstone/apps/entities/call.py`
 - `solstone/apps/facets/call.py`

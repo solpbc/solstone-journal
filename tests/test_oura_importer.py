@@ -7,15 +7,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from solstone.apps.body.routes import _iter_normalized_rows
 from solstone.think.importers import oura
 from solstone.think.importers.file_importer import (
     FILE_IMPORTER_REGISTRY,
@@ -43,6 +44,65 @@ from solstone.think.importers.sync import SYNCABLE_REGISTRY, get_syncable_backen
 FIXTURE_ROOT = (
     Path(__file__).parent / "fixtures" / "importers" / "health" / "oura_synthetic"
 )
+
+_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+
+
+def _read_shard_rows(path: Path) -> list[dict[str, Any]]:
+    month = path.stem if _MONTH_RE.fullmatch(path.stem) else None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ValueError(f"Could not read normalized shard: {path}") from exc
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Could not parse normalized shard {path} line {line_number}"
+            ) from exc
+        if not isinstance(row, dict):
+            raise ValueError(
+                f"Normalized shard {path} line {line_number} must be an object"
+            )
+        if month and not row.get("month"):
+            row["month"] = month
+        rows.append(row)
+    return rows
+
+
+def _iter_normalized_rows(
+    journal_root: Path, *, month: str | None = None
+) -> list[dict[str, Any]]:
+    imports_root = journal_root / "imports"
+    if not imports_root.is_dir():
+        return []
+
+    pattern = f"*/normalized/{month}.jsonl" if month else "*/normalized/*.jsonl"
+    rows: list[dict[str, Any]] = []
+    kept_by_key: dict[str, dict[str, Any]] = {}
+    for path in sorted(imports_root.glob(pattern), reverse=True):
+        for row in _read_shard_rows(path):
+            dedupe_key = row.get("dedupe_key")
+            if isinstance(dedupe_key, str) and dedupe_key:
+                kept = kept_by_key.get(dedupe_key)
+                if kept is not None:
+                    import_id = row.get("import_id")
+                    if import_id:
+                        bundles = kept.setdefault("import_ids", [])
+                        if str(import_id) not in bundles:
+                            bundles.insert(0, str(import_id))
+                    continue
+                kept_by_key[dedupe_key] = row
+                if row.get("import_id"):
+                    row["import_ids"] = [str(row["import_id"])]
+            rows.append(row)
+    return rows
+
+
 REVISION_ROOT = FIXTURE_ROOT / "revisions"
 APPLE_FIXTURE_ROOT = (
     Path(__file__).parent

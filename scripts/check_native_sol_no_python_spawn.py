@@ -19,6 +19,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {}
 
 CLIENT_CRATES = (
     REPO_ROOT / "core/crates/solstone-core-cogitate",
+    REPO_ROOT / "core/crates/solstone-core-convey-body",
     REPO_ROOT / "core/crates/solstone-core-sol-client",
     REPO_ROOT / "core/crates/solstone-core-sol-client-cli",
 )

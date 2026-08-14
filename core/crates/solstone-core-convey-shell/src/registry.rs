@@ -94,7 +94,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: Some(content_date_nav("message", "messages", "no messages")),
         facets_enabled: true,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "curation",
@@ -124,7 +124,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "home",
@@ -206,7 +206,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: true,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "settings",
@@ -380,5 +380,19 @@ pub fn shell_payload() -> ShellPayload {
             reporting_enabled: true,
         },
         version: env!("CARGO_PKG_VERSION"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::APP_REGISTRY;
+
+    #[test]
+    fn body_remains_a_converted_native_registry_entry() {
+        assert!(
+            APP_REGISTRY
+                .iter()
+                .any(|app| app.name == "body" && app.converted)
+        );
     }
 }
