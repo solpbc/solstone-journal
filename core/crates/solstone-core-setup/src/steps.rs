@@ -438,6 +438,22 @@ pub fn implemented_step_specs() -> Vec<StepSpec> {
 
 /// Render the complete explain/dry-run plan without running a step.
 #[must_use]
+fn plan_value<'a>(resolved: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
+    resolved.get(key)?.as_object()?.get("value")
+}
+
+/// `  <key>: <value> (<source>)`, matching the reference's provenance line.
+fn resolved_plan_line(resolved: &Map<String, Value>, key: &str) -> Option<String> {
+    let entry = resolved.get(key)?.as_object()?;
+    let value = entry.get("value")?;
+    let source = entry.get("source")?.as_str()?;
+    let rendered = match value {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    };
+    Some(format!("  {key}: {rendered} ({source})"))
+}
+
 pub fn render_plan(context: &SetupContext<'_>, dry_run: bool) -> Vec<String> {
     let heading = if dry_run {
         "setup dry-run:"
@@ -453,6 +469,25 @@ pub fn render_plan(context: &SetupContext<'_>, dry_run: bool) -> Vec<String> {
             context.resolved.journal_source
         ),
     ];
+    // The plan exists to tell an owner what a run would do with the arguments
+    // they just gave it, so every resolved value carries its provenance. An
+    // owner who passes --port and is shown no port cannot tell whether it took
+    // effect. The runtime already honours all of these; only the rendering was
+    // short, which is the narrowing that is easiest to miss because nothing
+    // fails.
+    for key in ["port", "variant", "step_timeout_seconds"] {
+        if let Some(line) = resolved_plan_line(&context.resolved.args_resolved, key) {
+            lines.push(line);
+        }
+    }
+    if let Some(value) =
+        plan_value(&context.resolved.args_resolved, "is_source_checkout").and_then(Value::as_bool)
+    {
+        lines.push(format!(
+            "  source checkout: {}",
+            if value { "True" } else { "False" }
+        ));
+    }
     for (index, spec) in step_specs().iter().enumerate() {
         lines.push(format!(
             "[step {}/{}] {}",
@@ -2920,5 +2955,38 @@ mod tests {
         .unwrap();
         assert!(runner.requests.is_empty());
         assert!(get_journal_config_path(&journal).is_file());
+    }
+
+    /// The plan is the surface whose whole job is telling an owner what a run
+    /// would do with the arguments they just gave it, so every resolved value
+    /// carries its provenance. This pins all four lines because the runtime
+    /// honoured them while the rendering did not, and a narrowing that nothing
+    /// fails on is the one that survives.
+    #[test]
+    fn plan_header_carries_every_resolved_value_with_its_source() {
+        let (args, resolved, root, home) = fixture(
+            "plan-header",
+            &["--explain", "--port", "6000", "--variant", "cuda"],
+        );
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let context = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        let lines = render_plan(&context, false);
+
+        assert_eq!(lines[0], "setup plan:");
+        assert_eq!(lines[1], "  mode: explain");
+        assert!(lines[2].starts_with("  journal: "), "{:?}", lines[2]);
+        assert_eq!(lines[3], "  port: 6000 (cli)");
+        assert_eq!(lines[4], "  variant: cuda (cli)");
+        assert_eq!(lines[5], "  step_timeout_seconds: 1800 (default)");
+        assert_eq!(lines[6], "  source checkout: False");
     }
 }
