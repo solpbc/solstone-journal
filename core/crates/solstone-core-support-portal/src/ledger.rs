@@ -31,6 +31,8 @@ const SCHEMA_VERSION: u64 = 1;
 const KEY_BYTES: usize = 32;
 const LEASE_DURATION: Duration = Duration::seconds(60);
 const RETENTION: Duration = Duration::days(45);
+// `conflict` is terminal for compaction compatibility, although this crate never writes it.
+const TERMINAL_STATES: &[&str] = &["completed", "failed", "conflict"];
 
 /// One operation record returned to the portal adapter.  `operation_key` is never persisted.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,14 +115,14 @@ impl Ledger {
         verb: &str,
         fields: &serde_json::Map<String, Value>,
         principal: &str,
-        index: u32,
+        index: u64,
         now: DateTime<Utc>,
     ) -> Result<OperationRecord, OperationError> {
         self.ensure_storage()?;
         self.compact_expired_terminal_records(now)?;
         let child_action_id = derive_child_action_id(parent_action_id, verb, index);
         let canonical = canonicalize_operation(verb, fields, principal, &child_action_id)
-            .map_err(|_| unavailable(RECORD_INVALID))?;
+            .map_err(|message| OperationError::OperationInputInvalid { message })?;
         let key = self.load_or_create_fingerprint_key()?;
         let fingerprint = canonical_fingerprint(&key, &canonical);
         let principal_tag = principal_tag(&key, principal);
@@ -319,7 +321,7 @@ impl Ledger {
             let ReadRecord::Record(stored) = read_record(&path)? else {
                 continue;
             };
-            if !matches!(stored.state.as_str(), "completed" | "failed" | "conflict") {
+            if !TERMINAL_STATES.contains(&stored.state.as_str()) {
                 continue;
             }
             let Some(completed_at) = stored.completed_at.as_deref() else {
@@ -510,7 +512,9 @@ fn lock(
     )
     .map_err(|error| match error {
         LockError::Timeout(_) => unavailable(message),
-        LockError::Io { .. } => unavailable(message),
+        LockError::Io { .. } => OperationError::OperationLockUnavailable {
+            message: format!("operation lock is unavailable: {error}"),
+        },
     })
 }
 

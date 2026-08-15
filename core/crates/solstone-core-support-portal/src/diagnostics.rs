@@ -7,7 +7,10 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use chrono::{DateTime, Duration, Local, SecondsFormat, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, SecondsFormat, TimeZone, Utc};
+use nix::errno::Errno;
+use nix::sys::signal::kill;
+use nix::unistd::Pid;
 use regex::Regex;
 use serde_json::{Map, Value, json};
 
@@ -132,6 +135,7 @@ pub fn collect_version() -> Option<String> {
     Some(env!("CARGO_PKG_VERSION").to_owned())
 }
 
+/// Revision is intentionally unredacted: it has no input value to redact.
 /// Return the revision captured at build time, or `None` for a non-git build.
 pub fn collect_revision() -> Option<String> {
     option_env!("SOLSTONE_SUPPORT_PORTAL_REVISION").map(ToOwned::to_owned)
@@ -163,6 +167,13 @@ pub fn native_platform() -> PlatformInfo {
 
 /// Services are intentionally unredacted: their status values are not diagnostic text.
 pub fn collect_services(journal_root: &Path) -> Value {
+    collect_services_with_probe(journal_root, signal_zero)
+}
+
+fn collect_services_with_probe(
+    journal_root: &Path,
+    probe: impl Fn(i32) -> Result<(), Errno>,
+) -> Value {
     let health = journal_root.join("health");
     let Ok(entries) = fs::read_dir(health) else {
         return json!({});
@@ -177,31 +188,28 @@ pub fn collect_services(journal_root: &Path) -> Value {
             .file_stem()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        let status = service_status(
-            fs::read_to_string(&path).ok().as_deref(),
-            if Path::new("/proc").is_dir() {
-                Ok(())
-            } else {
-                Err(())
-            },
-        );
+        let status = service_status(fs::read_to_string(&path).ok().as_deref(), &probe);
         statuses.insert(service.to_owned(), Value::String(status.to_owned()));
     }
     Value::Object(statuses)
 }
 
-fn service_status(pid_text: Option<&str>, process_probe: Result<(), ()>) -> &'static str {
-    let Some(pid) = pid_text.and_then(|value| value.trim().parse::<u32>().ok()) else {
+fn service_status(
+    pid_text: Option<&str>,
+    probe: &impl Fn(i32) -> Result<(), Errno>,
+) -> &'static str {
+    let Some(pid) = pid_text.and_then(|value| value.trim().parse::<i32>().ok()) else {
         return "stopped";
     };
-    if process_probe.is_err() {
-        return "unknown";
+    match probe(pid) {
+        Ok(()) => "running",
+        Err(Errno::ESRCH | Errno::EPERM) => "stopped",
+        Err(_) => "unknown",
     }
-    if Path::new("/proc").join(pid.to_string()).exists() {
-        "running"
-    } else {
-        "stopped"
-    }
+}
+
+fn signal_zero(pid: i32) -> Result<(), Errno> {
+    kill(Pid::from_raw(pid), None)
 }
 
 /// Collect recent errors, preserving Python's aware-timestamp collector failure seam.
@@ -222,9 +230,10 @@ pub fn collect_recent_errors(journal_root: &Path, now: DateTime<Local>) -> Resul
             .and_then(|name| name.to_str())
             .unwrap_or_default()
             .to_owned();
-        let Ok(text) = fs::read_to_string(&path) else {
+        let Ok(bytes) = fs::read(&path) else {
             continue;
         };
+        let text = String::from_utf8_lossy(&bytes);
         let fallback = path
             .metadata()
             .ok()
@@ -232,7 +241,7 @@ pub fn collect_recent_errors(journal_root: &Path, now: DateTime<Local>) -> Resul
             .map(DateTime::<Local>::from);
         let mut last = None;
         for line in text.lines().filter(|line| line.contains("ERROR")) {
-            let (first, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+            let (first, rest) = split_python_once(line);
             let (time, approximate, message) = match parse_local_timestamp(first)? {
                 Some(time) => {
                     last = Some(time);
@@ -270,14 +279,45 @@ pub fn collect_recent_errors(journal_root: &Path, now: DateTime<Local>) -> Resul
 }
 
 fn parse_local_timestamp(value: &str) -> Result<Option<DateTime<Local>>, String> {
-    if DateTime::parse_from_rfc3339(value).is_ok() {
+    if parses_aware_timestamp(value) {
         // Python compares this aware value to its naive local cutoff and raises TypeError.
         return Err("offset-aware timestamp cannot compare to naive local cutoff".to_owned());
     }
-    let Ok(value) = chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f") else {
-        return Ok(None);
+    Ok(parse_naive_timestamp(value).and_then(|value| Local.from_local_datetime(&value).single()))
+}
+
+fn split_python_once(line: &str) -> (&str, &str) {
+    let line = line.trim_start();
+    let Some(index) = line.find(char::is_whitespace) else {
+        return (line, "");
     };
-    Ok(Local.from_local_datetime(&value).single())
+    (&line[..index], line[index..].trim_start())
+}
+
+fn parses_aware_timestamp(value: &str) -> bool {
+    DateTime::parse_from_rfc3339(value).is_ok()
+        || [
+            "%Y-%m-%dT%H:%M:%S%.f%z",
+            "%Y-%m-%d %H:%M:%S%.f%z",
+            "%Y%m%dT%H%M%S%.f%z",
+        ]
+        .iter()
+        .any(|format| DateTime::parse_from_str(value, format).is_ok())
+}
+
+fn parse_naive_timestamp(value: &str) -> Option<NaiveDateTime> {
+    [
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y%m%dT%H%M%S%.f",
+    ]
+    .iter()
+    .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
+    .or_else(|| {
+        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+            .ok()
+            .and_then(|date| date.and_hms_opt(0, 0, 0))
+    })
 }
 
 /// Return config data with secret-keyed values removed.
@@ -303,17 +343,21 @@ fn build_brain_health(journal_root: &Path, now: DateTime<Utc>) -> Result<Value, 
     let inspection = solstone_core_brain::inspect_brain_state(journal_root, &config, now);
     let present = solstone_core_brain::present_brain_inspection(&inspection, now);
     let projection = &inspection.projection;
+    let progressing = brain_progressing(
+        projection.reason_code.as_deref(),
+        projection.runtime_transition_in_progress,
+    );
     let snapshot = json!({
         "state": projection.aggregate_state,
         "headline": present.headline,
         "reason_code": projection.reason_code,
         "reason_text": present.reason_text,
         "failing_component": present.failing_component,
-        "action": support_action(&projection.aggregate_state, projection.reason_code.as_deref(), projection.runtime_transition_in_progress, projection.active_lane.as_deref(), present.failing_component.as_deref()),
+        "action": support_action(&projection.aggregate_state, projection.reason_code.as_deref(), progressing, projection.active_lane.as_deref(), present.failing_component.as_deref()),
         "identity": {"lane":projection.active_lane,"provider":projection.active_provider,"model":projection.active_model},
         "evidence": {"observed_at":present.evidence.observed_at,"age_seconds":present.evidence.age_seconds,"age_text":present.evidence.age_text},
         "components": {"generate":brain_component(inspection.record.as_ref(), "generate"),"cogitate":brain_component(inspection.record.as_ref(), "cogitate")},
-        "progressing": projection.reason_code.as_deref() == Some("brain_check_in_progress"),
+        "progressing": progressing,
     });
     let lines = render_brain_health_lines(&snapshot)?;
     Ok(json!({"snapshot":snapshot,"lines":lines}))
@@ -322,12 +366,10 @@ fn build_brain_health(journal_root: &Path, now: DateTime<Utc>) -> Result<Value, 
 fn support_action(
     state: &str,
     reason: Option<&str>,
-    runtime_transition: bool,
+    progressing: bool,
     lane: Option<&str>,
     component: Option<&str>,
 ) -> Value {
-    let progressing = reason == Some("brain_check_in_progress")
-        || (reason == Some("local_runtime_not_ready") && runtime_transition);
     if matches!(state, "ready" | "checking") || (state == "blocked" && progressing) {
         return Value::Null;
     }
@@ -361,6 +403,11 @@ fn support_action(
         return json!({"href":"/app/health/#brain","label":"view health"});
     }
     Value::Null
+}
+
+fn brain_progressing(reason: Option<&str>, runtime_transition: bool) -> bool {
+    reason == Some("brain_check_in_progress")
+        || (reason == Some("local_runtime_not_ready") && runtime_transition)
 }
 
 fn brain_component(record: Option<&Value>, name: &str) -> Value {

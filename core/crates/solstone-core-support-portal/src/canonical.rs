@@ -56,7 +56,7 @@ pub fn verb_fields(verb: &str) -> Option<&'static [&'static str]> {
 }
 
 /// Derive the length-prefixed child action ID used as the on-disk record name.
-pub fn derive_child_action_id(parent_action_id: &str, verb: &str, index: u32) -> String {
+pub fn derive_child_action_id(parent_action_id: &str, verb: &str, index: u64) -> String {
     let mut input = Vec::new();
     for part in [
         normalize(parent_action_id),
@@ -416,5 +416,29 @@ mod tests {
         for (value, expected) in vectors {
             assert_eq!(python_float(value), expected, "{value:?}");
         }
+    }
+
+    #[test]
+    fn canonicalization_refuses_the_typed_invalid_inputs_the_reference_refuses() {
+        let fields = Map::new();
+        assert!(canonicalize_operation("unknown", &fields, "anonymous", "sact1_vector").is_err());
+
+        let mut unknown_field = Map::new();
+        unknown_field.insert("not_a_reply_field".to_owned(), Value::Null);
+        assert!(
+            canonicalize_operation("reply", &unknown_field, "anonymous", "sact1_vector").is_err()
+        );
+
+        assert!(canonicalize_operation("reply", &fields, "jkt:", "sact1_vector").is_err());
+
+        let mut colliding_map = Map::new();
+        colliding_map.insert("é".to_owned(), Value::Null);
+        colliding_map.insert("e\u{301}".to_owned(), Value::Null);
+        let mut colliding_fields = Map::new();
+        colliding_fields.insert("ticket_id".to_owned(), Value::Object(colliding_map));
+        assert!(
+            canonicalize_operation("reply", &colliding_fields, "anonymous", "sact1_vector")
+                .is_err()
+        );
     }
 }

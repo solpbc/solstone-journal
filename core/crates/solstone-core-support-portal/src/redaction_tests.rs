@@ -31,29 +31,40 @@ fn write(root: &TempDir, path: &str, contents: &str) {
 #[test]
 fn redacts_each_reference_shape_and_bounds_characters() {
     let cases = [
-        ("MY_TOKEN=abc", "<secret>"),
-        ("OPENAI_API_KEY", "<secret>"),
-        // `sk-ant-` is consumed by the leftmost `sk-` alternation branch.
-        ("sk-ant-x", "<secret>"),
-        ("AIzaX", "<secret>"),
-        ("/private", "<path>"),
-        (r"C:\private", "<path>"),
+        ("MY_TOKEN=abc", "abc", "<secret>"),
+        ("OPENAI_API_KEY", "OPENAI_API_KEY", "<secret>"),
+        ("sk-x", "sk-x", "<secret>"),
+        ("AIzaX", "AIzaX", "<secret>"),
+        ("/private", "/private", "<path>"),
+        (r"C:\private", r"C:\private", "<path>"),
         (
             "Traceback (most recent call last): frame",
+            "Traceback (most recent call last):",
             "traceback redacted frame",
         ),
     ];
-    for (raw, expected) in cases {
+    for (raw, sensitive, expected) in cases {
+        let redacted = text(raw);
+        assert!(raw.contains(sensitive), "raw input omitted {sensitive:?}");
         assert!(
-            raw.contains(if raw.starts_with("sk") { "sk" } else { raw }),
-            "raw precondition"
+            !redacted.contains(sensitive),
+            "redaction leaked {sensitive:?}"
         );
-        assert_eq!(text(raw), expected);
+        assert_eq!(redacted, expected);
     }
-    let raw = "x".repeat(600);
+    let raw = format!("sk-x {}", "x".repeat(595));
+    assert_eq!(raw.chars().count(), 600);
     let bounded = bounded_redacted_text(Some(&raw), 500).expect("bounded");
+    assert!(raw.contains("sk-x"));
+    assert!(!bounded.contains("sk-x"));
     assert_eq!(bounded.chars().count(), 500);
     assert!(bounded.ends_with('…'));
+}
+
+#[test]
+fn sk_ant_is_redacted_by_the_leftmost_sk_branch() {
+    // `sk-ant-` is consumed by the leftmost `sk-` alternation branch.
+    assert_eq!(text("sk-ant-x"), "<secret>");
 }
 
 #[test]
@@ -97,6 +108,10 @@ fn diagnostics_collector_order_and_aware_timestamp_omit_match_reference() {
         .with_ymd_and_hms(2026, 1, 2, 4, 0, 0)
         .single()
         .expect("now");
+    assert_eq!(
+        collect_recent_errors(root.path(), now).unwrap_err(),
+        "offset-aware timestamp cannot compare to naive local cutoff"
+    );
     let all = collect_all(root.path(), now, platform());
     assert!(!all.contains_key("recent_errors"));
     assert_eq!(
@@ -127,30 +142,48 @@ fn diagnostics_collector_order_and_aware_timestamp_omit_match_reference() {
 }
 
 #[test]
-fn services_are_never_redacted_and_recent_errors_keep_reference_shapes() {
+fn services_and_recent_errors_keep_reference_shapes_and_ordering() {
     let root = root();
-    write(&root, "health/sk-x.pid", "not-a-pid\n");
-    let services = collect_services(root.path());
-    assert_eq!(services["sk-x"], "stopped");
-    assert_ne!(services["sk-x"], "***");
+    write(&root, "health/sk-x.pid", "1\n");
+    write(&root, "health/stopped.pid", "2\n");
+    write(&root, "health/unknown.pid", "3\n");
+    write(&root, "health/invalid.pid", "not-a-pid\n");
+    let public_services = collect_services(root.path());
+    assert!(matches!(
+        public_services["sk-x"].as_str(),
+        Some("running" | "stopped" | "unknown")
+    ));
+    assert_ne!(public_services["sk-x"], "***");
+    let services = collect_services_with_probe(root.path(), |pid| match pid {
+        1 => Ok(()),
+        2 => Err(nix::errno::Errno::ESRCH),
+        _ => Err(nix::errno::Errno::EIO),
+    });
+    assert_eq!(services["sk-x"], "running");
+    assert_eq!(services["stopped"], "stopped");
+    assert_eq!(services["unknown"], "unknown");
+    assert_eq!(services["invalid"], "stopped");
 
-    write(
-        &root,
-        "health/svc.log",
-        "ERROR sk-x /private\n2026-01-02T03:04:04 ERROR MY_TOKEN=abc /private Traceback (most recent call last): frame\n",
-    );
-    let now = Local
-        .with_ymd_and_hms(2026, 1, 2, 4, 0, 0)
-        .single()
-        .expect("now");
-    let errors = collect_recent_errors(root.path(), now).expect("naive local lines");
+    let seed = Local::now();
+    let mut lines = vec!["unparseable ERROR sk-x /private".to_owned()];
+    for offset in 1..=11 {
+        let time = seed - chrono::Duration::seconds(offset);
+        lines.push(format!(
+            "   {} ERROR MY_TOKEN=abc /private Traceback (most recent call last): entry-{offset}",
+            time.format("%Y-%m-%dT%H:%M:%S")
+        ));
+    }
+    write(&root, "health/svc.log", &lines.join("\n"));
+    let errors = collect_recent_errors(root.path(), Local::now() + chrono::Duration::minutes(2))
+        .expect("naive local lines");
     let errors = errors.as_array().expect("array");
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 10);
     assert!(
         errors[0]["time_approximate"]
             .as_bool()
             .expect("approximate")
     );
+    assert_eq!(errors[0]["message"], "unparseable ERROR <secret> <path>");
     assert!(
         errors[1]["message"]
             .as_str()
@@ -159,6 +192,43 @@ fn services_are_never_redacted_and_recent_errors_keep_reference_shapes() {
     );
     assert!(!errors[1]["time_approximate"].as_bool().expect("exact"));
     assert_eq!(errors[0]["service"], "svc");
+    assert!(
+        errors[9]["message"]
+            .as_str()
+            .expect("message")
+            .contains("entry-9")
+    );
+    for pair in errors.windows(2) {
+        assert!(pair[0]["time"].as_str().expect("time") >= pair[1]["time"].as_str().expect("time"));
+    }
+}
+
+#[test]
+fn recent_errors_decodes_lossily_and_accepts_python_naive_iso_forms() {
+    let root = root();
+    let now = Local::now();
+    let spaced = (now - chrono::Duration::seconds(2)).format("%Y-%m-%d %H:%M:%S");
+    let basic = (now - chrono::Duration::seconds(3)).format("%Y%m%dT%H%M%S");
+    let path = root.path().join("health/lossy.log");
+    fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+    let mut bytes = format!("{spaced} ERROR bad-utf8: ").into_bytes();
+    bytes.push(0xff);
+    bytes.extend_from_slice(format!("\n{basic} ERROR basic-naive\n").as_bytes());
+    fs::write(path, bytes).expect("lossy log");
+    let errors = collect_recent_errors(root.path(), now + chrono::Duration::minutes(1))
+        .expect("naive ISO forms");
+    let errors = errors.as_array().expect("array");
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|error| {
+        error["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("�"))
+    }));
+    assert!(errors.iter().any(|error| {
+        error["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("basic-naive"))
+    }));
 }
 
 #[test]
@@ -193,15 +263,16 @@ fn platform_injection_and_brain_live_and_fallback_shapes_are_stable() {
 }
 
 #[test]
-fn service_status_has_running_stopped_and_unknown_outcomes() {
-    assert_eq!(service_status(Some("not-a-pid"), Ok(())), "stopped");
-    assert_eq!(service_status(Some("1"), Err(())), "unknown");
+fn local_runtime_transition_is_progressing_and_suppresses_an_action() {
+    assert!(brain_progressing(Some("local_runtime_not_ready"), true));
     assert_eq!(
-        service_status(Some("1"), Ok(())),
-        if std::path::Path::new("/proc/1").exists() {
-            "running"
-        } else {
-            "stopped"
-        }
+        support_action(
+            "blocked",
+            Some("local_runtime_not_ready"),
+            brain_progressing(Some("local_runtime_not_ready"), true),
+            Some("bundled"),
+            None,
+        ),
+        serde_json::Value::Null
     );
 }

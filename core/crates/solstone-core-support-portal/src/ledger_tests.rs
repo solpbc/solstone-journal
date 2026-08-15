@@ -53,14 +53,15 @@ fn stored_json(path: &std::path::Path) -> Value {
 }
 
 fn assert_return_matches_stored_except_key(returned: &OperationRecord, path: &std::path::Path) {
-    let stored = stored_json(path);
-    assert_eq!(stored["parent_action_id"], returned.parent_action_id);
-    assert_eq!(stored["child_action_id"], returned.child_action_id);
-    assert_eq!(stored["generation"], returned.generation);
-    assert_eq!(stored["state"], returned.state);
-    assert_eq!(stored["ack_state"], returned.ack_state);
+    let stored_json = stored_json(path);
+    assert!(stored_json.get("operation_key").is_none());
+    let stored: StoredRecord = serde_json::from_value(stored_json).expect("stored record");
+    assert_eq!(
+        returned,
+        &stored.into_operation(returned.operation_key.clone()),
+        "returned record differs from its persisted record beyond operation_key"
+    );
     assert!(returned.operation_key.is_some());
-    assert!(stored.get("operation_key").is_none());
 }
 
 #[test]
@@ -86,6 +87,7 @@ fn terminal_replays_rewrite_identical_payload_bytes_and_return_key_only() {
     // `_update_current` writes unconditionally, so inode and mtime change and are not oracles.
     // Payload bytes and parsed content must remain identical for all terminal early returns.
     let before_complete = fs::read(&path).expect("before complete replay");
+    let before_complete_payload = stored_json(&path);
     let replayed = ledger
         .mark_completed(&completed, Some("different-remote-is-ignored"), started)
         .expect("completed replay");
@@ -93,9 +95,11 @@ fn terminal_replays_rewrite_identical_payload_bytes_and_return_key_only() {
         before_complete,
         fs::read(&path).expect("after complete replay")
     );
+    assert_eq!(before_complete_payload, stored_json(&path));
     assert_return_matches_stored_except_key(&replayed, &path);
 
     let before_release = fs::read(&path).expect("before release replay");
+    let before_release_payload = stored_json(&path);
     let released = ledger
         .release_retryable_lease(&completed, started)
         .expect("completed release replay");
@@ -103,15 +107,18 @@ fn terminal_replays_rewrite_identical_payload_bytes_and_return_key_only() {
         before_release,
         fs::read(&path).expect("after release replay")
     );
+    assert_eq!(before_release_payload, stored_json(&path));
     assert_return_matches_stored_except_key(&released, &path);
 
     let acknowledged = ledger.mark_acknowledged(&completed).expect("acknowledged");
     let before_ack = fs::read(&path).expect("before acknowledgement replay");
+    let before_ack_payload = stored_json(&path);
     let replayed_ack = ledger.mark_acknowledged(&acknowledged).expect("ack replay");
     assert_eq!(
         before_ack,
         fs::read(&path).expect("after acknowledgement replay")
     );
+    assert_eq!(before_ack_payload, stored_json(&path));
     assert_return_matches_stored_except_key(&replayed_ack, &path);
 }
 
@@ -167,20 +174,51 @@ fn record_persistence_excludes_payload_and_operation_key_and_scan_positive_contr
 #[test]
 fn lease_boundaries_and_in_progress_conflict_are_exact() {
     let (_temp, ledger) = ledger();
-    let started = now();
-    let record = begin(&ledger, "lease-boundary", started);
-    let in_progress = ledger
-        .mark_in_progress(&record, started)
-        .expect("in progress");
+    let current = now();
+
+    let expired = ledger
+        .mark_in_progress(&begin(&ledger, "lease-expired", current), current)
+        .expect("real in-progress fixture");
+    let expired_path = record_path(&ledger, &expired);
+    let mut expired_value = stored_json(&expired_path);
+    expired_value["lease_expires_at"] = Value::String(iso(current - Duration::seconds(1)));
+    fs::write(
+        &expired_path,
+        serde_json::to_vec(&expired_value).expect("fixture json"),
+    )
+    .expect("field-edit real fixture");
+    let recovered = begin(&ledger, "lease-expired", current);
+    assert_eq!(recovered.generation, expired.generation + 1);
+
+    let live = ledger
+        .mark_in_progress(&begin(&ledger, "lease-live", current), current)
+        .expect("real in-progress fixture");
+    let live_path = record_path(&ledger, &live);
+    let mut live_value = stored_json(&live_path);
+    live_value["lease_expires_at"] = Value::String(iso(current + Duration::seconds(1)));
+    fs::write(
+        &live_path,
+        serde_json::to_vec(&live_value).expect("fixture json"),
+    )
+    .expect("field-edit real fixture");
     assert_eq!(
-        try_begin(&ledger, "lease-boundary", started + Duration::seconds(59)).unwrap_err(),
+        try_begin(&ledger, "lease-live", current).unwrap_err(),
         OperationError::OperationInProgress
     );
-    let at_boundary = begin(&ledger, "lease-boundary", started + LEASE_DURATION);
-    assert_eq!(at_boundary.generation, 2);
-    assert_eq!(at_boundary.state, "in_progress");
-    assert_eq!(in_progress.state, "in_progress");
-    assert_eq!(record.generation, 1);
+
+    let boundary = ledger
+        .mark_in_progress(&begin(&ledger, "lease-boundary", current), current)
+        .expect("real in-progress fixture");
+    let boundary_path = record_path(&ledger, &boundary);
+    let mut boundary_value = stored_json(&boundary_path);
+    boundary_value["lease_expires_at"] = Value::String(iso(current));
+    fs::write(
+        &boundary_path,
+        serde_json::to_vec(&boundary_value).expect("fixture json"),
+    )
+    .expect("field-edit real fixture");
+    let at_boundary = begin(&ledger, "lease-boundary", current);
+    assert_eq!(at_boundary.generation, boundary.generation + 1);
 }
 
 #[test]
@@ -253,6 +291,35 @@ fn acknowledgement_state_machine_and_pending_order() {
         .list_pending_acknowledgements()
         .expect("pending acknowledgements");
     assert_eq!(pending.len(), 2);
+    let stored = stored_json(&record_path(&ledger, &pending[0]));
+    assert_eq!(
+        stored
+            .as_object()
+            .expect("record")
+            .keys()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>(),
+        [
+            "ack_state",
+            "canonical_fingerprint",
+            "child_action_id",
+            "completed_at",
+            "created_at",
+            "generation",
+            "lease_expires_at",
+            "lease_id",
+            "parent_action_id",
+            "principal_tag",
+            "remote_operation_id",
+            "schema_version",
+            "state",
+            "terminal_reason",
+            "verb",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect(),
+    );
     assert!(pending[0].child_action_id <= pending[1].child_action_id);
     ledger.mark_acknowledged(&pending[0]).expect("acknowledge");
     assert_eq!(
@@ -291,11 +358,90 @@ fn record_and_retired_tombstone_key_sets_are_exact() {
         .mark_completed(&in_progress, None, started)
         .expect("completed");
     let path = record_path(&ledger, &completed);
-    assert_eq!(stored_json(&path).as_object().expect("record").len(), 15);
+    let record_keys = stored_json(&path)
+        .as_object()
+        .expect("record")
+        .keys()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        record_keys,
+        [
+            "ack_state",
+            "canonical_fingerprint",
+            "child_action_id",
+            "completed_at",
+            "created_at",
+            "generation",
+            "lease_expires_at",
+            "lease_id",
+            "parent_action_id",
+            "principal_tag",
+            "remote_operation_id",
+            "schema_version",
+            "state",
+            "terminal_reason",
+            "verb",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    );
     ledger
         .compact_expired_terminal_records(started + RETENTION + Duration::seconds(1))
         .expect("retire");
-    assert_eq!(stored_json(&path).as_object().expect("marker").len(), 3);
+    let marker_keys = stored_json(&path)
+        .as_object()
+        .expect("marker")
+        .keys()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        marker_keys,
+        ["child_action_id", "schema_version", "terminal_reason"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
+    assert!(matches!(
+        read_record(&path).expect("marker parses"),
+        ReadRecord::Retired
+    ));
+
+    let extra_temp = TempDir::new().expect("tempdir");
+    let extra_ledger = Ledger::new(extra_temp.path());
+    let extra = begin(&extra_ledger, "extra-key", started);
+    let extra_path = record_path(&extra_ledger, &extra);
+    let mut extra_value = stored_json(&extra_path);
+    extra_value["unexpected"] = Value::Bool(true);
+    fs::write(
+        &extra_path,
+        serde_json::to_vec(&extra_value).expect("fixture json"),
+    )
+    .expect("extra-key fixture");
+    assert_eq!(
+        try_begin(&extra_ledger, "extra-key", started).unwrap_err(),
+        unavailable(RECORD_INVALID)
+    );
+
+    let missing_temp = TempDir::new().expect("tempdir");
+    let missing_ledger = Ledger::new(missing_temp.path());
+    let missing = begin(&missing_ledger, "missing-key", started);
+    let missing_path = record_path(&missing_ledger, &missing);
+    let mut missing_value = stored_json(&missing_path);
+    missing_value
+        .as_object_mut()
+        .expect("record")
+        .remove("ack_state");
+    fs::write(
+        &missing_path,
+        serde_json::to_vec(&missing_value).expect("fixture json"),
+    )
+    .expect("missing-key fixture");
+    assert_eq!(
+        try_begin(&missing_ledger, "missing-key", started).unwrap_err(),
+        unavailable(RECORD_INVALID)
+    );
 }
 
 #[test]
@@ -336,6 +482,24 @@ fn malformed_action_id_is_state_unavailable() {
         ledger.record_path("bad/action").unwrap_err(),
         unavailable(ACTION_ID_INVALID)
     );
+}
+
+#[test]
+fn canonical_input_failure_is_not_laundered_as_ledger_corruption() {
+    let (_temp, ledger) = ledger();
+    let mut invalid_fields = fields();
+    invalid_fields.insert("outside_reply_tuple".to_owned(), Value::Null);
+    assert!(matches!(
+        ledger.begin_operation(
+            "invalid-canonical-input",
+            "reply",
+            &invalid_fields,
+            "jkt:test-thumbprint",
+            0,
+            now(),
+        ),
+        Err(OperationError::OperationInputInvalid { .. })
+    ));
 }
 
 #[test]

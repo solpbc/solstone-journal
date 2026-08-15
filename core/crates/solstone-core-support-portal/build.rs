@@ -21,14 +21,4 @@ fn main() {
     if !revision.is_empty() {
         println!("cargo:rustc-env=SOLSTONE_SUPPORT_PORTAL_REVISION={revision}");
     }
-    for path in ["HEAD", "packed-refs"] {
-        if let Ok(output) = Command::new("git")
-            .args(["rev-parse", "--git-path", path])
-            .output()
-            && output.status.success()
-            && let Ok(path) = String::from_utf8(output.stdout)
-        {
-            println!("cargo:rerun-if-changed={}", path.trim());
-        }
-    }
 }

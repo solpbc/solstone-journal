@@ -8,6 +8,12 @@ use thiserror::Error;
 /// Typed failure returned by the local support-operation ledger.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum OperationError {
+    /// The caller supplied canonical operation input the reference rejects with `ValueError`.
+    #[error("{message}")]
+    OperationInputInvalid {
+        /// The canonicalizer's reference-compatible validation message.
+        message: String,
+    },
     /// A current generation owns an unexpired lease.
     #[error("That operation is already in progress.")]
     OperationInProgress,
@@ -29,6 +35,12 @@ pub enum OperationError {
     /// A later generation replaced the caller's lease.
     #[error("That operation isn't available in the current state.")]
     OperationSuperseded,
+    /// The filesystem lock could not be acquired for a reason other than contention.
+    #[error("{message}")]
+    OperationLockUnavailable {
+        /// The underlying lock failure, preserved rather than misreported as contention.
+        message: String,
+    },
     /// The local state cannot be safely read or written.
     #[error("{message}")]
     OperationStateUnavailable {
@@ -41,36 +53,44 @@ impl OperationError {
     /// Return the owner-visible reason code when routes map this error directly.
     pub const fn reason_code(&self) -> Option<&'static str> {
         match self {
+            Self::OperationInputInvalid { .. }
+            | Self::OperationLockUnavailable { .. }
+            | Self::OperationStateUnavailable { .. } => Some("support_portal_failed"),
             Self::OperationInProgress => Some("operation_in_progress"),
             Self::IdempotencyConflict => Some("idempotency_conflict"),
             Self::OperationInvalidState => Some("invalid_state"),
             Self::OperationTosChanged => Some("tos_changed"),
             Self::OperationRetired => Some("operation_retired"),
             Self::OperationErased => Some("operation_erased"),
-            Self::OperationStateUnavailable { .. } => Some("support_portal_failed"),
             // Measured at solstone/apps/support/routes.py:_operation_error_response:
             // Python has no OperationSupersededError branch, so it falls through
             // to the generic support-portal failure response instead.
-            Self::OperationSuperseded => None,
+            Self::OperationSuperseded => Some("support_portal_failed"),
         }
     }
 
     /// Return the matching HTTP status when the reference route maps this error.
     pub const fn http_status(&self) -> Option<u16> {
         match self {
+            Self::OperationInputInvalid { .. }
+            | Self::OperationLockUnavailable { .. }
+            | Self::OperationStateUnavailable { .. }
+            | Self::OperationSuperseded => Some(500),
             Self::OperationInProgress | Self::IdempotencyConflict | Self::OperationInvalidState => {
                 Some(409)
             }
             Self::OperationTosChanged => Some(401),
             Self::OperationRetired | Self::OperationErased => Some(410),
-            Self::OperationStateUnavailable { .. } => Some(500),
-            Self::OperationSuperseded => None,
         }
     }
 
     /// Return the owner-visible message associated with a mapped reason.
     pub const fn owner_message(&self) -> Option<&'static str> {
         match self {
+            Self::OperationInputInvalid { .. }
+            | Self::OperationLockUnavailable { .. }
+            | Self::OperationStateUnavailable { .. }
+            | Self::OperationSuperseded => Some("I couldn't reach support right now."),
             Self::OperationInProgress => Some("That operation is already in progress."),
             Self::IdempotencyConflict => Some("That operation conflicts with an earlier attempt."),
             Self::OperationInvalidState => {
@@ -79,8 +99,6 @@ impl OperationError {
             Self::OperationTosChanged => Some("Support terms changed and require re-consent."),
             Self::OperationRetired => Some("That operation is no longer available."),
             Self::OperationErased => Some("That operation was erased."),
-            Self::OperationStateUnavailable { .. } => Some("I couldn't reach support right now."),
-            Self::OperationSuperseded => None,
         }
     }
 }
