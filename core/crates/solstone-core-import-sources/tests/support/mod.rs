@@ -20,11 +20,14 @@ pub struct TempTree {
 impl TempTree {
     pub fn new() -> Self {
         let index = NEXT_TREE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "solstone-core-import-sources-w7-{}-{index}",
-            std::process::id()
-        ));
-        fs::create_dir(&path).unwrap();
+        let path = tempfile::Builder::new()
+            .prefix(&format!(
+                "solstone-core-import-sources-w7-{}-{index}-",
+                std::process::id()
+            ))
+            .tempdir_in(std::env::temp_dir())
+            .unwrap()
+            .keep();
         Self { path }
     }
 

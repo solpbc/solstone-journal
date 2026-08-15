@@ -8,6 +8,23 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
+
+[[test]]
+name = "source_archive_contracts"
+path = "tests/source_archive_contracts.rs"
+
+[[test]]
+name = "source_document_contracts"
+path = "tests/source_document_contracts.rs"
+
+[[test]]
+name = "source_format_contracts"
+path = "tests/source_format_contracts.rs"
+
+[[test]]
+name = "source_planning_contracts"
+path = "tests/source_planning_contracts.rs"
 
 [lints]
 workspace = true
