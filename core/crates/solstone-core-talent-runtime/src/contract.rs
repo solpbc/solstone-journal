@@ -373,10 +373,101 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
+    use std::path::Path;
     use std::ptr;
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct HookConformanceError {
+        missing_declared_hooks: Vec<String>,
+        unreferenced_table_hooks: Vec<String>,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct HookCorpusCounts {
+        talents: usize,
+        hook_declaring_talents: usize,
+        pre_post_entries: usize,
+        distinct_hooks: usize,
+    }
+
+    fn declared_hooks(
+        configs: &[solstone_core_talent_config::TalentConfig],
+    ) -> (BTreeSet<String>, usize) {
+        let mut hooks = BTreeSet::new();
+        let mut hook_declaring_talents = 0;
+        for config in configs {
+            let Some(hook) = config
+                .metadata
+                .get("hook")
+                .and_then(serde_json::Value::as_object)
+            else {
+                continue;
+            };
+            hook_declaring_talents += 1;
+            for phase in ["pre", "post"] {
+                if let Some(name) = hook.get(phase).and_then(serde_json::Value::as_str) {
+                    hooks.insert(name.to_owned());
+                }
+            }
+        }
+        (hooks, hook_declaring_talents)
+    }
+
+    fn check_hook_conformance(
+        configs: &[solstone_core_talent_config::TalentConfig],
+        bindings: &[HookBinding],
+    ) -> Result<HookCorpusCounts, HookConformanceError> {
+        let (declared, hook_declaring_talents) = declared_hooks(configs);
+        let table = bindings
+            .iter()
+            .map(|binding| binding.hook.to_owned())
+            .collect::<BTreeSet<_>>();
+        let missing_declared_hooks: Vec<_> = declared.difference(&table).cloned().collect();
+        let unreferenced_table_hooks: Vec<_> = table.difference(&declared).cloned().collect();
+        if !missing_declared_hooks.is_empty() || !unreferenced_table_hooks.is_empty() {
+            return Err(HookConformanceError {
+                missing_declared_hooks,
+                unreferenced_table_hooks,
+            });
+        }
+        let pre_post_entries = configs
+            .iter()
+            .filter_map(|config| config.metadata.get("hook"))
+            .filter_map(serde_json::Value::as_object)
+            .map(|hook| {
+                ["pre", "post"]
+                    .into_iter()
+                    .filter(|phase| {
+                        hook.get(*phase)
+                            .and_then(serde_json::Value::as_str)
+                            .is_some()
+                    })
+                    .count()
+            })
+            .sum();
+        Ok(HookCorpusCounts {
+            talents: configs.len(),
+            hook_declaring_talents,
+            pre_post_entries,
+            distinct_hooks: declared.len(),
+        })
+    }
+
+    fn shipped_configs() -> Vec<solstone_core_talent_config::TalentConfig> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("talent runtime crate is nested under the repository root");
+        solstone_core_talent_config::discover(
+            &root.join("solstone/talent"),
+            &root.join("solstone/apps"),
+        )
+        .expect("discover shipped talent corpus")
+    }
 
     #[test]
     fn criterion_9_hook_table_is_closed_and_story_is_one_stage() {
@@ -413,5 +504,55 @@ mod tests {
             &CHAT_CONTEXT
         ));
         assert!(resolve_hook("chat").is_none());
+    }
+
+    #[test]
+    fn criterion_9_hook_table_conforms_to_the_derived_shipped_corpus() {
+        let configs = shipped_configs();
+        let counts = check_hook_conformance(&configs, &HOOK_TABLE)
+            .expect("every shipped declaration is bound and every binding is shipped");
+        println!(
+            "derived corpus: {} talents, {} hook talents, {} pre/post entries, {} distinct hooks",
+            counts.talents,
+            counts.hook_declaring_talents,
+            counts.pre_post_entries,
+            counts.distinct_hooks,
+        );
+    }
+
+    #[test]
+    fn criterion_9_checker_rejects_a_removed_real_binding() {
+        let configs = shipped_configs();
+        let removed = HOOK_TABLE[0];
+        let bindings = HOOK_TABLE
+            .iter()
+            .copied()
+            .filter(|binding| binding.stage != removed.stage)
+            .collect::<Vec<_>>();
+        let error = check_hook_conformance(&configs, &bindings)
+            .expect_err("removing a real binding must reject the corpus");
+        assert!(
+            error
+                .missing_declared_hooks
+                .iter()
+                .any(|hook| hook == removed.hook)
+        );
+    }
+
+    #[test]
+    fn criterion_9_checker_rejects_a_fixture_unknown_hook() {
+        let root = tempfile::tempdir().unwrap();
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        fs::create_dir_all(&talent_root).unwrap();
+        fs::write(
+            talent_root.join("fixture.md"),
+            "{\n\"hook\": {\"pre\": \"fixture_unknown_hook\"}\n}\nfixture",
+        )
+        .unwrap();
+        let configs = solstone_core_talent_config::discover(&talent_root, &apps_root).unwrap();
+        let error = check_hook_conformance(&configs, &HOOK_TABLE)
+            .expect_err("an unknown fixture declaration must reject the corpus");
+        assert_eq!(error.missing_declared_hooks, ["fixture_unknown_hook"]);
     }
 }
