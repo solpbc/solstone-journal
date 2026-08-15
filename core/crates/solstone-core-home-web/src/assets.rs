@@ -160,32 +160,10 @@ mod tests {
         let (failed, _) = failed
             .split_once("function markedRows()")
             .expect("failed renderer end");
-        assert!(failed.contains("identity(row)"));
+        assert!(failed.contains("identity(identityText(row))"));
         assert!(failed.contains("copy(\"failed.badge\")"));
         assert!(failed.contains("copy(\"failed.body\""));
         assert!(!failed.contains("row.what") && !failed.contains("row.origin_"));
-
-        let (_, identity) = source
-            .split_once("function identity(row)")
-            .expect("identity renderer");
-        let (identity, _) = identity
-            .split_once("function markedRow(row)")
-            .expect("identity renderer end");
-        assert!(identity.contains("if (stream === null)"));
-        assert!(identity.contains("data-removal-identity>' + escapeHtml(row.day) + '</p>"));
-        assert!(identity.contains("copy(\"row.identity\", { date: row.day, stream: stream })"));
-
-        let (_, confirmation) = source
-            .split_once("function confirmationHtml()")
-            .expect("confirmation renderer");
-        let (confirmation, _) = confirmation
-            .split_once("function render()")
-            .expect("confirmation end");
-        assert!(confirmation.contains("selected.length === 1"));
-        assert!(confirmation.contains("copyWithoutDefaultStream : copy)(\"confirm.body_one\""));
-        assert!(confirmation.contains("copyWithoutDefaultStream"));
-        assert!(source.contains("COPY[key].replace(' · {stream}', '')"));
-        assert!(confirmation.contains("copy(\"confirm.body_many\""));
 
         let (_, outcomes) = source
             .split_once("function showOutcome")
@@ -199,6 +177,6 @@ mod tests {
         assert!(outcomes.contains("case 'tool.unavailable':"));
         assert!(outcomes.contains("case 'request.too_large':"));
         assert!(outcomes.contains("case 'approve.policy_keeps':"));
-        assert!(outcomes.contains("<ul>' + items + '</ul>"));
+        assert!(outcomes.contains("refusalList(items)"));
     }
 }

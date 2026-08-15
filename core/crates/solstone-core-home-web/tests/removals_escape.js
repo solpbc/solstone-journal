@@ -55,11 +55,44 @@ function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+async function boot(source, list, approval) {
+  const root = new Element();
+  const window = {
+    apiJson(url) {
+      if (url === '/app/home/api/removals') return Promise.resolve(list);
+      if (url === '/app/home/api/approve') return Promise.resolve(approval);
+      throw new Error(`unexpected URL: ${url}`);
+    }
+  };
+  const document = {
+    readyState: 'complete',
+    addEventListener() {},
+    createElement() { return new Element(); },
+    querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
+  };
+  window.window = window;
+  vm.runInNewContext(source, { document, Promise, setImmediate, window }, { filename: 'removals.js' });
+  await flush();
+  await flush();
+  const card = root.children[0];
+  assert(card, 'card mounted');
+  return card;
+}
+
+async function approve(card, markId) {
+  card.controls.find((control) => (
+    control.dataset.removalAction === 'approve' && control.dataset.markId === markId
+  )).click();
+  await flush();
+  card.controls.find((control) => control.dataset.removalAction === 'confirm').click();
+  await flush();
+  await flush();
+}
+
 async function main() {
   const manifestDir = process.argv[2];
   if (!manifestDir) throw new Error('manifest directory required');
   const source = fs.readFileSync(path.join(manifestDir, 'assets/removals.js'), 'utf8');
-  const root = new Element();
   const stream = '<img src=x onerror=stream>';
   const staged = 'chronicle/<img src=x onerror=staged>';
   const name = '<img src=x onerror=name>';
@@ -80,46 +113,68 @@ async function main() {
     stream,
     staged
   };
-  const list = { state: 'list.ready', removals: [marked, failed] };
-  const window = {
-    apiJson(url) {
-      if (url === '/app/home/api/removals') return Promise.resolve(list);
-      if (url === '/app/home/api/approve') {
-        return Promise.resolve({
-          state: 'approve.refused_after_start',
-          removed_count: 0,
-          not_removed_count: 1,
-          refusals: [{ state: 'refusal.item_named', name, reason: 'kept' }]
-        });
-      }
-      throw new Error(`unexpected URL: ${url}`);
+  const namedCard = await boot(
+    source,
+    { state: 'list.ready', removals: [marked, failed] },
+    {
+      state: 'approve.refused_after_start',
+      removed_count: 0,
+      not_removed_count: 1,
+      refusals: [{ state: 'refusal.item_named', name, reason: 'kept' }]
     }
-  };
-  const document = {
-    readyState: 'complete',
-    addEventListener() {},
-    createElement() { return new Element(); },
-    querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
-  };
-  window.window = window;
-  vm.runInNewContext(source, { document, Promise, setImmediate, window }, { filename: 'removals.js' });
-  await flush();
-  await flush();
+  );
+  assert(namedCard.innerHTML.includes('20260101 · &lt;img src=x onerror=stream&gt;'));
+  assert(namedCard.innerHTML.includes('aria-label="20260101 · &lt;img src=x onerror=stream&gt;"'));
+  await approve(namedCard, 'marked');
 
-  const card = root.children[0];
-  assert(card, 'card mounted');
-  card.controls.find((control) => control.dataset.removalAction === 'approve').click();
-  await flush();
-  card.controls.find((control) => control.dataset.removalAction === 'confirm').click();
-  await flush();
-  await flush();
-
-  const html = card.innerHTML;
+  const html = namedCard.innerHTML;
   for (const value of [stream, staged, name]) {
     assert(!html.includes(value), `raw journal value rendered: ${value}`);
     assert(html.includes(value.replace(/</g, '&lt;').replace(/>/g, '&gt;')), `escaped journal value missing: ${value}`);
   }
   assert(!html.includes('<img'), 'journal markup must not become live DOM');
+
+  const defaultRow = {
+    id: 'default',
+    state: 'marked',
+    origin: 'policy',
+    day: '20260102',
+    stream: '_default',
+    count: 2,
+    bytes: 2,
+    size: '2 B'
+  };
+  const defaultCard = await boot(
+    source,
+    { state: 'list.ready', removals: [defaultRow] },
+    { state: 'approve.refused_before_start', removed_count: 0, not_removed_count: 0, refusals: [] }
+  );
+  assert(defaultCard.innerHTML.includes('data-removal-identity>20260102</p>'));
+  assert(defaultCard.innerHTML.includes('aria-label="20260102"'));
+  assert(!defaultCard.innerHTML.includes('20260102 ·'));
+  assert(!defaultCard.innerHTML.includes('20260102  '));
+  assert(!defaultCard.innerHTML.includes('_default'));
+  defaultCard.controls.find((control) => (
+    control.dataset.removalAction === 'approve' && control.dataset.markId === 'default'
+  )).click();
+  await flush();
+  assert(defaultCard.innerHTML.includes(
+    "this deletes 2 originals from 20260102. nothing else goes with them. it can't be undone."
+  ));
+  assert(!defaultCard.innerHTML.includes('20260102 ·'));
+
+  const pendingCard = await boot(
+    source,
+    { state: 'list.ready', removals: [defaultRow] },
+    {
+      state: 'approve.refused_after_start',
+      removed_count: 0,
+      not_removed_count: 1,
+      refusals: [{ state: 'refusal.item_unnamed' }]
+    }
+  );
+  await approve(pendingCard, 'default');
+  assert(!pendingCard.innerHTML.includes('<ul>'));
 }
 
 main().catch((error) => {

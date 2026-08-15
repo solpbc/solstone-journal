@@ -98,14 +98,16 @@
     return typeof stream === 'string' ? stream : null;
   }
 
-  function identity(row) {
+  function identityText(row) {
     const stream = streamLabel(row.stream);
     if (stream === null) {
-      return '<p class="removals-card-identity" data-removal-identity>' + escapeHtml(row.day) + '</p>';
+      return escapeHtml(row.day);
     }
-    return '<p class="removals-card-identity" data-removal-identity>'
-      + copy("row.identity", { date: row.day, stream: stream })
-      + '</p>';
+    return copy("row.identity", { date: row.day, stream: stream });
+  }
+
+  function identity(text) {
+    return '<p class="removals-card-identity" data-removal-identity>' + text + '</p>';
   }
 
   function copyWithoutDefaultStream(key, values) {
@@ -115,12 +117,13 @@
   function markedRow(row) {
     const selected = selectedIds.has(row.id) ? ' checked' : '';
     const origin = row.origin === 'offload' ? "row.origin_offload" : "row.origin_policy";
+    const label = identityText(row);
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
-      + identity(row)
+      + identity(label)
       + '<p class="removals-card-origin">' + copy(origin) + '</p>'
       + '<p class="removals-card-what">' + copy("row.what", { n: row.count, size: row.size }) + '</p>'
       + '<p class="removals-card-kept">' + copy("row.kept") + '</p>'
-      + '<label><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + selected + '></label>'
+      + '<label><input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '" aria-label="' + label + '"' + selected + '></label>'
       + '<button type="button" data-removal-action="approve" data-mark-id="' + escapeHtml(row.id) + '">'
       + copy("row.delete")
       + '</button>'
@@ -132,7 +135,7 @@
 
   function failedRow(row) {
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
-      + identity(row)
+      + identity(identityText(row))
       + '<p class="removals-card-failed-badge">' + copy("failed.badge") + '</p>'
       + '<p class="removals-card-failed-body">'
       + copy("failed.body", { staged: row.staged })
@@ -214,16 +217,21 @@
 
   function refusalItems(response) {
     const items = Array.isArray(response.refusals) ? response.refusals : [];
-    return items.map(function (item) {
+    return items.reduce(function (rendered, item) {
       if (item.state === 'refusal.item_named') {
-        return '<li>' + copy("done.refused_item", { name: item.name, reason: item.reason }) + '</li>';
+        rendered.push('<li>' + copy("done.refused_item", { name: item.name, reason: item.reason }) + '</li>');
+        return rendered;
       }
       if (pending(item.state)) {
         // The unnamed fallback remains pending; never render a raw state code.
-        return '';
+        return rendered;
       }
-      return '';
-    }).join('');
+      return rendered;
+    }, []);
+  }
+
+  function refusalList(items) {
+    return items.length === 0 ? '' : '<ul>' + items.join('') + '</ul>';
   }
 
   function pending(state) {
@@ -246,10 +254,10 @@
         setOutcome('<p>' + copy("done.refused_none") + '</p>');
         break;
       case 'approve.refused_after_start':
-        setOutcome('<p>' + copy("done.refused_none") + '</p><ul>' + items + '</ul>');
+        setOutcome('<p>' + copy("done.refused_none") + '</p>' + refusalList(items));
         break;
       case 'approve.partial':
-        setOutcome('<p>' + copy("done.partial", { n: removed, m: notRemoved }) + '</p><ul>' + items + '</ul>');
+        setOutcome('<p>' + copy("done.partial", { n: removed, m: notRemoved }) + '</p>' + refusalList(items));
         break;
       case 'approve.deleted':
         setOutcome('<p>' + copy("done.deleted", { n: removed }) + '</p>');
