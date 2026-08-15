@@ -1,0 +1,4 @@
+The keypair, token and terms text in this directory are a freshly generated
+throwaway, committed so the native support portal client can prove it reads
+what an existing install already wrote. They authenticate to nothing and are
+not, and never were, associated with any account.
