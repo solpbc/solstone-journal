@@ -13,13 +13,14 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use solstone_core_retention::Target;
 use solstone_core_retention::marks::{
-    Failure, Proposal, RemovalClass, load, reconcile, record_failure,
+    Failure, MarkId, Proposal, RemovalClass, load, reconcile, record_failure,
 };
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -141,6 +142,55 @@ fn keys(body: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
+fn register_json(bed: &Bed) -> Value {
+    serde_json::to_value(load(bed.journal()).unwrap()).unwrap()
+}
+
+struct HeldLock {
+    child: Child,
+    ready: PathBuf,
+}
+
+impl Drop for HeldLock {
+    fn drop(&mut self) {
+        match self.child.kill() {
+            Ok(()) | Err(_) => {}
+        }
+        match self.child.wait() {
+            Ok(_) | Err(_) => {}
+        }
+        match fs::remove_file(&self.ready) {
+            Ok(()) | Err(_) => {}
+        }
+    }
+}
+
+fn hold_lock(path: &Path) -> HeldLock {
+    let file_name = path.file_name().unwrap().to_string_lossy();
+    let sidecar = path.with_file_name(format!("{file_name}.lock"));
+    let ready = sidecar.with_extension("held");
+    let mut child = Command::new("flock")
+        .args(["--exclusive", "--no-fork"])
+        .arg(&sidecar)
+        .args(["sh", "-c", "touch \"$1\"; exec sleep 60", "sh"])
+        .arg(&ready)
+        .spawn()
+        .unwrap();
+    for _attempt in 0..100 {
+        if ready.exists() {
+            return HeldLock { child, ready };
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    match child.kill() {
+        Ok(()) | Err(_) => {}
+    }
+    match child.wait() {
+        Ok(_) | Err(_) => {}
+    }
+    panic!("the test lock was not acquired");
+}
+
 fn make_day_unreadable(day: &Path) {
     fs::set_permissions(day, fs::Permissions::from_mode(0o000)).unwrap();
 }
@@ -186,12 +236,16 @@ fn mark_refuses_an_unavailable_chronicle_without_reconciling_the_register() {
 fn mark_is_non_destructive_and_keeps_marked_at_for_the_same_proposal() {
     let bed = Bed::new("mark-idempotent");
     let segment = bed.proven_segment(
-        "20260701",
+        "20260706",
         "field.audio",
         "070000_17",
-        "2026-07-01T00:00:00Z",
+        "2026-07-06T00:00:00Z",
     );
-    let policy = armed_policy();
+    let policy = json!({
+        "default_rule": {"anchor": "captured", "period": 7, "priority": 0},
+        "enabled": true,
+    })
+    .to_string();
     let first = bed.run(
         "mark",
         &[
@@ -210,11 +264,9 @@ fn mark_is_non_destructive_and_keeps_marked_at_for_the_same_proposal() {
     let mark = marks.values().next().unwrap();
     let marked_at = mark["marked_at"].clone();
     assert_eq!(first.status.code(), Some(0));
-    assert!(
-        mark["proposal"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("age_days")
+    assert_eq!(
+        mark["proposal"]["reason"],
+        "policy eligibility: Eligible { anchor: Captured, age_days: 30, period: Days(7) }"
     );
     assert_eq!(
         fs::read(segment.join("audio.flac")).unwrap(),
@@ -625,6 +677,8 @@ fn remove_marked_reproves_then_releases_the_named_policy_mark() {
         "070000_17",
         "2026-07-01T00:00:00Z",
     );
+    let untouched = b"leave this file unchanged";
+    fs::write(segment.join("notes.txt"), untouched).unwrap();
     let policy = armed_policy();
     let marked = bed.run(
         "mark",
@@ -669,8 +723,251 @@ fn remove_marked_reproves_then_releases_the_named_policy_mark() {
         BTreeSet::from(["detail", "index", "ok", "outcome", "verb"])
     );
     assert!(!segment.join("audio.flac").exists());
+    assert_eq!(fs::read(segment.join("notes.txt")).unwrap(), untouched);
     let listed = bed.run("marks", &["--journal", bed.journal().to_str().unwrap()]);
     assert_eq!(receipt(&listed)["marks"]["marks"], json!({}));
+}
+
+#[test]
+fn remove_marked_stops_at_a_locked_later_mark_without_losing_completed_rows() {
+    let bed = Bed::new("remove-marked-halt-later");
+    let first = Target {
+        day: "20260701".to_owned(),
+        ..target()
+    };
+    let second = Target {
+        day: "20260702".to_owned(),
+        ..target()
+    };
+    let first_segment = bed.proven_segment(
+        &first.day,
+        &first.stream,
+        &first.dir,
+        "2026-07-01T00:00:00Z",
+    );
+    let second_segment = bed.proven_segment(
+        &second.day,
+        &second.stream,
+        &second.dir,
+        "2026-07-01T00:00:00Z",
+    );
+    let first_proposal = proposal(vec!["audio.flac".to_owned()]);
+    let second_proposal = proposal(vec!["audio.flac".to_owned()]);
+    reconcile(
+        bed.journal(),
+        RemovalClass::PolicyRawRelease,
+        &[
+            (first.clone(), first_proposal.clone()),
+            (second.clone(), second_proposal.clone()),
+        ],
+        "first",
+    )
+    .unwrap();
+    let first_id = MarkId::derive(
+        RemovalClass::PolicyRawRelease,
+        &first,
+        &first_proposal.names,
+    );
+    let second_id = MarkId::derive(
+        RemovalClass::PolicyRawRelease,
+        &second,
+        &second_proposal.names,
+    );
+    let _held = hold_lock(&second_segment);
+    let policy = armed_policy();
+    let output = bed.run(
+        "remove-marked",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+            "--mark",
+            first_id.as_str(),
+            "--mark",
+            second_id.as_str(),
+        ],
+    );
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(4));
+    assert!(!first_segment.join("audio.flac").exists());
+    assert!(second_segment.join("audio.flac").exists());
+    assert_eq!(body["outcome"]["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(body["outcome"]["targets"][0]["target"]["day"], first.day);
+    assert_eq!(
+        body["outcome"]["halted"]["reason"],
+        format!(
+            "i couldn't start on the originals for {} because something else is using them. the rest of the removal list wasn't attempted (1 remaining).",
+            second_id.as_str()
+        )
+    );
+}
+
+#[test]
+fn remove_marked_reports_halted_before_start_when_the_first_mark_is_locked() {
+    let bed = Bed::new("remove-marked-halt-first");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let proposed = proposal(vec!["audio.flac".to_owned()]);
+    let marked = reconcile(
+        bed.journal(),
+        RemovalClass::PolicyRawRelease,
+        &[(target(), proposed.clone())],
+        "first",
+    )
+    .unwrap();
+    let id = marked.marks.keys().next().unwrap().as_str().to_owned();
+    let _held = hold_lock(&segment);
+    let policy = armed_policy();
+    let output = bed.run(
+        "remove-marked",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+            "--mark",
+            &id,
+        ],
+    );
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(4));
+    assert_eq!(body["outcome"]["targets"], json!([]));
+    assert_eq!(
+        body["outcome"]["halted"]["reason"],
+        format!(
+            "i couldn't start on the originals for {id} because something else is using them. the rest of the removal list wasn't attempted (1 remaining)."
+        )
+    );
+    assert!(segment.join("audio.flac").exists());
+}
+
+#[test]
+fn remove_marked_keeps_its_receipt_when_resolving_the_mark_fails() {
+    let bed = Bed::new("remove-marked-register-error");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let policy = armed_policy();
+    let marked = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    let id = receipt(&marked)["marks"]["marks"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let output = {
+        let _held = hold_lock(&bed.journal().join("health/retention-marks.json"));
+        bed.run(
+            "remove-marked",
+            &[
+                "--journal",
+                bed.journal().to_str().unwrap(),
+                "--today",
+                "2026-08-06",
+                "--now",
+                "2026-08-06T00:00:00Z",
+                "--policy",
+                &policy,
+                "--mark",
+                &id,
+            ],
+        )
+    };
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(!segment.join("audio.flac").exists());
+    assert_eq!(body["outcome"]["targets"].as_array().unwrap().len(), 1);
+    assert!(
+        body["detail"]["register_error"]
+            .as_str()
+            .unwrap()
+            .contains("removal register is busy")
+    );
+    assert!(
+        load(bed.journal())
+            .unwrap()
+            .marks
+            .contains_key(&MarkId::parse(&id).unwrap())
+    );
+}
+
+#[test]
+fn remove_marked_repeated_approval_leaves_the_first_removal_intact() {
+    let bed = Bed::new("remove-marked-repeat");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let policy = armed_policy();
+    let marked = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    let id = receipt(&marked)["marks"]["marks"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let args = [
+        "--journal",
+        bed.journal().to_str().unwrap(),
+        "--today",
+        "2026-08-06",
+        "--now",
+        "2026-08-06T00:00:00Z",
+        "--policy",
+        &policy,
+        "--mark",
+        &id,
+    ];
+    let first = bed.run("remove-marked", &args);
+    let second = bed.run("remove-marked", &args);
+    assert_eq!(first.status.code(), Some(0));
+    assert_eq!(second.status.code(), Some(3));
+    assert!(!segment.join("audio.flac").exists());
+    assert_eq!(receipt(&second)["outcome"], Value::Null);
 }
 
 #[test]
@@ -841,11 +1138,33 @@ fn remove_marked_reports_current_policy_and_processing_proof_refusals() {
         ],
     );
     assert_eq!(policy_refused.status.code(), Some(3));
-    assert!(
-        receipt(&policy_refused)["outcome"]["targets"][0]["not_removed"][0]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("KeptForever")
+    assert_eq!(
+        receipt(&policy_refused)["outcome"]["targets"][0]["not_removed"][0]["reason"],
+        "your retention settings keep these originals indefinitely."
+    );
+
+    let too_young =
+        json!({"default_rule":{"anchor":"captured","period":90,"priority":0},"enabled":true})
+            .to_string();
+    let too_young_refused = bed.run(
+        "remove-marked",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &too_young,
+            "--mark",
+            &id,
+        ],
+    );
+    assert_eq!(too_young_refused.status.code(), Some(3));
+    assert_eq!(
+        receipt(&too_young_refused)["outcome"]["targets"][0]["not_removed"][0]["reason"],
+        "your retention settings don't release these originals yet. they aren't old enough."
     );
 
     let proof_bed = Bed::new("proof-refusal");
@@ -898,6 +1217,46 @@ fn remove_marked_reports_current_policy_and_processing_proof_refusals() {
             .unwrap()
             .contains("audio.flac")
     );
+
+    let missing_anchor_bed = Bed::new("anchor-missing");
+    let missing_target = Target {
+        day: "not-a-day".to_owned(),
+        ..target()
+    };
+    missing_anchor_bed.proven_segment(
+        &missing_target.day,
+        &missing_target.stream,
+        &missing_target.dir,
+        "2026-07-01T00:00:00Z",
+    );
+    let register = reconcile(
+        missing_anchor_bed.journal(),
+        RemovalClass::PolicyRawRelease,
+        &[(missing_target, proposal(vec!["audio.flac".to_owned()]))],
+        "first",
+    )
+    .unwrap();
+    let missing_id = register.marks.keys().next().unwrap().as_str().to_owned();
+    let missing_anchor = missing_anchor_bed.run(
+        "remove-marked",
+        &[
+            "--journal",
+            missing_anchor_bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+            "--mark",
+            &missing_id,
+        ],
+    );
+    assert_eq!(missing_anchor.status.code(), Some(3));
+    assert_eq!(
+        receipt(&missing_anchor)["outcome"]["targets"][0]["not_removed"][0]["reason"],
+        "i don't have a record of when these originals are from, so i can't release them."
+    );
 }
 
 #[test]
@@ -949,15 +1308,29 @@ fn remove_marked_reports_freshly_proven_files_outside_the_approval() {
     assert_eq!(output.status.code(), Some(3));
     assert!(!segment.join("audio.flac").exists());
     assert!(segment.join("other.wav").exists());
+    assert_eq!(
+        body["outcome"]["targets"][0]["removed"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        body["outcome"]["targets"][0]["not_removed"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(
         body["outcome"]["targets"][0]["not_removed"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["reason"]
+                .any(|item| item["reason"]
                 .as_str()
                 .unwrap()
-                .contains("not named in this mark's proposal"))
+                == "this file was proven releasable but is not on the removal list, so it is left in place")
     );
 }
 
@@ -1008,9 +1381,214 @@ fn remove_marked_accounts_for_a_proposal_file_that_is_already_gone() {
             .unwrap()
             .iter()
             .any(|item| item["reason"]
-                == "this file was named in the proposal but is no longer present")
+                == "this file was on the removal list but is no longer present")
     );
     assert_eq!(load(bed.journal()).unwrap().marks, Default::default());
+}
+
+#[test]
+fn decline_drops_only_the_named_offload_mark_without_touching_media() {
+    let bed = Bed::new("decline");
+    let policy_segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let offload_target = Target {
+        day: "20260702".to_owned(),
+        ..target()
+    };
+    let offload_segment = bed.proven_segment(
+        &offload_target.day,
+        &offload_target.stream,
+        &offload_target.dir,
+        "2026-07-01T00:00:00Z",
+    );
+    let policy_proposal = proposal(vec!["audio.flac".to_owned()]);
+    let offload_proposal = proposal(vec!["audio.flac".to_owned()]);
+    reconcile(
+        bed.journal(),
+        RemovalClass::PolicyRawRelease,
+        &[(target(), policy_proposal.clone())],
+        "first",
+    )
+    .unwrap();
+    reconcile(
+        bed.journal(),
+        RemovalClass::OffloadRawRelease,
+        &[(offload_target.clone(), offload_proposal.clone())],
+        "first",
+    )
+    .unwrap();
+    let policy_id = MarkId::derive(
+        RemovalClass::PolicyRawRelease,
+        &target(),
+        &policy_proposal.names,
+    );
+    let offload_id = MarkId::derive(
+        RemovalClass::OffloadRawRelease,
+        &offload_target,
+        &offload_proposal.names,
+    );
+    let policy_bytes = fs::read(policy_segment.join("audio.flac")).unwrap();
+    let offload_bytes = fs::read(offload_segment.join("audio.flac")).unwrap();
+    let output = bed.run(
+        "decline",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--mark",
+            offload_id.as_str(),
+        ],
+    );
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(keys(&body), BTreeSet::from(["marks", "ok", "verb"]));
+    assert!(body["marks"]["marks"].get(policy_id.as_str()).is_some());
+    assert!(body["marks"]["marks"].get(offload_id.as_str()).is_none());
+    assert_eq!(
+        fs::read(policy_segment.join("audio.flac")).unwrap(),
+        policy_bytes
+    );
+    assert_eq!(
+        fs::read(offload_segment.join("audio.flac")).unwrap(),
+        offload_bytes
+    );
+}
+
+#[test]
+fn decline_refusals_leave_the_register_unchanged() {
+    let missing = Bed::new("decline-missing");
+    let missing_register = reconcile(
+        missing.journal(),
+        RemovalClass::PolicyRawRelease,
+        &[(target(), proposal(vec!["audio.flac".to_owned()]))],
+        "first",
+    )
+    .unwrap();
+    let missing_before = register_json(&missing);
+    let absent = "0000000000000000000000000000000000000000000000000000000000000000";
+    let missing_output = missing.run(
+        "decline",
+        &[
+            "--journal",
+            missing.journal().to_str().unwrap(),
+            "--mark",
+            absent,
+        ],
+    );
+    assert_eq!(missing_output.status.code(), Some(3));
+    assert_eq!(
+        keys(&receipt(&missing_output)),
+        BTreeSet::from(["error", "ok", "verb"])
+    );
+    assert_eq!(register_json(&missing), missing_before);
+
+    let not_required = Bed::new("decline-not-required");
+    let not_required_register = reconcile(
+        not_required.journal(),
+        RemovalClass::OwnerRawRelease,
+        &[(target(), proposal(vec!["audio.flac".to_owned()]))],
+        "first",
+    )
+    .unwrap();
+    let not_required_id = not_required_register
+        .marks
+        .keys()
+        .next()
+        .unwrap()
+        .as_str()
+        .to_owned();
+    let not_required_before = register_json(&not_required);
+    let not_required_output = not_required.run(
+        "decline",
+        &[
+            "--journal",
+            not_required.journal().to_str().unwrap(),
+            "--mark",
+            &not_required_id,
+        ],
+    );
+    assert_eq!(not_required_output.status.code(), Some(3));
+    assert_eq!(
+        keys(&receipt(&not_required_output)),
+        BTreeSet::from(["error", "ok", "verb"])
+    );
+    assert_eq!(register_json(&not_required), not_required_before);
+
+    let failed = Bed::new("decline-failed");
+    let failed_register = record_failure(
+        failed.journal(),
+        RemovalClass::PolicyRawRelease,
+        &target(),
+        &["audio.flac".to_owned()],
+        Failure {
+            at: "first".to_owned(),
+            reason: "needs recovery".to_owned(),
+            staged: Some("set-aside/segment".to_owned()),
+        },
+        "first",
+    )
+    .unwrap();
+    let failed_id = failed_register
+        .marks
+        .keys()
+        .next()
+        .unwrap()
+        .as_str()
+        .to_owned();
+    let failed_before = register_json(&failed);
+    let failed_output = failed.run(
+        "decline",
+        &[
+            "--journal",
+            failed.journal().to_str().unwrap(),
+            "--mark",
+            &failed_id,
+        ],
+    );
+    assert_eq!(failed_output.status.code(), Some(3));
+    assert_eq!(
+        keys(&receipt(&failed_output)),
+        BTreeSet::from(["error", "ok", "verb"])
+    );
+    assert_eq!(register_json(&failed), failed_before);
+
+    let duplicate = Bed::new("decline-duplicate");
+    let duplicate_register = reconcile(
+        duplicate.journal(),
+        RemovalClass::PolicyRawRelease,
+        &[(target(), proposal(vec!["audio.flac".to_owned()]))],
+        "first",
+    )
+    .unwrap();
+    let duplicate_id = duplicate_register
+        .marks
+        .keys()
+        .next()
+        .unwrap()
+        .as_str()
+        .to_owned();
+    let duplicate_before = register_json(&duplicate);
+    let duplicate_output = duplicate.run(
+        "decline",
+        &[
+            "--journal",
+            duplicate.journal().to_str().unwrap(),
+            "--mark",
+            &duplicate_id,
+            "--mark",
+            &duplicate_id,
+        ],
+    );
+    assert_eq!(duplicate_output.status.code(), Some(2));
+    assert_eq!(
+        keys(&receipt(&duplicate_output)),
+        BTreeSet::from(["error", "ok", "verb"])
+    );
+    assert_eq!(register_json(&duplicate), duplicate_before);
+    assert_eq!(missing_register.marks.len(), 1);
 }
 
 #[test]

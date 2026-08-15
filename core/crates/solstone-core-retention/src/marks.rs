@@ -188,6 +188,16 @@ pub struct Register {
     pub marks: BTreeMap<MarkId, Mark>,
 }
 
+/// Marks proven ready for a removal run before any target is attempted.
+#[derive(Clone, Debug)]
+pub struct PreflightMarks(Vec<(MarkId, Mark)>);
+
+impl PreflightMarks {
+    pub(crate) fn as_slice(&self) -> &[(MarkId, Mark)] {
+        &self.0
+    }
+}
+
 /// Construct and upsert an offload proposal after the caller has scanned and
 /// validated owner-media names. This is the importable half of the retention
 /// CLI's `mark-offload` body.
@@ -245,6 +255,48 @@ pub enum StoreError {
     Write(AtomicWriteError),
 }
 
+/// A reason a requested mark cannot be acted on before any target is attempted.
+#[derive(Debug)]
+pub enum PreflightRefusal {
+    Empty,
+    Duplicate,
+    Missing { id: MarkId },
+    NotRequired { id: MarkId },
+    Failed { id: MarkId },
+    Register(StoreError),
+}
+
+impl fmt::Display for PreflightRefusal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(formatter, "at least one --mark is required"),
+            Self::Duplicate => write!(formatter, "the same mark was named more than once"),
+            Self::Missing { id } => write!(
+                formatter,
+                "no mark named `{}` exists; run `marks` to see current marks — an id changes whenever its proposal's file list changes",
+                id.as_str()
+            ),
+            Self::NotRequired { id } => {
+                write!(
+                    formatter,
+                    "mark `{}` does not require approval",
+                    id.as_str()
+                )
+            }
+            Self::Failed { id } => {
+                write!(formatter, "mark `{}` has a recorded failure", id.as_str())
+            }
+            Self::Register(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl From<StoreError> for PreflightRefusal {
+    fn from(error: StoreError) -> Self {
+        Self::Register(error)
+    }
+}
+
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -297,6 +349,21 @@ impl Error for StoreError {
 /// Read the register without creating its directory or file.
 pub fn load(journal: &Path) -> Result<Register, StoreError> {
     load_path(&register_path(journal))
+}
+
+/// Validate named marks before a removal run reaches any target.
+pub fn preflight(journal: &Path, ids: &[MarkId]) -> Result<PreflightMarks, PreflightRefusal> {
+    let register = load(journal)?;
+    preflight_register(&register, ids)
+}
+
+/// Drop one pending approval after validating it while holding the register lock.
+pub fn decline(journal: &Path, id: &MarkId) -> Result<Register, PreflightRefusal> {
+    mutate(journal, |register| {
+        preflight_register(register, std::slice::from_ref(id))?;
+        register.marks.remove(id);
+        Ok(true)
+    })
 }
 
 /// Reconcile one class's marks with the current set of proposals.
@@ -495,26 +562,57 @@ fn index_proposals(
     Ok(indexed)
 }
 
-fn mutate<F>(journal: &Path, mutation: F) -> Result<Register, StoreError>
+fn preflight_register(
+    register: &Register,
+    ids: &[MarkId],
+) -> Result<PreflightMarks, PreflightRefusal> {
+    if ids.is_empty() {
+        return Err(PreflightRefusal::Empty);
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    if ids.iter().any(|id| !unique.insert(id.as_str())) {
+        return Err(PreflightRefusal::Duplicate);
+    }
+    let mut marks = Vec::new();
+    for id in ids {
+        let Some(mark) = register.marks.get(id) else {
+            return Err(PreflightRefusal::Missing { id: id.clone() });
+        };
+        if mark.class.axes().1 != Approval::Required {
+            return Err(PreflightRefusal::NotRequired { id: id.clone() });
+        }
+        if matches!(mark.state, MarkState::Failed(_)) {
+            return Err(PreflightRefusal::Failed { id: id.clone() });
+        }
+        marks.push((id.clone(), mark.clone()));
+    }
+    Ok(PreflightMarks(marks))
+}
+
+fn mutate<F, E>(journal: &Path, mutation: F) -> Result<Register, E>
 where
-    F: FnOnce(&mut Register) -> Result<bool, StoreError>,
+    F: FnOnce(&mut Register) -> Result<bool, E>,
+    E: From<StoreError>,
 {
     mutate_with_options(journal, register_lock_options(), mutation)
 }
 
-fn mutate_with_options<F>(
+fn mutate_with_options<F, E>(
     journal: &Path,
     options: LockOptions,
     mutation: F,
-) -> Result<Register, StoreError>
+) -> Result<Register, E>
 where
-    F: FnOnce(&mut Register) -> Result<bool, StoreError>,
+    F: FnOnce(&mut Register) -> Result<bool, E>,
+    E: From<StoreError>,
 {
     let path = register_path(journal);
-    let _lock = hold_lock(&path, options).map_err(StoreError::Lock)?;
-    let mut register = load_path(&path)?;
+    let _lock = hold_lock(&path, options)
+        .map_err(StoreError::Lock)
+        .map_err(E::from)?;
+    let mut register = load_path(&path).map_err(E::from)?;
     if mutation(&mut register)? {
-        validate(&register)?;
+        validate(&register).map_err(E::from)?;
         write_json(
             &path,
             &register,
@@ -523,7 +621,8 @@ where
                 ..JsonWriteOptions::default()
             },
         )
-        .map_err(StoreError::Write)?;
+        .map_err(StoreError::Write)
+        .map_err(E::from)?;
     }
     Ok(register)
 }
@@ -626,6 +725,19 @@ mod tests {
         }
     }
 
+    fn mark(class: RemovalClass, state: MarkState) -> Mark {
+        let target = target("20260805", "field.audio", "070000_17");
+        let proposal = proposal("current");
+        Mark {
+            id: MarkId::derive(class, &target, &proposal.names),
+            class,
+            target,
+            marked_at: "first".to_owned(),
+            proposal,
+            state,
+        }
+    }
+
     #[test]
     fn every_class_has_its_declared_axes() {
         for (class, expected_initiator, expected_approval, expected_material) in [
@@ -662,6 +774,68 @@ mod tests {
             assert_eq!(approval, expected_approval, "{class:?} approval mismatch");
             assert_eq!(material, expected_material, "{class:?} material mismatch");
         }
+    }
+
+    #[test]
+    fn preflight_refuses_every_non_executable_mark_shape() {
+        let required = mark(RemovalClass::PolicyRawRelease, MarkState::Marked);
+        let missing = MarkId::derive(
+            RemovalClass::PolicyRawRelease,
+            &target("20260806", "field.audio", "070000_17"),
+            &proposal("current").names,
+        );
+        let mut register = Register::empty();
+        register.marks.insert(required.id.clone(), required.clone());
+
+        assert!(matches!(
+            preflight_register(&register, &[]),
+            Err(PreflightRefusal::Empty)
+        ));
+        assert!(matches!(
+            preflight_register(&register, &[required.id.clone(), required.id.clone()]),
+            Err(PreflightRefusal::Duplicate)
+        ));
+        assert!(matches!(
+            preflight_register(&register, std::slice::from_ref(&missing)),
+            Err(PreflightRefusal::Missing { .. })
+        ));
+        assert_eq!(
+            preflight_register(&register, std::slice::from_ref(&required.id))
+                .unwrap()
+                .as_slice()
+                .len(),
+            1
+        );
+
+        let not_required = mark(RemovalClass::OwnerRawRelease, MarkState::Marked);
+        let mut not_required_register = Register::empty();
+        not_required_register
+            .marks
+            .insert(not_required.id.clone(), not_required.clone());
+        assert!(matches!(
+            preflight_register(
+                &not_required_register,
+                std::slice::from_ref(&not_required.id)
+            ),
+            Err(PreflightRefusal::NotRequired { .. })
+        ));
+
+        let failed = mark(
+            RemovalClass::PolicyRawRelease,
+            MarkState::Failed(Failure {
+                at: "first".to_owned(),
+                reason: "needs recovery".to_owned(),
+                staged: Some("set-aside".to_owned()),
+            }),
+        );
+        let mut failed_register = Register::empty();
+        failed_register
+            .marks
+            .insert(failed.id.clone(), failed.clone());
+        assert!(matches!(
+            preflight_register(&failed_register, std::slice::from_ref(&failed.id)),
+            Err(PreflightRefusal::Failed { .. })
+        ));
     }
 
     #[test]

@@ -492,6 +492,7 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use serde_json::{Map, Value, json};
     use solstone_core_retention::Target;
+    use solstone_core_retention::marks::load;
     use solstone_core_retention::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 
     struct Host;
@@ -602,9 +603,9 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         write_config(
             journal.path(),
-            json!({"retention": {"raw_media": "days", "raw_media_days": 1}}),
+            json!({"retention": {"raw_media": "days", "raw_media_days": 7}}),
         );
-        write_proven_segment(journal.path(), "20260228", "first.audio", "070000_17");
+        write_proven_segment(journal.path(), "20260130", "first.audio", "070000_17");
         let host = Host;
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
@@ -617,10 +618,21 @@ mod tests {
                 .stdout
                 .starts_with("mark-raw: new items: 1.\n  standing total: 1.")
         );
+        assert_eq!(
+            load(journal.path())
+                .unwrap()
+                .marks
+                .values()
+                .next()
+                .unwrap()
+                .proposal
+                .reason,
+            "policy eligibility: Eligible { anchor: Captured, age_days: 30, period: Days(7) }"
+        );
         let first_id = mark_ids_from_output(&first.stdout).pop().unwrap();
 
         // A second stream becomes eligible after the first register reconciliation.
-        write_proven_segment(journal.path(), "20260228", "second.audio", "070000_17");
+        write_proven_segment(journal.path(), "20260130", "second.audio", "070000_17");
         let second = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(second.exit_code, 0);
         assert!(

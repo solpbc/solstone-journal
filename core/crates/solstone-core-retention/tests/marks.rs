@@ -19,8 +19,8 @@ use serde_json::json;
 use solstone_core_journal_io::{LockOptions, hold_lock};
 use solstone_core_retention::Target;
 use solstone_core_retention::marks::{
-    Failure, MarkId, MarkState, Proposal, Register, RemovalClass, StoreError, load, reconcile,
-    reconcile_recovered, record_failure, resolve, upsert,
+    Failure, MarkId, MarkState, PreflightRefusal, Proposal, Register, RemovalClass, StoreError,
+    load, preflight, reconcile, reconcile_recovered, record_failure, resolve, upsert,
 };
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -93,6 +93,14 @@ fn malformed_register_is_not_treated_as_empty() {
     fs::create_dir_all(register.parent().unwrap()).unwrap();
     fs::write(register, b"{not json").unwrap();
     assert!(matches!(load(bed.path()), Err(StoreError::Malformed(_))));
+    let id = mark_id(
+        RemovalClass::PolicyRawRelease,
+        &target("20260805", "field.audio", "070000_17"),
+    );
+    assert!(matches!(
+        preflight(bed.path(), &[id]),
+        Err(PreflightRefusal::Register(StoreError::Malformed(_)))
+    ));
 }
 
 #[test]
