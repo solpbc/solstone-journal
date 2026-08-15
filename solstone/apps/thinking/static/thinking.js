@@ -20,6 +20,22 @@
     byoCustomCheckedModel: '',
     byoModelResolutionTargets: [],
     pendingSwitchTarget: '',
+    runsNavigationGeneration: 0,
+    runsRouteKey: '',
+    runsRequestGenerations: {day: 0, run: 0, prompt: 0, output: 0, identity: 0},
+    runsInFlight: {day: null, run: null, prompt: null, output: null, identity: null},
+    runsCache: {
+      day: new Map(),
+      run: new Map(),
+      prompt: new Map(),
+      output: new Map(),
+      identity: null,
+    },
+    runsFacet: '',
+    runsFacetExplicit: false,
+    runsDay: null,
+    runsDetail: null,
+    runsModalFocus: null,
   };
   let copy = {};
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
@@ -859,6 +875,784 @@
   function viewFromHash() {
     const hash = window.location.hash.replace(/^#/, '');
     return views.has(hash) ? hash : 'main';
+  }
+
+  function encodeThinkingSegment(value) {
+    return encodeURIComponent(value);
+  }
+
+  function decodeThinkingSegment(value) {
+    try {
+      return decodeURIComponent(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function todayThinkingDay() {
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  function thinkingRunsHash(route) {
+    if (route.kind === 'run-id') {
+      return `#runs/run/${encodeThinkingSegment(route.useId)}`;
+    }
+    const parts = ['#runs', route.day];
+    if (route.talent) parts.push(encodeThinkingSegment(route.talent));
+    if (route.useId) parts.push(encodeThinkingSegment(route.useId));
+    return parts.join('/');
+  }
+
+  function parseThinkingHash() {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (hash === 'identity') return {kind: 'identity', key: 'identity'};
+    if (!hash.startsWith('runs')) return null;
+    const parts = hash.split('/');
+    if (parts[0] !== 'runs') return null;
+    if (parts.length === 1) return {kind: 'runs-root', key: 'runs-root'};
+    if (parts[1] === 'run') {
+      if (parts.length !== 3 || !parts[2]) return {kind: 'runs-invalid', key: 'runs-invalid'};
+      const useId = decodeThinkingSegment(parts[2]);
+      return useId ? {kind: 'run-id', useId, key: `run:${useId}`} : {kind: 'runs-invalid', key: 'runs-invalid'};
+    }
+    if (parts.length < 2 || parts.length > 4 || !/^\d{8}$/.test(parts[1])) {
+      return {kind: 'runs-invalid', key: 'runs-invalid'};
+    }
+    const decoded = parts.slice(2).map(decodeThinkingSegment);
+    if (decoded.some((part) => !part)) return {kind: 'runs-invalid', key: 'runs-invalid'};
+    const [talent = '', useId = ''] = decoded;
+    if (useId && !talent) return {kind: 'runs-invalid', key: 'runs-invalid'};
+    return {
+      kind: 'runs',
+      day: parts[1],
+      talent,
+      useId,
+      key: `runs:${parts[1]}:${talent}:${useId}`,
+    };
+  }
+
+  function replaceThinkingHash(hash) {
+    if (window.location.hash !== hash) {
+      window.history.replaceState(null, '', hash);
+    }
+  }
+
+  function setThinkingRoute(route) {
+    if (state.runsRouteKey !== route.key) {
+      state.runsRouteKey = route.key;
+      state.runsNavigationGeneration += 1;
+    }
+  }
+
+  function thinkingCacheKey(kind, values = {}) {
+    if (kind === 'day') return `day:${values.day}:facet:${values.facet || ''}`;
+    if (kind === 'run') return `run:${values.useId}`;
+    if (kind === 'prompt') return `prompt:${values.talent}`;
+    if (kind === 'output') return `output:${values.day}:${values.file}`;
+    return 'identity';
+  }
+
+  function beginThinkingRequest(kind) {
+    const requestGeneration = (state.runsRequestGenerations[kind] || 0) + 1;
+    state.runsRequestGenerations[kind] = requestGeneration;
+    const token = {
+      kind,
+      navigationGeneration: state.runsNavigationGeneration,
+      requestGeneration,
+      hash: window.location.hash,
+      selectionKey: currentRunsSelectionKey(),
+    };
+    state.runsInFlight[kind] = token;
+    return token;
+  }
+
+  function isCurrentThinkingRequest(token) {
+    return token.navigationGeneration === state.runsNavigationGeneration
+      && token.requestGeneration === state.runsRequestGenerations[token.kind]
+      && token.hash === window.location.hash
+      && token.selectionKey === currentRunsSelectionKey();
+  }
+
+  function readThinkingCache(kind, key) {
+    if (kind === 'identity') return state.runsCache.identity;
+    return state.runsCache[kind].get(key) || null;
+  }
+
+  function writeThinkingCache(kind, key, value, token) {
+    if (!isCurrentThinkingRequest(token)) return false;
+    if (kind === 'identity') {
+      state.runsCache.identity = value;
+    } else {
+      state.runsCache[kind].set(key, value);
+    }
+    return true;
+  }
+
+  async function loadThinkingRequest(kind, key, load, renderReady, renderFailed) {
+    const token = beginThinkingRequest(kind);
+    try {
+      const value = await load();
+      if (!isCurrentThinkingRequest(token)) return;
+      if (!writeThinkingCache(kind, key, value, token) || !isCurrentThinkingRequest(token)) return;
+      renderReady(value);
+    } catch (err) {
+      if (isCurrentThinkingRequest(token)) renderFailed(err);
+    } finally {
+      if (isCurrentThinkingRequest(token)) state.runsInFlight[kind] = null;
+    }
+  }
+
+  function setThinkingStatus(id, message) {
+    const status = $(id);
+    if (!status) return;
+    status.textContent = message || '';
+    status.hidden = !message;
+  }
+
+  function identityDisplayState(payload) {
+    const agent = payload?.agent || {};
+    const identity = payload?.identity || {};
+    if (agent.name_status === 'default') return 'default';
+    if (!agent.name && !agent.name_status && !identity.name) return 'uninitialized';
+    return 'customized';
+  }
+
+  function renderIdentityLoading() {
+    const content = $('thinkingIdentityContent');
+    if (content) content.replaceChildren();
+    setThinkingStatus('thinkingIdentityStatus', 'loading identity…');
+  }
+
+  function renderIdentity(payload) {
+    const content = $('thinkingIdentityContent');
+    if (!content) return;
+    const agent = payload?.agent || {};
+    const identity = payload?.identity || {};
+    content.replaceChildren();
+    content.dataset.state = identityDisplayState(payload);
+    const details = document.createElement('dl');
+    details.className = 'thinking-runs-identity-details';
+    for (const [label, value] of [
+      ['name', agent.name || 'not set'],
+      ['naming status', agent.name_status || 'not set'],
+      ['you', identity.name || 'not set'],
+    ]) {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const description = document.createElement('dd');
+      description.textContent = value;
+      details.append(term, description);
+    }
+    content.appendChild(details);
+    setThinkingStatus('thinkingIdentityStatus', '');
+  }
+
+  function renderIdentityFailure(err) {
+    window.logError?.(err, {context: 'thinking identity load'});
+    const content = $('thinkingIdentityContent');
+    if (!content) return;
+    content.replaceChildren();
+    const detail = document.createElement('p');
+    detail.textContent = "identity details aren't available right now.";
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'thinking-runs-retry';
+    retry.textContent = 'try again';
+    retry.addEventListener('click', () => loadIdentity());
+    content.append(detail, retry);
+    setThinkingStatus('thinkingIdentityStatus', "couldn't load identity");
+  }
+
+  function loadIdentity() {
+    const key = thinkingCacheKey('identity');
+    const cached = readThinkingCache('identity', key);
+    if (cached) {
+      const token = beginThinkingRequest('identity');
+      if (isCurrentThinkingRequest(token)) renderIdentity(cached);
+      if (isCurrentThinkingRequest(token)) state.runsInFlight.identity = null;
+      return Promise.resolve();
+    }
+    renderIdentityLoading();
+    return loadThinkingRequest(
+      'identity',
+      key,
+      () => window.apiJson('/app/thinking/api/identity'),
+      renderIdentity,
+      renderIdentityFailure,
+    );
+  }
+
+  function runContextFromRecord(route, record) {
+    const day = record?.day;
+    const talent = record?.name;
+    const useId = record?.id || route.useId;
+    if (!/^\d{8}$/.test(day || '') || !talent || !useId) return route;
+    const contextual = {kind: 'runs', day, talent, useId, key: `runs:${day}:${talent}:${useId}`};
+    if (route.day !== day || route.talent !== talent || route.useId !== useId || route.kind === 'run-id') {
+      replaceThinkingHash(thinkingRunsHash(contextual));
+    }
+    return contextual;
+  }
+
+  function thinkingPanelHeading(tabId) {
+    if (tabId === 'thinkingRunsTab') return $('thinkingRunsHeading');
+    if (tabId === 'thinkingIdentityTab') return $('thinkingIdentityHeading');
+    return $('thinkingHeading');
+  }
+
+  function activateThinkingTab(tabId, origin, tablistId, headingId = '') {
+    const tablist = $(tablistId);
+    const tab = $(tabId);
+    if (!tab) return;
+    const tabs = tablist?.querySelectorAll('[role="tab"]') || [];
+    tabs.forEach((candidate) => {
+      const selected = candidate === tab;
+      candidate.setAttribute('aria-selected', String(selected));
+      candidate.tabIndex = selected ? 0 : -1;
+    });
+    if (origin === 'pointer' || origin === 'keyboard') {
+      tab.focus();
+      return;
+    }
+    if ((origin === 'reload' || origin === 'history') && !tablist?.contains(document.activeElement)) {
+      (headingId ? $(headingId) : thinkingPanelHeading(tabId))?.focus({preventScroll: true});
+    }
+  }
+
+  function activateThinkingSectionTab(tabId, origin) {
+    activateThinkingTab(tabId, origin, 'thinkingSectionTabs');
+  }
+
+  function showThinkingSection(section, route, origin) {
+    setThinkingRoute(route);
+    document.querySelectorAll('#providers [data-view]').forEach((view) => {
+      view.hidden = true;
+    });
+    document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
+      panel.hidden = panel.dataset.thinkingSection !== section;
+    });
+    const tabId = section === 'runs' ? 'thinkingRunsTab' : 'thinkingIdentityTab';
+    activateThinkingSectionTab(tabId, origin);
+    if (section === 'identity') loadIdentity();
+    if (section === 'runs') {
+      if (route.kind === 'runs') loadThinkingRuns(route);
+      if (route.useId) loadThinkingRun(route);
+    }
+  }
+
+  function navigateThinkingSection(section, origin) {
+    const hash = section === 'setup' ? '#main' : (section === 'runs' ? '#runs' : '#identity');
+    if (window.location.hash !== hash) window.history.pushState(null, '', hash);
+    routeThinkingHash(origin);
+  }
+
+  function showThinkingSetup(origin) {
+    setThinkingRoute({key: 'setup'});
+    document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
+      panel.hidden = true;
+    });
+    showView(viewFromHash(), {replace: true});
+    activateThinkingSectionTab('thinkingSetupTab', origin);
+  }
+
+  function routeThinkingHash(origin = 'history') {
+    const hash = window.location.hash;
+    if (!hash) {
+      replaceThinkingHash('#main');
+      showThinkingSetup(origin);
+      return;
+    }
+    const route = parseThinkingHash();
+    if (route?.kind === 'identity') {
+      showThinkingSection('identity', route, origin);
+      return;
+    }
+    if (route?.kind === 'runs-root') {
+      const canonical = {kind: 'runs', day: todayThinkingDay(), talent: '', useId: '', key: ''};
+      canonical.key = `runs:${canonical.day}::`;
+      replaceThinkingHash(thinkingRunsHash(canonical));
+      showThinkingSection('runs', canonical, origin);
+      return;
+    }
+    if (route?.kind === 'runs-invalid') {
+      const canonical = {kind: 'runs', day: todayThinkingDay(), talent: '', useId: '', key: ''};
+      canonical.key = `runs:${canonical.day}::`;
+      replaceThinkingHash(thinkingRunsHash(canonical));
+      showThinkingSection('runs', canonical, origin);
+      setThinkingStatus('thinkingRunsStatus', "that talent run isn't available.");
+      return;
+    }
+    if (route?.kind === 'runs' || route?.kind === 'run-id') {
+      showThinkingSection('runs', route, origin);
+      setThinkingStatus('thinkingRunsStatus', '');
+      return;
+    }
+    showThinkingSetup(origin);
+  }
+
+  function bindThinkingTablist(tablistId, activate) {
+    const thinkingTabs = Array.from($(tablistId)?.querySelectorAll('[role="tab"]') || [])
+      .filter((tab) => !tab.hidden);
+    thinkingTabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activate(tab, 'pointer'));
+      tab.addEventListener('keydown', (event) => {
+        let nextIndex = index;
+        if (event.key === 'ArrowLeft') nextIndex = (index + thinkingTabs.length - 1) % thinkingTabs.length;
+        else if (event.key === 'ArrowRight') nextIndex = (index + 1) % thinkingTabs.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = thinkingTabs.length - 1;
+        else return;
+        event.preventDefault();
+        activate(thinkingTabs[nextIndex], 'keyboard');
+      });
+    });
+  }
+
+  function bindThinkingSectionTabs() {
+    const thinkingSectionForTab = (tab) => ({
+      thinkingSetupTab: 'setup',
+      thinkingRunsTab: 'runs',
+      thinkingIdentityTab: 'identity',
+    })[tab.id];
+    bindThinkingTablist('thinkingSectionTabs', (tab, origin) => {
+      navigateThinkingSection(thinkingSectionForTab(tab), origin);
+    });
+  }
+
+  function runsDayInputValue(day) {
+    return `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`;
+  }
+
+  function runsDayFromInput(value) {
+    const day = String(value || '').replace(/-/g, '');
+    return /^\d{8}$/.test(day) ? day : '';
+  }
+
+  function shiftThinkingDay(day, amount) {
+    const value = new Date(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8)) + amount);
+    return `${value.getFullYear()}${String(value.getMonth() + 1).padStart(2, '0')}${String(value.getDate()).padStart(2, '0')}`;
+  }
+
+  function currentRunsSelectionKey() {
+    return `${state.runsRouteKey}:facet:${state.runsFacetExplicit ? state.runsFacet : 'cookie'}`;
+  }
+
+  function setRunsFacet(value, explicit) {
+    const next = value || '';
+    if (state.runsFacet !== next || state.runsFacetExplicit !== explicit) {
+      state.runsFacet = next;
+      state.runsFacetExplicit = explicit;
+      state.runsNavigationGeneration += 1;
+    }
+  }
+
+  function thinkingRunStatus(run) {
+    if (run.status === 'running') return 'running';
+    return run.failed ? 'failed' : 'completed';
+  }
+
+  function thinkingRunFacts(run) {
+    return [
+      ['time', run.start],
+      ['model', run.model],
+      ['provider', run.provider],
+      ['runtime', run.runtime_seconds],
+      ['thinking events', run.thinking_count],
+      ['tool calls', run.tool_count],
+      ['cost', run.cost],
+      ['facet', run.facet],
+    ].filter(([, value]) => value !== null && value !== undefined && value !== '');
+  }
+
+  function appendThinkingRunFacts(host, run) {
+    thinkingRunFacts(run).forEach(([label, value]) => {
+      const item = document.createElement('span');
+      item.textContent = `${label}: ${value}`;
+      host.appendChild(item);
+    });
+  }
+
+  function normalizedThinkingRuns(payload) {
+    return Array.isArray(payload?.uses) ? payload.uses.map((run) => ({
+      id: run.id,
+      name: run.name,
+      start: run.start,
+      status: run.status,
+      failed: run.failed === true,
+      model: run.model,
+      provider: run.provider,
+      runtime_seconds: run.runtime_seconds,
+      thinking_count: run.thinking_count,
+      tool_count: run.tool_count,
+      cost: run.cost,
+      facet: run.facet,
+      output_file: run.output_file,
+    })).filter((run) => run.id && run.name) : [];
+  }
+
+  function renderThinkingRunsSummary(runs) {
+    const summary = $('thinkingRunsSummary');
+    if (!summary) return;
+    summary.replaceChildren();
+    const failed = runs.filter((run) => run.failed).length;
+    const cost = runs.reduce((total, run) => total + (typeof run.cost === 'number' ? run.cost : 0), 0);
+    if (failed) {
+      const item = document.createElement('span');
+      item.textContent = `failed: ${failed}`;
+      summary.appendChild(item);
+    }
+    if (cost) {
+      const item = document.createElement('span');
+      item.textContent = `cost: ${cost}`;
+      summary.appendChild(item);
+    }
+  }
+
+  function thinkingRunControl(run) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'thinking-runs-run-control';
+    button.textContent = 'run log';
+    button.addEventListener('click', () => navigateThinkingRun(run));
+    return button;
+  }
+
+  function renderThinkingRunList(host, runs) {
+    const table = document.createElement('table');
+    table.className = 'thinking-runs-table';
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const label of ['time', 'model', 'provider', 'runtime', 'thinking events', 'tool calls', 'cost', 'facet', 'output', 'prompt']) {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = label;
+      headRow.appendChild(cell);
+    }
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement('tbody');
+    runs.forEach((run) => {
+      const row = document.createElement('tr');
+      for (const value of [run.start, run.model, run.provider, run.runtime_seconds, run.thinking_count, run.tool_count, run.cost, run.facet]) {
+        const cell = document.createElement('td');
+        if (value !== null && value !== undefined && value !== '') cell.textContent = value;
+        row.appendChild(cell);
+      }
+      const output = document.createElement('td');
+      if (run.output_file) output.textContent = 'output';
+      row.appendChild(output);
+      const prompt = document.createElement('td');
+      prompt.appendChild(thinkingRunControl(run));
+      row.appendChild(prompt);
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    host.appendChild(table);
+    const cards = document.createElement('div');
+    cards.className = 'thinking-runs-cards';
+    runs.forEach((run) => {
+      const card = document.createElement('article');
+      card.className = 'thinking-runs-card';
+      const heading = document.createElement('h4');
+      heading.textContent = run.name;
+      card.appendChild(heading);
+      appendThinkingRunFacts(card, run);
+      card.appendChild(thinkingRunControl(run));
+      cards.appendChild(card);
+    });
+    host.appendChild(cards);
+  }
+
+  function renderThinkingRunsDay(payload, route) {
+    state.runsDay = payload;
+    const runs = normalizedThinkingRuns(payload);
+    const date = $('thinkingRunsDate');
+    if (date) date.value = runsDayInputValue(route.day);
+    const facet = $('thinkingRunsFacet');
+    if (facet) {
+      facet.replaceChildren();
+      const all = document.createElement('option');
+      all.value = '';
+      all.textContent = 'all';
+      facet.appendChild(all);
+      (Array.isArray(payload?.facets) ? payload.facets : []).forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.name || item;
+        option.textContent = item.title || item.name || item;
+        facet.appendChild(option);
+      });
+      facet.value = state.runsFacet;
+    }
+    const host = $('thinkingRunsContent');
+    if (!host) return;
+    host.replaceChildren();
+    $('thinkingRunsDetail').hidden = !route.useId;
+    renderThinkingRunsSummary(runs);
+    if (!runs.length) {
+      const heading = document.createElement('p');
+      heading.textContent = 'no talent runs on this day';
+      const detail = document.createElement('p');
+      detail.textContent = 'talent runs will appear here after they finish.';
+      host.append(heading, detail);
+      return;
+    }
+    const groups = new Map();
+    runs.forEach((run) => groups.set(run.name, [...(groups.get(run.name) || []), run]));
+    groups.forEach((group, name) => {
+      const section = document.createElement('section');
+      const heading = document.createElement('h3');
+      heading.textContent = name;
+      section.appendChild(heading);
+      renderThinkingRunList(section, group);
+      host.appendChild(section);
+    });
+  }
+
+  function renderThinkingRunsLoading() {
+    const host = $('thinkingRunsContent');
+    if (!host) return;
+    host.replaceChildren();
+    const message = document.createElement('p');
+    message.textContent = 'loading talent runs…';
+    host.appendChild(message);
+  }
+
+  function renderThinkingRunsFailure() {
+    const host = $('thinkingRunsContent');
+    if (!host) return;
+    host.replaceChildren();
+    const message = document.createElement('p');
+    message.textContent = "couldn't load talent runs";
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'thinking-runs-retry';
+    retry.textContent = 'try again';
+    retry.addEventListener('click', () => loadThinkingRuns(parseThinkingHash(), true));
+    host.append(message, retry);
+  }
+
+  function renderThinkingUpdatedDays(days) {
+    const host = $('thinkingRunsUpdated');
+    if (!host) return;
+    host.replaceChildren();
+    (Array.isArray(days) ? days : []).forEach((day) => {
+      const link = document.createElement('a');
+      link.href = thinkingRunsHash({kind: 'runs', day, talent: '', useId: ''});
+      link.textContent = day;
+      host.appendChild(link);
+    });
+  }
+
+  function loadThinkingUpdatedDays(route) {
+    const token = beginThinkingRequest('day');
+    window.apiJson('/app/thinking/api/updated-days').then((days) => {
+      if (isCurrentThinkingRequest(token)) renderThinkingUpdatedDays(days);
+    }).catch(() => {
+      if (isCurrentThinkingRequest(token)) setThinkingStatus('thinkingRunsStatus', "some run details aren't available right now.");
+    }).finally(() => {
+      if (isCurrentThinkingRequest(token)) state.runsInFlight.day = null;
+    });
+  }
+
+  function thinkingDayUrl(route) {
+    const path = `/app/thinking/api/talents/${route.day}`;
+    return state.runsFacetExplicit ? `${path}?facet=${encodeURIComponent(state.runsFacet)}` : path;
+  }
+
+  function loadThinkingRuns(route, force = false) {
+    if (!route || route.kind !== 'runs') return;
+    const key = thinkingCacheKey('day', {day: route.day, facet: state.runsFacetExplicit ? state.runsFacet : ''});
+    const cached = readThinkingCache('day', key);
+    if (cached && !force) {
+      renderThinkingRunsDay(cached, route);
+      loadThinkingUpdatedDays(route);
+      return;
+    }
+    renderThinkingRunsLoading();
+    loadThinkingRequest(
+      'day',
+      key,
+      () => window.apiJson(thinkingDayUrl(route)),
+      (payload) => {
+        renderThinkingRunsDay(payload, route);
+        loadThinkingUpdatedDays(route);
+      },
+      renderThinkingRunsFailure,
+    );
+  }
+
+  function navigateThinkingRun(run) {
+    const route = parseThinkingHash();
+    if (!route?.day) return;
+    const next = {kind: 'runs', day: route.day, talent: run.name, useId: run.id, key: `runs:${route.day}:${run.name}:${run.id}`};
+    window.history.pushState(null, '', thinkingRunsHash(next));
+    routeThinkingHash('pointer');
+  }
+
+  function renderThinkingRunLog(run) {
+    const panel = $('thinkingRunsLogPanel');
+    if (!panel) return;
+    panel.replaceChildren();
+    if (run.status === 'running') {
+      const progress = document.createElement('p');
+      progress.textContent = 'this run is still in progress.';
+      const check = document.createElement('p');
+      check.textContent = 'check back soon.';
+      panel.append(progress, check);
+      return;
+    }
+    (Array.isArray(run.events) ? run.events : []).forEach((event) => {
+      const item = document.createElement('div');
+      const fields = [['thinking', event.thinking], ['tools', event.tools], ['args', event.args], ['result', event.result], ['error', event.error]];
+      fields.forEach(([label, value]) => {
+        if (value === null || value === undefined || value === '') return;
+        const fact = document.createElement('p');
+        fact.textContent = `${label}: ${typeof value === 'string' ? value : JSON.stringify(value)}`;
+        item.appendChild(fact);
+      });
+      if (!item.children.length) {
+        const incomplete = document.createElement('p');
+        incomplete.textContent = event.event === 'tool_start' ? 'tool call did not complete' : 'did not complete';
+        item.appendChild(incomplete);
+      }
+      panel.appendChild(item);
+    });
+  }
+
+  function renderThinkingRunDetail(run, route) {
+    state.runsDetail = run;
+    const detail = $('thinkingRunsDetail');
+    if (detail) detail.hidden = false;
+    setText('thinkingRunsDetailHeading', run.name || route.talent || '');
+    const facts = $('thinkingRunsDetailFacts');
+    if (facts) {
+      facts.replaceChildren();
+      appendThinkingRunFacts(facts, run);
+    }
+    const output = $('thinkingRunsOutputTab');
+    if (output) output.hidden = !run.output_file;
+    renderThinkingRunLog(run);
+    activateThinkingRunDetailTab('thinkingRunsLogTab', 'history');
+  }
+
+  function renderThinkingRunFailure() {
+    const panel = $('thinkingRunsLogPanel');
+    if (!panel) return;
+    panel.replaceChildren();
+    const message = document.createElement('p');
+    message.textContent = "couldn't load that run";
+    panel.appendChild(message);
+  }
+
+  function loadThinkingRun(route, force = false) {
+    if (!route?.useId) return;
+    const key = thinkingCacheKey('run', {useId: route.useId});
+    const cached = readThinkingCache('run', key);
+    if (cached && !force) {
+      const contextual = runContextFromRecord(route, cached);
+      renderThinkingRunDetail(cached, contextual);
+      return;
+    }
+    const detail = $('thinkingRunsDetail');
+    if (detail) detail.hidden = false;
+    setText('thinkingRunsDetailHeading', route.talent || '');
+    const panel = $('thinkingRunsLogPanel');
+    if (panel) panel.textContent = 'loading run details…';
+    loadThinkingRequest(
+      'run',
+      key,
+      () => window.apiJson(`/app/thinking/api/run/${encodeThinkingSegment(route.useId)}`),
+      (run) => {
+        const contextual = runContextFromRecord(route, run);
+        setThinkingRoute(contextual);
+        renderThinkingRunDetail(run, contextual);
+        if (contextual.day) loadThinkingRuns(contextual);
+      },
+      renderThinkingRunFailure,
+    );
+  }
+
+  function activateThinkingRunDetailTab(tabId, origin) {
+    const output = tabId === 'thinkingRunsOutputTab';
+    $('thinkingRunsLogPanel').hidden = output;
+    $('thinkingRunsOutputPanel').hidden = !output;
+    activateThinkingTab(tabId, origin, 'thinkingRunsDetailTabs', 'thinkingRunsDetailHeading');
+    if (output) loadThinkingOutput();
+  }
+
+  function loadThinkingOutput() {
+    const run = state.runsDetail;
+    if (!run?.output_file || !run.day) return;
+    const key = thinkingCacheKey('output', {day: run.day, file: run.output_file});
+    const cached = readThinkingCache('output', key);
+    const panel = $('thinkingRunsOutputPanel');
+    if (cached) {
+      panel.textContent = cached.content || '';
+      return;
+    }
+    panel.textContent = 'loading output…';
+    const encoded = String(run.output_file).split('/').map(encodeThinkingSegment).join('/');
+    loadThinkingRequest(
+      'output', key,
+      () => window.apiJson(`/app/thinking/api/output/${run.day}/${encoded}`),
+      (payload) => { panel.textContent = payload.content || ''; },
+      () => { panel.textContent = "couldn't load that output"; },
+    );
+  }
+
+  function openThinkingPrompt() {
+    const run = state.runsDetail;
+    if (!run?.name) return;
+    const modal = $('thinkingRunsPromptModal');
+    state.runsModalFocus = document.activeElement;
+    modal.hidden = false;
+    const content = $('thinkingRunsPromptContent');
+    content.textContent = 'loading run log…';
+    const key = thinkingCacheKey('prompt', {talent: run.name});
+    const cached = readThinkingCache('prompt', key);
+    if (cached) {
+      content.textContent = cached.content || '';
+      return;
+    }
+    loadThinkingRequest(
+      'prompt', key,
+      () => window.apiJson(`/app/thinking/api/preview/${encodeThinkingSegment(run.name)}`),
+      (payload) => { content.textContent = payload.content || ''; },
+      () => { content.textContent = "couldn't load that prompt"; },
+    );
+  }
+
+  function closeThinkingPrompt() {
+    $('thinkingRunsPromptModal').hidden = true;
+    state.runsModalFocus?.focus();
+  }
+
+  function bindThinkingRuns() {
+    bindThinkingTablist('thinkingRunsDetailTabs', (tab, origin) => {
+      activateThinkingRunDetailTab(tab.id, origin);
+    });
+    $('thinkingRunsPrevious')?.addEventListener('click', () => navigateThinkingRunsDay(-1));
+    $('thinkingRunsNext')?.addEventListener('click', () => navigateThinkingRunsDay(1));
+    $('thinkingRunsDate')?.addEventListener('change', (event) => navigateThinkingRunsDay(0, runsDayFromInput(event.target.value)));
+    $('thinkingRunsFacet')?.addEventListener('change', (event) => {
+      setRunsFacet(event.target.value, true);
+      const expires = new Date();
+      expires.setFullYear(expires.getFullYear() + 1);
+      document.cookie = `selectedFacet=${state.runsFacet}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+      const route = parseThinkingHash();
+      if (route?.kind === 'runs') loadThinkingRuns(route, true);
+    });
+    $('thinkingRunsPrompt')?.addEventListener('click', openThinkingPrompt);
+    $('thinkingRunsPromptClose')?.addEventListener('click', closeThinkingPrompt);
+  }
+
+  function navigateThinkingRunsDay(amount, requestedDay = '') {
+    const route = parseThinkingHash();
+    const day = requestedDay || shiftThinkingDay(route?.day || todayThinkingDay(), amount);
+    const next = {kind: 'runs', day, talent: '', useId: '', key: `runs:${day}::`};
+    window.history.pushState(null, '', thinkingRunsHash(next));
+    routeThinkingHash('pointer');
   }
 
   function providerLabel(provider) {
@@ -2568,16 +3362,18 @@
     $('localEndpointSave')?.addEventListener('click', () => saveLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
     $('localEndpointClear')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localEndpointStatus', err.message, 'error')));
     $('localEndpointClearFromLocal')?.addEventListener('click', () => clearLocalEndpoint().catch((err) => setMessage('localSetupMessage', err.message, 'error')));
-    window.addEventListener('hashchange', () => showView(viewFromHash(), {replace: true}));
+    window.addEventListener('hashchange', () => routeThinkingHash('history'));
   }
 
   async function init() {
     const loaded = await loadInitialState();
     if (!loaded) return;
     bind();
+    bindThinkingSectionTabs();
+    bindThinkingRuns();
     setSelectedByoProvider(defaultByoProvider());
     renderAll();
-    showView(viewFromHash(), {replace: true});
+    routeThinkingHash('reload');
     try {
       await refreshLocalModels();
       await refreshInstallStatus({autoResume: true});

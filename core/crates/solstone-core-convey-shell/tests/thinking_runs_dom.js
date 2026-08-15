@@ -1,0 +1,483 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+const nodeAssert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+let executedCases = 0;
+let passedCases = 0;
+function recordCase(assertion) {
+  executedCases += 1;
+  const result = assertion();
+  passedCases += 1;
+  return result;
+}
+const assert = new Proxy(nodeAssert, {
+  apply(target, thisArg, args) {
+    return recordCase(() => Reflect.apply(target, thisArg, args));
+  },
+  get(target, property) {
+    const value = Reflect.get(target, property);
+    if (typeof value !== 'function') return value;
+    return (...args) => recordCase(() => Reflect.apply(value, target, args));
+  },
+});
+
+class Element {
+  constructor(id = '', dataset = {}) {
+    this.id = id;
+    this.dataset = {...dataset};
+    this.hidden = false;
+    this.tabIndex = 0;
+    this.textContent = '';
+    this.className = '';
+    this.children = [];
+    this.listeners = {};
+    this.attributes = {};
+    this.style = {};
+    this.parent = null;
+  }
+
+  append(...children) {
+    children.forEach((child) => this.appendChild(child));
+  }
+
+  appendChild(child) {
+    child.parent = this;
+    this.children.push(child);
+    return child;
+  }
+
+  replaceChildren(...children) {
+    this.children = [];
+    this.append(...children);
+  }
+
+  addEventListener(name, listener) {
+    (this.listeners[name] ||= []).push(listener);
+  }
+
+  emit(name, event = {}) {
+    for (const listener of this.listeners[name] || []) listener({
+      preventDefault() {},
+      stopPropagation() {},
+      target: this,
+      ...event,
+    });
+  }
+
+  focus() {
+    this.focused = true;
+    this.document.activeElement = this;
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+
+  removeAttribute(name) {
+    delete this.attributes[name];
+  }
+
+  getAttribute(name) {
+    return this.attributes[name] || null;
+  }
+
+  contains(node) {
+    return node === this || this.children.some((child) => child.contains(node));
+  }
+
+  querySelectorAll(selector) {
+    if (selector === '[role="tab"]') return this.children.filter((child) => child.attributes.role === 'tab');
+    return [];
+  }
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return {promise, resolve, reject};
+}
+
+function settle() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function main() {
+  const manifestDir = process.argv[2];
+  if (!manifestDir) throw new Error('manifest directory required');
+  let source = fs.readFileSync(path.join(manifestDir, 'assets/thinking/thinking.js'), 'utf8');
+  source = source.replace(
+    '  init();\n})();',
+    `  window.__thinkingRuns = {
+    state,
+    bind,
+    bindThinkingSectionTabs,
+    bindThinkingRuns,
+    routeThinkingHash,
+    parseThinkingHash,
+    thinkingRunsHash,
+    activateThinkingSectionTab,
+    runContextFromRecord,
+    renderIdentityLoading,
+    renderIdentity,
+    renderIdentityFailure,
+    loadThinkingRuns,
+    loadThinkingRun,
+    loadThinkingOutput,
+    openThinkingPrompt,
+    navigateThinkingRunsDay,
+  };
+})();`,
+  );
+
+  const nodes = new Map();
+  const document = {
+    activeElement: null,
+    getElementById(id) { return nodes.get(id) || null; },
+    createElement() {
+      const node = new Element();
+      node.document = document;
+      return node;
+    },
+    querySelectorAll(selector) {
+      if (selector === '#providers [data-view]') return views;
+      if (selector === '[data-thinking-section]') return panels;
+      return [];
+    },
+  };
+  const make = (id, dataset = {}) => {
+    const node = new Element(id, dataset);
+    node.document = document;
+    nodes.set(id, node);
+    return node;
+  };
+  const tablist = make('thinkingSectionTabs');
+  const setupTab = make('thinkingSetupTab');
+  const runsTab = make('thinkingRunsTab');
+  const identityTab = make('thinkingIdentityTab');
+  for (const tab of [setupTab, runsTab, identityTab]) {
+    tab.setAttribute('role', 'tab');
+    tablist.appendChild(tab);
+  }
+  const setupPanel = make('thinkingSetupPanel');
+  const runsPanel = make('thinkingRunsPanel', {thinkingSection: 'runs'});
+  const identityPanel = make('thinkingIdentityPanel', {thinkingSection: 'identity'});
+  const panels = [runsPanel, identityPanel];
+  const views = [
+    setupPanel,
+    make('thinkingByoSetup', {view: 'byo-setup'}),
+    make('thinkingConfidentialSetup', {view: 'confidential-setup'}),
+    make('thinkingLocalSetup', {view: 'local-setup'}),
+    make('thinkingLaneSwitch', {view: 'lane-switch'}),
+  ];
+  setupPanel.dataset.view = 'main';
+  make('thinkingHeading');
+  make('thinkingRunsHeading');
+  make('thinkingIdentityHeading');
+  make('thinkingRunsStatus');
+  make('thinkingRunsDate');
+  make('thinkingRunsPrevious');
+  make('thinkingRunsNext');
+  make('thinkingRunsFacet');
+  make('thinkingRunsUpdated');
+  make('thinkingRunsSummary');
+  make('thinkingRunsContent');
+  make('thinkingRunsDetail');
+  make('thinkingRunsDetailHeading');
+  make('thinkingRunsDetailFacts');
+  make('thinkingRunsPrompt');
+  const detailTabs = make('thinkingRunsDetailTabs');
+  const logTab = make('thinkingRunsLogTab');
+  const outputTab = make('thinkingRunsOutputTab');
+  for (const tab of [logTab, outputTab]) {
+    tab.setAttribute('role', 'tab');
+    detailTabs.appendChild(tab);
+  }
+  make('thinkingRunsLogPanel');
+  make('thinkingRunsOutputPanel');
+  make('thinkingRunsPromptModal');
+  make('thinkingRunsPromptClose');
+  make('thinkingRunsPromptContent');
+  make('thinkingIdentityStatus');
+  make('thinkingIdentityContent');
+
+  let identityResponse = deferred();
+  const requests = [];
+  const dayResponses = [];
+  const runResponses = [];
+  const promptResponses = [];
+  const outputResponses = [];
+  const updatedResponses = [];
+  const hashListeners = [];
+  const window = {
+    location: {hash: ''},
+    history: {
+      pushed: [],
+      replaced: [],
+      pushState(_state, _title, hash) {
+        this.pushed.push(hash);
+        window.location.hash = hash;
+      },
+      replaceState(_state, _title, hash) {
+        this.replaced.push(hash);
+        window.location.hash = hash;
+      },
+    },
+    addEventListener(name, listener) {
+      if (name === 'hashchange') hashListeners.push(listener);
+    },
+    apiJson(url) {
+      requests.push(url);
+      if (url === '/app/thinking/api/identity') return identityResponse.promise;
+      if (url.startsWith('/app/thinking/api/talents/')) return dayResponses.shift() || Promise.resolve({uses: [], facets: []});
+      if (url === '/app/thinking/api/updated-days') return updatedResponses.shift() || Promise.resolve([]);
+      if (url.startsWith('/app/thinking/api/run/')) return runResponses.shift() || Promise.resolve({id: 'use-id', name: 'talent', day: '20260815', events: []});
+      if (url.startsWith('/app/thinking/api/preview/')) return promptResponses.shift() || Promise.resolve({content: ''});
+      if (url.startsWith('/app/thinking/api/output/')) return outputResponses.shift() || Promise.resolve({content: ''});
+      throw new Error(`unexpected URL: ${url}`);
+    },
+    logError() {},
+  };
+  window.window = window;
+  const context = {
+    window,
+    document,
+    console,
+    Date,
+    Map,
+    Set,
+    Promise,
+    fetch() { throw new Error('unexpected fetch'); },
+    setTimeout,
+    clearTimeout,
+  };
+  vm.runInNewContext(source, context, {filename: 'thinking.js'});
+  const thinking = window.__thinkingRuns;
+  assert(thinking, 'test exports present');
+  thinking.bind();
+  thinking.bindThinkingSectionTabs();
+  thinking.bindThinkingRuns();
+
+  const setupHashes = ['#main', '#byo-setup', '#confidential-setup', '#local-setup', '#lane-switch'];
+  for (const hash of setupHashes) {
+    thinking.state.pendingSwitchTarget = hash === '#lane-switch' ? 'byo' : '';
+    window.location.hash = hash;
+    thinking.routeThinkingHash('history');
+    assert.strictEqual(window.location.hash, hash, `setup hash preserved: ${hash}`);
+    assert.strictEqual(setupTab.attributes['aria-selected'], 'true', `setup tab selected: ${hash}`);
+  }
+
+  window.location.hash = '';
+  thinking.routeThinkingHash('reload');
+  assert.strictEqual(window.location.hash, '#main', 'absent hash canonicalizes to main');
+
+  window.location.hash = '#runs';
+  thinking.routeThinkingHash('history');
+  assert.match(window.location.hash, /^#runs\/\d{8}$/, 'runs root canonicalizes to today');
+  assert.strictEqual(runsPanel.hidden, false, 'runs panel shown');
+  assert.strictEqual(runsTab.attributes['aria-selected'], 'true', 'runs tab selected');
+
+  for (const hash of [
+    '#runs/20260815',
+    '#runs/20260815/talent',
+    '#runs/20260815/talent/use-id',
+    '#runs/run/use-id',
+  ]) {
+    window.location.hash = hash;
+    thinking.routeThinkingHash('history');
+    assert.strictEqual(window.location.hash, hash, `well-formed hash remains contextual: ${hash}`);
+    assert.strictEqual(runsPanel.hidden, false, `runs panel remains visible: ${hash}`);
+  }
+
+  const encoded = thinking.thinkingRunsHash({
+    kind: 'runs', day: '20260815', talent: 'talent/with #', useId: 'use/id?#', key: 'encoded',
+  });
+  window.location.hash = encoded;
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(thinking.parseThinkingHash())),
+    {kind: 'runs', day: '20260815', talent: 'talent/with #', useId: 'use/id?#', key: 'runs:20260815:talent/with #:use/id?#'},
+    'dynamic hash segments round-trip independently',
+  );
+
+  window.location.hash = '#runs/not-a-day';
+  thinking.routeThinkingHash('history');
+  assert.match(window.location.hash, /^#runs\/\d{8}$/, 'invalid runs hash canonicalizes to today');
+  assert.strictEqual(nodes.get('thinkingRunsStatus').textContent, "that talent run isn't available.");
+
+  const contextual = thinking.runContextFromRecord(
+    {kind: 'run-id', useId: 'old', key: 'run:old'},
+    {id: 'actual/id', day: '20260815', name: 'talent/name'},
+  );
+  assert.strictEqual(contextual.day, '20260815');
+  assert.strictEqual(window.location.hash, '#runs/20260815/talent%2Fname/actual%2Fid', 'record provenance wins');
+
+  document.activeElement = new Element('outside');
+  document.activeElement.document = document;
+  window.location.hash = '#identity';
+  thinking.routeThinkingHash('history');
+  assert.strictEqual(identityPanel.hidden, false, 'identity panel shown');
+  assert.strictEqual(nodes.get('thinkingIdentityHeading').focused, true, 'history focuses panel heading from outside tabs');
+  assert.strictEqual(nodes.get('thinkingIdentityStatus').textContent, 'loading identity…');
+
+  window.location.hash = '#runs/20260815';
+  thinking.routeThinkingHash('history');
+  identityResponse.resolve({agent: {name: 'stale', name_status: 'chosen'}, identity: {name: 'stale'}});
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsCache.identity, null, 'stale identity response is not cached');
+  assert.strictEqual(nodes.get('thinkingIdentityContent').children.length, 0, 'stale identity response is not rendered');
+
+  thinking.renderIdentityLoading();
+  assert.strictEqual(nodes.get('thinkingIdentityStatus').textContent, 'loading identity…');
+  thinking.renderIdentity({agent: {name: 'sol', name_status: 'default'}, identity: {name: 'you'}});
+  assert.strictEqual(nodes.get('thinkingIdentityContent').dataset.state, 'default');
+  thinking.renderIdentity({agent: {}, identity: {}});
+  assert.strictEqual(nodes.get('thinkingIdentityContent').dataset.state, 'uninitialized');
+  thinking.renderIdentity({agent: {name: 'aria', name_status: 'chosen'}, identity: {name: 'you'}});
+  assert.strictEqual(nodes.get('thinkingIdentityContent').dataset.state, 'customized');
+  thinking.renderIdentityFailure(new Error('failed'));
+  assert.strictEqual(nodes.get('thinkingIdentityStatus').textContent, "couldn't load identity");
+
+  runsTab.emit('keydown', {key: 'End'});
+  assert.strictEqual(window.location.hash, '#identity', 'End activates final tab');
+  assert.strictEqual(document.activeElement, identityTab, 'keyboard activation keeps focus on selected tab');
+  identityTab.emit('keydown', {key: 'ArrowLeft'});
+  assert.match(window.location.hash, /^#runs\/\d{8}$/, 'arrow activation enters runs');
+  assert.strictEqual(document.activeElement, runsTab, 'arrow activation keeps focus on selected tab');
+  setupTab.emit('click');
+  assert.strictEqual(window.location.hash, '#main', 'pointer activation pushes setup');
+  assert.strictEqual(document.activeElement, setupTab, 'pointer activation keeps focus on selected tab');
+
+  setupTab.focus();
+  nodes.get('thinkingRunsHeading').focused = false;
+  window.location.hash = '#runs/20260815';
+  hashListeners.forEach((listener) => listener());
+  assert.strictEqual(nodes.get('thinkingRunsHeading').focused, false, 'history keeps tablist focus intact');
+
+  thinking.state.runsFacet = '';
+  thinking.state.runsFacetExplicit = false;
+  const firstDayRequest = requests.length;
+  window.location.hash = '#runs/20260101';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(requests[firstDayRequest], '/app/thinking/api/talents/20260101', 'first day request leaves facet to the cookie');
+  const facetControl = nodes.get('thinkingRunsFacet');
+  facetControl.value = 'work';
+  facetControl.emit('change');
+  await settle();
+  assert.strictEqual(document.cookie.includes('selectedFacet=work'), true, 'explicit facet persists selectedFacet cookie');
+  assert(requests.includes('/app/thinking/api/talents/20260101?facet=work'), 'explicit facet is sent after selection');
+
+  thinking.navigateThinkingRunsDay(1);
+  assert.strictEqual(window.location.hash, '#runs/20260102', 'next day updates the hash');
+  thinking.navigateThinkingRunsDay(-1);
+  assert.strictEqual(window.location.hash, '#runs/20260101', 'previous day updates the hash');
+
+  const dayFailure = deferred();
+  dayResponses.push(dayFailure.promise);
+  window.location.hash = '#runs/20260103';
+  thinking.routeThinkingHash('history');
+  dayFailure.reject(new Error('day failure'));
+  await settle();
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsContent').children[0].textContent, "couldn't load talent runs", 'day failure replaces only the Runs body');
+  const retry = nodes.get('thinkingRunsContent').children[1];
+  retry.emit('click');
+  await settle();
+  assert(requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260103')).length >= 2, 'retry starts a new day request');
+
+  const runFailure = deferred();
+  runResponses.push(runFailure.promise);
+  window.location.hash = '#runs/20260103/talent/missing';
+  thinking.routeThinkingHash('history');
+  runFailure.reject(new Error('run failure'));
+  await settle();
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, "couldn't load that run", 'run failure remains inside detail context');
+
+  const first = deferred();
+  const second = deferred();
+  dayResponses.push(first.promise, second.promise);
+  window.location.hash = '#runs/20260104';
+  thinking.routeThinkingHash('history');
+  window.location.hash = '#runs/20260105';
+  thinking.routeThinkingHash('history');
+  second.resolve({uses: [{id: 'new', name: 'talent'}], facets: []});
+  await settle();
+  first.resolve({uses: [{id: 'old', name: 'talent'}], facets: []});
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsCache.day.has('day:20260104:facet:work'), false, 'stale day response is not cached');
+  assert.strictEqual(thinking.state.runsCache.day.has('day:20260105:facet:work'), true, 'current day response is cached');
+
+  const firstRun = deferred();
+  const secondRun = deferred();
+  runResponses.push(firstRun.promise, secondRun.promise);
+  window.location.hash = '#runs/20260106/talent/first';
+  thinking.routeThinkingHash('history');
+  window.location.hash = '#runs/20260107/talent/second';
+  thinking.routeThinkingHash('history');
+  secondRun.resolve({id: 'second', day: '20260107', name: 'talent', events: []});
+  await settle();
+  firstRun.resolve({id: 'first', day: '20260106', name: 'talent', events: []});
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsCache.run.has('run:first'), false, 'stale run response is not cached');
+  assert.strictEqual(thinking.state.runsCache.run.has('run:second'), true, 'current run response is cached');
+
+  const firstPrompt = deferred();
+  const secondPrompt = deferred();
+  promptResponses.push(firstPrompt.promise, secondPrompt.promise);
+  window.location.hash = '#runs/20260107/first%20prompt/second';
+  thinking.routeThinkingHash('history');
+  await settle();
+  thinking.state.runsDetail = {name: 'first prompt'};
+  thinking.openThinkingPrompt();
+  window.location.hash = '#runs/20260107/second%20prompt/second';
+  thinking.routeThinkingHash('history');
+  await settle();
+  thinking.state.runsDetail = {name: 'second prompt'};
+  thinking.openThinkingPrompt();
+  secondPrompt.resolve({content: 'current prompt'});
+  await settle();
+  firstPrompt.resolve({content: 'stale prompt'});
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsCache.prompt.has('prompt:first prompt'), false, 'stale prompt response is not cached');
+  assert.strictEqual(thinking.state.runsCache.prompt.get('prompt:second prompt').content, 'current prompt', 'current prompt response is cached');
+
+  const firstOutput = deferred();
+  const secondOutput = deferred();
+  outputResponses.push(firstOutput.promise, secondOutput.promise);
+  window.location.hash = '#runs/20260107/talent/second';
+  thinking.routeThinkingHash('history');
+  await settle();
+  thinking.state.runsDetail = {day: '20260107', output_file: 'first.txt'};
+  thinking.loadThinkingOutput();
+  window.location.hash = '#runs/20260108/talent/second';
+  thinking.routeThinkingHash('history');
+  await settle();
+  thinking.state.runsDetail = {day: '20260108', output_file: 'second.txt'};
+  thinking.loadThinkingOutput();
+  secondOutput.resolve({content: 'current output'});
+  await settle();
+  firstOutput.resolve({content: 'stale output'});
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsCache.output.has('output:20260107:first.txt'), false, 'stale output response is not cached');
+  assert.strictEqual(thinking.state.runsCache.output.get('output:20260108:second.txt').content, 'current output', 'current output response is cached');
+  console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
+}
+
+main().catch((error) => {
+  console.error(error.stack || error);
+  process.exitCode = 1;
+});

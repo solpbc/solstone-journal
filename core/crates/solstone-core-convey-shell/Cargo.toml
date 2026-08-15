@@ -29,6 +29,14 @@ path = "tests/restart_protocol.rs"
 name = "thinking_sol_reads"
 path = "tests/thinking_sol_reads.rs"
 
+[[test]]
+name = "thinking_runs_contracts"
+path = "tests/thinking_runs_contracts.rs"
+
+[[test]]
+name = "thinking_runs_dom"
+path = "tests/thinking_runs_dom.rs"
+
 [lints]
 workspace = true
 
