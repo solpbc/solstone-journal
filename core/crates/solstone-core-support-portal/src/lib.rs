@@ -22,7 +22,7 @@ pub use canonical::{
     CANONICAL_NAMESPACE, canonical_fingerprint, canonicalize_operation, derive_child_action_id,
     operation_key, principal_tag,
 };
-pub use client::PortalClient;
+pub use client::{PortalClient, PortalOperationError, is_enabled, portal_url_from_settings};
 pub use diagnostics::{
     PlatformInfo, bounded_redacted_text, collect_all, collect_brain_health, collect_config,
     collect_platform, collect_recent_errors, collect_revision, collect_services, is_secret_key,

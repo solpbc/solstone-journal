@@ -16,10 +16,6 @@ use crate::errors::PortalClientError;
 use crate::keypair::{Keypair, save_keypair};
 use crate::token::{create_access_token, sign_tos};
 
-#[allow(
-    dead_code,
-    reason = "W1c resolves the production portal URL through this helper."
-)]
 const DEFAULT_PORTAL_URL: &str = "https://support.solstone.app";
 
 /// The complete response needed for TOS classification, diagnostics, and text fetches.
@@ -173,11 +169,9 @@ fn transport_error(error: impl std::fmt::Display) -> PortalClientError {
     }
 }
 
-#[allow(dead_code, reason = "W1c supplies multipart attachment streams.")]
 pub(crate) trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek + ?Sized> ReadSeek for T {}
 
-#[allow(dead_code, reason = "W1c supplies multipart attachment streams.")]
 pub(crate) struct MultipartInput<'a> {
     pub(crate) name: String,
     pub(crate) filename: String,
@@ -186,7 +180,6 @@ pub(crate) struct MultipartInput<'a> {
 }
 
 #[derive(Clone)]
-#[allow(dead_code, reason = "W1c supplies multipart attachment streams.")]
 pub(crate) struct MultipartPart {
     pub(crate) name: String,
     pub(crate) filename: String,
@@ -222,6 +215,23 @@ impl PortalClient {
             anonymous,
             Box::new(UreqPortalTransport::new()),
             Box::new(ProductionRuntime),
+        )
+    }
+
+    /// Construct a client using the support settings rooted at one journal.
+    pub fn from_journal_settings(
+        journal_root: &Path,
+        portal_url: Option<&str>,
+        anonymous: bool,
+    ) -> Result<Self, PortalClientError> {
+        let portal_url = portal_url
+            .map(|url| url.trim_end_matches('/').to_owned())
+            .unwrap_or_else(|| portal_url_from_settings(journal_root));
+        Self::new(
+            portal_url,
+            journal_root.join("apps/support/portal"),
+            None,
+            anonymous,
         )
     }
 
@@ -351,7 +361,6 @@ impl PortalClient {
         Ok(())
     }
 
-    #[allow(dead_code, reason = "W1c derives its durable ledger principal here.")]
     pub(crate) fn principal(&mut self) -> Result<String, PortalClientError> {
         // This apparent derivation may create RSA-4096 state, matching the reference.
         if self.anonymous {
@@ -379,7 +388,7 @@ impl PortalClient {
 
     #[allow(
         dead_code,
-        reason = "W1c forwards the cached credential to its request adapter."
+        reason = "the private credential accessor remains reserved for in-crate protocol tests."
     )]
     pub(crate) fn access_token(&self) -> Option<&str> {
         self.access_token.as_deref()
@@ -487,10 +496,6 @@ impl PortalClient {
         self.register()
     }
 
-    #[allow(
-        dead_code,
-        reason = "W1c dispatches authenticated reads and mutations here."
-    )]
     pub(crate) fn authed_request(
         &mut self,
         method: &str,
@@ -509,10 +514,6 @@ impl PortalClient {
         self.authed_request_inner(method, path, &mut options, true)
     }
 
-    #[allow(
-        dead_code,
-        reason = "W1c dispatches authenticated reads and mutations here."
-    )]
     fn authed_request_inner(
         &mut self,
         method: &str,
@@ -609,10 +610,6 @@ struct SignupBody {
     handle: String,
 }
 
-#[allow(
-    dead_code,
-    reason = "W1c retries multipart uploads through this rewind path."
-)]
 fn rewind_files(
     inputs: &mut [MultipartInput<'_>],
 ) -> Result<Vec<MultipartPart>, PortalClientError> {
@@ -655,11 +652,7 @@ fn suffix(bytes: &[u8; 4]) -> String {
         .collect()
 }
 
-#[allow(
-    dead_code,
-    reason = "W1c reads portal configuration at its journal boundary."
-)]
-pub(crate) fn portal_url_from_settings(journal_root: &Path) -> String {
+pub fn portal_url_from_settings(journal_root: &Path) -> String {
     portal_url_from_settings_with_env(
         journal_root,
         std::env::var("SOLSTONE_SUPPORT_URL").ok().as_deref(),
@@ -686,8 +679,7 @@ pub(crate) fn portal_url_from_settings_with_env(
     DEFAULT_PORTAL_URL.to_owned()
 }
 
-#[allow(dead_code, reason = "W1c checks this portal configuration gate.")]
-pub(crate) fn is_enabled(journal_root: &Path) -> bool {
+pub fn is_enabled(journal_root: &Path) -> bool {
     let Ok(text) = fs::read_to_string(journal_root.join("config/config.json")) else {
         return true;
     };
@@ -742,3 +734,7 @@ fn percent_encode(value: &str) -> String {
         })
         .collect()
 }
+
+#[path = "operations_client.rs"]
+mod operations_client;
+pub use operations_client::PortalOperationError;
