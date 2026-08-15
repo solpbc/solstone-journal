@@ -14,7 +14,6 @@ use chrono::{DateTime, Duration, NaiveDate, Timelike, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection};
 use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY};
-use solstone_core_entity::read_journal_principal;
 use solstone_core_facets::{
     list_declared_facet_names, load_activity_records, load_current, read_facet_declaration,
 };
@@ -24,6 +23,7 @@ use solstone_core_observer::store::load_observers;
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
 use crate::HomeContext;
+use crate::formatting::format_date;
 use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative};
 
 const BRIEFING_MORNING_END_HOUR: u32 = 10;
@@ -67,7 +67,7 @@ pub fn load_latest_weekly_reflection(context: &HomeContext) -> Option<Value> {
         .collect::<Vec<_>>();
     days.sort();
     let day = days.pop()?;
-    Some(json!({"day": day, "label": format_day(&day)}))
+    Some(json!({"day": day, "label": format_date(&day)}))
 }
 
 /// Read `chronicle/<day>/talents/flow.md` without creating its parent directories.
@@ -906,18 +906,14 @@ pub fn last_observe_relative_seconds(context: &HomeContext) -> Option<i64> {
         .map(|last_seen| (context.now_ms() - last_seen) / 1000)
 }
 
-/// Read the principal and edge index. Card projection is deliberately phase two.
+/// Read the edge index for an already-resolved principal. Card projection is deliberately phase two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionReadError;
 
 pub fn load_connections_network(
     context: &HomeContext,
+    principal: &Value,
 ) -> Result<Option<solstone_core_indexer_query::NetworkResponse>, ConnectionReadError> {
-    let principal = match read_journal_principal(context.journal_root()) {
-        Ok(Some(principal)) => principal,
-        Ok(None) => return Ok(None),
-        Err(_) => return Err(ConnectionReadError),
-    };
     let Some(principal_id) = principal
         .get("id")
         .and_then(Value::as_str)
@@ -981,11 +977,6 @@ fn empty_pulse() -> PulseNarrative {
         updated_at: None,
         needs: Vec::new(),
     }
-}
-fn format_day(day: &str) -> String {
-    NaiveDate::parse_from_str(day, "%Y%m%d")
-        .map(|value| value.format("%B %-d, %Y").to_string())
-        .unwrap_or_else(|_| day.to_owned())
 }
 fn title_case(value: &str) -> String {
     value
@@ -1538,7 +1529,10 @@ mod tests {
     fn connections_acquisition_and_brain_fallback_have_explicit_contracts() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
-        assert!(matches!(load_connections_network(&context), Ok(None)));
+        assert!(matches!(
+            load_connections_network(&context, &json!({})),
+            Ok(None)
+        ));
         assert!(connection_copy().is_object());
         assert!(build_brain_snapshot(&context).is_object());
         assert_eq!(
@@ -1682,24 +1676,13 @@ mod tests {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
         assert_eq!(load_awareness(&context), json!({}));
-        assert!(matches!(load_connections_network(&context), Ok(None)));
-        write(root.path(), "entities/principal.json", "bad");
-        assert!(matches!(load_connections_network(&context), Ok(None)));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn connections_reader_preserves_a_principal_read_failure() {
-        let root = TempDir::new().unwrap();
-        let context = context(root.path());
-        let entities = root.path().join("entities");
-        fs::create_dir(&entities).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-
-        fs::set_permissions(&entities, fs::Permissions::from_mode(0o000)).unwrap();
         assert!(matches!(
-            load_connections_network(&context),
-            Err(ConnectionReadError)
+            load_connections_network(&context, &json!({})),
+            Ok(None)
+        ));
+        assert!(matches!(
+            load_connections_network(&context, &json!({"id":""})),
+            Ok(None)
         ));
     }
 

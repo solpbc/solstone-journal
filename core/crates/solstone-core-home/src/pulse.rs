@@ -342,7 +342,7 @@ fn load_connections_card(context: &HomeContext) -> Value {
         {
             Ok(json!({}))
         }
-        Ok(Some(_)) => load_connections_network(context)
+        Ok(Some(principal)) => load_connections_network(context, principal)
             .map_err(|_| ())
             .and_then(|network| {
                 network
@@ -589,6 +589,18 @@ mod tests {
             ],
         );
         assert_eq!(briefing_payload(&context), reference["briefing"]);
+        let mut expected_reflection = reference["pulse"]["latest_weekly_reflection"].clone();
+        expected_reflection.as_object_mut().unwrap().remove("url");
+        assert_eq!(payload["latest_weekly_reflection"], expected_reflection);
+        let stats: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/convey_home_seeded_journal/chronicle/20260814/stats.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            payload["segment_count"],
+            stats["stats"]["transcript_segments"]
+        );
+        assert_eq!(payload["facet_data"], stats["facet_data"]);
         for pointer in [
             "/activities",
             "/anticipated_activities",
@@ -665,6 +677,119 @@ mod tests {
         )
         .unwrap();
         assert!(summarize_yesterday_processing(&context, 1).is_none());
+    }
+
+    #[test]
+    fn yesterday_processing_is_absent_on_the_first_journal_day() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260813")).unwrap();
+        fs::write(
+            root.path().join("chronicle/20260813/stats.json"),
+            r#"{"stats":{"transcript_duration":60,"transcript_segments":1},"facet_data":{"focus":{"minutes":1,"count":1}}}"#,
+        )
+        .unwrap();
+        let context = HomeContext::new(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+        );
+        assert!(summarize_yesterday_processing(&context, 0).is_none());
+    }
+
+    #[test]
+    fn sparse_yesterday_precedes_processing_warnings() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260813")).unwrap();
+        fs::write(
+            root.path().join("chronicle/20260813/stats.json"),
+            r#"{"stats":{"transcript_duration":60,"transcript_segments":1},"facet_data":{}}"#,
+        )
+        .unwrap();
+        let context = HomeContext::new(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+        );
+        let processing = summarize_yesterday_processing(&context, 1).unwrap();
+        assert_eq!(processing["mode"], "sparse");
+        assert_eq!(processing["title"], "Yesterday's processing");
+        assert_eq!(
+            processing["status_reasons"],
+            json!(["pipeline_warning", "briefing_missing"])
+        );
+        assert_eq!(
+            processing["sparse_lines"],
+            json!([
+                "I didn't produce any facet newsletters.",
+                "There wasn't much else to process."
+            ])
+        );
+    }
+
+    #[test]
+    fn pipeline_summary_caps_real_failures_before_gap_links() {
+        let root = TempDir::new().unwrap();
+        let health = root.path().join("chronicle/20260813/health");
+        fs::create_dir_all(&health).unwrap();
+        let failures = (0..21)
+            .map(|index| {
+                json!({
+                    "event": "talent.fail",
+                    "ts": index + 1,
+                    "mode": "daily",
+                    "name": format!("failure_{index:02}"),
+                    "use_id": format!("run-{index:02}"),
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(health.join("failures_daily.jsonl"), format!("{failures}\n")).unwrap();
+        let context = HomeContext::new(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+        );
+        let pipeline = summarize_pipeline_day(&context, "20260813");
+        assert_eq!(
+            pipeline["anomalies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|anomaly| anomaly["kind"] == "talent_failure")
+                .count(),
+            20
+        );
+        assert_eq!(pipeline["talents"]["outstanding_failed"], 21);
+        assert_eq!(pipeline["talents"]["failed_list_truncated"], true);
+        assert!(
+            format_gap_links(&pipeline, true, "20260813", "20260814")
+                .iter()
+                .any(|link| link["text"] == "…and 1 more didn't finish.")
+        );
+    }
+
+    #[test]
+    fn non_null_attention_is_reshaped_for_the_public_payload() {
+        let mut fields = Map::new();
+        fields.insert(
+            "attention".to_owned(),
+            json!({
+                "placeholder_text": "Review your calendar",
+                "context_lines": ["One meeting", "One follow-up"],
+                "private_detail": "not public",
+            }),
+        );
+        let payload = PulseContext {
+            fields,
+            now: Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+        }
+        .into_pulse_payload();
+        assert_eq!(
+            payload["attention"],
+            json!({
+                "placeholder_text": "Review your calendar",
+                "context_lines": ["One meeting", "One follow-up"],
+            })
+        );
+        assert_eq!(payload["attention"].as_object().unwrap().len(), 2);
     }
 
     #[test]
