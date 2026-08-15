@@ -11,6 +11,9 @@ pub enum StageId {
     Steward,
     Story,
     ChatContext,
+    Pulse,
+    MorningBriefing,
+    EntityDescribe,
 }
 
 #[derive(Clone, Copy)]
@@ -28,11 +31,12 @@ pub type ParseOutputFn =
 pub type CommitFn =
     fn(ParsedOutput, &PreparedTalent, &PrePostState) -> Result<CommitPlan, StageError>;
 pub type WriteIntentFn = fn(CommitPlan, &ExecutionContext) -> Result<CommitDisposition, StageError>;
+pub type OutputOverrideFn = fn(&str, &PreparedTalent, &PrePostState) -> Result<String, StageError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GateDecision {
     Proceed,
-    Skip(&'static str),
+    Skip(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +44,9 @@ pub enum PrePostState {
     None,
     Steward(crate::steward::StewardPreState),
     ChatContext(crate::chat_context::ChatContextState),
+    Pulse(Box<crate::pulse::PulsePreState>),
+    MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
+    EntityDescribe(crate::entities::describe::EntityDescribePreState),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,9 +82,10 @@ pub struct StageSpec {
     pub prompt_override: Option<PromptOverrideFn>,
     pub commit: Option<CommitSpec>,
     pub writes_as_intent: Option<WriteIntentFn>,
+    pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 4] = [
+pub const HOOK_TABLE: [HookBinding; 7] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -94,6 +102,18 @@ pub const HOOK_TABLE: [HookBinding; 4] = [
         hook: "chat_context",
         stage: StageId::ChatContext,
     },
+    HookBinding {
+        hook: "pulse",
+        stage: StageId::Pulse,
+    },
+    HookBinding {
+        hook: "morning_briefing",
+        stage: StageId::MorningBriefing,
+    },
+    HookBinding {
+        hook: "entities:entity_describe",
+        stage: StageId::EntityDescribe,
+    },
 ];
 
 pub static DOCUMENTS: StageSpec = StageSpec {
@@ -103,6 +123,7 @@ pub static DOCUMENTS: StageSpec = StageSpec {
     prompt_override: None,
     commit: None,
     writes_as_intent: None,
+    output_override: None,
 };
 pub static STEWARD: StageSpec = StageSpec {
     stage: StageId::Steward,
@@ -114,6 +135,7 @@ pub static STEWARD: StageSpec = StageSpec {
         commit: crate::steward::commit,
     }),
     writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
 };
 pub static STORY: StageSpec = StageSpec {
     stage: StageId::Story,
@@ -125,6 +147,7 @@ pub static STORY: StageSpec = StageSpec {
         commit: crate::story::commit,
     }),
     writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
 };
 pub static CHAT_CONTEXT: StageSpec = StageSpec {
     stage: StageId::ChatContext,
@@ -133,6 +156,37 @@ pub static CHAT_CONTEXT: StageSpec = StageSpec {
     prompt_override: Some(crate::chat_context::apply_prompt_override),
     commit: None,
     writes_as_intent: None,
+    output_override: None,
+};
+pub static PULSE: StageSpec = StageSpec {
+    stage: StageId::Pulse,
+    gate: Some(crate::pulse::gate),
+    build: Some(crate::pulse::build),
+    prompt_override: Some(crate::pulse::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::pulse::parse,
+        commit: crate::pulse::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: Some(crate::pulse::output_override),
+};
+pub static MORNING_BRIEFING: StageSpec = StageSpec {
+    stage: StageId::MorningBriefing,
+    gate: Some(crate::morning_briefing::gate),
+    build: Some(crate::morning_briefing::build),
+    prompt_override: Some(crate::morning_briefing::apply_prompt_override),
+    commit: None,
+    writes_as_intent: None,
+    output_override: None,
+};
+pub static ENTITY_DESCRIBE: StageSpec = StageSpec {
+    stage: StageId::EntityDescribe,
+    gate: Some(crate::entities::describe::gate),
+    build: Some(crate::entities::describe::build),
+    prompt_override: Some(crate::entities::describe::apply_prompt_override),
+    commit: None,
+    writes_as_intent: None,
+    output_override: None,
 };
 
 pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
@@ -142,6 +196,9 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::Steward => &STEWARD,
         StageId::Story => &STORY,
         StageId::ChatContext => &CHAT_CONTEXT,
+        StageId::Pulse => &PULSE,
+        StageId::MorningBriefing => &MORNING_BRIEFING,
+        StageId::EntityDescribe => &ENTITY_DESCRIBE,
     })
 }
 

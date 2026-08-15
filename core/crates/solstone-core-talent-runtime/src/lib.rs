@@ -16,7 +16,10 @@ use solstone_core_system_health::{DataState, read_segment_data_state};
 pub mod chat_context;
 pub mod contract;
 pub mod documents;
+pub mod entities;
+pub mod morning_briefing;
 pub mod prepare;
+pub mod pulse;
 pub mod steward;
 pub mod steward_health;
 pub mod steward_log;
@@ -115,17 +118,44 @@ pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
     let context = ExecutionContext {
         journal: journal.to_path_buf(),
     };
-    let installation = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let paths = prepare::RuntimePaths {
-        talent_root: installation.join("solstone/talent"),
-        apps_root: installation.join("solstone/apps"),
-        templates_dir: installation.join("solstone/think/templates"),
+    let paths = match runtime_paths_from_current_executable() {
+        Ok(paths) => paths,
+        Err(error) => {
+            eprintln!("talent runtime: {error}");
+            return ExitCode::from(70);
+        }
     };
     let client = OneShotClient::sibling();
     let stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
     run_lines(stdin, &mut stdout, &paths, &context, client.as_ref());
     ExitCode::SUCCESS
+}
+
+fn runtime_paths_from_current_executable() -> Result<prepare::RuntimePaths, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("could not resolve worker executable: {error}"))?;
+    let executable_dir = executable
+        .parent()
+        .ok_or_else(|| format!("worker executable has no parent: {}", executable.display()))?;
+    runtime_paths_from_executable_dir(executable_dir)
+}
+
+fn runtime_paths_from_executable_dir(
+    executable_dir: &Path,
+) -> Result<prepare::RuntimePaths, String> {
+    let root = solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
+        .ok_or_else(|| {
+            format!(
+                "could not resolve installation root from executable directory: {}",
+                executable_dir.display()
+            )
+        })?;
+    Ok(prepare::RuntimePaths {
+        talent_root: root.join("solstone/talent"),
+        apps_root: root.join("solstone/apps"),
+        templates_dir: root.join("solstone/think/templates"),
+    })
 }
 
 fn run_lines(
@@ -214,7 +244,7 @@ pub fn execute_request(
                 return RuntimeOutcome::Skipped {
                     stage: hook.to_owned(),
                     talent: prepared.name.clone(),
-                    reason: reason.to_owned(),
+                    reason,
                 };
             }
             Err(error) => return RuntimeOutcome::StageFailed(error),
@@ -304,32 +334,49 @@ fn generate_and_write(
             ));
         }
     };
-    if let Some((stage, state)) = stage
-        && let Some(commit) = stage.commit
-    {
-        let parsed = match (commit.parse)(&response, prepared, &state) {
-            Ok(parsed) => parsed,
-            Err(_) if matches!(stage.stage, contract::StageId::Story) => {
-                return RuntimeOutcome::Finished {
-                    output: response,
-                    disposition: CommitDisposition::RejectedNoMutation,
-                };
-            }
-            Err(error) => return RuntimeOutcome::StageFailed(error),
-        };
-        let plan = match (commit.commit)(parsed, prepared, &state) {
-            Ok(plan) => plan,
-            Err(error) => return RuntimeOutcome::StageFailed(error),
-        };
-        let disposition = match stage.writes_as_intent {
-            Some(apply) => match apply(plan, context) {
-                Ok(value) => value,
+    if let Some((stage, state)) = stage {
+        let disposition;
+        if let Some(commit) = stage.commit {
+            let parsed = match (commit.parse)(&response, prepared, &state) {
+                Ok(parsed) => parsed,
+                Err(_) if matches!(stage.stage, contract::StageId::Story) => {
+                    return RuntimeOutcome::Finished {
+                        output: response,
+                        disposition: CommitDisposition::RejectedNoMutation,
+                    };
+                }
+                Err(error) => return RuntimeOutcome::StageFailed(error),
+            };
+            let plan = match (commit.commit)(parsed, prepared, &state) {
+                Ok(plan) => plan,
+                Err(error) => return RuntimeOutcome::StageFailed(error),
+            };
+            disposition = match stage.writes_as_intent {
+                Some(apply) => match apply(plan, context) {
+                    Ok(value) => value,
+                    Err(error) => return RuntimeOutcome::StageFailed(error),
+                },
+                None => CommitDisposition::CommittedNoOutput,
+            };
+        } else {
+            disposition = match writers::write_output_if_configured(prepared, &response) {
+                Ok(_) => CommitDisposition::Written,
+                Err(error) => {
+                    return RuntimeOutcome::StageFailed(stage_error(
+                        "write", "runtime", prepared, error,
+                    ));
+                }
+            };
+        }
+        let output = match stage.output_override {
+            Some(override_output) => match override_output(&response, prepared, &state) {
+                Ok(output) => output,
                 Err(error) => return RuntimeOutcome::StageFailed(error),
             },
-            None => CommitDisposition::CommittedNoOutput,
+            None => response,
         };
         return RuntimeOutcome::Finished {
-            output: response,
+            output,
             disposition,
         };
     }
@@ -785,15 +832,15 @@ mod tests {
     #[test]
     fn criterion_10_unported_hook_and_ported_transcript_loading() {
         let (root, paths, context) = fixture(
-            "pulse-fixture",
+            "schedule-fixture",
             r#"{
-"type":"generate", "hook":{"post":"pulse"}, "load":{"transcripts":false}
+"type":"generate", "hook":{"pre":"schedule"}, "load":{"transcripts":false}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
         let mut output = Vec::new();
         let outcome = execute_request(
-            json!({"name":"pulse-fixture", "prompt":"$placeholder"})
+            json!({"name":"schedule-fixture", "prompt":"$placeholder"})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -803,7 +850,7 @@ mod tests {
             &mut output,
         );
         assert!(
-            matches!(outcome, RuntimeOutcome::UnportedHook { ref hook, ref talent } if hook == "pulse" && talent == "pulse-fixture")
+            matches!(outcome, RuntimeOutcome::UnportedHook { ref hook, ref talent } if hook == "schedule" && talent == "schedule-fixture")
         );
         let hook_events = events(&output);
         assert_eq!(hook_events.len(), 1);

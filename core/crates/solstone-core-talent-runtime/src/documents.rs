@@ -17,7 +17,7 @@ fn gate_stream(stream: Option<&str>) -> GateDecision {
     if stream == Some("import.document") {
         GateDecision::Proceed
     } else {
-        GateDecision::Skip("not a document import segment")
+        GateDecision::Skip("not a document import segment".to_owned())
     }
 }
 
@@ -70,7 +70,7 @@ mod tests {
         match expectation.as_str() {
             "skip" => assert_eq!(
                 decision,
-                GateDecision::Skip("not a document import segment")
+                GateDecision::Skip("not a document import segment".to_owned())
             ),
             "proceed" => assert_eq!(decision, GateDecision::Proceed),
             other => panic!("unknown child expectation: {other}"),
