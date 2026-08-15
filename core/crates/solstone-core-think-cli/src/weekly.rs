@@ -1,0 +1,188 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use serde_json::{Map, Value};
+use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_configs};
+
+use crate::context::ThinkContext;
+use crate::dispatch::{ModeResult, PendingUse, dispatch, drain, excluded, grouped, runtime};
+use crate::run_log::RunLogWriter;
+
+/// Port of `thinking.py:2559-2957`: sorted priority groups, multi-facet
+/// expansion, stream exclusion, bounded batches, and a final group drain.
+pub(crate) fn run(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    force: bool,
+    stream: Option<&str>,
+    max_concurrency: i64,
+) -> Result<ModeResult, String> {
+    let configs = load_talent_configs(
+        &context.talent_root,
+        &context.apps_root,
+        None,
+        TalentFilter {
+            r#type: None,
+            schedule: Some("weekly"),
+            include_disabled: false,
+        },
+    )?;
+    if configs.is_empty() {
+        return Ok(ModeResult::default());
+    }
+    let facets =
+        solstone_core_facets::list_declared_facet_names(&context.journal).unwrap_or_default();
+    let active_facets =
+        solstone_core_system::activity_state::active_facets(&context.journal, &context.day);
+    let runtime = runtime()?;
+    let mut total = ModeResult::default();
+    for (priority, group) in grouped(configs) {
+        let mut start = Map::new();
+        start.insert("mode".to_owned(), Value::String("weekly".to_owned()));
+        start.insert("day".to_owned(), Value::String(context.day.clone()));
+        start.insert("priority".to_owned(), Value::from(priority));
+        start.insert("count".to_owned(), Value::from(group.len()));
+        log.log("group.start", context.now_ms, start);
+        let mut pending = Vec::new();
+        let mut group_result = ModeResult::default();
+        for config in group {
+            if excluded(&config, stream) {
+                continue;
+            }
+            if config.metadata.get("multi_facet") == Some(&Value::Bool(true)) {
+                for facet in &facets {
+                    if config.metadata.get("always") != Some(&Value::Bool(true))
+                        && !active_facets.contains(facet)
+                    {
+                        log_skip(log, context, &config.key, "no_active_facets", Some(facet));
+                        continue;
+                    }
+                    queue(
+                        context,
+                        log,
+                        &runtime,
+                        &config,
+                        Some(facet),
+                        force,
+                        &mut pending,
+                        &mut group_result,
+                    );
+                    drain_if_full(
+                        context,
+                        &runtime,
+                        &mut pending,
+                        &mut group_result,
+                        max_concurrency,
+                    );
+                }
+            } else {
+                queue(
+                    context,
+                    log,
+                    &runtime,
+                    &config,
+                    None,
+                    force,
+                    &mut pending,
+                    &mut group_result,
+                );
+                drain_if_full(
+                    context,
+                    &runtime,
+                    &mut pending,
+                    &mut group_result,
+                    max_concurrency,
+                );
+            }
+        }
+        merge(
+            &mut group_result,
+            drain(context, &runtime, std::mem::take(&mut pending)),
+        );
+        let mut complete = Map::new();
+        complete.insert("mode".to_owned(), Value::String("weekly".to_owned()));
+        complete.insert("day".to_owned(), Value::String(context.day.clone()));
+        complete.insert("priority".to_owned(), Value::from(priority));
+        complete.insert("success".to_owned(), Value::from(group_result.success));
+        complete.insert("failed".to_owned(), Value::from(group_result.failed));
+        log.log("group.complete", context.now_ms, complete);
+        merge(&mut total, group_result);
+    }
+    Ok(total)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The weekly dispatch boundary keeps the reference's facet, force, and batch state visible."
+)]
+fn queue(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    runtime: &tokio::runtime::Runtime,
+    config: &TalentConfig,
+    facet: Option<&str>,
+    force: bool,
+    pending: &mut Vec<PendingUse>,
+    result: &mut ModeResult,
+) {
+    match dispatch(context, runtime, config, "weekly", facet, force, Map::new()) {
+        Ok(item) => {
+            // Source-derived, not measured: thinking.py:2875 records every accepted weekly dispatch.
+            let mut fields = Map::new();
+            fields.insert("mode".to_owned(), Value::String("weekly".to_owned()));
+            fields.insert("day".to_owned(), Value::String(context.day.clone()));
+            fields.insert("name".to_owned(), Value::String(config.key.clone()));
+            fields.insert("use_id".to_owned(), Value::String(item.use_id.clone()));
+            if let Some(facet) = facet {
+                fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
+            }
+            log.log("talent.dispatch", context.now_ms, fields);
+            pending.push(item);
+        }
+        Err(_) => {
+            result.failed += 1;
+            result.failed_names.push(label(&config.key, facet, "send"));
+        }
+    }
+}
+
+fn log_skip(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    name: &str,
+    reason: &str,
+    facet: Option<&str>,
+) {
+    let mut fields = Map::new();
+    fields.insert("mode".to_owned(), Value::String("weekly".to_owned()));
+    fields.insert("day".to_owned(), Value::String(context.day.clone()));
+    fields.insert("name".to_owned(), Value::String(name.to_owned()));
+    fields.insert("reason".to_owned(), Value::String(reason.to_owned()));
+    if let Some(facet) = facet {
+        fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
+    }
+    log.log("talent.skip", context.now_ms, fields);
+}
+fn drain_if_full(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    pending: &mut Vec<PendingUse>,
+    result: &mut ModeResult,
+    max: i64,
+) {
+    if max != 0 && pending.len() as i64 >= max {
+        merge(result, drain(context, runtime, std::mem::take(pending)));
+    }
+}
+fn merge(into: &mut ModeResult, from: ModeResult) {
+    into.success += from.success;
+    into.failed += from.failed;
+    into.failed_names.extend(from.failed_names);
+    into.applicable_units.extend(from.applicable_units);
+}
+fn label(name: &str, facet: Option<&str>, reason: &str) -> String {
+    facet.map_or_else(
+        || format!("{name} ({reason})"),
+        |facet| format!("{name}/{facet} ({reason})"),
+    )
+}

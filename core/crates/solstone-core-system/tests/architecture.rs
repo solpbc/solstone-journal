@@ -10,6 +10,7 @@ use solstone_core_system::TASK_VERB_TOKENS;
 const JOURNAL_PROCESSES: &str = include_str!("../../solstone-core-journal-cli/src/processes.rs");
 const JOURNAL_MANIFEST: &str = include_str!("../../solstone-core-journal-cli/src/manifest.rs");
 const LIB: &str = include_str!("../src/lib.rs");
+const ACTIVITY_STATE: &str = include_str!("../src/activity_state.rs");
 const CAP: &str = include_str!("../src/cap.rs");
 const CATCHUP: &str = include_str!("../src/catchup.rs");
 const ERROR: &str = include_str!("../src/error.rs");
@@ -33,6 +34,7 @@ const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
 const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
 const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
 const LIFECYCLE_WATCHER: &str = include_str!("../src/lifecycle/watcher.rs");
+const MEMORY_ADMISSION: &str = include_str!("../src/memory_admission.rs");
 const STATUS_WIRE: &str = include_str!("../src/status_wire.rs");
 const STT_BACKEND_CHOICE: &str = include_str!("../src/stt_backend_choice.rs");
 const SCHEDULE: &str = include_str!("../src/schedule/mod.rs");
@@ -151,10 +153,17 @@ fn ac7_bus_decode_is_typed_to_bus_requests_not_scheduled_execution_requests() {
 #[test]
 fn ac21_only_operational_log_module_names_write_primitives() {
     let root_modules = [
+        (
+            "activity_state",
+            ACTIVITY_STATE
+                .split_once("\n#[cfg(test)]")
+                .map_or(ACTIVITY_STATE, |(production, _)| production),
+        ),
         ("cap", CAP),
         ("catchup", CATCHUP),
         ("error", ERROR),
         ("lifecycle", LIFECYCLE),
+        ("memory_admission", MEMORY_ADMISSION),
         ("operational_log_parse", OPERATIONAL_LOG_PARSE),
         ("partition", PARTITION),
         ("process", PROCESS_MOD),

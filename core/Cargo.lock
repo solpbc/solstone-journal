@@ -4383,17 +4383,22 @@ version = "1.0.22"
 dependencies = [
  "chrono",
  "filetime",
+ "glob",
  "log",
  "serde_json",
  "solstone-core-cli",
  "solstone-core-cortex-client",
+ "solstone-core-facets",
  "solstone-core-identity",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-segment",
  "solstone-core-system",
+ "solstone-core-system-health",
+ "solstone-core-talent-config",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

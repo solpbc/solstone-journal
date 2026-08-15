@@ -3,7 +3,7 @@
 
 //! Deterministic, read-only activity state machine.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -12,6 +12,13 @@ use solstone_core_format::segment::segment_start_and_end_seconds;
 
 pub const GAP_THRESHOLD_SECONDS: i64 = 600;
 pub const END_HYSTERESIS_SEGMENTS: usize = 2;
+
+/// Read the active facet keys from the durable activity-state representation.
+/// This is the native equivalent of Python's `get_active_facets(day)`.
+pub fn active_facets(journal: &Path, _day: &str) -> BTreeSet<String> {
+    let machine = ActivityStateMachine::hydrate(Some(journal));
+    machine.state.into_keys().collect()
+}
 
 pub fn make_activity_id(activity_type: &str, since_segment: &str) -> String {
     format!("{activity_type}_{since_segment}")
@@ -375,6 +382,18 @@ mod tests {
         assert_eq!(current.state.len(), 1);
         assert_eq!(current.last_segment_key.as_deref(), Some("100000_60"));
         assert_eq!(current.last_segment_day.as_deref(), Some("20260101"));
+    }
+
+    #[test]
+    fn active_facets_reads_only_durable_active_entries() {
+        let root = tempfile::tempdir().unwrap();
+        let awareness = root.path().join("awareness");
+        fs::create_dir_all(&awareness).unwrap();
+        fs::write(awareness.join("activity_state.json"), serde_json::to_vec(&json!({"active":{"work":active("work")},"last_segment_key":"100000_60","last_segment_day":"20260101"})).unwrap()).unwrap();
+        assert_eq!(
+            super::active_facets(root.path(), "20260101"),
+            std::collections::BTreeSet::from(["work".to_owned()])
+        );
     }
 
     #[test]

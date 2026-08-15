@@ -15,16 +15,21 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
+glob.workspace = true
 log.workspace = true
 serde_json.workspace = true
 solstone-core-cli.workspace = true
 solstone-core-cortex-client.workspace = true
+solstone-core-facets.workspace = true
 solstone-core-identity.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-local.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-system.workspace = true
+solstone-core-system-health.workspace = true
+solstone-core-talent-config.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 filetime = "0.2.29"

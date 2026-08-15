@@ -4,18 +4,15 @@
 //! Native preflight and unavailable-run boundary for `journal think`.
 
 mod args;
-#[allow(
-    dead_code,
-    reason = "Wave 1 exposes cadence state before native run modes are enabled."
-)]
 mod cadence;
+mod cadence_state;
+mod context;
+mod daily;
 mod day;
+mod dispatch;
 mod gate;
-#[allow(
-    dead_code,
-    reason = "Wave 1 exposes the run-log writer seam before native run modes are enabled."
-)]
 mod run_log;
+mod weekly;
 mod workers;
 
 use std::path::Path;
@@ -55,6 +52,7 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
         |name| std::env::var(name).ok(),
         || solstone_core_segment::is_solstone_up(journal),
         || Local::now().date_naive(),
+        || chrono::Utc::now().timestamp_millis(),
         || {
             std::thread::available_parallelism()
                 .ok()
@@ -82,12 +80,13 @@ pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn run_cli_with<E, C, N, P, R, B>(
+pub fn run_cli_with<E, C, N, M, P, R, B>(
     raw_args: &[String],
     journal: &Path,
     lookup_env: E,
     connectivity: C,
     clock: N,
+    now_ms: M,
     cpu_count: P,
     endpoint: R,
     bundled_slots: B,
@@ -96,6 +95,7 @@ where
     E: Fn(&str) -> Option<String>,
     C: FnOnce() -> bool,
     N: Fn() -> NaiveDate,
+    M: Fn() -> i64,
     P: Fn() -> Option<usize>,
     R: Fn() -> (bool, LocalEndpointResolution),
     B: Fn() -> Option<u32>,
@@ -140,17 +140,87 @@ where
         }
 
         let selected_day = day::selected_day(parsed.day.as_deref(), parsed.cadence, today);
-        day::create_day(journal, &selected_day)
+        let day_dir = day::create_day(journal, &selected_day)
             .map_err(|message| CliError::InvalidDay { message })?;
         let (uses_local, endpoint) = endpoint();
         validate(&parsed, cpu_count(), uses_local, endpoint, bundled_slots())?;
 
-        // `EXIT_UNAVAILABLE` is already used by several verbs in this binary to mean
-        // this route is unavailable in this build; the message, not the code,
-        // identifies the unavailable think run.
-        // Intentional divergence: run-mode-bound inputs, including --dry-run, do not
-        // execute the retained Python run and exit 69 rather than succeeding.
-        Err(CliError::Unavailable)
+        if parsed.activity.is_some()
+            || parsed.flush
+            || parsed.segments
+            || parsed.segment.is_some()
+            || parsed.dry_run
+        {
+            // `EXIT_UNAVAILABLE` remains the terminus for Phase 2b's run modes and
+            // the planner; this phase must not route a real run into an absent body.
+            return Err(CliError::Unavailable);
+        }
+
+        let now_ms = now_ms();
+        let context =
+            context::ThinkContext::new(journal, selected_day.clone(), day_dir.clone(), now_ms);
+        if parsed.cadence {
+            let configs = cadence::configured(&context)
+                .map_err(|message| CliError::InvalidDay { message })?;
+            // `thinking.py:2969-2972` returns before creating the cadence sidecar
+            // when no cadence talent is configured.
+            if configs.is_empty() {
+                return Ok(CliRun {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                });
+            }
+            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let result = cadence::run(&context, configs, &mut log, parsed.refresh)
+                .map_err(|message| CliError::InvalidDay { message })?;
+            return Ok(CliRun {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: (result.failed != 0) as i32,
+            });
+        }
+
+        let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+        let result = if parsed.weekly {
+            weekly::run(
+                &context,
+                &mut log,
+                parsed.refresh,
+                parsed.stream.as_deref(),
+                parsed.jobs,
+            )
+        } else {
+            // Source-derived, not measured: main records this pre-phase at
+            // thinking.py:4606 before it invokes `run_daily_prompts`.
+            let mut fields = serde_json::Map::new();
+            fields.insert(
+                "mode".to_owned(),
+                serde_json::Value::String("daily".to_owned()),
+            );
+            fields.insert(
+                "day".to_owned(),
+                serde_json::Value::String(selected_day.clone()),
+            );
+            fields.insert(
+                "phase".to_owned(),
+                serde_json::Value::String("sense_repair".to_owned()),
+            );
+            log.log("phase.start", now_ms, fields);
+            daily::run(
+                &context,
+                &mut log,
+                parsed.stream.as_deref(),
+                parsed.from_scratch,
+                parsed.jobs,
+            )
+        }
+        .map_err(|message| CliError::InvalidDay { message })?;
+        Ok(CliRun {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: (result.failed != 0) as i32,
+        })
     })();
     match result {
         Ok(run) => run,
@@ -180,6 +250,27 @@ where
             exit_code: 69,
         },
     }
+}
+
+fn open_run_log(
+    args: &args::ThinkArgs,
+    day_dir: &Path,
+    now_ms: i64,
+    day: &str,
+) -> run_log::RunLogWriter<std::fs::File> {
+    // This order differs from Python's main chain only superficially: args.rs
+    // refuses --segment with --weekly or --cadence before mode derivation.
+    let mode = run_log::mode(args);
+    let mut log = run_log::RunLogWriter::open(&run_log::path(day_dir, now_ms, mode));
+    let mut fields = serde_json::Map::new();
+    fields.insert(
+        "mode".to_owned(),
+        serde_json::Value::String(mode.to_owned()),
+    );
+    fields.insert("day".to_owned(), serde_json::Value::String(day.to_owned()));
+    fields.insert("ref".to_owned(), serde_json::Value::from(now_ms));
+    log.log("run.start", now_ms, fields);
+    log
 }
 
 fn validate(
@@ -254,11 +345,11 @@ fn validate(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
     use std::fs;
     use std::io::{self, Write};
     use std::path::Path;
-    use std::sync::{Mutex, MutexGuard, Once, OnceLock};
+    use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
 
     use chrono::NaiveDate;
     use filetime::{FileTime, set_file_mtime};
@@ -275,6 +366,66 @@ mod tests {
     static LOGGER_INIT: Once = Once::new();
     static LOGS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
     static LOG_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    #[derive(Default)]
+    struct Recorder {
+        requests: Mutex<Vec<solstone_core_cortex_client::CortexRequest>>,
+        waits: Mutex<Vec<Vec<String>>>,
+    }
+
+    impl context::CortexBoundary for Recorder {
+        fn dispatch(
+            &self,
+            _: &tokio::runtime::Runtime,
+            request: &solstone_core_cortex_client::CortexRequest,
+        ) -> Result<String, String> {
+            let mut requests = self.requests.lock().unwrap();
+            requests.push(request.clone());
+            Ok(format!("use-{}", requests.len()))
+        }
+        fn wait(
+            &self,
+            _: &tokio::runtime::Runtime,
+            use_ids: &[String],
+        ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
+            self.waits.lock().unwrap().push(use_ids.to_vec());
+            Ok(solstone_core_cortex_client::WaitForUsesReport {
+                completed: use_ids
+                    .iter()
+                    .map(|id| (id.clone(), solstone_core_cortex_client::UseEndState::Finish))
+                    .collect(),
+                timed_out: Vec::new(),
+            })
+        }
+    }
+
+    fn recorder_context(
+        journal: &Path,
+        day: &str,
+        now_ms: i64,
+    ) -> (context::ThinkContext, Arc<Recorder>) {
+        let recorder = Arc::new(Recorder::default());
+        let day_dir = day::create_day(journal, day).unwrap();
+        (
+            context::ThinkContext::new(journal, day.to_owned(), day_dir, now_ms)
+                .with_boundary(recorder.clone()),
+            recorder,
+        )
+    }
+
+    fn talent_roots(
+        root: &Path,
+        entries: &[(&str, &str)],
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let talents = root.join("talent");
+        fs::create_dir_all(&talents).unwrap();
+        for (name, contents) in entries {
+            fs::write(talents.join(format!("{name}.md")), contents).unwrap();
+        }
+        let apps = root.join("apps");
+        fs::create_dir_all(&apps).unwrap();
+        (talents, apps)
+    }
 
     impl Log for TestLogger {
         fn enabled(&self, metadata: &Metadata<'_>) -> bool {
@@ -327,6 +478,7 @@ mod tests {
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
             today,
+            || 1_785_000_000_000,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
@@ -366,6 +518,703 @@ mod tests {
         set_file_mtime(&path, FileTime::from_unix_time(modified_at, 0)).unwrap();
     }
 
+    fn sidecar_events(journal: &Path, day: &str, mode: &str) -> Vec<Value> {
+        let path = journal
+            .join("chronicle")
+            .join(day)
+            .join("health")
+            .join(format!("1785000000000_{mode}.jsonl"));
+        fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    fn write_health_event(journal: &Path, day: &str, event: &str) {
+        let path = journal
+            .join("chronicle")
+            .join(day)
+            .join("health")
+            .join("terminal.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, format!("{event}\n")).unwrap();
+    }
+
+    fn talent(metadata: Map<String, Value>) -> solstone_core_talent_config::TalentConfig {
+        solstone_core_talent_config::TalentConfig {
+            key: "sample".to_owned(),
+            file: "talent/sample.md".to_owned(),
+            metadata,
+            body: "prompt".to_owned(),
+        }
+    }
+
+    #[test]
+    fn output_persistence_accumulate_returns_without_mutating_request() {
+        let config = talent(Map::from_iter([
+            ("accumulate".to_owned(), Value::Bool(true)),
+            ("output".to_owned(), Value::String("json".to_owned())),
+        ]));
+        let mut request = Map::from_iter([("existing".to_owned(), Value::Bool(true))]);
+        dispatch::apply_output_persistence(&config, &mut request, true);
+        assert_eq!(
+            request,
+            Map::from_iter([("existing".to_owned(), Value::Bool(true))])
+        );
+    }
+
+    #[test]
+    fn exclude_streams_uses_fnmatch_globs() {
+        let config = talent(Map::from_iter([(
+            "exclude_streams".to_owned(),
+            Value::Array(vec![Value::String("screen*".to_owned())]),
+        )]));
+        assert!(dispatch::excluded(&config, Some("screen.main")));
+        assert!(!dispatch::excluded(&config, Some("audio.main")));
+        assert!(!dispatch::excluded(&config, None));
+    }
+
+    #[test]
+    fn ac7_exclude_streams_guard_handles_fresh_and_matching_state() {
+        let config = talent(Map::from_iter([(
+            "exclude_streams".to_owned(),
+            Value::Array(vec![Value::String("capture-*".to_owned())]),
+        )]));
+        assert!(!dispatch::excluded(&config, None));
+        assert!(!dispatch::excluded(&config, Some("screen")));
+        assert!(dispatch::excluded(&config, Some("capture-screen")));
+    }
+
+    #[test]
+    fn priority_groups_are_sorted_and_keys_inside_groups_are_sorted() {
+        let mut late = talent(Map::from_iter([("priority".to_owned(), Value::from(20))]));
+        late.key = "zeta".to_owned();
+        let mut first = talent(Map::from_iter([("priority".to_owned(), Value::from(10))]));
+        first.key = "beta".to_owned();
+        let mut second = talent(Map::from_iter([("priority".to_owned(), Value::from(10))]));
+        second.key = "alpha".to_owned();
+        let groups = dispatch::grouped(vec![late, first, second]);
+        assert_eq!(groups.keys().copied().collect::<Vec<_>>(), vec![10, 20]);
+        assert_eq!(
+            groups[&10]
+                .iter()
+                .map(|config| config.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha", "beta"]
+        );
+    }
+
+    #[test]
+    fn weekly_reflection_uses_the_week_start_output_and_prompt_only_for_that_key() {
+        let journal = tempdir().unwrap();
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let runtime = dispatch::runtime().unwrap();
+        let mut reflection = talent(Map::from_iter([(
+            "type".to_owned(),
+            Value::String("cogitate".to_owned()),
+        )]));
+        reflection.key = "weekly_reflection".to_owned();
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &reflection,
+            "weekly",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        let ordinary = talent(Map::from_iter([(
+            "type".to_owned(),
+            Value::String("cogitate".to_owned()),
+        )]));
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &ordinary,
+            "weekly",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        let requests = recorder.requests.lock().unwrap();
+        assert_eq!(
+            requests[0].config["output_path"],
+            journal
+                .path()
+                .join("reflections/weekly/20260809.md")
+                .display()
+                .to_string()
+        );
+        assert!(
+            requests[0]
+                .prompt
+                .contains("weekly reflection for 20260809")
+        );
+        assert!(!requests[1].config.contains_key("output_path"));
+        assert!(!requests[1].prompt.contains("weekly reflection"));
+    }
+
+    #[test]
+    fn recorder_seam_folds_a_batch_of_finished_uses() {
+        let journal = tempdir().unwrap();
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let runtime = dispatch::runtime().unwrap();
+        let config = talent(Map::new());
+        let first =
+            dispatch::dispatch(&context, &runtime, &config, "daily", None, true, Map::new())
+                .unwrap();
+        let second =
+            dispatch::dispatch(&context, &runtime, &config, "daily", None, true, Map::new())
+                .unwrap();
+        let result = dispatch::drain(&context, &runtime, vec![first, second]);
+        assert_eq!((result.success, result.failed), (2, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn ac2a_empty_cadence_configuration_leaves_no_sidecar() {
+        // Source-derived, not measured: thinking.py:2969-2972 returns before opening a sidecar.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(roots.path(), &[]);
+        let (context, _) = recorder_context(journal.path(), "20260814", 1_785_000_000_000);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        assert!(cadence::configured(&context).unwrap().is_empty());
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260814/health/1785000000000_cadence.jsonl")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn ac2b_configured_cadence_opens_exactly_one_run_start_sidecar() {
+        // Source-derived, not measured: thinking.py:2969-2972 permits the sidecar after configuration exists.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "cadence",
+                "{\n\"type\": \"generate\", \"schedule\": \"cadence\", \"priority\": 1, \"output\": \"md\"\n}\n",
+            )],
+        );
+        let (context, _) = recorder_context(journal.path(), "20260814", 1_785_000_000_000);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        assert_eq!(cadence::configured(&context).unwrap().len(), 1);
+        let args::ParseOutcome::Args(parsed) = args::parse(&["--cadence".to_owned()]).unwrap()
+        else {
+            panic!("cadence args")
+        };
+        let _log = open_run_log(&parsed, &context.day_dir, context.now_ms, &context.day);
+        let events = sidecar_events(journal.path(), "20260814", "cadence");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["event"], "run.start");
+        assert_eq!(events[0]["mode"], "cadence");
+        assert_eq!(events[0]["day"], "20260814");
+        assert_eq!(events[0]["ref"], 1_785_000_000_000_i64);
+    }
+
+    #[test]
+    fn batch_drain_bounded_drains_at_two_then_the_group_remainder() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "charlie",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+                (
+                    "alpha",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+                (
+                    "bravo",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        let result = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!((result.success, result.failed), (3, 0));
+        assert_eq!(
+            recorder
+                .waits
+                .lock()
+                .unwrap()
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+        assert_eq!(
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|request| request.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha", "bravo", "charlie"]
+        );
+    }
+
+    #[test]
+    fn ac7_active_facet_gate_skips_inactive_and_always_run_overrides_it() {
+        // Source-derived, not measured: thinking.py:2220-2227 skips inactive facets unless `always` is set.
+        let journal = tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("facets/work")).unwrap();
+        fs::write(journal.path().join("facets/work/facet.json"), "{}").unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "multi",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        assert!(
+            daily::run(&context, &mut log, None, false, 2)
+                .unwrap()
+                .applicable_units
+                .is_empty()
+        );
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        let skip = fs::read_to_string(journal.path().join("daily.jsonl")).unwrap();
+        assert!(skip.contains("no_active_facets"));
+
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "always-multi",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 10);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("always.jsonl"));
+        let result = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!(
+            result.applicable_units,
+            BTreeSet::from([("always-multi".to_owned(), Some("work".to_owned()))])
+        );
+        assert_eq!(recorder.requests.lock().unwrap()[0].config["facet"], "work");
+    }
+
+    #[test]
+    fn ac20_cortex_policies_have_distinct_real_deadlines() {
+        use solstone_core_cortex_client::CortexRequestPolicy;
+        use std::time::Duration;
+
+        assert_eq!(
+            CortexRequestPolicy::think().outcome_deadline(),
+            Some(Duration::from_secs(610))
+        );
+        assert_eq!(
+            CortexRequestPolicy::interactive().outcome_deadline(),
+            Some(Duration::from_secs(600))
+        );
+    }
+
+    #[test]
+    fn ac7_completed_unit_guard_dispatches_fresh_then_skips_terminal_unit() {
+        // Source-derived, not measured: thinking.py:2123-2125 skips a completed daily unit on rerun.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "completed",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        let fresh = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!(fresh.applicable_units.len(), 1);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.complete","ts":1,"mode":"daily","name":"completed"}"#,
+        );
+        let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!(repeated.applicable_units, fresh.applicable_units);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ac7_deterministic_failure_guard_dispatches_fresh_then_skips_failure() {
+        // Source-derived, not measured: thinking.py:2124-2125 keeps deterministic daily failures out of a rerun.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "deterministic",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        let fresh = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!(fresh.applicable_units.len(), 1);
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"deterministic","reason_code":"no_output"}"#,
+        );
+        let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!(repeated.applicable_units, fresh.applicable_units);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ac7_retry_on_deterministic_failure_dispatches_the_recorded_unit() {
+        // Source-derived, not measured: thinking.py:2124-2125 lets `retry_on_deterministic_failure` bypass the skip.
+        let journal = tempdir().unwrap();
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"retry","reason_code":"no_output"}"#,
+        );
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "retry",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        let result = daily::run(&context, &mut log, None, false, 2).unwrap();
+        assert_eq!(result.applicable_units.len(), 1);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn batch_drain_zero_dispatches_the_entire_priority_group_before_waiting() {
+        // Source-derived, not measured: thinking.py:2086 documents zero as unlimited per priority group.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "one",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+                (
+                    "two",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+                (
+                    "three",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        let result = daily::run(&context, &mut log, None, false, 0).unwrap();
+        assert_eq!((result.success, result.failed), (3, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 3);
+        assert_eq!(
+            recorder.waits.lock().unwrap().as_slice(),
+            &[vec![
+                "use-1".to_owned(),
+                "use-2".to_owned(),
+                "use-3".to_owned(),
+            ]]
+        );
+    }
+
+    #[test]
+    fn multi_facet_daily_expansion_dispatches_each_active_facet_and_reports_units() {
+        // Source-derived, not measured: thinking.py:2217-2237 expands one applicable unit per eligible facet.
+        let journal = tempdir().unwrap();
+        for facet in ["home", "work"] {
+            let path = journal.path().join("facets").join(facet);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("facet.json"), "{}").unwrap();
+        }
+        let active = journal.path().join("awareness/activity_state.json");
+        fs::create_dir_all(active.parent().unwrap()).unwrap();
+        fs::write(
+            active,
+            r#"{"active":{"home":{"id":"h","activity":"focus","since":"s","description":"d"},"work":{"id":"w","activity":"focus","since":"s","description":"d"}}}"#,
+        )
+        .unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "multi",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        let result = daily::run(&context, &mut log, None, false, 0).unwrap();
+        assert_eq!(
+            result.applicable_units,
+            BTreeSet::from([
+                ("multi".to_owned(), Some("home".to_owned())),
+                ("multi".to_owned(), Some("work".to_owned())),
+            ])
+        );
+        assert_eq!(result.success, 2);
+        assert_eq!(
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|request| request.config["facet"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["home", "work"]
+        );
+    }
+
+    #[test]
+    fn ac22_daily_weekly_and_cadence_route_requests_through_output_persistence() {
+        // Source-derived, not measured: thinking.py:2058 applies this helper only to daily, weekly, and cadence; Phase 2b covers the direct-output modes.
+        let journal = tempdir().unwrap();
+        write_health_event(
+            journal.path(),
+            "20260813",
+            r#"{"event":"talent.complete","ts":1,"mode":"segment","stream":"default","segment":"one","name":"sense"}"#,
+        );
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "daily-output",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                ),
+                (
+                    "weekly-output",
+                    "{\n\"type\": \"generate\", \"schedule\": \"weekly\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                ),
+                (
+                    "cadence-output",
+                    "{\n\"type\": \"generate\", \"schedule\": \"cadence\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let mut daily_log = run_log::RunLogWriter::open(&journal.path().join("daily.jsonl"));
+        daily::run(&context, &mut daily_log, None, false, 2).unwrap();
+        let mut weekly_log = run_log::RunLogWriter::open(&journal.path().join("weekly.jsonl"));
+        weekly::run(&context, &mut weekly_log, false, None, 2).unwrap();
+        let mut cadence_log = run_log::RunLogWriter::open(&journal.path().join("cadence.jsonl"));
+        cadence::run(
+            &context,
+            cadence::configured(&context).unwrap(),
+            &mut cadence_log,
+            false,
+        )
+        .unwrap();
+        let requests = recorder.requests.lock().unwrap();
+        for name in ["daily-output", "weekly-output", "cadence-output"] {
+            let request = requests
+                .iter()
+                .find(|request| request.name == name)
+                .unwrap();
+            assert_eq!(request.config["output"], "json");
+        }
+    }
+
+    #[test]
+    fn ac7_completed_and_deterministic_guards_keep_fresh_units_eligible() {
+        use solstone_core_system_health::{CompletedUnit, DailyUnit, DeterministicFailure};
+
+        let unit = CompletedUnit {
+            mode: "daily".to_owned(),
+            name: "sample".to_owned(),
+            facet: None,
+        };
+        let failure = DailyUnit {
+            name: "sample".to_owned(),
+            facet: None,
+        };
+        let completed = BTreeSet::<CompletedUnit>::new();
+        let deterministic = std::collections::BTreeMap::<DailyUnit, DeterministicFailure>::new();
+        assert!(!completed.contains(&unit));
+        assert!(!deterministic.contains_key(&failure));
+    }
+
+    #[test]
+    fn ac7_completed_and_deterministic_guards_identify_populated_units() {
+        use solstone_core_system_health::{CompletedUnit, DailyUnit, DeterministicFailure};
+
+        let unit = CompletedUnit {
+            mode: "daily".to_owned(),
+            name: "sample".to_owned(),
+            facet: None,
+        };
+        let failure = DailyUnit {
+            name: "sample".to_owned(),
+            facet: None,
+        };
+        let completed = BTreeSet::from([unit.clone()]);
+        let deterministic = std::collections::BTreeMap::from([(
+            failure.clone(),
+            DeterministicFailure {
+                count: 1,
+                reason_code: "invalid_config".to_owned(),
+            },
+        )]);
+        assert!(completed.contains(&unit));
+        assert!(deterministic.contains_key(&failure));
+    }
+
+    #[test]
+    fn daily_records_its_source_derived_sense_repair_pre_phase() {
+        let journal = tempdir().unwrap();
+        let _ = run_at(journal.path(), &[]);
+        let events = sidecar_events(journal.path(), "20260813", "daily");
+        assert_eq!(events[0]["event"], "run.start");
+        assert_eq!(events[0]["mode"], "daily");
+        assert!(events.iter().any(|event| {
+            event["event"] == "phase.start"
+                && event["mode"] == "daily"
+                && event["phase"] == "sense_repair"
+        }));
+    }
+
+    #[test]
+    fn weekly_records_its_priority_group_observable() {
+        let journal = tempdir().unwrap();
+        let _ = run_at(journal.path(), &["--weekly"]);
+        let events = sidecar_events(journal.path(), "20260813", "weekly");
+        assert_eq!(events[0]["event"], "run.start");
+        assert!(
+            events
+                .iter()
+                .any(|event| event["event"] == "group.start" && event["mode"] == "weekly")
+        );
+    }
+
+    #[test]
+    fn cadence_records_a_run_start_without_firing_when_no_work_is_complete() {
+        let journal = tempdir().unwrap();
+        assert_eq!(run_at(journal.path(), &["--cadence"]).exit_code, 0);
+        let events = sidecar_events(journal.path(), "20260814", "cadence");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["event"], "run.start");
+        assert_eq!(events[0]["mode"], "cadence");
+        assert!(!journal.path().join("health/cadence.json").exists());
+    }
+
+    #[test]
+    fn output_persistence_generate_defaults_to_markdown() {
+        let config = talent(Map::from_iter([(
+            "type".to_owned(),
+            Value::String("generate".to_owned()),
+        )]));
+        let mut request = Map::new();
+        dispatch::apply_output_persistence(&config, &mut request, false);
+        assert_eq!(request.get("output"), Some(&Value::String("md".to_owned())));
+        assert!(!request.contains_key("refresh"));
+    }
+
+    #[test]
+    fn output_persistence_declared_output_sets_refresh_only_when_forced() {
+        let config = talent(Map::from_iter([(
+            "output".to_owned(),
+            Value::String("json".to_owned()),
+        )]));
+        let mut ordinary = Map::new();
+        dispatch::apply_output_persistence(&config, &mut ordinary, false);
+        assert_eq!(
+            ordinary.get("output"),
+            Some(&Value::String("json".to_owned()))
+        );
+        assert!(!ordinary.contains_key("refresh"));
+        let mut forced = Map::new();
+        dispatch::apply_output_persistence(&config, &mut forced, true);
+        assert_eq!(forced.get("refresh"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn output_persistence_cogitate_without_output_is_untouched() {
+        let config = talent(Map::from_iter([(
+            "type".to_owned(),
+            Value::String("cogitate".to_owned()),
+        )]));
+        let mut request = Map::from_iter([("existing".to_owned(), Value::Bool(true))]);
+        dispatch::apply_output_persistence(&config, &mut request, true);
+        assert_eq!(
+            request,
+            Map::from_iter([("existing".to_owned(), Value::Bool(true))])
+        );
+    }
+
+    #[test]
+    fn cadence_missing_file_loads_empty_state() {
+        let journal = tempdir().unwrap();
+        assert_eq!(
+            cadence_state::CadenceState::load(journal.path()).timestamp("missing"),
+            None
+        );
+    }
+
+    #[test]
+    fn cadence_save_preserves_non_integer_and_untouched_values() {
+        let journal = tempdir().unwrap();
+        let path = journal.path().join("health/cadence.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            r#"{"fired": 1, "unknown": "keep", "nested": {"a": 1}}"#,
+        )
+        .unwrap();
+        let mut state = cadence_state::CadenceState::load(journal.path());
+        state.set_timestamp("fired", 9);
+        state.save(journal.path()).unwrap();
+        let saved: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(saved["fired"], 9);
+        assert_eq!(saved["unknown"], "keep");
+        assert_eq!(saved["nested"]["a"], 1);
+    }
+
+    #[test]
+    fn cadence_call_site_updates_only_clean_fires_and_keeps_prior_timestamp_on_failure() {
+        let journal = tempdir().unwrap();
+        let mut state = cadence_state::CadenceState::load(journal.path());
+        state.set_timestamp("failed", 11);
+        state.set_timestamp("other", 12);
+        assert!(!cadence::record_clean_fire(&mut state, "failed", 20, false));
+        assert!(cadence::record_clean_fire(&mut state, "fired", 20, true));
+        state.save(journal.path()).unwrap();
+        let loaded = cadence_state::CadenceState::load(journal.path());
+        assert_eq!(loaded.timestamp("failed"), Some(11));
+        assert_eq!(loaded.timestamp("fired"), Some(20));
+        assert_eq!(loaded.timestamp("other"), Some(12));
+    }
+
     #[test]
     fn criterion_three_value_half_preserves_parser_defaults() {
         // Criterion 3's value half is inline because unavailable run modes do not reveal defaults.
@@ -382,11 +1231,12 @@ mod tests {
         let journal = tempdir().unwrap();
         let base = |env: Option<(&str, &str)>, up| {
             run_cli_with(
-                &[],
+                &["--segment".to_owned(), "x".to_owned()],
                 journal.path(),
                 move |name| env.and_then(|(key, value)| (name == key).then(|| value.to_owned())),
                 move || up,
                 || NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+                || 1_785_000_000_000,
                 || Some(8),
                 || (false, LocalEndpointResolution::Bundled),
                 || None,
@@ -415,6 +1265,7 @@ mod tests {
             |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
             || false,
             || NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+            || 1_785_000_000_000,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || None,
@@ -453,7 +1304,7 @@ mod tests {
     fn criterion_nine_day_resolution_creates_yesterday() {
         let journal = tempdir().unwrap();
         let result = run_at(journal.path(), &[]);
-        assert_eq!(result.exit_code, 69);
+        assert_eq!(result.exit_code, 1);
         assert!(journal.path().join("chronicle/20260813").is_dir());
     }
 
@@ -491,6 +1342,7 @@ mod tests {
             |_| None,
             || false,
             today,
+            || 1_785_000_000_000,
             || Some(8),
             || (false, LocalEndpointResolution::Bundled),
             || Some(2),
@@ -589,7 +1441,9 @@ mod tests {
             ),
             (vec!["--flush", "--segment", "x"], "flush"),
             (vec!["--segments"], "segment"),
+            (vec!["--segment", "x"], "segment"),
             (vec!["--weekly"], "weekly"),
+            (vec!["--cadence"], "cadence"),
             (vec![], "daily"),
         ] {
             let args::ParseOutcome::Args(parsed) =
@@ -599,24 +1453,23 @@ mod tests {
             };
             assert_eq!(run_log::mode(&parsed), expected);
         }
-        // The cadence run-log mode is unreachable in this wave.
     }
 
     #[test]
     fn criterion_sixteen_cadence_round_trips_and_save_replaces_previous_state() {
         let journal = tempdir().unwrap();
         fs::create_dir_all(journal.path().join("health")).unwrap();
-        let initial = BTreeMap::from([("one".to_owned(), 12), ("two".to_owned(), 24)]);
-        cadence::save(journal.path(), &initial).unwrap();
-        assert_eq!(cadence::load(journal.path()), initial);
-        let replacement = BTreeMap::from([("two".to_owned(), 36)]);
-        cadence::save(journal.path(), &replacement).unwrap();
-        assert_eq!(cadence::load(journal.path()), replacement);
-        assert!(
-            !fs::read_to_string(journal.path().join("health/cadence.json"))
-                .unwrap()
-                .contains("one")
-        );
+        let mut initial = cadence_state::CadenceState::load(journal.path());
+        initial.set_timestamp("one", 12);
+        initial.set_timestamp("two", 24);
+        initial.save(journal.path()).unwrap();
+        let mut replacement = cadence_state::CadenceState::load(journal.path());
+        assert_eq!(replacement.timestamp("one"), Some(12));
+        replacement.set_timestamp("two", 36);
+        replacement.save(journal.path()).unwrap();
+        let loaded = cadence_state::CadenceState::load(journal.path());
+        assert_eq!(loaded.timestamp("one"), Some(12));
+        assert_eq!(loaded.timestamp("two"), Some(36));
     }
 
     #[test]
@@ -627,13 +1480,19 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let corrupt = b"{ definitely not json }";
         fs::write(&path, corrupt).unwrap();
-        assert!(cadence::load(journal.path()).is_empty());
+        assert_eq!(
+            cadence_state::CadenceState::load(journal.path()).timestamp("x"),
+            None
+        );
         assert_eq!(warnings().len(), 1);
         assert_eq!(fs::read(&path).unwrap(), corrupt);
 
         LOGS.get().unwrap().lock().unwrap().clear();
         fs::write(&path, "[]").unwrap();
-        assert!(cadence::load(journal.path()).is_empty());
+        assert_eq!(
+            cadence_state::CadenceState::load(journal.path()).timestamp("x"),
+            None
+        );
         assert!(warnings().is_empty());
     }
 
