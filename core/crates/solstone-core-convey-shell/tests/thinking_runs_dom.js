@@ -443,6 +443,10 @@ async function main() {
 
   thinking.state.runsFacet = '';
   thinking.state.runsFacetExplicit = false;
+  dayResponses.push(Promise.resolve({
+    uses: [],
+    facets: {work: {title: 'Work'}, verona: {title: 'Verona'}},
+  }));
   const firstDayRequest = requests.length;
   window.location.hash = '#runs/20260101';
   thinking.routeThinkingHash('history');
@@ -451,6 +455,11 @@ async function main() {
   assert.strictEqual(requests[firstDayRequest], '/app/thinking/api/talents/20260101', 'first day request leaves facet to the cookie');
   assert.strictEqual(nodes.get('thinkingRunsSummary').children[0].textContent, '0 runs', 'day summary includes the run total');
   const facetControl = nodes.get('thinkingRunsFacet');
+  assert.strictEqual(
+    JSON.stringify(facetControl.children.map((option) => [option.value, option.textContent])),
+    JSON.stringify([['', 'all'], ['work', 'Work'], ['verona', 'Verona']]),
+    'the native facet object map populates distinct selector values and labels',
+  );
   facetControl.value = 'work';
   facetControl.emit('change');
   await settle();

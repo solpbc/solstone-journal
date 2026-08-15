@@ -1398,7 +1398,14 @@
       all.value = '';
       all.textContent = 'all';
       facet.appendChild(all);
-      (Array.isArray(payload?.facets) ? payload.facets : []).forEach((item) => {
+      const returnedFacets = Array.isArray(payload?.facets)
+        ? payload.facets
+        : Object.entries(payload?.facets && typeof payload.facets === 'object' ? payload.facets : {})
+          .map(([name, metadata]) => ({
+            ...(metadata && typeof metadata === 'object' ? metadata : {}),
+            name,
+          }));
+      returnedFacets.forEach((item) => {
         const option = document.createElement('option');
         option.value = item.name || item;
         option.textContent = item.title || item.name || item;
