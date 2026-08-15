@@ -3,7 +3,7 @@
 
 use super::pricing::{calc_token_cost, provider};
 use serde_json::{Map, Value, json};
-use solstone_core_journal_io::{read_text, resolve_journal_path};
+use solstone_core_journal_io::{DirEntryKind, list_dir_entries, read_text, resolve_journal_path};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -178,14 +178,13 @@ pub(super) fn aggregate_entries(day: &str, entries: Vec<Value>) -> Value {
 
 pub(super) fn cost_stats(root: &Path, month: Option<&str>) -> Result<Value, String> {
     let tokens = resolve_journal_path(root, "tokens").map_err(|e| e.to_string())?;
-    let entries = match std::fs::read_dir(tokens) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(json!({})),
-        Err(error) => return Err(error.to_string()),
-    };
+    let entries = list_dir_entries(&tokens).map_err(|error| error.to_string())?;
     let mut rows = Map::new();
     for entry in entries {
-        let path = entry.map_err(|e| e.to_string())?.path();
+        if entry.kind != DirEntryKind::File {
+            continue;
+        }
+        let path = entry.path;
         let Some(day) = path.file_stem().and_then(|v| v.to_str()) else {
             continue;
         };
