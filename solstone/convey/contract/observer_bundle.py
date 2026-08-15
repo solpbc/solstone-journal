@@ -20,7 +20,7 @@ from solstone.convey.contract.assemble import CALLOSUM_REGISTRY, build_document
 from solstone.observe import protocol
 
 INITIAL_BUNDLE_SEMVER = "1.0.0"
-BUNDLE_SEMVER = "7.0.1"
+BUNDLE_SEMVER = "7.0.2"
 GENERATOR_IDENTITY = "solstone.convey.contract.observer_bundle.v1"
 BUNDLE_SCHEMA_IDENTITY = "solstone.observer-client-contract-bundle.schema.v1"
 SCHEMA_DIALECT_URI = "https://json-schema.org/draft/2020-12/schema"

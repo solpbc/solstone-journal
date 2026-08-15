@@ -355,7 +355,7 @@
             "application/json": {
               "example": {
                 "csr": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
-                "device_label": "Jer iPhone",
+                "device_label": "Rae's iPhone",
                 "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
                 "sender_instance_id": "ios-01"
               },

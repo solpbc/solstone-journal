@@ -428,10 +428,9 @@ fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
 
 // --- export ---------------------------------------------------------------
 //
-// export reproduced the identical defect one wave later: the later cutover was already
-// in flight when grab/transfer/observer were repaired, and its scope never
-// named this surface. That recurrence is why the coverage is here rather than
-// left to each wave to remember.
+// Export must reject malformed invocations consistently with grab, transfer,
+// and observer. This coverage keeps shared CLI validation changes from omitting
+// the export surface.
 
 #[test]
 fn malformed_export_invocations_exit_2_not_64() {

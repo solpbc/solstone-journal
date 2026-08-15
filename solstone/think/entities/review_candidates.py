@@ -229,7 +229,7 @@ def dismiss_candidate(
             return rows
         evidence = existing.get("evidence", {})
         existing["status"] = "dismissed"
-        # Preserved today; a future re-open lode compares stronger evidence here.
+        # Preserved today; a future re-open may compare stronger evidence here.
         existing["dismissed_detection_count"] = (
             evidence.get("detection_count") if isinstance(evidence, dict) else None
         )

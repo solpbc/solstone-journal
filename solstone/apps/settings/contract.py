@@ -72,7 +72,7 @@ OPERATIONS: list[OperationSpec] = [
                 FieldSpec("key", "string"),
                 FieldSpec("value", "string"),
             ),
-            example={"section": "identity", "data": {"name": "Jer"}},
+            example={"section": "identity", "data": {"name": "Rae"}},
         ),
         responses=(
             ResponseSpec(

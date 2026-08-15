@@ -26,7 +26,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "core/fixtures/convey_restart_reference_grammar.json"
 DEFAULT_REFERENCE_PYTHON = ROOT / ".venv/bin/python"
-SCRATCH_JOURNAL = Path("/tmp/solstone-restart-capture-journal")
+SCRATCH_JOURNAL = Path("/var/tmp/solstone-restart-capture-journal")
+PUBLIC_REFERENCE_ROOT = Path("/workspace/reference")
+PUBLIC_REFERENCE_PYTHON = PUBLIC_REFERENCE_ROOT / ".venv/bin/python"
 REFERENCE_REV = "c1f9da3e0d4b55cbef68e68876065ac213721d6b"
 ALLOWED_CAPTURE_PATHS = {
     Path("scripts/capture_convey_restart_reference_grammar.py"),
@@ -208,9 +210,9 @@ def checked_provenance(reference_python: Path, output: Path) -> dict[str, Any]:
         )
     return {
         "captured_from_rev": revision,
-        "interpreter": str(reference_python),
+        "interpreter": str(PUBLIC_REFERENCE_PYTHON),
         "python": python_version,
-        "pythonpath": str(ROOT),
+        "pythonpath": str(PUBLIC_REFERENCE_ROOT),
         "solstone_journal": str(SCRATCH_JOURNAL),
         "tree_cleanliness": {
             "source_dirty_files": 0,
@@ -227,7 +229,7 @@ def checked_provenance(reference_python: Path, output: Path) -> dict[str, Any]:
         "convey_exec_capture": {
             "intercepted": "solstone.convey.cli.os.execv",
             "records": "forwarded_argv excluding the helper binary path",
-            "note": "accepted Convey cases are parse-accept records without an exit code. The previously verified external interpreter /workspace/owner/solstone-finding1-b7530552/.venv/bin/python has sibling solstone-core 0.8.9, so post-exec output is never corpus behavior.",
+            "note": "accepted Convey cases are parse-accept records without an exit code. The previously verified external interpreter /workspace/reference/.venv/bin/python has sibling solstone-core 0.8.9, so post-exec output is never corpus behavior.",
         },
         "guard": "This is immutable committed capture data. A build worktree without a runnable Python environment must not regenerate it.",
     }

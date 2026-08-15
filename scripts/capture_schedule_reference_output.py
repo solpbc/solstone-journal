@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "core/fixtures/schedule_reference_output.json"
 DEFAULT_PYTHON = ROOT / ".venv/bin/python"
 FROZEN_NOW = "2026-03-22T10:30:00"
+PUBLIC_REFERENCE_PYTHON = Path("/workspace/reference/.venv/bin/python")
 
 
 def run_case(python: Path, journal: Path, argv: list[str]) -> dict[str, object]:
@@ -157,7 +158,7 @@ def main() -> int:
             encoding="utf-8",
         )
         cases["invalid_daily_time"] = run_case(args.python, journal, [])
-    payload = {"schema": "schedule-reference-output/1", "provenance": {"captured_from_rev": subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip(), "interpreter": str(args.python), "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port."}, "cases": cases}
+    payload = {"schema": "schedule-reference-output/1", "provenance": {"captured_from_rev": subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip(), "interpreter": str(PUBLIC_REFERENCE_PYTHON), "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port."}, "cases": cases}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0

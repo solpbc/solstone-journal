@@ -35,7 +35,7 @@ body_source_python_json_vectors.json freezes Python's raw JSON behavior that
 ordinary Rust strings/numbers cannot represent: duplicate keys, lone
 surrogates, key ordering, float rounding and overflow/underflow, long numeric
 patterns, and malformed-input coordinates. It was generated with the shipping
-Python 3.12 runtime; Hopper consumes it but never regenerates it.
+Python 3.12 runtime; the native codec consumes it but never regenerates it.
 
 body_source_codec_rows.json supplies independently hand-authored examples of
 all three normalized schemas currently accepted by the shipping body reader,

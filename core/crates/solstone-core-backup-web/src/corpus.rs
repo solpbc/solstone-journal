@@ -72,9 +72,9 @@ async fn corpus_replays_all_cases() {
                 .expect("request");
             let established = phase != "unestablished" && phase != "corrupt";
             let native = established;
-            // The fixture hashes the Python-identical backup.js it predates. the retained compatibility boundary
-            // intentionally serves crate-local backup.js bytes, so this is the corpus-level
-            // counterpart to assets.rs's deliberate JS byte-identity divergence.
+            // The fixture predates the Python-identical backup.js it hashes. The
+            // retained compatibility path intentionally serves crate-local backup.js
+            // bytes, mirroring assets.rs's deliberate JS byte-identity divergence.
             let native_copy_deviation = native && case["path"] == "/app/backup/static/backup.js";
             let response = if native {
                 capture(

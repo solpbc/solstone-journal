@@ -6904,7 +6904,7 @@
             "application/json": {
               "example": {
                 "csr": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
-                "device_label": "Jer iPhone",
+                "device_label": "Rae's iPhone",
                 "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
                 "sender_instance_id": "ios-01"
               },
@@ -7072,7 +7072,7 @@
           "content": {
             "application/json": {
               "example": {
-                "device_label": "Jer iPhone",
+                "device_label": "Rae's iPhone",
                 "role": "phone",
                 "same_machine": false
               },
@@ -7100,7 +7100,7 @@
               "application/json": {
                 "example": {
                   "ca_fingerprint": "9c5f2e0c8e6a42f0a32e55e5cf7f5b4a",
-                  "device_label": "Jer iPhone",
+                  "device_label": "Rae's iPhone",
                   "expires_in": 300,
                   "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
                   "pair_link": "https://solstone.link/pair#0ABCD..."
@@ -7328,7 +7328,7 @@
             "application/json": {
               "example": {
                 "fingerprint": "sha256:4bf5122f344554c53bde2ebb8cd2b7e3...",
-                "label": "Jer iPhone"
+                "label": "Rae's iPhone"
               },
               "schema": {
                 "additionalProperties": true,
@@ -7355,8 +7355,8 @@
             "content": {
               "application/json": {
                 "example": {
-                  "device_label": "Jer iPhone",
-                  "display_label": "Jer iPhone",
+                  "device_label": "Rae's iPhone",
+                  "display_label": "Rae's iPhone",
                   "fingerprint": "sha256:4bf5122f344554c53bde2ebb8cd2b7e3..."
                 },
                 "schema": {
@@ -8937,7 +8937,7 @@
             "application/json": {
               "example": {
                 "data": {
-                  "name": "Jer"
+                  "name": "Rae"
                 },
                 "section": "identity"
               },

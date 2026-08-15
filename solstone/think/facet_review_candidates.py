@@ -150,7 +150,7 @@ def dismiss_candidate(name_key: str) -> dict[str, Any] | None:
         if existing is None:
             return rows
         existing["status"] = "dismissed"
-        # Preserved today; a future re-open lode compares stronger evidence here.
+        # Preserved today; a future re-open may compare stronger evidence here.
         existing["dismissed_count"] = existing.get("count")
         touch_updated(existing)
         row = existing

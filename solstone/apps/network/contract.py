@@ -104,7 +104,7 @@ OPERATIONS: list[OperationSpec] = [
                 FieldSpec("same_machine", "boolean"),
             ),
             example={
-                "device_label": "Jer iPhone",
+                "device_label": "Rae's iPhone",
                 "role": "phone",
                 "same_machine": False,
             },
@@ -124,7 +124,7 @@ OPERATIONS: list[OperationSpec] = [
                     "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
                     "pair_link": "https://solstone.link/pair#0ABCD...",
                     "expires_in": 300,
-                    "device_label": "Jer iPhone",
+                    "device_label": "Rae's iPhone",
                     "ca_fingerprint": "9c5f2e0c8e6a42f0a32e55e5cf7f5b4a",
                 },
             ),
@@ -179,7 +179,7 @@ OPERATIONS: list[OperationSpec] = [
             ),
             example={
                 "fingerprint": "sha256:4bf5122f344554c53bde2ebb8cd2b7e3...",
-                "label": "Jer iPhone",
+                "label": "Rae's iPhone",
             },
         ),
         responses=(
@@ -193,8 +193,8 @@ OPERATIONS: list[OperationSpec] = [
                 ),
                 example={
                     "fingerprint": "sha256:4bf5122f344554c53bde2ebb8cd2b7e3...",
-                    "device_label": "Jer iPhone",
-                    "display_label": "Jer iPhone",
+                    "device_label": "Rae's iPhone",
+                    "display_label": "Rae's iPhone",
                 },
             ),
             _json_error(
@@ -339,7 +339,7 @@ OPERATIONS: list[OperationSpec] = [
             example={
                 "csr": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
                 "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
-                "device_label": "Jer iPhone",
+                "device_label": "Rae's iPhone",
                 "sender_instance_id": "ios-01",
             },
         ),

@@ -40,9 +40,9 @@
     }
   },
   "provenance": {
-    "captured_from_rev": "3d2e593bd6ed349692e2ed5779f61a8b00408806",
+    "captured_from_rev": "e28cffd8ff2aae3779def72005b4ddd26fb54b5b",
     "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port.",
-    "interpreter": "/workspace/owner/.hopper/worktrees/rfgkwqoa/.venv/bin/python"
+    "interpreter": "/workspace/reference/.venv/bin/python"
   },
   "schema": "schedule-reference-output/1"
 }
