@@ -17,7 +17,7 @@ All link-service state lives under `journal/link/`:
 
 `journal/link/` is a narrow exception to the "memories live in
 day/stream/segment/" rule — this is config, not memory, scoped to this
-one service (see cpo/strategy/journal-memory-structure.md).
+one service.
 """
 
 from __future__ import annotations

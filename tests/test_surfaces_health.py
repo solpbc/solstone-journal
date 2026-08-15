@@ -30,7 +30,7 @@ from solstone.think.processing import (
 )
 from solstone.think.surfaces import health as health_surface
 
-_SPEC_POINTER = "cpo/specs/in-flight/consumer-surface-health.md"
+_SPEC_POINTER = "solstone/think/surfaces/health.py"
 
 
 def _configure_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

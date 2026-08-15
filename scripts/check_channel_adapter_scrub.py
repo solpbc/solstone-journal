@@ -65,7 +65,7 @@ TIER1_VALUES = (
     _parts("pr", "o5", "e"),
     _parts("spark", "-", "a8", "a6"),
     _parts("tm", "ux", "-", "run"),
-    _parts("hopper", ":", "build", "-"),
+    _parts("automation", ":", "build", "-"),
 )
 
 TIER3_TERMS = (

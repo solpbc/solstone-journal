@@ -1775,8 +1775,8 @@ def _active_talent_count_for_today_locked() -> int:
     return len(reduce_chat_state(_today_day())["active_talents"])
 
 
-# LOCKED — see cpo/specs/in-flight/chat-schema-tolerance-audit.md
-# Spec amendment required to expand. No fuzzy matching, no LLM classification.
+# LOCKED — exact matching is part of the parser contract.
+# An explicit contract change is required to expand it. No fuzzy matching, no LLM classification.
 
 # target field — accepted aliases → canonical
 TARGET_ALIASES = {

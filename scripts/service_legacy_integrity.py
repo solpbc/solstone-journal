@@ -114,6 +114,7 @@ ROLE_TOKEN = re.compile(r"<([A-Z_]+)>")
 OPERATOR_HOME_PATH = re.compile(
     r"""(?:^|[\s=:"'(\[+@!-]|file://(?:localhost)?)/(?:home|Users)/"""
 )
+HIDDEN_WORKTREE_PATH = re.compile(r"(?:^|/)[.][^/]+/worktrees(?:/|$)")
 ESCAPED_CODEPOINT = re.compile(
     r"\\+(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2}))"
 )
@@ -141,8 +142,8 @@ def contains_operator_path(text: str) -> bool:
         if unescaped == normalized:
             break
         normalized = unescaped
-    return (
-        bool(OPERATOR_HOME_PATH.search(normalized)) or ".hopper/worktrees" in normalized
+    return bool(OPERATOR_HOME_PATH.search(normalized)) or bool(
+        HIDDEN_WORKTREE_PATH.search(normalized)
     )
 
 
@@ -1194,7 +1195,7 @@ def self_test(fixture: Path, oracle_path: Path) -> None:
         "file://localhost/home/operator/worktree",
         "file:%2f%2f%2fUsers%2foperator%2fworktree",
         "file:%252f%252f%252fhome%252foperator%252fworktree",
-        '"/tmp/.hopper/worktrees/poison"',
+        '"/tmp/.automation/worktrees/poison"',
     ):
         if not contains_operator_path(text):
             raise AssertionError(f"operator path control was missed: {text}")

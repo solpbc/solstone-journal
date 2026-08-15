@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "AGPL-3.0-only"}
 authors = [
-    {name = "Jer Miller", email = "jer@solpbc.org"}
+    {name = "sol pbc"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

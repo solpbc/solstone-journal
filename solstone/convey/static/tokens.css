@@ -2,19 +2,19 @@
  * sol pbc — web design tokens
  * The single consumable embodiment of the design-token SOT.
  *
- *   SOT (prose, authoritative):   vpx/design-system/tokens.md
- *   Identity source:              brand/sol/index.md
- *   Consumption contract:         vpx/design-system/web/index.md
- *   Surface tiers (who uses what): vpx/design-system/surface-tiers.md
+ *   Canonical consumable source:  this file
+ *   Identity values:              fixed token declarations below
+ *   Consumption contract:         import this file
+ *   Surface tiers (who uses what): documented by section below
  *
  * Variable names mirror the reference implementation (services.solstone.app
  * `portal.css`) so surfaces adopt with minimal churn. Derivation is ONE-WAY:
- * do not edit a value here to "fix" a surface — fix it in tokens.md (usage,
- * product review) or via an identity request, then re-derive. A surface that
+ * do not edit a value here to "fix" a surface — update the upstream design
+ * source through product review, then re-derive. A surface that
  * hard-codes brand values instead of importing this file is non-compliant
- * (web/index.md § no inline brand values).
+ * (see the no-inline-brand-values rule below).
  *
- * THE CONTRAST LAW (the org's most re-found a11y defect — tokens.md):
+ * THE CONTRAST LAW:
  *   --orange (#E8923A) is DECORATION ONLY. It fails WCAG 3:1 against white
  *   (2.44:1), cream-bright (2.38:1), and cream (2.21:1) — it may fill shapes
  *   and sit behind dark ink, never BE text/links on a light surface.
@@ -43,7 +43,7 @@
 }
 
 :root {
-  /* ── brand identity (brand/sol/index.md) ─────────────────────────────── */
+  /* ── brand identity ──────────────────────────────────────────────────── */
   --gold:        #FFCF33; /* sun rays — decoration only */
   --orange:      #E8923A; /* THE sol orange. DECORATION ONLY (see contrast law) */
   --orange-ink:  #B06A1A; /* accessible orange — ALL orange text + links on light */

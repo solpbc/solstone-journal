@@ -104,7 +104,7 @@ PROBES: list[tuple[str, str, dict[str, str], str]] = [
     ("GET", "/app/speakers/api/discovery/cluster/-1/presence", {}, "negative id: router 404, non-JSON body"),
     ("GET", "/app/speakers/api/people/search?q=", {}, "blank query is 200 with an empty list"),
     ("GET", "/app/speakers/api/people/search?q=a", {}, "broad query -- pins the invisible limit of 8"),
-    ("GET", "/app/speakers/api/people/search?q=hopper", {}, "narrow query"),
+    ("GET", "/app/speakers/api/people/search?q=grace", {}, "narrow query"),
     ("GET", f"/app/speakers/api/stats/{DAY_FULL[:6]}", {}, "month stats: bare {day: count}"),
     ("GET", "/app/speakers/api/stats/999999", {}, "\\d{6} accepts an impossible month"),
     ("GET", "/app/speakers/api/stats/nope", {}, "a non-month is 400"),

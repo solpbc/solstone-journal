@@ -861,11 +861,11 @@
       "why": "broad query -- pins the invisible limit of 8"
     },
     {
-      "body_bytes": 98,
-      "body_sha256": "43dd0f067cfb0a6cfc72cd271d0f429dd2f694d05f4f359bc178e20e12e80ea0",
+      "body_bytes": 97,
+      "body_sha256": "cd65d22f852c68595a2c4b3ee6778308ac58c1a281171aa3cf3119ebcd272921",
       "body_sha256_basis": "normalized-json",
       "headers": {
-        "Content-Length": "98",
+        "Content-Length": "97",
         "Content-Type": "application/json"
       },
       "json": {
@@ -876,11 +876,11 @@
             "name": "Grace Hopper"
           }
         ],
-        "query": "hopper"
+        "query": "grace"
       },
       "method": "GET",
       "normalized_fields": [],
-      "path": "/app/speakers/api/people/search?q=hopper",
+      "path": "/app/speakers/api/people/search?q=grace",
       "request_headers": {},
       "status": 200,
       "why": "narrow query"

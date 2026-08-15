@@ -68,7 +68,7 @@ DEGRADED_OUTPUT_NOTE_CAP = 10
 TALENT_INDEX_PROBLEM_NOTE_CAP = 10
 _DAY_MS = 86_400_000
 _HOUR_MS = 3_600_000
-_SPEC_POINTER = "cpo/specs/in-flight/consumer-surface-health.md"
+_SPEC_POINTER = "solstone/think/surfaces/health.py"
 
 logger = logging.getLogger(__name__)
 
