@@ -593,7 +593,7 @@
     if (lateness.late) {
       return '<div class="pulse-briefing-placeholder">'
         + "I usually finish your briefing by ~10 am. It's " + esc(lateness.late_hours || 0) + 'h late.'
-        + '<a class="pulse-briefing-status-link" href="/app/sol/' + esc(pulseContext?.today || '') + '#morning_briefing">Check status</a>'
+        + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.today || '') + '/morning_briefing">Check status</a>'
         + '</div>';
     }
     return '<div class="pulse-briefing-placeholder">your morning briefing is being prepared...</div>';

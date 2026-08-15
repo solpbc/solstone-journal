@@ -2519,7 +2519,7 @@ function renderObservationItem(obs) {
   if (row.source_day) {
     if (/^\d{8}$/.test(row.source_day)) {
       const dayLink = document.createElement('a');
-      dayLink.href = `/app/sol/${row.source_day}`;
+      dayLink.href = `/app/thinking/#runs/${row.source_day}`;
       dayLink.title = ENT_COPY.ENT_OBS_SOURCE_LINK_TITLE || '';
       dayLink.textContent = formatDateShort(row.source_day);
       meta.appendChild(dayLink);
@@ -3013,7 +3013,7 @@ function appendEvidenceRows(list, rows, referenceDay) {
     if (/^\d{8}$/.test(row.day || '')) {
       const date = document.createElement('a');
       date.className = 'entity-conn-evidence-date';
-      date.href = `/app/sol/${row.day}`;
+      date.href = `/app/thinking/#runs/${row.day}`;
       date.textContent = formatEntityConnDay(row.day, referenceDay);
       item.appendChild(date);
     } else {

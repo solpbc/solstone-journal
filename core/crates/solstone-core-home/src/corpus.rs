@@ -17,6 +17,12 @@ const CORPUS: &[u8] = include_bytes!(concat!(
 
 #[test]
 fn replay_convey_home_corpus() {
+    let source = std::str::from_utf8(CORPUS).expect("home corpus is UTF-8");
+    let legacy_url_count = source.matches("/app/sol/").count();
+    assert_eq!(
+        legacy_url_count, 9,
+        "home corpus legacy Sol URL count: expected 9, actual {legacy_url_count}"
+    );
     let corpus: Value = serde_json::from_slice(CORPUS).unwrap();
     let groups = corpus["cases"].as_object().unwrap();
     let mut asserted = 0_usize;
@@ -169,6 +175,8 @@ fn replay_convey_home_corpus() {
         asserted += 1;
     }
     for case in groups["gap_links"].as_array().unwrap() {
+        let mut expected = case["output"].clone();
+        rewrite_sol_urls_in_value(&mut expected);
         eq(
             &json!(formatting::format_gap_links(
                 &case["input"]["pipeline_summary"],
@@ -176,7 +184,7 @@ fn replay_convey_home_corpus() {
                 "20260513",
                 "20260514"
             )),
-            &case["output"],
+            &expected,
             "gap links",
         );
         asserted += 1;
@@ -269,6 +277,73 @@ fn replay_convey_home_corpus() {
         asserted += 1;
     }
     assert_eq!(asserted, 2154);
+}
+
+fn rewrite_sol_urls_in_value(value: &mut Value) {
+    match value {
+        Value::String(text) => *text = rewrite_sol_urls(text),
+        Value::Array(values) => {
+            for value in values {
+                rewrite_sol_urls_in_value(value);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values_mut() {
+                rewrite_sol_urls_in_value(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn rewrite_sol_urls(text: &str) -> String {
+    const PREFIX: &str = "/app/sol/";
+    let mut rewritten = String::new();
+    let mut cursor = 0;
+    while let Some(offset) = text[cursor..].find(PREFIX) {
+        let start = cursor + offset;
+        rewritten.push_str(&text[cursor..start]);
+        let path_start = start + PREFIX.len();
+        let path_end = text[path_start..]
+            .find(is_url_delimiter)
+            .map_or(text.len(), |offset| path_start + offset);
+        let path = &text[path_start..path_end];
+        rewritten.push_str(&rewrite_sol_path(path).unwrap_or_else(|| format!("{PREFIX}{path}")));
+        cursor = path_end;
+    }
+    rewritten.push_str(&text[cursor..]);
+    rewritten
+}
+
+fn is_url_delimiter(ch: char) -> bool {
+    ch.is_whitespace() || matches!(ch, '"' | '\'' | ')' | ']' | '<' | '>')
+}
+
+fn rewrite_sol_path(path: &str) -> Option<String> {
+    let parts = path.split('/').collect::<Vec<_>>();
+    if matches!(parts.as_slice(), [day, "talents", "facet_newsletter"] if day_key(day)) {
+        return Some(format!("/app/thinking/#runs/{}/facet_newsletter", parts[0]));
+    }
+    if let Some((day, fragment)) = path.split_once('#')
+        && day_key(day)
+    {
+        let parts = fragment.split('/').collect::<Vec<_>>();
+        return match parts.as_slice() {
+            [talent] if !talent.is_empty() => Some(format!("/app/thinking/#runs/{day}/{talent}")),
+            [talent, use_id] if !talent.is_empty() && !use_id.is_empty() => {
+                Some(format!("/app/thinking/#runs/{day}/{talent}/{use_id}"))
+            }
+            _ => None,
+        };
+    }
+    if day_key(path) {
+        return Some(format!("/app/thinking/#runs/{path}"));
+    }
+    (!path.is_empty() && !path.contains('/')).then(|| format!("/app/thinking/#runs/run/{path}"))
+}
+
+fn day_key(value: &str) -> bool {
+    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn eq<T: serde::Serialize>(actual: &T, expected: &Value, group: &str) {

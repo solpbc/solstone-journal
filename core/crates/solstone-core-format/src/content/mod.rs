@@ -754,6 +754,59 @@ mod tests {
         "screen_first_row_without_timestamp_or_raw_is_skipped_not_metadata",
     ];
 
+    fn rewrite_sol_urls(text: &str) -> String {
+        const PREFIX: &str = "/app/sol/";
+        let mut rewritten = String::new();
+        let mut cursor = 0;
+        while let Some(offset) = text[cursor..].find(PREFIX) {
+            let start = cursor + offset;
+            rewritten.push_str(&text[cursor..start]);
+            let path_start = start + PREFIX.len();
+            let path_end = text[path_start..]
+                .find(is_url_delimiter)
+                .map_or(text.len(), |offset| path_start + offset);
+            let path = &text[path_start..path_end];
+            rewritten
+                .push_str(&rewrite_sol_path(path).unwrap_or_else(|| format!("{PREFIX}{path}")));
+            cursor = path_end;
+        }
+        rewritten.push_str(&text[cursor..]);
+        rewritten
+    }
+
+    fn is_url_delimiter(ch: char) -> bool {
+        ch.is_whitespace() || matches!(ch, '"' | '\'' | ')' | ']' | '<' | '>')
+    }
+
+    fn rewrite_sol_path(path: &str) -> Option<String> {
+        let parts = path.split('/').collect::<Vec<_>>();
+        if matches!(parts.as_slice(), [day, "talents", "facet_newsletter"] if day_key(day)) {
+            return Some(format!("/app/thinking/#runs/{}/facet_newsletter", parts[0]));
+        }
+        if let Some((day, fragment)) = path.split_once('#')
+            && day_key(day)
+        {
+            let parts = fragment.split('/').collect::<Vec<_>>();
+            return match parts.as_slice() {
+                [talent] if !talent.is_empty() => {
+                    Some(format!("/app/thinking/#runs/{day}/{talent}"))
+                }
+                [talent, use_id] if !talent.is_empty() && !use_id.is_empty() => {
+                    Some(format!("/app/thinking/#runs/{day}/{talent}/{use_id}"))
+                }
+                _ => None,
+            };
+        }
+        if day_key(path) {
+            return Some(format!("/app/thinking/#runs/{path}"));
+        }
+        (!path.is_empty() && !path.contains('/')).then(|| format!("/app/thinking/#runs/run/{path}"))
+    }
+
+    fn day_key(value: &str) -> bool {
+        value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
+    }
+
     fn raw_percept_family_by_name(name: &str) -> Option<RawPerceptFamily> {
         Some(match name {
             "Audio" => RawPerceptFamily::Audio,
@@ -770,18 +823,19 @@ mod tests {
         compare_error: bool,
         mismatches: &mut Vec<String>,
     ) {
-        let expected: Vec<&str> = case["chunks"]
+        let expected = case["chunks"]
             .as_array()
             .expect("case chunks")
             .iter()
-            .map(|chunk| chunk["markdown"].as_str().expect("chunk markdown"))
-            .collect();
+            .map(|chunk| rewrite_sol_urls(chunk["markdown"].as_str().expect("chunk markdown")))
+            .collect::<Vec<_>>();
+        let expected_refs = expected.iter().map(String::as_str).collect::<Vec<_>>();
         let actual: Vec<&str> = produced
             .chunks
             .iter()
             .map(|chunk| chunk.content.as_str())
             .collect();
-        if actual != expected {
+        if actual != expected_refs {
             if use_divergences {
                 match divergence_for(id) {
                     Some(entry) if actual == entry.native_chunks => {}
@@ -871,9 +925,14 @@ mod tests {
     /// against its documented as-if-content-absent behaviour.
     #[test]
     fn every_family_matches_the_reference_corpus() {
+        let fixture_source = include_str!("../../../../fixtures/content_families.json");
+        let legacy_url_count = fixture_source.matches("/app/sol/").count();
+        assert_eq!(
+            legacy_url_count, 1,
+            "content families legacy Sol URL count: expected 1, actual {legacy_url_count}"
+        );
         let fixture: serde_json::Value =
-            serde_json::from_str(include_str!("../../../../fixtures/content_families.json"))
-                .expect("content family fixture parses");
+            serde_json::from_str(fixture_source).expect("content family fixture parses");
 
         let cases = fixture["cases"].as_array().expect("fixture cases");
         assert!(!cases.is_empty(), "corpus is empty — nothing was compared");
@@ -1668,7 +1727,7 @@ not json
         assert!(
             produced.chunks[0]
                 .content
-                .contains("**Talent:** [123](/app/sol/123)")
+                .contains("**Talent:** [123](/app/thinking/#runs/run/123)")
         );
         assert!(produced.chunks[0].content.contains("- name: Alice"));
     }

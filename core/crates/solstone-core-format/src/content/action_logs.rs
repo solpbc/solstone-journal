@@ -29,7 +29,9 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         lines.push(meta_parts.join(" | "));
 
         if let Some(use_id) = truthy_display(entry, "use_id") {
-            lines.push(format!("**Talent:** [{use_id}](/app/sol/{use_id})"));
+            lines.push(format!(
+                "**Talent:** [{use_id}](/app/thinking/#runs/run/{use_id})"
+            ));
         }
 
         lines.push(String::new());

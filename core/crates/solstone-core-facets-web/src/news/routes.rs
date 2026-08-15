@@ -355,7 +355,7 @@ async fn detail(root: PathBuf, facet: String, day: String) -> Response {
     }
     match load(&root, &facet, &day) {
         Ok(Some((_raw, content))) => json_response(
-            json!({"markdown": content, "raw_url": format!("/app/news/{facet}/{day}/raw"), "pdf_url": format!("/app/news/{facet}/{day}/pdf"), "kicker": copy::NEWS_KICKER, "facet": facet, "date_label": dates::format_news_list_date(&day), "subtitle": copy::NEWS_DETAIL_SUBTITLE.replace("{facet}", &facet), "debug_link_label": copy::NEWS_DETAIL_DEBUG_LINK, "debug_link_url": format!("/app/sol/{day}/talents/facet_newsletter")}),
+            json!({"markdown": content, "raw_url": format!("/app/news/{facet}/{day}/raw"), "pdf_url": format!("/app/news/{facet}/{day}/pdf"), "kicker": copy::NEWS_KICKER, "facet": facet, "date_label": dates::format_news_list_date(&day), "subtitle": copy::NEWS_DETAIL_SUBTITLE.replace("{facet}", &facet), "debug_link_label": copy::NEWS_DETAIL_DEBUG_LINK, "debug_link_url": format!("/app/thinking/#runs/{day}/facet_newsletter")}),
         ),
         Ok(None) => json_response(empty_detail(&facet, &day)),
         // Flask's internal_error envelope is 89 B because it appends a newline. Native

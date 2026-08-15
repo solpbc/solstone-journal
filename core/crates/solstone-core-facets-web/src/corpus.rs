@@ -18,6 +18,11 @@ use crate::{
     test_support::{corpus, fixed_clock, later_clock, phase_root, write},
 };
 
+const CORPUS_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/convey_facets_corpus.json"
+));
+
 // Mirrors sol-client json_format::{sort_json, ensure_ascii}; copied for AC3/AC19 because those helpers are private and production code must not take a client dependency. Keep sort_json(v) -> serde_json::to_string(&sorted) -> ensure_ascii(&s).
 fn sort_json(value: &Value) -> Value {
     match value {
@@ -56,6 +61,74 @@ fn ensure_ascii(value: &str) -> String {
 fn canonical(value: &Value) -> Vec<u8> {
     ensure_ascii(&serde_json::to_string(&sort_json(value)).expect("JSON")).into_bytes()
 }
+
+fn rewrite_sol_urls_in_value(value: &mut Value) {
+    match value {
+        Value::String(text) => *text = rewrite_sol_urls(text),
+        Value::Array(values) => {
+            for value in values {
+                rewrite_sol_urls_in_value(value);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values_mut() {
+                rewrite_sol_urls_in_value(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn rewrite_sol_urls(text: &str) -> String {
+    const PREFIX: &str = "/app/sol/";
+    let mut rewritten = String::new();
+    let mut cursor = 0;
+    while let Some(offset) = text[cursor..].find(PREFIX) {
+        let start = cursor + offset;
+        rewritten.push_str(&text[cursor..start]);
+        let path_start = start + PREFIX.len();
+        let path_end = text[path_start..]
+            .find(is_url_delimiter)
+            .map_or(text.len(), |offset| path_start + offset);
+        let path = &text[path_start..path_end];
+        rewritten.push_str(&rewrite_sol_path(path).unwrap_or_else(|| format!("{PREFIX}{path}")));
+        cursor = path_end;
+    }
+    rewritten.push_str(&text[cursor..]);
+    rewritten
+}
+
+fn is_url_delimiter(ch: char) -> bool {
+    ch.is_whitespace() || matches!(ch, '"' | '\'' | ')' | ']' | '<' | '>')
+}
+
+fn rewrite_sol_path(path: &str) -> Option<String> {
+    let parts = path.split('/').collect::<Vec<_>>();
+    if matches!(parts.as_slice(), [day, "talents", "facet_newsletter"] if day_key(day)) {
+        return Some(format!("/app/thinking/#runs/{}/facet_newsletter", parts[0]));
+    }
+    if let Some((day, fragment)) = path.split_once('#')
+        && day_key(day)
+    {
+        let parts = fragment.split('/').collect::<Vec<_>>();
+        return match parts.as_slice() {
+            [talent] if !talent.is_empty() => Some(format!("/app/thinking/#runs/{day}/{talent}")),
+            [talent, use_id] if !talent.is_empty() && !use_id.is_empty() => {
+                Some(format!("/app/thinking/#runs/{day}/{talent}/{use_id}"))
+            }
+            _ => None,
+        };
+    }
+    if day_key(path) {
+        return Some(format!("/app/thinking/#runs/{path}"));
+    }
+    (!path.is_empty() && !path.contains('/')).then(|| format!("/app/thinking/#runs/run/{path}"))
+}
+
+fn day_key(value: &str) -> bool {
+    value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn substitute(value: &str, root: &Path) -> String {
     let root_text = root.display().to_string();
     let canonical = root
@@ -418,6 +491,11 @@ async fn ac2_ac3_replay_all_108_timeline_records() {
 
 #[tokio::test]
 async fn ac1_replay_all_120_news_records() {
+    let legacy_url_count = CORPUS_SOURCE.matches("/app/sol/").count();
+    assert_eq!(
+        legacy_url_count, 1,
+        "facets corpus legacy Sol URL count: expected 1, actual {legacy_url_count}"
+    );
     let fixture = corpus();
     let mut executed = 0;
     for (phase, records) in fixture["phases"].as_object().expect("phases") {
@@ -500,11 +578,14 @@ async fn ac1_replay_all_120_news_records() {
                 normalize(&mut value, root.path());
                 Sha256::digest(canonical(&value))
             };
-            assert_eq!(
-                format!("{digest:x}"),
-                expected["body_sha256"].as_str().expect("digest"),
-                "{phase} {path}"
-            );
+            let mut recorded_body = expected["json"].clone();
+            rewrite_sol_urls_in_value(&mut recorded_body);
+            let expected_digest = if recorded_body != expected["json"] {
+                format!("{:x}", Sha256::digest(canonical(&recorded_body)))
+            } else {
+                expected["body_sha256"].as_str().expect("digest").to_owned()
+            };
+            assert_eq!(format!("{digest:x}"), expected_digest, "{phase} {path}");
         }
     }
     assert_eq!(executed, 120);

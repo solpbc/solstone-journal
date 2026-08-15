@@ -260,10 +260,10 @@ pub fn format_gap_links(
         .collect::<Vec<_>>();
     let mut links = Vec::new();
     if has_daily {
-        links.push(json!({"text":"I didn't finish the full overnight review.","href":format!("/app/sol/{yesterday}")}));
+        links.push(json!({"text":"I didn't finish the full overnight review.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if has_activity {
-        links.push(json!({"text":"I didn't finish writing all of yesterday's notes.","href":format!("/app/sol/{yesterday}")}));
+        links.push(json!({"text":"I didn't finish writing all of yesterday's notes.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     let mut groups = std::collections::BTreeMap::<String, Vec<&Value>>::new();
     for failure in &failures {
@@ -313,12 +313,12 @@ pub fn format_gap_links(
             .and_then(Value::as_str)
             .unwrap_or("")
             .trim();
-        let anchor = if count == 1 && !use_id.is_empty() {
-            format!("{name}/{use_id}")
+        let href = if count == 1 && !use_id.is_empty() {
+            format!("/app/thinking/#runs/{yesterday}/{name}/{use_id}")
         } else {
-            name
+            format!("/app/thinking/#runs/{yesterday}/{name}")
         };
-        links.push(json!({"text":text,"href":format!("/app/sol/{yesterday}#{anchor}")}));
+        links.push(json!({"text":text,"href":href}));
     }
     if pipeline
         .pointer("/talents/failed_list_truncated")
@@ -331,14 +331,14 @@ pub fn format_gap_links(
             .unwrap_or(0)
             - failures.len() as i64;
         if more > 0 {
-            links.push(json!({"text":format!("…and {more} more didn't finish."),"href":format!("/app/sol/{yesterday}")}));
+            links.push(json!({"text":format!("…and {more} more didn't finish."),"href":format!("/app/thinking/#runs/{yesterday}")}));
         }
     }
     if !failures.is_empty() && !has_daily && !has_activity && !has_named_failures {
-        links.push(json!({"text":"Some of my overnight work didn't finish.","href":format!("/app/sol/{yesterday}")}));
+        links.push(json!({"text":"Some of my overnight work didn't finish.","href":format!("/app/thinking/#runs/{yesterday}")}));
     }
     if !briefing_valid {
-        links.push(json!({"text":"I didn't prepare your morning briefing overnight.","href":format!("/app/sol/{today}#morning_briefing")}));
+        links.push(json!({"text":"I didn't prepare your morning briefing overnight.","href":format!("/app/thinking/#runs/{today}/morning_briefing")}));
     }
     links
 }
@@ -408,7 +408,10 @@ mod tests {
             "20260814",
         );
         assert_eq!(links[0]["text"], "2 daily summary runs didn't finish.");
-        assert_eq!(links[0]["href"], "/app/sol/20260813#daily_summary");
+        assert_eq!(
+            links[0]["href"],
+            "/app/thinking/#runs/20260813/daily_summary"
+        );
 
         let links = format_gap_links(
             &json!({"anomalies":[
@@ -419,6 +422,9 @@ mod tests {
             "20260813",
             "20260814",
         );
-        assert_eq!(links[0]["href"], "/app/sol/20260813#daily_summary/z");
+        assert_eq!(
+            links[0]["href"],
+            "/app/thinking/#runs/20260813/daily_summary/z"
+        );
     }
 }

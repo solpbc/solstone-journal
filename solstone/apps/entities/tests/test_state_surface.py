@@ -338,7 +338,7 @@ def test_connection_formatter_and_label_fallback(html):
     assert "path" not in label
     assert "anchor" not in label
 
-    assert "date.href = `/app/sol/${row.day}`;" in rows
+    assert "date.href = `/app/thinking/#runs/${row.day}`;" in rows
     assert "date.textContent = formatEntityConnDay(row.day, referenceDay);" in rows
     assert "item.classList.add('entity-conn-evidence-row-upcoming');" in rows
     assert "label.textContent = entityConnEvidenceLabel(row);" in rows
