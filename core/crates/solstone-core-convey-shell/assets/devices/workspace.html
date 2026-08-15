@@ -38,6 +38,10 @@
   font-weight: 600;
   font-size: 1.1em;
 }
+.observer-source {
+  color: var(--text-muted, #5a6268);
+  font-size: 0.9em;
+}
 .observer-status {
   display: inline-flex;
   align-items: center;
@@ -628,6 +632,8 @@ function groupHeaderHTML(group) {
 function observerCardHTML(observer, labels = {}) {
   const { statusClass, cardClass } = statusMeta(observer.state);
   const label = observer.label;
+  const displayName = observer.display_name || observer.name;
+  const sourceLabel = observer.source_label || '';
   const safeLabel = escapeHtml(label);
   const liveLabel = observer.live === true ? (labels.live || '') : '';
   // Replace this unavailable state when a native live-connection source is mounted
@@ -639,20 +645,21 @@ function observerCardHTML(observer, labels = {}) {
   const livePip = liveLabel
     ? `<span class="observer-live-pip">${safeLiveLabel}</span>`
     : '';
-  const ariaLabel = [observer.name, label, liveLabel].filter(Boolean).join(', ');
+  const ariaLabel = [displayName, sourceLabel, label, liveLabel].filter(Boolean).join(', ');
 
   return `
     <div class="observer-card ${cardClass}" data-key="${observer.prefix}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
       <div class="observer-header">
-        <span class="observer-name">${escapeHtml(observer.name)}</span>
+        <span class="observer-name">${escapeHtml(displayName)}</span>
+        ${sourceLabel ? `<span class="observer-source">${escapeHtml(sourceLabel)}</span>` : ''}
         <span class="observer-status ${statusClass}">${safeLabel}</span>
         ${livePip}${liveUnavailable}
       </div>
       <div class="observer-stats">${statsHTML(observer, statusClass)}</div>
       <div class="observer-actions">
         ${statusClass === 'stale' && !observer.revoked ? `<button onclick="restartObserver('${observer.prefix}', this)">${window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect'}</button><span class="observer-reconnect-result" data-reconnect-result="${observer.prefix}"></span>` : ''}
-        ${observer.revoked ? '' : `<button onclick="viewObserverKey('${observer.prefix}', '${escapeHtml(observer.name)}')">view key</button>`}
-        ${observer.revoked ? '' : `<button class="danger" onclick="revokeObserver('${observer.prefix}', '${escapeHtml(observer.name)}')">revoke</button>`}
+        ${observer.revoked ? '' : `<button onclick="viewObserverKey('${observer.prefix}', this)">view key</button>`}
+        ${observer.revoked ? '' : `<button class="danger" onclick="revokeObserver('${observer.prefix}', this)">revoke</button>`}
       </div>
     </div>
   `;
@@ -795,7 +802,12 @@ function refreshTimestamps() {
 	  }
 	}
 
-	async function revokeObserver(keyPrefix, name) {
+function observerNameFor(button) {
+  return button.closest('.observer-card')?.querySelector('.observer-name')?.textContent || 'this device';
+}
+
+async function revokeObserver(keyPrefix, button) {
+  const name = observerNameFor(button);
   if (!confirm(`Remove "${name}"? sol on that device won't be able to add to your journal.`)) {
     return;
   }
@@ -817,9 +829,9 @@ function refreshTimestamps() {
   }
 }
 
-async function viewObserverKey(keyPrefix, name) {
+async function viewObserverKey(keyPrefix, button) {
+  const name = observerNameFor(button);
   if (!confirm(`Reveal key for "${name}"?`)) return;
-  const trigger = document.querySelector(`.observer-card[data-key="${keyPrefix}"] button`);
   try {
     const response = await fetch(`/app/devices/api/${keyPrefix}/key`);
     const data = await response.json();
@@ -828,7 +840,7 @@ async function viewObserverKey(keyPrefix, name) {
       throw new Error(data.error || 'Failed to get key');
     }
 
-    showKeyModal(name, data.key, trigger);
+    showKeyModal(name, data.key, button);
   } catch (err) {
     const msg = 'i couldn\'t retrieve the key for that device — your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
     if (window.showError) { showError(msg); } else { showLocalError(msg); }
