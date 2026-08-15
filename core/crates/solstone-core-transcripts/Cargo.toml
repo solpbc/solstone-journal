@@ -14,6 +14,7 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
+log.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
 solstone-core-journal-io.workspace = true

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{Duration, NaiveDate, NaiveDateTime};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use solstone_core_format::content::{
     ChatLabels, Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
     produce_raw_percept_chunks,
@@ -14,11 +15,60 @@ use solstone_core_format::content::{
 use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TalentSource {
+    Disabled,
+    All,
+    Only(BTreeSet<String>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sources {
     pub transcripts: bool,
     pub percepts: bool,
-    pub agents: bool,
+    pub talents: TalentSource,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SourceCounts {
+    pub transcripts: usize,
+    pub percepts: usize,
+    pub talents: usize,
+}
+
+impl SourceCounts {
+    pub fn total(&self) -> usize {
+        self.transcripts + self.percepts + self.talents
+    }
+
+    fn from_entries(entries: &[Entry]) -> Self {
+        let mut counts = Self::default();
+        for entry in entries {
+            match entry.prefix {
+                "transcript" => counts.transcripts += 1,
+                "percept" | "browser" => counts.percepts += 1,
+                "agent_output" => counts.talents += 1,
+                _ => {}
+            }
+        }
+        counts
+    }
+}
+
+impl From<SourceCounts> for Value {
+    fn from(counts: SourceCounts) -> Self {
+        Value::Object(Map::from_iter([
+            ("transcripts".to_owned(), Value::from(counts.transcripts)),
+            ("percepts".to_owned(), Value::from(counts.percepts)),
+            ("talents".to_owned(), Value::from(counts.talents)),
+        ]))
+    }
+}
+
+pub const MIN_INPUT_CHARS: usize = 50;
+
+pub fn is_no_input(text: &str, counts: &SourceCounts) -> bool {
+    counts.total() == 0 || text.trim().len() < MIN_INPUT_CHARS
 }
 
 struct Entry {
@@ -49,19 +99,29 @@ impl fmt::Display for RangeError {
 
 impl std::error::Error for RangeError {}
 
-pub fn cluster(root: &Path, day: &str, sources: Sources) -> String {
+pub fn cluster(root: &Path, day: &str, sources: &Sources) -> (String, SourceCounts) {
     let day_dir = day_dir(root, day);
+    // Python's day_path at solstone/think/utils.py:289 creates this directory before
+    // cluster.py:794-797 checks it. Native reads stay non-creating: native think creates
+    // day directories before dispatch, while an owner's read must not create chronicle state.
     if !day_dir.is_dir() {
-        return format!("Day folder not found: {}", day_dir.display());
+        return (
+            format!("Day folder not found: {}", day_dir.display()),
+            SourceCounts::default(),
+        );
     }
     let entries = load_day(root, day, sources);
+    let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
-        format!(
-            "No transcript, screen, or browser files found for date {day} in {}.",
-            day_dir.display()
+        (
+            format!(
+                "No transcript, screen, or browser files found for date {day} in {}.",
+                day_dir.display()
+            ),
+            counts,
         )
     } else {
-        groups_to_markdown(entries)
+        (groups_to_markdown(entries), counts)
     }
 }
 
@@ -69,17 +129,24 @@ pub fn cluster_period(
     root: &Path,
     day: &str,
     key: &str,
-    sources: Sources,
+    sources: &Sources,
     stream: Option<&str>,
-) -> String {
+) -> (String, SourceCounts) {
     let Some(segment) = find_segment(root, day, key, stream) else {
-        return format!("Segment folder not found: {day}/{key}");
+        return (
+            format!("Segment folder not found: {day}/{key}"),
+            SourceCounts::default(),
+        );
     };
     let entries = process_segment(&segment, day, sources);
+    let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
-        format!("No transcript, screen, or browser files found for segment {key}")
+        (
+            format!("No transcript, screen, or browser files found for segment {key}"),
+            counts,
+        )
     } else {
-        groups_to_markdown(entries)
+        (groups_to_markdown(entries), counts)
     }
 }
 
@@ -87,9 +154,9 @@ pub fn cluster_span(
     root: &Path,
     day: &str,
     span: &[&str],
-    sources: Sources,
+    sources: &Sources,
     stream: Option<&str>,
-) -> Result<String, String> {
+) -> Result<(String, SourceCounts), String> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for key in span {
@@ -108,14 +175,18 @@ pub fn cluster_span(
         .iter()
         .flat_map(|segment| process_segment(segment, day, sources))
         .collect::<Vec<_>>();
+    let counts = SourceCounts::from_entries(&entries);
     if entries.is_empty() {
-        return Ok(format!(
-            "No transcript, screen, or browser files found in span: {}",
-            span.join(", ")
+        return Ok((
+            format!(
+                "No transcript, screen, or browser files found in span: {}",
+                span.join(", ")
+            ),
+            counts,
         ));
     }
     entries.sort_by_key(|entry| entry.timestamp);
-    Ok(groups_to_markdown(entries))
+    Ok((groups_to_markdown(entries), counts))
 }
 
 pub fn cluster_range(
@@ -123,7 +194,7 @@ pub fn cluster_range(
     day: &str,
     start: &str,
     end: &str,
-    sources: Sources,
+    sources: &Sources,
 ) -> Result<String, RangeError> {
     let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(range_error)?;
     let start =
@@ -143,7 +214,7 @@ fn range_error(error: impl fmt::Display) -> RangeError {
     RangeError(error.to_string())
 }
 
-fn load_day(root: &Path, day: &str, sources: Sources) -> Vec<Entry> {
+fn load_day(root: &Path, day: &str, sources: &Sources) -> Vec<Entry> {
     let mut entries = all_segments(root, day)
         .into_iter()
         .flat_map(|segment| process_segment(&segment, day, sources))
@@ -152,7 +223,7 @@ fn load_day(root: &Path, day: &str, sources: Sources) -> Vec<Entry> {
     entries
 }
 
-fn process_segment(segment: &Segment, day: &str, sources: Sources) -> Vec<Entry> {
+fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry> {
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
     };
@@ -284,9 +355,14 @@ fn process_segment(segment: &Segment, day: &str, sources: Sources) -> Vec<Entry>
             }
         }
     }
-    if sources.agents {
+    if !matches!(sources.talents, TalentSource::Disabled) {
         let talents = segment.path.join("talents");
-        if let Ok(projections) = iter_talent_text_projections(&talents, "", None) {
+        let stem_filter = |stem: &str| match &sources.talents {
+            TalentSource::Disabled => false,
+            TalentSource::All => true,
+            TalentSource::Only(stems) => stems.contains(stem),
+        };
+        if let Ok(projections) = iter_talent_text_projections(&talents, "", Some(&stem_filter)) {
             for projection in projections {
                 if !projection.text.trim().is_empty() {
                     entries.push(Entry {
@@ -312,10 +388,25 @@ fn raw_content(
     day: &str,
     family: RawPerceptFamily,
 ) -> Option<String> {
-    let text = fs::read_to_string(path).ok()?;
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) => {
+            log::warn!(
+                "unable to read transcript input {}: {error}",
+                path.display()
+            );
+            return None;
+        }
+    };
     let name = path.file_name()?.to_str()?;
     let rel = format!("{day}/{}/{}/{}", segment.stream_dir, segment.key, name);
+    // Unlike solstone/think/cluster.py:173, the formatter skips malformed JSONL lines
+    // individually (content/mod.rs:500-513), preserving valid body rows rather than
+    // reducing what native reads from the file.
     let produced = produce_raw_percept_chunks(family, &rel, &text);
+    if let Some(error) = &produced.error {
+        log::warn!("{error}");
+    }
     let mut parts = Vec::new();
     if let Some(header) = produced.header {
         parts.push(header);
@@ -474,9 +565,31 @@ fn transcript_header(stream: Option<&str>) -> &'static str {
 mod tests {
     use std::fs;
 
+    use serde_json::json;
     use tempfile::TempDir;
 
-    use super::all_segments;
+    use super::*;
+
+    const DAY: &str = "20260731";
+    const SEGMENT: &str = "090000_60";
+
+    fn sources(transcripts: bool, percepts: bool, talents: TalentSource) -> Sources {
+        Sources {
+            transcripts,
+            percepts,
+            talents,
+        }
+    }
+
+    fn segment(root: &TempDir) -> PathBuf {
+        let path = root.path().join("chronicle").join(DAY).join(SEGMENT);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn only(stems: &[&str]) -> TalentSource {
+        TalentSource::Only(stems.iter().map(|stem| (*stem).to_owned()).collect())
+    }
 
     #[test]
     fn all_segments_includes_legacy_default_stream_segments() {
@@ -496,5 +609,271 @@ mod tests {
                 ("field".to_owned(), "100000_60".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn criterion_2_percepts_only_renders_sections_and_counts() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("screen.jsonl"),
+            r#"{"timestamp":0,"content":{"window":"Planning notes"}}"#,
+        )
+        .unwrap();
+        fs::write(
+            segment.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Inbox"}"#,
+        )
+        .unwrap();
+
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(false, true, TalentSource::Disabled),
+        );
+
+        assert!(markdown.contains("### Screen Activity"));
+        assert!(markdown.contains("### Browser Content"));
+        assert_eq!(counts.transcripts, 0);
+        assert_eq!(counts.percepts, 2);
+        assert_eq!(counts.talents, 0);
+    }
+
+    #[test]
+    fn criterion_2_talents_only_renders_summary_and_counts() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("talents/planning.md"), "Plan the next step.").unwrap();
+
+        let (markdown, counts) =
+            cluster(root.path(), DAY, &sources(false, false, TalentSource::All));
+
+        assert!(markdown.contains("### planning summary"));
+        assert_eq!(
+            counts,
+            SourceCounts {
+                transcripts: 0,
+                percepts: 0,
+                talents: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn criterion_4_talent_filter_keeps_only_named_output_stem() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("talents/selected.md"), "Selected output.").unwrap();
+        fs::write(segment.join("talents/other.md"), "Other output.").unwrap();
+
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(false, false, only(&["selected"])),
+        );
+
+        assert!(markdown.contains("### selected summary"));
+        assert!(markdown.contains("Selected output."));
+        assert!(!markdown.contains("other summary"));
+        assert!(!markdown.contains("Other output."));
+        assert_eq!(counts.talents, 1);
+    }
+
+    #[test]
+    fn criterion_6_counts_are_zero_filled_and_browser_folds_into_percepts() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("browser_events.jsonl"),
+            r#"{"t":"segment_start","ts":1,"title":"Inbox"}"#,
+        )
+        .unwrap();
+        let (_, browser_counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(false, true, TalentSource::Disabled),
+        );
+
+        assert_eq!(browser_counts.transcripts, 0);
+        assert_eq!(browser_counts.percepts, 1);
+        assert_eq!(browser_counts.talents, 0);
+        let counts = SourceCounts {
+            transcripts: 1,
+            percepts: 2,
+            talents: 3,
+        };
+
+        assert_eq!(counts.total(), 6);
+        assert_eq!(
+            Value::from(counts),
+            json!({"transcripts": 1, "percepts": 2, "talents": 3})
+        );
+        assert_eq!(
+            Value::from(SourceCounts::default()),
+            json!({"transcripts": 0, "percepts": 0, "talents": 0})
+        );
+    }
+
+    #[test]
+    fn criterion_8_start_key_record_is_rendered_as_a_chunk_not_metadata() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:01","text":"First row","title":"metadata-looking"}"#,
+        )
+        .unwrap();
+
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+
+        assert!(markdown.contains("[00:00:01] First row"));
+        assert!(markdown.contains("## 2026-07-31 09:00:00 - 09:01:00"));
+        assert!(markdown.contains("### Transcript"));
+        assert!(markdown.contains("Start: 2026-07-31 09:00am"));
+        assert!(!markdown.contains("Title: metadata-looking"));
+        assert_eq!(counts.transcripts, 1);
+    }
+
+    #[test]
+    fn criterion_10_day_not_found_keeps_the_day_directory_absent() {
+        let root = TempDir::new().unwrap();
+        let day_dir = root.path().join("chronicle").join(DAY);
+        let (markdown, counts) = cluster(root.path(), DAY, &sources(true, true, TalentSource::All));
+
+        // Unlike solstone/think/utils.py:289, the native day read does not create a directory.
+        assert_eq!(
+            markdown,
+            format!("Day folder not found: {}", day_dir.display())
+        );
+        assert_eq!(counts, SourceCounts::default());
+        assert!(!day_dir.exists());
+    }
+
+    #[test]
+    fn criterion_10_segment_not_found_has_its_own_message_and_zero_counts() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("chronicle").join(DAY)).unwrap();
+
+        let (markdown, counts) = cluster_period(
+            root.path(),
+            DAY,
+            SEGMENT,
+            &sources(true, true, TalentSource::All),
+            None,
+        );
+
+        assert_eq!(markdown, "Segment folder not found: 20260731/090000_60");
+        assert_eq!(counts, SourceCounts::default());
+    }
+
+    #[test]
+    fn criterion_10_span_fails_when_any_member_is_missing() {
+        let root = TempDir::new().unwrap();
+        segment(&root);
+
+        let error = cluster_span(
+            root.path(),
+            DAY,
+            &[SEGMENT, "100000_60"],
+            &sources(true, true, TalentSource::All),
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "Segment directories not found: 100000_60");
+    }
+
+    #[test]
+    fn criterion_11_emptiness_uses_counts_and_the_shared_threshold() {
+        let present = SourceCounts {
+            transcripts: 1,
+            ..SourceCounts::default()
+        };
+
+        assert!(is_no_input("enough text", &SourceCounts::default()));
+        assert!(is_no_input(
+            "x".repeat(MIN_INPUT_CHARS - 1).as_str(),
+            &present
+        ));
+        assert!(!is_no_input("x".repeat(MIN_INPUT_CHARS).as_str(), &present));
+    }
+
+    #[test]
+    fn criterion_7_malformed_jsonl_line_keeps_the_remaining_audio_rows() {
+        let root = TempDir::new().unwrap();
+        let segment = segment(&root);
+        fs::write(
+            segment.join("capture_audio.jsonl"),
+            "{\"start\":\"00:00:00\",\"text\":\"Before\"}\nnot json\n{\"start\":\"00:00:01\",\"text\":\"After\"}\n",
+        )
+        .unwrap();
+
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+
+        // Native keeps valid rows after a malformed body line; cluster.py:173 drops the file.
+        assert!(markdown.contains("Before"));
+        assert!(markdown.contains("After"));
+        assert_eq!(counts.transcripts, 1);
+    }
+
+    #[test]
+    fn criterion_17_dropped_input_diagnostics_do_not_enter_markdown() {
+        let root = TempDir::new().unwrap();
+        let path = segment(&root);
+        fs::write(
+            path.join("capture_audio.jsonl"),
+            "{\"start\":\"00:00:00\",\"text\":\"Kept row\"}\n{\"text\":\"Dropped row\"}\n",
+        )
+        .unwrap();
+
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+
+        assert!(markdown.contains("Kept row"));
+        assert!(!markdown.contains("Dropped row"));
+        assert!(!markdown.contains("Skipped 1 entries missing 'start'"));
+        assert_eq!(counts.transcripts, 1);
+    }
+
+    #[test]
+    fn criterion_17_unreadable_input_drops_only_that_entry() {
+        let root = TempDir::new().unwrap();
+        let path = segment(&root);
+        fs::write(
+            path.join("good_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Good row"}"#,
+        )
+        .unwrap();
+        let missing = path.join("missing_audio.jsonl");
+        let missing_segment = Segment {
+            path: path.clone(),
+            stream_dir: "_default".to_owned(),
+            key: SEGMENT.to_owned(),
+        };
+
+        assert_eq!(
+            raw_content(&missing, &missing_segment, DAY, RawPerceptFamily::Audio),
+            None
+        );
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+        assert!(markdown.contains("Good row"));
+        assert_eq!(counts.transcripts, 1);
     }
 }

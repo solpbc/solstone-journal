@@ -365,6 +365,36 @@ pub fn is_truthy(value: &Value) -> bool {
     }
 }
 
+pub fn source_is_enabled(value: &Value) -> bool {
+    match value {
+        Value::Object(sources) => sources.values().any(source_value_is_enabled),
+        value => source_value_is_enabled(value),
+    }
+}
+
+pub fn source_is_required(value: &Value) -> bool {
+    match value {
+        Value::Object(sources) => sources.values().any(source_value_is_required),
+        value => source_value_is_required(value),
+    }
+}
+
+pub fn get_talent_filter(value: &Value) -> Option<Map<String, Value>> {
+    match value {
+        Value::Object(filter) => Some(filter.clone()),
+        Value::Bool(false) => Some(Map::new()),
+        _ => None,
+    }
+}
+
+fn source_value_is_enabled(value: &Value) -> bool {
+    matches!(value, Value::Bool(true)) || value.as_str() == Some("required")
+}
+
+fn source_value_is_required(value: &Value) -> bool {
+    value.as_str() == Some("required")
+}
+
 pub fn get_output_name(key: &str) -> String {
     match key.split_once(':') {
         Some((app, name)) => format!("_{app}_{name}"),
@@ -776,5 +806,30 @@ mod tests {
             )])),
         );
         assert_eq!(configs[0].metadata["disabled"], "yes");
+    }
+
+    #[test]
+    fn criterion_5_source_rules_match_the_reference_enabledness_and_filter_semantics() {
+        let all_false = json!({"transcripts": false, "percepts": false});
+        let any_true = json!({"transcripts": false, "percepts": true});
+        let any_required = json!({"transcripts": false, "percepts": "required"});
+        let filter = json!({"screen": true, "sense": "required", "other": false});
+
+        assert!(!source_is_enabled(&all_false));
+        assert!(!source_is_enabled(&json!("enabled")));
+        assert!(source_is_enabled(&any_true));
+        assert!(source_is_enabled(&any_required));
+        assert!(source_is_enabled(&json!(true)));
+        assert!(source_is_enabled(&json!("required")));
+
+        assert!(!source_is_required(&all_false));
+        assert!(!source_is_required(&json!(true)));
+        assert!(source_is_required(&any_required));
+        assert!(source_is_required(&json!("required")));
+
+        assert_eq!(get_talent_filter(&filter), filter.as_object().cloned());
+        assert_eq!(get_talent_filter(&json!(false)), Some(Map::new()));
+        assert_eq!(get_talent_filter(&json!(true)), None);
+        assert_eq!(get_talent_filter(&json!("required")), None);
     }
 }

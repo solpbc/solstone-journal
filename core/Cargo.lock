@@ -4436,6 +4436,7 @@ name = "solstone-core-transcripts"
 version = "1.0.22"
 dependencies = [
  "chrono",
+ "log",
  "serde_json",
  "solstone-core-format",
  "solstone-core-journal-io",
