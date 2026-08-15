@@ -831,10 +831,14 @@ fn metadata_then_missing_open_uses_the_real_exec_pid_and_fixed_tail_shape() {
     };
     assert_eq!(status.code(), Some(1));
     assert!(fs::read(&stdout_path).unwrap().is_empty());
+    let tail_name = expected_tail
+        .file_name()
+        .expect("fixed tail path has a program name")
+        .to_string_lossy();
     assert_eq!(
         fs::read(&stderr_path).unwrap(),
         format!(
-            "/usr/bin/tail: cannot open '{}' for reading: No such file or directory\n/usr/bin/tail: no files remaining\n",
+            "{tail_name}: cannot open '{}' for reading: No such file or directory\n{tail_name}: no files remaining\n",
             service_log.display()
         )
         .as_bytes()

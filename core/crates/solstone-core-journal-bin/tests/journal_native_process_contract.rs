@@ -2194,12 +2194,15 @@ fn native_service_registered_probes_have_exact_clean_parser_output() {
 }
 
 #[test]
-fn native_service_dispatch_reaches_the_real_bodies_without_python() {
+fn native_service_dispatch_reaches_stable_real_bodies_without_python() {
     let harness = Harness::new();
     let context = harness.context();
     prove_poison_interpreters_live(&context);
     fs::create_dir_all(context.home).expect("create isolated service home");
 
+    // `down` deliberately consults the fixed OS service manager, whose live
+    // registration is outside this process fixture. Its exact parser path is
+    // asserted above and its stop decision table is covered in the core crate.
     for (token, argv, expected_stdout, expected_stderr) in [
         (
             "service",
@@ -2210,12 +2213,6 @@ fn native_service_dispatch_reaches_the_real_bodies_without_python() {
         ),
         (
             "up",
-            &[][..],
-            b"".as_slice(),
-            b"error: service not installed. run 'journal service install' first.\n".as_slice(),
-        ),
-        (
-            "down",
             &[][..],
             b"".as_slice(),
             b"error: service not installed. run 'journal service install' first.\n".as_slice(),

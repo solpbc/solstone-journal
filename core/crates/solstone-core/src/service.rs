@@ -347,27 +347,18 @@ fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
         return Err(truth_error("stop", &target, &unit));
     }
     let runtime = observe_runtime(platform, &target)?;
-    match runtime {
-        RuntimeTruth::Foreign | RuntimeTruth::Unknown(_) => {
-            return Err(runtime_error("stop", runtime));
-        }
-        RuntimeTruth::Absent if matches!(unit, UnitTruth::Absent) => {
-            return Err(not_installed());
-        }
-        RuntimeTruth::Absent | RuntimeTruth::Managed { active: false } => {}
-        RuntimeTruth::Managed { active: true } => {
-            let result = match platform {
-                Platform::Linux => run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
-                Platform::Darwin => {
-                    let uid = nix::unistd::Uid::effective().as_raw();
-                    run_fixed(
-                        launchctl(&["kill", "SIGTERM", &format!("gui/{uid}/{LABEL}")]),
-                        STOP_TIMEOUT,
-                    )?
-                }
-            };
-            require_success(result, "stop service")?;
-        }
+    if stop_requires_manager(&unit, runtime)? {
+        let result = match platform {
+            Platform::Linux => run_fixed(systemctl(&["--user", "stop", UNIT]), STOP_TIMEOUT)?,
+            Platform::Darwin => {
+                let uid = nix::unistd::Uid::effective().as_raw();
+                run_fixed(
+                    launchctl(&["kill", "SIGTERM", &format!("gui/{uid}/{LABEL}")]),
+                    STOP_TIMEOUT,
+                )?
+            }
+        };
+        require_success(result, "stop service")?;
     }
     if let Ok(journal) = resolved_journal() {
         clear_readiness(&journal).map_err(|error| {
@@ -376,6 +367,15 @@ fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
     }
     println!("service stopped");
     Ok(0)
+}
+
+fn stop_requires_manager(unit: &UnitTruth, runtime: RuntimeTruth) -> Result<bool, String> {
+    match runtime {
+        RuntimeTruth::Foreign | RuntimeTruth::Unknown(_) => Err(runtime_error("stop", runtime)),
+        RuntimeTruth::Absent if matches!(unit, UnitTruth::Absent) => Err(not_installed()),
+        RuntimeTruth::Absent | RuntimeTruth::Managed { active: false } => Ok(false),
+        RuntimeTruth::Managed { active: true } => Ok(true),
+    }
 }
 
 fn restart(platform: Platform, home: &Path, if_installed: bool) -> Result<u8, String> {
@@ -1743,6 +1743,32 @@ mod tests {
         assert_eq!(
             classify_systemd_runtime(&drop_in, canonical, &launchers).unwrap(),
             RuntimeTruth::Foreign
+        );
+    }
+
+    #[test]
+    fn stop_plan_preserves_absent_and_runtime_ownership_failures() {
+        assert_eq!(
+            stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Absent).unwrap_err(),
+            "service not installed. run 'journal service install' first."
+        );
+        assert_eq!(
+            stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Foreign).unwrap_err(),
+            "service stop refused a runtime registration not created by journal"
+        );
+        let managed_unit = UnitTruth::Managed(UnitSnapshot {
+            device: 1,
+            inode: 2,
+            bytes: Vec::new(),
+        });
+        assert!(!stop_requires_manager(&managed_unit, RuntimeTruth::Absent).unwrap());
+        assert!(
+            !stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Managed { active: false },)
+                .unwrap()
+        );
+        assert!(
+            stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Managed { active: true },)
+                .unwrap()
         );
     }
 

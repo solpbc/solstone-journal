@@ -28,15 +28,17 @@ fn service_help_and_invalid_port_are_owned_by_the_native_binary() {
 }
 
 #[test]
-fn absent_unit_status_and_top_level_up_down_have_exact_failures() {
+fn absent_unit_status_and_top_level_up_have_exact_failures() {
     let home = tempfile::tempdir().expect("temporary home opens");
+    // `down` must inspect the fixed OS service manager even when this HOME has
+    // no unit, so its result legitimately depends on the caller's live runtime.
+    // Its parser contract and the stop decision table are covered separately.
     for (arguments, expected_stdout) in [
         (
             &["service", "status"][..],
             "service: not installed\nrun 'journal setup' or 'journal service install' to install it.\n",
         ),
         (&["up"][..], ""),
-        (&["down"][..], ""),
     ] {
         let output = Command::new(BINARY)
             .args(arguments)
@@ -50,7 +52,7 @@ fn absent_unit_status_and_top_level_up_down_have_exact_failures() {
             expected_stdout,
             "{arguments:?}"
         );
-        if arguments == ["up"] || arguments == ["down"] {
+        if arguments == ["up"] {
             assert_eq!(
                 output.stderr,
                 b"error: service not installed. run 'journal service install' first.\n"
