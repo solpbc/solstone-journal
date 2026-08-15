@@ -764,7 +764,7 @@ check-differentials: check-rust-onnx-stage build
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \
 		"-p solstone-core-local --test admission_cross_process --test vulkan_differential --test local_fit_report_differential --test install_provider_differential --test downloading_installers_differential -- --nocapture" \
-		"-p solstone-core-observer --test observer_list_json_differential --test observer_status_differential --test observer_list_human_differential --test observer_reconcile_dry_run_differential --test observer_increment_stat_differential --test observer_resolve_identity_differential --test observer_prune_dry_run_differential" \
+		"-p solstone-core-observer --test observer_differentials" \
 		"-p solstone-core-system --test system_differentials" \
 		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
 		"-p solstone-core-transfer --test transfer_differential" \

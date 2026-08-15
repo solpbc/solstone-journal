@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
+use super::fixtures;
 
 use regex::Regex;
 use solstone_core_system_health::{GrepCompileError, compile_grep_pattern, decimal_digit_value};

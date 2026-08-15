@@ -4,17 +4,13 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_observer::store::record::ObserverRecord;
 use solstone_core_observer::store::write::save_observer;
 
-static TZ_GUARD: Mutex<()> = Mutex::new(());
-
 pub fn with_utc_tz<R>(operation: impl FnOnce() -> R) -> R {
-    let _guard = TZ_GUARD.lock().expect("timezone guard");
     solstone_core_observer::store::format::use_utc_for_differential_tests();
     operation()
 }

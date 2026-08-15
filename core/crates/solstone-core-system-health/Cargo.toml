@@ -8,6 +8,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
 
 [features]
 differential = []
@@ -25,6 +26,14 @@ solstone-core-format.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-system.workspace = true
 sha2.workspace = true
+
+[[test]]
+name = "system_health_state_contracts"
+path = "tests/system_health_state_contracts.rs"
+
+[[test]]
+name = "system_health_static_contracts"
+path = "tests/system_health_static_contracts.rs"
 
 [[test]]
 name = "pipeline_health_oracle"

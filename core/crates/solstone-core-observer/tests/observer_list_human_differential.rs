@@ -1,4 +1,4 @@
-mod common;
+use super::common;
 use solstone_core_observer::store::format::render_list;
 use solstone_core_observer::store::reload::load_observers;
 

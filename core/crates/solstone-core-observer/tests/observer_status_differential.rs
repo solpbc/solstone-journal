@@ -1,4 +1,4 @@
-mod common;
+use super::common;
 
 use chrono::{Duration, Utc};
 use serde_json::json;

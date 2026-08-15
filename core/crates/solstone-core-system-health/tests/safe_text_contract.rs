@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
+use super::fixtures;
 
 use solstone_core_system_health::{sanitize_for_terminal, unsafe_ranges};
 

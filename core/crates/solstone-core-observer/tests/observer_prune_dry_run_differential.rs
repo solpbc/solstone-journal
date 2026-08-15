@@ -5,7 +5,7 @@
 //! exit code must match `solstone/apps/observer/prune.py`'s over the same
 //! fixture, including the `last-physical-copy` marking and summary count.
 
-mod common;
+use super::common;
 
 use serde_json::json;
 use solstone_core_observer::store::prune::{format_result, run_prune};

@@ -8,6 +8,19 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+autotests = false
+
+[[test]]
+name = "top_reducer_render_contracts"
+path = "tests/top_reducer_render_contracts.rs"
+
+[[test]]
+name = "top_runtime_contracts"
+path = "tests/top_runtime_contracts.rs"
+
+[[test]]
+name = "render_reference"
+path = "tests/render_reference.rs"
 
 [dependencies]
 serde.workspace = true

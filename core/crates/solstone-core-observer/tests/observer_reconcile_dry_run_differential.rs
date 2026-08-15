@@ -1,4 +1,4 @@
-mod common;
+use super::common;
 
 use serde_json::json;
 use solstone_core_observer::store::reconcile::reconcile_plan;
