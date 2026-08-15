@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
-use chrono::Utc;
+use chrono::Local;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
@@ -178,7 +178,7 @@ async fn post_with_router(router: &axum::Router, uri: &str) -> (u16, Value) {
 }
 
 fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
-    let day = Utc::now().format("%Y%m%d").to_string();
+    let day = Local::now().format("%Y%m%d").to_string();
     let Ok(ledger) = fs::read_to_string(root.join("config/actions").join(format!("{day}.jsonl")))
     else {
         return Vec::new();
