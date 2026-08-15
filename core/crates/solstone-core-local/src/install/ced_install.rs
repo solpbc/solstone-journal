@@ -15,7 +15,11 @@ use super::{archive, download_artifact, select_artifact};
 
 const ENGINE_UNIT: &str = "ced-engine";
 const MODEL_UNIT: &str = "ced-model";
-const ENGINE_VERSION: &str = "v0.1.0";
+/// The engine pin the installer resolves against. Public because the
+/// owner-facing download disclosure prints it, and a version typed into that
+/// sentence goes silently false at the next bump while the owner reads a
+/// version that is not what arrived.
+pub const ENGINE_VERSION: &str = "v0.1.0";
 const MODEL_REPO: &str = "mudler/ced-gguf";
 const MODEL_REPOSITORY_DIRECTORY: &str = "mudler__ced-gguf";
 const MODEL_REVISION: &str = "b5e9a4aad6438763c8da16079d77563fbed35c65";
