@@ -127,7 +127,7 @@ pub(crate) fn facet_names(journal_root: &Path) -> Result<Vec<String>, JournalSta
     Ok(names)
 }
 
-pub(crate) fn estimate_duration_minutes(segments: &[String]) -> u64 {
+pub fn estimate_duration_minutes(segments: &[String]) -> u64 {
     let seconds: u64 = segments
         .iter()
         .filter_map(|segment| segment_bounds(segment).map(|(start, end)| end - start))

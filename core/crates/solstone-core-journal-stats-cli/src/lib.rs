@@ -32,6 +32,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
 use solstone_core_system_health::{HealthLogSource, SegmentSource};
 
+pub use activities::estimate_duration_minutes;
 pub use backlog::{BacklogViewReader, FilesystemBacklogViewReader};
 pub use cache::{
     DayCacheWriter, FilesystemDayCacheWriter, bounded_input_mtime, load_fresh_day_cache,
