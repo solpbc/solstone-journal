@@ -33,7 +33,10 @@ fn fields(prepared: &PreparedTalent) -> Option<(&str, &str, Option<&str>)> {
 }
 
 fn segment_dir(journal: &Path, day: &str, segment: &str, stream: Option<&str>) -> Option<PathBuf> {
-    find_segment_dir(journal, day, segment, stream)
+    stream
+        .filter(|stream| !stream.is_empty())
+        .and_then(|stream| find_segment_dir(journal, day, segment, Some(stream)))
+        .or_else(|| find_segment_dir(journal, day, segment, None))
 }
 
 fn resolve_activity(
@@ -319,6 +322,30 @@ mod tests {
         assert_eq!(
             gate(&prepared(true), &context).unwrap(),
             GateDecision::Proceed
+        );
+    }
+
+    #[test]
+    fn stale_stream_falls_back_to_the_matching_segment() {
+        // Derived from solstone/apps/timeline/talent/segment_summary.py:91-133.
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("chronicle/20260101/actual/090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(segment.join("talents/activity.md"), "Recovered activity.\n").unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let mut prepared = prepared(false);
+        prepared.config.insert("stream".to_owned(), json!("stale"));
+
+        assert_eq!(gate(&prepared, &context).unwrap(), GateDecision::Proceed);
+        let state = build(&mut prepared, &context).unwrap();
+        apply_prompt_override(&mut prepared, &state).unwrap();
+        assert!(
+            prepared.config["prompt"]
+                .as_str()
+                .unwrap()
+                .contains("Segment: 20260101/actual/090000_300\nActivity: Recovered activity.")
         );
     }
 

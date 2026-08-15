@@ -8,8 +8,9 @@ use crate::writers::WriteIntent;
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use solstone_core_system_health::find_segment_dir;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 pub const NOTABILITY_LABELS: [(&str, &str); 3] = [
@@ -363,14 +364,25 @@ pub fn apply_result(
         return Ok(());
     };
     let outcome = path.join("talents/detection_outcome.json");
-    let result = apply_detections(journal, output, day, &path);
-    let (wrote, error) = match &result {
-        Ok(wrote) => (*wrote, None),
-        Err(error) => (0, Some(error.as_str())),
-    };
-    let payload = serde_json::json!({"wrote":wrote,"skipped":0,"dropped":0,"errored":usize::from(error.is_some()),"error":error,"ts":chrono::Utc::now().timestamp_millis()});
+    let (counts, error) = apply_detections(journal, output, day, &path);
+    let payload = serde_json::json!({
+        "wrote": counts.wrote,
+        "skipped": counts.skipped,
+        "dropped": counts.dropped,
+        "errored": counts.errored,
+        "error": error,
+        "ts": chrono::Utc::now().timestamp_millis(),
+    });
     let _ = fs::write(outcome, format!("{payload}\n"));
-    result.map(|_| ())
+    Ok(())
+}
+
+#[derive(Default)]
+struct DetectionCounts {
+    wrote: usize,
+    skipped: usize,
+    dropped: usize,
+    errored: usize,
 }
 
 fn apply_detections(
@@ -378,7 +390,9 @@ fn apply_detections(
     output: &str,
     day: &str,
     path: &std::path::Path,
-) -> Result<usize, String> {
+) -> (DetectionCounts, Option<String>) {
+    let mut counts = DetectionCounts::default();
+    let mut error = None;
     let origin = solstone_core_maintenance::bodies::timeline::origin_for_segment(path);
     let sense = read_sense(path).unwrap_or(Value::Null);
     let facets = sense
@@ -388,7 +402,7 @@ fn apply_detections(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|row| row.get("facet").and_then(Value::as_str).map(str::to_owned))
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
     let types = sense
         .get("entities")
         .and_then(Value::as_array)
@@ -396,105 +410,75 @@ fn apply_detections(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|row| {
-            Some((
-                row.get("name")?.as_str()?.trim().to_lowercase(),
-                row.get("type")?.as_str()?.to_owned(),
-            ))
+            let name = row.get("name")?.as_str()?.trim();
+            (!name.is_empty()).then(|| {
+                (
+                    solstone_core_entity_matching::entity_slug(name),
+                    row.get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                )
+            })
         })
-        .collect::<std::collections::BTreeMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     let Ok(Value::Object(value)) = serde_json::from_str(output) else {
-        return Ok(0);
+        return (counts, error);
     };
     let Some(rows) = value.get("detections").and_then(Value::as_array) else {
-        return Ok(0);
+        return (counts, error);
     };
-    let mut wrote = 0;
-    for facet in facets {
-        let detections = rows
-            .iter()
-            .filter_map(|row| {
-                let row = row.as_object()?;
-                let name = row.get("name")?.as_str()?.trim();
-                let description = row.get("description")?.as_str()?;
-                let entity_type = types.get(&name.to_lowercase())?.clone();
-                (row.get("facet")?.as_str()? == facet).then(|| {
-                    solstone_core_facets::DetectedEntityInput {
-                        entity_type,
-                        name: name.to_owned(),
-                        description: description.to_owned(),
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        if !detections.is_empty() {
-            resolve_detection_names(journal, &facet, day, &origin, &detections)?;
-            solstone_core_facets::upsert_detection_segment(
-                journal,
-                &facet,
-                day,
-                &origin,
-                &detections,
-            )
-            .map_err(|error| error.to_string())?;
-            wrote += detections.len();
+    let mut kept_by_facet =
+        BTreeMap::<String, Vec<solstone_core_facets::DetectedEntityInput>>::new();
+    for row in rows {
+        let Some(row) = row.as_object() else {
+            counts.dropped += 1;
+            continue;
+        };
+        let (Some(name), Some(facet), Some(description)) = (
+            row.get("name").and_then(Value::as_str),
+            row.get("facet").and_then(Value::as_str),
+            row.get("description").and_then(Value::as_str),
+        ) else {
+            counts.dropped += 1;
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty() || !facets.contains(facet) {
+            counts.dropped += 1;
+            continue;
         }
-    }
-    Ok(wrote)
-}
-
-fn resolve_detection_names(
-    journal: &std::path::Path,
-    facet: &str,
-    day: &str,
-    origin: &str,
-    detections: &[solstone_core_facets::DetectedEntityInput],
-) -> Result<(), String> {
-    let entities = solstone_core_entity::load_all_journal_entities(journal)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .map(|entity| entity.resolution_entity())
-        .filter(|entity| !entity.blocked)
-        .collect::<Vec<_>>();
-    let candidates = entities
-        .iter()
-        .map(
-            |entity| solstone_core_entity_matching::EntityNameCandidate {
-                id: entity.id.clone(),
-                name: entity.name.clone(),
-                aka: entity.aka.clone(),
-                emails: entity.emails.clone(),
+        let Some(entity_type) = types
+            .get(&solstone_core_entity_matching::entity_slug(name))
+            .cloned()
+        else {
+            counts.dropped += 1;
+            continue;
+        };
+        kept_by_facet.entry(facet.to_owned()).or_default().push(
+            solstone_core_facets::DetectedEntityInput {
+                entity_type,
+                name: name.to_owned(),
+                description: description.to_owned(),
             },
-        )
-        .collect::<Vec<_>>();
-    for detection in detections {
-        let resolution_origin = json!({"lane":"apps.entities.detection","facet":facet,"day":day,"segment_id":origin,"field":"detection.name"});
-        if solstone_core_entity_matching::find_matching_entity(&detection.name, &candidates, 90.0)
-            .is_some()
-        {
-            solstone_core_entity::record_entity_resolution(
-                journal,
-                &detection.name,
-                &entities,
-                json!({"kind":"facet","facet":facet}),
-                resolution_origin,
-                90.0,
-                false,
-            )
-            .map_err(|error| error.to_string())?;
-        } else {
-            solstone_core_entity::record_entity_resolution_from_name_evidence(
-                journal,
-                &detection.name,
-                &entities,
-                json!({"kind":"facet","facet":facet}),
-                resolution_origin,
-                90.0,
-                false,
-            )
-            .map_err(|error| error.to_string())?;
+        );
+    }
+    for (facet, detections) in kept_by_facet {
+        match solstone_core_facets::upsert_detection_segment(
+            journal,
+            &facet,
+            day,
+            &origin,
+            &detections,
+        ) {
+            Ok(report) => counts.wrote += report.wrote,
+            Err(upsert_error) => {
+                counts.errored += 1;
+                error = Some(format!("FacetEntityWriteError: {upsert_error}"));
+            }
         }
     }
-    Ok(())
+    (counts, error)
 }
 #[cfg(test)]
 mod tests {
@@ -581,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn post_resolution_paths_upsert_detected_entities_and_outcome() {
+    fn post_upserts_detected_entities_and_writes_outcome() {
         // Derived from solstone/apps/entities/talent/detection.py:222-310.
         let root = tempfile::tempdir().unwrap();
         let segment = root.path().join("chronicle/20260101/090000_300");
@@ -599,6 +583,70 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().any(|row| row["id"] == "ada"));
         assert!(segment.join("talents/detection_outcome.json").is_file());
+    }
+
+    #[test]
+    fn post_uses_slug_identity_and_records_dropped_rows() {
+        // Derived from solstone/apps/entities/talent/detection.py:235-306.
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("chronicle/20260101/090000_300/talents");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("sense.json"),
+            r#"{"facets":[{"facet":"work"}],"entities":[{"name":"Müller & Co.","type":"Company"}]}"#,
+        )
+        .unwrap();
+        apply_result(
+            root.path(),
+            r#"{"detections":[{"name":"Müller & Co.","facet":"work","description":"Reviewed terms."},{"name":"","facet":"work","description":"Invalid."},"invalid"]}"#,
+            "20260101",
+            "090000_300",
+            None,
+        )
+        .unwrap();
+        let rows =
+            solstone_core_facets::read_detected_entities(root.path(), "work", "20260101").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Müller & Co.");
+        let outcome: Value = serde_json::from_str(
+            &fs::read_to_string(segment.join("detection_outcome.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["wrote"], 1);
+        assert_eq!(outcome["dropped"], 2);
+        assert_eq!(outcome["errored"], 0);
+    }
+
+    #[test]
+    fn reconcile_errors_write_an_outcome_without_failing_the_stage() {
+        // Derived from solstone/apps/entities/talent/detection.py:290-306.
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("chronicle/20260101/090000_300/talents");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("sense.json"),
+            r#"{"facets":[{"facet":"work"}],"entities":[{"name":"Ada","type":"Person"}]}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.path().join("facets/work/entities/20260101.jsonl")).unwrap();
+        apply_result(
+            root.path(),
+            r#"{"detections":[{"name":"Ada","facet":"work","description":"Discussed plans."}]}"#,
+            "20260101",
+            "090000_300",
+            None,
+        )
+        .unwrap();
+        let outcome: Value = serde_json::from_str(
+            &fs::read_to_string(segment.join("detection_outcome.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["errored"], 1);
+        assert!(
+            outcome["error"]
+                .as_str()
+                .is_some_and(|error| !error.is_empty())
+        );
     }
 
     #[test]

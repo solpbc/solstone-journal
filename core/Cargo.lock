@@ -4310,6 +4310,7 @@ dependencies = [
 name = "solstone-core-talent-runtime"
 version = "1.0.22"
 dependencies = [
+ "caseless",
  "chrono",
  "jsonschema",
  "log",

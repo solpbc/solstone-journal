@@ -254,7 +254,8 @@ pub fn build(
         )
         .map_err(|error| skipped(prepared, error.to_string()))?;
         try_accumulate(&context.journal, day, segment, stream, &state.resolved);
-        // This writes from build because the reference writes before it skips generation.
+        // Preserve solstone/talent/speaker_attribution.py:73-81: this writes from build because
+        // the reference writes before it skips generation.
         return Err(skipped(prepared, "all_resolved"));
     }
     Ok(PrePostState::SpeakerAttribution(state))

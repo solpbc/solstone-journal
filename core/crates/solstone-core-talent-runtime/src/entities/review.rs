@@ -11,6 +11,7 @@ use crate::writers::WriteIntent;
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
+use caseless::default_case_fold_str;
 use chrono::{Duration, NaiveDate};
 use serde_json::{Map, Value};
 #[derive(Clone, Debug, PartialEq)]
@@ -21,7 +22,7 @@ pub struct ReviewState {
 const REVIEW_WINDOW_DAYS: i64 = 7;
 
 fn format_name_key(name: &str) -> (String, String) {
-    (name.to_lowercase(), name.to_owned())
+    (default_case_fold_str(name), name.to_owned())
 }
 
 fn review_days(day: &str) -> Vec<String> {
@@ -87,19 +88,21 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             names.insert(name.to_owned());
         }
     }
-    let attached = solstone_core_facets::load_all_attached_entities(journal, false, None)
+    let attached = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
         .map_err(|error| error.to_string())?;
     let candidates = attached
         .iter()
         .map(
             |entity| solstone_core_entity_matching::EntityNameCandidate {
-                id: entity.get("id").and_then(Value::as_str).map(str::to_owned),
+                id: Some(entity.entity_id.clone()),
                 name: entity
+                    .identity
                     .get("name")
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_owned(),
                 aka: entity
+                    .identity
                     .get("aka")
                     .and_then(Value::as_array)
                     .into_iter()
@@ -107,7 +110,15 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
                     .filter_map(Value::as_str)
                     .map(str::to_owned)
                     .collect(),
-                emails: Vec::new(),
+                emails: entity
+                    .identity
+                    .get("emails")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
             },
         )
         .collect::<Vec<_>>();
@@ -141,7 +152,9 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
             .map(|context| context["name"].as_str().unwrap_or_default())
             .min_by_key(|name| format_name_key(name))
             .unwrap_or_default();
-        if solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0).is_some() {
+        if solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0)
+            .is_some_and(|matched| matched.tier.is_high_confidence())
+        {
             continue;
         }
         eligible.push(serde_json::json!({"name":name,"slug":slug,"type":entity_type,"day_count":days.len(),"contexts":contexts}));
@@ -176,8 +189,8 @@ fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewI
         .map_err(|error| error.to_string())?;
     prior.sort_by_key(|row| {
         (
-            row["source"].as_str().unwrap_or_default().to_lowercase(),
-            row["target"].as_str().unwrap_or_default().to_lowercase(),
+            default_case_fold_str(row["source"].as_str().unwrap_or_default()),
+            default_case_fold_str(row["target"].as_str().unwrap_or_default()),
             row["status"].as_str().unwrap_or("open").to_owned(),
         )
     });
@@ -558,9 +571,13 @@ mod tests {
     use super::*;
 
     fn detect(root: &Path, day: &str, name: &str) {
+        detect_in(root, "work", day, name);
+    }
+
+    fn detect_in(root: &Path, facet: &str, day: &str, name: &str) {
         solstone_core_facets::upsert_detection_segment(
             root,
-            "work",
+            facet,
             day,
             "090000_300",
             &[solstone_core_facets::DetectedEntityInput {
@@ -582,6 +599,7 @@ mod tests {
             ]
         );
         assert!(format_name_key("Ada") < format_name_key("beta"));
+        assert_eq!(format_name_key("Straße").0, "strasse");
         let root = tempfile::tempdir().unwrap();
         detect(root.path(), "20260101", "Ada");
         detect(root.path(), "20260102", "Ada Lovelace");
@@ -590,6 +608,66 @@ mod tests {
                 .unwrap()
                 .hints,
             [("Ada".to_owned(), "Ada Lovelace".to_owned())]
+        );
+    }
+
+    #[test]
+    fn candidates_ignore_entities_attached_to_other_facets() {
+        // Derived from solstone/apps/entities/talent/entities_review.py:116-167.
+        let root = tempfile::tempdir().unwrap();
+        for day in ["20260101", "20260102"] {
+            detect_in(root.path(), "work", day, "Ada");
+        }
+        solstone_core_facets::attach_or_reactivate_entity(
+            root.path(),
+            "personal",
+            "Person",
+            "Ada",
+            "",
+        )
+        .unwrap();
+        let inputs = build_review_inputs(root.path(), "work", "20260103").unwrap();
+        assert!(
+            inputs
+                .eligible
+                .iter()
+                .any(|candidate| candidate["name"] == "Ada")
+        );
+    }
+
+    #[test]
+    fn low_confidence_name_matches_remain_review_candidates() {
+        // Derived from solstone/apps/entities/talent/entities_review.py:158-162.
+        let root = tempfile::tempdir().unwrap();
+        for day in ["20260101", "20260102"] {
+            detect(root.path(), day, "Ada");
+        }
+        solstone_core_facets::attach_or_reactivate_entity(
+            root.path(),
+            "work",
+            "Person",
+            "Ada Lovelace",
+            "",
+        )
+        .unwrap();
+        let matched = solstone_core_entity_matching::find_matching_entity(
+            "Ada",
+            &[solstone_core_entity_matching::EntityNameCandidate {
+                id: Some("ada_lovelace".to_owned()),
+                name: "Ada Lovelace".to_owned(),
+                aka: Vec::new(),
+                emails: Vec::new(),
+            }],
+            90.0,
+        )
+        .unwrap();
+        assert!(!matched.tier.is_high_confidence());
+        let inputs = build_review_inputs(root.path(), "work", "20260103").unwrap();
+        assert!(
+            inputs
+                .eligible
+                .iter()
+                .any(|candidate| candidate["name"] == "Ada")
         );
     }
 
