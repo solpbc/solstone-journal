@@ -1312,7 +1312,7 @@ ci-under-poison:
 	@echo "Efficient CI checks passed (format, all-target static compilation, and library/binary unit tests)."
 	@echo "Run 'make ci-full' from an operator final-tree session for the canonical host gate."
 
-ci-full:
+ci-full: check-rust-onnx-stage check-rust-pdf-stage
 	$(call run-rust-gate-under-poison,ci-full-under-poison)
 
 ci-full-under-poison:

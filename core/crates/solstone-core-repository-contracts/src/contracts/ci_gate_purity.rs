@@ -357,8 +357,12 @@ fn target_body<'a>(makefile: &'a str, target: &str) -> &'a str {
         .enumerate()
         .skip(1)
         .find_map(|(index, line)| {
-            (!line.is_empty() && !line.starts_with('\t') && line.ends_with(':'))
-                .then(|| rest.lines().take(index).map(|item| item.len() + 1).sum())
+            let target_header = !line.is_empty()
+                && !line.starts_with(['\t', ' ', '#'])
+                && line
+                    .split_once(':')
+                    .is_some_and(|(_, suffix)| !suffix.trim_start().starts_with('='));
+            target_header.then(|| rest.lines().take(index).map(|item| item.len() + 1).sum())
         })
         .unwrap_or(rest.len());
     &rest[..end]
@@ -1630,14 +1634,28 @@ fn differential_gate_requires_validated_onnx_staging() {
         header.contains("check-rust-onnx-stage"),
         "check-differentials can bypass validated ONNX staging"
     );
-    assert!(
-        !target_body(&makefile, "ci-under-poison").contains("check-rust-onnx-stage"),
-        "make ci must not invoke Python-backed staging"
-    );
-    assert!(
-        !target_body(&makefile, "ci-full-under-poison").contains("check-rust-onnx-stage"),
-        "make ci-full must not invoke Python-backed staging"
-    );
+}
+
+#[test]
+fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
+    let makefile = makefile_text(&repo_root());
+    let header = target_body(&makefile, "ci-full")
+        .lines()
+        .next()
+        .expect("ci-full header");
+    for stage in ["check-rust-onnx-stage", "check-rust-pdf-stage"] {
+        assert!(
+            header.contains(stage),
+            "make ci-full must stage {stage} before entering the poisoned gate"
+        );
+    }
+    for gate in ["ci-under-poison", "ci-full-under-poison"] {
+        let body = target_body(&makefile, gate);
+        assert!(
+            !body.contains("check-rust-onnx-stage") && !body.contains("check-rust-pdf-stage"),
+            "{gate} must not invoke Python-backed runtime staging"
+        );
+    }
 }
 
 #[test]
