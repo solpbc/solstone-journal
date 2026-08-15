@@ -497,6 +497,35 @@ fn replay_full_recorded_case(
     (body_arm(case), false)
 }
 
+fn superseded_presentation_asset(path: &str) -> Option<&'static [u8]> {
+    match path {
+        "/app/thinking/workspace" => Some(include_bytes!("../assets/thinking/workspace.html")),
+        "/app/thinking/static/thinking.js" => {
+            Some(include_bytes!("../assets/thinking/thinking.js"))
+        }
+        _ => None,
+    }
+}
+
+fn assert_superseded_presentation_case(
+    phase: &str,
+    case: &Value,
+    response: &(StatusCode, String, Option<String>, Vec<u8>),
+    expected_asset: &[u8],
+) {
+    let path = case["path"].as_str().expect("path");
+    assert_eq!(case["method"], "GET", "{phase} {path} fixture method");
+    assert_eq!(case["status"], 200, "{phase} {path} fixture status");
+    assert_eq!(response.0, StatusCode::OK, "{phase} {path} status");
+    assert_eq!(
+        response.1,
+        case["content_type"].as_str().expect("content type"),
+        "{phase} {path} content type"
+    );
+    assert_eq!(response.2, None, "{phase} {path} location");
+    assert_eq!(response.3, expected_asset, "{phase} {path} native asset");
+}
+
 fn is_established_phase(phase: &str) -> bool {
     matches!(
         phase,
@@ -760,6 +789,7 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
     let mut byte_pinned = 0;
     let mut corrupt_semantic = 0;
     let mut established_error_envelope_fallback = 0;
+    let mut superseded_presentation = 0;
     let mut no_slash_deviations = 0;
     let mut generators_missing_body_deviation = 0;
     for phase in [
@@ -798,6 +828,12 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
             } else if is_generators_missing_body_deviation(phase, case) {
                 assert_generators_missing_body_deviation(&response);
                 generators_missing_body_deviation += 1;
+            } else if is_established_phase(phase)
+                && let Some(expected_asset) =
+                    superseded_presentation_asset(case["path"].as_str().expect("path"))
+            {
+                assert_superseded_presentation_case(phase, case, &response, expected_asset);
+                superseded_presentation += 1;
             } else {
                 let (replayed_arm, fallback) =
                     replay_full_recorded_case(phase, index, &journal.0, case, &response);
@@ -814,15 +850,17 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
     }
     assert_eq!(count, 448);
     assert_eq!(arms, [361, 55, 32]);
-    assert_eq!(byte_pinned, 193);
+    assert_eq!(byte_pinned, 181);
     assert_eq!(corrupt_semantic, 49);
     assert_eq!(established_error_envelope_fallback, 198);
+    assert_eq!(superseded_presentation, 12);
     assert_eq!(no_slash_deviations, 2);
     assert_eq!(generators_missing_body_deviation, 6);
     assert_eq!(
         byte_pinned
             + corrupt_semantic
             + established_error_envelope_fallback
+            + superseded_presentation
             + no_slash_deviations
             + generators_missing_body_deviation,
         448
