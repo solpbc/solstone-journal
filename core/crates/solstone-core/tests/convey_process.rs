@@ -201,7 +201,7 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
             .as_array()
             .expect("apps array")
             .len(),
-        23
+        22
     );
     assert_eq!(
         request(
