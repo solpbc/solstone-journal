@@ -8,11 +8,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use solstone_core_generate::OneShotClient;
-use solstone_core_import::{
-    ImportResult, NativePublicationOperations, RegistrySource,
-    cli_argv::{CliRun, RegistryDispatch},
-    cli_render,
-};
+use solstone_core_import::cli_render::CliRun;
+use solstone_core_import::{ImportResult, NativePublicationOperations, RegistrySource, cli_render};
+use solstone_core_import_host::cli_argv::RegistryDispatch;
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
     merge_journal_archive,

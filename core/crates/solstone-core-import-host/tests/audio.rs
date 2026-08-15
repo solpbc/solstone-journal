@@ -12,10 +12,11 @@ use serde_json::Map;
 use serde_json::{Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
 use solstone_core_import::events::observing_fields;
-use solstone_core_import::{
+use solstone_core_import::{ImportError, ObservingSegment};
+use solstone_core_import_host::audio::{
     AudioImportOutcome, AudioImportRequest, AudioImportSeams, AudioProbeError,
-    AudioProcessingState, AudioSliceError, AudioWaitRecord, ImportError, ObservingSegment,
-    import_audio_with_seams, read_audio_import_record,
+    AudioProcessingState, AudioSliceError, AudioWaitRecord, import_audio_with_seams,
+    read_audio_import_record,
 };
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -85,7 +86,7 @@ async fn fake_import_with_calls(
     .await
 }
 
-fn created(outcome: &AudioImportOutcome) -> &solstone_core_import::AudioImportComplete {
+fn created(outcome: &AudioImportOutcome) -> &solstone_core_import_host::audio::AudioImportComplete {
     outcome.created()
 }
 

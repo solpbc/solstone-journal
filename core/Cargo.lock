@@ -2703,6 +2703,7 @@ dependencies = [
  "solstone-core-grab",
  "solstone-core-identity",
  "solstone-core-import",
+ "solstone-core-import-host",
  "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
@@ -3431,8 +3432,6 @@ version = "1.0.22"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "ffmpeg-next",
- "ffmpeg-sys-next",
  "getrandom 0.3.4",
  "regex",
  "serde",
@@ -3445,6 +3444,25 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-import-sources",
  "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-processing-record",
+ "solstone-core-segment",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "solstone-core-import-host"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "ffmpeg-next",
+ "ffmpeg-sys-next",
+ "serde",
+ "serde_json",
+ "solstone-core-body-ingest",
+ "solstone-core-callosum",
+ "solstone-core-import",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-segment",

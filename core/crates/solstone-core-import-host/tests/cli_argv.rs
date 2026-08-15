@@ -3,7 +3,8 @@
 
 use std::path::Path;
 
-use solstone_core_import::cli_argv::{CliOutcome, CliRun, run_cli_with};
+use solstone_core_import::cli_render::CliRun;
+use solstone_core_import_host::cli_argv::{CliOutcome, run_cli_with};
 use solstone_core_segment::SUPERVISOR_MESSAGE;
 
 #[test]

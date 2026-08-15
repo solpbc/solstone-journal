@@ -7,7 +7,8 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use solstone_core_import::{cli_argv, cli_journal_source};
+use solstone_core_import::{cli_journal_source, cli_render::CliRun};
+use solstone_core_import_host::cli_argv;
 use tempfile::TempDir;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/journal_source_reference_grammar.json");
@@ -17,7 +18,7 @@ fn args(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-fn run(root: &Path, values: &[&str]) -> cli_argv::CliRun {
+fn run(root: &Path, values: &[&str]) -> CliRun {
     cli_journal_source::run_cli(&args(values), root)
 }
 

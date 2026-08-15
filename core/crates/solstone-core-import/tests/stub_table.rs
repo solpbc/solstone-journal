@@ -11,7 +11,6 @@ fn importer_has_no_reserved_module_seams() {
 #[test]
 fn implemented_import_modules_have_no_unimplemented_seam() {
     for implemented in [
-        "audio",
         "contract",
         "detect",
         "timestamp",
@@ -28,7 +27,6 @@ fn implemented_import_modules_have_no_unimplemented_seam() {
         "sync_audio",
         "connect",
         "consent_gate",
-        "cli_argv",
         "cli_render",
     ] {
         assert!(

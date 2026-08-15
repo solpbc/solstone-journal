@@ -9,8 +9,6 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
-pub mod audio;
-pub mod cli_argv;
 pub mod cli_journal_source;
 pub mod cli_render;
 pub mod connect;
@@ -30,13 +28,6 @@ pub mod sync_state;
 pub mod text;
 pub mod timestamp;
 
-pub use audio::{
-    AudioImportAbort, AudioImportComplete, AudioImportOutcome, AudioImportPartial,
-    AudioImportRecord, AudioImportRecordSegment, AudioImportRequest, AudioImportSeams,
-    AudioProbeError, AudioProcessingState, AudioSliceError, AudioWaitRecord, DroppedAudioChunk,
-    ProcessingWaitOutcome, import_audio, import_audio_with_seams, read_audio_import_record,
-    write_audio_import_record,
-};
 pub use connect::{OuraConnectOutcome, OuraConnectRequest, connect_oura};
 pub use consent_gate::{
     CONSENT_GATE_EXIT_CODE, ConsentGateOutcome, ConsentGateRequest, GateFailure,

@@ -21,10 +21,12 @@ use solstone_core_processing_record::{
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
 use tokio::time::{Instant, timeout};
 
-use crate::ImportError;
-use crate::events::{EventEmitter, ObservingMeta, ObservingSegment, emit_observe_observing};
-use crate::publish::CreatedSegment;
-use crate::staging::{ensure_import_private_chain, import_directory};
+use solstone_core_import::ImportError;
+use solstone_core_import::events::{
+    EventEmitter, ObservingMeta, ObservingSegment, emit_observe_observing,
+};
+use solstone_core_import::publish::CreatedSegment;
+use solstone_core_import::staging::{ensure_import_private_chain, import_directory};
 
 const AUDIO_RECORD_SCHEMA: &str = "solstone.import.audio.v1";
 const AUDIO_RECORD_NAME: &str = "audio-import.json";

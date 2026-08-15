@@ -198,10 +198,8 @@ pub fn relocate_import(
     ensure_import_private_chain(journal_root, to_import_id)
 }
 
-pub(crate) fn import_directory(
-    journal_root: &Path,
-    import_id: &str,
-) -> Result<PathBuf, ImportError> {
+/// Resolve and validate one direct child of the journal's imports directory.
+pub fn import_directory(journal_root: &Path, import_id: &str) -> Result<PathBuf, ImportError> {
     if !matches!(
         Path::new(import_id).components().next(),
         Some(Component::Normal(_))
@@ -214,7 +212,8 @@ pub(crate) fn import_directory(
     Ok(journal_root.join("imports").join(import_id))
 }
 
-pub(crate) fn ensure_import_private_chain(
+/// Create the private imports directory chain for one validated import id.
+pub fn ensure_import_private_chain(
     journal_root: &Path,
     import_id: &str,
 ) -> Result<PathBuf, ImportError> {

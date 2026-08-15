@@ -14,34 +14,28 @@ use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
 };
 
-use crate::cli_journal_source;
-use crate::cli_render;
-use crate::connect::{OuraConnectRequest, connect_oura};
-use crate::contract::{AudioAuto, SyncPreviewRequest};
-use crate::detect::{
+use solstone_core_import::cli_journal_source;
+use solstone_core_import::cli_render::{self, CliRun};
+use solstone_core_import::connect::{OuraConnectRequest, connect_oura};
+use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest};
+use solstone_core_import::detect::{
     ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
     ResolvedSource, resolve_import,
 };
-use crate::sync_audio::{
+use solstone_core_import::sync_audio::{
     AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSyncRequest, DirectoryScanner,
     FilesystemAudioStateWriter, ManifestLookup, sync_audio_preview,
 };
-use crate::sync_obsidian::{
+use solstone_core_import::sync_obsidian::{
     ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianScanner,
     ObsidianSyncRequest, sync_obsidian_preview,
 };
-use crate::sync_plaud::{
+use solstone_core_import::sync_plaud::{
     FilesystemPlaudStateWriter, PlaudCatalogue, PlaudCredential, PlaudFailureKind,
     PlaudManifestLookup, PlaudPreviewSeams, PlaudSyncRequest, SyncClock, sync_plaud_preview,
 };
 
-/// Observable result of a library-hosted journal importer invocation.
-#[derive(Debug, Eq, PartialEq)]
-pub struct CliRun {
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: i32,
-}
+use crate::audio::{AudioImportRequest, import_audio};
 
 /// Result of parsing and resolving one importer invocation.
 #[derive(Debug, Eq, PartialEq)]
@@ -246,7 +240,7 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         Ok(runtime) => runtime,
         Err(error) => return failure("", &format!("audio import runtime failed: {error}\n"), 1),
     };
-    let request = crate::AudioImportRequest {
+    let request = AudioImportRequest {
         source_media: PathBuf::from(media),
         journal_root: journal_path.to_path_buf(),
         day: timestamp[..8].to_owned(),
@@ -264,7 +258,7 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
-    match runtime.block_on(crate::import_audio(request)) {
+    match runtime.block_on(import_audio(request)) {
         Ok(outcome) => success(format!("Generic audio import complete: {outcome:?}\n")),
         Err(error) => failure("", &format!("{error}\n"), 1),
     }
@@ -288,7 +282,7 @@ fn run_text(
     if let Err(error) = fs::create_dir_all(&day_dir) {
         return failure("", &format!("{error}\n"), 1);
     }
-    match crate::process_transcript(
+    match solstone_core_import::process_transcript(
         Path::new(media),
         &day_dir,
         &timestamp[9..],
@@ -342,7 +336,9 @@ fn options_ref<'a>(options: &'a Options, media: &'a str) -> ResolutionOptions<'a
         media: Path::new(media),
         source: options.source.as_deref(),
         timestamp: options.timestamp.as_deref(),
-        auto: crate::AutoTimestamp::from_raw(options.auto.as_ref().map(|value| value.as_deref())),
+        auto: solstone_core_import::AutoTimestamp::from_raw(
+            options.auto.as_ref().map(|value| value.as_deref()),
+        ),
         dry_run: options.dry_run,
         deterministic_only: options.deterministic_only,
         force: options.force,
@@ -354,7 +350,7 @@ fn resolve(
     journal_path: &Path,
 ) -> Result<ResolutionOutcome, String> {
     if let Some(source) = options.source
-        && crate::RegistrySource::from_name(source).is_none()
+        && solstone_core_import::RegistrySource::from_name(source).is_none()
     {
         return Err(format!("unknown importer source: {source}"));
     }
@@ -384,7 +380,7 @@ fn resolve(
         && manifest.entry_count > 0
     {
         return Ok(ResolutionOutcome::Skipped {
-            reason: crate::SkipReason::AlreadyImported,
+            reason: solstone_core_import::SkipReason::AlreadyImported,
             detected_timestamp: None,
         });
     }
@@ -400,8 +396,10 @@ fn resolve(
         // journal root. The resolver retains this seam for its library callers.
         manifest_lookup: no_manifest_match,
         generated_timestamp: || {
-            crate::validate_timestamp(&Local::now().format("%Y%m%d_%H%M%S").to_string())
-                .expect("current local timestamp is valid")
+            solstone_core_import::validate_timestamp(
+                &Local::now().format("%Y%m%d_%H%M%S").to_string(),
+            )
+            .expect("current local timestamp is valid")
         },
     };
     resolve_import(&options, &mut seams).map_err(|error| error.message().into_owned())
@@ -458,8 +456,9 @@ fn generic_manifest_summary(
     journal_path: &Path,
     media: &Path,
 ) -> Result<Option<ManifestSummary>, String> {
-    let source_hash = crate::hash_source(media).map_err(|error| error.to_string())?;
-    let scan = crate::find_manifest_by_hash(journal_path, &source_hash)
+    let source_hash =
+        solstone_core_import::hash_source(media).map_err(|error| error.to_string())?;
+    let scan = solstone_core_import::find_manifest_by_hash(journal_path, &source_hash)
         .map_err(|error| error.to_string())?;
     Ok(scan.found.and_then(|found| {
         found
@@ -470,22 +469,28 @@ fn generic_manifest_summary(
     }))
 }
 
-fn no_registry_claim(_: crate::RegistrySource, _: &Path) -> Result<bool, ()> {
+fn no_registry_claim(_: solstone_core_import::RegistrySource, _: &Path) -> Result<bool, ()> {
     Ok(false)
 }
 
-fn no_deterministic_timestamp(_: &Path, _: Option<&str>) -> Option<crate::DetectedTimestamp> {
+fn no_deterministic_timestamp(
+    _: &Path,
+    _: Option<&str>,
+) -> Option<solstone_core_import::DetectedTimestamp> {
     None
 }
 
 fn unavailable_model_timestamp(
     _: &Path,
     _: Option<&str>,
-) -> Result<Option<crate::DetectedTimestamp>, crate::ModelDetectionError<()>> {
+) -> Result<
+    Option<solstone_core_import::DetectedTimestamp>,
+    solstone_core_import::ModelDetectionError<()>,
+> {
     Ok(None)
 }
 
-fn no_manifest_match(_: &crate::SourceHash) -> Option<ManifestSummary> {
+fn no_manifest_match(_: &solstone_core_import::SourceHash) -> Option<ManifestSummary> {
     None
 }
 
@@ -595,7 +600,7 @@ fn audio_auto(options: &Options) -> AudioAuto {
     }
 }
 
-fn state_file_count(state: &crate::SyncState) -> usize {
+fn state_file_count(state: &solstone_core_import::SyncState) -> usize {
     state
         .root()
         .get("files")
@@ -652,7 +657,7 @@ fn collect_audio_candidates(
             .ok_or_else(|| format!("audio filename is not UTF-8: {}", path.display()))?
             .to_owned();
         let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
-        let source_hash = crate::hash_source(&path)
+        let source_hash = solstone_core_import::hash_source(&path)
             .map_err(|error| error.to_string())?
             .into_inner();
         candidates.push(AudioCandidate {
@@ -686,9 +691,9 @@ struct FilesystemManifestLookup<'a> {
 
 impl ManifestLookup for FilesystemManifestLookup<'_> {
     fn imported_hash(&self, source_hash: &str) -> bool {
-        crate::find_manifest_by_hash(
+        solstone_core_import::find_manifest_by_hash(
             self.journal_path,
-            &crate::SourceHash::new(source_hash.to_owned()),
+            &solstone_core_import::SourceHash::new(source_hash.to_owned()),
         )
         .ok()
         .and_then(|scan| scan.found)
@@ -759,7 +764,7 @@ fn collect_obsidian_notes(
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|error| error.to_string())?
             .as_secs_f64();
-        let content_hash = crate::hash_source(&path)
+        let content_hash = solstone_core_import::hash_source(&path)
             .map_err(|error| error.to_string())?
             .into_inner();
         notes.push(ObsidianNote {
@@ -787,7 +792,7 @@ impl PlaudCatalogue for UnusedPlaudCatalogue {
     fn list_files(
         &mut self,
         _token: &str,
-    ) -> Result<Vec<crate::sync_plaud::PlaudFile>, PlaudFailureKind> {
+    ) -> Result<Vec<solstone_core_import::sync_plaud::PlaudFile>, PlaudFailureKind> {
         unreachable!("Plaud catalogue is not called without a credential")
     }
 }
@@ -797,7 +802,7 @@ struct EmptyPlaudManifestLookup;
 impl PlaudManifestLookup for EmptyPlaudManifestLookup {
     fn matching_imports(
         &self,
-        _files: &[crate::sync_plaud::PlaudFile],
+        _files: &[solstone_core_import::sync_plaud::PlaudFile],
     ) -> Result<std::collections::BTreeMap<String, String>, PlaudFailureKind> {
         Ok(std::collections::BTreeMap::new())
     }
