@@ -1087,7 +1087,9 @@ format:
 
 # Clean build artifacts and cache files
 clean:
+	@$(REQUIRE_CARGO)
 	@echo "Cleaning build artifacts and cache files..."
+	cargo clean --manifest-path $(RUST_MANIFEST)
 	rm -rf build/ dist/ *.egg-info/
 	rm -rf .pytest_cache/ .coverage
 	rm -rf journal/.agents/ journal/.claude/

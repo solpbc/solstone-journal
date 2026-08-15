@@ -804,6 +804,65 @@ fn make_ci_full_names_the_manual_rust_race_gate() {
 }
 
 #[test]
+fn make_clean_reclaims_default_and_configured_cargo_targets() {
+    let temp = TempDir::new("make-clean-cargo-targets");
+    let root = &temp.path;
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(root, system, arch.trim());
+
+    let default_target = root.join("core/target");
+    fs::create_dir_all(&default_target).expect("create default Cargo target fixture");
+    fs::write(default_target.join("sentinel"), b"default").expect("seed default target fixture");
+    let default_clean = Command::new("make")
+        .arg("clean")
+        .env_remove("CARGO_TARGET_DIR")
+        .current_dir(root)
+        .output()
+        .expect("run make clean for default Cargo target");
+    assert!(
+        default_clean.status.success(),
+        "make clean failed for default Cargo target: {}",
+        String::from_utf8_lossy(&default_clean.stderr)
+    );
+    assert!(
+        !default_target.exists(),
+        "make clean left the default core/target directory behind"
+    );
+
+    let configured_target = root.join("private-cargo-target");
+    fs::create_dir_all(&configured_target).expect("create configured Cargo target fixture");
+    fs::write(configured_target.join("sentinel"), b"configured")
+        .expect("seed configured target fixture");
+    let configured_clean = Command::new("make")
+        .arg("clean")
+        .env("CARGO_TARGET_DIR", &configured_target)
+        .current_dir(root)
+        .output()
+        .expect("run make clean for configured Cargo target");
+    assert!(
+        configured_clean.status.success(),
+        "make clean failed for configured Cargo target: {}",
+        String::from_utf8_lossy(&configured_clean.stderr)
+    );
+    assert!(
+        !configured_target.exists(),
+        "make clean left the configured Cargo target directory behind"
+    );
+}
+
+#[test]
 fn manual_race_gate_is_selectable_without_uv() {
     let root = repo_root();
     let dry_run = Command::new("make")
