@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crate::client::{MultipartPart, PortalResponse, PortalTransport};
+use crate::client::{PortalResponse, PortalTransport, RequestBody};
 use crate::errors::PortalClientError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,32 +69,24 @@ impl StubTransport {
 }
 
 impl PortalTransport for StubTransport {
-    fn get(
+    fn request(
         &mut self,
+        method: &str,
         url: &str,
         headers: &[(String, String)],
+        body: RequestBody,
     ) -> Result<PortalResponse, PortalClientError> {
-        self.reply("GET", url, headers, None)
-    }
-    fn post_json(
-        &mut self,
-        url: &str,
-        headers: &[(String, String)],
-        body: &str,
-    ) -> Result<PortalResponse, PortalClientError> {
-        self.reply("POST", url, headers, Some(body.to_owned()))
-    }
-    fn post_multipart(
-        &mut self,
-        url: &str,
-        headers: &[(String, String)],
-        files: &[MultipartPart],
-    ) -> Result<PortalResponse, PortalClientError> {
-        self.multipart_bodies
-            .lock()
-            .expect("body lock")
-            .push(files.iter().flat_map(|part| part.bytes.clone()).collect());
-        self.reply("POST", url, headers, None)
+        match body {
+            RequestBody::None => self.reply(method, url, headers, None),
+            RequestBody::Json(body) => self.reply(method, url, headers, Some(body)),
+            RequestBody::Multipart(files) => {
+                self.multipart_bodies
+                    .lock()
+                    .expect("body lock")
+                    .push(files.iter().flat_map(|part| part.bytes.clone()).collect());
+                self.reply(method, url, headers, None)
+            }
+        }
     }
 }
 

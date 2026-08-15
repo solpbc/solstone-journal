@@ -274,7 +274,7 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"
 # RSA-4096 key generation for the support-portal identity. Release-rail lenses:
-# `rsa` adds pkcs1 and num-bigint-dig; num-bigint-dig 0.8.6's build.rs only
+# `rsa` adds pkcs1, num-bigint-dig, and pem-rfc7468; num-bigint-dig 0.8.6's build.rs only
 # emits the Rust `has_i128` cfg, so it has no cc/cmake/native build step and
 # leaves musl x86_64/aarch64 eligible. Package MSRV 1.65 is below the
 # check-rust-msrv 1.95.0 toolchain; its pure-Rust graph is eligible for iOS and

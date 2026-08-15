@@ -170,7 +170,9 @@ fn tos_changed_retries_once_and_rewinds_multipart() {
                 "POST",
                 "https://portal.example/api/upload",
                 None,
-                Some(&mut files)
+                None,
+                Some(&mut files),
+                None
             )
             .unwrap()
             .body,
@@ -270,6 +272,30 @@ fn settings_precedence_empty_env_and_enabled_fail_open_cases() {
         portal_url_from_settings_with_env(dir.path(), Some("https://env.example///")),
         "https://env.example"
     );
+    std::fs::write(
+        dir.path().join("config/config.json"),
+        r#"{"support":{"portal_url":"","enabled":0}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        portal_url_from_settings_with_env(dir.path(), None),
+        "https://support.solstone.app"
+    );
+    assert!(!is_enabled(dir.path()));
+    for value in ["null", "false", "\"\"", "[]", "{}"] {
+        std::fs::write(
+            dir.path().join("config/config.json"),
+            format!(r#"{{"support":{{"enabled":{value}}}}}"#),
+        )
+        .unwrap();
+        assert!(!is_enabled(dir.path()));
+    }
+    std::fs::write(
+        dir.path().join("config/config.json"),
+        r#"{"support":{"enabled":"yes"}}"#,
+    )
+    .unwrap();
+    assert!(is_enabled(dir.path()));
     assert!(!is_enabled(dir.path()));
     #[cfg(unix)]
     {
@@ -283,6 +309,137 @@ fn settings_precedence_empty_env_and_enabled_fail_open_cases() {
             assert!(is_enabled(dir.path()));
         }
     }
+}
+
+#[test]
+fn authed_request_preserves_delete_params_idempotency_and_dpop_htu() {
+    let dir = TempDir::new().unwrap();
+    let (mut client, log) = client(
+        dir.path(),
+        vec![
+            response(200, "terms"),
+            response(200, r#"{"access_token":"token"}"#),
+            response(200, "done"),
+        ],
+    );
+    client.register().unwrap();
+    let params = [("status".to_owned(), "open".to_owned())];
+    client
+        .authed_request(
+            "DELETE",
+            "/api/tickets",
+            None,
+            Some(&params),
+            None,
+            Some("idem-1"),
+        )
+        .unwrap();
+    let request = log.lock().unwrap().last().unwrap().clone();
+    assert_eq!(request.method, "DELETE");
+    assert_eq!(request.path, "/api/tickets?status=open");
+    assert_eq!(
+        request
+            .headers
+            .iter()
+            .find(|(name, _)| name == "Idempotency-Key")
+            .map(|(_, value)| value.as_str()),
+        Some("idem-1")
+    );
+    let proof = request
+        .headers
+        .iter()
+        .find(|(name, _)| name == "DPoP")
+        .map(|(_, value)| value)
+        .unwrap();
+    assert_eq!(
+        proof_payload(proof)["htu"],
+        "https://portal.example/api/tickets"
+    );
+}
+
+#[test]
+fn non_ascii_jwt_and_signup_json_use_python_ascii_escapes() {
+    let keypair = Keypair::from_pem(include_bytes!(
+        "../../../fixtures/support_portal_golden_nonproduction/keypair.pem"
+    ))
+    .unwrap();
+    let token = create_access_token(
+        &keypair.signer,
+        "terms",
+        "https://portal.é",
+        &keypair.thumbprint,
+        "id",
+        1,
+    )
+    .unwrap();
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(token.split('.').nth(1).unwrap())
+        .unwrap();
+    assert!(payload.windows(6).any(|bytes| bytes == b"\\u00e9"));
+    assert!(payload.iter().all(|byte| byte.is_ascii()));
+
+    let dir = TempDir::new().unwrap();
+    let (transport, log) = StubTransport::new(
+        "https://portal.é",
+        vec![
+            response(200, "terms"),
+            response(200, r#"{"access_token":"token"}"#),
+        ],
+    );
+    let mut client = PortalClient::new_with(
+        "https://portal.é",
+        dir.path(),
+        Some("h-é".to_owned()),
+        false,
+        Box::new(transport),
+        Box::new(FixedRuntime::new()),
+    )
+    .unwrap();
+    client.register().unwrap();
+    let body = log
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|request| request.path == "/api/signup")
+        .unwrap()
+        .body
+        .as_deref()
+        .unwrap()
+        .to_owned();
+    assert!(body.as_bytes().windows(6).any(|bytes| bytes == b"\\u00e9"));
+    assert!(body.as_bytes().iter().all(|byte| byte.is_ascii()));
+}
+
+#[test]
+fn empty_and_null_handles_follow_python_truthiness_and_get_semantics() {
+    let dir = TempDir::new().unwrap();
+    let (transport, _) = StubTransport::new("https://portal.example", vec![]);
+    let mut empty = PortalClient::new_with(
+        "https://portal.example",
+        dir.path(),
+        Some(String::new()),
+        true,
+        Box::new(transport),
+        Box::new(FixedRuntime::new()),
+    )
+    .unwrap();
+    assert!(empty.handle().starts_with("anon-"));
+    let (transport, _) = StubTransport::new("https://portal.example", vec![]);
+    std::fs::write(
+        dir.path().join("token.json"),
+        r#"{"access_token":"token","handle":null}"#,
+    )
+    .unwrap();
+    let mut loaded = PortalClient::new_with(
+        "https://portal.example",
+        dir.path(),
+        Some("kept".to_owned()),
+        false,
+        Box::new(transport),
+        Box::new(FixedRuntime::new()),
+    )
+    .unwrap();
+    assert_ne!(loaded.handle(), "kept");
 }
 
 #[test]
@@ -491,7 +648,7 @@ fn second_tos_changed_is_returned_without_a_second_reregistration() {
     client.register().unwrap();
     assert_eq!(
         client
-            .authed_request("GET", "/api/read", None, None)
+            .authed_request("GET", "/api/read", None, None, None, None)
             .unwrap()
             .status,
         401
@@ -529,7 +686,7 @@ fn unrelated_or_non_json_401_does_not_reregister() {
         client.register().unwrap();
         assert_eq!(
             client
-                .authed_request("GET", "/api/read", None, None)
+                .authed_request("GET", "/api/read", None, None, None, None)
                 .unwrap()
                 .status,
             401
@@ -634,7 +791,7 @@ fn real_transport_does_not_follow_redirects_and_sends_dpop_headers() {
     let mut client =
         PortalClient::new(redirect.url(), dir.path(), Some("loop".to_owned()), false).unwrap();
     let error = client
-        .authed_request("GET", "/read", None, None)
+        .authed_request("GET", "/read", None, None, None, None)
         .unwrap_err();
     assert!(
         matches!(error, PortalClientError::HttpStatus { ref message } if message.contains(" — 302: "))

@@ -6,11 +6,12 @@
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::dpop::create_dpop_proof;
+use crate::dpop::{create_dpop_proof, json_ascii};
 use crate::errors::PortalClientError;
 use crate::keypair::{Keypair, save_keypair};
 use crate::token::{create_access_token, sign_tos};
@@ -33,23 +34,26 @@ pub(crate) struct PortalResponse {
     reason = "W1c dispatches mutations through this private seam."
 )]
 pub(crate) trait PortalTransport {
-    fn get(
+    fn request(
         &mut self,
+        method: &str,
         url: &str,
         headers: &[(String, String)],
+        body: RequestBody,
     ) -> Result<PortalResponse, PortalClientError>;
-    fn post_json(
-        &mut self,
-        url: &str,
-        headers: &[(String, String)],
-        body: &str,
-    ) -> Result<PortalResponse, PortalClientError>;
-    fn post_multipart(
-        &mut self,
-        url: &str,
-        headers: &[(String, String)],
-        files: &[MultipartPart],
-    ) -> Result<PortalResponse, PortalClientError>;
+}
+
+pub(crate) enum RequestBody {
+    None,
+    Json(String),
+    Multipart(Vec<MultipartPart>),
+}
+
+struct AuthedRequestOptions<'files, 'reader> {
+    json_body: Option<String>,
+    params: Option<Vec<(String, String)>>,
+    files: Option<&'files mut [MultipartInput<'reader>]>,
+    idempotency_key: Option<String>,
 }
 
 pub(crate) trait PortalRuntime {
@@ -86,6 +90,7 @@ impl UreqPortalTransport {
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .max_redirects(0)
+            .timeout_global(Some(Duration::from_secs(30)))
             .build();
         Self {
             agent: ureq::Agent::new_with_config(config),
@@ -93,67 +98,72 @@ impl UreqPortalTransport {
     }
 
     fn response(
-        response: ureq::http::Response<ureq::Body>,
+        mut response: ureq::http::Response<ureq::Body>,
     ) -> Result<PortalResponse, PortalClientError> {
         let status = response.status().as_u16();
-        let body = response.into_body().read_to_string().map_err(|error| {
-            PortalClientError::Transport {
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(100 * 1024 * 1024)
+            .lossy_utf8(true)
+            .read_to_string()
+            .map_err(|error| PortalClientError::Transport {
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         Ok(PortalResponse { status, body })
     }
 }
 
 impl PortalTransport for UreqPortalTransport {
-    fn get(
+    fn request(
         &mut self,
+        method: &str,
         url: &str,
         headers: &[(String, String)],
+        body: RequestBody,
     ) -> Result<PortalResponse, PortalClientError> {
-        let mut request = self.agent.get(url);
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
-        Self::response(request.call().map_err(transport_error)?)
-    }
-
-    fn post_json(
-        &mut self,
-        url: &str,
-        headers: &[(String, String)],
-        body: &str,
-    ) -> Result<PortalResponse, PortalClientError> {
-        let mut request = self
-            .agent
-            .post(url)
-            .header("Content-Type", "application/json");
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
-        Self::response(request.send(body).map_err(transport_error)?)
-    }
-
-    fn post_multipart(
-        &mut self,
-        url: &str,
-        headers: &[(String, String)],
-        files: &[MultipartPart],
-    ) -> Result<PortalResponse, PortalClientError> {
-        use ureq::unversioned::multipart::{Form, Part};
-        let mut form = Form::new();
-        for file in files {
-            let mut part = Part::bytes(&file.bytes).file_name(&file.filename);
-            if let Some(content_type) = &file.content_type {
-                part = part.mime_str(content_type).map_err(transport_error)?;
+        let build = |content_type: Option<&str>| {
+            let mut builder = ureq::http::Request::builder().method(method).uri(url);
+            for (name, value) in headers {
+                builder = builder.header(name, value);
             }
-            form = form.part(&file.name, part);
+            if let Some(content_type) = content_type {
+                builder = builder.header("Content-Type", content_type);
+            }
+            builder
+        };
+        match body {
+            RequestBody::None => Self::response(
+                self.agent
+                    .run(build(None).body(()).map_err(transport_error)?)
+                    .map_err(transport_error)?,
+            ),
+            RequestBody::Json(body) => Self::response(
+                self.agent
+                    .run(
+                        build(Some("application/json"))
+                            .body(body)
+                            .map_err(transport_error)?,
+                    )
+                    .map_err(transport_error)?,
+            ),
+            RequestBody::Multipart(files) => {
+                use ureq::unversioned::multipart::{Form, Part};
+                let mut form = Form::new();
+                for file in &files {
+                    let mut part = Part::bytes(&file.bytes).file_name(&file.filename);
+                    if let Some(content_type) = &file.content_type {
+                        part = part.mime_str(content_type).map_err(transport_error)?;
+                    }
+                    form = form.part(&file.name, part);
+                }
+                Self::response(
+                    self.agent
+                        .run(build(None).body(form).map_err(transport_error)?)
+                        .map_err(transport_error)?,
+                )
+            }
         }
-        let mut request = self.agent.post(url);
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
-        Self::response(request.send(form).map_err(transport_error)?)
     }
 }
 
@@ -225,7 +235,7 @@ impl PortalClient {
     ) -> Result<Self, PortalClientError> {
         let storage_dir = storage_dir.into();
         fs::create_dir_all(&storage_dir).map_err(storage_error)?;
-        if anonymous && handle.is_none() {
+        if anonymous && handle.as_deref().is_none_or(str::is_empty) {
             let mut bytes = [0; 4];
             runtime.random_bytes(&mut bytes)?;
             handle = Some(format!("anon-{}", hex(&bytes)));
@@ -247,7 +257,7 @@ impl PortalClient {
 
     /// Memoize a generated client handle exactly as the Python property does.
     pub fn handle(&mut self) -> &str {
-        if self.handle.is_none() {
+        if self.handle.as_deref().is_none_or(str::is_empty) {
             let hostname = nix::unistd::gethostname()
                 .expect("read local hostname")
                 .to_string_lossy()
@@ -279,18 +289,16 @@ impl PortalClient {
                 &fs::read(key_path).map_err(storage_error)?,
             )?);
         }
-        match fs::read_to_string(self.token_path()) {
-            Ok(text) => match serde_json::from_str::<Value>(&text) {
+        if let Ok(text) = fs::read_to_string(self.token_path()) {
+            match serde_json::from_str::<Value>(&text) {
                 Ok(Value::Object(value)) => {
                     self.access_token = value
                         .get("access_token")
                         .and_then(Value::as_str)
                         .map(str::to_owned);
-                    self.handle = value
-                        .get("handle")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                        .or(self.handle.take());
+                    if let Some(handle) = value.get("handle") {
+                        self.handle = handle.as_str().map(str::to_owned);
+                    }
                 }
                 Ok(_) => {
                     return Err(PortalClientError::State {
@@ -298,8 +306,7 @@ impl PortalClient {
                     });
                 }
                 Err(_) => {}
-            },
-            Err(_) => {}
+            }
         }
         if let Ok(bytes) = fs::read(self.tos_path()) {
             self.tos =
@@ -317,7 +324,7 @@ impl PortalClient {
         if self.anonymous {
             return Ok(());
         }
-        let text = serde_json::to_string(&TokenFile {
+        let text = json_ascii(&TokenFile {
             access_token,
             handle: self.handle.as_deref(),
         })
@@ -382,9 +389,12 @@ impl PortalClient {
 
     pub fn fetch_tos(&mut self) -> Result<String, PortalClientError> {
         let url = format!("{}/tos", self.portal_url);
-        let response = self
-            .transport
-            .get(&url, &[("Accept".to_owned(), "text/plain".to_owned())])?;
+        let response = self.transport.request(
+            "GET",
+            &url,
+            &[("Accept".to_owned(), "text/plain".to_owned())],
+            RequestBody::None,
+        )?;
         self.raise_for_status("GET", &url, &response)?;
         self.save_tos(&response.body)?;
         self.tos = Some(response.body.clone());
@@ -414,7 +424,7 @@ impl PortalClient {
                 self.runtime.now(),
                 None,
             )?;
-            let body = serde_json::to_string(&SignupBody {
+            let body = json_ascii(&SignupBody {
                 tos_signature: sign_tos(&keypair.signer, &tos)?,
                 access_token: access.clone(),
                 handle: self.handle().to_owned(),
@@ -423,9 +433,12 @@ impl PortalClient {
                 message: error.to_string(),
             })?;
             let url = format!("{}/api/signup", self.portal_url);
-            let response = self
-                .transport
-                .post_json(&url, &[("DPoP".to_owned(), dpop)], &body)?;
+            let response = self.transport.request(
+                "POST",
+                &url,
+                &[("DPoP".to_owned(), dpop)],
+                RequestBody::Json(body),
+            )?;
             if response.status == 409 {
                 if attempt >= 3 {
                     return Err(PortalClientError::HandleCollision);
@@ -459,11 +472,9 @@ impl PortalClient {
                     message: "signup response has no access_token".to_owned(),
                 })?
                 .to_owned();
-            self.handle = data
-                .get("handle")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .or(self.handle.take());
+            if let Some(handle) = data.get("handle") {
+                self.handle = handle.as_str().map(str::to_owned);
+            }
             self.access_token = Some(received.clone());
             self.save_token(&received)?;
             return Ok(());
@@ -485,11 +496,19 @@ impl PortalClient {
     pub(crate) fn authed_request(
         &mut self,
         method: &str,
-        url: &str,
+        path: &str,
         json_body: Option<&str>,
-        mut files: Option<&mut [MultipartInput<'_>]>,
+        params: Option<&[(String, String)]>,
+        files: Option<&mut [MultipartInput<'_>]>,
+        idempotency_key: Option<&str>,
     ) -> Result<PortalResponse, PortalClientError> {
-        self.authed_request_inner(method, url, json_body, &mut files, true)
+        let mut options = AuthedRequestOptions {
+            json_body: json_body.map(str::to_owned),
+            params: params.map(ToOwned::to_owned),
+            files,
+            idempotency_key: idempotency_key.map(str::to_owned),
+        };
+        self.authed_request_inner(method, path, &mut options, true)
     }
 
     #[allow(
@@ -499,15 +518,14 @@ impl PortalClient {
     fn authed_request_inner(
         &mut self,
         method: &str,
-        url: &str,
-        json_body: Option<&str>,
-        files: &mut Option<&mut [MultipartInput<'_>]>,
+        path: &str,
+        options: &mut AuthedRequestOptions<'_, '_>,
         retry_on_tos: bool,
     ) -> Result<PortalResponse, PortalClientError> {
-        let url = if url.starts_with('/') {
-            format!("{}{}", self.portal_url, url)
+        let url = if path.starts_with('/') {
+            format!("{}{}", self.portal_url, path)
         } else {
-            url.to_owned()
+            path.to_owned()
         };
         let token = self
             .access_token
@@ -530,25 +548,29 @@ impl PortalClient {
             self.runtime.now(),
             Some(&token),
         )?;
-        let headers = vec![
+        let mut headers = vec![
             ("Authorization".to_owned(), format!("DPoP {token}")),
             ("DPoP".to_owned(), dpop),
         ];
-        let response = if let Some(body) = json_body {
-            self.transport.post_json(&url, &headers, body)?
-        } else if let Some(inputs) = files.as_deref_mut() {
-            let parts = rewind_files(inputs)?;
-            self.transport.post_multipart(&url, &headers, &parts)?
+        if let Some(key) = &options.idempotency_key {
+            headers.push(("Idempotency-Key".to_owned(), key.clone()));
+        }
+        let wire_url = append_params(&url, options.params.as_deref());
+        let body = if let Some(body) = &options.json_body {
+            RequestBody::Json(body.clone())
+        } else if let Some(inputs) = options.files.as_deref_mut() {
+            RequestBody::Multipart(rewind_files(inputs)?)
         } else {
-            self.transport.get(&url, &headers)?
+            RequestBody::None
         };
+        let response = self.transport.request(method, &wire_url, &headers, body)?;
         if response.status == 401 && retry_on_tos {
             let error = serde_json::from_str::<Value>(&response.body)
                 .ok()
                 .and_then(|body| body.get("error").and_then(Value::as_str).map(str::to_owned));
             if error.as_deref() == Some("tos_changed") {
                 self.register()?;
-                return self.authed_request_inner(method, &url, json_body, files, false);
+                return self.authed_request_inner(method, path, options, false);
             }
         }
         Ok(response)
@@ -660,7 +682,10 @@ pub(crate) fn portal_url_from_settings_with_env(
     // The reference intentionally fails open for every config read/parse error.
     if let Ok(text) = fs::read_to_string(journal_root.join("config/config.json"))
         && let Ok(value) = serde_json::from_str::<Value>(&text)
-        && let Some(url) = value.pointer("/support/portal_url").and_then(Value::as_str)
+        && let Some(url) = value
+            .pointer("/support/portal_url")
+            .and_then(Value::as_str)
+            .filter(|url| !url.is_empty())
     {
         return url.trim_end_matches('/').to_owned();
     }
@@ -677,6 +702,42 @@ pub(crate) fn is_enabled(journal_root: &Path) -> bool {
     };
     value
         .pointer("/support/enabled")
-        .and_then(Value::as_bool)
+        .map(python_truthy)
         .unwrap_or(true)
+}
+
+fn python_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null | Value::Bool(false) => false,
+        Value::Number(number) => number.as_f64().is_none_or(|number| number != 0.0),
+        Value::String(text) => !text.is_empty(),
+        Value::Array(values) => !values.is_empty(),
+        Value::Object(values) => !values.is_empty(),
+        Value::Bool(true) => true,
+    }
+}
+
+fn append_params(url: &str, params: Option<&[(String, String)]>) -> String {
+    let Some(params) = params.filter(|params| !params.is_empty()) else {
+        return url.to_owned();
+    };
+    let query = params
+        .iter()
+        .map(|(key, value)| format!("{}={}", percent_encode(key), percent_encode(value)))
+        .collect::<Vec<_>>()
+        .join("&");
+    let separator = if url.contains('?') { "&" } else { "?" };
+    format!("{url}{separator}{query}")
+}
+
+fn percent_encode(value: &str) -> String {
+    value
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                vec![char::from(byte)]
+            }
+            _ => format!("%{byte:02X}").chars().collect(),
+        })
+        .collect()
 }
