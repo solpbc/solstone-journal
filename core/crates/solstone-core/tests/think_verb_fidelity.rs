@@ -7,6 +7,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
+use chrono::{Duration, Local};
 use tempfile::TempDir;
 
 fn command(args: &[&str], journal: &TempDir) -> Command {
@@ -191,29 +192,39 @@ fn every_supported_argument_spelling_reaches_think_not_top_level_usage() {
 
 #[test]
 fn updated_ignores_invalid_segment_workers_and_run_modes_are_unavailable() {
-    let journal = TempDir::new().unwrap();
-    fs::create_dir_all(journal.path().join("chronicle/20260813/health")).unwrap();
-    fs::create_dir_all(journal.path().join("chronicle/20260814/health")).unwrap();
-    fs::write(
-        journal
-            .path()
-            .join("chronicle/20260813/health/stream.updated"),
-        b"",
-    )
-    .unwrap();
-    fs::write(
-        journal
-            .path()
-            .join("chronicle/20260814/health/stream.updated"),
-        b"",
-    )
-    .unwrap();
-    let updated = command(&["think", "--updated", "--segment-workers", "99"], &journal)
-        .output()
+    let (journal, prior, updated) = loop {
+        let journal = TempDir::new().unwrap();
+        let sampled_today = Local::now().date_naive();
+        let prior = (sampled_today - Duration::days(1))
+            .format("%Y%m%d")
+            .to_string();
+        let today = sampled_today.format("%Y%m%d").to_string();
+        fs::create_dir_all(journal.path().join(format!("chronicle/{prior}/health"))).unwrap();
+        fs::create_dir_all(journal.path().join(format!("chronicle/{today}/health"))).unwrap();
+        fs::write(
+            journal
+                .path()
+                .join(format!("chronicle/{prior}/health/stream.updated")),
+            b"",
+        )
         .unwrap();
+        fs::write(
+            journal
+                .path()
+                .join(format!("chronicle/{today}/health/stream.updated")),
+            b"",
+        )
+        .unwrap();
+        let updated = command(&["think", "--updated", "--segment-workers", "99"], &journal)
+            .output()
+            .unwrap();
+        if Local::now().date_naive() == sampled_today {
+            break (journal, prior, updated);
+        }
+    };
     assert_eq!(updated.status.code(), Some(0));
     assert!(updated.stderr.is_empty());
-    assert_eq!(updated.stdout, b"20260813\n");
+    assert_eq!(updated.stdout, format!("{prior}\n").into_bytes());
     let unavailable = command(&["think", "--dry-run"], &journal).output().unwrap();
     assert_eq!(unavailable.status.code(), Some(69));
 }
