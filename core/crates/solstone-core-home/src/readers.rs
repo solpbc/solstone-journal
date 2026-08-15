@@ -62,9 +62,7 @@ pub fn load_latest_weekly_reflection(context: &HomeContext) -> Option<Value> {
         .filter_map(|entry| {
             entry.file_type().ok().filter(|kind| kind.is_file())?;
             let stem = entry.path().file_stem()?.to_str()?.to_owned();
-            NaiveDate::parse_from_str(&stem, "%Y%m%d")
-                .ok()
-                .map(|_| stem)
+            (stem.len() == 8 && stem.bytes().all(|byte| byte.is_ascii_digit())).then_some(stem)
         })
         .collect::<Vec<_>>();
     days.sort();
@@ -1193,6 +1191,15 @@ mod tests {
         assert_eq!(
             load_latest_weekly_reflection(&context).unwrap()["day"],
             "20260531"
+        );
+        write(
+            root.path(),
+            "reflections/weekly/99999999.md",
+            "future-looking",
+        );
+        assert_eq!(
+            load_latest_weekly_reflection(&context).unwrap(),
+            json!({"day":"99999999","label":"99999999"})
         );
     }
 
