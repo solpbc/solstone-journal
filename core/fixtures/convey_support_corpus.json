@@ -1,0 +1,4311 @@
+{
+  "coverage_limits": {
+    "already_green_before_the_port": "The unestablished and corrupt phases are properties of the shared session gate and the shared API error handler, not of this app. In the native shell the app catch-all already answers both, so those cases go green with zero routes registered. Only the established, disabled and unregistered phases discriminate.",
+    "mutation_census": {
+      "cases_that_actually_mutated": 19,
+      "cases_whose_repeat_also_succeeded": 18,
+      "mutating_method_cases": 59,
+      "routes_with_a_successful_mutation": {
+        "POST /app/support/api/draft": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/feedback": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/register": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/tickets": [
+          "established",
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/tickets/7/attachments": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/tickets/7/close": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/tickets/7/reply": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/tickets/7/resolution/confirm": [
+          "established",
+          "unregistered"
+        ],
+        "POST /app/support/api/tickets/7/resolution/still-need-help": [
+          "established",
+          "unregistered"
+        ]
+      },
+      "total_cases": 137
+    },
+    "named_hazards_a_replay_cannot_see": [
+      "PortalClient._principal() calls _ensure_keypair(), so a read-shaped name generates and persists an RSA-4096 keypair on every mutation. A port that regenerates instead of reusing orphans the owner's registered identity and returns success.",
+      "register() ALWAYS writes tos.txt and token.json; only ensure_registered() is guarded on is_registered. A replay cannot tell the two apart because both produce the same body.",
+      "operations._load_or_create_fingerprint_key fills only when absent and refuses on unsafe permissions. Regenerating the key invalidates every stored canonical_fingerprint, turning in-flight operations into idempotency conflicts.",
+      "The 409 operation_in_progress arm of the dispatch matrix touches the ledger not at all, leaving a live ~60s lease; the other retryable arms release it. All four leave state == in_progress, so any assertion keyed to the recorded STATE cannot separate them.",
+      "The redaction captured here is the redactor's OUTPUT on one authored seed. Four of the seven diagnostics collectors redact nothing at all, which is the reference's behaviour and not an oversight.",
+      "collect_version and collect_revision are normalized, so this corpus pins their PRESENCE and their key, never their derivation."
+    ],
+    "what_a_green_replay_is_not_evidence_about": "Every response body a portal-backed route returns here is the STUB's, not a production portal's: this corpus pins what the reference DID with a response, never what a real portal sends. It says nothing about the local operation ledger's state machine, nothing about the diagnostics redactor's coverage, and nothing about the twelve-arm outcome matrix, all of which are invisible to a replay and are proven by derivation tests over injected inputs in the implementation."
+  },
+  "expected_case_counts": {
+    "corrupt": 24,
+    "disabled": 26,
+    "established": 39,
+    "unestablished": 24,
+    "unregistered": 24
+  },
+  "generator": "scripts/convey_support_corpus.py",
+  "header_allowlist": [
+    "Content-Type",
+    "Location"
+  ],
+  "phases": {
+    "corrupt": [
+      {
+        "method": "GET",
+        "name": "page_index",
+        "normalized": [
+          "response.text#journal_root"
+        ],
+        "path": "/app/support/",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/plain; charset=utf-8"
+          },
+          "status": 500,
+          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "text_bytes": 183,
+          "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_workspace",
+        "normalized": [
+          "response.text#journal_root"
+        ],
+        "path": "/app/support/workspace",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/plain; charset=utf-8"
+          },
+          "status": 500,
+          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "text_bytes": 183,
+          "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_background",
+        "normalized": [
+          "response.text#journal_root"
+        ],
+        "path": "/app/support/background",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/plain; charset=utf-8"
+          },
+          "status": 500,
+          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "text_bytes": 183,
+          "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "static_support_js",
+        "normalized": [
+          "response.text#journal_root"
+        ],
+        "path": "/app/support/static/support.js",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/plain; charset=utf-8"
+          },
+          "status": 500,
+          "text": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+          "text_bytes": 183,
+          "text_sha256": "79d3273f316213e790ebe64c8f3d341e869b65a4eacc083a1bfaa85a690e9b7a"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_config",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/config",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list_status",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets?status=open",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_ticket_get",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/7",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_closed",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/closed",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_articles",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/articles?q=backup",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_article",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/articles/getting-started",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_announcements",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/announcements",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_diagnostics",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/diagnostics",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_badge_count",
+        "normalized": [
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/badge-count",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "routing_404_non_integer_ticket",
+        "normalized": [],
+        "path": "/app/support/api/tickets/notanint",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "",
+            "error": "I couldn't complete that request.",
+            "reason_code": "http_error"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 404
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_register",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/register",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_reply",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/7/reply",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_close",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/7/close",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_confirm",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/7/resolution/confirm",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_still_need_help",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/tickets/7/resolution/still-need-help",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback",
+        "normalized": [
+          "repeat_response.body.detail#journal_root",
+          "response.body.detail#journal_root"
+        ],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "response": {
+          "body": {
+            "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
+            "error": "I couldn't read your settings.",
+            "reason_code": "corrupt_config"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 500
+        },
+        "sends_idempotency_key": true
+      }
+    ],
+    "disabled": [
+      {
+        "method": "GET",
+        "name": "page_index",
+        "normalized": [],
+        "path": "/app/support/",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 12199,
+          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
+          "text_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_workspace",
+        "normalized": [],
+        "path": "/app/support/workspace",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 37261,
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
+          "text_sha256": "ca70f29ba5345d5374c23be877eb52fc1e421f0eec088d9b9cd31032016e1deb"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_background",
+        "normalized": [],
+        "path": "/app/support/background",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),\n        onSuccess: (data) => {\n          AppServices.badges.app.set('support', data.count ?? 0);\n        }\n      });\n\n      // Listen for proactive suggestions from callosum\n      if (window.appEvents) {\n        window.appEvents.listen('support', function(msg) {\n          if (msg.event === 'proactive_suggestion') {\n            const service = msg.service || 'unknown';\n            AppServices.notifications.show({\n              app: 'support',\n              icon: 'life-buoy',\n              key: `support:proactive_suggestion:${service}`,\n              title: 'Support suggestion',\n              message: msg.message || 'Something may need attention.',\n              action: '/app/support',\n              dismissible: true,\n              autoDismiss: 30000\n            });\n          }\n        });\n      }\n    },\n\n    stop() {\n      if (badgeTask) {\n        badgeTask.stop();\n        badgeTask = null;\n      }\n    }\n  });\n",
+          "text_bytes": 1182,
+          "text_sha256": "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "static_support_js",
+        "normalized": [],
+        "path": "/app/support/static/support.js",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/javascript; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 10629,
+          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const defaultSetTimer = (fn, ms) => setTimeout(fn, ms);\n  const defaultClea",
+          "text_sha256": "dc56041242732fbd1e54cbc16c02735ef325ce99c8d9bcf1c851f9f412af0b55"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_config",
+        "normalized": [
+          "response.body.portal_url#portal_url"
+        ],
+        "path": "/app/support/api/config",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "enabled": false,
+            "portal_url": "<STUB_PORTAL>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list_status",
+        "normalized": [],
+        "path": "/app/support/api/tickets?status=open",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_ticket_get",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_closed",
+        "normalized": [],
+        "path": "/app/support/api/tickets/closed",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_articles",
+        "normalized": [],
+        "path": "/app/support/api/articles?q=backup",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_article",
+        "normalized": [],
+        "path": "/app/support/api/articles/getting-started",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_announcements",
+        "normalized": [],
+        "path": "/app/support/api/announcements",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_diagnostics",
+        "normalized": [
+          "response.body.platform.machine",
+          "response.body.platform.python",
+          "response.body.platform.release",
+          "response.body.recent_errors.*.time",
+          "response.body.revision",
+          "response.body.version"
+        ],
+        "path": "/app/support/api/diagnostics",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "brain_health": {
+              "lines": [
+                "Brain Health",
+                "  thinking status unavailable",
+                "  brain record missing",
+                "  \u2192 view health: /app/health/#brain"
+              ],
+              "snapshot": {
+                "action": {
+                  "href": "/app/health/#brain",
+                  "label": "view health"
+                },
+                "components": {
+                  "cogitate": {
+                    "observed_at": null,
+                    "reason_code": null,
+                    "reason_text": "unknown",
+                    "status": null
+                  },
+                  "generate": {
+                    "observed_at": null,
+                    "reason_code": null,
+                    "reason_text": "unknown",
+                    "status": null
+                  }
+                },
+                "evidence": {
+                  "age_seconds": null,
+                  "age_text": null,
+                  "observed_at": null
+                },
+                "failing_component": null,
+                "headline": "thinking status unavailable",
+                "identity": {
+                  "lane": "none",
+                  "model": null,
+                  "provider": "none"
+                },
+                "progressing": false,
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
+                "state": "unknown"
+              }
+            },
+            "config": {
+              "observe": {
+                "enabled": true
+              },
+              "provider": {
+                "api_key": "***"
+              },
+              "support": {
+                "enabled": false
+              }
+            },
+            "platform": {
+              "machine": "<PLATFORM_MACHINE>",
+              "python": "<PLATFORM_PYTHON>",
+              "release": "<PLATFORM_RELEASE>",
+              "system": "Linux"
+            },
+            "recent_errors": [
+              {
+                "message": "ERROR provider rejected the call: <secret>",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              },
+              {
+                "message": "ERROR reading <path> failed",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              },
+              {
+                "message": "ERROR traceback redacted",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": true
+              },
+              {
+                "message": "INFO the operator asked about an ERROR yesterday",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              }
+            ],
+            "revision": "<REVISION>",
+            "services": {
+              "cortex": "stopped",
+              "observer": "running"
+            },
+            "version": "<VERSION>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_badge_count",
+        "normalized": [],
+        "path": "/app/support/api/badge-count",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Support is not enabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "routing_404_non_integer_ticket",
+        "normalized": [],
+        "path": "/app/support/api/tickets/notanint",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "",
+            "error": "I couldn't complete that request.",
+            "reason_code": "http_error"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 404
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft",
+        "normalized": [],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_register",
+        "normalized": [],
+        "path": "/app/support/api/register",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_reply",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/reply",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_close",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/close",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_confirm",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/confirm",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_still_need_help",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/still-need-help",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback",
+        "normalized": [],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "response": {
+          "body": {
+            "detail": "Support is disabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "GET",
+        "name": "drain_on_feature_unavailable_refusal",
+        "normalized": [],
+        "path": "/app/support/api/badge-count",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          }
+        ],
+        "response": {
+          "body": {
+            "detail": "Support is not enabled",
+            "error": "I couldn't use that feature because it isn't enabled.",
+            "reason_code": "feature_unavailable"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 403
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "drain_on_local_read",
+        "normalized": [
+          "response.body.portal_url#portal_url"
+        ],
+        "path": "/app/support/api/config",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          }
+        ],
+        "response": {
+          "body": {
+            "enabled": false,
+            "portal_url": "<STUB_PORTAL>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      }
+    ],
+    "established": [
+      {
+        "method": "GET",
+        "name": "page_index",
+        "normalized": [],
+        "path": "/app/support/",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 12199,
+          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
+          "text_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_workspace",
+        "normalized": [],
+        "path": "/app/support/workspace",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 37261,
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
+          "text_sha256": "ca70f29ba5345d5374c23be877eb52fc1e421f0eec088d9b9cd31032016e1deb"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_background",
+        "normalized": [],
+        "path": "/app/support/background",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),\n        onSuccess: (data) => {\n          AppServices.badges.app.set('support', data.count ?? 0);\n        }\n      });\n\n      // Listen for proactive suggestions from callosum\n      if (window.appEvents) {\n        window.appEvents.listen('support', function(msg) {\n          if (msg.event === 'proactive_suggestion') {\n            const service = msg.service || 'unknown';\n            AppServices.notifications.show({\n              app: 'support',\n              icon: 'life-buoy',\n              key: `support:proactive_suggestion:${service}`,\n              title: 'Support suggestion',\n              message: msg.message || 'Something may need attention.',\n              action: '/app/support',\n              dismissible: true,\n              autoDismiss: 30000\n            });\n          }\n        });\n      }\n    },\n\n    stop() {\n      if (badgeTask) {\n        badgeTask.stop();\n        badgeTask = null;\n      }\n    }\n  });\n",
+          "text_bytes": 1182,
+          "text_sha256": "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "static_support_js",
+        "normalized": [],
+        "path": "/app/support/static/support.js",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/javascript; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 10629,
+          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const defaultSetTimer = (fn, ms) => setTimeout(fn, ms);\n  const defaultClea",
+          "text_sha256": "dc56041242732fbd1e54cbc16c02735ef325ce99c8d9bcf1c851f9f412af0b55"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_config",
+        "normalized": [
+          "response.body.portal_url#portal_url"
+        ],
+        "path": "/app/support/api/config",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "enabled": true,
+            "portal_url": "<STUB_PORTAL>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "body": "a field an active ticket keeps",
+              "created_at": "2026-02-01T00:00:00Z",
+              "status": "open",
+              "subject": "a seeded open ticket",
+              "ticket_id": 7,
+              "updated_at": "2026-02-02T00:00:00Z"
+            },
+            {
+              "close_scheduled_at": "2026-02-10T00:00:00Z",
+              "closed_at": "2026-02-03T00:00:00Z",
+              "reason_code": "resolved",
+              "status": "closed",
+              "ticket_id": 8
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list_status",
+        "normalized": [],
+        "path": "/app/support/api/tickets?status=open",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "body": "a field an active ticket keeps",
+              "created_at": "2026-02-01T00:00:00Z",
+              "status": "open",
+              "subject": "a seeded open ticket",
+              "ticket_id": 7,
+              "updated_at": "2026-02-02T00:00:00Z"
+            },
+            {
+              "close_scheduled_at": "2026-02-10T00:00:00Z",
+              "closed_at": "2026-02-03T00:00:00Z",
+              "reason_code": "resolved",
+              "status": "closed",
+              "ticket_id": 8
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_ticket_get",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets/7"
+          }
+        ],
+        "response": {
+          "body": {
+            "body": "a field an active ticket keeps",
+            "created_at": "2026-02-01T00:00:00Z",
+            "status": "open",
+            "subject": "a seeded open ticket",
+            "ticket_id": 7,
+            "updated_at": "2026-02-02T00:00:00Z"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_closed",
+        "normalized": [],
+        "path": "/app/support/api/tickets/closed",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets/closed"
+          }
+        ],
+        "response": {
+          "body": {
+            "next_cursor": "corpus-cursor",
+            "tickets": [
+              {
+                "close_scheduled_at": "2026-02-10T00:00:00Z",
+                "closed_at": "2026-02-03T00:00:00Z",
+                "reason_code": "resolved",
+                "status": "closed",
+                "ticket_id": 8
+              }
+            ]
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_articles",
+        "normalized": [],
+        "path": "/app/support/api/articles?q=backup",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/articles"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "slug": "getting-started",
+              "title": "Getting started"
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_article",
+        "normalized": [],
+        "path": "/app/support/api/articles/getting-started",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/articles/getting-started"
+          }
+        ],
+        "response": {
+          "body": {
+            "body": "an article",
+            "slug": "getting-started"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_announcements",
+        "normalized": [],
+        "path": "/app/support/api/announcements",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/announcements"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "id": 1,
+              "title": "an announcement"
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_diagnostics",
+        "normalized": [
+          "response.body.platform.machine",
+          "response.body.platform.python",
+          "response.body.platform.release",
+          "response.body.recent_errors.*.time",
+          "response.body.revision",
+          "response.body.version"
+        ],
+        "path": "/app/support/api/diagnostics",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "brain_health": {
+              "lines": [
+                "Brain Health",
+                "  thinking status unavailable",
+                "  brain record missing",
+                "  \u2192 view health: /app/health/#brain"
+              ],
+              "snapshot": {
+                "action": {
+                  "href": "/app/health/#brain",
+                  "label": "view health"
+                },
+                "components": {
+                  "cogitate": {
+                    "observed_at": null,
+                    "reason_code": null,
+                    "reason_text": "unknown",
+                    "status": null
+                  },
+                  "generate": {
+                    "observed_at": null,
+                    "reason_code": null,
+                    "reason_text": "unknown",
+                    "status": null
+                  }
+                },
+                "evidence": {
+                  "age_seconds": null,
+                  "age_text": null,
+                  "observed_at": null
+                },
+                "failing_component": null,
+                "headline": "thinking status unavailable",
+                "identity": {
+                  "lane": "none",
+                  "model": null,
+                  "provider": "none"
+                },
+                "progressing": false,
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
+                "state": "unknown"
+              }
+            },
+            "config": {
+              "observe": {
+                "enabled": true
+              },
+              "provider": {
+                "api_key": "***"
+              },
+              "support": {
+                "enabled": true
+              }
+            },
+            "platform": {
+              "machine": "<PLATFORM_MACHINE>",
+              "python": "<PLATFORM_PYTHON>",
+              "release": "<PLATFORM_RELEASE>",
+              "system": "Linux"
+            },
+            "recent_errors": [
+              {
+                "message": "ERROR provider rejected the call: <secret>",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              },
+              {
+                "message": "ERROR reading <path> failed",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              },
+              {
+                "message": "ERROR traceback redacted",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": true
+              },
+              {
+                "message": "INFO the operator asked about an ERROR yesterday",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              }
+            ],
+            "revision": "<REVISION>",
+            "services": {
+              "cortex": "stopped",
+              "observer": "running"
+            },
+            "version": "<VERSION>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_badge_count",
+        "normalized": [],
+        "path": "/app/support/api/badge-count",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets"
+          }
+        ],
+        "response": {
+          "body": {
+            "count": 1
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "routing_404_non_integer_ticket",
+        "normalized": [],
+        "path": "/app/support/api/tickets/notanint",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "",
+            "error": "I couldn't complete that request.",
+            "reason_code": "http_error"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 404
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft",
+        "normalized": [
+          "repeat_response.body.draft_id",
+          "response.body.draft_id"
+        ],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "draft_id": "<DRAFT_ID>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "response": {
+          "body": {
+            "draft_id": "<DRAFT_ID>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_register",
+        "normalized": [],
+        "path": "/app/support/api/register",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "handle": "solstone-corpus-host"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "response": {
+          "body": {
+            "handle": "solstone-corpus-host"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_reply",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/reply",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/messages"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/messages"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "message_id": 202,
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "message_id": 202,
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/attachments"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/attachments"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "attachment_id": 303,
+            "filename": "corpus.txt",
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "attachment_id": 303,
+            "filename": "corpus.txt",
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_close",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/close",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/close"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/close"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_confirm",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/confirm",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/confirm"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/confirm"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_still_need_help",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/still-need-help",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/still-need-help"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/still-need-help"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "body": "a field an active ticket keeps",
+            "created_at": "2026-02-01T00:00:00Z",
+            "status": "open",
+            "subject": "a seeded open ticket",
+            "ticket_id": 7,
+            "updated_at": "2026-02-02T00:00:00Z"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "body": "a field an active ticket keeps",
+            "created_at": "2026-02-01T00:00:00Z",
+            "status": "open",
+            "subject": "a seeded open ticket",
+            "ticket_id": 7,
+            "updated_at": "2026-02-02T00:00:00Z"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback",
+        "normalized": [],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create_no_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_reply_no_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/reply",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment_no_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_close_no_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/close",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_confirm_no_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/confirm",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_still_need_help_no_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/still-need-help",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback_no_key",
+        "normalized": [],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft_unknown_verb",
+        "normalized": [],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "verb must be create|feedback|reply|close|resolved|still_need_help and payload must be an object",
+            "error": "I couldn't use one of those values.",
+            "reason_code": "invalid_request_value"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft_missing_payload",
+        "normalized": [],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "verb and payload are required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create_missing_subject",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "subject and description are required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback_missing_body",
+        "normalized": [],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "body is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment_bad_suffix",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "Unsupported file type: .exe. Allowed: .csv, .gif, .html, .jpeg, .jpg, .json, .md, .pdf, .png, .svg, .txt, .webp, .xml",
+            "error": "I couldn't use one of those values.",
+            "reason_code": "invalid_request_value"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create_malformed_key",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          }
+        ],
+        "response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "drain_on_missing_key_refusal",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          }
+        ],
+        "response": {
+          "body": {
+            "detail": "Idempotency-Key header is required",
+            "error": "I couldn't find a required field.",
+            "reason_code": "missing_required_field"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 400
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "drain_on_page_request",
+        "normalized": [],
+        "path": "/app/support/workspace",
+        "portal_requests": [
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          }
+        ],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 37261,
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
+          "text_sha256": "ca70f29ba5345d5374c23be877eb52fc1e421f0eec088d9b9cd31032016e1deb"
+        },
+        "sends_idempotency_key": false
+      }
+    ],
+    "unestablished": [
+      {
+        "method": "GET",
+        "name": "page_index",
+        "normalized": [],
+        "path": "/app/support/",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_workspace",
+        "normalized": [],
+        "path": "/app/support/workspace",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_background",
+        "normalized": [],
+        "path": "/app/support/background",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "static_support_js",
+        "normalized": [],
+        "path": "/app/support/static/support.js",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_config",
+        "normalized": [],
+        "path": "/app/support/api/config",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list_status",
+        "normalized": [],
+        "path": "/app/support/api/tickets?status=open",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_ticket_get",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_closed",
+        "normalized": [],
+        "path": "/app/support/api/tickets/closed",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_articles",
+        "normalized": [],
+        "path": "/app/support/api/articles?q=backup",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_article",
+        "normalized": [],
+        "path": "/app/support/api/articles/getting-started",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_announcements",
+        "normalized": [],
+        "path": "/app/support/api/announcements",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_diagnostics",
+        "normalized": [],
+        "path": "/app/support/api/diagnostics",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_badge_count",
+        "normalized": [],
+        "path": "/app/support/api/badge-count",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "routing_404_non_integer_ticket",
+        "normalized": [],
+        "path": "/app/support/api/tickets/notanint",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "",
+            "error": "I couldn't complete that request.",
+            "reason_code": "http_error"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 404
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft",
+        "normalized": [],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_register",
+        "normalized": [],
+        "path": "/app/support/api/register",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_reply",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/reply",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_close",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/close",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_confirm",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/confirm",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_still_need_help",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/still-need-help",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback",
+        "normalized": [],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [],
+        "repeat_response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8",
+            "Location": "/init"
+          },
+          "status": 302,
+          "text": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
+          "text_bytes": 197,
+          "text_sha256": "5bbac92c025cbb62108af01b13d9aedad29b3510cbfe7835a053fa56f62ab2d1"
+        },
+        "sends_idempotency_key": true
+      }
+    ],
+    "unregistered": [
+      {
+        "method": "GET",
+        "name": "page_index",
+        "normalized": [],
+        "path": "/app/support/",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 12199,
+          "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
+          "text_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_workspace",
+        "normalized": [],
+        "path": "/app/support/workspace",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 37261,
+          "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
+          "text_sha256": "ca70f29ba5345d5374c23be877eb52fc1e421f0eec088d9b9cd31032016e1deb"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "page_background",
+        "normalized": [],
+        "path": "/app/support/background",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/html; charset=utf-8"
+          },
+          "status": 200,
+          "text": "let badgeTask = null;\n\nAppServices.register('support', {\n    initialize() {\n      badgeTask = AppServices.registerTask('support', 'badge-count', {\n        intervalMs: 5 * 60 * 1000,\n        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),\n        onSuccess: (data) => {\n          AppServices.badges.app.set('support', data.count ?? 0);\n        }\n      });\n\n      // Listen for proactive suggestions from callosum\n      if (window.appEvents) {\n        window.appEvents.listen('support', function(msg) {\n          if (msg.event === 'proactive_suggestion') {\n            const service = msg.service || 'unknown';\n            AppServices.notifications.show({\n              app: 'support',\n              icon: 'life-buoy',\n              key: `support:proactive_suggestion:${service}`,\n              title: 'Support suggestion',\n              message: msg.message || 'Something may need attention.',\n              action: '/app/support',\n              dismissible: true,\n              autoDismiss: 30000\n            });\n          }\n        });\n      }\n    },\n\n    stop() {\n      if (badgeTask) {\n        badgeTask.stop();\n        badgeTask = null;\n      }\n    }\n  });\n",
+          "text_bytes": 1182,
+          "text_sha256": "6299f26fbc48e57ddd708f2d97b947086f3ae650531f982d97d6bf1c0441fe4b"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "static_support_js",
+        "normalized": [],
+        "path": "/app/support/static/support.js",
+        "portal_requests": [],
+        "response": {
+          "headers": {
+            "Content-Type": "text/javascript; charset=utf-8"
+          },
+          "status": 200,
+          "text_bytes": 10629,
+          "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const defaultSetTimer = (fn, ms) => setTimeout(fn, ms);\n  const defaultClea",
+          "text_sha256": "dc56041242732fbd1e54cbc16c02735ef325ce99c8d9bcf1c851f9f412af0b55"
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_config",
+        "normalized": [
+          "response.body.portal_url#portal_url"
+        ],
+        "path": "/app/support/api/config",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "enabled": true,
+            "portal_url": "<STUB_PORTAL>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "body": "a field an active ticket keeps",
+              "created_at": "2026-02-01T00:00:00Z",
+              "status": "open",
+              "subject": "a seeded open ticket",
+              "ticket_id": 7,
+              "updated_at": "2026-02-02T00:00:00Z"
+            },
+            {
+              "close_scheduled_at": "2026-02-10T00:00:00Z",
+              "closed_at": "2026-02-03T00:00:00Z",
+              "reason_code": "resolved",
+              "status": "closed",
+              "ticket_id": 8
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_list_status",
+        "normalized": [],
+        "path": "/app/support/api/tickets?status=open",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "body": "a field an active ticket keeps",
+              "created_at": "2026-02-01T00:00:00Z",
+              "status": "open",
+              "subject": "a seeded open ticket",
+              "ticket_id": 7,
+              "updated_at": "2026-02-02T00:00:00Z"
+            },
+            {
+              "close_scheduled_at": "2026-02-10T00:00:00Z",
+              "closed_at": "2026-02-03T00:00:00Z",
+              "reason_code": "resolved",
+              "status": "closed",
+              "ticket_id": 8
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_ticket_get",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets/7"
+          }
+        ],
+        "response": {
+          "body": {
+            "body": "a field an active ticket keeps",
+            "created_at": "2026-02-01T00:00:00Z",
+            "status": "open",
+            "subject": "a seeded open ticket",
+            "ticket_id": 7,
+            "updated_at": "2026-02-02T00:00:00Z"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_tickets_closed",
+        "normalized": [],
+        "path": "/app/support/api/tickets/closed",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets/closed"
+          }
+        ],
+        "response": {
+          "body": {
+            "next_cursor": "corpus-cursor",
+            "tickets": [
+              {
+                "close_scheduled_at": "2026-02-10T00:00:00Z",
+                "closed_at": "2026-02-03T00:00:00Z",
+                "reason_code": "resolved",
+                "status": "closed",
+                "ticket_id": 8
+              }
+            ]
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_articles",
+        "normalized": [],
+        "path": "/app/support/api/articles?q=backup",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/articles"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "slug": "getting-started",
+              "title": "Getting started"
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_article",
+        "normalized": [],
+        "path": "/app/support/api/articles/getting-started",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/articles/getting-started"
+          }
+        ],
+        "response": {
+          "body": {
+            "body": "an article",
+            "slug": "getting-started"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_announcements",
+        "normalized": [],
+        "path": "/app/support/api/announcements",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/announcements"
+          }
+        ],
+        "response": {
+          "body": [
+            {
+              "id": 1,
+              "title": "an announcement"
+            }
+          ],
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_diagnostics",
+        "normalized": [
+          "response.body.platform.machine",
+          "response.body.platform.python",
+          "response.body.platform.release",
+          "response.body.recent_errors.*.time",
+          "response.body.revision",
+          "response.body.version"
+        ],
+        "path": "/app/support/api/diagnostics",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "brain_health": {
+              "lines": [
+                "Brain Health",
+                "  thinking status unavailable",
+                "  brain record missing",
+                "  \u2192 view health: /app/health/#brain"
+              ],
+              "snapshot": {
+                "action": {
+                  "href": "/app/health/#brain",
+                  "label": "view health"
+                },
+                "components": {
+                  "cogitate": {
+                    "observed_at": null,
+                    "reason_code": null,
+                    "reason_text": "unknown",
+                    "status": null
+                  },
+                  "generate": {
+                    "observed_at": null,
+                    "reason_code": null,
+                    "reason_text": "unknown",
+                    "status": null
+                  }
+                },
+                "evidence": {
+                  "age_seconds": null,
+                  "age_text": null,
+                  "observed_at": null
+                },
+                "failing_component": null,
+                "headline": "thinking status unavailable",
+                "identity": {
+                  "lane": "none",
+                  "model": null,
+                  "provider": "none"
+                },
+                "progressing": false,
+                "reason_code": "brain_record_missing",
+                "reason_text": "brain record missing",
+                "state": "unknown"
+              }
+            },
+            "config": {
+              "observe": {
+                "enabled": true
+              },
+              "provider": {
+                "api_key": "***"
+              },
+              "support": {
+                "enabled": true
+              }
+            },
+            "platform": {
+              "machine": "<PLATFORM_MACHINE>",
+              "python": "<PLATFORM_PYTHON>",
+              "release": "<PLATFORM_RELEASE>",
+              "system": "Linux"
+            },
+            "recent_errors": [
+              {
+                "message": "ERROR provider rejected the call: <secret>",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              },
+              {
+                "message": "ERROR reading <path> failed",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              },
+              {
+                "message": "ERROR traceback redacted",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": true
+              },
+              {
+                "message": "INFO the operator asked about an ERROR yesterday",
+                "service": "supervisor",
+                "time": "<CAPTURE_TIME>",
+                "time_approximate": false
+              }
+            ],
+            "revision": "<REVISION>",
+            "services": {
+              "cortex": "stopped",
+              "observer": "running"
+            },
+            "version": "<VERSION>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "api_badge_count",
+        "normalized": [],
+        "path": "/app/support/api/badge-count",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/api/tickets"
+          }
+        ],
+        "response": {
+          "body": {
+            "count": 1
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "GET",
+        "name": "routing_404_non_integer_ticket",
+        "normalized": [],
+        "path": "/app/support/api/tickets/notanint",
+        "portal_requests": [],
+        "response": {
+          "body": {
+            "detail": "",
+            "error": "I couldn't complete that request.",
+            "reason_code": "http_error"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 404
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_draft",
+        "normalized": [
+          "repeat_response.body.draft_id",
+          "response.body.draft_id"
+        ],
+        "path": "/app/support/api/draft",
+        "portal_requests": [],
+        "repeat_response": {
+          "body": {
+            "draft_id": "<DRAFT_ID>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "response": {
+          "body": {
+            "draft_id": "<DRAFT_ID>"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_register",
+        "normalized": [],
+        "path": "/app/support/api/register",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "handle": "solstone-corpus-host"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "response": {
+          "body": {
+            "handle": "solstone-corpus-host"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 200
+        },
+        "sends_idempotency_key": false
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_create",
+        "normalized": [],
+        "path": "/app/support/api/tickets",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_reply",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/reply",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/messages"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/messages"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "message_id": 202,
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "message_id": 202,
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_attachment",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/attachments",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/attachments"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/attachments"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "attachment_id": 303,
+            "filename": "corpus.txt",
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "attachment_id": 303,
+            "filename": "corpus.txt",
+            "status": "open"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_ticket_close",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/close",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/close"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/close"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_confirm",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/confirm",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/confirm"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/confirm"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "close_scheduled_at": "2026-02-10T00:00:00Z",
+            "closed_at": "2026-02-03T00:00:00Z",
+            "reason_code": "resolved",
+            "status": "closed",
+            "ticket_id": 8
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_resolution_still_need_help",
+        "normalized": [],
+        "path": "/app/support/api/tickets/7/resolution/still-need-help",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/still-need-help"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets/7/resolution/still-need-help"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "body": "a field an active ticket keeps",
+            "created_at": "2026-02-01T00:00:00Z",
+            "status": "open",
+            "subject": "a seeded open ticket",
+            "ticket_id": 7,
+            "updated_at": "2026-02-02T00:00:00Z"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "body": "a field an active ticket keeps",
+            "created_at": "2026-02-01T00:00:00Z",
+            "status": "open",
+            "subject": "a seeded open ticket",
+            "ticket_id": 7,
+            "updated_at": "2026-02-02T00:00:00Z"
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      },
+      {
+        "method": "POST",
+        "name": "api_feedback",
+        "normalized": [],
+        "path": "/app/support/api/feedback",
+        "portal_requests": [
+          {
+            "had_authorization": false,
+            "had_dpop": false,
+            "had_idempotency_key": false,
+            "method": "GET",
+            "path": "/tos"
+          },
+          {
+            "had_authorization": false,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/signup"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": false,
+            "method": "POST",
+            "path": "/api/idempotency/ack"
+          },
+          {
+            "had_authorization": true,
+            "had_dpop": true,
+            "had_idempotency_key": true,
+            "method": "POST",
+            "path": "/api/tickets"
+          }
+        ],
+        "repeat_response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "response": {
+          "body": {
+            "status": "open",
+            "subject": "corpus subject",
+            "ticket_id": 101
+          },
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "status": 201
+        },
+        "sends_idempotency_key": true
+      }
+    ]
+  },
+  "pinned": {
+    "completed_at": 1767225600,
+    "handle": "solstone-corpus-host",
+    "hostname": "corpus-host",
+    "parent_action_id": "sact1_corpusfixedparentaction",
+    "seeded_ticket_id": 7,
+    "stub_access_token": "corpus.stub.access.token",
+    "stub_tos": "Corpus terms of service. Authored for this fixture; not a real agreement.\n"
+  },
+  "placeholders": {
+    "journal_root": "<JOURNAL_ROOT>",
+    "portal_url": "<STUB_PORTAL>"
+  },
+  "schema": "solstone-convey-support-corpus-v1",
+  "tz": "UTC"
+}
