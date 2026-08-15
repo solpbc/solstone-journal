@@ -8,8 +8,10 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, GenerateResponse, OneShotClient};
+use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod chat_context;
 pub mod contract;
@@ -19,6 +21,7 @@ pub mod steward;
 pub mod steward_health;
 pub mod steward_log;
 pub mod story;
+mod transcript;
 pub mod writers;
 
 #[cfg(test)]
@@ -35,6 +38,32 @@ pub struct ExecutionContext {
 pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
+}
+
+pub fn check_segment_has_no_input(
+    journal: &Path,
+    day: &str,
+    segment: &str,
+    stream: Option<&str>,
+    sources: &Map<String, Value>,
+    now: DateTime<Utc>,
+) -> bool {
+    if !transcript::sources_are_enabled(sources) {
+        return false;
+    }
+    let (text, counts) =
+        transcript::load_segment_transcript(journal, day, segment, stream, sources);
+    if solstone_core_transcripts::is_no_input(&text, &counts) {
+        return true;
+    }
+    let data_state = read_segment_data_state(journal, day, segment, stream, now);
+    // Talent output is not a detected modality. A talent-only segment has real transcript text
+    // and an empty map, so the non-empty guard prevents vacuous all() gating it.
+    !data_state.0.is_empty()
+        && data_state
+            .0
+            .values()
+            .all(|state| state == DataState::Empty.as_str())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,12 +99,9 @@ pub enum RuntimeOutcome {
         hook: String,
         talent: String,
     },
-    UnportedTranscriptLoading {
+    PrepareSkipped {
         talent: String,
-        enabled_sources: Vec<String>,
-    },
-    Disabled {
-        talent: String,
+        reason: String,
     },
     SchemaValidationFailed {
         talent: String,
@@ -157,21 +183,13 @@ pub fn execute_request(
 ) -> RuntimeOutcome {
     let mut prepared = match prepare::prepare(request, paths, context) {
         Ok(prepared) => prepared,
-        Err(prepare::PrepareFailure::UnportedTranscriptLoading {
-            talent,
-            enabled_sources,
-        }) => {
-            return RuntimeOutcome::UnportedTranscriptLoading {
-                talent,
-                enabled_sources,
-            };
-        }
         Err(error) => return RuntimeOutcome::PrepareFailed(error),
     };
     emit_start(writer, &prepared);
-    if prepared.config.get("skip_reason").and_then(Value::as_str) == Some("disabled") {
-        return RuntimeOutcome::Disabled {
+    if let Some(reason) = prepared.config.get("skip_reason").and_then(Value::as_str) {
+        return RuntimeOutcome::PrepareSkipped {
             talent: prepared.name.clone(),
+            reason: reason.to_owned(),
         };
     }
     let hook = prepared
@@ -465,16 +483,9 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             writer,
             json!({"event":"error", "terminal":true, "name":talent, "error":format!("unported talent hook: {hook}")}),
         ),
-        RuntimeOutcome::UnportedTranscriptLoading {
-            talent,
-            enabled_sources,
-        } => emit(
+        RuntimeOutcome::PrepareSkipped { talent, reason } => emit(
             writer,
-            json!({"event":"error", "terminal":true, "name":talent, "error":format!("transcript loading is unported for talent '{talent}'"), "enabled_sources":enabled_sources}),
-        ),
-        RuntimeOutcome::Disabled { talent } => emit(
-            writer,
-            json!({"event":"finish", "name":talent, "skip_reason":"disabled"}),
+            json!({"event":"finish", "name":talent, "skip_reason":reason}),
         ),
         RuntimeOutcome::SchemaValidationFailed { talent, validation } => emit(
             writer,
@@ -538,6 +549,16 @@ mod tests {
             .map(serde_json::from_str)
             .collect::<Result<_, _>>()
             .unwrap()
+    }
+
+    fn segment_dir(context: &ExecutionContext, day: &str, segment: &str) -> PathBuf {
+        let path = context.journal.join("chronicle").join(day).join(segment);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn source_config(value: Value) -> Map<String, Value> {
+        value.as_object().cloned().unwrap()
     }
 
     #[test]
@@ -762,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn criterion_10_unported_hook_and_transcript_loading_are_named_refusals() {
+    fn criterion_10_unported_hook_and_ported_transcript_loading() {
         let (root, paths, context) = fixture(
             "pulse-fixture",
             r#"{
@@ -806,21 +827,47 @@ mod tests {
         );
         let source_client =
             OneShotClient::at_path(test_support::one_shot_stub(source_root.path(), "generated"));
+        let source_day = "20260101";
+        let source_segment = "090000_60";
+        fs::write(
+            segment_dir(&source_context, source_day, source_segment).join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"This transcript is long enough to prepare and execute normally."}"#,
+        )
+        .unwrap();
+        let source_request = json!({
+            "name":"source-fixture", "day":source_day, "segment":source_segment, "prompt":"hello"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let source_prepared =
+            prepare::prepare(source_request.clone(), &source_paths, &source_context)
+                .expect("ported transcript source prepares");
+        assert!(
+            source_prepared.config["transcript"]
+                .as_str()
+                .unwrap()
+                .contains("long enough")
+        );
+        assert_eq!(
+            source_prepared.config["source_counts"],
+            json!({"transcripts": 1, "percepts": 0, "talents": 0})
+        );
         let mut source_output = Vec::new();
         let source_outcome = execute_request(
-            json!({"name":"source-fixture", "prompt":"hello"})
-                .as_object()
-                .unwrap()
-                .clone(),
+            source_request,
             &source_paths,
             &source_context,
             &source_client,
             &mut source_output,
         );
-        assert!(
-            matches!(source_outcome, RuntimeOutcome::UnportedTranscriptLoading { ref talent, .. } if talent == "source-fixture")
-        );
-        assert!(source_output.is_empty());
+        assert!(matches!(source_outcome, RuntimeOutcome::Finished { .. }));
+        emit_outcome(&mut source_output, source_outcome);
+        let source_events = events(&source_output);
+        assert_eq!(source_events.len(), 2);
+        assert_eq!(source_events[0]["event"], "start");
+        assert_eq!(source_events[1]["event"], "finish");
+        assert_eq!(source_events[1]["output"], "generated");
     }
 
     #[test]
@@ -914,5 +961,301 @@ mod tests {
         assert_eq!(error.phase, "commit");
         assert_eq!(error.stage, "story");
         assert_eq!(error.talent, "conversation");
+    }
+
+    #[test]
+    fn criterion_1_runtime_manifest_has_no_axum_dependency() {
+        assert!(
+            !include_str!("../Cargo.toml")
+                .lines()
+                .any(|line| line.trim_start().starts_with("axum"))
+        );
+    }
+
+    #[test]
+    fn criterion_3_required_percepts_are_enabled_and_gathered() {
+        let (_root, paths, context) = fixture(
+            "required-percepts",
+            r#"{
+"type":"generate", "load":{"percepts":"required"}
+}"#,
+        );
+        let day = "20260102";
+        let segment = "090000_60";
+        fs::write(
+            segment_dir(&context, day, segment).join("screen.jsonl"),
+            r#"{"timestamp":0,"content":{"window":"Enough recorded percept text to prepare this talent normally."}}"#,
+        )
+        .unwrap();
+
+        let prepared = prepare::prepare(
+            json!({"name":"required-percepts", "day":day, "segment":segment, "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+        )
+        .unwrap();
+
+        assert!(prepared.config.get("skip_reason").is_none());
+        assert!(
+            prepared.config["transcript"]
+                .as_str()
+                .unwrap()
+                .contains("Screen Activity")
+        );
+        assert_eq!(prepared.config["source_counts"]["percepts"], 1);
+    }
+
+    #[test]
+    fn criterion_9_gate_does_not_probe_when_no_source_is_enabled() {
+        let root = tempfile::tempdir().unwrap();
+        let sources =
+            source_config(json!({"transcripts": false, "percepts": false, "talents": false}));
+
+        assert!(!check_segment_has_no_input(
+            root.path(),
+            "20260103",
+            "090000_60",
+            None,
+            &sources,
+            Utc::now(),
+        ));
+        assert!(!root.path().join("chronicle").exists());
+    }
+
+    #[test]
+    fn criterion_9_gate_returns_true_for_content_emptiness() {
+        let root = tempfile::tempdir().unwrap();
+        let sources = source_config(json!({"transcripts": true}));
+
+        assert!(check_segment_has_no_input(
+            root.path(),
+            "20260103",
+            "090000_60",
+            None,
+            &sources,
+            Utc::now(),
+        ));
+    }
+
+    #[test]
+    fn criterion_9_gate_returns_true_for_nonempty_all_empty_data_state() {
+        let root = tempfile::tempdir().unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_path_buf(),
+        };
+        let path = segment_dir(&context, "20260103", "090000_60");
+        fs::write(
+            path.join("audio.jsonl"),
+            r#"{"_solstone_processing":{"state":"empty"}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(path.join("talents")).unwrap();
+        fs::write(
+            path.join("talents/sense.md"),
+            "This talent output is deliberately long enough to avoid the content emptiness gate.",
+        )
+        .unwrap();
+        let sources = source_config(json!({"talents": true}));
+
+        assert!(check_segment_has_no_input(
+            &context.journal,
+            "20260103",
+            "090000_60",
+            None,
+            &sources,
+            Utc::now(),
+        ));
+    }
+
+    #[test]
+    fn criterion_12_public_gate_keeps_talent_only_input_when_data_state_is_empty() {
+        let root = tempfile::tempdir().unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_path_buf(),
+        };
+        let path = segment_dir(&context, "20260103", "090000_60");
+        fs::create_dir_all(path.join("talents")).unwrap();
+        fs::write(
+            path.join("talents/sense.md"),
+            "This talent output is deliberately long enough to avoid the content emptiness gate.",
+        )
+        .unwrap();
+        let sources = source_config(json!({"talents": true}));
+
+        assert!(!check_segment_has_no_input(
+            &context.journal,
+            "20260103",
+            "090000_60",
+            None,
+            &sources,
+            Utc::now(),
+        ));
+    }
+
+    #[test]
+    fn criterion_16_talent_filter_reaches_the_talents_count_key() {
+        let (_root, paths, context) = fixture(
+            "filtered-talents",
+            r#"{
+"type":"generate", "load":{"talents":{"sense":true}}
+}"#,
+        );
+        let day = "20260104";
+        let segment = "090000_60";
+        let path = segment_dir(&context, day, segment);
+        fs::create_dir_all(path.join("talents")).unwrap();
+        fs::write(
+            path.join("talents/sense.md"),
+            "This selected talent output is long enough for the gather to retain it.",
+        )
+        .unwrap();
+        fs::write(
+            path.join("talents/other.md"),
+            "This other talent output must not appear in the gathered transcript.",
+        )
+        .unwrap();
+
+        let prepared = prepare::prepare(
+            json!({"name":"filtered-talents", "day":day, "segment":segment, "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+        )
+        .unwrap();
+
+        assert_eq!(prepared.config["sources"]["talents"], json!({"sense":true}));
+        assert!(
+            prepared.config["transcript"]
+                .as_str()
+                .unwrap()
+                .contains("### sense summary")
+        );
+        assert!(
+            !prepared.config["transcript"]
+                .as_str()
+                .unwrap()
+                .contains("other summary")
+        );
+        assert_eq!(prepared.config["source_counts"]["talents"], 1);
+    }
+
+    #[test]
+    fn criterion_18_required_source_skip_keeps_gathered_counts() {
+        let (_root, paths, context) = fixture(
+            "required-missing",
+            r#"{
+"type":"generate", "load":{"percepts":"required"}
+}"#,
+        );
+        let day = "20260105";
+        let segment = "090000_60";
+        segment_dir(&context, day, segment);
+
+        let prepared = prepare::prepare(
+            json!({"name":"required-missing", "day":day, "segment":segment, "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+        )
+        .unwrap();
+
+        assert_eq!(prepared.config["skip_reason"], "missing_required_percepts");
+        assert_eq!(
+            prepared.config["source_counts"],
+            json!({"transcripts":0,"percepts":0,"talents":0})
+        );
+    }
+
+    #[test]
+    fn criterion_18_empty_gather_skips_with_no_input() {
+        let (_root, paths, context) = fixture(
+            "empty-gather",
+            r#"{
+"type":"generate", "load":{"transcripts":true}
+}"#,
+        );
+        let prepared = prepare::prepare(
+            json!({"name":"empty-gather", "day":"20260105", "segment":"090000_60", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+        )
+        .unwrap();
+
+        assert_eq!(prepared.config["skip_reason"], "no_input");
+        assert_eq!(
+            prepared.config["transcript"],
+            "Segment folder not found: 20260105/090000_60"
+        );
+    }
+
+    #[test]
+    fn criterion_18_sparse_gather_prepends_the_exact_input_note() {
+        let (_root, paths, context) = fixture(
+            "sparse-gather",
+            r#"{
+"type":"generate", "load":{"transcripts":true}
+}"#,
+        );
+        let day = "20260105";
+        let segment = "090000_60";
+        fs::write(
+            segment_dir(&context, day, segment).join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"This single transcript entry is long enough to avoid the no input skip."}"#,
+        )
+        .unwrap();
+        let prepared = prepare::prepare(
+            json!({"name":"sparse-gather", "day":day, "segment":segment, "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+        )
+        .unwrap();
+
+        assert_eq!(prepared.config["source_counts"]["transcripts"], 1);
+        assert!(prepared.config["transcript"]
+            .as_str()
+            .unwrap()
+            .starts_with("**Input Note:** Limited recordings for this day. Scale analysis to available input.\n\n"));
+    }
+
+    #[test]
+    fn criterion_18_prepare_skip_emits_start_before_finish() {
+        let (root, paths, context) = fixture(
+            "ordered-skip",
+            r#"{
+"type":"generate", "load":{"transcripts":true}
+}"#,
+        );
+        let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
+        let mut output = Vec::new();
+        run_lines(
+            Cursor::new(
+                "{\"name\":\"ordered-skip\",\"day\":\"20260105\",\"segment\":\"090000_60\",\"prompt\":\"hello\"}\n",
+            ),
+            &mut output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+
+        let output_events = events(&output);
+        assert_eq!(output_events.len(), 2);
+        assert_eq!(output_events[0]["event"], "start");
+        assert_eq!(
+            output_events[1],
+            json!({"event":"finish", "name":"ordered-skip", "skip_reason":"no_input"})
+        );
     }
 }

@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge};
 
-use crate::{ExecutionContext, PreparedTalent};
+use crate::{ExecutionContext, PreparedTalent, transcript};
+
+const SPARSE_INPUT_NOTE: &str =
+    "**Input Note:** Limited recordings for this day. Scale analysis to available input.\n\n";
 
 #[derive(Clone, Debug)]
 pub struct RuntimePaths {
@@ -18,14 +21,8 @@ pub struct RuntimePaths {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrepareFailure {
     Refusal(String),
-    UnresolvableCwd {
-        talent: String,
-    },
+    UnresolvableCwd { talent: String },
     NoBrainConfigured,
-    UnportedTranscriptLoading {
-        talent: String,
-        enabled_sources: Vec<String>,
-    },
 }
 
 impl std::fmt::Display for PrepareFailure {
@@ -39,10 +36,6 @@ impl std::fmt::Display for PrepareFailure {
             Self::NoBrainConfigured => {
                 formatter.write_str("No thinking engine is chosen yet. Choose one in Thinking.")
             }
-            Self::UnportedTranscriptLoading { talent, .. } => write!(
-                formatter,
-                "transcript loading is unported for talent '{talent}'"
-            ),
         }
     }
 }
@@ -106,22 +99,51 @@ pub fn prepare(
             config: composed,
         });
     }
-    let enabled_sources = composed
-        .get("sources")
-        .and_then(Value::as_object)
-        .map(|sources| {
-            sources
-                .iter()
-                .filter(|(_, value)| is_truthy(value))
-                .map(|(name, _)| name.clone())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if !enabled_sources.is_empty() {
-        return Err(PrepareFailure::UnportedTranscriptLoading {
-            talent: name,
-            enabled_sources,
-        });
+    let sources = composed.get("sources").and_then(Value::as_object).cloned();
+    if composed.contains_key("day")
+        && sources
+            .as_ref()
+            .is_some_and(transcript::sources_are_enabled)
+    {
+        let (mut transcript, counts) = transcript::load_transcript(&context.journal, &composed)
+            .map_err(PrepareFailure::Refusal)?;
+        composed.insert("transcript".to_owned(), Value::String(transcript.clone()));
+        composed.insert("source_counts".to_owned(), Value::from(counts));
+
+        let mut source_entries = sources
+            .as_ref()
+            .expect("enabled sources are present")
+            .iter()
+            .collect::<Vec<_>>();
+        source_entries.sort_by_key(|(source, _)| *source);
+        for (source, value) in source_entries {
+            if solstone_core_talent_config::source_is_required(value)
+                && source_count(&counts, source) == 0
+            {
+                composed.insert(
+                    "skip_reason".to_owned(),
+                    Value::String(format!("missing_required_{source}")),
+                );
+                return Ok(PreparedTalent {
+                    name,
+                    config: composed,
+                });
+            }
+        }
+        if solstone_core_transcripts::is_no_input(&transcript, &counts) {
+            composed.insert(
+                "skip_reason".to_owned(),
+                Value::String("no_input".to_owned()),
+            );
+            return Ok(PreparedTalent {
+                name,
+                config: composed,
+            });
+        }
+        if counts.total() < 3 {
+            transcript.insert_str(0, SPARSE_INPUT_NOTE);
+            composed.insert("transcript".to_owned(), Value::String(transcript));
+        }
     }
     if let Some(output) = composed.get("output").and_then(Value::as_str)
         && let Some(day) = composed.get("day").and_then(Value::as_str)
@@ -150,6 +172,15 @@ pub fn prepare(
         name,
         config: composed,
     })
+}
+
+fn source_count(counts: &solstone_core_transcripts::SourceCounts, source: &str) -> usize {
+    match source {
+        "transcripts" => counts.transcripts,
+        "percepts" => counts.percepts,
+        "talents" => counts.talents,
+        _ => 0,
+    }
 }
 
 fn configured_brain(journal: &Path) -> (String, String) {

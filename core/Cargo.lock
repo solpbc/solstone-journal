@@ -4317,8 +4317,10 @@ dependencies = [
  "solstone-core-identity",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+ "solstone-core-system-health",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
+ "solstone-core-transcripts",
  "tempfile",
 ]
 
