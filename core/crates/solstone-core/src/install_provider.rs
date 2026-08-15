@@ -108,22 +108,12 @@ pub fn run(options: InstallProviderOptions) -> ExitCode {
             }
         },
         move |journal| {
-            let input = json!({"journal": journal.display().to_string()})
-                .as_object()
-                .unwrap()
-                .clone();
-            if is_local {
-                // Darwin's local provider IS MLX. Inspecting the llama.cpp
-                // installation there would report on an artifact set that
-                // platform never installs.
-                if normalized_os(std::env::consts::OS) == "darwin" {
-                    readiness::inspect_mlx(input)
-                } else {
-                    readiness::inspect_local(input)
-                }
-            } else {
-                readiness::inspect_parakeet(input)
-            }
+            readiness_for(
+                journal,
+                is_local,
+                normalized_os(std::env::consts::OS),
+                normalized_arch(std::env::consts::ARCH),
+            )
         },
         install_parakeet,
         install_local,
@@ -838,6 +828,65 @@ fn render_status(status: &status::InstallStatus) -> String {
 
 fn render_value(value: &Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON value serializes")
+}
+
+/// Route to the right inspector for this provider and platform, and supply the
+/// host facts the MLX one takes as inputs.
+///
+/// Extracted from `run`'s closure so the routing and the inputs are testable
+/// together: asserting `mlx_host_inputs` alone would still pass if the wiring
+/// that carries them were removed.
+fn readiness_for(journal: &Path, provider_is_local: bool, os_name: &str, arch: &str) -> Value {
+    let mut input = json!({"journal": journal.display().to_string()})
+        .as_object()
+        .expect("journal input is an object")
+        .clone();
+    if !provider_is_local {
+        return readiness::inspect_parakeet(input);
+    }
+    // Darwin's local provider IS MLX. Inspecting the llama.cpp installation
+    // there would report on an artifact set that platform never installs.
+    if os_name != "darwin" {
+        return readiness::inspect_local(input);
+    }
+    for (key, value) in mlx_host_inputs(os_name, arch) {
+        input.insert(key.to_owned(), Value::Bool(value));
+    }
+    readiness::inspect_mlx(input)
+}
+
+/// The two host facts `inspect_mlx` takes as INPUTS, which both default to
+/// `false` when a caller omits them.
+///
+/// 🔴 Omitting them is not neutral. `inspect_mlx` checks the manifest proof
+/// first, so an absent snapshot reads `missing-or-mismatched` either way -- but
+/// the moment a Mac owner HAS the model installed, the proof passes and the
+/// `!platform_supported` branch answers `host-ineligible` /
+/// `platform_unsupported`. So the verb reported the platform unsupported ON THE
+/// PLATFORM IT IS FOR, at exit 1, where the reference reports
+/// `local already installed` at exit 0. Nothing caught it because the defect is
+/// only reachable AFTER a successful install.
+///
+/// The reference computes `platform_supported` as Darwin plus a non-empty MLX
+/// pin set, which is a fact this side can answer exactly.
+///
+/// ⚠ `mlx_vlm_importable` is the reference's `import mlx_vlm`, and a native
+/// binary cannot answer it -- executing an interpreter to ask is the thing this
+/// conversion exists to remove, and probing for a Python package layout would
+/// be a second implementation of import resolution. It is answered from the
+/// same platform fact because the journal declares `mlx-vlm` as an
+/// unconditional dependency under exactly this platform marker
+/// (`pyproject.toml`: `sys_platform == 'darwin' and platform_machine ==
+/// 'arm64'`), so the reference's import succeeds on every correctly installed
+/// Mac. 📌 The residual, and it is named rather than hidden: on a Mac whose MLX
+/// package is BROKEN, this reports installed where the reference reports
+/// `package_unavailable`.
+fn mlx_host_inputs(os_name: &str, arch: &str) -> [(&'static str, bool); 2] {
+    let supported = os_name == "darwin" && arch == "arm64" && !pins::MLX_MODELS.is_empty();
+    [
+        ("platform_supported", supported),
+        ("mlx_vlm_importable", supported),
+    ]
 }
 
 /// Quote a rejected provider name the way the reference's `!r` does.
@@ -1634,6 +1683,52 @@ mod tests {
             .find(|check| check.name == "gpu")
             .unwrap();
         assert!(!gpu.detail.contains(solstone_core_local::CPU_PLACEMENT_COPY));
+    }
+
+    #[test]
+    fn darwin_local_readiness_carries_the_host_facts_inspect_mlx_takes_as_inputs() {
+        // The defect this pins is only reachable AFTER a successful install:
+        // `inspect_mlx` checks the manifest proof first, so an absent snapshot
+        // hides it, and once the snapshot proves, an omitted `platform_supported`
+        // answers `host-ineligible` / `platform_unsupported` -- the platform
+        // reported unsupported on the platform it is for. `inspect_mlx` echoes
+        // both inputs into `host`, so an empty journal is enough to assert the
+        // wiring without staging a 10 GB snapshot.
+        let journal = tempfile::tempdir().unwrap();
+
+        let darwin = readiness_for(journal.path(), true, "darwin", "arm64");
+        assert_eq!(darwin["host"]["platform_supported"], json!(true));
+        assert_eq!(darwin["host"]["package_available"], json!(true));
+        assert_eq!(darwin["target"]["model_id"], json!(pins::MLX_MODELS[0].0));
+
+        // Every other platform routes to the llama.cpp inspector, which has no
+        // such inputs -- so a `host` block carrying them would mean the Darwin
+        // branch had leaked.
+        let linux = readiness_for(journal.path(), true, "linux", "x86_64");
+        assert!(linux["target"]["model_id"] != json!(pins::MLX_MODELS[0].0));
+
+        let parakeet = readiness_for(journal.path(), false, "darwin", "arm64");
+        assert_eq!(parakeet["provider"], json!("parakeet"));
+    }
+
+    #[test]
+    fn mlx_host_facts_track_the_reference_predicate() {
+        // `is_mlx_platform_supported()` is Darwin plus a non-empty MLX pin set.
+        assert_eq!(
+            mlx_host_inputs("darwin", "arm64"),
+            [("platform_supported", true), ("mlx_vlm_importable", true)]
+        );
+        for (os_name, arch) in [
+            ("linux", "x86_64"),
+            ("linux", "arm64"),
+            ("darwin", "x86_64"),
+        ] {
+            assert_eq!(
+                mlx_host_inputs(os_name, arch),
+                [("platform_supported", false), ("mlx_vlm_importable", false)],
+                "{os_name}/{arch}"
+            );
+        }
     }
 
     #[test]
