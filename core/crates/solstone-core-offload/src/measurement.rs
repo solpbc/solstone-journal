@@ -70,13 +70,21 @@ pub fn measure_raw_media_usage(journal: &Path) -> RawMediaUsage {
         per_day,
     }
 }
+// `statvfs`'s block counts are u64 on Linux and u32 on Darwin, so both of these
+// only compile on Linux unconverted. See the note in
+// `solstone-core-backup-web::measurement` for why the lint has to be silenced
+// rather than the cast dropped.
 pub fn device_free_bytes(journal: &Path) -> Result<u64, String> {
     let stat = statvfs(journal).map_err(|error| error.to_string())?;
-    Ok(stat.blocks_available().saturating_mul(stat.fragment_size()))
+    #[allow(clippy::unnecessary_cast)]
+    let blocks = stat.blocks_available() as u64;
+    Ok(blocks.saturating_mul(stat.fragment_size()))
 }
 pub fn device_total_bytes(journal: &Path) -> Result<u64, String> {
     let stat = statvfs(journal).map_err(|error| error.to_string())?;
-    Ok(stat.blocks().saturating_mul(stat.fragment_size()))
+    #[allow(clippy::unnecessary_cast)]
+    let blocks = stat.blocks() as u64;
+    Ok(blocks.saturating_mul(stat.fragment_size()))
 }
 pub fn suggest_offload_defaults(total: u64) -> Result<SuggestedOffloadDefaults, String> {
     if total == 0 {

@@ -291,14 +291,56 @@ fn install_provider_help_is_byte_identical_for_both_spellings() {
 
 #[test]
 fn install_provider_unsupported_name_reaches_the_body() {
-    let output = run_core(&["install-provider", "bogus"]);
+    // The verb gates on the journal service before it validates the name, so
+    // this case establishes that condition rather than inheriting whatever the
+    // build host happens to be running. Without it the assertion grades a
+    // supervisor refusal, says nothing about the name arm, and passes or fails
+    // according to whether someone left a journal up.
+    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args(["install-provider", "bogus"])
+        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
+        .output()
+        .expect("run solstone-core");
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(output.stdout, b"");
     assert!(
         String::from_utf8(output.stderr)
             .expect("UTF-8 stderr")
-            .contains("unsupported provider \"bogus\"; supported: local, parakeet")
+            .contains("unsupported provider 'bogus'; supported: local, parakeet")
     );
+}
+
+#[test]
+fn install_provider_gates_on_the_supervisor_before_the_name() {
+    // Ordering is the contract: argv errors precede the gate -- which is why
+    // the malformed cases above pass with the stack down -- and the gate
+    // precedes the name check. A supervisor-spawned child gets 75 and stays
+    // silent, because that caller is the one least able to notice a stray line.
+    let journal = tempfile::tempdir().expect("temp journal");
+    let run = |spawned: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+        command
+            .args(["install-provider", "bogus"])
+            .env("SOLSTONE_JOURNAL", journal.path())
+            .env_remove("SOL_SKIP_SUPERVISOR_CHECK");
+        if spawned {
+            command.env("SOL_SUPERVISOR_SPAWNED", "1");
+        } else {
+            command.env_remove("SOL_SUPERVISOR_SPAWNED");
+        }
+        command.output().expect("run solstone-core")
+    };
+
+    let interactive = run(false);
+    assert_eq!(interactive.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8(interactive.stderr).expect("UTF-8 stderr"),
+        "sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+    );
+
+    let spawned = run(true);
+    assert_eq!(spawned.status.code(), Some(75));
+    assert_eq!(spawned.stderr, b"");
 }
 
 // --- transfer -------------------------------------------------------------
