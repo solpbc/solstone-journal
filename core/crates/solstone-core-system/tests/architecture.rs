@@ -258,6 +258,18 @@ fn ac21_only_operational_log_module_names_write_primitives() {
                 && *name != "catchup"
         })
     {
+        // Checked against PRODUCTION source only -- everything before a trailing
+        // `mod tests`. The claim is "must not write journal data", and a unit
+        // test building a fixture tree under the OS temp dir is not that. This
+        // mirrors the `catchup` treatment immediately below, which established
+        // the pattern for exactly this shape; scanning whole files instead made
+        // `activity_state` (0 write primitives in production, 4 `fs::write` and
+        // 3 `create_dir_all` in its tests) and `schedule/config` red on test
+        // code. Production is a subset of the whole file, so this removes false
+        // positives without weakening any module's real coverage.
+        let production = source
+            .split_once("mod tests")
+            .map_or(source, |(production, _)| production);
         for primitive in [
             "File::",
             "OpenOptions",
@@ -266,7 +278,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             "create_dir_all",
         ] {
             assert!(
-                !source.contains(primitive),
+                !production.contains(primitive),
                 "{name} must not write journal data through {primitive}"
             );
         }
