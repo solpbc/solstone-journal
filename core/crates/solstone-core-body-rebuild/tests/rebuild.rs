@@ -36,6 +36,7 @@ impl TempDir {
             std::process::id()
         ));
         fs::create_dir(&path).expect("temporary journal root creates");
+        let path = fs::canonicalize(path).expect("temporary journal root canonicalizes");
         Self { path }
     }
 
