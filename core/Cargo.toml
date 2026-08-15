@@ -273,6 +273,17 @@ pdf-extract = "0.12.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"
+# RSA-4096 key generation for the support-portal identity. Release-rail lenses:
+# `rsa` adds pkcs1 and num-bigint-dig; num-bigint-dig 0.8.6's build.rs only
+# emits the Rust `has_i128` cfg, so it has no cc/cmake/native build step and
+# leaves musl x86_64/aarch64 eligible. Package MSRV 1.65 is below the
+# check-rust-msrv 1.95.0 toolchain; its pure-Rust graph is eligible for iOS and
+# macOS cross targets. cargo-deny bans/licenses/sources are reviewed by the
+# gate. RUSTSEC-2023-0071 (Marvin timing sidechannel) is an accepted input:
+# this crate uses rsa only for one-time key generation; every attacker-observable
+# signature uses ring. cargo-deny here does not check advisories, so that gate
+# result is not the justification for the containment.
+rsa = "0.9.10"
 unicode-general-category = "1.1.0"
 unicode-xid = "0.2.6"
 unicode_names2 = "1.3.0"
