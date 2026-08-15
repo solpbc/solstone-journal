@@ -496,6 +496,21 @@ fn action_log_failure_does_not_change_the_client_outcome() {
     assert_eq!(response.1["state"], "approve.deleted");
 }
 
+#[test]
+fn removal_card_escapes_journal_values_before_rendering_markup() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/removals_escape.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("removal card escape harness");
+    assert!(
+        output.status.success(),
+        "removal card escape harness: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn run_retention(binary: &Path, args: &[&str]) -> Value {
     let output = Command::new(binary)
         .args(args)

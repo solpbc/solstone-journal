@@ -26,6 +26,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
         .route("/app/home", get(shell_redirect))
         .route("/app/home/workspace", get(assets::workspace))
         .route("/app/home/static/home.js", get(assets::home_js))
+        .route("/app/home/static/removals.js", get(assets::removals_js))
         .route("/app/home/api/removals", get(removals::list))
         .route("/app/home/api/approve", post(removals::approve))
         .route("/app/home/api/decline", post(removals::decline))
@@ -131,7 +132,7 @@ mod tests {
 
     #[tokio::test]
     async fn home_routes_match_assets_and_session_gate() {
-        let paths: [(&str, &str, &[u8]); 3] = [
+        let paths: [(&str, &str, &[u8]); 4] = [
             (
                 "/app/home/",
                 "text/html; charset=utf-8",
@@ -149,6 +150,11 @@ mod tests {
                 "/app/home/static/home.js",
                 "text/javascript; charset=utf-8",
                 include_bytes!("../assets/home.js"),
+            ),
+            (
+                "/app/home/static/removals.js",
+                "text/javascript; charset=utf-8",
+                include_bytes!("../assets/removals.js"),
             ),
         ];
 
