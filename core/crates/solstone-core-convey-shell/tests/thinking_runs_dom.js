@@ -405,9 +405,35 @@ async function main() {
   identityTab.emit('keydown', {key: 'ArrowLeft'});
   assert.match(window.location.hash, /^#runs\/\d{8}$/, 'arrow activation enters runs');
   assert.strictEqual(document.activeElement, runsTab, 'arrow activation keeps focus on selected tab');
+  thinking.state.runsFacet = 'work';
+  thinking.state.runsFacetExplicit = true;
+  thinking.state.runsCache.run.set('run:use-id', {
+    id: 'use-id', day: '20260310', name: 'talent', events: [],
+  });
+  window.location.hash = '#runs/20260310/talent/use-id';
+  thinking.routeThinkingHash('history');
+  await settle();
+  identityTab.emit('click');
+  assert.strictEqual(window.location.hash, '#identity', 'pointer activation enters identity');
+  runsTab.emit('click');
+  await settle();
+  assert.strictEqual(
+    window.location.hash,
+    '#runs/20260310/talent/use-id',
+    'identity round-trip restores the prior Runs drill-down instead of resetting to today',
+  );
+  assert.strictEqual(thinking.state.runsFacet, 'work', 'identity round-trip retains the explicit facet');
+  assert.strictEqual(nodes.get('thinkingRunsFacet').value, 'work', 'identity round-trip restores the facet control');
   setupTab.emit('click');
   assert.strictEqual(window.location.hash, '#main', 'pointer activation pushes setup');
   assert.strictEqual(document.activeElement, setupTab, 'pointer activation keeps focus on selected tab');
+  runsTab.emit('click');
+  await settle();
+  assert.strictEqual(window.location.hash, '#runs/20260310/talent/use-id', 'setup round-trip restores the prior Runs drill-down');
+  assert.strictEqual(thinking.state.runsFacet, 'work', 'setup round-trip retains the explicit facet');
+  assert.strictEqual(nodes.get('thinkingRunsFacet').value, 'work', 'setup round-trip restores the facet control');
+  setupTab.emit('click');
+  assert.strictEqual(window.location.hash, '#main', 'setup remains available after a Runs round-trip');
 
   setupTab.focus();
   nodes.get('thinkingRunsHeading').focused = false;

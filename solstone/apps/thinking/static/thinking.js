@@ -22,6 +22,7 @@
     pendingSwitchTarget: '',
     runsNavigationGeneration: 0,
     runsRouteKey: '',
+    runsLastHash: '',
     runsRequestGenerations: {day: 0, run: 0, prompt: 0, output: 0, identity: 0},
     runsInFlight: {day: null, run: null, prompt: null, output: null, identity: null},
     runsCache: {
@@ -944,6 +945,9 @@
   }
 
   function setThinkingRoute(route) {
+    if (route?.kind === 'runs' || route?.kind === 'run-id') {
+      state.runsLastHash = thinkingRunsHash(route);
+    }
     const selectedUseId = thinkingSelectedRunId(route);
     if (state.runsSelectedUseId !== selectedUseId) {
       state.runsSelectedUseId = selectedUseId;
@@ -1157,7 +1161,9 @@
   }
 
   function navigateThinkingSection(section, origin) {
-    const hash = section === 'setup' ? '#main' : (section === 'runs' ? '#runs' : '#identity');
+    const hash = section === 'setup'
+      ? '#main'
+      : (section === 'runs' ? state.runsLastHash || '#runs' : '#identity');
     if (window.location.hash !== hash) window.history.pushState(null, '', hash);
     routeThinkingHash(origin);
   }
