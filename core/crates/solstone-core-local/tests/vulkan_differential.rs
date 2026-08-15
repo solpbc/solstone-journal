@@ -40,7 +40,12 @@ fn python_loader_available() -> bool {
 }
 
 fn core_helper() -> PathBuf {
-    let helper = repository_root().join("core/target/debug/solstone-core-vulkan-probe");
+    let helper = std::env::current_exe()
+        .expect("current test executable")
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("Cargo profile directory")
+        .join("solstone-core-vulkan-probe");
     assert!(
         helper.is_file(),
         "differential requires make check-differentials to build {}",

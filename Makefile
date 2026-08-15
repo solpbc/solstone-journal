@@ -25,6 +25,7 @@ VENV_BIN := $(VENV)/bin
 VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
+RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
 MACOS_TARGET := aarch64-apple-darwin
@@ -632,7 +633,7 @@ check-rust-race: build
 		exit "$$status"; \
 	}; \
 	trap cleanup EXIT; trap 'exit 130' INT TERM; \
-	classifier="$(CURDIR)/core/target/debug/solstone-core-race-classifier"; \
+	classifier="$(RUST_TARGET_DIR)/debug/solstone-core-race-classifier"; \
 	if [ ! -x "$$classifier" ]; then echo "check-rust-race: FAILED: classifier was not built"; exit 1; fi; \
 	job=1; while [ "$$job" -le "$(RUST_RACE_LOAD_JOBS)" ]; do (while :; do :; done) & load_pids="$$load_pids $$!"; job=$$((job + 1)); done; \
 	run=1; while [ "$$run" -le "$(RUST_RACE_RUNS)" ]; do \
