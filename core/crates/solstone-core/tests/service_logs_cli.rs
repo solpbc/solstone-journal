@@ -351,7 +351,7 @@ fn missing_unsafe_follow_path_takes_not_found_before_the_safety_gate() {
 }
 
 #[test]
-fn route_selectors_reject_non_utf8_but_ignored_trailing_bytes_run_one_shot() {
+fn route_selectors_reject_non_utf8_at_their_owned_layers_but_trailing_bytes_run_one_shot() {
     let journal = TestJournal::new();
     let opaque = OsString::from_vec(vec![0xff]);
     let output = run(
@@ -365,28 +365,58 @@ fn route_selectors_reject_non_utf8_but_ignored_trailing_bytes_run_one_shot() {
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stdout, b"=== service.log === (not found)\n");
 
-    for arguments in [
-        vec![opaque.clone(), OsString::from("logs")],
-        vec![OsString::from("service"), opaque.clone()],
-    ] {
-        let output = run(journal.path().as_os_str(), &arguments);
-        assert_eq!(output.status.code(), Some(64));
-        assert!(output.stdout.is_empty());
-    }
+    let output = run(
+        journal.path().as_os_str(),
+        &[opaque.clone(), OsString::from("logs")],
+    );
+    assert_eq!(output.status.code(), Some(64));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.starts_with(b"Usage:\n"));
+
+    let output = run(
+        journal.path().as_os_str(),
+        &[OsString::from("service"), opaque],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        output.stderr,
+        b"Unknown subcommand: \\xff; Available: install, uninstall, start, stop, restart, status, logs\n"
+    );
 }
 
 #[test]
-fn other_service_routes_remain_ordinary_core_usage() {
+fn adjacent_service_lifecycle_routes_keep_their_native_contract() {
     let journal = TestJournal::new();
-    for arguments in [
-        args(&["service"]),
-        args(&["service", "--help"]),
-        args(&["service", "status"]),
+    let home = tempfile::tempdir().unwrap();
+    for (arguments, expected_code, expected_stdout) in [
+        (
+            &["service"][..],
+            1,
+            solstone_core_cli::SERVICE_USAGE.as_bytes(),
+        ),
+        (
+            &["service", "--help"][..],
+            0,
+            solstone_core_cli::SERVICE_USAGE.as_bytes(),
+        ),
+        (
+            &["service", "status"][..],
+            1,
+            b"service: not installed\nrun 'journal setup' or 'journal service install' to install it.\n"
+                .as_slice(),
+        ),
     ] {
-        let output = run(journal.path().as_os_str(), &arguments);
-        assert_eq!(output.status.code(), Some(64), "{arguments:?}");
-        assert!(output.stdout.is_empty(), "{arguments:?}");
-        assert!(output.stderr.starts_with(b"Usage:\n"));
+        let output = Command::new(BINARY)
+            .args(arguments)
+            .env("SOLSTONE_JOURNAL", journal.path())
+            .env("HOME", home.path())
+            .env("PATH", "/definitely-not-a-service-manager")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(expected_code), "{arguments:?}");
+        assert_eq!(output.stdout, expected_stdout, "{arguments:?}");
+        assert!(output.stderr.is_empty(), "{arguments:?}");
     }
 }
 
