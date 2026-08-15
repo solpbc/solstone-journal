@@ -1630,20 +1630,6 @@ check-core-fixtures: .installed
 check-release-advisory-liveness: .installed
 	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py
 
-# Operator-opt-in install-state smoke: drives the real install primitives
-# (real uv Popen for bundled providers, real httpx for local llama-server +
-# GGUF download, real huggingface_hub for MLX snapshot) against a tmp
-# journal_config and asserts canonical phase transitions, byte-count
-# surfacing, and post-restart state persistence. Hits the same code paths
-# the dashboard hits, end-to-end. Heavier than `make test` because it does
-# real network fetches; lighter than `make smoke-cogitate` because it does
-# not require API keys or a running supervisor.
-smoke-install-providers: .installed
-	@echo "Running install-state integration smoke..."
-	$(PYTEST_BASETEMP_INIT) $(TEST_ENV) $(PYTEST) $(PYTEST_BASETEMP_FLAG) \
-	  solstone/apps/settings/tests/test_providers_payload_extended.py \
-	  -v --tb=short --timeout=120
-
 release: ## Locked publication entrypoint
 	$(call FREEZE_GUARD,$@)
 
