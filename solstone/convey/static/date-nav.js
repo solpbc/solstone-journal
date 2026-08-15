@@ -45,6 +45,7 @@
   ];
 
   let mountAbort = null;
+  let scopedMount = null;
   let parsedDayInitialized = false;
 
   const state = {
@@ -1046,6 +1047,51 @@
     }
   }
 
+  // Scoped consumers (stats) own a controller. They deliberately do not use
+  // the legacy module singleton above, parse a path day, or hard-navigate.
+  function createScopedController(options) {
+    const local = {
+      host: options.host,
+      apiBase: String(options.apiBase || ''),
+      day: parseDayString(options.initialDay),
+      onSelect: options.onSelect,
+      abort: new AbortController()
+    };
+    if (!local.host || !local.day || typeof local.onSelect !== 'function') return null;
+    local.host.innerHTML =
+      '<div class="date-nav-content" data-date-nav-root>' +
+      '<button type="button" data-date-nav-prev aria-label="previous day">‹</button>' +
+      '<span data-date-nav-label></span>' +
+      '<button type="button" data-date-nav-next aria-label="next day">›</button>' +
+      '</div>';
+    const label = local.host.querySelector('[data-date-nav-label]');
+    const render = () => { label.textContent = controlLabel(local.day); };
+    const select = day => {
+      const normalized = parseDayString(day);
+      if (!normalized) return;
+      local.day = normalized;
+      render();
+      local.onSelect(normalized);
+    };
+    local.host.querySelector('[data-date-nav-prev]').addEventListener('click', () => select(addDays(local.day, -1)), { signal: local.abort.signal });
+    local.host.querySelector('[data-date-nav-next]').addEventListener('click', () => select(addDays(local.day, 1)), { signal: local.abort.signal });
+    render();
+    return { unmount: () => { local.abort.abort(); local.host.replaceChildren(); } };
+  }
+
+  function mountScoped(options) {
+    if (scopedMount) return null;
+    const controller = createScopedController(options || {});
+    if (!controller) return null;
+    scopedMount = controller;
+    return {
+      unmount() {
+        controller.unmount();
+        if (scopedMount === controller) scopedMount = null;
+      }
+    };
+  }
+
   document.addEventListener('keydown', handleDocumentKeydown);
   document.addEventListener('workspace:mounted', handleWorkspaceMounted);
 
@@ -1063,6 +1109,7 @@
     weekControlLabel,
     weekHeadingLabel,
     stepDay,
-    sundayOf
+    sundayOf,
+    mountScoped
   };
 })();
