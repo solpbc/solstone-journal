@@ -26,5 +26,8 @@ mod settings_devices_python_web_cut;
 #[path = "contracts/settings_native_linkage.rs"]
 mod settings_native_linkage;
 #[cfg(test)]
+#[path = "contracts/stats_dispatch_audit.rs"]
+mod stats_dispatch_audit;
+#[cfg(test)]
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;
