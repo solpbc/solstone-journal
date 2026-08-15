@@ -514,6 +514,7 @@ fn metal_candidate_origin_failures_are_explicit_and_never_publish_ready_state() 
             &projector,
         )
         .unwrap_err();
+        assert_eq!(error.exit_code, 74, "{name}");
         assert_eq!(
             error.envelope.error.unwrap().reason_code,
             expected,

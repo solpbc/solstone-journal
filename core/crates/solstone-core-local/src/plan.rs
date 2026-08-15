@@ -363,6 +363,12 @@ fn plan_vulkan(input: PlanInput, reason: &str) -> PlanOutcome {
 }
 
 fn plan_metal(input: PlanInput) -> PlanOutcome {
+    if input.runtime_dir.is_some() {
+        return rejected("metal runtime_dir must not be set");
+    }
+    if input.mlx_interpreter_path.is_some() {
+        return rejected("metal mlx_interpreter_path must not be set");
+    }
     let Some(binary) = input.metal_binary_path.clone() else {
         return rejected("metal binary path is required");
     };
@@ -895,6 +901,7 @@ mod tests {
             })
         );
         assert!(!plan.argv.iter().any(|arg| arg == "--device"));
+        assert!(!plan.argv.iter().any(|arg| arg == "/mlx"));
         assert!(!plan.argv.iter().any(|arg| arg.contains("mlx")));
         assert_eq!(plan.argv.last(), Some(&"/mm".to_owned()));
         assert!(plan.visible_devices_env_name.is_none());
@@ -924,6 +931,23 @@ mod tests {
         let mut linux = input(1);
         linux.backend_override = Some(PlanBackend::Metal);
         assert_rejected(linux, "Metal backend override is not valid on Linux");
+
+        let mut runtime_dir = input(1);
+        runtime_dir.platform = Platform::Darwin;
+        runtime_dir.backend_override = Some(PlanBackend::Metal);
+        runtime_dir.metal_binary_path = Some("/metal-bin".into());
+        runtime_dir.runtime_dir = Some("/runtime".into());
+        assert_rejected(runtime_dir, "metal runtime_dir must not be set");
+
+        let mut mlx_interpreter = input(1);
+        mlx_interpreter.platform = Platform::Darwin;
+        mlx_interpreter.backend_override = Some(PlanBackend::Metal);
+        mlx_interpreter.metal_binary_path = Some("/metal-bin".into());
+        mlx_interpreter.mlx_interpreter_path = Some("/mlx".into());
+        assert_rejected(
+            mlx_interpreter,
+            "metal mlx_interpreter_path must not be set",
+        );
     }
     #[test]
     fn plan_is_repeatable_without_side_effects() {

@@ -483,6 +483,35 @@ fn bundled_candidate_loopback_enforces_schema_output_and_sends_multimodal_respon
 }
 
 #[test]
+fn bundled_candidate_schema_validation_is_advisory() {
+    let journal = root("candidate-schema-advisory");
+    write_config(&journal, bundled_config(false));
+    let (port, server) = serve_recording(vec![(
+        200,
+        completion_body("{}", "stop", Some(json!({"prompt_tokens": 2}))),
+    )]);
+    std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let mut request = fixture_vector("generated")["request"].clone();
+    request["json_output"] = json!(true);
+    request["json_schema"] = json!({
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    });
+
+    let response = stdout_json(&one_shot(&journal, &request));
+    assert_eq!(response["outcome"], "generated");
+    assert_eq!(response["schema_validation"]["valid"], false);
+    assert_eq!(
+        response["schema_validation"]["errors"][0]["constraint"],
+        "required"
+    );
+    let requests = server.join().expect("join recording server");
+    assert_only_local_requests(&requests);
+    let _ = std::fs::remove_dir_all(journal);
+}
+
+#[test]
 fn bundled_candidate_loopback_converse_preserves_tool_results_and_rejects_prose_tools() {
     let journal = root("candidate-converse");
     let first = json!({

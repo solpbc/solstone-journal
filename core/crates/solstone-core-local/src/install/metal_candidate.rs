@@ -71,6 +71,7 @@ pub(super) fn run_with(
 
     prepare_staging(&runtime_staging)?;
     let archive_path = runtime_staging.join(runtime_filename);
+    // Shared installer behavior: download verification failures use the io/state exit code.
     download_artifact(runtime, &archive_path, policy, |_, _| {}, "download_failed")?;
     archive::extract_tar_gz(&archive_path, &runtime_staging)
         .map_err(|error| failure("archive", "extract_failed", error, 65))?;
@@ -94,6 +95,7 @@ pub(super) fn run_with(
     write_runtime_manifest(&runtime_staging, &target_sha256, runtime_filename)?;
 
     prepare_staging(&model_staging)?;
+    // Shared installer behavior: download verification failures use the io/state exit code.
     download_artifact(
         model,
         &model_staging.join(MODEL_FILENAME),
@@ -225,6 +227,7 @@ fn require_platform(platform_key: &str) -> Result<(), DispatchError> {
 }
 
 fn prepare_staging(path: &Path) -> Result<(), DispatchError> {
+    // Best-effort removal is safe: downloads truncate stale parts and publish is atomic.
     let _ = fs::remove_dir_all(path);
     fs::create_dir_all(path).map_err(|error| failure("io", "staging_create_failed", error, 74))
 }
