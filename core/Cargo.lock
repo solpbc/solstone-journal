@@ -4432,6 +4432,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-transcripts"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "solstone-core-format",
+ "solstone-core-journal-io",
+ "tempfile",
+]
+
+[[package]]
 name = "solstone-core-transcripts-web"
 version = "1.0.22"
 dependencies = [
@@ -4452,6 +4463,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-system",
  "solstone-core-system-health",
+ "solstone-core-transcripts",
  "temp-env",
  "tempfile",
  "tokio",

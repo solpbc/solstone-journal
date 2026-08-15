@@ -29,6 +29,7 @@ solstone-core-npy.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-transcripts.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 

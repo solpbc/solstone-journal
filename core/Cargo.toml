@@ -115,6 +115,7 @@ members = [
     "crates/solstone-core-health-web",
     "crates/solstone-core-home-web",
     "crates/solstone-core-settings-web",
+    "crates/solstone-core-transcripts",
     "crates/solstone-core-transcripts-web",
     "crates/solstone-core-facets-web",
     "crates/solstone-core-home",
@@ -210,6 +211,7 @@ solstone-core-health-web = { path = "crates/solstone-core-health-web" }
 solstone-core-home = { path = "crates/solstone-core-home" }
 solstone-core-home-web = { path = "crates/solstone-core-home-web" }
 solstone-core-settings-web = { path = "crates/solstone-core-settings-web" }
+solstone-core-transcripts = { path = "crates/solstone-core-transcripts" }
 solstone-core-transcripts-web = { path = "crates/solstone-core-transcripts-web" }
 solstone-core-facets-web = { path = "crates/solstone-core-facets-web" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
