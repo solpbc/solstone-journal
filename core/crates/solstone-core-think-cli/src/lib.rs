@@ -1828,9 +1828,17 @@ mod tests {
         let journal = tempdir().unwrap();
         assert_eq!(run_at(journal.path(), &["--cadence"]).exit_code, 0);
         let events = sidecar_events(journal.path(), "20260814", "cadence");
-        assert_eq!(events.len(), 1);
         assert_eq!(events[0]["event"], "run.start");
         assert_eq!(events[0]["mode"], "cadence");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| {
+                    event["event"] == "talent.skip" && event["reason"] == "no_new_work"
+                })
+                .count(),
+            2
+        );
         assert!(!journal.path().join("health/cadence.json").exists());
     }
 

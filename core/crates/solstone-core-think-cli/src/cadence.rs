@@ -56,13 +56,37 @@ pub(crate) fn run(
                 .get("cadence_minutes")
                 .and_then(Value::as_i64)
                 .unwrap_or(5);
-            if last.is_some_and(|stamp| now - stamp < minutes * 60_000) {
+            if let Some(stamp) = last.filter(|stamp| now - *stamp < minutes * 60_000) {
+                // Source-derived, not measured: thinking.py:2984-2991 records
+                // every closed cadence interval in the run sidecar.
+                log.log(
+                    "talent.skip",
+                    context.now_ms,
+                    cadence_skip_fields(
+                        context,
+                        &config.key,
+                        "interval_not_elapsed",
+                        format!("{}s since last < {minutes}m", (now - stamp) / 1_000),
+                    ),
+                );
                 continue;
             }
             let completed = read_completed_since(&source, &context.day, last.unwrap_or(0))
                 .map_err(|error| error.to_string())?
                 .value;
             if completed.segments.is_empty() && completed.activities.is_empty() {
+                // Source-derived, not measured: thinking.py:2994-3001 records
+                // the no-work skip instead of silently omitting the talent.
+                log.log(
+                    "talent.skip",
+                    context.now_ms,
+                    cadence_skip_fields(
+                        context,
+                        &config.key,
+                        "no_new_work",
+                        "no segment/activity completed since last cadence run".to_owned(),
+                    ),
+                );
                 continue;
             }
             let extra = Map::from_iter([(
@@ -159,6 +183,21 @@ pub(crate) fn run(
         ),
     );
     Ok(result)
+}
+
+fn cadence_skip_fields(
+    context: &ThinkContext,
+    name: &str,
+    reason: &str,
+    detail: String,
+) -> Map<String, Value> {
+    Map::from_iter([
+        ("name".to_owned(), Value::String(name.to_owned())),
+        ("reason".to_owned(), Value::String(reason.to_owned())),
+        ("detail".to_owned(), Value::String(detail)),
+        ("mode".to_owned(), Value::String("cadence".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+    ])
 }
 
 #[cfg(test)]

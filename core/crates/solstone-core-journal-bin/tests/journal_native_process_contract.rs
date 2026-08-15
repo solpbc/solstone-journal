@@ -629,6 +629,12 @@ const PROBES: &[Probe] = &[
         expected_exit: 2,
         stderr_anchor: None,
     },
+    Probe {
+        token: "think",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal think [-h]"),
+    },
 ];
 
 #[allow(dead_code)]
@@ -2858,6 +2864,219 @@ fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
     }
     found.sort();
     found
+}
+
+fn seed_think_install(context: &VerdictContext<'_>, talents: &[(&str, &str)]) {
+    let install_root = context
+        .sibling_dir
+        .parent()
+        .expect("sibling directory parent");
+    let talent_root = install_root.join("solstone/talent");
+    fs::create_dir_all(&talent_root).expect("create fixture talent root");
+    fs::create_dir_all(install_root.join("solstone/apps")).expect("create fixture apps root");
+    fs::create_dir_all(install_root.join(".git")).expect("create fixture checkout marker");
+    fs::write(install_root.join("pyproject.toml"), b"").expect("create fixture project marker");
+    for (name, body) in talents {
+        fs::write(talent_root.join(format!("{name}.md")), body).expect("seed think talent");
+    }
+}
+
+fn think_mode_events(journal: &Path, mode: &str) -> Vec<serde_json::Value> {
+    let suffix = format!("_{mode}.jsonl");
+    let mut logs = Vec::new();
+    let chronicle = journal.join("chronicle");
+    let Ok(days) = fs::read_dir(chronicle) else {
+        return logs;
+    };
+    for day in days.filter_map(Result::ok) {
+        let Ok(entries) = fs::read_dir(day.path().join("health")) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            if entry.file_name().to_string_lossy().ends_with(&suffix) {
+                logs.extend(
+                    fs::read_to_string(entry.path())
+                        .expect("read think mode sidecar")
+                        .lines()
+                        .map(|line| serde_json::from_str(line).expect("parse think sidecar event")),
+                );
+            }
+        }
+    }
+    logs
+}
+
+fn run_native_think_mode(context: &VerdictContext<'_>, argv: &[&str]) -> std::process::Output {
+    let output = run_dispatcher_with_output_and_environment(
+        context,
+        "think",
+        argv,
+        &[("SOL_SKIP_SUPERVISOR_CHECK", "1")],
+    )
+    .expect("run native think mode through dispatcher");
+    assert!(
+        !context.poison_marker.exists(),
+        "journal think {:?} reached a poisoned interpreter; exit={:?} stderr={}",
+        argv,
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_ne!(
+        output.status.code(),
+        Some(69),
+        "think mode still unavailable"
+    );
+    output
+}
+
+/// Built-binary AC1 witnesses.  These are intentionally separate from the
+/// recorder-seam unit tests: the dispatcher, native sibling, and run-log path
+/// are the boundary under proof here.
+#[test]
+fn native_think_all_modes_produce_their_falsifying_observables_without_python() {
+    // Source-derived, not measured: thinking.py:4606 records this daily-only
+    // pre-phase before `run_daily_prompts`.
+    let daily = Harness::new();
+    let context = daily.context();
+    prove_poison_interpreters_live(&context);
+    seed_think_install(
+        &context,
+        &[(
+            "daily_probe",
+            "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":1,\"output\":\"md\"\n}\n",
+        )],
+    );
+    run_native_think_mode(&context, &["--day", "20260101"]);
+    assert!(
+        think_mode_events(context.journal, "daily")
+            .iter()
+            .any(|event| { event["event"] == "phase.start" && event["phase"] == "sense_repair" })
+    );
+
+    // Source-derived, not measured: thinking.py:2559-2957 processes a
+    // priority group only in the weekly run; the sidecar retains that group.
+    let weekly = Harness::new();
+    let context = weekly.context();
+    prove_poison_interpreters_live(&context);
+    seed_think_install(
+        &context,
+        &[(
+            "weekly_probe",
+            "{\n\"type\":\"generate\",\"schedule\":\"weekly\",\"priority\":91,\"output\":\"md\"\n}\n",
+        )],
+    );
+    run_native_think_mode(&context, &["--day", "20260101", "--weekly"]);
+    assert!(
+        think_mode_events(context.journal, "weekly")
+            .iter()
+            .any(|event| event["event"] == "group.start" && event["priority"] == 91)
+    );
+
+    // Source-derived, not measured: thinking.py:2994-3001 records this
+    // cadence-only no-new-work skip instead of silently omitting the talent.
+    let cadence = Harness::new();
+    let context = cadence.context();
+    prove_poison_interpreters_live(&context);
+    seed_think_install(
+        &context,
+        &[(
+            "cadence_probe",
+            "{\n\"type\":\"generate\",\"schedule\":\"cadence\",\"priority\":45,\"output\":\"json\"\n}\n",
+        )],
+    );
+    run_native_think_mode(&context, &["--day", "20260101", "--cadence"]);
+    assert!(
+        think_mode_events(context.journal, "cadence")
+            .iter()
+            .any(|event| {
+                event["event"] == "talent.skip"
+                    && event["mode"] == "cadence"
+                    && event["name"] == "cadence_probe"
+                    && event["reason"] == "no_new_work"
+            })
+    );
+
+    // Source-derived, not measured: thinking.py:3084-3499 carries the
+    // activity id in activity-mode start records; other modes do not.
+    let activity = Harness::new();
+    let context = activity.context();
+    prove_poison_interpreters_live(&context);
+    seed_think_install(
+        &context,
+        &[(
+            "activity_probe",
+            "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"meeting\"]\n}\n",
+        )],
+    );
+    let record = context
+        .journal
+        .join("facets/work/activities/20260101.jsonl");
+    fs::create_dir_all(record.parent().expect("activity parent")).expect("create activity parent");
+    fs::write(
+        record,
+        r#"{"id":"meeting_1","activity":"meeting","segments":["090000_60"],"source":"user","level_avg":1.0}"#,
+    )
+    .expect("seed activity");
+    run_native_think_mode(
+        &context,
+        &[
+            "--day",
+            "20260101",
+            "--activity",
+            "meeting_1",
+            "--facet",
+            "work",
+        ],
+    );
+    assert!(
+        think_mode_events(context.journal, "activity")
+            .iter()
+            .any(|event| event["event"] == "started" && event["activity"] == "meeting_1")
+    );
+
+    // Source-derived, not measured: thinking.py:3500-3712 emits a flush-mode
+    // sidecar only after filtering `hook.flush` eligible talents.
+    let flush = Harness::new();
+    let context = flush.context();
+    prove_poison_interpreters_live(&context);
+    seed_think_install(
+        &context,
+        &[(
+            "flush_probe",
+            "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"md\",\"hook\":{\"flush\":true}\n}\n",
+        )],
+    );
+    run_native_think_mode(
+        &context,
+        &["--day", "20260101", "--segment", "090000_60", "--flush"],
+    );
+    assert!(
+        think_mode_events(context.journal, "flush")
+            .iter()
+            .any(|event| event["event"] == "started" && event["segment"] == "090000_60")
+    );
+
+    // Source-derived, not measured: thinking.py:1536-1584 writes the idle
+    // Sense artifact for an input-free segment, unique to segment sensing.
+    let segment = Harness::new();
+    let context = segment.context();
+    prove_poison_interpreters_live(&context);
+    seed_think_install(
+        &context,
+        &[(
+            "sense",
+            "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\",\"load\":{\"transcripts\":true}\n}\n",
+        )],
+    );
+    fs::create_dir_all(context.journal.join("chronicle/20260101/090000_60"))
+        .expect("seed empty segment");
+    run_native_think_mode(&context, &["--day", "20260101", "--segment", "090000_60"]);
+    assert!(
+        context
+            .journal
+            .join("chronicle/20260101/090000_60/talents/sense.json")
+            .is_file()
+    );
 }
 
 /// The talent runtime must not be a plugin host: outside the dispatcher's own

@@ -272,6 +272,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         binary: "solstone-core",
         preset_argv: &["backfill-processing-records"],
     },
+    NativeProcessSpec {
+        token: "think",
+        binary: "solstone-core",
+        preset_argv: &["think"],
+    },
 ];
 
 pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
