@@ -2,7 +2,7 @@
 # Copyright (c) 2026 sol pbc
 
 [package]
-name = "solstone-core-import"
+name = "solstone-core-import-host"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,43 +11,25 @@ publish = false
 autotests = false
 
 [[test]]
-name = "import_cli"
-path = "tests/import_cli.rs"
-
-[[test]]
-name = "import_foundation"
-path = "tests/import_foundation.rs"
-
-[[test]]
-name = "import_sync"
-path = "tests/import_sync.rs"
-
-[[test]]
-name = "import_text"
-path = "tests/import_text.rs"
+name = "import_host"
+path = "tests/import_host.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
 chrono.workspace = true
-getrandom.workspace = true
-regex.workspace = true
+ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "build"] }
+ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sha2.workspace = true
 solstone-core-body-ingest.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
-solstone-core-facets.workspace = true
-solstone-core-generate.workspace = true
-solstone-core-indexer-store.workspace = true
+solstone-core-import.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
-base64 = "0.22.1"
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [dev-dependencies]
-solstone-core-format.workspace = true
-solstone-core-import-sources.workspace = true
 tempfile = "3.24.0"

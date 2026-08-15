@@ -16,7 +16,7 @@ use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, atomic_replace, write_bytes_exclusive,
 };
 
-use crate::cli_argv::CliRun;
+use crate::cli_render::CliRun;
 
 const USAGE: &str = "usage: journal importer journal-source [-h] [--json] [-v] [-d] {create,list,status,revoke} ...";
 const STATE_AREAS: [&str; 5] = ["segments", "entities", "facets", "imports", "config"];

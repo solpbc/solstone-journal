@@ -101,6 +101,7 @@ members = [
     "crates/solstone-core-think-cli",
     "crates/solstone-core-streams-cli",
     "crates/solstone-core-import",
+    "crates/solstone-core-import-host",
     "crates/solstone-core-import-sources",
     "crates/solstone-core-import-web",
     "crates/solstone-core-segment-cli",
@@ -217,6 +218,7 @@ solstone-core-facets-web = { path = "crates/solstone-core-facets-web" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
 solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
 solstone-core-import = { path = "crates/solstone-core-import" }
+solstone-core-import-host = { path = "crates/solstone-core-import-host" }
 solstone-core-import-sources = { path = "crates/solstone-core-import-sources" }
 solstone-core-import-web = { path = "crates/solstone-core-import-web" }
 solstone-core-segment-cli = { path = "crates/solstone-core-segment-cli" }

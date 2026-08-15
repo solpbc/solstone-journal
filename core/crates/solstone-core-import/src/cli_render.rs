@@ -9,6 +9,14 @@ use serde::Serialize;
 
 use crate::{ImportPreview, ImportResult, RegistrySource};
 
+/// Observable result of a library-hosted journal importer invocation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct CliRun {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
 #[derive(Clone, Copy, Serialize)]
 pub struct ImporterRow {
     pub name: &'static str,
