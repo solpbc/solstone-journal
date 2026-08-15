@@ -15,7 +15,7 @@ use crate::context::{DispatchFailure, ThinkContext};
 /// Daily, weekly, and cadence all use the reference's 610-second batch deadline.
 pub(crate) const DEFAULT_THINK_TIMEOUT: Duration = Duration::from_secs(610);
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ModeResult {
     pub(crate) success: usize,
     pub(crate) failed: usize,

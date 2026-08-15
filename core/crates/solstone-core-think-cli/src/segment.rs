@@ -1,0 +1,997 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use chrono::Utc;
+use serde_json::{Map, Value};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
+use solstone_core_system_health::{
+    DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, detect_segment_change,
+    find_segment_dir, is_floor_talent_capped, read_segment_data_state, resolve_predecessor,
+};
+use solstone_core_talent_config::{
+    TalentConfig, TalentFilter, get_output_path, load_talent_configs,
+};
+
+use crate::context::{DispatchFailure, ThinkContext};
+use crate::dispatch::{ModeResult, PendingUse, dispatch_direct, drain_with_deadline, runtime};
+use crate::helpers;
+use crate::run_log::RunLogWriter;
+
+/// Port of the Sense phase of `thinking.py:1382-1816`.
+///
+/// The remaining talent-selection and batch-dispatch phase is intentionally
+/// deferred to stage 2. This stage establishes Sense's durable artifacts and
+/// terminal branches before anything is selected from them.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The reference keeps segment mode, timeout, live, and skip controls distinct at this boundary."
+)]
+pub(crate) fn run(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    segment: &str,
+    refresh: bool,
+    stream: Option<&str>,
+    max_concurrency: i64,
+    timeout: Option<Duration>,
+    live: bool,
+    skip_talents: &[String],
+) -> Result<ModeResult, String> {
+    let configs = load_talent_configs(
+        &context.talent_root,
+        &context.apps_root,
+        None,
+        TalentFilter {
+            r#type: None,
+            schedule: Some("segment"),
+            include_disabled: false,
+        },
+    )?;
+    if configs.is_empty() {
+        return Ok(ModeResult::default());
+    }
+    let by_name = configs
+        .into_iter()
+        .map(|config| (config.key.clone(), config))
+        .collect::<BTreeMap<_, _>>();
+    let Some(sense) = by_name.get("sense") else {
+        log_skip(log, context, "sense", segment, "no_config", stream);
+        return Ok(ModeResult {
+            failed: 1,
+            failed_names: vec!["sense (not_configured)".to_owned()],
+            ..ModeResult::default()
+        });
+    };
+    let state =
+        read_segment_data_state(&context.journal, &context.day, segment, stream, Utc::now());
+    let in_flight = state.0.values().any(|value| {
+        value == DataState::Pending.as_str() || value == DataState::Analyzing.as_str()
+    });
+    if in_flight {
+        // Source-derived, not measured: thinking.py:1485-1499 records this raw-media gate.
+        log_skip(log, context, "sense", segment, "raw_media_pending", stream);
+        return Ok(ModeResult::default());
+    }
+    let Some(segment_dir) = find_segment_dir(&context.journal, &context.day, segment, stream)
+    else {
+        return Ok(ModeResult {
+            failed: 1,
+            failed_names: vec!["sense (missing_segment)".to_owned()],
+            ..ModeResult::default()
+        });
+    };
+    let load = sense
+        .metadata
+        .get("load")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    // Source-derived, not measured: thinking.py:1507-1534 starts the Sense
+    // lifecycle before the no-input gate so its terminal result remains visible.
+    context
+        .status
+        .update(segment_status(context, segment, stream, 1, 0));
+    let _ = helpers::emit(
+        &context.journal,
+        context.now_ms,
+        "started",
+        segment_event(
+            context,
+            segment,
+            stream,
+            Map::from_iter([
+                ("count".to_owned(), Value::from(1)),
+                ("groups".to_owned(), Value::from(1)),
+            ]),
+        ),
+    );
+    if solstone_core_talent_runtime::check_segment_has_no_input(
+        &context.journal,
+        &context.day,
+        segment,
+        stream,
+        &load,
+        Utc::now(),
+    ) {
+        // Source-derived, not measured: thinking.py:1536-1584 writes a
+        // schema-valid idle artifact and change record before terminalizing.
+        let sense_json = empty_input_sense_output();
+        write_sense_outputs(&segment_dir, &sense_json)?;
+        let change = write_change(context, &segment_dir, segment, stream)?;
+        log_sense(log, context, segment, "idle", stream);
+        log_change(
+            log,
+            context,
+            segment,
+            change["change_class"].as_str().unwrap_or("idle"),
+            stream,
+        );
+        context
+            .status
+            .update(segment_status(context, segment, stream, 1, 0));
+        let _ = helpers::emit(
+            &context.journal,
+            context.now_ms,
+            "completed",
+            segment_event(
+                context,
+                segment,
+                stream,
+                Map::from_iter([
+                    ("success".to_owned(), Value::from(0)),
+                    ("failed".to_owned(), Value::from(0)),
+                    ("density".to_owned(), Value::String("idle".to_owned())),
+                ]),
+            ),
+        );
+        log_skip(log, context, "*", segment, "density_idle", stream);
+        complete(log, context, segment, stream, ModeResult::default());
+        return Ok(ModeResult::default());
+    }
+    let runtime = runtime()?;
+    let sense_use = match dispatch_agent(
+        context,
+        &runtime,
+        sense,
+        segment,
+        refresh,
+        stream,
+        live,
+        skip_talents,
+        log,
+    ) {
+        // The reference continues to the persisted Sense artifact when a
+        // dispatch was intentionally skipped (`thinking.py:1644-1708`).
+        Ok(AgentDispatch::Skipped) => None,
+        Ok(AgentDispatch::Pending(item)) => Some(item),
+        Err(DispatchFailure::NotClaimed { use_id }) => {
+            log_request_lost(log, context, "sense", segment, stream, &use_id);
+            let result = ModeResult {
+                failed: 1,
+                failed_names: vec!["sense (request_lost)".to_owned()],
+                ..ModeResult::default()
+            };
+            complete(log, context, segment, stream, result.clone());
+            return Ok(result);
+        }
+        Err(DispatchFailure::Unavailable) => {
+            log_skip(log, context, "sense", segment, "send_failed", stream);
+            let result = ModeResult {
+                failed: 1,
+                failed_names: vec!["sense (send)".to_owned()],
+                ..ModeResult::default()
+            };
+            complete(log, context, segment, stream, result.clone());
+            return Ok(result);
+        }
+    };
+    if let Some(sense_use) = sense_use.as_ref() {
+        // Source-derived, not measured: thinking.py:1648-1675 records the
+        // per-talent dispatch lifecycle before draining the Sense use.
+        let fields = segment_event(
+            context,
+            segment,
+            stream,
+            Map::from_iter([
+                ("name".to_owned(), Value::String("sense".to_owned())),
+                ("use_id".to_owned(), Value::String(sense_use.use_id.clone())),
+            ]),
+        );
+        let _ = helpers::emit(
+            &context.journal,
+            context.now_ms,
+            "talent_started",
+            fields.clone(),
+        );
+        log.log("talent.dispatch", context.now_ms, fields);
+        context.status.update(segment_status_with_current(
+            context,
+            segment,
+            stream,
+            1,
+            0,
+            vec!["sense".to_owned()],
+        ));
+    }
+    let result = sense_use.map_or_else(ModeResult::default, |sense_use| {
+        drain_with_deadline(context, &runtime, vec![sense_use], timeout)
+    });
+    context.status.update(segment_status(
+        context,
+        segment,
+        stream,
+        1,
+        result.success + result.failed,
+    ));
+    if result.failed != 0 {
+        complete(log, context, segment, stream, result.clone());
+        return Ok(result);
+    }
+
+    let sense_path = get_output_path(
+        &context.day_dir,
+        "sense",
+        Some(segment),
+        Some("json"),
+        None,
+        stream,
+    );
+    let sense_json: Value = match std::fs::read_to_string(&sense_path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+    {
+        Some(value) => value,
+        None => {
+            let result = failed("sense (output_parse)");
+            complete(log, context, segment, stream, result.clone());
+            return Ok(result);
+        }
+    };
+    let Some(sense_object) = sense_json.as_object() else {
+        let result = failed("sense (output_invalid)");
+        complete(log, context, segment, stream, result.clone());
+        return Ok(result);
+    };
+    if !sense_object.contains_key("density") || !sense_object.contains_key("content_type") {
+        let result = failed("sense (output_invalid)");
+        complete(log, context, segment, stream, result.clone());
+        return Ok(result);
+    }
+    let Some(density) = sense_object.get("density").and_then(Value::as_str) else {
+        return Ok(failed("sense (output_invalid)"));
+    };
+    write_sense_outputs(&segment_dir, sense_object)?;
+    log_sense(log, context, segment, density, stream);
+    let predecessor = resolve_predecessor(&context.journal, &context.day, stream, segment);
+    let change =
+        write_change_with_predecessor(context, &segment_dir, segment, stream, predecessor)?;
+    let change_class = change
+        .get("change_class")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    log_change(log, context, segment, change_class, stream);
+    if density == "idle" && !refresh {
+        log_skip(log, context, "*", segment, "density_idle", stream);
+        complete(log, context, segment, stream, result.clone());
+        return Ok(result);
+    }
+    if change_class == "redundant" && !refresh {
+        // Source-derived, not measured: thinking.py:1773 invokes the maintenance library directly.
+        if let Some(previous) = change
+            .pointer("/predecessor/segment")
+            .and_then(Value::as_str)
+        {
+            solstone_core_maintenance::bodies::timeline::write_continuation_summary(
+                &segment_dir,
+                previous,
+            )?;
+        }
+        log_skip(log, context, "*", segment, "change_redundant", stream);
+        complete(log, context, segment, stream, result.clone());
+        return Ok(result);
+    }
+    let mut total = result;
+    let mut agents = select_agents(
+        context,
+        log,
+        &by_name,
+        sense_object,
+        &segment_dir,
+        segment,
+        stream,
+        refresh,
+    )?;
+    context.status.update(segment_status(
+        context,
+        segment,
+        stream,
+        1 + agents.len(),
+        total.success + total.failed,
+    ));
+    let mut pending = Vec::new();
+    for config in agents.drain(..) {
+        match dispatch_agent(
+            context,
+            &runtime,
+            config,
+            segment,
+            refresh,
+            stream,
+            live,
+            skip_talents,
+            log,
+        ) {
+            Ok(AgentDispatch::Skipped) => {}
+            Ok(AgentDispatch::Pending(item)) => {
+                // Source-derived, not measured: thinking.py:1943-1956 logs
+                // every accepted selected-agent dispatch before batch draining.
+                log_dispatch(log, context, segment, stream, &item);
+                pending.push(item);
+            }
+            Err(DispatchFailure::Unavailable) => {
+                log_skip(log, context, &config.key, segment, "send_failed", stream);
+                total.failed += 1;
+                total.failed_names.push(format!("{} (send)", config.key));
+            }
+            Err(DispatchFailure::NotClaimed { use_id }) => {
+                // Source-derived, not measured: thinking.py:1951-1960 treats
+                // a selected talent's unclaimed request separately from send failure.
+                log_request_lost(log, context, &config.key, segment, stream, &use_id);
+                total.failed += 1;
+                total
+                    .failed_names
+                    .push(format!("{} (request_lost)", config.key));
+            }
+        }
+        if max_concurrency != 0 && pending.len() as i64 >= max_concurrency {
+            drain_selected(context, &runtime, &mut pending, timeout, &mut total);
+        }
+        context.status.update(segment_status(
+            context,
+            segment,
+            stream,
+            1,
+            total.success + total.failed,
+        ));
+    }
+    // Source-derived, not measured: thinking.py:1994-2010 drains the final
+    // partial selection batch; zero means one unlimited final batch.
+    drain_selected(context, &runtime, &mut pending, timeout, &mut total);
+    complete(log, context, segment, stream, total.clone());
+    Ok(total)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn select_agents<'a>(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    by_name: &'a BTreeMap<String, TalentConfig>,
+    sense: &Map<String, Value>,
+    segment_dir: &std::path::Path,
+    segment: &str,
+    stream: Option<&str>,
+    refresh: bool,
+) -> Result<Vec<&'a TalentConfig>, String> {
+    let mut selected = Vec::new();
+    let source = FilesystemHealthLogSource::new(&context.journal);
+    for name in SEGMENT_FLOOR_TALENTS {
+        let Some(config) = by_name.get(*name) else {
+            log_skip(log, context, name, segment, "no_config", stream);
+            continue;
+        };
+        if !refresh
+            && is_floor_talent_capped(&source, &context.day, stream, segment, name)
+                .map_err(|error| error.to_string())?
+                .value
+        {
+            // Source-derived, not measured: thinking.py:1824-1838 skips a
+            // repeatedly failed floor talent unless an explicit refresh retries it.
+            log_skip(log, context, name, segment, "capped", stream);
+            continue;
+        }
+        selected.push(config);
+    }
+    for name in ["timeline:segment_summary", "entities:detection"] {
+        if let Some(config) = by_name.get(name) {
+            selected.push(config);
+        } else {
+            log_skip(log, context, name, segment, "no_config", stream);
+        }
+    }
+    let recommend = sense
+        .get("recommend")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if recommend.get("screen_record").is_some_and(python_truthy) {
+        if let Some(config) = by_name.get("screen") {
+            selected.push(config);
+        } else {
+            log_skip(log, context, "screen", segment, "no_config", stream);
+        }
+    } else {
+        // Source-derived, not measured: thinking.py:1884-1903 deliberately
+        // leaves this skip untagged with stream because it is not fold-consumed.
+        log_skip(log, context, "screen", segment, "not_recommended", None);
+    }
+    let speakers_recommended = recommend
+        .get("speaker_attribution")
+        .is_some_and(python_truthy);
+    if speakers_recommended && has_audio_embeddings(segment_dir) {
+        if let Some(config) = by_name.get("speaker_attribution") {
+            selected.push(config);
+        } else {
+            log_skip(
+                log,
+                context,
+                "speaker_attribution",
+                segment,
+                "no_config",
+                stream,
+            );
+        }
+    } else {
+        // Source-derived, not measured: thinking.py:1905-1930 keeps both the
+        // non-recommended and no-audio-embeddings branches distinguishable.
+        log_skip(
+            log,
+            context,
+            "speaker_attribution",
+            segment,
+            "not_recommended",
+            None,
+        );
+    }
+    Ok(selected)
+}
+
+fn has_audio_embeddings(segment_dir: &std::path::Path) -> bool {
+    std::fs::read_dir(segment_dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            let path = entry.path();
+            path.extension().and_then(|extension| extension.to_str()) == Some("npz")
+                && path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem == "audio" || stem.ends_with("_audio"))
+        })
+    })
+}
+
+fn drain_selected(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    pending: &mut Vec<PendingUse>,
+    timeout: Option<Duration>,
+    total: &mut ModeResult,
+) {
+    if pending.is_empty() {
+        return;
+    }
+    merge(
+        total,
+        drain_with_deadline(context, runtime, std::mem::take(pending), timeout),
+    );
+}
+
+enum AgentDispatch {
+    Skipped,
+    Pending(PendingUse),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dispatch_agent(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    config: &TalentConfig,
+    segment: &str,
+    refresh: bool,
+    stream: Option<&str>,
+    live: bool,
+    skip_talents: &[String],
+    log: &mut RunLogWriter<std::fs::File>,
+) -> Result<AgentDispatch, DispatchFailure> {
+    if skip_talents.iter().any(|name| name == &config.key) {
+        // Source-derived, not measured: thinking.py:1412-1421 skips names
+        // requested through `--skip-talents` without dispatching them.
+        log_skip(
+            log,
+            context,
+            &config.key,
+            segment,
+            "skip_talents_flag",
+            stream,
+        );
+        return Ok(AgentDispatch::Skipped);
+    }
+    if config.metadata.get("new_only").is_some_and(python_truthy) && !live {
+        // Source-derived, not measured: thinking.py:1423-1433 gates raw
+        // Python-truthy `new_only` values on the live current-segment run.
+        log_skip(
+            log,
+            context,
+            &config.key,
+            segment,
+            "new_only_historical",
+            stream,
+        );
+        return Ok(AgentDispatch::Skipped);
+    }
+    let generate = config.metadata.get("type").and_then(Value::as_str) == Some("generate");
+    let mut request = Map::from_iter([
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("segment".to_owned(), Value::String(segment.to_owned())),
+        ("schedule".to_owned(), Value::String("segment".to_owned())),
+    ]);
+    if generate {
+        request.insert(
+            "output".to_owned(),
+            Value::String(
+                config
+                    .metadata
+                    .get("output")
+                    .and_then(Value::as_str)
+                    .unwrap_or("md")
+                    .to_owned(),
+            ),
+        );
+        if refresh {
+            request.insert("refresh".to_owned(), Value::Bool(true));
+        }
+    } else if let Some(output) = config.metadata.get("output") {
+        request.insert("output".to_owned(), output.clone());
+    }
+    if let Some(stream) = stream {
+        request.insert("stream".to_owned(), Value::String(stream.to_owned()));
+    }
+    // Source-derived, not measured: the flat cortex request keeps an explicit
+    // talent provider/model override when frontmatter supplies either field.
+    for field in ["provider", "model"] {
+        if let Some(value) = config.metadata.get(field) {
+            request.insert(field.to_owned(), value.clone());
+        }
+    }
+    let mut env = Map::from_iter([
+        ("SOL_DAY".to_owned(), Value::String(context.day.clone())),
+        ("SOL_SEGMENT".to_owned(), Value::String(segment.to_owned())),
+    ]);
+    if let Some(stream) = stream {
+        env.insert("SOL_STREAM".to_owned(), Value::String(stream.to_owned()));
+    }
+    request.insert("env".to_owned(), Value::Object(env));
+    dispatch_direct(
+        context,
+        runtime,
+        &config.key,
+        if generate {
+            String::new()
+        } else {
+            format!("Running scheduled task for {}.", context.day)
+        },
+        request,
+        None,
+    )
+    .map(AgentDispatch::Pending)
+}
+
+/// Run selected repairs with the reference's bounded segment-level worker pool.
+/// Each worker owns a log handle; the shared cortex allocator remains locked,
+/// so equal-millisecond concurrent dispatches still receive unique use ids.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_repair_batch(
+    context: &ThinkContext,
+    segments: Vec<(String, Option<String>)>,
+    refresh: bool,
+    max_concurrency: i64,
+    segment_workers: usize,
+    timeout: Option<Duration>,
+    skip_talents: Vec<String>,
+) -> Result<ModeResult, String> {
+    if segments.is_empty() {
+        return Ok(ModeResult::default());
+    }
+    let workers = segment_workers.clamp(1, segments.len());
+    let queue = Arc::new(Mutex::new(VecDeque::from(segments)));
+    let aggregate = Arc::new(Mutex::new(ModeResult::default()));
+    let log_path = crate::run_log::path(&context.day_dir, context.now_ms, "segments");
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let queue = Arc::clone(&queue);
+            let aggregate = Arc::clone(&aggregate);
+            let skip_talents = &skip_talents;
+            let log_path = log_path.clone();
+            scope.spawn(move || {
+                loop {
+                    let Some((segment, stream)) =
+                        queue.lock().expect("repair queue lock").pop_front()
+                    else {
+                        break;
+                    };
+                    let mut log = RunLogWriter::open(&log_path);
+                    match run(
+                        context,
+                        &mut log,
+                        &segment,
+                        refresh,
+                        stream.as_deref(),
+                        max_concurrency,
+                        timeout,
+                        false,
+                        skip_talents,
+                    ) {
+                        Ok(result) => {
+                            merge(&mut aggregate.lock().expect("repair result lock"), result)
+                        }
+                        Err(_) => {
+                            // Source-derived, not measured: thinking.py:677-682
+                            // folds one worker exception into that segment's failure
+                            // while the remaining repairs continue.
+                            let mut aggregate = aggregate.lock().expect("repair result lock");
+                            aggregate.failed += 1;
+                            aggregate
+                                .failed_names
+                                .push(format!("{segment} (exception)"));
+                        }
+                    }
+                }
+            });
+        }
+    });
+    Ok(aggregate.lock().expect("repair result lock").clone())
+}
+
+fn log_dispatch(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    item: &PendingUse,
+) {
+    let fields = segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([
+            ("name".to_owned(), Value::String(item.name.clone())),
+            ("use_id".to_owned(), Value::String(item.use_id.clone())),
+        ]),
+    );
+    let _ = helpers::emit(
+        &context.journal,
+        context.now_ms,
+        "talent_started",
+        fields.clone(),
+    );
+    log.log("talent.dispatch", context.now_ms, fields);
+}
+
+fn merge(into: &mut ModeResult, from: ModeResult) {
+    into.success += from.success;
+    into.failed += from.failed;
+    into.failed_names.extend(from.failed_names);
+    into.applicable_units.extend(from.applicable_units);
+}
+
+fn log_skip(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    name: &str,
+    segment: &str,
+    reason: &str,
+    stream: Option<&str>,
+) {
+    let mut fields = Map::from_iter([
+        ("mode".to_owned(), Value::String("segment".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("segment".to_owned(), Value::String(segment.to_owned())),
+        ("name".to_owned(), Value::String(name.to_owned())),
+        ("reason".to_owned(), Value::String(reason.to_owned())),
+    ]);
+    if let Some(stream) = stream {
+        fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
+    }
+    log.log("talent.skip", context.now_ms, fields);
+}
+fn log_sense(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    segment: &str,
+    density: &str,
+    stream: Option<&str>,
+) {
+    let mut fields = Map::from_iter([
+        ("mode".to_owned(), Value::String("segment".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("segment".to_owned(), Value::String(segment.to_owned())),
+        ("density".to_owned(), Value::String(density.to_owned())),
+    ]);
+    if let Some(stream) = stream {
+        fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
+    }
+    log.log("sense.complete", context.now_ms, fields);
+}
+fn log_change(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    segment: &str,
+    change: &str,
+    stream: Option<&str>,
+) {
+    let mut fields = Map::from_iter([
+        ("mode".to_owned(), Value::String("segment".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("segment".to_owned(), Value::String(segment.to_owned())),
+        ("change_class".to_owned(), Value::String(change.to_owned())),
+    ]);
+    if let Some(stream) = stream {
+        fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
+    }
+    log.log("sense.change_detect", context.now_ms, fields);
+}
+
+fn empty_input_sense_output() -> Map<String, Value> {
+    Map::from_iter([
+        ("density".to_owned(), Value::String("idle".to_owned())),
+        ("content_type".to_owned(), Value::String("idle".to_owned())),
+        ("activity_summary".to_owned(), Value::String(String::new())),
+        ("entities".to_owned(), Value::Array(Vec::new())),
+        ("facets".to_owned(), Value::Array(Vec::new())),
+        ("speculative_facet".to_owned(), Value::Null),
+        ("meeting_detected".to_owned(), Value::Bool(false)),
+        ("speakers".to_owned(), Value::Array(Vec::new())),
+        (
+            "recommend".to_owned(),
+            serde_json::json!({"screen_record":false,"speaker_attribution":false}),
+        ),
+        (
+            "emotional_register".to_owned(),
+            Value::String("neutral".to_owned()),
+        ),
+    ])
+}
+
+fn write_sense_outputs(
+    segment: &std::path::Path,
+    sense: &Map<String, Value>,
+) -> Result<(), String> {
+    // Source-derived, not measured: sense_splitter.py:13-68 writes these
+    // durable projections after both actual and no-input Sense completion.
+    let talents = segment.join("talents");
+    std::fs::create_dir_all(&talents).map_err(|error| error.to_string())?;
+    replace_text(
+        &talents.join("activity.md"),
+        sense
+            .get("activity_summary")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )?;
+    replace_json(
+        &talents.join("facets.json"),
+        &sense
+            .get("facets")
+            .cloned()
+            .unwrap_or(Value::Array(Vec::new())),
+    )?;
+    replace_json(&talents.join("sense.json"), &Value::Object(sense.clone()))?;
+    replace_json(
+        &talents.join("density.json"),
+        &serde_json::json!({"classification":sense["density"],"timestamp":Utc::now().to_rfc3339()}),
+    )?;
+    if sense
+        .get("entities")
+        .and_then(Value::as_array)
+        .is_some_and(|entities| !entities.is_empty())
+    {
+        let lines = sense
+            .get("entities")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object)
+            .map(|entity| {
+                format!(
+                    "- {} — {} (role={}, source={}) — {}",
+                    entity
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    entity
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    entity
+                        .get("role")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    entity
+                        .get("source")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    entity
+                        .get("context")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )
+            })
+            .collect::<Vec<_>>();
+        if !lines.is_empty() {
+            replace_text(
+                &talents.join("sense.md"),
+                &format!("# Sense Entities\n\n{}", lines.join("\n")),
+            )?;
+        }
+    }
+    if sense.get("meeting_detected").is_some_and(python_truthy) {
+        replace_json(
+            &talents.join("speakers.json"),
+            &sense
+                .get("speakers")
+                .cloned()
+                .unwrap_or(Value::Array(Vec::new())),
+        )?;
+    }
+    Ok(())
+}
+
+fn write_change(
+    context: &ThinkContext,
+    segment_dir: &std::path::Path,
+    segment: &str,
+    stream: Option<&str>,
+) -> Result<Value, String> {
+    let predecessor = resolve_predecessor(&context.journal, &context.day, stream, segment);
+    write_change_with_predecessor(context, segment_dir, segment, stream, predecessor)
+}
+
+fn write_change_with_predecessor(
+    context: &ThinkContext,
+    segment_dir: &std::path::Path,
+    segment: &str,
+    stream: Option<&str>,
+    predecessor: Option<Value>,
+) -> Result<Value, String> {
+    let change = detect_segment_change(
+        &context.journal,
+        &context.day,
+        stream,
+        segment,
+        segment_dir,
+        predecessor,
+        &Utc::now().to_rfc3339(),
+    );
+    replace_json(&segment_dir.join("talents/change.json"), &change)?;
+    Ok(change)
+}
+
+fn replace_text(path: &std::path::Path, text: &str) -> Result<(), String> {
+    atomic_replace(path, text.as_bytes(), AtomicWriteOptions::default())
+        .map_err(|error| error.to_string())
+}
+
+fn replace_json(path: &std::path::Path, value: &Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    atomic_replace(path, &bytes, AtomicWriteOptions::default()).map_err(|error| error.to_string())
+}
+
+fn segment_event(
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    mut fields: Map<String, Value>,
+) -> Map<String, Value> {
+    fields.insert("mode".to_owned(), Value::String("segment".to_owned()));
+    fields.insert("day".to_owned(), Value::String(context.day.clone()));
+    fields.insert("segment".to_owned(), Value::String(segment.to_owned()));
+    if let Some(stream) = stream {
+        fields.insert("stream".to_owned(), Value::String(stream.to_owned()));
+    }
+    fields
+}
+
+fn segment_status(
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    total: usize,
+    completed: usize,
+) -> Map<String, Value> {
+    segment_status_with_current(context, segment, stream, total, completed, Vec::new())
+}
+
+fn segment_status_with_current(
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    total: usize,
+    completed: usize,
+    current_agents: Vec<String>,
+) -> Map<String, Value> {
+    segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([
+            ("agents_total".to_owned(), Value::from(total)),
+            ("agents_completed".to_owned(), Value::from(completed)),
+            (
+                "current_agents".to_owned(),
+                Value::Array(current_agents.into_iter().map(Value::String).collect()),
+            ),
+        ]),
+    )
+}
+
+fn log_request_lost(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    name: &str,
+    segment: &str,
+    stream: Option<&str>,
+    use_id: &str,
+) {
+    let mut fields = segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([
+            ("name".to_owned(), Value::String(name.to_owned())),
+            ("use_id".to_owned(), Value::String(use_id.to_owned())),
+            ("state".to_owned(), Value::String("request_lost".to_owned())),
+        ]),
+    );
+    log.log("talent.fail", context.now_ms, std::mem::take(&mut fields));
+}
+
+fn complete(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    result: ModeResult,
+) {
+    context.status.update(segment_status(
+        context,
+        segment,
+        stream,
+        1,
+        result.success + result.failed,
+    ));
+    let fields = segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([
+            ("success".to_owned(), Value::from(result.success)),
+            ("failed".to_owned(), Value::from(result.failed)),
+            (
+                "failed_names".to_owned(),
+                Value::Array(result.failed_names.into_iter().map(Value::String).collect()),
+            ),
+        ]),
+    );
+    log.log("completed", context.now_ms, fields.clone());
+    let _ = helpers::emit(&context.journal, context.now_ms, "completed", fields);
+}
+
+fn python_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
+fn failed(name: &str) -> ModeResult {
+    ModeResult {
+        failed: 1,
+        failed_names: vec![name.to_owned()],
+        ..ModeResult::default()
+    }
+}

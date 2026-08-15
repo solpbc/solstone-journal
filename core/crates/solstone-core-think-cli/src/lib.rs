@@ -147,18 +147,25 @@ where
         let day_dir = day::create_day(journal, &selected_day)
             .map_err(|message| CliError::InvalidDay { message })?;
         let (uses_local, endpoint) = endpoint();
-        validate(&parsed, cpu_count(), uses_local, endpoint, bundled_slots())?;
+        let cpu_count = cpu_count();
+        let bundled_slots = bundled_slots();
+        let default_segment_workers = workers::default_segment_workers(
+            cpu_count,
+            uses_local,
+            endpoint.clone(),
+            bundled_slots,
+        );
+        validate(&parsed, cpu_count, uses_local, endpoint, bundled_slots)?;
 
-        if parsed.dry_run || parsed.segments || parsed.segment.is_some() {
-            // Segment execution and the planner land after activity and flush.
-            // Keep their existing unavailable terminus until those bodies and
-            // their acceptance coverage arrive together.
+        if parsed.dry_run {
+            // The planner lands after all native run modes.
             return Err(CliError::Unavailable);
         }
 
         let now_ms = now_ms();
         let context =
             context::ThinkContext::new(journal, selected_day.clone(), day_dir.clone(), now_ms);
+        let timeout = (!parsed.no_timeout).then_some(std::time::Duration::from_secs(610));
         if parsed.cadence {
             let configs = cadence::configured(&context)
                 .map_err(|message| CliError::InvalidDay { message })?;
@@ -181,7 +188,6 @@ where
             });
         }
 
-        let timeout = (!parsed.no_timeout).then_some(std::time::Duration::from_secs(610));
         if let Some(activity_id) = parsed.activity.as_deref() {
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
             let result = activity::run(
@@ -214,53 +220,41 @@ where
                 exit_code: (result.failed != 0) as i32,
             });
         }
-        if parsed.segments || parsed.segment.is_some() {
-            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+        if parsed.segments {
+            let source = solstone_core_system_health::FilesystemSegmentSource;
+            let segments = solstone_core_system_health::scan_day(
+                &source,
+                &context.journal,
+                &context.day,
+                chrono::Utc::now(),
+            )
+            .map_err(|error| CliError::InvalidDay {
+                message: error.to_string(),
+            })?
+            .2
+            .into_iter()
+            .map(|entry| (entry.key, Some(entry.stream)))
+            .collect();
             let skip_talents = parsed
                 .skip_talents
                 .split(',')
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
-            let result = if let Some(segment) = parsed.segment.as_deref() {
-                // Source-derived, not measured: thinking.py:4709 is one of the two no-timeout paths.
-                segment::run(
-                    &context,
-                    &mut log,
-                    segment,
-                    parsed.refresh,
-                    parsed.stream.as_deref(),
-                    parsed.jobs,
-                    timeout,
-                    parsed.live,
-                    &skip_talents,
-                )
-            } else {
-                let source = solstone_core_system_health::FilesystemSegmentSource;
-                let segments = solstone_core_system_health::scan_day(
-                    &source,
-                    &context.journal,
-                    &context.day,
-                    chrono::Utc::now(),
-                )
-                .map_err(|error| CliError::InvalidDay {
-                    message: error.to_string(),
-                })?
-                .2
-                .into_iter()
-                .map(|entry| (entry.key, Some(entry.stream)))
-                .collect();
-                // Source-derived, not measured: thinking.py:4444 is the other no-timeout path.
-                segment::run_repair_batch(
-                    &context,
-                    &mut log,
-                    segments,
-                    parsed.refresh,
-                    parsed.jobs,
-                    timeout,
-                    &skip_talents,
-                )
-            }
+            let workers =
+                usize::try_from(parsed.segment_workers.unwrap_or(
+                    i64::try_from(default_segment_workers).expect("worker count fits i64"),
+                ))
+                .expect("validated segment workers");
+            let result = segment::run_repair_batch(
+                &context,
+                segments,
+                parsed.refresh,
+                parsed.jobs,
+                workers,
+                timeout,
+                skip_talents,
+            )
             .map_err(|message| CliError::InvalidDay { message })?;
             return Ok(CliRun {
                 stdout: String::new(),
@@ -268,7 +262,34 @@ where
                 exit_code: (result.failed != 0) as i32,
             });
         }
-
+        if let Some(segment) = parsed.segment.as_deref() {
+            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let skip_talents = parsed
+                .skip_talents
+                .split(',')
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            // Source-derived, not measured: thinking.py:4709 gives the
+            // direct segment path its sole optional overall deadline.
+            let result = segment::run(
+                &context,
+                &mut log,
+                segment,
+                parsed.refresh,
+                parsed.stream.as_deref(),
+                parsed.jobs,
+                timeout,
+                parsed.live,
+                &skip_talents,
+            )
+            .map_err(|message| CliError::InvalidDay { message })?;
+            return Ok(CliRun {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: (result.failed != 0) as i32,
+            });
+        }
         let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
         let result = if parsed.weekly {
             weekly::run(
@@ -464,6 +485,7 @@ mod tests {
         deadlines: Mutex<Vec<Option<std::time::Duration>>>,
         finish_fields: Mutex<solstone_core_cortex_client::FinishFields>,
         dispatch_failure: Mutex<Option<context::DispatchFailure>>,
+        dispatch_failures: Mutex<std::collections::BTreeMap<String, context::DispatchFailure>>,
     }
 
     #[derive(Default)]
@@ -483,6 +505,15 @@ mod tests {
         ) -> Result<String, context::DispatchFailure> {
             let mut requests = self.requests.lock().unwrap();
             requests.push(request.clone());
+            if let Some(error) = self
+                .dispatch_failures
+                .lock()
+                .unwrap()
+                .get(&request.name)
+                .cloned()
+            {
+                return Err(error);
+            }
             if let Some(error) = self.dispatch_failure.lock().unwrap().clone() {
                 return Err(error);
             }
@@ -1945,15 +1976,17 @@ mod tests {
     }
 
     #[test]
-    fn worker_refusal_preserves_segment_unavailable_terminus() {
+    fn segment_modes_are_reachable_while_only_the_planner_is_unavailable() {
         assert_eq!(
             run(&["--segments", "--jobs", "0", "--segment-workers", "2"]).exit_code,
             2
         );
         assert_eq!(
             run(&["--segments", "--jobs", "0", "--segment-workers", "1"]).exit_code,
-            69
+            0
         );
+        assert_ne!(run(&["--segment", "missing"]).exit_code, 69);
+        assert_eq!(run(&["--dry-run"]).exit_code, 69);
     }
 
     #[test]
@@ -2100,5 +2133,587 @@ mod tests {
         writer.log("talent.skip", 10, Map::<String, Value>::new());
         assert_eq!(writer.skip_count, 2);
         assert_eq!(warnings().len(), 2);
+    }
+
+    fn segment_dir(journal: &Path, day: &str, segment: &str) -> std::path::PathBuf {
+        let path = journal
+            .join("chronicle")
+            .join(day)
+            .join("default")
+            .join(segment);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn sense_output_path(context: &context::ThinkContext, segment: &str) -> std::path::PathBuf {
+        solstone_core_talent_config::get_output_path(
+            &context.day_dir,
+            "sense",
+            Some(segment),
+            Some("json"),
+            None,
+            Some("default"),
+        )
+    }
+
+    fn write_sense_output(context: &context::ThinkContext, segment: &str, value: Value) {
+        let path = sense_output_path(context, segment);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+    }
+
+    fn segment_context(
+        journal: &Path,
+        roots: &Path,
+        metadata: &str,
+    ) -> (context::ThinkContext, Arc<Recorder>) {
+        let (talent_root, apps_root) = talent_roots(roots, &[("sense", metadata)]);
+        let (context, recorder) = recorder_context(journal, "20260813", 9);
+        (context.with_talent_roots(talent_root, apps_root), recorder)
+    }
+
+    fn run_segment(
+        context: &context::ThinkContext,
+        journal: &Path,
+        segment: &str,
+        refresh: bool,
+        live: bool,
+    ) -> dispatch::ModeResult {
+        run_segment_with(
+            context,
+            journal,
+            segment,
+            refresh,
+            live,
+            2,
+            Some(std::time::Duration::from_secs(610)),
+            &[],
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_segment_with(
+        context: &context::ThinkContext,
+        journal: &Path,
+        segment: &str,
+        refresh: bool,
+        live: bool,
+        jobs: i64,
+        timeout: Option<std::time::Duration>,
+        skip_talents: &[String],
+    ) -> dispatch::ModeResult {
+        let mut log = run_log::RunLogWriter::open(&journal.join("segment.jsonl"));
+        segment::run(
+            context,
+            &mut log,
+            segment,
+            refresh,
+            Some("default"),
+            jobs,
+            timeout,
+            live,
+            skip_talents,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn segment_inflight_gate_skips_pending_and_analyzing_media_without_dispatching() {
+        // Source-derived, not measured: thinking.py:1485-1499 leaves a
+        // pending or analyzing modality untouched and records `raw_media_pending`.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        let path = segment_dir(journal.path(), "20260813", "090000_300");
+        fs::write(path.join("audio.jsonl"), "{}\n").unwrap();
+
+        let first = run_segment(&context, journal.path(), "090000_300", false, false);
+        let analyzing = segment_dir(journal.path(), "20260813", "090500_300");
+        fs::write(analyzing.join(".analyzing_audio"), "{}").unwrap();
+        let second = run_segment(&context, journal.path(), "090500_300", false, false);
+        assert_eq!(first, dispatch::ModeResult::default());
+        assert_eq!(second, first);
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        assert!(
+            fs::read_to_string(journal.path().join("segment.jsonl"))
+                .unwrap()
+                .contains("raw_media_pending")
+        );
+    }
+
+    #[test]
+    fn segment_no_input_gate_writes_idle_artifacts_without_dispatching() {
+        // Source-derived, not measured: thinking.py:1536-1584 writes a
+        // schema-valid idle Sense result and terminalizes the segment.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\", \"load\": {\"audio\": true}\n}\n",
+        );
+        let path = segment_dir(journal.path(), "20260813", "090000_300");
+
+        let first = run_segment(&context, journal.path(), "090000_300", false, false);
+        let density = fs::read(path.join("talents/density.json")).unwrap();
+        let second = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(first, dispatch::ModeResult::default());
+        assert_eq!(second, first);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&density).unwrap()["classification"],
+            "idle"
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(path.join("talents/density.json")).unwrap())
+                .unwrap()["classification"],
+            "idle"
+        );
+        assert!(recorder.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn segment_new_only_is_historical_skip_but_live_dispatches() {
+        // Source-derived, not measured: thinking.py:1423-1433 only dispatches
+        // a raw-truthy `new_only` talent from a live segment invocation.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\", \"new_only\": true\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+
+        let historical = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(historical.success, 0);
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        let live = run_segment(&context, journal.path(), "090000_300", false, true);
+        assert_eq!((live.success, live.failed), (1, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn segment_not_claimed_is_distinct_from_send_failure() {
+        // Source-derived, not measured: thinking.py:1602-1628 records a
+        // not-claimed Sense request as `request_lost`, not a send failure.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        *recorder.dispatch_failure.lock().unwrap() = Some(context::DispatchFailure::NotClaimed {
+            use_id: "lost-1".to_owned(),
+        });
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(result.failed_names, vec!["sense (request_lost)"]);
+        let log = fs::read_to_string(journal.path().join("segment.jsonl")).unwrap();
+        assert!(log.contains("request_lost"));
+        assert!(!log.contains("send_failed"));
+    }
+
+    #[test]
+    fn segment_rejects_malformed_and_missing_required_sense_output() {
+        // Source-derived, not measured: thinking.py:1682-1724 treats invalid
+        // JSON and either missing required Sense field as distinct failures.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        let output = sense_output_path(&context, "090000_300");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&output, "not json").unwrap();
+        assert_eq!(
+            run_segment(&context, journal.path(), "090000_300", false, false).failed_names,
+            vec!["sense (output_parse)"]
+        );
+        fs::write(&output, r#"{"density":"active"}"#).unwrap();
+        assert_eq!(
+            run_segment(&context, journal.path(), "090000_300", false, false).failed_names,
+            vec!["sense (output_invalid)"]
+        );
+        fs::write(&output, r#"{"content_type":"work"}"#).unwrap();
+        assert_eq!(
+            run_segment(&context, journal.path(), "090000_300", false, false).failed_names,
+            vec!["sense (output_invalid)"]
+        );
+    }
+
+    #[test]
+    fn segment_idle_and_redundant_branches_write_their_distinct_artifacts() {
+        // Source-derived, not measured: thinking.py:1746-1816 terminalizes
+        // idle segments and writes a continuation only for redundant changes.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        let idle = segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"idle","content_type":"idle"}),
+        );
+        let idle_result = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!((idle_result.success, idle_result.failed), (1, 0));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(idle.join("talents/density.json")).unwrap())
+                .unwrap()["classification"],
+            "idle"
+        );
+        assert!(!idle.join("timeline.json").exists());
+
+        let previous = segment_dir(journal.path(), "20260813", "090500_300");
+        let current = segment_dir(journal.path(), "20260813", "091000_300");
+        fs::write(previous.join("imported.md"), "same transcript words").unwrap();
+        fs::write(current.join("imported.md"), "same transcript words").unwrap();
+        let sensor = solstone_core_system_health::detect_segment_change(
+            journal.path(),
+            "20260813",
+            Some("default"),
+            "091000_300",
+            &current,
+            None,
+            "2026-08-13T00:00:00+00:00",
+        )["sensors"]
+            .clone();
+        fs::create_dir_all(previous.join("talents")).unwrap();
+        fs::write(
+            previous.join("talents/change.json"),
+            serde_json::to_vec(&serde_json::json!({"sensors": sensor})).unwrap(),
+        )
+        .unwrap();
+        write_sense_output(
+            &context,
+            "091000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+        let redundant = run_segment(&context, journal.path(), "091000_300", false, false);
+        assert_eq!((redundant.success, redundant.failed), (1, 0));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(current.join("timeline.json")).unwrap())
+                .unwrap()["continuation_of"],
+            "090500_300"
+        );
+    }
+
+    #[test]
+    fn segment_selects_direct_output_talents_and_observes_sense_change() {
+        // Source-derived, not measured: thinking.py:1818-1882 selects the
+        // floor, summary, and detection talents after a non-terminal Sense result.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "sense",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                ),
+                (
+                    "documents",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"json\",\"accumulate\":true\n}",
+                ),
+                (
+                    "timeline:segment_summary",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\",\"provider\":\"test-provider\",\"model\":\"test-model\"\n}",
+                ),
+                (
+                    "entities:detection",
+                    "{\n\"type\":\"cogitate\",\"schedule\":\"segment\",\"priority\":2\n}",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work","recommend":{}}),
+        );
+
+        let result = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!((result.success, result.failed), (4, 0));
+        let requests = recorder.requests.lock().unwrap();
+        let documents = requests
+            .iter()
+            .find(|request| request.name == "documents")
+            .unwrap();
+        // Source-derived, not measured: thinking.py:1435-1468 gives segment
+        // requests direct persistence, never `apply_output_persistence`.
+        assert_eq!(documents.config["output"], "json");
+        let summary = requests
+            .iter()
+            .find(|request| request.name == "timeline:segment_summary")
+            .unwrap();
+        assert_eq!(summary.config["provider"], "test-provider");
+        assert_eq!(summary.config["model"], "test-model");
+        assert!(
+            fs::read_to_string(journal.path().join("segment.jsonl"))
+                .unwrap()
+                .contains("sense.change_detect")
+        );
+    }
+
+    #[test]
+    fn segment_recommendation_and_floor_cap_guards_keep_their_outcomes_distinct() {
+        // Source-derived, not measured: thinking.py:1824-1838 caps floor
+        // talents, while 1905-1930 requires audio embeddings for speakers.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "sense",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                ),
+                (
+                    "documents",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+                (
+                    "screen",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+                (
+                    "speaker_attribution",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        segment_dir(journal.path(), "20260813", "090000_300");
+        let health = journal.path().join("chronicle/20260813/health/cap.jsonl");
+        fs::create_dir_all(health.parent().unwrap()).unwrap();
+        fs::write(
+            health,
+            (0..5)
+                .map(|index| format!(r#"{{"event":"talent.fail","ts":{},"mode":"segment","stream":"default","segment":"090000_300","name":"documents"}}"#, index * 1_800_000))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work","recommend":{"screen_record":true,"speaker_attribution":true}}),
+        );
+        let first = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(first.success, 2);
+        assert!(
+            !recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.name == "documents")
+        );
+        assert!(
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.name == "screen")
+        );
+        assert!(
+            !recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.name == "speaker_attribution")
+        );
+        let path = journal.path().join("chronicle/20260813/default/090000_300");
+        fs::write(path.join("audio.npz"), []).unwrap();
+        let second = run_segment(&context, journal.path(), "090000_300", true, false);
+        assert_eq!(second.success, 4);
+        assert!(
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.name == "speaker_attribution")
+        );
+    }
+
+    #[test]
+    fn segment_selected_dispatch_outcomes_and_batches_are_distinct() {
+        // Source-derived, not measured: thinking.py:1931-2016 keeps skipped,
+        // unavailable, and unclaimed selection outcomes separate while draining batches.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "sense",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                ),
+                (
+                    "documents",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+                (
+                    "timeline:segment_summary",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+                (
+                    "entities:detection",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+                (
+                    "screen",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        segment_dir(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work","recommend":{"screen_record":true}}),
+        );
+        recorder.dispatch_failures.lock().unwrap().insert(
+            "documents".to_owned(),
+            context::DispatchFailure::Unavailable,
+        );
+        recorder.dispatch_failures.lock().unwrap().insert(
+            "timeline:segment_summary".to_owned(),
+            context::DispatchFailure::NotClaimed {
+                use_id: "lost-selected".to_owned(),
+            },
+        );
+        let skipped = vec!["entities:detection".to_owned()];
+        let result = run_segment_with(
+            &context,
+            journal.path(),
+            "090000_300",
+            false,
+            false,
+            1,
+            Some(std::time::Duration::from_secs(610)),
+            &skipped,
+        );
+        assert_eq!((result.success, result.failed), (2, 2));
+        assert_eq!(
+            result.failed_names,
+            vec![
+                "documents (send)".to_owned(),
+                "timeline:segment_summary (request_lost)".to_owned(),
+            ]
+        );
+        assert_eq!(
+            recorder
+                .waits
+                .lock()
+                .unwrap()
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![1, 1]
+        );
+        let log = fs::read_to_string(journal.path().join("segment.jsonl")).unwrap();
+        assert!(log.contains("request_lost"));
+        assert!(log.contains("skip_talents_flag"));
+    }
+
+    #[test]
+    fn segment_zero_jobs_and_repair_pool_keep_optional_deadlines_and_unique_ids() {
+        // Source-derived, not measured: thinking.py:1994-2010 leaves jobs=0
+        // unlimited, and 4444 gives both segment entry paths the optional deadline.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "sense",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                ),
+                (
+                    "documents",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        for segment in ["090000_300", "090500_300"] {
+            segment_dir(journal.path(), "20260813", segment);
+            write_sense_output(
+                &context,
+                segment,
+                serde_json::json!({"density":"active","content_type":"work","recommend":{}}),
+            );
+        }
+        let direct = run_segment_with(
+            &context,
+            journal.path(),
+            "090000_300",
+            false,
+            false,
+            0,
+            None,
+            &[],
+        );
+        assert_eq!((direct.success, direct.failed), (2, 0));
+        let result = segment::run_repair_batch(
+            &context,
+            vec![
+                ("090000_300".to_owned(), Some("default".to_owned())),
+                ("090500_300".to_owned(), Some("default".to_owned())),
+            ],
+            false,
+            0,
+            2,
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        assert_eq!((result.success, result.failed), (4, 0));
+        assert!(
+            recorder
+                .deadlines
+                .lock()
+                .unwrap()
+                .iter()
+                .all(Option::is_none)
+        );
+        let use_ids = recorder
+            .waits
+            .lock()
+            .unwrap()
+            .iter()
+            .flatten()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        // Use-log paths derive from these ids; asserting a fake path would only
+        // measure the fake, while id uniqueness is the real construction invariant.
+        assert_eq!(use_ids.len(), 6);
     }
 }
