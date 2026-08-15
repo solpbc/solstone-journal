@@ -228,7 +228,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "support",
@@ -259,20 +259,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         facets_enabled: false,
         has_background: true,
         converted: true,
-    },
-    AppDefinition {
-        name: "tokens",
-        icon: "💰",
-        label: "tokens",
-        lucide_icon: "coins",
-        date_nav: Some(DateNav {
-            allow_future: false,
-            step: None,
-            unit: DateNavUnit::Currency { kind: "currency" },
-        }),
-        facets_enabled: false,
-        has_background: false,
-        converted: false,
     },
     AppDefinition {
         name: "transcripts",
@@ -367,7 +353,52 @@ pub fn shell_payload() -> ShellPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::APP_REGISTRY;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode, header};
+    use tower::ServiceExt;
+
+    use super::{APP_REGISTRY, shell_payload};
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct EstablishedJournal(PathBuf);
+
+    impl EstablishedJournal {
+        fn new() -> Self {
+            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "solstone-registry-{}-{nanos}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("journal root");
+            fs::create_dir(path.join("config")).expect("config directory");
+            fs::write(
+                path.join("config/journal.json"),
+                br#"{"setup":{"completed_at":1767225600}}"#,
+            )
+            .expect("journal config");
+            Self(path)
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for EstablishedJournal {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn body_remains_a_converted_native_registry_entry() {
@@ -376,5 +407,88 @@ mod tests {
                 .iter()
                 .any(|app| app.name == "body" && app.converted)
         );
+    }
+
+    #[test]
+    fn stats_is_converted_and_tokens_is_removed_from_the_registry() {
+        let stats: Vec<_> = APP_REGISTRY
+            .iter()
+            .filter(|app| app.name == "stats")
+            .collect();
+        assert_eq!(stats.len(), 1);
+        assert!(stats[0].converted);
+        assert!(!APP_REGISTRY.iter().any(|app| app.name == "tokens"));
+    }
+
+    #[test]
+    fn shell_payload_lists_stats_once_and_omits_tokens_entirely() {
+        let payload = shell_payload();
+        let stats: Vec<_> = payload
+            .apps
+            .iter()
+            .filter(|app| app.name == "stats")
+            .collect();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].workspace_url, "/app/stats/workspace");
+        assert!(!payload.apps.iter().any(|app| {
+            app.name == "tokens" || app.label == "tokens" || app.workspace_url.contains("tokens")
+        }));
+    }
+
+    #[tokio::test]
+    async fn stats_paths_are_native_and_tokens_paths_fall_back_to_unknown_app_404() {
+        let journal = EstablishedJournal::new();
+        let app = crate::router(journal.path().to_path_buf());
+
+        for path in [
+            "/app/stats/",
+            "/app/stats/workspace",
+            "/app/stats/api/usage?day=20260809",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert!(
+                response.status().is_success(),
+                "{path}: {}",
+                response.status()
+            );
+        }
+
+        let mut first_404_body = None;
+        for path in [
+            "/app/stats/not-a-native-route",
+            "/app/tokens/",
+            "/app/tokens/workspace",
+            "/app/tokens/api/usage?day=20260809",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+            assert_eq!(
+                response.headers().get(header::CONTENT_TYPE).unwrap(),
+                "text/html; charset=utf-8",
+                "{path}"
+            );
+            assert!(response.headers().get(header::LOCATION).is_none(), "{path}");
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec();
+            assert!(
+                serde_json::from_slice::<serde_json::Value>(&body).is_err(),
+                "{path} must not be the typed JSON refusal"
+            );
+            if let Some(expected) = &first_404_body {
+                assert_eq!(&body, expected, "{path}");
+            } else {
+                first_404_body = Some(body);
+            }
+        }
     }
 }

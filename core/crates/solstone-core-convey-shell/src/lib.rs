@@ -40,10 +40,10 @@
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Body, Devices, Entities, Health, Settings, and Speakers are converted workspaces in this wave.
+//! Body, Devices, Entities, Health, Settings, Speakers, and Stats are converted workspaces in this wave.
 //! Home's shell, workspace, and static script are natively served while its API routes remain unconverted.
 //! Network's shell, workspace, static, and state routes are natively served while its other routes remain unconverted.
-//! Every other known app receives a 501 `app_not_converted` JSON payload carrying its app name;
+//! Each known app that remains unconverted receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
 //!
 //! ## D7: host transport has one indispensable listener and one capability
