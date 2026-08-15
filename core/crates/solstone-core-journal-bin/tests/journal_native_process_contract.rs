@@ -50,6 +50,12 @@ const TALENT_LIFECYCLE_NATIVE_TOKENS: &[&str] = &["cortex", "talent"];
 // this tree, so redefining it would not compile and would delete that
 // assertion. The value is the contract; the binding name is not.
 const LANE_BB_REQUIRED_NATIVE_TOKENS: &[&str] = &["think"];
+// `install-provider` is the last owner-facing provider-install verb still
+// routed to Python. Carried under a lane-scoped name for the same reason the
+// two above are: REQUIRED_NATIVE_TOKENS is already bound on this tree, so
+// rebinding it would not compile and would delete that assertion. The value is
+// the contract; the binding name is not.
+const LANE_BE_REQUIRED_NATIVE_TOKENS: &[&str] = &["install-provider"];
 // The dispatcher is the one interpreter-resolution site the shipped tree is
 // allowed to have, and `processes.rs` is the census that measures conversion
 // progress. Any other crate that resolves an interpreter is a second,
@@ -152,6 +158,32 @@ fn talent_lifecycle_tokens_are_registered_for_native_dispatch() {
     assert!(
         missing.is_empty(),
         "talent lifecycle process tokens are still Python-routed: {missing:?}"
+    );
+}
+
+// This test is committed to fail until `journal install-provider` dispatches to
+// the native sibling. Registration is the load-bearing half: the poison
+// liveness contract requires PROBES to equal NATIVE_PROCESS_SPECS exactly, so
+// the row that turns this green also arms a probe that runs the real dispatcher
+// with both interpreter poisons live. What resolves it: a NATIVE_PROCESS_SPECS
+// row for `install-provider` plus its PROBES entry. What does not resolve it:
+// do not #[ignore] this test, and do not shrink or reword
+// LANE_BE_REQUIRED_NATIVE_TOKENS.
+#[test]
+fn install_provider_is_registered_for_native_dispatch() {
+    let native_tokens = NATIVE_PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
+    let missing = LANE_BE_REQUIRED_NATIVE_TOKENS
+        .iter()
+        .copied()
+        .filter(|token| !native_tokens.contains(token))
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "install-provider is still Python-routed: {missing:?}"
     );
 }
 
