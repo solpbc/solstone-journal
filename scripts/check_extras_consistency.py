@@ -70,9 +70,7 @@ THIN_BASE = {
 ROOT_SCRIPT_FILES = tuple(
     f"scripts/root-launchers/{name}" for name in ROOT_LAUNCHER_NAMES
 )
-HOST_SCRIPTS = {
-    "mlx-vlm-server": "solstone.think.providers.mlx_server:main",
-}
+HOST_SCRIPTS: dict[str, str] = {}
 TOMBSTONE_PIN = "solstone-journal-host==0.7.0"
 PDF_META_EXTRA = [
     "solstone[pdf-import]",

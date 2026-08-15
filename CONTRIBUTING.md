@@ -194,7 +194,7 @@ That target first runs `scripts/build_skill_references.py` to regenerate the che
 
 ## Migrating from a source install to a packaged install
 
-A packaged host install puts `sol`, `solstone`, `journal`, and `mlx-vlm-server` on PATH directly. `pip install solstone-journal` exposes those commands in one environment; uv tool and pipx expose each tool's own commands, so install both the journal tool and the thin `solstone` tool. It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/sol`.
+A packaged host install puts `sol`, `solstone`, and `journal` on PATH directly. `pip install solstone-journal` exposes those commands in one environment; uv tool and pipx expose each tool's own commands, so install both the journal tool and the thin `solstone` tool. The package split is pinned by `packages/solstone-journal/pyproject.toml` and `scripts/cleanroom-install.sh`. It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/sol`.
 
 `make uninstall` is disabled by design. To migrate cleanly from a source checkout to a packaged install, remove user-runtime artifacts explicitly:
 

@@ -44,12 +44,13 @@ pipx install solstone-journal && pipx install solstone         # same two-tool s
 
 Pick one installer.
 
-A pip install of solstone-journal puts `sol`, `solstone`, `journal`, and
-`mlx-vlm-server` on PATH (`~/.local/bin/` for uv tool and pipx, which most
-shells already include). uv tool and pipx expose each installed tool's own
-commands — the journal tool provides `journal` and `mlx-vlm-server`, and the
-thin solstone tool provides `sol` and `solstone`, which is why their install
-lines above are two commands.
+A pip install of solstone-journal puts `sol`, `solstone`, and `journal` on PATH.
+uv tool and pipx expose each installed package's own commands: the journal
+package provides `journal`, and the thin command package provides `sol` and `solstone`,
+which is why their install lines above are two commands. The
+[package metadata](packages/solstone-journal/pyproject.toml) and
+[cleanroom installer checks](scripts/cleanroom-install.sh) pin this command
+split.
 
 NVIDIA GPU owners who want GPU-accelerated transcription install
 `solstone-journal-cuda` **instead of** `solstone-journal` with the same
@@ -69,8 +70,8 @@ uvx solstone --help             # or ephemerally — no install, one-shot
 
 Running the journal? Check the machine first: `uvx solstone check` renders a one-shot readiness verdict (GPU, memory, free disk) for the bundled local models — no install required. It exits 0 when ready, and prints exactly what's missing when not.
 
-A thin/no-extras install carries only `sol` and `solstone`; `journal setup`,
-`journal start`, and `mlx-vlm-server` require a `solstone-journal` host install.
+A thin/no-extras install carries only `sol` and `solstone`. Install the journal
+to use `journal setup` and `journal start`.
 
 ## set up
 

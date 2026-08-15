@@ -82,7 +82,7 @@ pip install solstone-journal
 pipx install solstone-journal && pipx install solstone
 ```
 
-A `pip install solstone-journal` puts `journal` and `mlx-vlm-server` on PATH natively; `uv tool` and `pipx` expose each tool's own commands, so the journal install is two commands — the journal tool plus the thin `solstone` tool. For GPU transcription, install `solstone-journal-cuda` instead.
+A `pip install solstone-journal` puts `journal` on PATH natively. `uv tool` and `pipx` expose each package's own commands, so install the journal and thin command packages as shown above. The [cleanroom installer checks](scripts/cleanroom-install.sh) pin this command split. For GPU transcription, install `solstone-journal-cuda` instead.
 
 want only the thin `sol` client — to talk to a journal running elsewhere? `uv tool install solstone` (no extras), or `uvx solstone` for an ephemeral one-shot.
 

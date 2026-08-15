@@ -38,7 +38,7 @@ models.
 
 The Thinking app exposes five setup choices:
 
-- Bundled local, using Solstone's installed llama-server or mlx-vlm runtime.
+- Bundled local, using Solstone's installed llama-server runtime.
 - An owner-supplied OpenAI-compatible URL, model id, and optional bearer key.
 - OpenAI with an owner-supplied API key and model id.
 - Anthropic with an owner-supplied API key and model id.
@@ -112,10 +112,11 @@ native cogitate execution.
 ## Local Admission
 
 Bundled local and non-confidential arbitrary endpoints share the governed local
-admission boundary. Cloud and confidential processing bypass it. Capacity is
-kept intentionally small: one slot on the Linux floor and Apple mlx-vlm, two on
-the capable Linux tier, or the explicit `parallel_slots` value for an arbitrary
-endpoint.
+[admission boundary](../core/crates/solstone-core-local/src/admission.rs). Cloud
+and confidential processing do not use this local slot pool. The
+[tier contract](../core/crates/solstone-core-local/src/tier.rs) keeps capacity
+intentionally small: one slot on the floor tier and two on the capable tier.
+An arbitrary endpoint may instead set `parallel_slots` explicitly.
 
 Admission uses per-slot `flock` files under
 `health/local-inference-admission/`, coordinating independent journal

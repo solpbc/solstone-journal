@@ -4270,6 +4270,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-support-portal"
+version = "1.0.22"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "getrandom 0.3.4",
+ "hmac",
+ "nix",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-brain",
+ "solstone-core-journal-io",
+ "solstone-core-thinking",
+ "tempfile",
+ "thiserror 2.0.20",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
 name = "solstone-core-system"
 version = "1.0.22"
 dependencies = [

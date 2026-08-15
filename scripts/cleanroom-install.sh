@@ -252,7 +252,8 @@ run_pip_host() {
     python -m venv "$venv"
     "$venv/bin/python" -m pip install -q --upgrade pip
     "$venv/bin/python" -m pip install -q ${PIP_INDEX_ARGS} ${FIND_LINKS_ARGS} "$spec"
-    assert_present "$venv/bin" sol solstone journal mlx-vlm-server
+    assert_present "$venv/bin" sol solstone journal
+    assert_absent "$venv/bin" mlx-vlm-server
 }
 
 run_uv_tool_host() {
@@ -265,7 +266,8 @@ run_uv_tool_host() {
     XDG_DATA_HOME="$data" XDG_BIN_HOME="$bin" \
         uv tool install -q ${UV_INDEX_ARGS} ${FIND_LINKS_ARGS} \
             --with-executables-from solstone "$spec"
-    assert_present "$bin" sol solstone journal mlx-vlm-server
+    assert_present "$bin" sol solstone journal
+    assert_absent "$bin" mlx-vlm-server
 }
 
 run_pipx_host() {
@@ -284,7 +286,8 @@ run_pipx_host() {
         PIPX_HOME="$home" PIPX_BIN_DIR="$bin" PIPX_MAN_DIR="$man" \
             pipx install --quiet --include-deps "$spec"
     fi
-    assert_present "$bin" sol solstone journal mlx-vlm-server
+    assert_present "$bin" sol solstone journal
+    assert_absent "$bin" mlx-vlm-server
 }
 
 run_host_extra() {

@@ -429,7 +429,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Provider install leases (`health/providers/{local,parakeet}.lease`) | `solstone/think/providers/install_lease.py` |
 | Provider runtime health and retry-token records (`health/providers/runtime/{local,parakeet}.json`, `health/providers/runtime/{local,parakeet}.retry-token.json`, `health/providers/runtime/{local,parakeet}.operation.lock`) | `solstone/think/providers/runtime_health.py` |
 | Native speakers-analyze install generation (`health/speakers-analyze/install-generation.json`, `health/speakers-analyze/install-generation.lock`) | `core/crates/solstone-core-transcribe/` via `speakers_installation.rs` |
-| Provider artifact manifests (`cache/providers/**/.solstone-provider-manifest.json`, `cache/providers/local/mlx/**/*.manifest.json`) | `solstone/think/providers/artifact_proof.py` |
+| Provider artifact manifests (`cache/providers/**/.solstone-provider-manifest.json`) | `core/crates/solstone-core-local/src/install/manifest.rs` |
 | nvattest appraiser cache (`cache/providers/nvattest/**`) | `solstone/think/providers/nvattest_install.py` |
 | Media offload ledger (`health/offload/<YYYYMMDD>.jsonl`) | `solstone/think/offload_ledger.py` + `core/crates/solstone-core-offload/` during native migration; the retained Python writer stays reachable through the Flask backup app until it is retired |
 | Pruning-run audit (`health/pruning-runs/<YYYYMMDD>.jsonl`) | `solstone/think/pruning_audit.py` owns `journal_logs` and `raw_media`; `core/crates/solstone-core-offload/` owns `raw_media_offload` — both append to this shared audit file |

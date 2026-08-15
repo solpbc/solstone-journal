@@ -15,11 +15,10 @@ stops at it comes back clean on a cross-module writer WITH ITS CONTROLS FIRING.
 If `import` returns anything but 2, this sweep is broken and every other zero in
 the run means nothing.
 
-⚠ KNOWN BLIND SPOT: this keys on route decorators, so a writer registered as a
-blueprint- or app-level HOOK is invisible. `support_bp` puts its acknowledgement
-drain on `before_request` AND `after_request`, so every one of its GET routes
-reaches a remote write while this reports it clean. `HOOK_DECORATORS` below is the
-hook vocabulary; walking it is the extension still owed.
+⚠ KNOWN BLIND SPOT: hook calls are included in every route's reached set, but
+imported helpers still stop after one file-boundary hop. `support_bp` puts its
+acknowledgement drain on `before_request` AND `after_request`; `HOOK_DECORATORS`
+below is the hook vocabulary folded into each GET-only route.
 
 Usage:
     python scripts/check_get_only_writers.py                 # the default app set
@@ -30,6 +29,13 @@ from __future__ import annotations
 import ast
 import subprocess
 import sys
+
+CONTROL_APP = "import"
+# `87d708aa4` deleted solstone/apps/import/routes.py.  Its parent has the known
+# (11, 2) control: import_content_list and import_content_detail both reach
+# generate_content_manifest -> atomic_replace.
+CONTROL_REV = "87d708aa4^"
+CONTROL_EXPECTED = (11, 2)
 
 #: Names that mean a filesystem write WHEREVER they appear. Every one of these is
 #: unambiguous — no builtin type carries a method of the same name.
@@ -155,20 +161,57 @@ def _imported_origins(tree: ast.AST) -> dict[str, str]:
     return origins
 
 
-def sweep(app: str, rev: str = "origin/main") -> tuple[int, int]:
+def _reached_calls(
+    seeds: set[str], module_fns: dict[str, ast.AST], origins: dict[str, str],
+    foreign_fns: dict[str, dict[str, ast.AST]], rev: str,
+) -> set[str]:
+    """Apply the existing same-file then one-hop imported-helper reachability."""
+    reached = set(seeds)
+    for name in list(reached):
+        helper = module_fns.get(name)
+        if helper is not None:
+            reached |= called_names(helper)
+    # Intentionally stops after this imported function (the known line-185 blind spot).
+    for name in list(reached):
+        dotted = origins.get(name)
+        if dotted is None or not dotted.startswith("solstone"):
+            continue
+        foreign = foreign_fns.get(dotted)
+        if foreign is None:
+            src_f = _module_source(dotted, rev)
+            foreign = {}
+            if src_f:
+                try:
+                    for n in ast.parse(src_f).body:
+                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            foreign[n.name] = n
+                except SyntaxError:
+                    pass
+            foreign_fns[dotted] = foreign
+        target = foreign.get(name)
+        if target is not None:
+            reached |= called_names(target)
+    return reached
+
+
+def sweep(app: str, rev: str = "origin/main") -> tuple[int, int] | None:
     path = f"solstone/apps/{app}/routes.py"
     src = subprocess.run(
         ["git", "show", f"{rev}:{path}"], capture_output=True, text=True
     ).stdout
     if not src:
         print(f"  {app}: NO SOURCE at {rev}:{path}")
-        return (0, 0)
+        return None
     tree = ast.parse(src)
     module_fns = {
         n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     origins = _imported_origins(tree)
     foreign_fns: dict[str, dict[str, ast.AST]] = {}
+    hook_seeds: set[str] = set()
+    for node in module_fns.values():
+        if any(hook_kind(dec) is not None for dec in node.decorator_list):
+            hook_seeds |= called_names(node)
     get_only = 0
     findings = 0
     for node in tree.body:
@@ -182,32 +225,7 @@ def sweep(app: str, rev: str = "origin/main") -> tuple[int, int]:
         if methods is None or methods - {"GET", "HEAD", "OPTIONS"}:
             continue
         get_only += 1
-        # one hop through same-module helpers, then one hop ACROSS the file
-        # boundary into whatever the handler imported by name.
-        reached = called_names(node)
-        for name in list(reached):
-            helper = module_fns.get(name)
-            if helper is not None:
-                reached |= called_names(helper)
-        for name in list(reached):
-            dotted = origins.get(name)
-            if dotted is None or not dotted.startswith("solstone"):
-                continue
-            foreign = foreign_fns.get(dotted)
-            if foreign is None:
-                src_f = _module_source(dotted, rev)
-                foreign = {}
-                if src_f:
-                    try:
-                        for n in ast.parse(src_f).body:
-                            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                                foreign[n.name] = n
-                    except SyntaxError:
-                        pass
-                foreign_fns[dotted] = foreign
-            target = foreign.get(name)
-            if target is not None:
-                reached |= called_names(target)
+        reached = _reached_calls(called_names(node) | hook_seeds, module_fns, origins, foreign_fns, rev)
         hits = (reached & WRITE_PRIMITIVES) | (reached & WRITING_HELPERS)
         hits |= {n for n in reached if n.endswith("<write>")}
         if "open<write>" in reached:
@@ -221,9 +239,18 @@ def sweep(app: str, rev: str = "origin/main") -> tuple[int, int]:
 if __name__ == "__main__":
     apps = sys.argv[1:] or ["health", "stats", "tokens", "sol", "support", "import"]
     total = 0
-    print("=== GET-only routes reaching a write primitive (rev origin/main) ===")
+    print("=== GET-only routes reaching a write primitive (origin/main except pinned control) ===")
     for app in apps:
-        g, f = sweep(app)
+        rev = CONTROL_REV if app == CONTROL_APP else "origin/main"
+        result = sweep(app, rev)
+        if result is None:
+            if app == CONTROL_APP:
+                raise SystemExit(f"{CONTROL_APP} control source is missing at {CONTROL_REV}")
+            print(f"  {app}: 0 GET-only routes, 0 flagged")
+            continue
+        g, f = result
+        if app == CONTROL_APP and result != CONTROL_EXPECTED:
+            raise SystemExit(f"{CONTROL_APP} control expected {CONTROL_EXPECTED}, got {result}")
         total += f
         print(f"  {app}: {g} GET-only routes, {f} flagged")
     print(f"\nTOTAL flagged: {total}")
