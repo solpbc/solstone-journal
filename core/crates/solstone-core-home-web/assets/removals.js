@@ -210,10 +210,6 @@
         + '<p class="removals-card-total">'
         + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
         + '</p>' + cardRows() + confirmationHtml() + outcomeHtml + '</section>';
-    } else if (listState === 'outcome.unknown') {
-      card.innerHTML = '<section class="removals-card">' + heading
-        + '<p class="removals-card-outcome">' + copy("done.unknown") + '</p>'
-        + outcomeHtml + '</section>';
     } else {
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p>' + copy("card.unavailable") + '</p>' + outcomeHtml + '</section>';
@@ -259,9 +255,13 @@
   function showOutcome(response, context) {
     const items = refusalItems(response);
     const row = context.row;
+    const decline = context.action === 'decline';
+    const nothingRan = decline
+      ? copy("done.declined_failed")
+      : copyForCount('done.refused_none', rowCount(row));
     switch (response.state) {
       case 'outcome.unknown':
-        setOutcome('<p>' + copy("done.unknown") + '</p>');
+        setOutcome('<p>' + copy(decline ? "done.declined_unknown" : "done.unknown") + '</p>');
         break;
       case 'approve.refused_before_start':
         setOutcome('<p>' + copyForCount('done.refused_none', rowCount(row)) + '</p>');
@@ -279,7 +279,7 @@
         break;
       case 'tool.unavailable':
       case 'approve.policy_keeps':
-        setOutcome('<p>' + copyForCount('done.refused_none', rowCount(row)) + '</p>');
+        setOutcome('<p>' + nothingRan + '</p>');
         break;
       case 'request.too_large':
         setOutcome('<p>' + copy("done.too_many") + '</p>');
@@ -292,7 +292,8 @@
         setOutcome('<p>' + copy("done.declined_unknown") + '</p>');
         break;
       case 'request.invalid':
-        return response.state;
+        setOutcome('');
+        break;
       default:
         setOutcome('');
     }
@@ -322,10 +323,13 @@
         body: JSON.stringify({ mark_ids: [row.id] })
       });
       await refresh();
-      showOutcome(response, { row: row });
+      showOutcome(response, { action: action, row: row });
     } catch (_) {
       await refresh();
-      showOutcome({ state: action === 'decline' ? 'declined.unknown' : 'outcome.unknown' }, { row: row });
+      showOutcome(
+        { state: action === 'decline' ? 'declined.unknown' : 'outcome.unknown' },
+        { action: action, row: row }
+      );
     }
   }
 

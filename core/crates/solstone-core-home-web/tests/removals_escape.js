@@ -88,11 +88,17 @@ function escaped(value) {
   })[char]);
 }
 
-async function boot(source, list, responses) {
+async function boot(source, lists, responses) {
   const root = new Element();
+  const listResponses = Array.isArray(lists) ? lists : [lists];
+  let listIndex = 0;
   const window = {
     apiJson(url) {
-      if (url === '/app/home/api/removals') return Promise.resolve(list);
+      if (url === '/app/home/api/removals') {
+        const response = listResponses[Math.min(listIndex, listResponses.length - 1)];
+        listIndex += 1;
+        return Promise.resolve(response);
+      }
       if (url === '/app/home/api/approve') return Promise.resolve(responses.approve);
       if (url === '/app/home/api/decline') return Promise.resolve(responses.decline);
       throw new Error(`unexpected URL: ${url}`);
@@ -143,6 +149,27 @@ function marked(id, origin, count, stream) {
     bytes: count,
     size: `${count} B`
   };
+}
+
+function outcome(card) {
+  return card.innerHTML.match(/<section class="removals-card-outcome">([\s\S]*?)<\/section>/)?.[1] || '';
+}
+
+function assertDeclineOutcomeHasNoDeletingCopy(card, copy) {
+  const deleting = [
+    'done.unknown',
+    'done.refused_none_one',
+    'done.refused_none_many',
+    'done.clause_deleted_one',
+    'done.clause_deleted_many',
+    'done.clause_not_removed_one',
+    'done.clause_not_removed_many',
+    'done.clause_halted'
+  ].map((key) => copy[key]);
+  const rendered = outcome(card);
+  for (const value of deleting) {
+    assert(!rendered.includes(value), `decline rendered deleting copy: ${value}`);
+  }
 }
 
 async function main() {
@@ -238,15 +265,44 @@ async function main() {
   assert(outcomeCard.innerHTML.includes(rendered(copy, 'done.refused_item_unnamed', { reason: 'unnamed reason' })));
   assert(outcomeCard.innerHTML.indexOf(clauses) < outcomeCard.innerHTML.indexOf('<ul>'));
 
-  const declinedCard = await boot(
+  const declineStates = [
+    ['declined.done', copy['done.kept_policy']],
+    ['declined.partial', copy['done.declined_failed']],
+    ['declined.refused', copy['done.declined_failed']],
+    ['declined.unknown', copy['done.declined_unknown']],
+    ['tool.unavailable', copy['done.declined_failed']],
+    ['request.too_large', copy['done.too_many']],
+    ['outcome.unknown', copy['done.declined_unknown']],
+    ['request.invalid', '']
+  ];
+  for (const [state, expected] of declineStates) {
+    const row = marked(`decline-${state}`, 'policy', 1, 'kitchen-mic');
+    const card = await boot(
+      source,
+      { state: 'list.ready', removals: [row] },
+      { decline: { state } }
+    );
+    click(card, 'decline', row.id);
+    await settle();
+    assert(expected === '' || outcome(card).includes(expected), `decline renders ${state}`);
+    assert(expected !== '' || outcome(card) === '', `decline renders nothing for ${state}`);
+    assertDeclineOutcomeHasNoDeletingCopy(card, copy);
+  }
+
+  const row = marked('decline-refresh', 'policy', 1, 'kitchen-mic');
+  const declineRefreshCard = await boot(
     source,
-    { state: 'list.ready', removals: [marked('declined', 'policy', 1, 'kitchen-mic')] },
-    { decline: { state: 'declined.unknown' } }
+    [
+      { state: 'list.ready', removals: [row] },
+      { state: 'outcome.unknown', removals: [] }
+    ],
+    { decline: { state: 'declined.done' } }
   );
-  click(declinedCard, 'decline', 'declined');
+  click(declineRefreshCard, 'decline', row.id);
   await settle();
-  assert(declinedCard.innerHTML.includes(copy['done.declined_unknown']));
-  assert(!declinedCard.innerHTML.includes(copy['done.unknown']));
+  assert(declineRefreshCard.innerHTML.includes(copy['card.unavailable']));
+  assert(outcome(declineRefreshCard).includes(copy['done.kept_policy']));
+  assertDeclineOutcomeHasNoDeletingCopy(declineRefreshCard, copy);
 }
 
 main().catch((error) => {

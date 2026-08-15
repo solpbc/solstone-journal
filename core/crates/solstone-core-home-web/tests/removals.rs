@@ -458,6 +458,44 @@ fn decline_runs_each_id_and_aggregates_the_result() {
 }
 
 #[test]
+fn decline_maps_client_unknown_and_unavailable_to_distinct_non_delete_states() {
+    let harness = Harness::new();
+    let id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let unknown = harness.call(&decline_receipt(), "2", &json!({}), || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/decline", json!({"mark_ids": [id]})),
+        )
+    });
+    assert_eq!(unknown.1["state"], "declined.unknown");
+    assert_eq!(unknown.1["unknown_count"], 1);
+
+    let unavailable = harness.without_executor(|| {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/decline", json!({"mark_ids": [id]})),
+        )
+    });
+    assert_eq!(unavailable.1["state"], "tool.unavailable");
+    assert_eq!(unavailable.1["unavailable_count"], 1);
+}
+
+#[test]
+fn list_maps_an_unknown_marks_outcome_without_claiming_a_write_outcome() {
+    let harness = Harness::new();
+    let response = harness.call(&marks_receipt(json!({})), "2", &json!({}), || {
+        response(
+            harness.router(),
+            request("GET", "/app/home/api/removals", Value::Null),
+        )
+    });
+    assert_eq!(
+        response.1,
+        json!({"state": "outcome.unknown", "removals": []})
+    );
+}
+
+#[test]
 fn unavailable_and_unknown_attempts_keep_distinct_state_codes_and_are_logged() {
     let harness = Harness::new();
     let id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
