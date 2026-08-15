@@ -3773,6 +3773,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-model-pricing"
+version = "1.0.22"
+
+[[package]]
 name = "solstone-core-npy"
 version = "1.0.22"
 

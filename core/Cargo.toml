@@ -62,6 +62,7 @@ members = [
     "crates/solstone-core-sol-link",
     "crates/solstone-core-convey-http",
     "crates/solstone-core-convey-shell",
+    "crates/solstone-core-model-pricing",
     "crates/solstone-core-thinking-copy",
     "crates/solstone-core-thinking",
     "crates/solstone-core-serving",
@@ -202,6 +203,7 @@ solstone-core-sol-client-cli = { path = "crates/solstone-core-sol-client-cli" }
 solstone-core-sol-link = { path = "crates/solstone-core-sol-link", default-features = false }
 solstone-core-convey-http = { path = "crates/solstone-core-convey-http" }
 solstone-core-convey-shell = { path = "crates/solstone-core-convey-shell" }
+solstone-core-model-pricing = { path = "crates/solstone-core-model-pricing" }
 solstone-core-backup-web = { path = "crates/solstone-core-backup-web" }
 solstone-core-describe-categories = { path = "crates/solstone-core-describe-categories" }
 solstone-core-thinking-copy = { path = "crates/solstone-core-thinking-copy" }
