@@ -231,7 +231,46 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             get(validate_keys).post(persist_key_validations),
         )
         .route("/app/thinking/api/validate-model", post(validate_model))
+        .route(
+            "/app/thinking/api/talents/{day}",
+            get(crate::thinking_sol_reads::api_talents_day),
+        )
+        .route(
+            "/app/thinking/api/run/{use_id}",
+            get(crate::thinking_sol_reads::api_agent_run),
+        )
+        .route(
+            "/app/thinking/api/output/{day}/{*path}",
+            get(crate::thinking_sol_reads::api_output_file),
+        )
+        .route(
+            "/app/thinking/api/preview/{*name}",
+            get(crate::thinking_sol_reads::api_preview_prompt),
+        )
+        .route(
+            "/app/thinking/api/index",
+            get(crate::thinking_sol_reads::api_index),
+        )
+        .route(
+            "/app/thinking/api/stats/{month}",
+            get(crate::thinking_sol_reads::api_stats),
+        )
+        .route(
+            "/app/thinking/api/badge-count",
+            get(crate::thinking_sol_reads::api_badge_count),
+        )
+        .route(
+            "/app/thinking/api/updated-days",
+            get(crate::thinking_sol_reads::api_updated_days),
+        )
+        .route(
+            "/app/thinking/api/identity",
+            get(crate::thinking_sol_reads::api_identity),
+        )
         .layer(Extension(journal))
+        .layer(Extension(Arc::new(
+            crate::thinking_sol_reads::TalentRoots::production(),
+        )))
         .layer(Extension(Arc::new(OperationRegistry::default())))
         .layer(Extension(confidential_runtime))
 }
