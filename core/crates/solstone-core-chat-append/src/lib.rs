@@ -8,6 +8,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
 use regex::Regex;
 use serde_json::{Map, Value};
@@ -21,6 +24,27 @@ const SUPPORT_DRAFT: &str = "support_draft";
 const SEGMENT_WINDOW_MS: i64 = 300_000;
 
 static CHAT_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+static CHAT_LOCK_DEPTH: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+struct TestChatLockScope;
+
+#[cfg(test)]
+impl TestChatLockScope {
+    fn enter() -> Self {
+        CHAT_LOCK_DEPTH.fetch_add(1, AtomicOrdering::SeqCst);
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestChatLockScope {
+    fn drop(&mut self) {
+        CHAT_LOCK_DEPTH.fetch_sub(1, AtomicOrdering::SeqCst);
+    }
+}
 
 /// Failure while appending a support-draft chat event or its draft locator.
 #[derive(Debug, Error)]
@@ -184,9 +208,12 @@ fn append_validated_chat_event_at_local_time(
     let stored = Value::Object(stored);
 
     let chat_path = {
+        pause_at("chat-before-lock");
         let _guard = CHAT_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        #[cfg(test)]
+        let _test_lock_scope = TestChatLockScope::enter();
         let (day, segment) = current_segment_key(journal, timestamp, event_time)?;
         let segment_dir = SegmentDir::resolve(journal, &day, &segment, CHAT_STREAM)
             .map_err(|source| ChatAppendError::SegmentPath { source })?;
@@ -288,6 +315,7 @@ fn current_segment_key(
     timestamp: i64,
     event_time: NaiveDateTime,
 ) -> Result<(String, String), ChatAppendError> {
+    pause_at("chat-before-segment-selection");
     let day = event_time.format("%Y%m%d").to_string();
     let mut existing = chat_segments(journal, &day)?;
     if existing.is_empty() {
@@ -355,6 +383,10 @@ fn chat_segments(journal: &Path, day: &str) -> Result<Vec<String>, ChatAppendErr
 
 fn is_segment_key(value: &str) -> bool {
     static SEGMENT_KEY: OnceLock<Regex> = OnceLock::new();
+    // Adaptation: Rust `\\b` treats Marks, Connector_Punctuation, and Join_Control as word
+    // characters (for example, `\\u{0301}100000_300`), unlike Python. Later parsing requires
+    // ASCII digits, unlike Python `.isdigit()`/`int()` (for example, `١٢٣٤٥٦_٣٠٠`). Neither
+    // form can be system-created because chat writers emit ASCII `%H%M%S_300` keys.
     SEGMENT_KEY
         .get_or_init(|| {
             Regex::new(r"\b(\d{6})_(\d+)(?:_|\b)")
@@ -399,6 +431,8 @@ fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendEr
     })?;
     Local
         .from_local_datetime(&NaiveDateTime::new(date, time))
+        // Intentional adaptation: choose the earlier fall-back offset like Python fold=0;
+        // a spring-forward gap still errors here where Python resolves it.
         .earliest()
         .map(|time| time.timestamp_millis())
         .ok_or_else(|| ChatAppendError::InvalidSegmentKey {
@@ -466,6 +500,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::mpsc;
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
 
@@ -473,9 +508,9 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::{
-        CHAT_STREAM, ChatAppendError, PAUSE_HOOK, append_chat_event_at, append_support_draft,
-        append_validated_chat_event_at_local_time, record_draft_captured, resolve_draft_day,
-        support_draft_index_path,
+        CHAT_LOCK_DEPTH, CHAT_STREAM, ChatAppendError, PAUSE_HOOK, append_chat_event_at,
+        append_support_draft, append_validated_chat_event_at_local_time, record_draft_captured,
+        resolve_draft_day, support_draft_index_path,
     };
 
     static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(0);
@@ -1040,22 +1075,51 @@ mod tests {
 
     #[test]
     fn ac12_static_lock_serializes_segment_selection() {
+        #[derive(Debug)]
+        enum Event {
+            FirstPaused,
+            SecondAwaitingSelection,
+            SelectionOutsideLock,
+        }
+
         let journal = Arc::new(TestJournal::new());
         let first = local_at(2026, 8, 15, 10, 5, 0);
         let second = local_at(2026, 8, 15, 10, 7, 0);
         write_chat(&chat_path(&journal.path, "20260815", "100000_300"), "{}\n");
-        let entered = Arc::new(Barrier::new(2));
         let released = Arc::new(Barrier::new(2));
         let paused = Arc::new(AtomicBool::new(false));
-        let hook_entered = Arc::clone(&entered);
         let hook_released = Arc::clone(&released);
         let hook_paused = Arc::clone(&paused);
+        let lock_attempts = Arc::new(AtomicU64::new(0));
+        let hook_lock_attempts = Arc::clone(&lock_attempts);
+        let selection_outside_lock = Arc::new(AtomicBool::new(false));
+        let hook_selection_outside_lock = Arc::clone(&selection_outside_lock);
+        let (event_tx, event_rx) = mpsc::channel();
         let hooks = PAUSE_HOOK.get_or_init(|| Mutex::new(None));
-        *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| {
-            if point == "chat-read-before-write" && !hook_paused.swap(true, Ordering::SeqCst) {
-                hook_entered.wait();
+        *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| match point {
+            "chat-before-lock" => {
+                if hook_lock_attempts.fetch_add(1, Ordering::SeqCst) == 1 {
+                    event_tx
+                        .send(Event::SecondAwaitingSelection)
+                        .expect("test receiver");
+                }
+            }
+            "chat-before-segment-selection" => {
+                if CHAT_LOCK_DEPTH.load(Ordering::SeqCst) != 1 {
+                    hook_selection_outside_lock.store(true, Ordering::SeqCst);
+                    event_tx
+                        .send(Event::SelectionOutsideLock)
+                        .expect("test receiver");
+                }
+            }
+            "chat-read-before-write"
+                if !hook_selection_outside_lock.load(Ordering::SeqCst)
+                    && !hook_paused.swap(true, Ordering::SeqCst) =>
+            {
+                event_tx.send(Event::FirstPaused).expect("test receiver");
                 hook_released.wait();
             }
+            _ => {}
         }));
 
         let first_journal = Arc::clone(&journal);
@@ -1067,7 +1131,20 @@ mod tests {
                 first,
             )
         });
-        entered.wait();
+        match event_rx.recv().expect("first append event") {
+            Event::FirstPaused => {}
+            Event::SelectionOutsideLock => {
+                *hooks.lock().expect("hook lock") = None;
+                first_append
+                    .join()
+                    .expect("first thread")
+                    .expect("first append");
+                panic!("segment selection started outside CHAT_LOCK");
+            }
+            Event::SecondAwaitingSelection => {
+                panic!("second append reached the lock before the first append paused");
+            }
+        }
         let second_journal = Arc::clone(&journal);
         let second_append = thread::spawn(move || {
             append_chat_event_at(
@@ -1077,6 +1154,23 @@ mod tests {
                 second,
             )
         });
+        match event_rx.recv().expect("second append event") {
+            Event::SecondAwaitingSelection => {}
+            Event::SelectionOutsideLock => {
+                *hooks.lock().expect("hook lock") = None;
+                released.wait();
+                first_append
+                    .join()
+                    .expect("first thread")
+                    .expect("first append");
+                second_append
+                    .join()
+                    .expect("second thread")
+                    .expect("second append");
+                panic!("segment selection started outside CHAT_LOCK");
+            }
+            Event::FirstPaused => panic!("only the first append may pause before the write"),
+        }
         released.wait();
         first_append
             .join()
@@ -1087,6 +1181,10 @@ mod tests {
             .join()
             .expect("second thread")
             .expect("second append");
+        assert!(
+            !selection_outside_lock.load(Ordering::SeqCst),
+            "segment selection started outside CHAT_LOCK"
+        );
 
         let selected = chat_path(&journal.path, "20260815", "100500_300");
         assert_eq!(
