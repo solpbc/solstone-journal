@@ -30,6 +30,19 @@ pub enum WriteIntent {
         record_id: String,
         value: Value,
     },
+    DailySchedule {
+        output: String,
+    },
+    Participation {
+        output: String,
+        facet: String,
+        day: String,
+        activity: Map<String, Value>,
+    },
+    Schedule {
+        output: String,
+        day: String,
+    },
 }
 
 pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Result<bool, String> {
@@ -80,6 +93,43 @@ pub fn apply(
                     talent,
                     detail,
                 })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::DailySchedule { output }) => {
+            crate::daily_schedule::apply_result(&context.journal, &output).map_err(|detail| {
+                StageError {
+                    phase: "write-intent",
+                    stage: "daily_schedule",
+                    talent: "daily_schedule".to_owned(),
+                    detail,
+                }
+            })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::Participation {
+            output,
+            facet,
+            day,
+            activity,
+        }) => {
+            crate::participation::apply_result(&context.journal, &output, &facet, &day, &activity)
+                .map_err(|detail| StageError {
+                    phase: "write-intent",
+                    stage: "participation",
+                    talent: "participation".to_owned(),
+                    detail,
+                })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::Schedule { output, day }) => {
+            crate::schedule::apply_result(&context.journal, &output, &day).map_err(|detail| {
+                StageError {
+                    phase: "write-intent",
+                    stage: "schedule",
+                    talent: "schedule".to_owned(),
+                    detail,
+                }
+            })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
     }

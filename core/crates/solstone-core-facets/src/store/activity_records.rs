@@ -298,7 +298,8 @@ pub fn set_activity_hidden(
     })
 }
 
-fn append_edit(
+/// Append an activity edit using the store's canonical edit shape.
+pub fn append_edit(
     mut record: ActivityRecord,
     actor: &str,
     fields: Vec<String>,

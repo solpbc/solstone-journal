@@ -15,11 +15,14 @@ use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod chat_context;
 pub mod contract;
+pub mod daily_schedule;
 pub mod documents;
 pub mod entities;
 pub mod morning_briefing;
+pub mod participation;
 pub mod prepare;
 pub mod pulse;
+pub mod schedule;
 pub mod steward;
 pub mod steward_health;
 pub mod steward_log;
@@ -41,6 +44,43 @@ pub struct ExecutionContext {
 pub struct PreparedTalent {
     pub name: String,
     pub config: Map<String, Value>,
+}
+
+pub(crate) fn detected_resolution_entities(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+) -> Result<Vec<solstone_core_entity::EntityResolutionEntity>, String> {
+    let entities = solstone_core_facets::read_detected_entities(journal, facet, day)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|value| value.as_object().cloned())
+        .map(|item| solstone_core_entity::EntityResolutionEntity {
+            id: item.get("id").and_then(Value::as_str).map(str::to_owned),
+            name: item
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            aka: string_values(&item, "aka"),
+            emails: string_values(&item, "emails"),
+            blocked: item
+                .get("blocked")
+                .is_some_and(solstone_core_facets::activity_value_truthy),
+        })
+        .collect::<Vec<_>>();
+    Ok(entities)
+}
+
+fn string_values(value: &Map<String, Value>, field: &str) -> Vec<String> {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }
 
 pub fn check_segment_has_no_input(
@@ -832,15 +872,15 @@ mod tests {
     #[test]
     fn criterion_10_unported_hook_and_ported_transcript_loading() {
         let (root, paths, context) = fixture(
-            "schedule-fixture",
+            "speaker-attribution-fixture",
             r#"{
-"type":"generate", "hook":{"pre":"schedule"}, "load":{"transcripts":false}
+"type":"generate", "hook":{"pre":"speaker_attribution"}, "load":{"transcripts":false}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
         let mut output = Vec::new();
         let outcome = execute_request(
-            json!({"name":"schedule-fixture", "prompt":"$placeholder"})
+            json!({"name":"speaker-attribution-fixture", "prompt":"$placeholder"})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -850,7 +890,7 @@ mod tests {
             &mut output,
         );
         assert!(
-            matches!(outcome, RuntimeOutcome::UnportedHook { ref hook, ref talent } if hook == "schedule" && talent == "schedule-fixture")
+            matches!(outcome, RuntimeOutcome::UnportedHook { ref hook, ref talent } if hook == "speaker_attribution" && talent == "speaker-attribution-fixture")
         );
         let hook_events = events(&output);
         assert_eq!(hook_events.len(), 1);
@@ -867,9 +907,9 @@ mod tests {
         );
 
         let (source_root, source_paths, source_context) = fixture(
-            "source-fixture",
+            "schedule-source-fixture",
             r#"{
-"type":"generate", "load":{"transcripts":true}
+"type":"generate", "hook":{"post":"schedule"}, "load":{"transcripts":true,"percepts":false,"talents":{"screen":true}}
 }"#,
         );
         let source_client =
@@ -882,14 +922,14 @@ mod tests {
         )
         .unwrap();
         let source_request = json!({
-            "name":"source-fixture", "day":source_day, "segment":source_segment, "prompt":"hello"
+            "name":"schedule-source-fixture", "day":source_day, "segment":source_segment, "prompt":"hello"
         })
         .as_object()
         .unwrap()
         .clone();
         let source_prepared =
             prepare::prepare(source_request.clone(), &source_paths, &source_context)
-                .expect("ported transcript source prepares");
+                .expect("schedule source prepares");
         assert!(
             source_prepared.config["transcript"]
                 .as_str()

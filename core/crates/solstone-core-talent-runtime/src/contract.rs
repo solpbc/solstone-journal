@@ -14,6 +14,9 @@ pub enum StageId {
     Pulse,
     MorningBriefing,
     EntityDescribe,
+    Participation,
+    Schedule,
+    DailySchedule,
 }
 
 #[derive(Clone, Copy)]
@@ -47,6 +50,7 @@ pub enum PrePostState {
     Pulse(Box<crate::pulse::PulsePreState>),
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntityDescribe(crate::entities::describe::EntityDescribePreState),
+    DailySchedule(crate::daily_schedule::DailySchedulePreState),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,7 +89,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 7] = [
+pub const HOOK_TABLE: [HookBinding; 10] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -113,6 +117,18 @@ pub const HOOK_TABLE: [HookBinding; 7] = [
     HookBinding {
         hook: "entities:entity_describe",
         stage: StageId::EntityDescribe,
+    },
+    HookBinding {
+        hook: "participation",
+        stage: StageId::Participation,
+    },
+    HookBinding {
+        hook: "schedule",
+        stage: StageId::Schedule,
+    },
+    HookBinding {
+        hook: "daily_schedule",
+        stage: StageId::DailySchedule,
     },
 ];
 
@@ -188,6 +204,42 @@ pub static ENTITY_DESCRIBE: StageSpec = StageSpec {
     writes_as_intent: None,
     output_override: None,
 };
+pub static PARTICIPATION: StageSpec = StageSpec {
+    stage: StageId::Participation,
+    gate: None,
+    build: None,
+    prompt_override: None,
+    commit: Some(CommitSpec {
+        parse: crate::participation::parse,
+        commit: crate::participation::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
+pub static SCHEDULE: StageSpec = StageSpec {
+    stage: StageId::Schedule,
+    gate: None,
+    build: None,
+    prompt_override: None,
+    commit: Some(CommitSpec {
+        parse: crate::schedule::parse,
+        commit: crate::schedule::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
+pub static DAILY_SCHEDULE: StageSpec = StageSpec {
+    stage: StageId::DailySchedule,
+    gate: None,
+    build: Some(crate::daily_schedule::build),
+    prompt_override: Some(crate::daily_schedule::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::daily_schedule::parse,
+        commit: crate::daily_schedule::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
 
 pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
     let binding = HOOK_TABLE.iter().find(|binding| binding.hook == hook)?;
@@ -199,6 +251,9 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::Pulse => &PULSE,
         StageId::MorningBriefing => &MORNING_BRIEFING,
         StageId::EntityDescribe => &ENTITY_DESCRIBE,
+        StageId::Participation => &PARTICIPATION,
+        StageId::Schedule => &SCHEDULE,
+        StageId::DailySchedule => &DAILY_SCHEDULE,
     })
 }
 

@@ -142,6 +142,31 @@ where
     Ok(mutation.value)
 }
 
+/// Set reserved schedule metadata in one locked read-modify-write transaction.
+///
+/// This preserves `solstone/think/schedule_config.py:38-50`: supplied keys
+/// replace raw metadata values and always mark the transaction changed.
+pub fn set_schedule_metadata(
+    path: &Path,
+    updates: &Map<String, Value>,
+) -> Result<(), ScheduleError> {
+    let unknown = updates
+        .keys()
+        .filter(|key| !RESERVED_METADATA_KEYS.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        return Err(ScheduleError::UnknownMetadataKeys { keys: unknown });
+    }
+    mutate_schedule_entries(path, |raw| {
+        raw.extend(updates.clone());
+        ScheduleMutation {
+            changed: true,
+            value: (),
+        }
+    })
+}
+
 fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
     let raw = read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise).map_err(
         |error| match error {
@@ -164,6 +189,27 @@ fn write_raw(path: &Path, raw: Map<String, Value>) -> Result<(), ScheduleError> 
         .map_err(|error| ScheduleError::Io(error.to_string()))?;
     bytes.push(b'\n');
     atomic_replace(path, &bytes, AtomicWriteOptions::default()).map_err(io_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_metadata_updates_only_reserved_values_through_the_locked_door() {
+        // Derived from solstone/think/schedule_config.py:38-50; Python is not runnable here.
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("schedules.json");
+        std::fs::write(&path, r#"{"job":{"enabled":true},"daily_time":"08:00"}"#).unwrap();
+        set_schedule_metadata(
+            &path,
+            &Map::from_iter([("daily_time".to_owned(), Value::String("09:30".to_owned()))]),
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(value["daily_time"], "09:30");
+        assert_eq!(value["job"]["enabled"], true);
+    }
 }
 
 fn validate(raw: Map<String, Value>) -> ConfigLoad {

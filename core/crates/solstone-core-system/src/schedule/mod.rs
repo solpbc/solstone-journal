@@ -21,6 +21,7 @@ pub use caps::baseline_cap_contributions;
 pub use config::{
     ConfigDiagnostic, ScheduleConfig, ScheduleEntry, ScheduleMutation,
     add_missing_schedule_entries, mutate_schedule_entries, remove_schedule_entry,
+    set_schedule_metadata,
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};
@@ -47,4 +48,6 @@ pub enum ScheduleError {
     MalformedConfig { path: PathBuf },
     #[error("schedule state at {path} must be a JSON object")]
     StateShape { path: PathBuf },
+    #[error("unknown schedule metadata keys: {keys:?}")]
+    UnknownMetadataKeys { keys: Vec<String> },
 }

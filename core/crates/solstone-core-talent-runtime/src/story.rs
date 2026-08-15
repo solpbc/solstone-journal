@@ -111,24 +111,7 @@ pub fn apply_story(
     record_id: &str,
     value: &Value,
 ) -> Result<(), String> {
-    let entities = solstone_core_facets::read_detected_entities(root, facet, day)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter_map(|value| value.as_object().cloned())
-        .map(|item| solstone_core_entity::EntityResolutionEntity {
-            id: item.get("id").and_then(Value::as_str).map(str::to_owned),
-            name: item
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            aka: string_values(&item, "aka"),
-            emails: string_values(&item, "emails"),
-            blocked: item
-                .get("blocked")
-                .is_some_and(solstone_core_facets::activity_value_truthy),
-        })
-        .collect::<Vec<_>>();
+    let entities = crate::detected_resolution_entities(root, facet, day)?;
     let resolve = |name: &str, field: &str| -> Result<Value, String> {
         let result = solstone_core_entity::record_entity_resolution(root, name, &entities, json!({"kind":"facet","facet":facet}), json!({"lane":"talent.story","facet":facet,"day":day,"record_id":record_id,"field":field}), 90.0, false).map_err(|error| error.to_string())?;
         Ok(
@@ -255,17 +238,6 @@ fn required<'a>(prepared: &'a PreparedTalent, field: &str) -> Result<&'a str, St
 }
 fn error(prepared: &PreparedTalent, detail: &str) -> StageError {
     stage_error("post-parse", "story", prepared, detail)
-}
-
-fn string_values(record: &Map<String, Value>, key: &str) -> Vec<String> {
-    record
-        .get(key)
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect()
 }
 
 #[cfg(test)]

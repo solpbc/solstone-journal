@@ -4325,6 +4325,7 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
