@@ -331,4 +331,16 @@ fn thinking_runs_list_styles_do_not_force_horizontal_scrolling() {
         "run list must not force horizontal scrolling"
     );
     assert!(workspace.contains(".thinking-workspace .thinking-runs-cards {"));
+    let card_start = workspace
+        .find(".thinking-workspace .thinking-runs-card {")
+        .expect("mobile run-card style starts");
+    let card_end = workspace[card_start..]
+        .find("    }")
+        .expect("mobile run-card style ends")
+        + card_start;
+    let card = &workspace[card_start..card_end];
+    assert!(
+        card.contains("display: grid") && card.contains("gap: 8px"),
+        "mobile run facts remain visually separated"
+    );
 }
