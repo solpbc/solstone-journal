@@ -347,9 +347,23 @@ fn parse_days(value: Option<&Value>) -> Option<ParsedDays> {
                     .map(|days| ParsedDays::Integer(i64::try_from(days).unwrap_or(i64::MAX)))
             })
             .or_else(|| number.as_f64().and_then(parse_float_days)),
-        Value::String(value) => value.trim().parse::<i64>().ok().map(ParsedDays::Integer),
+        Value::String(value) => parse_integer_string(value).map(ParsedDays::Integer),
         Value::Null | Value::Array(_) | Value::Object(_) => None,
     }
+}
+
+fn parse_integer_string(value: &str) -> Option<i64> {
+    let value = value.trim();
+    if let Ok(days) = value.parse::<i64>() {
+        return Some(days);
+    }
+    let (negative, digits) = if let Some(digits) = value.strip_prefix('-') {
+        (true, digits)
+    } else {
+        (false, value.strip_prefix('+').unwrap_or(value))
+    };
+    (!digits.is_empty() && digits.bytes().all(|digit| digit.is_ascii_digit()))
+        .then_some(if negative { i64::MIN } else { i64::MAX })
 }
 
 fn parse_float_days(days: f64) -> Option<ParsedDays> {
@@ -412,6 +426,7 @@ mod tests {
             (json!([]), None, 0),
             (json!({}), None, 0),
             (json!(u64::MAX), Some(u32::MAX), u32::MAX),
+            (json!("999999999999999999999"), Some(u32::MAX), u32::MAX),
         ] {
             let policy = policy_from_retention(&retention(json!({
                 "raw_media": "days",

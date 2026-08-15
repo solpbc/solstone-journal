@@ -729,6 +729,67 @@ fn remove_marked_reproves_then_releases_the_named_policy_mark() {
 }
 
 #[test]
+fn remove_marked_refuses_unknown_flags_without_releasing() {
+    let bed = Bed::new("remove-marked-unknown-flag");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let policy = armed_policy();
+    let marked = bed.run(
+        "mark",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    let id = receipt(&marked)["marks"]["marks"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let output = bed.run(
+        "remove-marked",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+            "--mark",
+            &id,
+            "--typo",
+            "value",
+        ],
+    );
+    let body = receipt(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(keys(&body), BTreeSet::from(["error", "ok", "verb"]));
+    assert_eq!(body["verb"], "remove-marked");
+    assert!(segment.join("audio.flac").exists());
+    assert!(
+        load(bed.journal())
+            .unwrap()
+            .marks
+            .contains_key(&MarkId::parse(&id).unwrap())
+    );
+}
+
+#[test]
 fn remove_marked_stops_at_a_locked_later_mark_without_losing_completed_rows() {
     let bed = Bed::new("remove-marked-halt-later");
     let first = Target {

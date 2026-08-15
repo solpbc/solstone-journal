@@ -1045,6 +1045,15 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         Ok(value) => PathBuf::from(value),
         Err(error) => return verb_fail("remove-marked", &error),
     };
+    if let Some((flag, _)) = args.values.iter().find(|(flag, _)| {
+        flag != "--journal"
+            && flag != "--today"
+            && flag != "--now"
+            && flag != "--policy"
+            && flag != "--mark"
+    }) {
+        return verb_fail("remove-marked", &format!("unknown flag `{flag}`"));
+    }
     let today = match parse_today(args) {
         Ok(value) => value,
         Err(error) => return verb_fail("remove-marked", &error),

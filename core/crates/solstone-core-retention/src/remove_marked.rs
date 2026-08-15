@@ -14,7 +14,8 @@ use crate::content::{ClosedHandlerSet, JournalMedia};
 use crate::door::release_raw;
 use crate::eligibility::{RawRelease, resolve};
 use crate::marks::{
-    Failure, Mark, MarkId, PreflightMarks, record_failure, resolve as resolve_mark,
+    Failure, Mark, MarkId, PreflightMarks, load as load_marks, record_failure,
+    resolve as resolve_mark,
 };
 use crate::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 use crate::scan::scan_segment;
@@ -28,6 +29,8 @@ const ANCHOR_MISSING: &str =
 const NOT_ON_REMOVAL_LIST: &str =
     "this file was proven releasable but is not on the removal list, so it is left in place";
 const NO_LONGER_PRESENT: &str = "this file was on the removal list but is no longer present";
+const NO_LONGER_ON_REMOVAL_LIST: &str =
+    "this entry is no longer on the removal list, so nothing was removed";
 
 struct RemovalContext<'a> {
     policy: &'a Policy,
@@ -92,6 +95,13 @@ fn remove_one(
     let (row, complete, staged) = {
         let _segment_lock =
             hold_lock(journal.join(&live), LockOptions::default()).map_err(|_| ())?;
+        let register = match load_marks(journal) {
+            Ok(register) => register,
+            Err(error) => return Ok(refused(mark, &error.to_string())),
+        };
+        if register.marks.get(id) != Some(mark) {
+            return Ok(refused(mark, NO_LONGER_ON_REMOVAL_LIST));
+        }
         let found = scan_segment(&journal.join(&live), &ClosedHandlerSet, &JournalMedia);
         let records = found
             .iter()
@@ -234,5 +244,86 @@ fn refused(mark: &Mark, reason: &str) -> TargetOutcome {
             reason: reason.to_owned(),
             staged: None,
         }],
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test setup and assertions use concise infallible helpers"
+)]
+mod tests {
+    use std::fs;
+
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::marks::{Proposal, RemovalClass, decline, preflight, reconcile};
+
+    #[test]
+    fn a_mark_declined_after_preflight_is_not_unlinked() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = crate::Target {
+            day: "20260701".to_owned(),
+            stream: "field.audio".to_owned(),
+            dir: "070000_17".to_owned(),
+        };
+        let segment = journal.path().join(crate::layout::segment_rel(
+            &target.day,
+            &target.stream,
+            &target.dir,
+        ));
+        fs::create_dir_all(&segment).unwrap();
+        let raw = segment.join("audio.flac");
+        fs::write(&raw, b"the owner's originals").unwrap();
+        let proposal = Proposal {
+            bytes: 1,
+            reason: "test approval".to_owned(),
+            names: vec!["audio.flac".to_owned()],
+        };
+        let register = reconcile(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &[(target.clone(), proposal.clone())],
+            "first",
+        )
+        .unwrap();
+        let id = register.marks.keys().next().unwrap().clone();
+        let marks = preflight(journal.path(), std::slice::from_ref(&id)).unwrap();
+        decline(journal.path(), &id).unwrap();
+        let policy = Policy {
+            default_rule: crate::Rule {
+                anchor: crate::Anchor::Captured,
+                period: Some(crate::Days(1)),
+                priority: 0,
+            },
+            enabled: true,
+            ..Policy::default()
+        };
+        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let mut register_errors = Vec::new();
+        let outcome = remove_marked(
+            journal.path(),
+            &marks,
+            &policy,
+            today,
+            now,
+            "2026-08-06T00:00:00Z",
+            &mut register_errors,
+        );
+
+        assert!(raw.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed, Vec::new());
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].not_removed[0].reason,
+            NO_LONGER_ON_REMOVAL_LIST
+        );
     }
 }

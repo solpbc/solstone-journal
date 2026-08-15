@@ -21,7 +21,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub use solstone_core_retention::Target;
 pub use solstone_core_retention::layout::stream_rel;
@@ -67,7 +67,7 @@ const PER_TARGET_BYTES: usize = FIXED_TARGET_OUTCOME_BYTES
             .saturating_mul(REMOVED_PATH_SEPARATOR_BYTES),
     );
 
-/// A parsed refusal receipt or a client-side request refusal.
+/// A parsed refusal receipt returned by the executor.
 #[derive(Clone, Debug)]
 pub struct Refused {
     receipt: Value,
@@ -80,14 +80,7 @@ impl Refused {
         Self { receipt, summary }
     }
 
-    fn local(summary: String) -> Self {
-        Self {
-            receipt: json!({ "ok": false, "error": summary }),
-            summary,
-        }
-    }
-
-    /// The refusal receipt, including a local refusal's object-shaped detail.
+    /// The refusal receipt.
     pub fn receipt_value(&self) -> &Value {
         &self.receipt
     }
@@ -99,22 +92,29 @@ impl Refused {
 }
 
 /// What prevented a client invocation from returning a successful receipt.
+///
+/// [`Self::BinaryUnavailable`] and [`Self::RequestTooLarge`] mean nothing ran.
+/// [`Self::OutcomeUnknown`] means the executor may have run without a
+/// trustworthy outcome. [`Self::Refused`] means it ran and returned a readable
+/// refusal receipt.
 #[derive(Debug)]
 pub enum ClientError {
     /// The executor could not be resolved, so it did not run.
     BinaryUnavailable(String),
+    /// The request exceeded the local cap, so the executor did not run.
+    RequestTooLarge(String),
     /// The executor may have run, but no trustworthy outcome is available.
     OutcomeUnknown(String),
-    /// The executor returned a refusal receipt, or the client refused its input.
+    /// The executor ran and returned a refusal receipt.
     Refused(Refused),
 }
 
 impl fmt::Display for ClientError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BinaryUnavailable(reason) | Self::OutcomeUnknown(reason) => {
-                formatter.write_str(reason)
-            }
+            Self::BinaryUnavailable(reason)
+            | Self::RequestTooLarge(reason)
+            | Self::OutcomeUnknown(reason) => formatter.write_str(reason),
             Self::Refused(refused) => formatter.write_str(refused.summary()),
         }
     }
@@ -140,9 +140,9 @@ pub fn remove_marked(
     mark_ids: &[String],
 ) -> Result<Value, ClientError> {
     if mark_ids.len() > MAX_REMOVE_MARK_IDS {
-        return Err(ClientError::Refused(Refused::local(format!(
+        return Err(ClientError::RequestTooLarge(format!(
             "at most {MAX_REMOVE_MARK_IDS} mark IDs may be removed at once"
-        ))));
+        )));
     }
     let mut args = vec![
         "remove-marked".to_owned(),
@@ -460,6 +460,7 @@ mod tests {
         fn nothing_ran(error: ClientError) -> bool {
             match error {
                 ClientError::BinaryUnavailable(_) => true,
+                ClientError::RequestTooLarge(_) => true,
                 ClientError::OutcomeUnknown(_) => false,
                 ClientError::Refused(_) => false,
             }
@@ -468,11 +469,14 @@ mod tests {
         assert!(nothing_ran(ClientError::BinaryUnavailable(
             "missing".to_owned()
         )));
+        assert!(nothing_ran(ClientError::RequestTooLarge(
+            "too many marks".to_owned()
+        )));
         assert!(!nothing_ran(ClientError::OutcomeUnknown(
             "unknown".to_owned()
         )));
-        assert!(!nothing_ran(ClientError::Refused(Refused::local(
-            "refused".to_owned()
+        assert!(!nothing_ran(ClientError::Refused(Refused::receipt(
+            serde_json::json!({ "ok": false, "error": "refused" }),
         ))));
     }
 
@@ -498,7 +502,7 @@ mod tests {
             &ids,
         )
         .unwrap_err();
-        assert!(matches!(error, ClientError::Refused(_)));
+        assert!(matches!(error, ClientError::RequestTooLarge(_)));
     }
 
     #[test]
