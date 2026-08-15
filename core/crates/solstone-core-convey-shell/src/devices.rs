@@ -183,9 +183,18 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
     let freshness = freshness(record.last_seen(), record.revoked(), now_ms);
     let enabled = record.enabled().unwrap_or(true);
     let failing = record.ingest_rejection().is_some() && !record.revoked() && enabled;
+    let display_name = registration_display_name(record);
+    let source_label = display_name.and_then(|_| registration_source_label(record));
+    let presented_name = display_name.map_or_else(
+        || record.name().unwrap_or_default().to_owned(),
+        |display_name| match source_label {
+            Some(source_label) => format!("{display_name} · {source_label}"),
+            None => display_name.to_owned(),
+        },
+    );
     let mut value = Map::from_iter([
         ("prefix".to_owned(), json!(record.prefix())),
-        ("name".to_owned(), json!(record.name().unwrap_or_default())),
+        ("name".to_owned(), json!(presented_name)),
         (
             "created_at".to_owned(),
             json!(record.created_at().unwrap_or(0)),
@@ -225,6 +234,12 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
         ("failing".to_owned(), json!(failing)),
     ]);
     debug_assert_eq!(value.len(), OBSERVER_ENTRY_FIELDS.len());
+    if let Some(display_name) = display_name {
+        value.insert("display_name".to_owned(), json!(display_name));
+    }
+    if let Some(source_label) = source_label {
+        value.insert("source_label".to_owned(), json!(source_label));
+    }
     if let Some(rejection) = failing.then(|| record.ingest_rejection()).flatten() {
         value.insert(
             "ingest_rejection".to_owned(),
@@ -240,6 +255,26 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
         );
     }
     Value::Object(value)
+}
+
+fn registration_display_name(record: &ObserverRecord) -> Option<&str> {
+    let label = record.value().get("label")?.as_str()?.trim();
+    if label.is_empty()
+        || label.eq_ignore_ascii_case("watch")
+        || label.eq_ignore_ascii_case("omi pendant")
+    {
+        return None;
+    }
+    Some(label)
+}
+
+fn registration_source_label(record: &ObserverRecord) -> Option<&'static str> {
+    match record.value().get("stream_type")?.as_str()? {
+        "mobile" => Some("mobile"),
+        "omi" => Some("Omi"),
+        "watch" => Some("Watch"),
+        _ => None,
+    }
 }
 
 fn observer_sort_key(value: &Value) -> (u8, bool, Reverse<i64>, String) {
@@ -628,6 +663,64 @@ mod tests {
             ["aaaa0000", "dddd0000", "bbbb0000", "cccc0000", "eeee0000"],
             "the two revoked rows stay on opposite sides of the offline row"
         );
+    }
+
+    #[test]
+    fn registration_labels_project_readable_distinct_sources_without_mutating_records() {
+        let rows = [
+            ("mobile", "mobile", "Jeremie’s iPhone · mobile"),
+            ("omi", "Omi", "Jeremie’s iPhone · Omi"),
+            ("watch", "Watch", "Jeremie’s iPhone · Watch"),
+        ]
+        .map(|(stream_type, source_label, name)| {
+            let record = ObserverRecord::from_value(json!({
+                "key": format!("{stream_type}0-key"),
+                "name": format!("iphone-{stream_type}-technical"),
+                "label": "  Jeremie’s iPhone  ",
+                "stream_type": stream_type,
+                "enabled": true,
+            }))
+            .expect("record");
+            let stored = record.value().clone();
+            let row = observer_json(&record, 2_000_000);
+            assert_eq!(
+                record.value(),
+                &stored,
+                "projection must not mutate storage"
+            );
+            assert_eq!(row["display_name"], "Jeremie’s iPhone");
+            assert_eq!(row["source_label"], source_label);
+            assert_eq!(row["name"], name);
+            row
+        });
+
+        assert_eq!(rows[0]["prefix"], "mobile0-");
+        assert_eq!(rows[1]["prefix"], "omi0-key");
+        assert_eq!(rows[2]["prefix"], "watch0-k");
+    }
+
+    #[test]
+    fn legacy_registration_labels_preserve_technical_names() {
+        for label in [
+            Value::Null,
+            json!(""),
+            json!("  "),
+            json!("watch"),
+            json!("omi pendant"),
+        ] {
+            let record = ObserverRecord::from_value(json!({
+                "key": "abcdefgh-key",
+                "name": "iphone-technical-id",
+                "label": label,
+                "stream_type": "watch",
+                "enabled": true,
+            }))
+            .expect("record");
+            let row = observer_json(&record, 2_000_000);
+            assert_eq!(row["name"], "iphone-technical-id");
+            assert!(row.get("display_name").is_none());
+            assert!(row.get("source_label").is_none());
+        }
     }
 
     #[tokio::test]
