@@ -253,7 +253,7 @@ async fn ac2_talents_day_oracle_empty_and_populated() {
 }
 
 #[tokio::test]
-async fn ac3_run_detail_completed_pending_and_malformed_oracle() {
+async fn ac4_run_detail_completed_pending_and_malformed_oracle() {
     let fixture = Fixture::new();
     seed_populated(&fixture, 3);
     let app = router(fixture.0.clone());
@@ -289,6 +289,59 @@ async fn ac3_run_detail_completed_pending_and_malformed_oracle() {
         missing,
         corpus_body("established_empty", "api_run_completed")
     );
+
+    let pricing = Fixture::new();
+    pricing.established();
+    write_jsonl(
+        &pricing.0.join("talents/pricing/null-usage.jsonl"),
+        &[
+            request_event("null-usage", "20260403", "pricing", None),
+            json!({"event":"start", "model":"gpt-5.5"}),
+            json!({"event":"finish", "usage":null}),
+        ],
+    );
+    write_jsonl(
+        &pricing.0.join("talents/pricing/empty-usage.jsonl"),
+        &[
+            request_event("empty-usage", "20260403", "pricing", None),
+            json!({"event":"start", "model":"gpt-5.5"}),
+            json!({"event":"finish", "usage":{}}),
+        ],
+    );
+    write_jsonl(
+        &pricing.0.join("talents/pricing/non-object-usage.jsonl"),
+        &[
+            request_event("non-object-usage", "20260403", "pricing", None),
+            json!({"event":"start", "model":"gpt-5.5"}),
+            json!({"event":"finish", "usage":[]}),
+        ],
+    );
+    write_jsonl(
+        &pricing
+            .0
+            .join("talents/pricing/version-without-model.jsonl"),
+        &[
+            request_event("version-without-model", "20260403", "pricing", None),
+            json!({"event":"start", "provider":"openai"}),
+            json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1,"model_version":"gpt-5"}}),
+        ],
+    );
+    let app = router(pricing.0.clone());
+    for use_id in [
+        "null-usage",
+        "empty-usage",
+        "non-object-usage",
+        "version-without-model",
+    ] {
+        let (status, body) = get(
+            app.clone(),
+            &format!("/app/thinking/api/run/{use_id}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{use_id}: {body}");
+        assert_eq!(body["cost"], Value::Null, "{use_id}: {body}");
+    }
 }
 
 #[tokio::test]
@@ -350,9 +403,17 @@ async fn ac3_facet_query_cookie_and_empty_precedence() {
 }
 
 #[tokio::test]
-async fn ac4_output_oracle_and_invalid_path() {
+async fn ac5_output_oracle_and_containment() {
     let fixture = Fixture::new();
     seed_populated(&fixture, 3);
+    let facets_output = fixture.0.join("facets/work/activities/facet-output.json");
+    fs::create_dir_all(facets_output.parent().expect("facet parent")).expect("facet parent");
+    fs::write(&facets_output, "{\"facet\":true}\n").expect("facet output");
+    fs::write(
+        fixture.0.join("chronicle/20260403/talents/case.JSON"),
+        "{\"case\":true}\n",
+    )
+    .expect("upper JSON output");
     let app = router(fixture.0.clone());
     let (status, body) = get(
         app.clone(),
@@ -363,7 +424,29 @@ async fn ac4_output_oracle_and_invalid_path() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, corpus_body("established_populated", "api_output"));
     let (status, body) = get(
-        app,
+        app.clone(),
+        "/app/thinking/api/output/20260403/facets/work/activities/facet-output.json",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({"content":"{\"facet\":true}\n", "format":"json", "filename":"facet-output.json"})
+    );
+    let (status, body) = get(
+        app.clone(),
+        "/app/thinking/api/output/20260403/talents/case.JSON",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({"content":"{\"case\":true}\n", "format":"json", "filename":"case.JSON"})
+    );
+    let (status, body) = get(
+        app.clone(),
         "/app/thinking/api/output/20260403/../../etc/passwd",
         None,
     )
@@ -403,6 +486,14 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
     fs::write(&outside, "secret").expect("outside writes");
     let link = fixture.0.join("chronicle/20260403/talents/link.md");
     fs::create_dir_all(link.parent().expect("parent")).expect("link parent");
+    let cross_day_target = fixture.0.join("chronicle/20260402/talents/across.md");
+    fs::create_dir_all(cross_day_target.parent().expect("cross-day parent"))
+        .expect("cross-day parent");
+    fs::write(&cross_day_target, "# Cross-day output\n").expect("cross-day output");
+    let cross_day_link = fixture
+        .0
+        .join("chronicle/20260403/talents/cross-day-link.md");
+    symlink(&cross_day_target, &cross_day_link).expect("cross-day symlink");
     symlink(&outside, &link).expect("symlink");
     write_jsonl(
         &fixture.0.join("talents/daily/link-run.jsonl"),
@@ -412,6 +503,17 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
         ],
     );
     let app = router(fixture.0.clone());
+    let (status, cross_day) = get(
+        app.clone(),
+        "/app/thinking/api/output/20260403/talents/cross-day-link.md",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        cross_day,
+        json!({"content":"# Cross-day output\n", "format":"md", "filename":"across.md"})
+    );
     let (status, run) = get(app.clone(), "/app/thinking/api/run/link-run", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(run["output_file"], "talents/link.md");
@@ -476,6 +578,20 @@ async fn ac6_preview_wildcard_and_composed_chat() {
             .expect("prompt")
             .contains("$active_talents")
     );
+
+    let populated = Fixture::new();
+    seed_populated(&populated, 3);
+    let (status, preview) = get(
+        router(populated.0.clone()),
+        "/app/thinking/api/preview/chat",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        preview,
+        corpus_body("established_populated", "api_preview_chat")
+    );
 }
 
 #[tokio::test]
@@ -508,6 +624,17 @@ async fn ac7_stats_directory_skip_and_shape_only_dates() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(stats, corpus_body("established_empty", "api_stats"));
+
+    let populated = Fixture::new();
+    seed_populated(&populated, 3);
+    let (status, stats) = get(
+        router(populated.0.clone()),
+        "/app/thinking/api/stats/202604",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stats, corpus_body("established_populated", "api_stats"));
 }
 
 #[tokio::test]
@@ -532,7 +659,7 @@ async fn ac7_index_empty_and_populated_totals() {
         &fixture.0.join("talents/20260404.jsonl"),
         &[
             json!({"use_id":"none-one", "status":"completed"}),
-            json!({"use_id":"none-two", "status":"completed"}),
+            json!({"use_id":"none-two", "status":"completed", "facet":""}),
         ],
     );
     let (_, stats) = get(app.clone(), "/app/thinking/api/stats/202604", None).await;
@@ -572,6 +699,26 @@ async fn ac8_badge_counts_only_failed_and_updated_days_excludes_today() {
     let (status, updated) = get(app, "/app/thinking/api/updated-days", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated, json!(["20260403"]));
+
+    let populated = Fixture::new();
+    seed_populated(&populated, 3);
+    let populated_capture = today();
+    marker(&populated.0, "20260214", 10, 20);
+    marker(&populated.0, "20260315", 10, 20);
+    marker(&populated.0, &populated_capture, 10, 20);
+    let app = router(populated.0.clone());
+    let (status, badge) = get(app.clone(), "/app/thinking/api/badge-count", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        badge,
+        corpus_body("established_populated", "api_badge_count")
+    );
+    let (status, updated) = get(app, "/app/thinking/api/updated-days", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        updated,
+        corpus_body("established_populated", "api_updated_days")
+    );
 
     let empty = Fixture::new();
     empty.established();
@@ -634,6 +781,20 @@ async fn ac9_identity_read_leaves_config_bytes_inode_and_mtime_unchanged() {
     assert_eq!(after.ino(), metadata.ino());
     assert_eq!(after.mtime(), metadata.mtime());
     assert_eq!(after.mtime_nsec(), metadata.mtime_nsec());
+
+    let populated = Fixture::new();
+    seed_populated(&populated, 3);
+    let (status, identity) = get(
+        router(populated.0.clone()),
+        "/app/thinking/api/identity",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        identity,
+        corpus_body("established_populated", "api_identity")
+    );
 }
 
 #[tokio::test]

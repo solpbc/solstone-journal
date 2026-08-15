@@ -138,7 +138,7 @@ pub(crate) async fn api_agent_run(
             StatusCode::ACCEPTED,
         );
     }
-    match read_run(&path, &journal.0, &use_id, true) {
+    match read_run(&path, &journal.0, &use_id) {
         Ok(run) => Json(run).into_response(),
         Err(RunError::Malformed) => error(
             "talent_run_malformed",
@@ -194,7 +194,7 @@ pub(crate) async fn api_output_file(
     let format = if resolved
         .extension()
         .and_then(|extension| extension.to_str())
-        == Some("json")
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
     {
         "json"
     } else {
@@ -255,7 +255,10 @@ pub(crate) async fn api_preview_prompt(
     }
     Json(json!({
         "name": name,
-        "title": non_empty(string_value(&composed, "title"), &config.key),
+        "title": composed
+            .get("title")
+            .cloned()
+            .unwrap_or_else(|| Value::String(config.key.clone())),
         "full_prompt": sections.join("\n\n"),
         "multi_facet": composed.get("multi_facet").and_then(Value::as_bool).unwrap_or(false),
     }))
@@ -327,10 +330,19 @@ fn talent_metadata(configs: Vec<TalentConfig>) -> BTreeMap<String, Value> {
             let metadata = config.metadata;
             let key = config.key;
             let value = json!({
-                "title": non_empty(string_value(&metadata, "title"), &key),
+                "title": metadata
+                    .get("title")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String(key.clone())),
                 "description": metadata.get("description").cloned().unwrap_or(Value::Null),
-                "color": non_empty(string_value(&metadata, "color"), "#6c757d"),
-                "source": non_empty(string_value(&metadata, "source"), "system"),
+                "color": metadata
+                    .get("color")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("#6c757d".to_owned())),
+                "source": metadata
+                    .get("source")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("system".to_owned())),
                 "app": metadata.get("app").cloned().unwrap_or(Value::Null),
                 "schedule": metadata.get("schedule").cloned().unwrap_or(Value::Null),
                 "type": metadata.get("type").cloned().unwrap_or(Value::Null),
@@ -528,6 +540,7 @@ fn talent_use_counts(
             let facet = entry
                 .get("facet")
                 .and_then(Value::as_str)
+                .filter(|facet| !facet.is_empty())
                 .unwrap_or("_none");
             *result
                 .entry(day.clone())
@@ -561,12 +574,7 @@ enum RunError {
     Operation(String),
 }
 
-fn read_run(
-    path: &Path,
-    journal: &Path,
-    use_id: &str,
-    collect_events: bool,
-) -> Result<Value, RunError> {
+fn read_run(path: &Path, journal: &Path, use_id: &str) -> Result<Value, RunError> {
     let text = fs::read_to_string(path).map_err(|error| RunError::Operation(error.to_string()))?;
     let mut lines = text.lines();
     let Some(first) = lines.next().map(str::trim).filter(|line| !line.is_empty()) else {
@@ -587,31 +595,7 @@ fn read_run(
         .filter(|_| start != 0)
         .map(|end| (end - start) as f64 / 1000.0);
     let end_state = parsed.end_state.as_deref().unwrap_or("unknown");
-    let usage = parsed.usage.as_ref();
-    let cost = usage.and_then(|usage| {
-        agent_cost(
-            parsed.model.as_str(),
-            Some(PricingUsage {
-                input_tokens: usage
-                    .get("input_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default(),
-                output_tokens: usage
-                    .get("output_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default(),
-                reasoning_tokens: usage
-                    .get("reasoning_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default(),
-                cached_tokens: usage
-                    .get("cached_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or_default(),
-                model_version: usage.get("model_version").and_then(Value::as_str),
-            }),
-        )
-    });
+    let cost = run_cost(&parsed.model, parsed.usage.as_ref());
     Ok(json!({
         "id": use_id,
         "name": request.get("name").cloned().unwrap_or(Value::Null),
@@ -629,9 +613,38 @@ fn read_run(
         "error_message": parsed.error_message,
         "reason_code": parsed.reason_code,
         "output_file": output_file,
-        "events": if collect_events { Value::Array(parsed.events) } else { Value::Null },
+        "events": parsed.events,
         "day": request.get("day").cloned().unwrap_or_else(|| json!("")),
     }))
+}
+
+fn run_cost(model: &Value, usage: Option<&Value>) -> Option<f64> {
+    // Match calc_agent_cost: reject missing model and falsey/non-mapping usage
+    // before model_version can replace the start-event model.
+    let model = model.as_str().filter(|model| !model.is_empty())?;
+    let usage = usage?.as_object().filter(|usage| !usage.is_empty())?;
+    agent_cost(
+        Some(model),
+        Some(PricingUsage {
+            input_tokens: usage
+                .get("input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            output_tokens: usage
+                .get("output_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            reasoning_tokens: usage
+                .get("reasoning_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            cached_tokens: usage
+                .get("cached_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or_default(),
+            model_version: usage.get("model_version").and_then(Value::as_str),
+        }),
+    )
 }
 
 struct ParsedEvents {
@@ -761,9 +774,6 @@ fn month_key(value: &str) -> bool {
 fn string_value<'a>(map: &'a Map<String, Value>, key: &str) -> &'a str {
     map.get(key).and_then(Value::as_str).unwrap_or_default()
 }
-fn non_empty<'a>(value: &'a str, fallback: &'a str) -> &'a str {
-    if value.is_empty() { fallback } else { value }
-}
 fn truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
@@ -787,6 +797,8 @@ fn talent_failure(detail: impl Into<String>) -> Response {
     )
 }
 fn invalid_path() -> Response {
+    // Sol deliberately treats a rejected output path as a containment refusal
+    // (403), overriding INVALID_PATH's generic 400 status from reasons.py.
     error(
         "invalid_path",
         "I couldn't use that path.",
@@ -847,7 +859,7 @@ mod tests {
         .expect("config");
         fs::write(
             root.join("talent/demo.md"),
-            "{\n\"type\": \"generate\",\n\"title\": \"Demo\",\n\"output\": \"json\",\n\"system_instruction\": \"SYSTEM\",\n\"extra_context\": \"CONTEXT\"\n}\nINSTRUCTIONS\n",
+            "{\n\"type\": \"generate\",\n\"title\": \"\",\n\"output\": \"json\",\n\"system_instruction\": \"SYSTEM\",\n\"extra_context\": \"CONTEXT\"\n}\nINSTRUCTIONS\n",
         )
         .expect("talent");
         let config = root.join("config/journal.json");
@@ -881,6 +893,7 @@ mod tests {
         )
         .expect("json");
         assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["title"], "");
         assert_eq!(
             body["full_prompt"],
             "## System Instruction\n\nSYSTEM\n\n## Context\n\nCONTEXT\n\n## Instructions\n\nINSTRUCTIONS"
@@ -894,5 +907,26 @@ mod tests {
             before_mtime
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn talent_metadata_preserves_explicit_empty_values() {
+        let config = TalentConfig {
+            key: "empty".to_owned(),
+            file: "talent/empty.md".to_owned(),
+            metadata: Map::from_iter([
+                ("title".to_owned(), json!("")),
+                ("description".to_owned(), json!("")),
+                ("color".to_owned(), json!("")),
+                ("source".to_owned(), json!("")),
+            ]),
+            body: String::new(),
+        };
+        let metadata = talent_metadata(vec![config]);
+        let empty = &metadata["empty"];
+        assert_eq!(empty["title"], "");
+        assert_eq!(empty["description"], "");
+        assert_eq!(empty["color"], "");
+        assert_eq!(empty["source"], "");
     }
 }
