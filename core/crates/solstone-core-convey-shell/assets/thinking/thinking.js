@@ -35,6 +35,7 @@
     runsFacetExplicit: false,
     runsDetail: null,
     runsModalFocus: null,
+    runsPromptEscapeHandler: null,
   };
   let copy = {};
   const confidentialTerminalPhases = new Set(['not_verified', 'repair_needed', 'early_access']);
@@ -1392,7 +1393,7 @@
     if (!host) return;
     host.replaceChildren();
     $('thinkingRunsDetail').hidden = !route.useId;
-    $('thinkingRunsNoOutput').hidden = true;
+    if (!route.useId) $('thinkingRunsNoOutput').hidden = true;
     renderThinkingRunsSummary(runs);
     if (!runs.length) {
       const heading = document.createElement('p');
@@ -1542,6 +1543,14 @@
     activateThinkingRunDetailTab('thinkingRunsLogTab', 'history');
   }
 
+  function clearThinkingRunRenderState() {
+    state.runsDetail = null;
+    $('thinkingRunsDetailFacts')?.replaceChildren();
+    $('thinkingRunsOutputTab').hidden = true;
+    $('thinkingRunsNoOutput').hidden = true;
+    $('thinkingRunsOutputPanel')?.replaceChildren();
+  }
+
   function renderThinkingRunFailure() {
     const panel = $('thinkingRunsLogPanel');
     if (!panel) return;
@@ -1564,11 +1573,15 @@
 
   function loadThinkingRun(route) {
     if (!route?.useId) return;
+    clearThinkingRunRenderState();
     const key = thinkingCacheKey('run', {useId: route.useId});
     const cached = readThinkingCache('run', key);
     if (cached) {
       const contextual = runContextFromRecord(route, cached);
+      const contextChanged = contextual.key !== route.key;
+      setThinkingRoute(contextual);
       renderThinkingRunDetail(cached, contextual);
+      if (route.kind === 'run-id' || contextChanged) loadThinkingRuns(contextual);
       return;
     }
     const detail = $('thinkingRunsDetail');
@@ -1631,6 +1644,15 @@
     const modal = $('thinkingRunsPromptModal');
     state.runsModalFocus = document.activeElement;
     modal.hidden = false;
+    if (!state.runsPromptEscapeHandler) {
+      state.runsPromptEscapeHandler = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeThinkingPrompt();
+        }
+      };
+      document.addEventListener('keydown', state.runsPromptEscapeHandler);
+    }
     const content = $('thinkingRunsPromptContent');
     content.textContent = 'loading run details…';
     const key = thinkingCacheKey('prompt', {talent: run.name});
@@ -1649,7 +1671,12 @@
 
   function closeThinkingPrompt() {
     $('thinkingRunsPromptModal').hidden = true;
+    if (state.runsPromptEscapeHandler) {
+      document.removeEventListener('keydown', state.runsPromptEscapeHandler);
+      state.runsPromptEscapeHandler = null;
+    }
     state.runsModalFocus?.focus();
+    state.runsModalFocus = null;
   }
 
   function bindThinkingRuns() {
@@ -1669,12 +1696,6 @@
     });
     $('thinkingRunsPrompt')?.addEventListener('click', openThinkingPrompt);
     $('thinkingRunsPromptClose')?.addEventListener('click', closeThinkingPrompt);
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !$('thinkingRunsPromptModal')?.hidden) {
-        event.preventDefault();
-        closeThinkingPrompt();
-      }
-    });
   }
 
   function navigateThinkingRunsDay(amount, requestedDay = '') {

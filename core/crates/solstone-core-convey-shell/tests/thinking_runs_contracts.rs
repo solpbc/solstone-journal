@@ -98,8 +98,8 @@ fn contains_copy_literal(value: &serde_json::Value, needle: &str) -> bool {
             .iter()
             .any(|value| contains_copy_literal(value, needle)),
         serde_json::Value::Object(values) => values
-            .values()
-            .any(|value| contains_copy_literal(value, needle)),
+            .iter()
+            .any(|(key, value)| key == needle || contains_copy_literal(value, needle)),
         _ => false,
     }
 }
@@ -215,8 +215,14 @@ fn thinking_runs_copy_payload_remains_frozen() {
     );
     let payload = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
         .expect("Thinking copy payload serializes");
+    assert!(
+        contains_copy_literal(
+            &serde_json::json!({"runs": "outside the copy payload"}),
+            "runs"
+        ),
+        "copy literal traversal includes object keys"
+    );
     for literal in [
-        "setup",
         "runs",
         "identity",
         "talent runs",
@@ -286,10 +292,39 @@ fn thinking_runs_list_source_has_explicit_table_controls_and_mobile_cards() {
         row.contains("prompt.appendChild(thinkingRunControl(run));"),
         "every generated run row appends its explicit control"
     );
+    let prompt_start = row
+        .find("const prompt =")
+        .expect("run row has a prompt cell");
+    let prompt_end = row[prompt_start..]
+        .find("row.appendChild(prompt);")
+        .expect("prompt cell is appended to every row")
+        + prompt_start;
+    assert!(
+        !row[prompt_start..prompt_end].contains("if ("),
+        "the per-row control is not conditional"
+    );
     assert!(
         !row.contains("row.addEventListener(") && !row.contains("row.onclick"),
         "run rows are not clickable"
     );
+    let list_start = script
+        .find("  function renderThinkingRunList(host, runs)")
+        .expect("run-list source starts");
+    let list_end = script
+        .find("  function renderThinkingRunsDay(payload, route)")
+        .expect("run-list source ends");
+    let list = &script[list_start..list_end];
+    for listener in [
+        "host.addEventListener('click'",
+        "host.addEventListener(\"click\"",
+        "host.addEventListener('keydown'",
+        "host.addEventListener(\"keydown\"",
+    ] {
+        assert!(
+            !list.contains(listener),
+            "run-list container does not delegate row activation: {listener}"
+        );
+    }
 }
 
 #[test]

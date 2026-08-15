@@ -155,6 +155,9 @@ async function main() {
     addEventListener(name, listener) {
       (documentListeners[name] ||= []).push(listener);
     },
+    removeEventListener(name, listener) {
+      documentListeners[name] = (documentListeners[name] || []).filter((candidate) => candidate !== listener);
+    },
     emit(name, event = {}) {
       for (const listener of documentListeners[name] || []) listener({
         preventDefault() {},
@@ -217,7 +220,8 @@ async function main() {
   }
   make('thinkingRunsLogPanel');
   make('thinkingRunsOutputPanel');
-  make('thinkingRunsPromptModal');
+  const promptModal = make('thinkingRunsPromptModal');
+  promptModal.hidden = true;
   make('thinkingRunsPromptClose');
   make('thinkingRunsPromptContent');
   make('thinkingIdentityStatus');
@@ -333,6 +337,23 @@ async function main() {
   assert.strictEqual(contextual.day, '20260815');
   assert.strictEqual(window.location.hash, '#runs/20260815/talent%2Fname/actual%2Fid', 'record provenance wins');
 
+  const mismatchedDay = deferred();
+  const correctedDay = deferred();
+  dayResponses.push(mismatchedDay.promise, correctedDay.promise);
+  thinking.state.runsCache.run.set('run:cached-id', {id: 'cached-id', day: '20260111', name: 'actual-talent', events: []});
+  window.location.hash = '#runs/20260110/requested-talent/cached-id';
+  thinking.routeThinkingHash('history');
+  await settle();
+  assert.strictEqual(window.location.hash, '#runs/20260111/actual-talent/cached-id', 'cached record provenance rewrites the hash');
+  assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'actual-talent', 'cached record renders under its source talent');
+  assert.strictEqual(requests.filter((url) => url === '/app/thinking/api/talents/20260111').length, 1, 'cached provenance reloads the corrected day');
+  correctedDay.resolve({uses: [{id: 'contextual-day', name: 'corrected-day'}], facets: []});
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsDate').value, '2026-01-11', 'corrected day controls render from cached-record provenance');
+  assert.strictEqual(nodes.get('thinkingRunsContent').children[0].children[0].textContent, 'corrected-day', 'corrected day content replaces the mismatched context');
+  mismatchedDay.resolve({uses: [{id: 'stale-context', name: 'stale-day'}], facets: []});
+  await settle();
+
   document.activeElement = new Element('outside');
   document.activeElement.document = document;
   window.location.hash = '#identity';
@@ -419,13 +440,18 @@ async function main() {
   await settle();
   assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, "couldn't load that run", 'run failure remains inside detail context');
 
-  runResponses.push(Promise.resolve({id: 'without-output', day: '20260103', name: 'talent', events: []}));
-  window.location.hash = '#runs/20260103/talent/without-output';
+  const noOutputDay = deferred();
+  dayResponses.push(noOutputDay.promise);
+  runResponses.push(Promise.resolve({id: 'without-output', day: '20260112', name: 'talent', events: []}));
+  window.location.hash = '#runs/20260112/talent/without-output';
   thinking.routeThinkingHash('history');
   await settle();
   await settle();
   assert.strictEqual(noOutput.hidden, false, 'completed run without output explains the missing output');
   assert.strictEqual(noOutput.textContent, "this run doesn't have a saved output.");
+  noOutputDay.resolve({uses: [], facets: []});
+  await settle();
+  assert.strictEqual(noOutput.hidden, false, 'late day render preserves the selected no-output state');
 
   const deepDay = deferred();
   dayResponses.push(deepDay.promise);
@@ -434,6 +460,7 @@ async function main() {
   const deepDayRequests = requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260109')).length;
   window.location.hash = '#runs/20260109/talent/with-output';
   thinking.routeThinkingHash('history');
+  assert.strictEqual(noOutput.hidden, true, 'a subsequent run load clears an earlier no-output notice');
   await settle();
   assert.strictEqual(
     requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260109')).length,
@@ -443,6 +470,7 @@ async function main() {
   deepDay.resolve({uses: [], facets: []});
   await settle();
   assert.strictEqual(outputTab.hidden, false, 'run output tab becomes visible after binding');
+  assert.strictEqual(noOutput.hidden, true, 'a rendered output hides the no-output notice');
   outputTab.emit('click');
   await settle();
   assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'saved output', 'newly visible output tab activates its panel');
@@ -457,12 +485,44 @@ async function main() {
   assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, 'this run is still in progress.', 'active run renders progress instead of an empty detail');
   assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[1].textContent, 'check back soon.');
   assert.strictEqual(thinking.state.runsCache.run.has('run:active'), false, 'active response is not cached as a completed run');
+  assert.strictEqual(thinking.state.runsDetail, null, 'active run clears the prior completed-run selection');
+  nodes.get('thinkingRunsPrompt').emit('click');
+  assert.strictEqual(promptModal.hidden, true, 'pending run cannot open the prior run prompt');
 
+  const promptButton = nodes.get('thinkingRunsPrompt');
+  promptButton.focus();
   thinking.state.runsDetail = {name: 'prompt talent'};
+  assert.strictEqual((documentListeners.keydown || []).length, 0, 'closed prompt has no document Escape listener');
   thinking.openThinkingPrompt();
-  assert.strictEqual(nodes.get('thinkingRunsPromptModal').hidden, false, 'prompt modal opens');
+  assert.strictEqual(promptModal.hidden, false, 'prompt modal opens');
+  assert.strictEqual((documentListeners.keydown || []).length, 1, 'open prompt installs one Escape listener');
   document.emit('keydown', {key: 'Escape'});
-  assert.strictEqual(nodes.get('thinkingRunsPromptModal').hidden, true, 'Escape closes the prompt modal');
+  assert.strictEqual(promptModal.hidden, true, 'Escape closes the prompt modal');
+  assert.strictEqual((documentListeners.keydown || []).length, 0, 'closing prompt removes its Escape listener');
+  assert.strictEqual(document.activeElement, promptButton, 'closing prompt restores focus to its opener');
+  thinking.openThinkingPrompt();
+  assert.strictEqual((documentListeners.keydown || []).length, 1, 'reopening prompt installs a fresh Escape listener');
+  nodes.get('thinkingRunsPromptClose').emit('click');
+  assert.strictEqual((documentListeners.keydown || []).length, 0, 'close button removes the Escape listener');
+
+  runResponses.push(Promise.resolve({id: 'output-before-failure', day: '20260103', name: 'talent', output_file: 'old.txt', events: []}));
+  window.location.hash = '#runs/20260103/talent/output-before-failure';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(outputTab.hidden, false, 'completed output run exposes its output tab');
+  const runLoadFailure = deferred();
+  runResponses.push(runLoadFailure.promise);
+  window.location.hash = '#runs/20260103/talent/failing-run';
+  thinking.routeThinkingHash('history');
+  assert.strictEqual(outputTab.hidden, true, 'subsequent run load hides the prior output tab');
+  assert.strictEqual(noOutput.hidden, true, 'subsequent run load hides the prior no-output notice');
+  runLoadFailure.reject(new Error('run load failure'));
+  await settle();
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, "couldn't load that run", 'failed run does not restore prior run details');
+  assert.strictEqual(outputTab.hidden, true, 'failed run leaves no prior output tab');
+  assert.strictEqual(noOutput.hidden, true, 'failed run leaves no no-output notice');
 
   const first = deferred();
   const second = deferred();
