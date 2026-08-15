@@ -8,7 +8,7 @@ use crate::writers::WriteIntent;
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_system_health::find_segment_dir;
 use std::fs;
 
@@ -427,6 +427,7 @@ fn apply_detections(
             })
             .collect::<Vec<_>>();
         if !detections.is_empty() {
+            resolve_detection_names(journal, &facet, day, &origin, &detections)?;
             solstone_core_facets::upsert_detection_segment(
                 journal,
                 &facet,
@@ -439,6 +440,61 @@ fn apply_detections(
         }
     }
     Ok(wrote)
+}
+
+fn resolve_detection_names(
+    journal: &std::path::Path,
+    facet: &str,
+    day: &str,
+    origin: &str,
+    detections: &[solstone_core_facets::DetectedEntityInput],
+) -> Result<(), String> {
+    let entities = solstone_core_entity::load_all_journal_entities(journal)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|entity| entity.resolution_entity())
+        .filter(|entity| !entity.blocked)
+        .collect::<Vec<_>>();
+    let candidates = entities
+        .iter()
+        .map(
+            |entity| solstone_core_entity_matching::EntityNameCandidate {
+                id: entity.id.clone(),
+                name: entity.name.clone(),
+                aka: entity.aka.clone(),
+                emails: entity.emails.clone(),
+            },
+        )
+        .collect::<Vec<_>>();
+    for detection in detections {
+        let resolution_origin = json!({"lane":"apps.entities.detection","facet":facet,"day":day,"segment_id":origin,"field":"detection.name"});
+        if solstone_core_entity_matching::find_matching_entity(&detection.name, &candidates, 90.0)
+            .is_some()
+        {
+            solstone_core_entity::record_entity_resolution(
+                journal,
+                &detection.name,
+                &entities,
+                json!({"kind":"facet","facet":facet}),
+                resolution_origin,
+                90.0,
+                false,
+            )
+            .map_err(|error| error.to_string())?;
+        } else {
+            solstone_core_entity::record_entity_resolution_from_name_evidence(
+                journal,
+                &detection.name,
+                &entities,
+                json!({"kind":"facet","facet":facet}),
+                resolution_origin,
+                90.0,
+                false,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
 }
 #[cfg(test)]
 mod tests {
@@ -522,5 +578,60 @@ mod tests {
             )
         );
         assert!(packet.contains("## People and things noticed\n\n### Ada\nWhat's known:"));
+    }
+
+    #[test]
+    fn post_resolution_paths_upsert_detected_entities_and_outcome() {
+        // Derived from solstone/apps/entities/talent/detection.py:222-310.
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("chronicle/20260101/090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::create_dir_all(root.path().join("entities/ada")).unwrap();
+        fs::write(
+            root.path().join("entities/ada/entity.json"),
+            r#"{"id":"ada","name":"Ada","type":"Person"}"#,
+        )
+        .unwrap();
+        fs::write(segment.join("talents/sense.json"), r#"{"facets":[{"facet":"work"}],"entities":[{"name":"Ada","type":"Person"},{"name":"Unmatched","type":"Tool"}]}"#).unwrap();
+        apply_result(root.path(), r#"{"detections":[{"name":"Ada","facet":"work","description":"Known person."},{"name":"Unmatched","facet":"work","description":"Known tool."}]}"#, "20260101", "090000_300", None).unwrap();
+        let rows =
+            solstone_core_facets::read_detected_entities(root.path(), "work", "20260101").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row["id"] == "ada"));
+        assert!(segment.join("talents/detection_outcome.json").is_file());
+    }
+
+    #[test]
+    fn gate_reports_each_reference_skip_path() {
+        // Derived from solstone/apps/entities/talent/detection.py:189-214.
+        let root = tempfile::tempdir().unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let prepared = |config| PreparedTalent {
+            name: "entities:detection".to_owned(),
+            config,
+        };
+        assert!(
+            matches!(gate(&prepared(Map::new()), &context).unwrap(), GateDecision::Skip(reason) if reason == "no_sense")
+        );
+        let segment = root.path().join("chronicle/20260101/090000_300/talents");
+        fs::create_dir_all(&segment).unwrap();
+        let config = Map::from_iter([
+            ("day".to_owned(), Value::String("20260101".to_owned())),
+            ("segment".to_owned(), Value::String("090000_300".to_owned())),
+        ]);
+        fs::write(segment.join("sense.json"), r#"{"facets":[],"entities":[]}"#).unwrap();
+        assert!(
+            matches!(gate(&prepared(config.clone()), &context).unwrap(), GateDecision::Skip(reason) if reason == "no_facets")
+        );
+        fs::write(
+            segment.join("sense.json"),
+            r#"{"facets":[{"facet":"work"}],"entities":[]}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(gate(&prepared(config), &context).unwrap(), GateDecision::Skip(reason) if reason == "no_candidates")
+        );
     }
 }
