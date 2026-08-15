@@ -21,10 +21,12 @@ pub(crate) fn token() -> &'static str {
     spec().token
 }
 
+#[allow(dead_code)]
 pub(crate) fn module() -> &'static str {
     spec().module
 }
 
+#[allow(dead_code)]
 pub(crate) fn preset_argv() -> &'static [&'static str] {
     spec().preset_argv
 }
