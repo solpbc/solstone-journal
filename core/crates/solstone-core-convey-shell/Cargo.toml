@@ -86,6 +86,7 @@ solstone-core-settings-web.workspace = true
 solstone-core-import-web.workspace = true
 solstone-core-transcripts-web.workspace = true
 solstone-core-health-web.workspace = true
+solstone-core-stats-web.workspace = true
 solstone-core-home-web.workspace = true
 spl-home = { workspace = true, optional = true }
 spl-core = { workspace = true, optional = true }
