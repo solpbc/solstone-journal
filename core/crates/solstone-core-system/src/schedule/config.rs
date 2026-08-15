@@ -191,27 +191,6 @@ fn write_raw(path: &Path, raw: Map<String, Value>) -> Result<(), ScheduleError> 
     atomic_replace(path, &bytes, AtomicWriteOptions::default()).map_err(io_error)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn set_metadata_updates_only_reserved_values_through_the_locked_door() {
-        // Derived from solstone/think/schedule_config.py:38-50; Python is not runnable here.
-        let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("schedules.json");
-        std::fs::write(&path, r#"{"job":{"enabled":true},"daily_time":"08:00"}"#).unwrap();
-        set_schedule_metadata(
-            &path,
-            &Map::from_iter([("daily_time".to_owned(), Value::String("09:30".to_owned()))]),
-        )
-        .unwrap();
-        let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(value["daily_time"], "09:30");
-        assert_eq!(value["job"]["enabled"], true);
-    }
-}
-
 fn validate(raw: Map<String, Value>) -> ConfigLoad {
     let mut result = ConfigLoad {
         config: metadata_from_raw(&raw),
@@ -391,4 +370,25 @@ pub(crate) fn json_truthy(value: &Value) -> bool {
 
 fn io_error(error: impl std::fmt::Display) -> ScheduleError {
     ScheduleError::Io(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_metadata_updates_only_reserved_values_through_the_locked_door() {
+        // Derived from solstone/think/schedule_config.py:38-50; Python is not runnable here.
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("schedules.json");
+        std::fs::write(&path, r#"{"job":{"enabled":true},"daily_time":"08:00"}"#).unwrap();
+        set_schedule_metadata(
+            &path,
+            &Map::from_iter([("daily_time".to_owned(), Value::String("09:30".to_owned()))]),
+        )
+        .unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(value["daily_time"], "09:30");
+        assert_eq!(value["job"]["enabled"], true);
+    }
 }

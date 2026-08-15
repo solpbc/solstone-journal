@@ -66,6 +66,16 @@ const ALLOWED: &[(&str, &str)] = &[
          Ready is produced; never used to look up or adopt an existing entity",
     ),
     (
+        "solstone-core-talent-runtime/src/entities/detection.rs",
+        "preserves apps/entities/talent/detection.py:113-121: a transient name slug is compared \
+         with day-scoped detected-row ids; it never locates an existing journal entity",
+    ),
+    (
+        "solstone-core-talent-runtime/src/entities/review.rs",
+        "preserves apps/entities/talent/entities_review.py:74-79 and :128-167: derived names \
+         key transient review buckets and comparisons, never an existing entity lookup",
+    ),
+    (
         "solstone-core-entities/src/router.rs",
         "names merge-candidate key components and is a compatibility fallback only after a \
          stored attached-facet identity lookup fails -- never used to locate an existing entity",
