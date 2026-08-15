@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
@@ -26,6 +27,8 @@ pub(crate) struct PendingUse {
     pub(crate) use_id: String,
     pub(crate) name: String,
     pub(crate) facet: Option<String>,
+    pub(crate) output_path: Option<PathBuf>,
+    pub(crate) index_output: bool,
 }
 
 /// Mirrors `thinking.py:2058`: daily, weekly, and cadence use this persistence
@@ -173,11 +176,49 @@ pub(crate) fn dispatch(
         format!("Running scheduled task for {}.", context.day)
     };
     let request = CortexRequest::new(prompt, config.key.clone()).with_config(request);
+    let output_path = request
+        .config
+        .get("output_path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let index_output = config.metadata.get("type").and_then(Value::as_str) == Some("generate")
+        && config.metadata.get("output").and_then(Value::as_str) != Some("json");
     let use_id = context.cortex.dispatch(runtime, &request)?;
     Ok(PendingUse {
         use_id,
         name: config.key.clone(),
         facet: facet.map(ToOwned::to_owned),
+        output_path,
+        index_output,
+    })
+}
+
+/// Segment, activity, and flush intentionally own their output fields.  The
+/// reference's `thinking.py:2058` limits `apply_output_persistence` to daily,
+/// weekly, and cadence, so these callers must not use it.
+pub(crate) fn dispatch_direct(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    name: &str,
+    prompt: String,
+    config: Map<String, Value>,
+    facet: Option<&str>,
+) -> Result<PendingUse, String> {
+    let request = CortexRequest::new(prompt, name.to_owned()).with_config(config);
+    let output_path = request
+        .config
+        .get("output_path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let index_output = request.config.contains_key("output")
+        && request.config.get("output").and_then(Value::as_str) != Some("json");
+    let use_id = context.cortex.dispatch(runtime, &request)?;
+    Ok(PendingUse {
+        use_id,
+        name: name.to_owned(),
+        facet: facet.map(ToOwned::to_owned),
+        output_path,
+        index_output,
     })
 }
 
@@ -188,27 +229,37 @@ pub(crate) fn drain(
     runtime: &tokio::runtime::Runtime,
     pending: Vec<PendingUse>,
 ) -> ModeResult {
+    drain_with_deadline(context, runtime, pending, Some(DEFAULT_THINK_TIMEOUT))
+}
+
+pub(crate) fn drain_with_deadline(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    pending: Vec<PendingUse>,
+    deadline: Option<Duration>,
+) -> ModeResult {
     let mut result = ModeResult::default();
     if pending.is_empty() {
         return result;
     }
-    debug_assert_eq!(
-        context.cortex_policy_deadline(),
-        Some(DEFAULT_THINK_TIMEOUT)
-    );
     let use_ids = pending
         .iter()
         .map(|item| item.use_id.clone())
         .collect::<Vec<_>>();
-    match context.cortex.wait(runtime, &use_ids) {
+    match context.cortex.wait(runtime, &use_ids, deadline) {
         Ok(report) => {
             for item in pending {
                 let label = item.facet.as_ref().map_or_else(
                     || item.name.clone(),
                     |facet| format!("{}/{facet}", item.name),
                 );
-                match report.completed.get(&item.use_id).copied() {
-                    Some(UseEndState::Finish) => result.success += 1,
+                match report.completed.get(&item.use_id) {
+                    Some(completion) if completion.end_state == UseEndState::Finish => {
+                        // Source-derived, not measured: thinking.py:240-242 and
+                        // 1102 require both a literal changed flag and a path.
+                        maybe_rescan_output(context, &item, completion);
+                        result.success += 1;
+                    }
                     _ => {
                         result.failed += 1;
                         result.failed_names.push(format!("{label} (error)"));
@@ -228,4 +279,23 @@ pub(crate) fn drain(
         }
     }
     result
+}
+
+/// Preserve the reference's literal changed flag and existing-file gate.
+pub(crate) fn maybe_rescan_output(
+    context: &ThinkContext,
+    item: &PendingUse,
+    completion: &solstone_core_cortex_client::UseCompletion,
+) {
+    // Source-derived, not measured: thinking.py:240-242 requires both a
+    // literal `True` finish field and an existing output path.
+    if completion.finish_fields.output_changed == Some(true)
+        && item.index_output
+        && item.output_path.as_ref().is_some_and(|path| path.exists())
+    {
+        context.index.rescan_file(
+            &context.journal,
+            item.output_path.as_ref().expect("checked output path"),
+        );
+    }
 }

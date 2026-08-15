@@ -218,7 +218,7 @@ async fn request_and_wait(
         end_state: report
             .completed
             .get(&use_id)
-            .copied()
+            .map(|completion| completion.end_state)
             .unwrap_or(UseEndState::Unknown),
         timed_out: report
             .timed_out

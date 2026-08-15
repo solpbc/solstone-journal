@@ -70,7 +70,7 @@ pub(crate) fn run(journal: &Path, options: EngageOptions) -> ExitCode {
     let end_state = outcome
         .completed
         .get(&use_id)
-        .copied()
+        .map(|completion| completion.end_state)
         .unwrap_or(UseEndState::Unknown);
     if end_state != UseEndState::Finish {
         eprintln!("Error: agent ended with state: {}", end_state.as_str());

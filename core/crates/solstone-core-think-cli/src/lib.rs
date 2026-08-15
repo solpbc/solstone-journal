@@ -3,6 +3,7 @@
 
 //! Native preflight and unavailable-run boundary for `journal think`.
 
+mod activity;
 mod args;
 mod cadence;
 mod cadence_state;
@@ -10,8 +11,10 @@ mod context;
 mod daily;
 mod day;
 mod dispatch;
+mod flush;
 mod gate;
 mod run_log;
+mod segment;
 mod weekly;
 mod workers;
 
@@ -145,14 +148,10 @@ where
         let (uses_local, endpoint) = endpoint();
         validate(&parsed, cpu_count(), uses_local, endpoint, bundled_slots())?;
 
-        if parsed.activity.is_some()
-            || parsed.flush
-            || parsed.segments
-            || parsed.segment.is_some()
-            || parsed.dry_run
-        {
-            // `EXIT_UNAVAILABLE` remains the terminus for Phase 2b's run modes and
-            // the planner; this phase must not route a real run into an absent body.
+        if parsed.dry_run || parsed.segments || parsed.segment.is_some() {
+            // Segment execution and the planner land after activity and flush.
+            // Keep their existing unavailable terminus until those bodies and
+            // their acceptance coverage arrive together.
             return Err(CliError::Unavailable);
         }
 
@@ -174,6 +173,94 @@ where
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
             let result = cadence::run(&context, configs, &mut log, parsed.refresh)
                 .map_err(|message| CliError::InvalidDay { message })?;
+            return Ok(CliRun {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: (result.failed != 0) as i32,
+            });
+        }
+
+        let timeout = (!parsed.no_timeout).then_some(std::time::Duration::from_secs(610));
+        if let Some(activity_id) = parsed.activity.as_deref() {
+            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let result = activity::run(
+                &context,
+                &mut log,
+                activity_id,
+                parsed.facet.as_deref().expect("validated activity facet"),
+                parsed.refresh,
+                parsed.jobs,
+            )
+            .map_err(|message| CliError::InvalidDay { message })?;
+            return Ok(CliRun {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: (result.failed != 0) as i32,
+            });
+        }
+        if parsed.flush {
+            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let result = flush::run(
+                &context,
+                &mut log,
+                parsed.segment.as_deref().expect("validated flush segment"),
+                parsed.stream.as_deref(),
+            )
+            .map_err(|message| CliError::InvalidDay { message })?;
+            return Ok(CliRun {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: (result.failed != 0) as i32,
+            });
+        }
+        if parsed.segments || parsed.segment.is_some() {
+            let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
+            let skip_talents = parsed
+                .skip_talents
+                .split(',')
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let result = if let Some(segment) = parsed.segment.as_deref() {
+                // Source-derived, not measured: thinking.py:4709 is one of the two no-timeout paths.
+                segment::run(
+                    &context,
+                    &mut log,
+                    segment,
+                    parsed.refresh,
+                    parsed.stream.as_deref(),
+                    parsed.jobs,
+                    timeout,
+                    parsed.live,
+                    &skip_talents,
+                )
+            } else {
+                let source = solstone_core_system_health::FilesystemSegmentSource;
+                let segments = solstone_core_system_health::scan_day(
+                    &source,
+                    &context.journal,
+                    &context.day,
+                    chrono::Utc::now(),
+                )
+                .map_err(|error| CliError::InvalidDay {
+                    message: error.to_string(),
+                })?
+                .2
+                .into_iter()
+                .map(|entry| (entry.key, Some(entry.stream)))
+                .collect();
+                // Source-derived, not measured: thinking.py:4444 is the other no-timeout path.
+                segment::run_repair_batch(
+                    &context,
+                    &mut log,
+                    segments,
+                    parsed.refresh,
+                    parsed.jobs,
+                    timeout,
+                    &skip_talents,
+                )
+            }
+            .map_err(|message| CliError::InvalidDay { message })?;
             return Ok(CliRun {
                 stdout: String::new(),
                 stderr: String::new(),
@@ -371,6 +458,17 @@ mod tests {
     struct Recorder {
         requests: Mutex<Vec<solstone_core_cortex_client::CortexRequest>>,
         waits: Mutex<Vec<Vec<String>>>,
+        deadlines: Mutex<Vec<Option<std::time::Duration>>>,
+        finish_fields: Mutex<solstone_core_cortex_client::FinishFields>,
+    }
+
+    #[derive(Default)]
+    struct IndexRecorder(Mutex<Vec<std::path::PathBuf>>);
+
+    impl context::IndexBoundary for IndexRecorder {
+        fn rescan_file(&self, _: &Path, path: &Path) {
+            self.0.lock().unwrap().push(path.to_path_buf());
+        }
     }
 
     impl context::CortexBoundary for Recorder {
@@ -387,12 +485,23 @@ mod tests {
             &self,
             _: &tokio::runtime::Runtime,
             use_ids: &[String],
+            deadline: Option<std::time::Duration>,
         ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
             self.waits.lock().unwrap().push(use_ids.to_vec());
+            self.deadlines.lock().unwrap().push(deadline);
+            let finish_fields = *self.finish_fields.lock().unwrap();
             Ok(solstone_core_cortex_client::WaitForUsesReport {
                 completed: use_ids
                     .iter()
-                    .map(|id| (id.clone(), solstone_core_cortex_client::UseEndState::Finish))
+                    .map(|id| {
+                        (
+                            id.clone(),
+                            solstone_core_cortex_client::UseCompletion {
+                                end_state: solstone_core_cortex_client::UseEndState::Finish,
+                                finish_fields,
+                            },
+                        )
+                    })
                     .collect(),
                 timed_out: Vec::new(),
             })
@@ -411,6 +520,16 @@ mod tests {
                 .with_boundary(recorder.clone()),
             recorder,
         )
+    }
+
+    fn recorder_context_with_index(
+        journal: &Path,
+        day: &str,
+        now_ms: i64,
+    ) -> (context::ThinkContext, Arc<Recorder>, Arc<IndexRecorder>) {
+        let (context, recorder) = recorder_context(journal, day, now_ms);
+        let index = Arc::new(IndexRecorder::default());
+        (context.with_index_boundary(index.clone()), recorder, index)
     }
 
     fn talent_roots(
@@ -539,6 +658,20 @@ mod tests {
             .join("terminal.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, format!("{event}\n")).unwrap();
+    }
+
+    fn write_activity_record(journal: &Path, facet: &str, day: &str, record: Value) {
+        let path = journal
+            .join("facets")
+            .join(facet)
+            .join("activities")
+            .join(format!("{day}.jsonl"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            format!("{}\n", serde_json::to_string(&record).unwrap()),
+        )
+        .unwrap();
     }
 
     fn talent(metadata: Map<String, Value>) -> solstone_core_talent_config::TalentConfig {
@@ -672,6 +805,117 @@ mod tests {
         let result = dispatch::drain(&context, &runtime, vec![first, second]);
         assert_eq!((result.success, result.failed), (2, 0));
         assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn indexing_gate_requires_changed_boolean_and_existing_output() {
+        // Source-derived, not measured: thinking.py:240-242 uses `is True` and an existing path.
+        let journal = tempdir().unwrap();
+        let (context, recorder, index) = recorder_context_with_index(journal.path(), "20260813", 9);
+        let runtime = dispatch::runtime().unwrap();
+        let config = talent(Map::from_iter([
+            ("type".to_owned(), Value::String("generate".to_owned())),
+            ("output".to_owned(), Value::String("md".to_owned())),
+        ]));
+        let run = |changed: Option<bool>, create: bool| {
+            *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
+                output_changed: changed,
+            };
+            let pending = dispatch::dispatch(
+                &context,
+                &runtime,
+                &config,
+                "daily",
+                None,
+                false,
+                Map::new(),
+            )
+            .unwrap();
+            let path = recorder.requests.lock().unwrap().last().unwrap().config["output_path"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            if create {
+                let path = std::path::PathBuf::from(path);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, "# output").unwrap();
+            } else {
+                let _ = fs::remove_file(path);
+            }
+            dispatch::drain(&context, &runtime, vec![pending]);
+        };
+        run(Some(true), true);
+        assert_eq!(index.0.lock().unwrap().len(), 1);
+        run(Some(false), true);
+        run(None, true);
+        run(Some(true), false);
+        assert_eq!(index.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn shared_drain_indexes_changed_daily_weekly_and_cadence_outputs_only() {
+        // Source-derived, not measured: thinking.py:1102 applies the common
+        // changed-output indexing branch to daily, weekly, and cadence drains.
+        let journal = tempdir().unwrap();
+        let (context, recorder, index) = recorder_context_with_index(journal.path(), "20260813", 9);
+        let runtime = dispatch::runtime().unwrap();
+        *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
+            output_changed: Some(true),
+        };
+        for schedule in ["daily", "weekly", "cadence"] {
+            let mut config = talent(Map::from_iter([
+                ("type".to_owned(), Value::String("generate".to_owned())),
+                ("output".to_owned(), Value::String("md".to_owned())),
+            ]));
+            config.key = format!("{schedule}-changed");
+            let pending = dispatch::dispatch(
+                &context,
+                &runtime,
+                &config,
+                schedule,
+                None,
+                false,
+                Map::new(),
+            )
+            .unwrap();
+            let path = recorder.requests.lock().unwrap().last().unwrap().config["output_path"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let path = std::path::PathBuf::from(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "output").unwrap();
+            let result = dispatch::drain(&context, &runtime, vec![pending]);
+            assert_eq!((result.success, result.failed), (1, 0));
+        }
+        assert_eq!(index.0.lock().unwrap().len(), 3);
+
+        *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
+            output_changed: Some(false),
+        };
+        let config = talent(Map::from_iter([
+            ("type".to_owned(), Value::String("generate".to_owned())),
+            ("output".to_owned(), Value::String("md".to_owned())),
+        ]));
+        let pending = dispatch::dispatch(
+            &context,
+            &runtime,
+            &config,
+            "daily",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        let path = recorder.requests.lock().unwrap().last().unwrap().config["output_path"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let path = std::path::PathBuf::from(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "output").unwrap();
+        dispatch::drain(&context, &runtime, vec![pending]);
+        assert_eq!(index.0.lock().unwrap().len(), 3);
     }
 
     #[test]
@@ -1047,6 +1291,250 @@ mod tests {
     }
 
     #[test]
+    fn activity_filters_types_batches_requests_and_keeps_a_hard_deadline() {
+        // Source-derived, not measured: thinking.py:3137-3145 selects matching activity talents and 3235 waits for 610 seconds.
+        let journal = tempdir().unwrap();
+        write_activity_record(
+            journal.path(),
+            "work",
+            "20260813",
+            serde_json::json!({"id":"reading_1", "activity":"reading", "segments":["090000"]}),
+        );
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "one",
+                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
+                ),
+                (
+                    "two",
+                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"*\"], \"output\": \"json\"\n}\n",
+                ),
+                (
+                    "three",
+                    "{\n\"type\": \"cogitate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"]\n}\n",
+                ),
+                (
+                    "other",
+                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"coding\"], \"output\": \"md\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let path = journal.path().join("activity.jsonl");
+        let mut log = run_log::RunLogWriter::open(&path);
+        let result = activity::run(&context, &mut log, "reading_1", "work", false, 2).unwrap();
+        assert_eq!((result.success, result.failed), (3, 0));
+        let requests = recorder.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .map(|request| request.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "three", "two"]
+        );
+        assert!(!requests.iter().any(|request| request.name == "other"));
+        assert_eq!(requests[0].config["output"], "md");
+        assert!(!requests[1].config.contains_key("output"));
+        assert_eq!(
+            requests[1].prompt,
+            "Processing activity 'reading_1' (reading) in facet 'work' for 2026-08-13."
+        );
+        assert_eq!(requests[2].config["output"], "json");
+        assert!(
+            requests[0].config["output_path"]
+                .as_str()
+                .unwrap()
+                .ends_with("facets/work/activities/20260813/reading_1/one.md")
+        );
+        assert_eq!(
+            recorder
+                .waits
+                .lock()
+                .unwrap()
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+        assert_eq!(
+            recorder.deadlines.lock().unwrap().as_slice(),
+            &[
+                Some(std::time::Duration::from_secs(610)),
+                Some(std::time::Duration::from_secs(610))
+            ]
+        );
+        // Source-derived, not measured: thinking.py:3160-3180, 3403-3417,
+        // and 3441-3465 record the activity lifecycle in its run log.
+        let events = fs::read_to_string(path).unwrap();
+        for event in [
+            "\"event\":\"started\"",
+            "\"event\":\"group.start\"",
+            "\"event\":\"talent.started\"",
+            "\"event\":\"talent.dispatch\"",
+            "\"event\":\"talent.completed\"",
+            "\"event\":\"talent.complete\"",
+            "\"event\":\"group.complete\"",
+            "\"event\":\"completed\"",
+        ] {
+            assert!(events.contains(event), "missing {event}");
+        }
+        assert!(events.contains("\"activity\":\"reading_1\""));
+    }
+
+    #[test]
+    fn activity_zero_concurrency_is_unlimited_and_the_json_generator_skips_output_indexing() {
+        // Source-derived, not measured: thinking.py:3277-3287 skips incremental indexing for JSON generators; max_concurrency=0 leaves the group pending until its final drain.
+        let journal = tempdir().unwrap();
+        write_activity_record(
+            journal.path(),
+            "work",
+            "20260813",
+            serde_json::json!({"id":"reading_1", "activity":"reading", "segments":["090000"]}),
+        );
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "markdown",
+                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
+                ),
+                (
+                    "json",
+                    "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"json\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder, index) = recorder_context_with_index(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        *recorder.finish_fields.lock().unwrap() = solstone_core_cortex_client::FinishFields {
+            output_changed: Some(true),
+        };
+        for name in ["markdown.md", "json.json"] {
+            let path = journal
+                .path()
+                .join("facets/work/activities/20260813/reading_1")
+                .join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "output").unwrap();
+        }
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("activity.jsonl"));
+        activity::run(&context, &mut log, "reading_1", "work", false, 0).unwrap();
+        assert_eq!(
+            recorder
+                .waits
+                .lock()
+                .unwrap()
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
+        let requests = recorder.requests.lock().unwrap();
+        assert_eq!(requests[0].config["output"], "json");
+        assert_eq!(requests[1].config["output"], "md");
+        assert_eq!(index.0.lock().unwrap().len(), 1);
+        assert!(index.0.lock().unwrap()[0].ends_with("markdown.md"));
+    }
+
+    #[test]
+    fn flush_filters_hooks_sets_direct_output_and_uses_a_hard_deadline() {
+        // Source-derived, not measured: thinking.py:3524-3529 selects hook.flush and 3629 performs the fixed 610-second wait.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[
+                (
+                    "flushable",
+                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"hook\": {\"flush\": true}, \"output\": \"json\"\n}\n",
+                ),
+                (
+                    "ordinary",
+                    "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let path = journal.path().join("flush.jsonl");
+        let mut log = run_log::RunLogWriter::open(&path);
+        let result = flush::run(&context, &mut log, "090000", Some("default")).unwrap();
+        assert_eq!((result.success, result.failed), (1, 0));
+        let requests = recorder.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].name, "flushable");
+        assert_eq!(requests[0].config["flush"], true);
+        assert_eq!(requests[0].config["refresh"], true);
+        assert_eq!(requests[0].config["output"], "json");
+        assert_eq!(
+            recorder.deadlines.lock().unwrap().as_slice(),
+            &[Some(std::time::Duration::from_secs(610))]
+        );
+        // Source-derived, not measured: thinking.py:3538-3554, 3604-3617,
+        // and 3682-3703 record the flush lifecycle in its run log.
+        let events = fs::read_to_string(path).unwrap();
+        for event in [
+            "\"event\":\"started\"",
+            "\"event\":\"talent.started\"",
+            "\"event\":\"talent.dispatch\"",
+            "\"event\":\"talent.completed\"",
+            "\"event\":\"talent.complete\"",
+            "\"event\":\"completed\"",
+        ] {
+            assert!(events.contains(event), "missing {event}");
+        }
+        assert!(events.contains("\"segment\":\"090000\""));
+    }
+
+    #[test]
+    fn ac7_activity_low_level_work_guard_skips_only_the_reference_case() {
+        // Source-derived, not measured: thinking.py:3328-3343 skips `work`
+        // only for low-level browsing or reading records.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "work",
+                "{\n\"type\": \"generate\", \"schedule\": \"activity\", \"priority\": 1, \"activities\": [\"reading\"], \"output\": \"md\"\n}\n",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        write_activity_record(
+            journal.path(),
+            "work",
+            "20260813",
+            serde_json::json!({"id":"low", "activity":"reading", "segments":["090000"], "level_avg":0.39}),
+        );
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("low.jsonl"));
+        let low = activity::run(&context, &mut log, "low", "work", false, 2).unwrap();
+        assert_eq!((low.success, low.failed), (0, 0));
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        assert!(
+            fs::read_to_string(journal.path().join("low.jsonl"))
+                .unwrap()
+                .contains("\"reason\":\"low_level_activity\"")
+        );
+
+        write_activity_record(
+            journal.path(),
+            "work",
+            "20260813",
+            serde_json::json!({"id":"full", "activity":"reading", "segments":["090000"], "level_avg":0.4}),
+        );
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("full.jsonl"));
+        let full = activity::run(&context, &mut log, "full", "work", false, 2).unwrap();
+        assert_eq!((full.success, full.failed), (1, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
     fn ac7_completed_and_deterministic_guards_keep_fresh_units_eligible() {
         use solstone_core_system_health::{CompletedUnit, DailyUnit, DeterministicFailure};
 
@@ -1231,7 +1719,7 @@ mod tests {
         let journal = tempdir().unwrap();
         let base = |env: Option<(&str, &str)>, up| {
             run_cli_with(
-                &["--segment".to_owned(), "x".to_owned()],
+                &["--dry-run".to_owned()],
                 journal.path(),
                 move |name| env.and_then(|(key, value)| (name == key).then(|| value.to_owned())),
                 move || up,
@@ -1388,7 +1876,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_refusal_uses_pinned_counts() {
+    fn worker_refusal_preserves_segment_unavailable_terminus() {
         assert_eq!(
             run(&["--segments", "--jobs", "0", "--segment-workers", "2"]).exit_code,
             2

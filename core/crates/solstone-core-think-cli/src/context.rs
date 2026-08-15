@@ -19,7 +19,22 @@ pub(crate) trait CortexBoundary: Send + Sync {
         &self,
         runtime: &tokio::runtime::Runtime,
         use_ids: &[String],
+        deadline: Option<Duration>,
     ) -> Result<WaitForUsesReport, String>;
+}
+
+pub(crate) trait IndexBoundary: Send + Sync {
+    fn rescan_file(&self, journal: &Path, path: &Path);
+}
+
+struct NativeIndexBoundary;
+
+impl IndexBoundary for NativeIndexBoundary {
+    fn rescan_file(&self, journal: &Path, path: &Path) {
+        // Source-derived, not measured: thinking.py:240-242 queues the rescan
+        // and ignores its outcome, so the native port deliberately does too.
+        let _ = solstone_core_indexer_store::scan::rescan_file(journal, path);
+    }
 }
 
 struct NativeCortexBoundary(CortexRequestClient);
@@ -39,9 +54,10 @@ impl CortexBoundary for NativeCortexBoundary {
         &self,
         runtime: &tokio::runtime::Runtime,
         use_ids: &[String],
+        deadline: Option<Duration>,
     ) -> Result<WaitForUsesReport, String> {
         runtime
-            .block_on(self.0.wait_for_uses(use_ids))
+            .block_on(self.0.wait_for_uses_with_deadline(use_ids, deadline))
             .map_err(|error| format!("cortex wait failed: {error:?}"))
     }
 }
@@ -54,6 +70,7 @@ pub(crate) struct ThinkContext {
     pub(crate) talent_root: PathBuf,
     pub(crate) apps_root: PathBuf,
     pub(crate) cortex: Arc<dyn CortexBoundary>,
+    pub(crate) index: Arc<dyn IndexBoundary>,
 }
 
 impl ThinkContext {
@@ -72,16 +89,19 @@ impl ThinkContext {
                 CortexRequestPolicy::think(),
                 UseIdAllocator::new(move || Some(allocator_now)),
             ))),
+            index: Arc::new(NativeIndexBoundary),
         }
-    }
-
-    pub(crate) fn cortex_policy_deadline(&self) -> Option<Duration> {
-        CortexRequestPolicy::think().outcome_deadline()
     }
 
     #[cfg(test)]
     pub(crate) fn with_boundary(mut self, boundary: Arc<dyn CortexBoundary>) -> Self {
         self.cortex = boundary;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_index_boundary(mut self, boundary: Arc<dyn IndexBoundary>) -> Self {
+        self.index = boundary;
         self
     }
 

@@ -134,8 +134,23 @@ impl TimedOutUse {
 /// Per-use terminal states and deadline outcomes for a batch wait.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WaitForUsesReport {
-    pub completed: BTreeMap<String, UseEndState>,
+    pub completed: BTreeMap<String, UseCompletion>,
     pub timed_out: Vec<TimedOutUse>,
+}
+
+/// Terminal outcome plus the bool-only fields carried by a Cortex finish event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UseCompletion {
+    pub end_state: UseEndState,
+    pub finish_fields: FinishFields,
+}
+
+/// Finish-only fields the reference exposes to orchestration callers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FinishFields {
+    /// Present only when the finish event holds a JSON boolean.  Python uses
+    /// `isinstance(output_changed, bool)`, so truthy non-bools are discarded.
+    pub output_changed: Option<bool>,
 }
 
 /// The dispatch failures distinguish a failed bus send from an unclaimed request.
@@ -306,13 +321,18 @@ impl CortexRequestClient {
         &self,
         use_ids: &[String],
     ) -> Result<WaitForUsesReport, CortexClientError> {
-        wait_for_uses_with(
-            &self.journal,
-            use_ids,
-            self.policy.outcome_deadline(),
-            OUTCOME_POLL_INTERVAL,
-        )
-        .await
+        self.wait_for_uses_with_deadline(use_ids, self.policy.outcome_deadline())
+            .await
+    }
+
+    /// Wait with the caller's explicit overall deadline. `None` retains the
+    /// bounded poll interval while removing only the overall deadline.
+    pub async fn wait_for_uses_with_deadline(
+        &self,
+        use_ids: &[String],
+        deadline: Option<Duration>,
+    ) -> Result<WaitForUsesReport, CortexClientError> {
+        wait_for_uses_with(&self.journal, use_ids, deadline, OUTCOME_POLL_INTERVAL).await
     }
 }
 
@@ -459,7 +479,13 @@ async fn wait_for_uses_with(
             }
         {
             pending.remove(use_id);
-            report.completed.insert(use_id.to_owned(), end_state);
+            report.completed.insert(
+                use_id.to_owned(),
+                UseCompletion {
+                    end_state,
+                    finish_fields: finish_fields(&message.extra, end_state),
+                },
+            );
         }
         // Recovery is deliberately here, as well as before and after listener
         // lifetime, matching both old clients' three durable-broadcast positions.
@@ -501,17 +527,49 @@ fn wait_interval(
 fn recover_completed_from_disk(
     journal: &Path,
     pending: &mut HashSet<String>,
-    completed: &mut BTreeMap<String, UseEndState>,
+    completed: &mut BTreeMap<String, UseCompletion>,
 ) -> Result<(), CortexClientError> {
     for use_id in pending.clone() {
         let end_state =
             get_use_end_state(journal, &use_id).map_err(CortexClientError::ReadUseLog)?;
         if end_state.is_terminal() {
-            completed.insert(use_id.clone(), end_state);
+            let fields = if end_state == UseEndState::Finish {
+                let events =
+                    read_use_events(journal, &use_id).map_err(CortexClientError::ReadUseLog)?;
+                events
+                    .iter()
+                    .rev()
+                    .find_map(|event| {
+                        (event.get("event").and_then(Value::as_str) == Some("finish")).then(|| {
+                            event
+                                .as_object()
+                                .map(|event| finish_fields(event, end_state))
+                                .unwrap_or_default()
+                        })
+                    })
+                    .unwrap_or_default()
+            } else {
+                FinishFields::default()
+            };
+            completed.insert(
+                use_id.clone(),
+                UseCompletion {
+                    end_state,
+                    finish_fields: fields,
+                },
+            );
             pending.remove(&use_id);
         }
     }
     Ok(())
+}
+
+fn finish_fields(event: &Map<String, Value>, end_state: UseEndState) -> FinishFields {
+    FinishFields {
+        output_changed: (end_state == UseEndState::Finish)
+            .then(|| event.get("output_changed").and_then(Value::as_bool))
+            .flatten(),
+    }
 }
 
 #[cfg(test)]
@@ -647,12 +705,49 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(report.completed.get("finish"), Some(&UseEndState::Finish));
+        assert_eq!(
+            report
+                .completed
+                .get("finish")
+                .map(|completion| completion.end_state),
+            Some(UseEndState::Finish)
+        );
         assert_eq!(
             report.timed_out,
             vec![TimedOutUse::GenuineTimeout {
                 use_id: "pending".to_owned()
             }]
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn finish_fields_preserve_only_boolean_output_changed() {
+        let journal = tempfile::tempdir().unwrap();
+        active_use(
+            journal.path(),
+            "changed",
+            r#"{"event":"finish","output_changed":true}"#,
+        );
+        active_use(
+            journal.path(),
+            "truthy",
+            r#"{"event":"finish","output_changed":"yes"}"#,
+        );
+        let report = wait_for_uses_with(
+            journal.path(),
+            &["changed".to_owned(), "truthy".to_owned()],
+            Some(Duration::ZERO),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            report.completed["changed"].finish_fields.output_changed,
+            Some(true)
+        );
+        assert_eq!(
+            report.completed["truthy"].finish_fields.output_changed,
+            None
         );
     }
 
