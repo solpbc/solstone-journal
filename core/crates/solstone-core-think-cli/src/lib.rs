@@ -13,6 +13,7 @@ mod day;
 mod dispatch;
 mod flush;
 mod gate;
+mod helpers;
 mod run_log;
 mod segment;
 mod weekly;
@@ -434,9 +435,11 @@ fn validate(
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::io::{self, Write};
+    use std::io::{self, Read, Write};
+    use std::os::unix::net::UnixListener;
     use std::path::Path;
     use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
+    use std::thread;
 
     use chrono::NaiveDate;
     use filetime::{FileTime, set_file_mtime};
@@ -460,6 +463,7 @@ mod tests {
         waits: Mutex<Vec<Vec<String>>>,
         deadlines: Mutex<Vec<Option<std::time::Duration>>>,
         finish_fields: Mutex<solstone_core_cortex_client::FinishFields>,
+        dispatch_failure: Mutex<Option<context::DispatchFailure>>,
     }
 
     #[derive(Default)]
@@ -476,9 +480,12 @@ mod tests {
             &self,
             _: &tokio::runtime::Runtime,
             request: &solstone_core_cortex_client::CortexRequest,
-        ) -> Result<String, String> {
+        ) -> Result<String, context::DispatchFailure> {
             let mut requests = self.requests.lock().unwrap();
             requests.push(request.clone());
+            if let Some(error) = self.dispatch_failure.lock().unwrap().clone() {
+                return Err(error);
+            }
             Ok(format!("use-{}", requests.len()))
         }
         fn wait(
@@ -680,6 +687,68 @@ mod tests {
             file: "talent/sample.md".to_owned(),
             metadata,
             body: "prompt".to_owned(),
+        }
+    }
+
+    #[test]
+    fn helpers_emit_status_and_day_log_match_the_reference_shapes() {
+        // Source-derived, not measured: thinking.py:770-773 updates status,
+        // thinking.py:895-898 emits a `think` envelope, and utils.py:927-929
+        // appends `epoch<TAB>message` to the selected day task log.
+        let journal = tempdir().unwrap();
+        let socket = journal.path().join("health/callosum.sock");
+        fs::create_dir_all(socket.parent().unwrap()).unwrap();
+        let listener = UnixListener::bind(&socket).unwrap();
+        let received = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            stream.read_to_string(&mut line).unwrap();
+            line
+        });
+        assert!(helpers::emit(
+            journal.path(),
+            1_785_000_000_000,
+            "status",
+            Map::from_iter([("mode".to_owned(), Value::String("daily".to_owned()))]),
+        ));
+        let value: Value = serde_json::from_str(&received.join().unwrap()).unwrap();
+        assert_eq!(value["tract"], "think");
+        assert_eq!(value["event"], "status");
+        assert_eq!(value["mode"], "daily");
+        assert_eq!(value["ts"], 1_785_000_000_000_i64);
+        assert!(!helpers::emit(journal.path(), 1, "status", Map::new()));
+
+        let status = helpers::ThinkStatus::default();
+        status.update(Map::from_iter([(
+            "mode".to_owned(),
+            Value::String("daily".to_owned()),
+        )]));
+        status.update(Map::from_iter([(
+            "agents_completed".to_owned(),
+            Value::from(2),
+        )]));
+        assert_eq!(status.snapshot()["mode"], "daily");
+        assert_eq!(status.snapshot()["agents_completed"], 2);
+
+        for message in [
+            "sense_repair timeout",
+            "sense_repair error 1",
+            "sense_repair exception",
+            "sense_repair error no_callosum",
+            "sense_repair error timeout",
+        ] {
+            helpers::day_log(journal.path(), "20260813", 1_785_000_000_000, message);
+        }
+        let rows =
+            fs::read_to_string(journal.path().join("chronicle/20260813/task_log.txt")).unwrap();
+        for message in [
+            "sense_repair timeout",
+            "sense_repair error 1",
+            "sense_repair exception",
+            "sense_repair error no_callosum",
+            "sense_repair error timeout",
+        ] {
+            assert!(rows.contains(&format!("1785000000\t{message}\n")));
         }
     }
 

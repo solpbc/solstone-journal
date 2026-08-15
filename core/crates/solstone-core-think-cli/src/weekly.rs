@@ -4,8 +4,9 @@
 use serde_json::{Map, Value};
 use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_configs};
 
-use crate::context::ThinkContext;
+use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{ModeResult, PendingUse, dispatch, drain, excluded, grouped, runtime};
+use crate::helpers;
 use crate::run_log::RunLogWriter;
 
 /// Port of `thinking.py:2559-2957`: sorted priority groups, multi-facet
@@ -30,6 +31,14 @@ pub(crate) fn run(
     if configs.is_empty() {
         return Ok(ModeResult::default());
     }
+    let status = Map::from_iter([
+        ("mode".to_owned(), Value::String("weekly".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("agents_total".to_owned(), Value::from(configs.len())),
+        ("agents_completed".to_owned(), Value::from(0)),
+    ]);
+    context.status.update(status.clone());
+    let _ = helpers::emit(&context.journal, context.now_ms, "started", status);
     let facets =
         solstone_core_facets::list_declared_facet_names(&context.journal).unwrap_or_default();
     let active_facets =
@@ -108,6 +117,34 @@ pub(crate) fn run(
         log.log("group.complete", context.now_ms, complete);
         merge(&mut total, group_result);
     }
+    context.status.update(Map::from_iter([(
+        "agents_completed".to_owned(),
+        Value::from(total.success + total.failed),
+    )]));
+    let _ = helpers::emit(
+        &context.journal,
+        context.now_ms,
+        "completed",
+        Map::from_iter([
+            ("mode".to_owned(), Value::String("weekly".to_owned())),
+            ("day".to_owned(), Value::String(context.day.clone())),
+            ("success".to_owned(), Value::from(total.success)),
+            ("failed".to_owned(), Value::from(total.failed)),
+        ]),
+    );
+    helpers::day_log(
+        &context.journal,
+        &context.day,
+        context.now_ms,
+        &format!(
+            "think --weekly{}",
+            if total.failed == 0 {
+                String::new()
+            } else {
+                format!(" failed={}", total.failed)
+            }
+        ),
+    );
     Ok(total)
 }
 
@@ -139,7 +176,25 @@ fn queue(
             log.log("talent.dispatch", context.now_ms, fields);
             pending.push(item);
         }
-        Err(_) => {
+        Err(DispatchFailure::NotClaimed { use_id }) => {
+            // Source-derived, not measured: thinking.py:2753/2856 retains a
+            // never-claimed request as `request_lost`, not a send failure.
+            let mut fields = Map::new();
+            fields.insert("mode".to_owned(), Value::String("weekly".to_owned()));
+            fields.insert("day".to_owned(), Value::String(context.day.clone()));
+            fields.insert("name".to_owned(), Value::String(config.key.clone()));
+            fields.insert("use_id".to_owned(), Value::String(use_id));
+            fields.insert("state".to_owned(), Value::String("request_lost".to_owned()));
+            if let Some(facet) = facet {
+                fields.insert("facet".to_owned(), Value::String(facet.to_owned()));
+            }
+            log.log("talent.fail", context.now_ms, fields);
+            result.failed += 1;
+            result
+                .failed_names
+                .push(label(&config.key, facet, "request_lost"));
+        }
+        Err(DispatchFailure::Unavailable) => {
             result.failed += 1;
             result.failed_names.push(label(&config.key, facet, "send"));
         }

@@ -6,8 +6,9 @@ use solstone_core_system_health::{FilesystemHealthLogSource, read_completed_sinc
 use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_configs};
 
 use crate::cadence_state::CadenceState;
-use crate::context::ThinkContext;
+use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{ModeResult, dispatch, drain, grouped, runtime};
+use crate::helpers;
 use crate::run_log::RunLogWriter;
 
 /// `thinking.py:2969-2972` needs this separate preflight: lib.rs calls it before
@@ -33,6 +34,14 @@ pub(crate) fn run(
     log: &mut RunLogWriter<std::fs::File>,
     force: bool,
 ) -> Result<ModeResult, String> {
+    let status = Map::from_iter([
+        ("mode".to_owned(), Value::String("cadence".to_owned())),
+        ("day".to_owned(), Value::String(context.day.clone())),
+        ("agents_total".to_owned(), Value::from(configs.len())),
+        ("agents_completed".to_owned(), Value::from(0)),
+    ]);
+    context.status.update(status.clone());
+    let _ = helpers::emit(&context.journal, context.now_ms, "started", status);
     let mut state = CadenceState::load(&context.journal);
     let source = FilesystemHealthLogSource::new(&context.journal);
     let runtime = runtime()?;
@@ -97,7 +106,21 @@ pub(crate) fn run(
                     }
                     merge(&mut result, one);
                 }
-                Err(_) => {
+                Err(DispatchFailure::NotClaimed { use_id }) => {
+                    result.failed += 1;
+                    result
+                        .failed_names
+                        .push(format!("{} (request_lost)", config.key));
+                    let fields = Map::from_iter([
+                        ("mode".to_owned(), Value::String("cadence".to_owned())),
+                        ("day".to_owned(), Value::String(context.day.clone())),
+                        ("name".to_owned(), Value::String(config.key.clone())),
+                        ("use_id".to_owned(), Value::String(use_id)),
+                        ("state".to_owned(), Value::String("request_lost".to_owned())),
+                    ]);
+                    log.log("talent.fail", context.now_ms, fields);
+                }
+                Err(DispatchFailure::Unavailable) => {
                     result.failed += 1;
                     result.failed_names.push(format!("{} (send)", config.key));
                 }
@@ -107,6 +130,34 @@ pub(crate) fn run(
     if dirty {
         state.save(&context.journal)?;
     }
+    context.status.update(Map::from_iter([(
+        "agents_completed".to_owned(),
+        Value::from(result.success + result.failed),
+    )]));
+    let _ = helpers::emit(
+        &context.journal,
+        context.now_ms,
+        "completed",
+        Map::from_iter([
+            ("mode".to_owned(), Value::String("cadence".to_owned())),
+            ("day".to_owned(), Value::String(context.day.clone())),
+            ("success".to_owned(), Value::from(result.success)),
+            ("failed".to_owned(), Value::from(result.failed)),
+        ]),
+    );
+    helpers::day_log(
+        &context.journal,
+        &context.day,
+        context.now_ms,
+        &format!(
+            "think --cadence{}",
+            if result.failed == 0 {
+                String::new()
+            } else {
+                format!(" failed={}", result.failed)
+            }
+        ),
+    );
     Ok(result)
 }
 

@@ -19,6 +19,7 @@ glob.workspace = true
 log.workspace = true
 serde_json.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-callosum.workspace = true
 solstone-core-cortex-client.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-identity.workspace = true

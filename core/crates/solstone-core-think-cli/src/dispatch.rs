@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use solstone_core_cortex_client::{CortexRequest, UseEndState};
 use solstone_core_talent_config::{TalentConfig, get_output_path};
 
-use crate::context::ThinkContext;
+use crate::context::{DispatchFailure, ThinkContext};
 
 /// Daily, weekly, and cadence all use the reference's 610-second batch deadline.
 pub(crate) const DEFAULT_THINK_TIMEOUT: Duration = Duration::from_secs(610);
@@ -105,7 +105,7 @@ pub(crate) fn dispatch(
     facet: Option<&str>,
     force: bool,
     extra: Map<String, Value>,
-) -> Result<PendingUse, String> {
+) -> Result<PendingUse, DispatchFailure> {
     let mut request = extra;
     request
         .entry("day".to_owned())
@@ -119,8 +119,7 @@ pub(crate) fn dispatch(
     request.insert("env".to_owned(), Value::Object(env));
     apply_output_persistence(config, &mut request, force);
     if schedule == "weekly" && config.key == "weekly_reflection" {
-        let day =
-            NaiveDate::parse_from_str(&context.day, "%Y%m%d").map_err(|error| error.to_string())?;
+        let day = NaiveDate::parse_from_str(&context.day, "%Y%m%d").expect("validated day");
         let week_start =
             day - ChronoDuration::days(i64::from(day.weekday().num_days_from_sunday()));
         let week_start = week_start.format("%Y%m%d").to_string();
@@ -203,7 +202,7 @@ pub(crate) fn dispatch_direct(
     prompt: String,
     config: Map<String, Value>,
     facet: Option<&str>,
-) -> Result<PendingUse, String> {
+) -> Result<PendingUse, DispatchFailure> {
     let request = CortexRequest::new(prompt, name.to_owned()).with_config(config);
     let output_path = request
         .config

@@ -5,8 +5,9 @@ use serde_json::{Map, Value};
 use solstone_core_cortex_client::{TimedOutUse, UseEndState};
 use solstone_core_talent_config::{TalentFilter, load_talent_configs};
 
-use crate::context::ThinkContext;
+use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, dispatch_direct, runtime};
+use crate::helpers;
 use crate::run_log::RunLogWriter;
 
 /// Port of `thinking.py:3500-3712`: flush filters `hook.flush`, records each
@@ -35,15 +36,18 @@ pub(crate) fn run(
     }
     // Source-derived, not measured: thinking.py:3538-3554 records the flush
     // run before dispatching the eligible hooks.
-    log.log(
-        "started",
-        context.now_ms,
-        fields(
-            context,
-            segment,
-            Map::from_iter([("count".to_owned(), Value::from(configs.len()))]),
-        ),
+    let start = fields(
+        context,
+        segment,
+        Map::from_iter([
+            ("count".to_owned(), Value::from(configs.len())),
+            ("agents_total".to_owned(), Value::from(configs.len())),
+            ("agents_completed".to_owned(), Value::from(0)),
+        ]),
     );
+    context.status.update(start.clone());
+    let _ = helpers::emit(&context.journal, context.now_ms, "started", start.clone());
+    log.log("started", context.now_ms, start);
     let runtime = runtime()?;
     let mut pending = Vec::new();
     let mut result = ModeResult::default();
@@ -53,7 +57,21 @@ pub(crate) fn run(
                 log_dispatch(log, context, segment, &config.key, &item);
                 pending.push(item);
             }
-            Err(_) => {
+            Err(DispatchFailure::NotClaimed { use_id }) => {
+                result.failed += 1;
+                result
+                    .failed_names
+                    .push(format!("{} (request_lost)", config.key));
+                log_fail(
+                    log,
+                    context,
+                    segment,
+                    &config.key,
+                    Some(&use_id),
+                    "request_lost",
+                );
+            }
+            Err(DispatchFailure::Unavailable) => {
                 result.failed += 1;
                 result.failed_names.push(format!("{} (send)", config.key));
                 log_fail(log, context, segment, &config.key, None, "send_failed");
@@ -61,21 +79,41 @@ pub(crate) fn run(
         }
     }
     merge(&mut result, drain(context, log, &runtime, pending, segment));
+    context.status.update(Map::from_iter([(
+        "agents_completed".to_owned(),
+        Value::from(result.success + result.failed),
+    )]));
     // Source-derived, not measured: thinking.py:3682-3703 records the
     // aggregate result after the fixed-deadline wait.
-    log.log(
-        "completed",
+    let completed = fields(
+        context,
+        segment,
+        Map::from_iter([
+            ("success".to_owned(), Value::from(result.success)),
+            ("failed".to_owned(), Value::from(result.failed)),
+            ("duration_ms".to_owned(), Value::from(0)),
+        ]),
+    );
+    let _ = helpers::emit(
+        &context.journal,
         context.now_ms,
-        fields(
-            context,
-            segment,
-            Map::from_iter([
-                ("success".to_owned(), Value::from(result.success)),
-                ("failed".to_owned(), Value::from(result.failed)),
-                ("duration_ms".to_owned(), Value::from(0)),
-            ]),
+        "completed",
+        completed.clone(),
+    );
+    helpers::day_log(
+        &context.journal,
+        &context.day,
+        context.now_ms,
+        &format!(
+            "think --flush {segment}{}",
+            if result.failed == 0 {
+                String::new()
+            } else {
+                format!(" failed={}", result.failed)
+            }
         ),
     );
+    log.log("completed", context.now_ms, completed);
     Ok(result)
 }
 
@@ -95,7 +133,7 @@ fn queue(
     config: &solstone_core_talent_config::TalentConfig,
     segment: &str,
     stream: Option<&str>,
-) -> Result<PendingUse, String> {
+) -> Result<PendingUse, DispatchFailure> {
     let generate = config.metadata.get("type").and_then(Value::as_str) == Some("generate");
     let mut request = Map::from_iter([
         ("day".to_owned(), Value::String(context.day.clone())),

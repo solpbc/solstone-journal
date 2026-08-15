@@ -7,11 +7,12 @@ use solstone_core_cortex_client::{TimedOutUse, UseEndState};
 use solstone_core_facets::get_activity_record;
 use solstone_core_talent_config::{TalentFilter, get_output_name, load_talent_configs};
 
-use crate::context::ThinkContext;
+use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, dispatch_direct, grouped, maybe_rescan_output,
     runtime,
 };
+use crate::helpers;
 use crate::run_log::RunLogWriter;
 
 /// Port of `thinking.py:3084-3499`. Activity records select matching talents,
@@ -68,19 +69,20 @@ pub(crate) fn run(
 
     let groups = grouped(configs);
     let total_count = groups.values().map(Vec::len).sum::<usize>();
-    log.log(
-        "started",
-        context.now_ms,
-        fields(
-            context,
-            activity_id,
-            facet,
-            Map::from_iter([
-                ("count".to_owned(), Value::from(total_count)),
-                ("groups".to_owned(), Value::from(groups.len())),
-            ]),
-        ),
+    let start = fields(
+        context,
+        activity_id,
+        facet,
+        Map::from_iter([
+            ("count".to_owned(), Value::from(total_count)),
+            ("groups".to_owned(), Value::from(groups.len())),
+            ("agents_total".to_owned(), Value::from(total_count)),
+            ("agents_completed".to_owned(), Value::from(0)),
+        ]),
     );
+    context.status.update(start.clone());
+    let _ = helpers::emit(&context.journal, context.now_ms, "started", start.clone());
+    log.log("started", context.now_ms, start);
 
     let runtime = runtime()?;
     let mut total = ModeResult::default();
@@ -136,7 +138,22 @@ pub(crate) fn run(
                     log_dispatch(log, context, &config.key, activity_id, facet, &item);
                     pending.push(item);
                 }
-                Err(_) => {
+                Err(DispatchFailure::NotClaimed { use_id }) => {
+                    group.failed += 1;
+                    group
+                        .failed_names
+                        .push(format!("{} (request_lost)", config.key));
+                    log_fail(
+                        log,
+                        context,
+                        activity_id,
+                        facet,
+                        &config.key,
+                        Some(&use_id),
+                        "request_lost",
+                    );
+                }
+                Err(DispatchFailure::Unavailable) => {
                     group.failed += 1;
                     group.failed_names.push(format!("{} (send)", config.key));
                     log_fail(
@@ -183,25 +200,43 @@ pub(crate) fn run(
             ),
         );
         merge(&mut total, group);
+        context.status.update(Map::from_iter([(
+            "agents_completed".to_owned(),
+            Value::from(total.success + total.failed),
+        )]));
     }
     // Source-derived, not measured: thinking.py:3456-3465 writes a terminal
     // activity completion record after every priority group has drained.
-    log.log(
-        "completed",
+    let completed = fields(
+        context,
+        activity_id,
+        facet,
+        Map::from_iter([
+            ("success".to_owned(), Value::from(total.success)),
+            ("failed".to_owned(), Value::from(total.failed)),
+            ("duration_ms".to_owned(), Value::from(0)),
+        ]),
+    );
+    let _ = helpers::emit(
+        &context.journal,
         context.now_ms,
-        fields(
-            context,
-            activity_id,
-            facet,
-            Map::from_iter([
-                ("success".to_owned(), Value::from(total.success)),
-                ("failed".to_owned(), Value::from(total.failed)),
-                // `ThinkContext` has one deterministic millisecond seam, so this
-                // synchronous port records the observed duration as zero.
-                ("duration_ms".to_owned(), Value::from(0)),
-            ]),
+        "completed",
+        completed.clone(),
+    );
+    helpers::day_log(
+        &context.journal,
+        &context.day,
+        context.now_ms,
+        &format!(
+            "think --activity {activity_id}{}",
+            if total.failed == 0 {
+                String::new()
+            } else {
+                format!(" failed={}", total.failed)
+            }
         ),
     );
+    log.log("completed", context.now_ms, completed);
     Ok(total)
 }
 
@@ -242,7 +277,7 @@ fn queue(
     facet: &str,
     kind: &str,
     refresh: bool,
-) -> Result<PendingUse, String> {
+) -> Result<PendingUse, DispatchFailure> {
     let generate = config.metadata.get("type").and_then(Value::as_str) == Some("generate");
     let format = config
         .metadata

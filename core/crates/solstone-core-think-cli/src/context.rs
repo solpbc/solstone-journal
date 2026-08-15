@@ -6,15 +6,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use solstone_core_cortex_client::{
-    CortexRequest, CortexRequestClient, CortexRequestPolicy, UseIdAllocator, WaitForUsesReport,
+    CortexRequest, CortexRequestClient, CortexRequestPolicy, DispatchError, UseIdAllocator,
+    WaitForUsesReport,
 };
+
+use crate::helpers::ThinkStatus;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum DispatchFailure {
+    Unavailable,
+    NotClaimed { use_id: String },
+}
 
 pub(crate) trait CortexBoundary: Send + Sync {
     fn dispatch(
         &self,
         runtime: &tokio::runtime::Runtime,
         request: &CortexRequest,
-    ) -> Result<String, String>;
+    ) -> Result<String, DispatchFailure>;
     fn wait(
         &self,
         runtime: &tokio::runtime::Runtime,
@@ -44,10 +53,13 @@ impl CortexBoundary for NativeCortexBoundary {
         &self,
         runtime: &tokio::runtime::Runtime,
         request: &CortexRequest,
-    ) -> Result<String, String> {
+    ) -> Result<String, DispatchFailure> {
         runtime
             .block_on(self.0.dispatch(request))
-            .map_err(|error| format!("cortex dispatch failed: {error:?}"))
+            .map_err(|error| match error {
+                DispatchError::Unavailable => DispatchFailure::Unavailable,
+                DispatchError::NotClaimed { use_id } => DispatchFailure::NotClaimed { use_id },
+            })
     }
 
     fn wait(
@@ -71,6 +83,7 @@ pub(crate) struct ThinkContext {
     pub(crate) apps_root: PathBuf,
     pub(crate) cortex: Arc<dyn CortexBoundary>,
     pub(crate) index: Arc<dyn IndexBoundary>,
+    pub(crate) status: ThinkStatus,
 }
 
 impl ThinkContext {
@@ -90,6 +103,7 @@ impl ThinkContext {
                 UseIdAllocator::new(move || Some(allocator_now)),
             ))),
             index: Arc::new(NativeIndexBoundary),
+            status: ThinkStatus::default(),
         }
     }
 

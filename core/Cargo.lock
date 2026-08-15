@@ -4386,6 +4386,7 @@ dependencies = [
  "glob",
  "log",
  "serde_json",
+ "solstone-core-callosum",
  "solstone-core-cli",
  "solstone-core-cortex-client",
  "solstone-core-facets",
