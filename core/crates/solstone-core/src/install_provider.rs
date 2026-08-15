@@ -18,14 +18,19 @@ use solstone_core_local::{
     LocalEndpointResolution, MemorySource, detect_gpus, discrete_hardware_gpu_count, gpu_probe_ok,
     is_discrete, probe_nvidia_gpu, resolve_local_endpoint, select_device,
 };
+use solstone_core_segment::{SupervisorRefusal, is_solstone_up, require_solstone_with};
 use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
 
-use crate::{eprint_journal_path_error, resolve_process_journal_path};
+use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
 
 const OBSERVE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const OBSERVE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const OBSERVE_PROGRESS_INTERVAL: Duration = Duration::from_secs(10);
-const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two external artifacts into this journal's provider cache before it can run: the parakeet.cpp server binary from github.com (MIT) and the speech model from huggingface.co (CC-BY-4.0).";
+// Every byte this verb fetches resolves through `Artifact::origin_key` against a
+// single-element host allowlist, so naming github.com and huggingface.co here
+// would name two parties the native path never contacts. Carried verbatim from
+// the reference's post-flip wording rather than re-authored.
+const PARAKEET_DOWNLOAD_DISCLOSURE: &str = "parakeet-cpp fetches two artifacts into this journal's provider cache before it can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT) and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md.";
 const LOCAL_DOWNLOAD_DISCLOSURE: &str = "local model assets: downloading the llama.cpp runtime (MIT; the CUDA build also carries NVIDIA-licensed runtime components) and the model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,8 +58,45 @@ impl InstallProviderOutcome {
     }
 }
 
+/// Map a supervisor refusal onto the reference's observable surface.
+///
+/// Measured against the reference: with the stack down, `install-provider`
+/// exits 1 after printing the supervisor line, and exits 75 with **zero** bytes
+/// of stderr when `SOL_SUPERVISOR_SPAWNED=1` -- the supervisor's own spawn path
+/// is the caller least able to notice a spurious line.
+fn supervisor_refusal_outcome(refusal: SupervisorRefusal) -> InstallProviderOutcome {
+    InstallProviderOutcome {
+        exit_code: match refusal {
+            SupervisorRefusal::SpawnedUnavailable => EXIT_TEMPFAIL,
+            SupervisorRefusal::Unavailable => 1,
+        },
+        stdout: Vec::new(),
+        stderr: refusal.message().map(str::to_owned).into_iter().collect(),
+    }
+}
+
+/// The reference gates this verb on the journal service *after* argument
+/// parsing and *before* validating the provider name, and it reaches the gate
+/// through `read_service_port`, which swallows a journal it cannot resolve. So
+/// an unresolvable journal refuses as "not running" rather than as a path
+/// error, and `.ok()` here is that behaviour, not a swallowed failure.
+fn supervisor_preflight() -> Result<(), SupervisorRefusal> {
+    let journal = resolve_process_journal_path().ok().map(|line| line.path);
+    require_solstone_with(
+        |name| std::env::var(name).ok(),
+        || journal.as_deref().is_some_and(is_solstone_up),
+    )
+}
+
 /// Collect process inputs only; command decisions live in `run_inner`.
 pub fn run(options: InstallProviderOptions) -> ExitCode {
+    if let Err(refusal) = supervisor_preflight() {
+        let outcome = supervisor_refusal_outcome(refusal);
+        for line in outcome.stderr {
+            eprintln!("{line}");
+        }
+        return ExitCode::from(outcome.exit_code);
+    }
     let is_local = options.name == "local";
     let outcome = run_inner(
         options,
@@ -154,7 +196,10 @@ where
         name => {
             return InstallProviderOutcome::failure(
                 2,
-                format!("unsupported provider {name:?}; supported: local, parakeet"),
+                format!(
+                    "unsupported provider {}; supported: local, parakeet",
+                    reference_repr(name)
+                ),
             );
         }
     }
@@ -336,7 +381,17 @@ where
         }
     };
     let readiness = readiness_provider(&journal);
-    let mut stderr = vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()];
+    // Darwin's local provider is MLX, and the reference branches to its MLX
+    // installer BEFORE printing this line -- so on a mac it prints no download
+    // disclosure at all. Printing it here would name a llama.cpp runtime and a
+    // CUDA component that platform never fetches, on the one surface whose job
+    // is to say accurately what gets downloaded. A macOS-specific disclosure
+    // would be new copy the reference does not have, so it is not built here.
+    let mut stderr = if os_name == "darwin" {
+        Vec::new()
+    } else {
+        vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()]
+    };
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
     if readiness_status == "ready" {
         let install = match status::read_status(&journal, "local") {
@@ -783,6 +838,22 @@ fn render_status(status: &status::InstallStatus) -> String {
 
 fn render_value(value: &Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON value serializes")
+}
+
+/// Quote a rejected provider name the way the reference's `!r` does.
+///
+/// Rust's `{:?}` always double-quotes, so the reference's `'bogus'` came out as
+/// `"bogus"`. The reference prefers single quotes and switches to double only
+/// when the value contains a single quote and no double quote. Escaping of
+/// backslashes and non-printables is deliberately not reproduced: the input is
+/// an argv provider name, and the parity coverage this verb owes is boundary
+/// cases plus one representative per class, not the whole repr grammar.
+fn reference_repr(value: &str) -> String {
+    if value.contains('\'') && !value.contains('"') {
+        format!("\"{value}\"")
+    } else {
+        format!("'{value}'")
+    }
 }
 
 fn normalized_os(value: &str) -> &str {
@@ -1566,6 +1637,107 @@ mod tests {
     }
 
     #[test]
+    fn supervisor_gate_reproduces_all_four_reference_rows() {
+        // Measured by running the reference on a host with the stack down:
+        //   SOL_SKIP_SUPERVISOR_CHECK=1 -> proceeds (exit 2 on a bad name)
+        //   convey accepting            -> proceeds
+        //   SOL_SUPERVISOR_SPAWNED=1    -> exit 75, ZERO bytes of stderr
+        //   otherwise                   -> exit 1 plus the supervisor line
+        let env_of = |set: &'static str| {
+            move |name: &str| (name == set).then(|| "1".to_owned()) as Option<String>
+        };
+
+        assert!(require_solstone_with(env_of("SOL_SKIP_SUPERVISOR_CHECK"), || false).is_ok());
+        assert!(require_solstone_with(|_| None, || true).is_ok());
+
+        let spawned = supervisor_refusal_outcome(
+            require_solstone_with(env_of("SOL_SUPERVISOR_SPAWNED"), || false)
+                .expect_err("spawned + down must refuse"),
+        );
+        assert_eq!(spawned.exit_code, 75);
+        assert!(
+            spawned.stderr.is_empty(),
+            "a spawned child must stay silent: {:?}",
+            spawned.stderr
+        );
+        assert!(spawned.stdout.is_empty());
+
+        let interactive = supervisor_refusal_outcome(
+            require_solstone_with(|_| None, || false).expect_err("down must refuse"),
+        );
+        assert_eq!(interactive.exit_code, 1);
+        assert_eq!(
+            interactive.stderr,
+            ["sol: solstone isn't running. Start it with 'journal up' and retry."]
+        );
+        assert!(interactive.stdout.is_empty());
+    }
+
+    #[test]
+    fn unsupported_provider_quotes_the_name_like_the_reference() {
+        // `{:?}` double-quotes unconditionally, so this surface read
+        // `unsupported provider "bogus"` where the reference reads 'bogus'.
+        assert_eq!(reference_repr("bogus"), "'bogus'");
+        assert_eq!(reference_repr("it's"), "\"it's\"");
+        assert_eq!(reference_repr("say \"hi\""), "'say \"hi\"'");
+        assert_eq!(reference_repr("both'and\""), "'both'and\"'");
+    }
+
+    #[test]
+    fn darwin_local_arm_carries_no_llama_cpp_download_disclosure() {
+        // The reference branches into its MLX installer before printing the
+        // local disclosure, so a mac owner sees none. Printing it on Darwin
+        // names a llama.cpp runtime and a CUDA component that platform never
+        // fetches -- an over-disclosure on the surface that exists to disclose.
+        let journal = tempfile::tempdir().unwrap();
+        let executor = |_: &Path| Ok(json!({"status": {"install_state": "installed"}}));
+
+        let darwin = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            None,
+            executor,
+            "darwin",
+            "arm64",
+        );
+        assert!(
+            !darwin
+                .stderr
+                .iter()
+                .any(|line| line.contains("llama.cpp runtime") || line.contains("NVIDIA-licensed")),
+            "{:?}",
+            darwin.stderr
+        );
+
+        let linux = run_local_inner_with_platform(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            None,
+            executor,
+            "linux",
+            "x86_64",
+        );
+        assert_eq!(linux.stderr[0], LOCAL_DOWNLOAD_DISCLOSURE);
+    }
+
+    #[test]
+    fn parakeet_disclosure_names_only_the_origin_this_verb_fetches_from() {
+        // Every parakeet byte resolves through the artifact catalog's
+        // `origin_key` against a single-element host allowlist, so a disclosure
+        // naming github.com or huggingface.co would name parties this path
+        // never contacts.
+        assert!(PARAKEET_DOWNLOAD_DISCLOSURE.contains("updates.solstone.app"));
+        for third_party in ["github.com", "huggingface.co"] {
+            assert!(
+                !PARAKEET_DOWNLOAD_DISCLOSURE.contains(third_party),
+                "parakeet disclosure names {third_party}"
+            );
+        }
+        assert!(!LOCAL_DOWNLOAD_DISCLOSURE.contains("github.com"));
+        assert!(!LOCAL_DOWNLOAD_DISCLOSURE.contains("huggingface.co"));
+    }
+
+    #[test]
     fn ac6_unknown_provider_surface() {
         let unknown = run_inner(
             options("bogus"),
@@ -1577,7 +1749,7 @@ mod tests {
         assert_eq!(unknown.exit_code, 2);
         assert_eq!(
             unknown.stderr,
-            ["unsupported provider \"bogus\"; supported: local, parakeet"]
+            ["unsupported provider 'bogus'; supported: local, parakeet"]
         );
     }
 
