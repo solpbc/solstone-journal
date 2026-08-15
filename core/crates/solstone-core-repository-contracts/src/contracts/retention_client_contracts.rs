@@ -9,6 +9,8 @@ use std::process::Command;
 use serde_json::Value;
 
 const CLIENT: &str = "solstone-core-retention-client";
+const HOME: &str = "solstone-core-home-web";
+const RETENTION: &str = "solstone-core-retention";
 const CLIENT_SOURCE: &str = "core/crates/solstone-core-retention-client/src";
 const ALLOWED_REEXPORTS: &[&str] = &[
     "Mark",
@@ -158,10 +160,9 @@ fn retention_client_has_no_unapproved_workspace_dependents() {
         .iter()
         .map(|name| (*name).to_owned())
         .collect::<BTreeSet<_>>();
-    let unexpected = dependents.difference(&allowed).cloned().collect::<Vec<_>>();
-    assert!(
-        unexpected.is_empty(),
-        "retention client has workspace dependents outside its allowlist: {unexpected:?}"
+    assert_eq!(
+        dependents, allowed,
+        "retention client workspace dependents must exactly match its allowlist"
     );
 
     let tree = Command::new("cargo")
@@ -184,5 +185,32 @@ fn retention_client_has_no_unapproved_workspace_dependents() {
         tree.status.success(),
         "locked workspace cargo tree must succeed: {}",
         String::from_utf8_lossy(&tree.stderr)
+    );
+}
+
+#[test]
+fn home_uses_the_bounded_client_without_a_direct_retention_edge() {
+    let metadata = metadata(&repository_root());
+    let home = metadata["packages"]
+        .as_array()
+        .expect("packages array")
+        .iter()
+        .find(|package| package["name"] == HOME)
+        .expect("home package");
+    let dependencies = home["dependencies"].as_array().expect("home dependencies");
+
+    assert!(
+        dependencies
+            .iter()
+            .any(|dependency| dependency["name"] == CLIENT),
+        "home must use the bounded retention client"
+    );
+    // Temporarily adding the direct edge to home's manifest made this assertion fail;
+    // the manifest was restored before committing this contract.
+    assert!(
+        dependencies
+            .iter()
+            .all(|dependency| dependency["name"] != RETENTION),
+        "home must not declare retention directly, including for tests"
     );
 }

@@ -14,10 +14,15 @@ axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 serde_json.workspace = true
 solstone-core-home.workspace = true
+solstone-core-facets.workspace = true
+solstone-core-journal-config.workspace = true
+solstone-core-retention-client.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
 regex.workspace = true
 solstone-core-convey-shell.workspace = true
 tempfile = "3.24.0"
-tokio = { workspace = true, features = ["macros", "rt"] }
+temp-env = "0.3.6"
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true

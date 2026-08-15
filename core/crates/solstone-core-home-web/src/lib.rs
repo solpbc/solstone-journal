@@ -8,23 +8,27 @@ use axum::{
     body::Body,
     http::{StatusCode, header},
     response::Response,
-    routing::get,
+    routing::{get, post},
 };
 
 mod assets;
 mod clock;
+mod removals;
 
 pub use clock::Clock;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
     let pulse_root = journal_root.clone();
     let pulse_clock = clock.clone();
-    let briefing_root = journal_root;
+    let briefing_root = journal_root.clone();
     Router::new()
         .route("/app/home/", get(assets::shell))
         .route("/app/home", get(shell_redirect))
         .route("/app/home/workspace", get(assets::workspace))
         .route("/app/home/static/home.js", get(assets::home_js))
+        .route("/app/home/api/removals", get(removals::list))
+        .route("/app/home/api/approve", post(removals::approve))
+        .route("/app/home/api/decline", post(removals::decline))
         .route(
             "/app/home/api/pulse",
             get(move || pulse(pulse_root.clone(), pulse_clock.clone())),
@@ -33,6 +37,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
             "/app/home/api/briefing",
             get(move || briefing(briefing_root.clone(), clock.clone())),
         )
+        .with_state(journal_root)
 }
 
 async fn pulse(journal_root: PathBuf, clock: Clock) -> Json<serde_json::Value> {

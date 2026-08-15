@@ -530,6 +530,13 @@ mod tests {
         assert_eq!(serialized.len(), PER_TARGET_BYTES);
         assert_eq!(PER_TARGET_BYTES, 26_889);
         assert_eq!(child_timeout().as_secs(), 480);
+        assert!(
+            child_timeout()
+                >= Duration::from_secs(
+                    (MAX_REMOVE_MARK_IDS as u64).saturating_mul(LOCK_WAIT_SECONDS)
+                ),
+            "the child timeout must cover lock waiting for every accepted mark"
+        );
         assert_eq!(stdout_limit(), 860_704);
     }
 }
