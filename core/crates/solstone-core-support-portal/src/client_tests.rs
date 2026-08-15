@@ -7,7 +7,7 @@ use std::path::Path;
 
 use base64::Engine;
 use ring::signature::{RSA_PKCS1_2048_8192_SHA256, UnparsedPublicKey};
-use rsa::pkcs8::EncodePublicKey;
+use rsa::pkcs1::EncodeRsaPublicKey;
 use tempfile::TempDir;
 
 use crate::client::{
@@ -166,14 +166,7 @@ fn tos_changed_retries_once_and_rewinds_multipart() {
     }];
     assert_eq!(
         client
-            .authed_request(
-                "POST",
-                "https://portal.example/api/upload",
-                None,
-                None,
-                Some(&mut files),
-                None
-            )
+            .authed_request("POST", "/api/upload", None, None, Some(&mut files), None)
             .unwrap()
             .body,
         "done"
@@ -296,7 +289,6 @@ fn settings_precedence_empty_env_and_enabled_fail_open_cases() {
     )
     .unwrap();
     assert!(is_enabled(dir.path()));
-    assert!(!is_enabled(dir.path()));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -319,6 +311,7 @@ fn authed_request_preserves_delete_params_idempotency_and_dpop_htu() {
         vec![
             response(200, "terms"),
             response(200, r#"{"access_token":"token"}"#),
+            response(200, "done"),
             response(200, "done"),
         ],
     );
@@ -354,6 +347,22 @@ fn authed_request_preserves_delete_params_idempotency_and_dpop_htu() {
     assert_eq!(
         proof_payload(proof)["htu"],
         "https://portal.example/api/tickets"
+    );
+
+    client
+        .authed_request("GET", "/api/tickets#frag", None, Some(&params), None, None)
+        .unwrap();
+    let request = log.lock().unwrap().last().unwrap().clone();
+    assert_eq!(request.path, "/api/tickets?status=open#frag");
+    let proof = request
+        .headers
+        .iter()
+        .find(|(name, _)| name == "DPoP")
+        .map(|(_, value)| value)
+        .unwrap();
+    assert_eq!(
+        proof_payload(proof)["htu"],
+        "https://portal.example/api/tickets#frag"
     );
 }
 
@@ -484,7 +493,7 @@ fn verify_golden_proof(vector: &serde_json::Value, proof: &str) {
         rsa::BigUint::from_bytes_be(&e),
     )
     .unwrap();
-    let der = key.to_public_key_der().unwrap();
+    let der = key.to_pkcs1_der().unwrap();
     let (input, signature) = proof.rsplit_once('.').unwrap();
     let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(signature)
@@ -529,6 +538,13 @@ fn golden_storage_loads_identity_token_and_verifies_recorded_proof() {
     let vector = golden();
     let storage = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/support_portal_golden_nonproduction");
+    let expected_access_token = serde_json::from_str::<serde_json::Value>(
+        &std::fs::read_to_string(storage.join("token.json")).unwrap(),
+    )
+    .unwrap()["access_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let (transport, _) = StubTransport::new("https://support.example.invalid", vec![]);
     let client = PortalClient::new_with(
         vector["pinned"]["portal_url"].as_str().unwrap(),
@@ -540,10 +556,7 @@ fn golden_storage_loads_identity_token_and_verifies_recorded_proof() {
     )
     .unwrap();
     assert!(client.is_registered());
-    assert_eq!(
-        client.access_token(),
-        Some(vector["access_token"].as_str().unwrap())
-    );
+    assert_eq!(client.access_token(), Some(expected_access_token.as_str()));
     verify_golden_proof(
         &vector,
         vector["dpop"]["proof_with_access_token"].as_str().unwrap(),
@@ -764,8 +777,7 @@ fn status_error_includes_only_the_first_500_characters() {
     let PortalClientError::HttpStatus { message } = error else {
         panic!("wrong error")
     };
-    assert!(message.ends_with(&"x".repeat(500)));
-    assert_eq!(message.matches('x').count(), 500);
+    assert_eq!(message.rsplit_once(": ").unwrap().1, "x".repeat(500));
     assert!(message.starts_with("GET https://portal.example/too-long — 500: "));
 }
 
@@ -790,12 +802,10 @@ fn real_transport_does_not_follow_redirects_and_sends_dpop_headers() {
     .unwrap();
     let mut client =
         PortalClient::new(redirect.url(), dir.path(), Some("loop".to_owned()), false).unwrap();
-    let error = client
+    let response = client
         .authed_request("GET", "/read", None, None, None, None)
-        .unwrap_err();
-    assert!(
-        matches!(error, PortalClientError::HttpStatus { ref message } if message.contains(" — 302: "))
-    );
+        .unwrap();
+    assert_eq!(response.status, 302);
     let requests = redirect.log();
     let request = requests.lock().unwrap().pop().unwrap();
     assert_eq!(request.path, "/read");

@@ -266,9 +266,7 @@ impl PortalClient {
                 .replace('_', "-")
                 .chars()
                 .take(48)
-                .filter(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
-                })
+                .filter(|character| character.is_alphanumeric() || matches!(character, '.' | '-'))
                 .collect();
             self.handle = Some(format!("solstone-{}", hostname.trim_matches(['.', '-'])));
             if self.handle.as_deref() == Some("solstone-") {
@@ -522,11 +520,7 @@ impl PortalClient {
         options: &mut AuthedRequestOptions<'_, '_>,
         retry_on_tos: bool,
     ) -> Result<PortalResponse, PortalClientError> {
-        let url = if path.starts_with('/') {
-            format!("{}{}", self.portal_url, path)
-        } else {
-            path.to_owned()
-        };
+        let url = format!("{}{}", self.portal_url, path);
         let token = self
             .access_token
             .clone()
@@ -726,8 +720,15 @@ fn append_params(url: &str, params: Option<&[(String, String)]>) -> String {
         .map(|(key, value)| format!("{}={}", percent_encode(key), percent_encode(value)))
         .collect::<Vec<_>>()
         .join("&");
-    let separator = if url.contains('?') { "&" } else { "?" };
-    format!("{url}{separator}{query}")
+    let (base, fragment) = match url.split_once('#') {
+        Some((base, fragment)) => (base, Some(fragment)),
+        None => (url, None),
+    };
+    let separator = if base.contains('?') { "&" } else { "?" };
+    match fragment {
+        Some(fragment) => format!("{base}{separator}{query}#{fragment}"),
+        None => format!("{base}{separator}{query}"),
+    }
 }
 
 fn percent_encode(value: &str) -> String {
