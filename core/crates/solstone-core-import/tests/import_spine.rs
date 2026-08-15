@@ -631,8 +631,9 @@ fn facets_adapter_writes_a_durable_force_audit_record() {
         .unwrap()
         .path();
     let content = fs::read_to_string(action).unwrap();
-    assert!(content.contains("import_force_reimport"));
-    assert!(content.contains("\"dry_run\":true"));
+    let record: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(record["action"], "import_force_reimport");
+    assert_eq!(record["params"]["dry_run"], true);
 }
 
 fn metadata(source_hash: &str) -> Map<String, Value> {
