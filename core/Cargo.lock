@@ -2947,6 +2947,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-chat-append"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "log",
+ "serde_json",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-segment",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "solstone-core-check"
 version = "1.0.22"
 dependencies = [

@@ -7,6 +7,7 @@ members = [
     "crates/solstone-core-indexer",
     "crates/solstone-core-format",
     "crates/solstone-core-indexer-store",
+    "crates/solstone-core-chat-append",
     "crates/solstone-core-indexer-query",
     "crates/solstone-core-entity",
     "crates/solstone-core-entity-matching",
