@@ -13,9 +13,9 @@ use std::time::{Duration, Instant};
 
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, coreml_install, dispatch,
-    download_artifact, fingerprint, lease, local_backend_choice, manifest, metal_candidate,
-    parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
-    write_parakeet_model_manifest,
+    download_artifact, fingerprint, flatten_binary_bundle, lease, local_backend_choice, manifest,
+    metal_candidate, parakeet_target_for_install, pins, publish_staged_tree_with, readiness,
+    status, write_parakeet_model_manifest,
 };
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -1724,6 +1724,33 @@ fn extraction_refuses_symlink_and_hardlink_escapes_without_parent_changes() {
         assert_eq!(archive::snapshot_tree(&root).unwrap(), before);
         let _ = fs::remove_dir_all(root);
     }
+}
+
+#[test]
+fn metal_bundle_flatten_keeps_runtime_siblings_beside_binary() {
+    let root = temp("metal-bundle-flatten");
+    let staging = root.join("staging");
+    let bundle = staging.join("llama-b10068");
+    fs::create_dir_all(&bundle).unwrap();
+    fs::write(staging.join("archive.tar.gz"), b"archive").unwrap();
+    fs::write(bundle.join("llama-server"), b"binary").unwrap();
+    fs::write(bundle.join("libllama-server-impl.dylib"), b"library").unwrap();
+    fs::write(bundle.join("LICENSE"), b"license").unwrap();
+
+    flatten_binary_bundle(&staging, &bundle.join("llama-server")).unwrap();
+
+    assert_eq!(fs::read(staging.join("llama-server")).unwrap(), b"binary");
+    assert_eq!(
+        fs::read(staging.join("libllama-server-impl.dylib")).unwrap(),
+        b"library"
+    );
+    assert_eq!(fs::read(staging.join("LICENSE")).unwrap(), b"license");
+    assert_eq!(
+        fs::read(staging.join("archive.tar.gz")).unwrap(),
+        b"archive"
+    );
+    assert!(!bundle.exists());
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

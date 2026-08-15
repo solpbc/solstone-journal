@@ -801,8 +801,13 @@ fn run_local_install(
     })?;
     let final_binary = staging.join("llama-server");
     if binary != final_binary {
-        fs::rename(&binary, &final_binary)
-            .map_err(|error| failure("io", "binary_move_failed", error, 74))?;
+        if backend == "metal" {
+            flatten_binary_bundle(&staging, &binary)
+                .map_err(|error| failure("io", "binary_bundle_move_failed", error, 74))?;
+        } else {
+            fs::rename(&binary, &final_binary)
+                .map_err(|error| failure("io", "binary_move_failed", error, 74))?;
+        }
     }
     archive::make_executable(&final_binary)
         .map_err(|error| failure("io", "chmod_failed", error, 74))?;
@@ -1092,6 +1097,30 @@ fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn flatten_binary_bundle(staging: &Path, binary: &Path) -> std::io::Result<()> {
+    let parent = binary.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "binary has no parent")
+    })?;
+    if parent == staging {
+        return Ok(());
+    }
+    for entry in fs::read_dir(parent)? {
+        let entry = entry?;
+        let destination = staging.join(entry.file_name());
+        if fs::symlink_metadata(&destination).is_ok() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "bundle destination already exists: {}",
+                    destination.display()
+                ),
+            ));
+        }
+        fs::rename(entry.path(), destination)?;
+    }
+    fs::remove_dir(parent)
 }
 
 fn publish_staged_tree(staging: &Path, target: &Path) -> std::io::Result<()> {
