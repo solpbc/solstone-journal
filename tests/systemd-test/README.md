@@ -8,7 +8,7 @@ user service — not just that the unit file got written to
 For trade-offs (privilege requirements, host-kernel assumptions, what
 this image does NOT model, and the CI-runner path forward) see the
 operational playbook in the sol pbc org repo,
-`vpe/playbooks/solstone-systemd-test.md`. Read that first.
+`operator runbook`. Read that first.
 
 ## quick start
 
@@ -65,7 +65,7 @@ asserts setup self-heals the foreign wrapper — replaced by a managed wrapper
 `service_identity: ok`. This guards the wrapper/identity self-heal class
 (Ryan Bennett's 0.4.10→0.5.1 cutover #2) that the clean-install matrix can't
 exercise, because a clean install classifies the alias `OWNED` and never
-takes the `FOREIGN` heal path. Cell 6 in `vpe/playbooks/solstone-install-verify.md` (org repo).
+takes the `FOREIGN` heal path. Cell 6 in `operator verification guide` (org repo).
 
 ## the worked example
 
@@ -119,7 +119,7 @@ with just `--cgroupns=host`, `CAP_SYS_ADMIN`, and a bind-mount of
 privileged path first on a new host; fall back to `--privileged` if you
 hit cgroup write-permission errors.
 
-See `vpe/playbooks/solstone-systemd-test.md` (org repo) § trade-offs for the full
+See `operator runbook` (org repo) § trade-offs for the full
 discussion including the rootless-podman, distrobox, and lima
 alternatives.
 

@@ -34,7 +34,7 @@ pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> 
 }
 
 #[cfg(test)]
-mod w3c_tests;
+mod doctor_check_behavior_tests;
 fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResult> {
     if !entry.check.platforms.contains(&context.platform) {
         let mut r = make_result(
@@ -46,11 +46,11 @@ fn run_entry(entry: &RegistryEntry, context: &CheckContext) -> Option<CheckResul
         r.platform = Some(context.platform.tag().into());
         return Some(r);
     }
-    if let Some(wave) = entry.deferred {
+    if let Some(set) = entry.deferred {
         return Some(make_result(
             entry.check,
             Status::Skip,
-            format!("deferred to wave {wave}"),
+            format!("deferred check set: {set}"),
             None::<String>,
         ));
     }

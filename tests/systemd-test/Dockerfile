@@ -1,7 +1,7 @@
 # Debian-based image that runs systemd --user end-to-end so the solstone
 # install-integration test can verify that `journal setup` actually starts the
 # user service, not just that the unit file was written. See the playbook
-# at vpe/playbooks/solstone-systemd-test.md for trade-offs and limits.
+# at operator runbook for trade-offs and limits.
 
 FROM debian:bookworm
 

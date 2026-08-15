@@ -301,7 +301,7 @@ def test_load_entity_names_spoken_mode(monkeypatch):
             Path(tmpdir),
             "test",
             [
-                ("Person", "Jeremie Miller (Jer)", "Software engineer"),
+                ("Person", "Raelyn Miller (Rae)", "Software engineer"),
                 ("Person", "Jane Elizabeth Doe", "Product manager"),
                 ("Company", "Acme Corporation (ACME)", "Tech company"),
                 ("Company", "Widget Inc", "Manufacturing company"),
@@ -319,9 +319,9 @@ def test_load_entity_names_spoken_mode(monkeypatch):
         # Should return a list, not a string
         assert isinstance(result, list)
 
-        # Person: "Jeremie Miller (Jer)" -> ["Jeremie", "Jer"]
-        assert "Jeremie" in result
-        assert "Jer" in result
+        # Person: "Raelyn Miller (Rae)" -> ["Raelyn", "Rae"]
+        assert "Raelyn" in result
+        assert "Rae" in result
 
         # Person: "Jane Elizabeth Doe" -> ["Jane"]
         assert "Jane" in result

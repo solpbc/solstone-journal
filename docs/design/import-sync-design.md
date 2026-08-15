@@ -1,8 +1,8 @@
-# W9 Import Sync Design
+# this sync design Import Sync Design
 
 ## Purpose and boundary
 
-W9 fills the six reserved seams in `solstone-core-import` for the four
+this sync design fills the six reserved seams in `solstone-core-import` for the four
 `journal importer` modes that reach outside the local import resolver:
 
 - sync-state read/write (`sync_state`);
@@ -16,9 +16,9 @@ It is a **library-only** port. It owns typed mode semantics, backend inventory,
 state transitions, outcome values, and owner-facing gate values. It does not
 parse argv, dispatch a parsed command, read environment variables, resolve a
 home directory, print, exit, launch a process, or install a schedule. The
-dispatcher and command cut are W10. `cli_argv::ParsedCommand` remains unchanged.
+dispatcher and command cut are the command dispatcher. `cli_argv::ParsedCommand` remains unchanged.
 
-W9 does not touch Python; it does not add body-ingress outbound behavior; it
+this sync design does not touch Python; it does not add body-ingress outbound behavior; it
 does not persist a credential or token; it does not write a schedule file; and
 it does not create a second consent implementation. The native body owner
 continues to own Oura authorization, API ingress, and approval validation.
@@ -53,11 +53,11 @@ states this substitution explicitly.
 
 ## Deliberate decisions
 
-1. **Keep `cli_argv::ParsedCommand` unchanged.** W9 has no dispatcher cut and
+1. **Keep `cli_argv::ParsedCommand` unchanged.** this sync design has no dispatcher cut and
    no argv authority. It will provide typed library requests and typed rendered
-   values for W10 to map from `ParsedCommand`. `SyncBackendRequest` is the one
+   values for the command dispatcher to map from `ParsedCommand`. `SyncBackendRequest` is the one
    typed non-argv request surface; a parallel `SyncOptions` enum and identity
-   mapping would create two field sources for no W9 consumer. Changing parser
+   mapping would create two field sources for no this sync design consumer. Changing parser
    shape now would claim dispatcher reachability that this wave explicitly does
    not ship.
 
@@ -66,10 +66,10 @@ states this substitution explicitly.
    its `Oura` variant alone carries `window_days`. The returned
    `PlaudSyncRequest`, `ObsidianSyncRequest`, and `AudioSyncRequest` have no
    `window_days` member, making a leak to a Python-side backend
-   unrepresentable. W10 later supplies only argv-to-request parsing.
+   unrepresentable. the command dispatcher later supplies only argv-to-request parsing.
 
 2. **Use named seam structs, never positional closures or ambient reads.**
-   Each backend receives a named `*Seams` structure, following W1b's
+   Each backend receives a named `*Seams` structure, following the resolver design's
    `ResolutionSeams` convention. Every field has a one-line invocation contract.
    This preserves the Python monkeypatch boundary as an explicit Rust API and
    prevents a caller from silently exchanging clock, scanner, or pipeline
@@ -86,9 +86,9 @@ states this substitution explicitly.
    | `AudioProbe` | returns a duration or unreadable answer for an audio path; its free error text is reduced to the reference's generic unreadable outcome | fake probe drives `unreadable`, short-skip, and available outcomes |
    | `ImportPipeline` | caller performs one approved Plaud/audio import and returns a typed result; Plaud reduces failures to a closed kind, while audio retains the pipeline's `str(exc)`-equivalent as `last_error` | fake pipeline drives success, skip, no-result, and failure without importing data |
 
-   Live Plaud catalogue and download adapters are not constructed by W9. W10's
+   Live Plaud catalogue and download adapters are not constructed by this sync design. the command dispatcher's
    process adapter constructs them after it has obtained the credential and
-   chooses the live operation; W9 receives only the narrow trait references.
+   chooses the live operation; this sync design receives only the narrow trait references.
    This follows the same injected-transport split as
    `OuraHttp`/`LiveOuraHttp`/`sync_with_http`, while avoiding a library-owned
    environment read or process decision.
@@ -138,7 +138,7 @@ states this substitution explicitly.
 
    - Python writes `json.dumps(..., indent=2)` with ASCII escaping and no final
      newline. `serde_json::to_writer_pretty` is not assumed byte-compatible.
-     W9 supplies a dedicated state serializer that produces two-space pretty
+     this sync design supplies a dedicated state serializer that produces two-space pretty
      JSON, ASCII escapes non-ASCII strings, preserves library-authored insertion
      order, and adds no newline. Tests compare exact bytes only for state the
      library authors.
@@ -150,7 +150,7 @@ states this substitution explicitly.
      non-byte-compatible divergence. AC7 requires preservation, not identical
      reference round-trip bytes.
    - Untyped `serde_json::Value` does not impose the `i64` overflow boundary and
-     cannot read Python's bare non-finite floats. W9 checks only the reference's
+     cannot read Python's bare non-finite floats. this sync design checks only the reference's
      integer-constrained fields at the JSON boundary and rejects overflow;
      fractional Plaud `start_time`/`duration` and ordinary extras remain raw JSON
      values. A non-finite float is a strict sync-state decode failure, hence
@@ -162,25 +162,25 @@ states this substitution explicitly.
    `check_oura_sync_save` returns `ConsentGateOutcome::Blocked` for an invalid
    approval. Consent never reuses the sync-state reader or its error type.
 
-6. **Retire all six W9 stub rows.** `sync_state`, `sync_plaud`,
+6. **Retire all six this sync design stub rows.** `sync_state`, `sync_plaud`,
    `sync_obsidian`, `sync_audio`, `connect`, and `consent_gate` are wholly
    complete at their library boundary after this wave, so each is removed from
    `MODULE_STUBS`. `audio` and `text` remain reserved because their generic
-   import-pipeline implementations are not W9's sync orchestration. The result
+   import-pipeline implementations are not this sync design's sync orchestration. The result
    is `MODULE_STUBS.len() == 5`: `audio`, `text`, `cli_argv`,
    `cli_journal_source`, and `cli_render`. Update
    `tests/stub_table.rs` line 10 to 5 and its implemented-module list to include
    all six retired module names; its loop continues to require every remaining
    row to return its own `ImportError::Unimplemented`. The live Plaud transport
-   is W10 adapter work, but `sync_plaud` is nevertheless wholly complete at its
+   is the command dispatcher adapter work, but `sync_plaud` is nevertheless wholly complete at its
    library boundary: it owns the typed operation and accepts complete catalogue,
    download, match, state, and pipeline seams; constructing production transport
    is expressly outside that boundary.
 
    The complete workspace scan finds these `MODULE_STUBS`/stub-table touch
-   points. Only the first two files change for W9:
+   points. Only the first two files change for this sync design:
 
-   | File | W9 disposition |
+   | File | this sync design disposition |
    |---|---|
    | `core/crates/solstone-core-import/src/lib.rs:167-179` | Remove the six completed rows. |
    | `core/crates/solstone-core-import/tests/stub_table.rs:10,26-35` | Change expected count to 5 and add the six completed modules to the implemented list. |
@@ -188,19 +188,19 @@ states this substitution explicitly.
    | `core/crates/solstone-core-import-sources/tests/stub_table.rs:10-24` | No change: it asserts only the source-crate table. |
    | `core/crates/solstone-core-import-sources/tests/source_immutability.rs:9,21-24` | No change: it iterates only source-crate stubs. |
 
-7. **Vendor the whole W9/W10 oracle once as
+7. **Vendor the whole this sync design/the command dispatcher oracle once as
    `core/fixtures/import_sync_reference_oracle.json`.** Copy the complete source
    fixture byte-faithfully, including `schema`, `provenance`, `sync`, and
-   `journal_source`; W9 reads only `.sync`. Splitting it would create a second
-   derived artifact, lose the source fixture's identity, and force W10 to
+   `journal_source`; this sync design reads only `.sync`. Splitting it would create a second
+   derived artifact, lose the source fixture's identity, and force the command dispatcher to
    re-vendor its `journal_source` sibling. The neutral name declares shared
-   ownership without falsely claiming that W9 owns the W10 subtree.
+   ownership without falsely claiming that this sync design owns the the command dispatcher subtree.
 
 8. **Return a named gate value; callers map it to exit/text/JSON.**
    `GateFailure` carries the body-owned reason/stage plus importer, target,
    approval path, and flow. `CONSENT_GATE_EXIT_CODE` is the named caller-mapping
    constant with value **2**, matching the native body binary and the retained
-   Python gate. It is presentation policy, not library exit behavior: W9 never
+   Python gate. It is presentation policy, not library exit behavior: this sync design never
    prints or exits.
    `consent_gate.rs` renders the complete existing
    owner-facing explanation as a pure string formatter: blocked-before-write
@@ -210,9 +210,9 @@ states this substitution explicitly.
    (`skipped`, `reason`, `gate_reason`, `importer`, `flow`, `approval_path`,
    `target_journal`, `missing_fields`, `invalid_fields`, `checklist_version`).
    Native `BodyIngestError` supplies no `missing_fields` or `invalid_fields`, so
-   W9 includes those two required payload keys as empty arrays rather than
+   this sync design includes those two required payload keys as empty arrays rather than
    inventing populated values from a reason string. The body layer supplies the
-   actual refusal; W9 supplies presentation data and never prints it.
+   actual refusal; this sync design supplies presentation data and never prints it.
 
    The text formatter deliberately paraphrases the reference gate formatter and
    appends a `Flow:` line. It preserves the blocked-before-write headline,
@@ -231,10 +231,10 @@ states this substitution explicitly.
    halves of AC9 directly assertable; an error count alone is insufficient.
 
 10. **Keep `cron_hint` out of the design surface.** The only observed consumer
-    has no producer and the Oura branch returns before reaching it. W9 does not
+    has no producer and the Oura branch returns before reaching it. this sync design does not
     fabricate a result field, a schedule recommendation, or a schedule writer.
     `SyncGuidance` and its pure `format_text` make conditional guidance supplied
-    by a backend renderable at the W9 library boundary. It does not make Oura
+    by a backend renderable at the this sync design library boundary. It does not make Oura
     produce `cron_hint` or promise scheduling.
 
 11. **Expose separate typed preview and save operations.** The implemented
@@ -243,7 +243,7 @@ states this substitution explicitly.
     replace the design sketch's single generic operation name. This keeps the
    request-mode split visible at each public call site and avoids a runtime
    `save` switch. Consent routing returns only `Allowed` or `Blocked`: the body
-   owner consumes raw-retention policy under its own lock, and W9 has no
+   owner consumes raw-retention policy under its own lock, and this sync design has no
    consumer for that policy value.
 
 12. **Preserve the body owner's connect error type.** `connect_oura` returns
@@ -255,7 +255,7 @@ states this substitution explicitly.
 
 13. **Match audio's removal ordering exactly.** The reference first promotes
     available manifest matches, then marks every path absent from the current
-    scan `removed`, including an entry that was just promoted. W9 follows that
+    scan `removed`, including an entry that was just promoted. this sync design follows that
     ordering. This deliberately replaces the prior native-only exception that
     retained an unseen imported entry, because the reference's final state is
     authoritative.
@@ -276,9 +276,9 @@ All new source files receive the repository SPDX header.
 | `lib.rs` | Exports the completed sync, connect, and gate APIs; removes their six stub-table rows. It does not export a CLI parser or live HTTP constructor. |
 | body-ingest `approval`/`lib.rs` | Widens and re-exports the existing `oura_approval` function unchanged. `BodyIngestError::kind()`/`stage()` remain the existing typed refusal contract. |
 
-The live Plaud transport belongs to W10's adapter. Its construction consumes the
+The live Plaud transport belongs to the command dispatcher's adapter. Its construction consumes the
 caller-provided credential, configures the documented retries/timeouts/streaming
-posture, and passes separate narrow catalogue/download references into W9. W9
+posture, and passes separate narrow catalogue/download references into this sync design. this sync design
 itself has no `std::env` read, no global clock, and no transport construction.
 
 ## State machines
@@ -324,7 +324,7 @@ itself has no `std::env` read, no global clock, and no transport construction.
    named refusal.
 2. Scan caller-prepared eligible markdown notes. Each carries its relative path,
    title, numeric mtime, and content hash; content/frontmatter rendering remains
-   behind the save writer rather than W9 state orchestration.
+   behind the save writer rather than this sync design state orchestration.
 3. Preserve imported entries when content hash says unchanged while refreshing
    numeric mtime; otherwise
    make/update an `available` entry keyed by vault-relative path. Mark previous
@@ -338,7 +338,7 @@ itself has no `std::env` read, no global clock, and no transport construction.
 
 1. Require an explicit source path and reject a scanner result with no audio
    candidates before state publication. Tool and filesystem-directory checks
-   belong to the caller-owned scanner/probe adapters; W9 introduces no ambient
+   belong to the caller-owned scanner/probe adapters; this sync design introduces no ambient
    process or filesystem policy seam for them.
 2. Scan with the caller seam, excluding entries resolved under journal imports;
    key entries by POSIX relative path.
@@ -356,32 +356,32 @@ itself has no `std::env` read, no global clock, and no transport construction.
 1. Connect routes an explicit journal path to the native body owner and returns
    its typed authorization outcome. It neither reads nor stores a credential.
 2. Preview sync never invokes consent and has no schedule effect.
-3. Save sync asks the body-owned approval API before any W9 save-side operation;
+3. Save sync asks the body-owned approval API before any this sync design save-side operation;
    scheduled-consent expiry uses the body owner's own clock.
 4. An approval error becomes `ConsentGateOutcome::Blocked`; it is formatted or
-   encoded only by a caller, and W10 maps it to exit 2.
+   encoded only by a caller, and the command dispatcher maps it to exit 2.
 5. An approval success becomes `ConsentGateOutcome::Allowed`; standing consent
-   and raw-retention handling remain inside the body owner. W9 emits neither
+   and raw-retention handling remain inside the body owner. this sync design emits neither
    `cron_hint` nor a crontab line.
 
 ## Test plan
 
 | AC | Test location | Assertion and negative twin |
 |---|---|---|
-| 1 | `core/crates/solstone-core-import/tests/sync_state.rs` | Assert `SYNC_BACKEND_INVENTORY` is exactly `plaud`, `obsidian`, `audio`, `oura`, in the order formed by `import_reference_grammar.json`'s `syncable_backends_instantiated` followed by `native_sync_backends`; the vendored oracle `.sync` is corroborating data. A list missing `oura`, reordered, or containing a retired backend fails the literal fixture comparison. W10's later rendering is a dispatcher-only residual. |
+| 1 | `core/crates/solstone-core-import/tests/sync_state.rs` | Assert `SYNC_BACKEND_INVENTORY` is exactly `plaud`, `obsidian`, `audio`, `oura`, in the order formed by `import_reference_grammar.json`'s `syncable_backends_instantiated` followed by `native_sync_backends`; the vendored oracle `.sync` is corroborating data. A list missing `oura`, reordered, or containing a retired backend fails the literal fixture comparison. the command dispatcher's later rendering is a dispatcher-only residual. |
 | 2 | `core/crates/solstone-core-import/tests/sync_plaud.rs` and `sync_audio.rs` | Preview seam structs omit download/pipeline fields, while matching save seam structs require them; adding a preview download path therefore fails to compile. Save tests supply those seams and act. |
-| 3 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs`, `sync_obsidian.rs`, and `sync_audio.rs` | `SyncBackendRequest` directly models one selected backend: an Obsidian or audio source-path override reaches only that variant, while the Oura variant alone carries `window_days`. A compile-fail request-shape check proves Plaud cannot receive `window_days`; construction assertions prove both native-window and local-source directions. W10 argv parsing is the sole dispatcher residual. |
+| 3 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs`, `sync_obsidian.rs`, and `sync_audio.rs` | `SyncBackendRequest` directly models one selected backend: an Obsidian or audio source-path override reaches only that variant, while the Oura variant alone carries `window_days`. A compile-fail request-shape check proves Plaud cannot receive `window_days`; construction assertions prove both native-window and local-source directions. the command dispatcher argv parsing is the sole dispatcher residual. |
 | 4 | `core/crates/solstone-core-import/tests/consent_gate.rs` | Missing confirmation returns `Blocked`, `CONSENT_GATE_EXIT_CODE` is 2, and pure formatted text names the remedy. A real body approval fixture with `scheduled=true`, `confirmed=true`, and no valid `scheduled_sync` block returns the `scheduled_sync_consent_missing` reason family. The negative twin fails if either condition is treated as approval. |
 | 5 | `core/crates/solstone-core-import/tests/consent_gate.rs` | Unsupported/unknown approval schema, absent artifact, and unreadable/malformed artifact each become `Blocked`; `check_oura_sync_save` has no save or pipeline authority in its signature, and the test also asserts no `imports` directory was created. |
-| 6 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs` | A backend outcome carrying `SyncGuidance` renders its text through W9's pure formatter. The test enumerates the exact public fields of all six sync seam structs and rejects schedule-writer, schedule-path, and `cron_hint` identifiers, so adding schedule authority to an existing seam fails the field-shape assertion. This does not add a `cron_hint` producer: the retained Oura branch remains an early return before its dead consumer. W10 later chooses whether to print the already-rendered text. |
+| 6 | `core/crates/solstone-core-import/tests/contract_fixture_shape.rs` | A backend outcome carrying `SyncGuidance` renders its text through this sync design's pure formatter. The test enumerates the exact public fields of all six sync seam structs and rejects schedule-writer, schedule-path, and `cron_hint` identifiers, so adding schedule authority to an existing seam fails the field-shape assertion. This does not add a `cron_hint` producer: the retained Oura branch remains an early return before its dead consumer. the command dispatcher later chooses whether to print the already-rendered text. |
 | 7 | `core/crates/solstone-core-import/tests/sync_state.rs` | The vendored oracle supplies the agreed sync path/backends while an inline, prep-table-derived test literal covers every Plaud, Obsidian, and audio union key plus unknown members; each round-trips with parsed field-for-field equality. Separately, library-authored state compares byte-for-byte for two-space indent, ASCII escaping, insertion order, and no trailing newline. Assert file mode `0o600` through `AtomicWriteOptions { mode: Some(0o600) }` and parent/import directories `0o700` through `create_directory_with_mode`. |
-| 8 | `core/crates/solstone-core-import/tests/connect.rs` and existing `tests/resolution.rs` resolver-corpus coverage | `connect.rs` routes once to the native owner-present connection operation and returns its typed authorization result. The paired resolver-corpus assertion for `source=oura::plain.txt` remains the W1b refusal at `cli.py:582-588` (`OuraRequiresSync` / sync remedy), proving connect does not revive the retired file-import route. W10 later parses `--connect`, but has no ownership of either semantic. |
+| 8 | `core/crates/solstone-core-import/tests/connect.rs` and existing `tests/resolution.rs` resolver-corpus coverage | `connect.rs` routes once to the native owner-present connection operation and returns its typed authorization result. The paired resolver-corpus assertion for `source=oura::plain.txt` remains the the resolver design refusal at `cli.py:582-588` (`OuraRequiresSync` / sync remedy), proving connect does not revive the retired file-import route. the command dispatcher later parses `--connect`, but has no ownership of either semantic. |
 | 9 | `core/crates/solstone-core-import/tests/sync_audio.rs` and `sync_plaud.rs` | Script an already-imported match plus a later failure. Assert the matched record remains `imported`, the failed item remains `available` with `last_error`, `AudioItemOutcome` names the missing item, aggregate `errors` includes it, and the per-item checkpoint precedes the next item. A completion summary that reports success despite the failed item fails the test. |
-| 10 | `core/crates/solstone-core-import/tests/sync_plaud.rs`, `connect.rs`, and `consent_gate.rs` | Recording state/error/render seams prove credentials never enter state, paths, or diagnostics; only caller-supplied reference paths are touched. No W9 operation has an outbound transport other than the injected Plaud API calls, and body sync/connect are direct native owner calls rather than a new body-data egress route. |
+| 10 | `core/crates/solstone-core-import/tests/sync_plaud.rs`, `connect.rs`, and `consent_gate.rs` | Recording state/error/render seams prove credentials never enter state, paths, or diagnostics; only caller-supplied reference paths are touched. No this sync design operation has an outbound transport other than the injected Plaud API calls, and body sync/connect are direct native owner calls rather than a new body-data egress route. |
 | 11 | Settled repository gate | Run `make ci` only in the implementation validation stage and report its actual outcome. Stub retirement has separate unit coverage in `core/crates/solstone-core-import/tests/stub_table.rs`; preview-type discipline has its own compile/runtime seam tests and is not substituted for any AC. |
 
 No validation command runs in this design stage. Implementation validates only
-the narrow W9 crate tests and the prescribed gate in its subsequent stage.
+the narrow this sync design crate tests and the prescribed gate in its subsequent stage.
 
 ## Risks and fixed scope boundaries
 
@@ -391,8 +391,8 @@ the narrow W9 crate tests and the prescribed gate in its subsequent stage.
 - **Body API visibility:** the narrow public approval export is required before
   import can route to it. It must not broaden body write authority or expose
   mutable approval artifacts.
-- **Audio source authority:** the scanner/probe/pipeline seams prevent W9 from
-  silently acquiring process or filesystem policy. W10 decides production
+- **Audio source authority:** the scanner/probe/pipeline seams prevent this sync design from
+  silently acquiring process or filesystem policy. the command dispatcher decides production
   adapters.
 - **No Article 8 gate is required by this plan.** It adds no outbound data path,
   no credential location, no consent relaxation, and no novel owner-data

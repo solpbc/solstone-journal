@@ -14,7 +14,7 @@ const ORACLES: &str = include_str!("../../../fixtures/import_reference_oracles.j
 fn directory_hash_uses_path_component_order_not_rendered_string_order() {
     // import_reference_oracles.json:65-87: `sub/a.txt` precedes `sub.txt`.
     let root = std::env::temp_dir().join(format!(
-        "solstone-w1b-hash-{}",
+        "solstone-import-hash-{}",
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(root.join("sub")).unwrap();

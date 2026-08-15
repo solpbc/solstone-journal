@@ -63,7 +63,7 @@ _FLOOR_TIER = ServerTier(
     resident_mib=4147,
 )
 
-# COPY REVIEW: placeholder owner-facing copy; founder-gated before ship.
+# COPY REVIEW: placeholder owner-facing copy; approved before ship.
 LOCAL_MODEL_NOT_READY_COPY = "Local model is not ready yet."
 
 

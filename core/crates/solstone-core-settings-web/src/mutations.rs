@@ -473,7 +473,7 @@ fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
 fn prune_logs_replay_refuses_even_when_a_host_executor_is_resolvable() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let host = tempfile::Builder::new()
-        .prefix("w3-host-executor-")
+        .prefix("host-executor-")
         .tempdir()
         .expect("space-free host directory");
     assert!(!host.path().display().to_string().contains(' '));

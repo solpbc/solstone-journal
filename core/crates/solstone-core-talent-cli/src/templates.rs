@@ -342,7 +342,7 @@ mod tests {
         fs::create_dir_all(root.path().join("config")).expect("config");
         fs::write(
             root.path().join("config/journal.json"),
-            r#"{"identity":{"name":"JER","pronouns":{"subject":"they"}}}"#,
+            r#"{"identity":{"name":"RAE","pronouns":{"subject":"they"}}}"#,
         )
         .expect("config");
         fs::write(root.path().join("identity/partner.md"), "  Friend  \n")

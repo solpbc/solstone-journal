@@ -465,7 +465,7 @@ fn two_turn_run_accumulates_nondefault_terminal_usage() {
     );
 }
 
-/// Before R6a-1 this exits 78 with no stdout: one-shot cogitate constructs
+/// Before this behavior landed, this exits 78 with no stdout: one-shot cogitate constructs
 /// only the endpoint-override provider and never reaches Google's dialect.
 #[test]
 fn one_shot_google_config_dispatches_to_google_dialect() {
@@ -576,7 +576,7 @@ fn malformed_one_shot_stays_off_stdout() {
     assert!(!output.stderr.is_empty());
 }
 
-/// Before R6a-1 this exits 78 with no stdout because one-shot cogitate always
+/// Before this behavior landed, this exits 78 with no stdout because one-shot cogitate always
 /// constructs the endpoint-override provider before consulting journal config.
 #[test]
 fn no_engine_streams_a_terminal_error_instead_of_exiting_silently() {

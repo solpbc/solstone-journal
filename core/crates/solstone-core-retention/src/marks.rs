@@ -61,13 +61,13 @@ pub enum RemovalClass {
     /// A policy-driven raw-content release awaiting owner approval.
     ///
     /// The narrower "raw release doesn't need approval" reading from decision
-    /// record `260806-founder-retention-marks-for-removal-and-the-owner-approves`
+    /// approved retention-marks decision record
     /// is a one-field edit from [`Approval::Required`] to [`Approval::NotRequired`].
     PolicyRawRelease,
     /// An offload-driven raw-content release awaiting owner approval.
     ///
     /// The narrower "raw release doesn't need approval" reading from decision
-    /// record `260806-founder-retention-marks-for-removal-and-the-owner-approves`
+    /// approved retention-marks decision record
     /// is a one-field edit from [`Approval::Required`] to [`Approval::NotRequired`].
     /// Produced by the retention CLI's `mark-offload` verb.
     OffloadRawRelease,

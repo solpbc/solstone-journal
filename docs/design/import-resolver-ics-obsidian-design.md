@@ -1,8 +1,8 @@
-# W6 Native ICS and Obsidian Source Design
+# this source resolver design Native ICS and Obsidian Source Design
 
 ## Purpose and boundary
 
-W6 ports the read/compute half of Python's `ICSImporter` and
+this source resolver design ports the read/compute half of Python's `ICSImporter` and
 `ObsidianImporter` into `solstone-core-import-sources`, specifically
 `src/ics.rs` and `src/obsidian.rs`.
 
@@ -55,18 +55,18 @@ an in-repo test precedent.
 4. `[test]` Obsidian extraction and entity projection preserve daily-note
    recognition, wikilinks, `@`-prefix Person precedence, folder-derived type,
    and Topic fallback, including `@` filenames not linked elsewhere.
-5. `[test]` W6 does not change resolution semantics: the existing four
+5. `[test]` this source resolver design does not change resolution semantics: the existing four
    no-match corpus rows remain unclaimed, and the three two-claimant rows keep
-   their existing ordered results. W6 does not derive predicates from display
+   their existing ordered results. this source resolver design does not derive predicates from display
    `file_patterns`.
 6. `[test]` Each extracted entry carries the day the existing writer would
    place it in: calendar entries use the UTC day of `create_ts`; every
    Obsidian entry, daily or knowledge, uses its file mtime's local calendar
    day.
-7. `[test]` Every W6 read path leaves the supplied source tree byte-for-byte
+7. `[test]` Every this source resolver design read path leaves the supplied source tree byte-for-byte
    unchanged, including an ICS archive and a vault tree.
 8. `[check]` A Google Takeout ZIP holding Calendar and Gemini data remains an
-   unresolved product-routing question; W6 neither changes first-claim
+   unresolved product-routing question; this source resolver design neither changes first-claim
    selection nor implements multi-claim dispatch.
 9. `[test]` Once both source modules are implemented, neither remains in the
    reserved-module inventory and neither exposes `reserved_seam()`.
@@ -106,7 +106,7 @@ an in-repo test precedent.
    `obsidian.py:377-400`, then calls `window_items(notes, "mtime", tz=None)`
    at line 470. Daily-name classification does not alter placement. Therefore
    `NoteEntry.day` derives from its mtime in the local calendar timezone for
-   daily and knowledge notes alike. W6 must not invent a frontmatter date key
+   daily and knowledge notes alike. this source resolver design must not invent a frontmatter date key
    or assign knowledge notes a content date.
 5. **Disclose the mtime range.** The Obsidian preview continues to compute
    `date_range` from mtime, matching the writer, but for a non-empty vault its
@@ -132,7 +132,7 @@ an in-repo test precedent.
    `solstone-core-import/tests/resolution.rs` into each new source-crate test
    file. Do not move it into a cross-crate test utility: no such shared helper
    exists, and coupling test crates for a small filesystem builder is broader
-   than W6.
+   than this source resolver design.
 9. **Retire completed seams mechanically.** Follow `df22182b6`: delete each
    implemented `reserved_seam()`, remove both table rows, update the count,
    and add an explicit absence test. Do not keep an obsolete seam for
@@ -140,7 +140,7 @@ an in-repo test precedent.
 
 ## Public library surface
 
-All W6 source files keep repository SPDX headers. Return types use source-local
+All this source resolver design source files keep repository SPDX headers. Return types use source-local
 error enums for filesystem, archive, and source-decoding failures; malformed
 individual VEVENT payloads follow Python and contribute no entry rather than
 turning a readable source into a writer operation.
@@ -154,7 +154,7 @@ turning a readable source into a writer operation.
 
 `preview` calls its module's extraction/collection function, then aggregates the
 fixed `solstone_core_import::ImportPreview` fields. No source module returns
-`ImportResult`, `CreatedSegment`, or a publication input in W6.
+`ImportResult`, `CreatedSegment`, or a publication input in this source resolver design.
 
 ## Source read and computation pipeline
 
@@ -188,7 +188,7 @@ fixed `solstone_core_import::ImportPreview` fields. No source module returns
 
 ## Fixture and test plan
 
-Vendor `/home/jer/import-fixtures-260811/w6-w8-source-oracles.json` unchanged
+Vendor `/opt/import-fixtures/source-oracles.json` unchanged
 in content as `core/fixtures/import_source_preview_oracle.json`. The
 snake_case destination follows the existing vendored
 `import_resolver_corpus.json`, `import_detection_corpus.json`, and
@@ -224,7 +224,7 @@ checked-in fixture directories:
 The four no-match rows—`bare::dir_vault_1md`,
 `bare::dir_vault_3md_hidden`, `bare::dir_pdf_in_subdir`, and
 `bare::dir_only_images`—and the two-claimant rows are already established by
-the vendored resolver corpus and its source-crate registry tests. W6 reuses
+the vendored resolver corpus and its source-crate registry tests. this source resolver design reuses
 those tests and adds no duplicate directory corpus or competing source-routing
 test.
 
@@ -266,8 +266,8 @@ test.
 
 ## Source/corpus disagreement audit
 
-The vendored W6 oracle records Python's current preview strings and its
-Obsidian date range from captured file mtimes. W6 deliberately keeps that mtime
+The vendored this source resolver design oracle records Python's current preview strings and its
+Obsidian date range from captured file mtimes. this source resolver design deliberately keeps that mtime
 range and all count/entity facts, because `ObsidianImporter.process()` uses
 mtime uniformly for actual segment placement. The only intended difference is
 the documented Obsidian summary suffix identifying mtime as the range source;
@@ -280,7 +280,7 @@ it proves that native code reads fixture metadata rather than the clock.
 `import_resolver_corpus.json` records that a Takeout ZIP containing Calendar
 and Gemini resolves to ICS under today's ordered, first-claim registry. Whether
 an owner expects that one archive to enter both Calendar and a Gemini
-multi-claim import path is an open product question. W6 names it but makes no
+multi-claim import path is an open product question. this source resolver design names it but makes no
 decision: it neither changes `detect()` nor extends registry routing.
 
 The Python `ObsidianSyncBackend` is outside this port. Its persisted sync state,

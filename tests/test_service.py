@@ -20,10 +20,10 @@ from solstone.think import service
 
 LAUNCHCTL_RUNNING_WITH_PID = """gui/501/org.solpbc.solstone = {
 \tactive count = 1
-\tpath = /Users/jer/Library/LaunchAgents/org.solpbc.solstone.plist
+\tpath = /Users/owner/Library/LaunchAgents/org.solpbc.solstone.plist
 \ttype = LaunchAgent
 \tstate = running
-\tprogram = /Users/jer/.local/bin/sol
+\tprogram = /Users/owner/.local/bin/sol
 \tpid = 12345
 \tdomain = gui/501
 \tasid = 100012
@@ -34,7 +34,7 @@ LAUNCHCTL_RUNNING_WITH_PID = """gui/501/org.solpbc.solstone = {
 \t\tPATH => /usr/bin:/bin
 \t}
 \tenvironment = {
-\t\tHOME => /Users/jer
+\t\tHOME => /Users/rae
 \t}
 \tdomain = gui/501
 \tminimum runtime = 10
@@ -51,10 +51,10 @@ LAUNCHCTL_RUNNING_WITH_PID = """gui/501/org.solpbc.solstone = {
 
 LAUNCHCTL_LOADED_NO_PID = """gui/501/org.solpbc.solstone = {
 \tactive count = 0
-\tpath = /Users/jer/Library/LaunchAgents/org.solpbc.solstone.plist
+\tpath = /Users/owner/Library/LaunchAgents/org.solpbc.solstone.plist
 \ttype = LaunchAgent
 \tstate = not running
-\tprogram = /Users/jer/.local/bin/sol
+\tprogram = /Users/owner/.local/bin/sol
 \tdomain = gui/501
 \tasid = 100012
 \trun interval = 0
@@ -63,7 +63,7 @@ LAUNCHCTL_LOADED_NO_PID = """gui/501/org.solpbc.solstone = {
 \t\tPATH => /usr/bin:/bin
 \t}
 \tenvironment = {
-\t\tHOME => /Users/jer
+\t\tHOME => /Users/rae
 \t}
 \tdomain = gui/501
 \tminimum runtime = 10

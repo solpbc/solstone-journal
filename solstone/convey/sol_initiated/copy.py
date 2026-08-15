@@ -29,7 +29,7 @@ CATEGORY_CAP_DEFAULTS = {
     "notice": 2,
 }
 
-# lode 3 - chat origin tag, settings UI, push category
+# Chat origin tag, settings UI, push category.
 APNS_CATEGORY_SOL_CHAT_REQUEST = "SOLSTONE_SOL_CHAT_REQUEST"
 SOL_VOICE_SETTINGS_CATEGORY_CAP_AUTO_MUTED_FORMAT = "auto-muted until {date}"
 SOL_VOICE_SETTINGS_CATEGORY_CAP_CLEAR_BUTTON = "clear auto-mute"

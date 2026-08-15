@@ -194,7 +194,7 @@ fn binary_contract_matches_oracle_or_skips_without_staged_pdfium() {
                 {"index": 1, "chars": 0, "width_pt": 612.0, "height_pt": 792.0, "image_area_fraction": 1.0, "rendered": "page-0001.png", "error": null, "text": ""},
                 {"index": 2, "chars": 0, "width_pt": 612.0, "height_pt": 792.0, "image_area_fraction": 1.0, "rendered": "page-0002.png", "error": null, "text": ""}
             ],
-            "render": {"dpi": 72, "dir": "/tmp/w4-7ao8ph32/rasters"},
+            "render": {"dpi": 72, "dir": "/tmp/render-fixture/rasters"},
             "warnings": []
         }),
         true,

@@ -69,7 +69,7 @@ fn check_never_reaches_a_sibling_or_path_interpreter() {
 ///
 /// The previous form joined a hardcoded `../../target/debug/` path and assumed
 /// something had already built it. That passes in a warm worktree and fails in a
-/// fresh one with `NotFound`, so `make ci` was red for every new lode. Building
+/// fresh one with `NotFound`, so `make ci` was red for every new checkout. Building
 /// here also makes the path correct under a non-default profile or
 /// `CARGO_TARGET_DIR`. Mirrors `locate_workspace_binary` in
 /// `journal_native_process_contract.rs`.
@@ -119,9 +119,9 @@ fn build_vulkan_probe() -> std::path::PathBuf {
 
 #[test]
 #[cfg(unix)]
-fn wave_two_library_paths_never_spawn_python() {
-    if std::env::var_os("WAVE_TWO_POISON_CHILD").is_some() {
-        invoke_wave_two_library_paths(&std::path::PathBuf::from(
+fn native_library_paths_never_spawn_python() {
+    if std::env::var_os("NATIVE_LIBRARY_PATH_POISON_CHILD").is_some() {
+        invoke_native_library_paths(&std::path::PathBuf::from(
             std::env::var_os("SOLSTONE_JOURNAL").expect("child journal"),
         ));
         return;
@@ -141,10 +141,10 @@ fn wave_two_library_paths_never_spawn_python() {
     let output = Command::new(std::env::current_exe().expect("test executable"))
         .args([
             "--exact",
-            "check_no_python_spawn::wave_two_library_paths_never_spawn_python",
+            "check_no_python_spawn::native_library_paths_never_spawn_python",
             "--nocapture",
         ])
-        .env("WAVE_TWO_POISON_CHILD", "1")
+        .env("NATIVE_LIBRARY_PATH_POISON_CHILD", "1")
         .env("PATH", &bin)
         .env("POISON_MARKER", &marker)
         .env("SOLSTONE_JOURNAL", &journal)
@@ -155,12 +155,9 @@ fn wave_two_library_paths_never_spawn_python() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        !marker.exists(),
-        "Wave 2a native library path reached Python"
-    );
+    assert!(!marker.exists(), "native library path reached Python");
 
-    // No in-harness Python route is registered by this wave, so prove the
+    // No in-harness Python route is registered by this test, so prove the
     // shims themselves are live as the required positive control.
     let status = Command::new(bin.join("python3"))
         .env("POISON_MARKER", &marker)
@@ -174,7 +171,7 @@ fn wave_two_library_paths_never_spawn_python() {
 }
 
 #[cfg(unix)]
-fn invoke_wave_two_library_paths(journal: &std::path::Path) {
+fn invoke_native_library_paths(journal: &std::path::Path) {
     use solstone_core_system::activity_state::ActivityStateMachine;
     use solstone_core_system::catchup::{
         SegmentRepairOutcome, record_daily_catchup_progress, record_segment_repair_attempt,

@@ -621,11 +621,11 @@ fn every_host_excluded_crate_is_tested_by_a_ci_target() {
     );
 }
 
-/// The race gate may name only supervisor tests that use W4b's explicit
+/// The race gate may name only supervisor tests that use supervisor-race's explicit
 /// inconclusive outcome. Removing one from the Makefile list must therefore
 /// red this source-derived guard rather than silently reducing coverage.
 #[test]
-fn every_w4b_supervisor_test_is_named_in_rust_race_gate() {
+fn every_supervisor_race_test_is_named_in_rust_race_gate() {
     let root = repo_root();
     let makefile = makefile_text(&root);
     let registered = makefile
@@ -666,7 +666,7 @@ fn every_w4b_supervisor_test_is_named_in_rust_race_gate() {
 
     assert_eq!(
         registered, expected,
-        "RUST_RACE_TEST_TARGETS must exactly name W4b-converted supervisor tests"
+        "RUST_RACE_TEST_TARGETS must exactly name supervisor-race supervisor tests"
     );
     assert!(
         target_body(&makefile, "check-rust-race").contains("$(RUST_RACE_TEST_TARGETS)"),

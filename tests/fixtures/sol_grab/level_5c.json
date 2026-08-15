@@ -18,7 +18,7 @@
     },
     "saved": [
       {
-        "path": "/home/jer/.local/share/hopper/lodes/hyxf4ukp/worktree/tests/fixtures/sol_grab/_out/frame_7.png",
+        "path": "/workspace/owner/.local/share/worktrees/hyxf4ukp/worktree/tests/fixtures/sol_grab/_out/frame_7.png",
         "frame_id": 7,
         "timestamp": 1.0,
         "abs_time": "2024-01-02T23:30:01",
@@ -26,7 +26,7 @@
         "notes": ""
       },
       {
-        "path": "/home/jer/.local/share/hopper/lodes/hyxf4ukp/worktree/tests/fixtures/sol_grab/_out/frame_12.png",
+        "path": "/workspace/owner/.local/share/worktrees/hyxf4ukp/worktree/tests/fixtures/sol_grab/_out/frame_12.png",
         "frame_id": 12,
         "timestamp": 1.833333,
         "abs_time": "2024-01-02T23:30:01.833333",
@@ -34,7 +34,7 @@
         "notes": ""
       },
       {
-        "path": "/home/jer/.local/share/hopper/lodes/hyxf4ukp/worktree/tests/fixtures/sol_grab/_out/frame_23.png",
+        "path": "/workspace/owner/.local/share/worktrees/hyxf4ukp/worktree/tests/fixtures/sol_grab/_out/frame_23.png",
         "frame_id": 23,
         "timestamp": 3.666667,
         "abs_time": "2024-01-02T23:30:03.666667",

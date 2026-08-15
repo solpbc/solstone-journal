@@ -8,7 +8,7 @@ failures:
 ---- ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child stdout ----
 
 thread 'ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child' (1264684) panicked at crates/solstone-core/tests/supervisor_shutdown.rs:54:13:
-W4B_INCONCLUSIVE supervisor did not exit after SIGTERM: elapsed 36.61397968s, requested 30s, dilation 1.22x
+SUPERVISOR_RACE_INCONCLUSIVE supervisor did not exit after SIGTERM: elapsed 36.61397968s, requested 30s, dilation 1.22x
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 

@@ -116,8 +116,7 @@ fn rows(path: &Path) -> Vec<Value> {
 }
 
 fn oracle_case(name: &str) -> Value {
-    let oracle: Value =
-        serde_json::from_str(include_str!("fixtures/w3-text-oracles.json")).unwrap();
+    let oracle: Value = serde_json::from_str(include_str!("fixtures/text-oracles.json")).unwrap();
     oracle["cases"][name].clone()
 }
 

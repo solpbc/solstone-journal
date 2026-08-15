@@ -2,7 +2,7 @@
 
 - **When:** Thursday, January 1, 2026 09:00–09:30 MST
 - **Where:** Google Meet (meet.google.com/xwr-knvq-paj)
-- **Organizer:** jer@solpbc.org
+- **Organizer:** rae@example.test
 - **Attendees:** maya@solpbc.org, erik@solpbc.org, carlos@meridian.io
 - **Recurrence:** Every Thursday
 
@@ -15,7 +15,7 @@ Sprint status updates and blocker discussion. Review open PRs, check CI pipeline
 - **When:** Thursday, January 1, 2026 10:00–10:45 MST
 - **Where:** Zoom (us06web.zoom.us/j/84729163055)
 - **Organizer:** david@betaworks.com
-- **Attendees:** jer@solpbc.org
+- **Attendees:** rae@example.test
 
 Quarterly check-in. David wants to discuss follow-on timing and intro to a potential design partner in the media space. Bring updated metrics deck and solstone demo.
 
@@ -25,7 +25,7 @@ Quarterly check-in. David wants to discuss follow-on timing and intro to a poten
 
 - **When:** Thursday, January 1, 2026 11:00–12:00 MST
 - **Where:** Google Meet (meet.google.com/bmf-tsyh-rea)
-- **Organizer:** jer@solpbc.org
+- **Organizer:** rae@example.test
 - **Attendees:** maya@solpbc.org, erik@solpbc.org, lin@solpbc.org
 
 Walk through v0.4 milestone plan. Key topics: journal segment format finalization, import pipeline reliability, and facet extraction accuracy targets. Need to lock scope by EOW.

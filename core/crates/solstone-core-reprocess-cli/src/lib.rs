@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn wave_two_writers_reach_every_repair_and_drain_projection() {
+    fn writers_reach_every_repair_and_drain_projection() {
         use solstone_core_system::catchup::{
             CatchupKind, SegmentRepairOutcome, record_daily_catchup_progress,
             record_segment_repair_attempt, record_segment_repair_outcome,

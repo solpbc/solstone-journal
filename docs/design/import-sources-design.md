@@ -1,8 +1,8 @@
-# W7 Native Import Sources Design
+# this source-import design Native Import Sources Design
 
 ## Purpose and boundary
 
-W7 ports the read-only source behavior for Claude, ChatGPT, Gemini, and Kindle
+this source-import design ports the read-only source behavior for Claude, ChatGPT, Gemini, and Kindle
 from their retained Python importers into `solstone-core-import-sources`:
 
 - content-aware `detect` predicates;
@@ -18,7 +18,7 @@ at `solstone/think/importers/cli.py:698-730`; the real file-importer call
 shape is `solstone/think/importers/cli.py:465-490`.
 
 The one vendored oracle proposed by this design is
-`core/fixtures/import_sources_w7_oracle.json`. Its per-source wrapper holds a
+`core/fixtures/import-sources-oracle.json`. Its per-source wrapper holds a
 fixture-owned `status` and a `captured` payload containing the original source
 row verbatim; the fixture also carries provenance. This is the only way to
 honor both requirements at once: adding a status field directly to a captured
@@ -45,12 +45,12 @@ a parallel hard-coded list of superseded or non-expectation rows.
 | AC | Concrete assertion and test file |
 |---|---|
 | 1 | New source detector tests under `core/crates/solstone-core-import-sources/tests/` construct the two minimal `conversations.json` archives and assert both Claude/ChatGPT directions, extensions, and source-specific Gemini/Kindle predicates. |
-| 2 | `preview_oracle.rs` reads `core/fixtures/import_sources_w7_oracle.json`, honors the wrapper status, and compares expectation-row preview counts/ranges plus exact unit-naming summaries. |
+| 2 | `preview_oracle.rs` reads `core/fixtures/import-sources-oracle.json`, honors the wrapper status, and compares expectation-row preview counts/ranges plus exact unit-naming summaries. |
 | 3 | Design doc and implementation outcome record atomic units for all four sources and identify the superseded ChatGPT and non-expectation Gemini rows; AC 2 supplies the corresponding summary-string assertion. |
 | 4 | `core/crates/solstone-core-import/tests/resolution.rs` uses a genuine clippings input and drives the assertion through `resolve_import`: no source is `GenericText`, explicit Kindle selects Kindle. Because it uses the resolver's real skip-extension gate, deleting `txt` from `DETECTION_SKIP_EXTENSIONS` runs the claims sweep and changes the no-source result, so the test reds. |
 | 5 | `plan_contract.rs` uses the richer `Takeout/My Activity/Gemini Apps/MyActivity.json` fixture to assert prompt/response, timestamp, and HTML branches. `preview_oracle.rs` reads the row status and never treats the zero-item Gemini capture as an expectation. |
 | 6 | `plan_utc.rs` uses midday UTC conversation fixtures and asserts timestamped Human/Assistant entries, their UTC day grouping, and `HHMMSS_300` keys against the recorded days. |
-| 7 | `plan_contract.rs` asserts sorted, deduplicated explicit `affected_days` on `ImportPlan`. Publication is deferred to the staging wave; `ImportPlan.affected_days` is the named hand-off, and W7 discharges only the data-carrying half because it writes no output paths. |
+| 7 | `plan_contract.rs` asserts sorted, deduplicated explicit `affected_days` on `ImportPlan`. Publication is deferred to the staging wave; `ImportPlan.affected_days` is the named hand-off, and this source-import design discharges only the data-carrying half because it writes no output paths. |
 | 8 | `source_immutability.rs` runs actual detect, preview, and plan for all four constructed inputs *inside* `observe_source_immutability`, then asserts the report is not violated. |
 | 9 | `plan_contract.rs` embeds malformed candidates in otherwise-valid inputs and asserts a non-empty skipped report containing the source locator and closed reason; it inspects report contents rather than merely asserting no panic. Clean fixtures separately assert `skipped.is_empty()`. |
 | 10 | Implementation-stage outcome reports the actual `make ci` execution honestly: with fail-fast, unrun later targets are recorded as unrun, not passing; it also records the applicable `--locked` and host-scoped `BINDGEN_EXTRA_CLANG_ARGS` conditions. |
@@ -82,7 +82,7 @@ Not acceptance criteria:
   would require a broader entity/import contract decision.
 - Retiring `registry::reserved_seam` at
   `core/crates/solstone-core-import-sources/src/registry.rs:20-22`. It has the
-  same stale-seam shape retired elsewhere, but registry completion is not W7.
+  same stale-seam shape retired elsewhere, but registry completion is not this source-import design.
 
 ## Deliberate decisions
 
@@ -94,7 +94,7 @@ Not acceptance criteria:
 
    The exact preview summaries for the current synthetic fixture are:
 
-   | Source | W7 summary |
+   | Source | this source-import design summary |
    |---|---|
    | Claude | `2 messages from Claude chat export` |
    | ChatGPT | `2 messages from ChatGPT export` |
@@ -105,7 +105,7 @@ Not acceptance criteria:
    unit is a prompt or response message an activity yields (one or two), never
    the activity container. Kindle retains its type-count wording (for example,
    `N highlights ...` or `N notes ...`), which names its atomic clipping kind.
-   `core/fixtures/import_sources_w7_oracle.json` owns capture status and W7
+   `core/fixtures/import-sources-oracle.json` owns capture status and this source-import design
    expectations; this document does not duplicate those per-row classifications.
 
 2. **The public source surface is fallible and read-only.**
@@ -150,7 +150,7 @@ Not acceptance criteria:
 
    ChatGPT and Gemini oracle captures were host-timezone-sensitive; Claude and
    Kindle preview captures were not. Because the oracle does not retain raw
-   timestamps, W7 fixtures must use UTC/no-offset timestamps at a midday value
+   timestamps, this source-import design fixtures must use UTC/no-offset timestamps at a midday value
    far from any plausible day boundary. This is mandatory fixture construction,
    not a test-host environment assumption. If later owner-timezone windowing is
    required, it belongs at the staging/publication boundary after
@@ -204,7 +204,7 @@ Not acceptance criteria:
    while detailed diagnostics require parsing every candidate item and belong to
    the later plan/result presentation.
 
-5. **Completed modules leave the stub inventory.** Following `df22182b6`, W7
+5. **Completed modules leave the stub inventory.** Following `df22182b6`, this source-import design
    deletes the four source `reserved_seam` functions and removes their four rows
    from `MODULE_STUBS` (12 to 8), then widens the companion
    `implemented_*_modules_have_no_unimplemented_seam` assertion in
@@ -212,7 +212,7 @@ Not acceptance criteria:
    the implemented list keeps an accidental reintroduction red.
 
 6. **One vendored fixture owns status as data.**
-   `core/fixtures/import_sources_w7_oracle.json` wraps each captured row as
+   `core/fixtures/import-sources-oracle.json` wraps each captured row as
    `{ "status": ..., "captured": ... }`, with the original payload preserved
    under `captured` and provenance beside the case table. The status vocabulary
    distinguishes at least `expectation`, `superseded`, and `non_expectation`:
@@ -238,7 +238,7 @@ and `ImportResult` remain owned by `solstone-core-import`'s existing contract
 | resolver adapter | A source-to-`ResolutionSeams.claims` adapter that maps `detect` success to its boolean and every `SourceError` to false. It does not alter `resolve_import`'s ordered sweep. |
 | `ImportPlan` | `segments: Vec<PlannedSegment>`, `affected_days: Vec<String>`, `item_count: u64`, `date_range: (String, String)`, and `skipped: Vec<SkippedEntry>`. Empty plans use `("", "")`, matching preview convention. |
 | `PlannedSegment` | UTC `day`, UTC `segment_key`, optional first model slug, and `entries`. |
-| `PlannedEntry` | Exactly `{ start, speaker, text }`. `_window_messages` builds this shape directly (`shared.py:220-272`). `window_items` is the second reference window producer (`shared.py:275-335`): it groups Kindle's parsed clipping records unchanged. W7 retains that two-view split and projects the same three-field public entry from each windowed clipping; it adds no payload enum, source discriminant, or field. |
+| `PlannedEntry` | Exactly `{ start, speaker, text }`. `_window_messages` builds this shape directly (`shared.py:220-272`). `window_items` is the second reference window producer (`shared.py:275-335`): it groups Kindle's parsed clipping records unchanged. this source-import design retains that two-view split and projects the same three-field public entry from each windowed clipping; it adds no payload enum, source discriminant, or field. |
 | `SourceError` | Named source-boundary failures: `Io`, `UnsupportedPathKind`, `UnsupportedExtension`, `ArchiveOpen`, `ArchiveMemberMissing`, `ArchiveMemberRead`, `InvalidJson`, `InvalidJsonShape`, and `TextDecode`, each carrying the affected path and applicable member/operation context. Malformed individual entries are `SkippedEntry`, not operation-fatal errors. |
 
 The source crate gains `zip = { version = "=2.4.2", default-features = false,
@@ -263,7 +263,7 @@ must recalculate.
 `ImportPlan` stops at its five declared fields. It does not carry
 conversation/activity-to-segment bindings, book-to-segment grouping, content
 manifest rows, Kindle entity definitions, or any other manifest-ready data:
-`affected_days` is the complete W7 day-impact surface. Content-manifest binding
+`affected_days` is the complete this source-import design day-impact surface. Content-manifest binding
 and all publication decisions belong to staging rather than this speculative
 parser contract. Actual `write_segment`, `write_markdown_segments`, and
 `write_content_manifest` calls remain later work
@@ -285,7 +285,7 @@ only; response only; prompt and response; subtitle `value`; subtitle `name`
 fallback; HTML that strips to empty; no content; missing time; invalid time;
 and Bard/Gemini-era `products` and `header` fields. This pins `_parse_activity`'s
 prompt/response, timestamp, and HTML branches (`solstone/think/importers/gemini.py:85-141`).
-The era fields remain for Takeout fixture fidelity only; W7 does not classify
+The era fields remain for Takeout fixture fidelity only; this source-import design does not classify
 or surface era. The vendored zero-item Gemini row is never a preview expectation.
 
 The Claude/ChatGPT discrimination fixtures contain only the required ZIP member
@@ -329,7 +329,7 @@ test of the display-only `file_patterns` metadata.
 - The raw oracle fixture timestamps are unavailable. ChatGPT and Gemini were
   host-timezone-sensitive at capture, so their recorded dates are unsafe to
   reproduce with arbitrary epochs. The required midday UTC fixture discipline
-  makes W7's replacement pin deterministic, but it cannot prove the original
+  makes this source-import design's replacement pin deterministic, but it cannot prove the original
   capture's exact timestamp.
 - The Gemini zero row proves archive-path detection only. It does not exercise
   `_parse_activity`, and treating it as a successful parse oracle would lock in
@@ -341,17 +341,17 @@ test of the display-only `file_patterns` metadata.
   partly UTC. The one-rule UTC decision is therefore an intentional behavior
   change, not a mechanical port.
 - Several Python detectors/parser helpers can throw on unexpected JSON element
-  types rather than return false or skip. W7 must classify source-level invalid
+  types rather than return false or skip. this source-import design must classify source-level invalid
   JSON shape as `SourceError::InvalidJsonShape`; silently broadening claims
   would hide corrupt inputs, while panicking violates the error-mapping rule in
   `docs/PORTING.md:262-279`.
 - Python Kindle's `journal_root` parameter is ignored by its segment writer,
   which instead reaches global journal resolution (`kindle.py:322-328` and
-  `shared.py:367-375`). The pure W7 plan avoids inheriting that write-path
+  `shared.py:367-375`). The pure this source-import design plan avoids inheriting that write-path
   defect.
 - Kindle has two legitimate views: its clipping records carry the fields needed
   by `_render_highlight_markdown` (`kindle.py:137-175`), while the public plan
   exposes only the three-field segment-entry projection. This is the reference
-  pattern, not a W7 payload expansion: `window_items` groups parsed records
+  pattern, not a this source-import design payload expansion: `window_items` groups parsed records
   unchanged (`shared.py:275-335`) and the renderer consumes those records rather
   than window entries (`kindle.py:322-328`).

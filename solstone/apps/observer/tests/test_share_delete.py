@@ -35,7 +35,7 @@ def _retention_executor(monkeypatch):
     """Erasing location data now goes through the retention executor.
 
     ⚠ The REAL binary, not a fake. These tests exist to prove that a segment holding
-    both location data and a recording loses BOTH -- the founder ruling of 2026-08-05
+    both location data and a recording loses BOTH -- the approved policy of 2026-08-05
     against partial owner-directed deletes -- and a stand-in for the remover cannot
     prove that. When it is not built, say so rather than assert against a substitute.
     """
@@ -380,7 +380,7 @@ def test_location_failure_uses_location_in_not_removed(tmp_path, monkeypatch):
 
 
 def test_a_mixed_segment_loses_everything_not_just_its_location(tmp_path, monkeypatch):
-    """🔴 The founder ruling of 2026-08-05, inverted from what this test asserted.
+    """🔴 The approved policy of 2026-08-05, inverted from what this test asserted.
 
     It previously asserted `audio.m4a` SURVIVED while `location.jsonl` was unlinked --
     a partial owner-directed delete. The ruling forbids that affordance anywhere, so

@@ -12,18 +12,18 @@ pub enum Battery {
     JournalReadiness,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeferredWave {
-    W3b,
-    W3c,
+pub enum DeferredCheckSet {
+    EarlierSet,
+    LaterSet,
 }
-impl std::fmt::Display for DeferredWave {
+impl std::fmt::Display for DeferredCheckSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                Self::W3b => "W3b",
-                Self::W3c => "W3c",
+                Self::EarlierSet => "earlier check set",
+                Self::LaterSet => "later check set",
             }
         )
     }
@@ -33,7 +33,7 @@ pub type Runner = fn(&CheckContext) -> RunnerResult;
 pub struct RegistryEntry {
     pub check: Check,
     pub runner: Runner,
-    pub deferred: Option<DeferredWave>,
+    pub deferred: Option<DeferredCheckSet>,
     pub feature: Option<&'static str>,
 }
 const BOTH: &[Platform] = &[Platform::Linux, Platform::Darwin];

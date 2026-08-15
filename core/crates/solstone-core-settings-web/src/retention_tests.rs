@@ -53,7 +53,7 @@ pub(crate) fn executor_env_guard() -> MutexGuard<'static, ()> {
 /// hostile ambient environment.
 pub(crate) fn without_executor<T>(work: impl FnOnce() -> T) -> T {
     let empty = tempfile::Builder::new()
-        .prefix("w3-no-executor-")
+        .prefix("no-executor-")
         .tempdir()
         .expect("executor-free PATH directory");
     let binary = crate::retention_executor::BINARY;
@@ -117,7 +117,7 @@ struct Harness {
 impl Harness {
     fn new(retention: &Value) -> Self {
         let root = tempfile::Builder::new()
-            .prefix("w3-retention-")
+            .prefix("retention-")
             .tempdir()
             .expect("space-free temp journal");
         assert!(!root.path().display().to_string().contains(' '));
@@ -305,7 +305,7 @@ fn stub_case<'a>(corpus: &'a Value, name: &str) -> &'a Value {
 
 fn root_from_config(config: &Value) -> TempDir {
     let root = tempfile::Builder::new()
-        .prefix("w3-config-")
+        .prefix("config-")
         .tempdir()
         .expect("temporary config root");
     write_json(root.path(), "config/journal.json", config);

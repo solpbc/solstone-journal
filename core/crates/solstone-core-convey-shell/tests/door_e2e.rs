@@ -1272,7 +1272,7 @@ async fn ac4_accepted_leaf_digest_is_the_did() {
 
 #[tokio::test]
 async fn ac5_loopback_connection_is_via_spl() {
-    // A lode cannot originate an off-host connection; pure vectors cover Direct.
+    // An isolated checkout cannot originate an off-host connection; pure vectors cover Direct.
     let fixture = Fixture::established(1);
     let app =
         router(fixture.root.clone()).merge(Router::new().route("/__door_test/basis", get(basis)));

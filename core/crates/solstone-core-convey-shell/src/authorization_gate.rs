@@ -52,7 +52,7 @@ pub const AUTHORIZATION_GATE_EXEMPTIONS: &[AuthorizationExemption] = &[
     AuthorizationExemption::TopLevelStatic,
 ];
 // [check] Only boot assets bypass request authorization. APIs, app paths, and
-// `/sse/events` remain gated: this gate refuses a new SSE request, while W1a's
+// `/sse/events` remain gated: this gate refuses a new SSE request, while
 // carrier-level revocation closes an already-open device stream.
 
 #[derive(Serialize)]

@@ -1,5 +1,5 @@
 # Solstone install-integration test runner — see README.md for usage and
-# vpe/playbooks/solstone-systemd-test.md for the trade-off discussion.
+# operator runbook for the trade-off discussion.
 
 IMAGE ?= solstone-systemd-test:latest
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native temporary twin of `solstone/think/features.py`; retire in W3d.
+//! Native temporary twin of `solstone/think/features.py`; retire after the native implementation is complete.
 
 use std::path::Path;
 

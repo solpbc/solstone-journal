@@ -20,7 +20,7 @@ struct Tree(PathBuf);
 impl Tree {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "solstone-w1b-{}",
+            "solstone-import-{}",
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();

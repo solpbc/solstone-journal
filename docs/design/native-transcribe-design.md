@@ -1,12 +1,12 @@
-# W5a: native `journal transcribe` design
+# this native transcribe design: native `journal transcribe` design
 
 ## Decision record
 
-W5a builds the Python transcribe driver's standalone native replacement. The
+this native transcribe design builds the Python transcribe driver's standalone native replacement. The
 resulting process boundary is intentional: `solstone-transcribe` will become
 the production seam called by `journal transcribe` in a later, macOS-VAD-
 packaging-gated dispatch wave. It is therefore not an inspection/debug tool.
-W5a does not change the live Python route.
+this native transcribe design does not change the live Python route.
 
 The Python source remains the differential oracle during the conversion freeze.
 The native implementation owns transcription orchestration and the two
@@ -55,7 +55,7 @@ workspace members for `crates/solstone-core-transcribe` and
 `solstone-core-transcribe-cli`. The CLI depends on the library through the
 workspace dependency.
 
-W5a does **not** touch `PROCESS_SPECS`, the journal process table, Python
+this native transcribe design does **not** touch `PROCESS_SPECS`, the journal process table, Python
 dispatch code, or journal-distribution packaging. The standalone binary is
 reachable only through its crate tests, the AC16 end-to-end reachability test
 that spawns its built path directly, and direct manual/CI invocation. It is
@@ -131,7 +131,7 @@ reshaping or reimplementing its internals. More importantly,
 the ONNX closure from syntactic dependency keys and does not distinguish
 optional dependencies or feature selection. A dependency edge to either helper
 would mechanically require transcribe in `RUST_HOST_EXCLUDES` and the iOS
-exclude chain, contrary to W5a. The standalone helpers remain isolated by the
+exclude chain, contrary to this native transcribe design. The standalone helpers remain isolated by the
 existing exclusions; transcribe has no ONNX dependency in any feature
 configuration.
 
@@ -390,6 +390,6 @@ leg must name this owning package.
   can remain after a later JSONL failure. The driver-level orphan cleanup is
   therefore required on every retry path.
 - The Rust-conversion freeze permits temporary old/new routing only with a
-  deletion schedule. W5a intentionally creates no old/new live routing; the
+  deletion schedule. this native transcribe design intentionally creates no old/new live routing; the
   later native journal-dispatch wave owns deleting the retained Python route,
   without a compatibility alias or fallback subprocess.

@@ -493,15 +493,15 @@ fn turn_ladder_counts_off_by_one_and_dedupes_before_armed_check() {
     for index in 0..58 {
         let _ = ladder.check(&format!("r{index}"), 60, "finish");
     }
-    let armed = ladder.check("r58", 60, "finish").unwrap();
+    let armed = ladder.check("request-58", 60, "finish").unwrap();
     assert_eq!(armed.stage, BudgetStage::FinalTurn);
     assert_eq!(ladder.observed_turns, 59);
     // Duplicate response ids are a total no-op before arming.
-    assert!(ladder.check("r58", 60, "finish").is_none());
+    assert!(ladder.check("request-58", 60, "finish").is_none());
     assert_eq!(ladder.observed_turns, 59);
     assert!(!ladder.force_stopped);
     assert_eq!(
-        ladder.check("r59", 60, "finish").unwrap().stage,
+        ladder.check("request-59", 60, "finish").unwrap().stage,
         BudgetStage::ForceStopped
     );
     assert_eq!(ladder.observed_turns, 59);

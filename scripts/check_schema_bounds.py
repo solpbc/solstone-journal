@@ -21,35 +21,35 @@ from solstone.apps.timeline.rollup import build_rollup_schema  # noqa: E402
 from solstone.think.schema_bounds import unbounded_nodes  # noqa: E402
 
 ALLOWLIST: dict[str, str] = {
-    "build_rollup_schema(3)": "documents follow-on lode",
+    "build_rollup_schema(3)": "documents follow-on work",
     "solstone/apps/entities/talent/detection.schema.json": (
-        "entity_observer follow-on lode"
+        "entity_observer follow-on work"
     ),
     "solstone/apps/entities/talent/entities_review.schema.json": (
-        "entity_observer follow-on lode"
+        "entity_observer follow-on work"
     ),
     "solstone/apps/timeline/talent/segment_summary.schema.json": (
-        "documents follow-on lode"
+        "documents follow-on work"
     ),
-    "solstone/observe/categories/meeting.schema.json": "screen follow-on lode",
-    "solstone/observe/describe.schema.json": "screen follow-on lode",
-    "solstone/observe/extract.schema.json": "screen follow-on lode",
-    "solstone/talent/chat.schema.json": "messaging follow-on lode",
-    "solstone/talent/participation.schema.json": "calendar follow-on lode",
-    "solstone/talent/participation_entry.schema.json": "calendar follow-on lode",
-    "solstone/talent/pulse.schema.json": "morning_briefing follow-on lode",
-    "solstone/talent/schedule.schema.json": "calendar follow-on lode",
-    "solstone/talent/sense.schema.json": "sense follow-on lode",
+    "solstone/observe/categories/meeting.schema.json": "screen follow-on work",
+    "solstone/observe/describe.schema.json": "screen follow-on work",
+    "solstone/observe/extract.schema.json": "screen follow-on work",
+    "solstone/talent/chat.schema.json": "messaging follow-on work",
+    "solstone/talent/participation.schema.json": "calendar follow-on work",
+    "solstone/talent/participation_entry.schema.json": "calendar follow-on work",
+    "solstone/talent/pulse.schema.json": "morning_briefing follow-on work",
+    "solstone/talent/schedule.schema.json": "calendar follow-on work",
+    "solstone/talent/sense.schema.json": "sense follow-on work",
     "solstone/talent/speaker_attribution.schema.json": (
-        "speaker attribution follow-on lode"
+        "speaker attribution follow-on work"
     ),
-    "solstone/talent/steward.schema.json": "morning_briefing follow-on lode",
-    "solstone/think/detect_created.schema.json": "created-detection follow-on lode",
+    "solstone/talent/steward.schema.json": "morning_briefing follow-on work",
+    "solstone/think/detect_created.schema.json": "created-detection follow-on work",
     "solstone/think/detect_transcript_json.schema.json": (
-        "transcript detection follow-on lode"
+        "transcript detection follow-on work"
     ),
     "solstone/think/detect_transcript_segment.schema.json": (
-        "transcript detection follow-on lode"
+        "transcript detection follow-on work"
     ),
 }
 

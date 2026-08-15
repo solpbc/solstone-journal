@@ -525,7 +525,7 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
             "journal-source",
             vec![
                 Case {
-                    args: args(&["journal-source", "create", "w11-source"]),
+                    args: args(&["journal-source", "create", "sample-source"]),
                     exit: 0,
                     stream: Stream::Stdout,
                     contains: "Journal source created:",
@@ -534,19 +534,19 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                     args: args(&["journal-source", "list"]),
                     exit: 0,
                     stream: Stream::Stdout,
-                    contains: "w11-source",
+                    contains: "sample-source",
                 },
                 Case {
-                    args: args(&["journal-source", "status", "w11-source"]),
+                    args: args(&["journal-source", "status", "sample-source"]),
                     exit: 0,
                     stream: Stream::Stdout,
-                    contains: "Journal source: w11-source",
+                    contains: "Journal source: sample-source",
                 },
                 Case {
-                    args: args(&["journal-source", "revoke", "w11-source"]),
+                    args: args(&["journal-source", "revoke", "sample-source"]),
                     exit: 0,
                     stream: Stream::Stdout,
-                    contains: "Revoked journal source 'w11-source'",
+                    contains: "Revoked journal source 'sample-source'",
                 },
             ],
         ),

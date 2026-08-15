@@ -238,7 +238,7 @@ mod tests {
             served.header("content-type"),
             Some("text/html; charset=utf-8")
         );
-        // Temporary W1 scaffolding: W3 removes this copy and this test with the Python source.
+        // This test protects the copied native asset until the Python source is retired.
         // Until then, a Python-only edit must red the native crate that embeds the copied bytes.
         assert_eq!(
             served.body,
@@ -409,7 +409,7 @@ mod tests {
     #[tokio::test]
     async fn unported_entity_plates_and_assist_keep_their_reference_refusals() {
         let journal = Journal::established();
-        // W1 scaffolding: W2 replaces these five index-plate refusals with implementations.
+        // These five index-plate refusals remain until implementations replace them.
         for path in [
             "/app/entities/api/network?entity=x",
             "/app/entities/api/history?entity=x",

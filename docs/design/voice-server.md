@@ -1,8 +1,8 @@
-# Wave 2 voice server
+# Voice server design
 
 ## 1. Summary
 
-Wave 2 ships a root-level voice API for the existing Convey server: `POST /api/voice/session`, `POST /api/voice/connect`, `POST /api/voice/refresh-brain`, and `GET /api/voice/status`, all mounted from a new `solstone/convey/voice.py` blueprint at `/api/voice/*`. The implementation reuses existing journal, ledger, entity, briefing, and anticipated-activity read surfaces, keeps all voice-owned writes inside `journal/health/voice-brain-session*`, and treats the bridge contract in the scope as canonical when it conflicts with older prose (`solstone/convey/__init__.py:126-155`, `solstone/convey/system.py:18`, `solstone/apps/home/routes.py:149-198`, `solstone/think/surfaces/ledger.py:441-529`, `solstone/think/indexer/journal.py:1865-1948`).
+This design ships a root-level voice API for the existing Convey server: `POST /api/voice/session`, `POST /api/voice/connect`, `POST /api/voice/refresh-brain`, and `GET /api/voice/status`, all mounted from a new `solstone/convey/voice.py` blueprint at `/api/voice/*`. The implementation reuses existing journal, ledger, entity, briefing, and anticipated-activity read surfaces, keeps all voice-owned writes inside `journal/health/voice-brain-session*`, and treats the bridge contract in the scope as canonical when it conflicts with older prose (`solstone/convey/__init__.py:126-155`, `solstone/convey/system.py:18`, `solstone/apps/home/routes.py:149-198`, `solstone/think/surfaces/ledger.py:441-529`, `solstone/think/indexer/journal.py:1865-1948`).
 
 ## 2. Module layout
 
@@ -140,7 +140,7 @@ Side effects:
 Request body:
 
 - Empty body is allowed.
-- If a body is present it must decode to a JSON object; contents are ignored in Wave 2.
+- If a body is present it must decode to a JSON object; contents are ignored by this design.
 
 Success response:
 
@@ -198,7 +198,7 @@ Rules that apply to every tool:
 | `commitments.complete` | `{"commitment_id": "lg_...", "resolution": "done"|"sent"|"signed"|"dropped"|"deferred"}` | `{"ok": true, "commitment": {"id": "...", "owner": "...", "action": "...", "counterparty": "...", "state": "...", "context": "...", "day_opened": "YYYY-MM-DD", "day_closed": "YYYY-MM-DD"?, "resolution": "<input-resolution>"}}` | Validate `resolution`. Map `dropped -> as_state="dropped", note="resolution: dropped"`. Map `done|sent|signed|deferred -> as_state="closed", note="resolution: <value>"`. Call `think.surfaces.ledger.close(...)`, catch `KeyError`, and shape the returned `LedgerItem` as above (`solstone/think/surfaces/ledger.py:497-529`, `solstone/think/activities.py:1156-1207`) | `{"error": "invalid resolution"}` or `{"error": "not found"}` |
 | `calendar.today` | `{}` | `{"date": "YYYY-MM-DD", "events": [{"time": "HH:MM", "title": "<title>", "attendees": ["<name>"], "location": "<string>", "prep_notes": "<string>"}]}` | `think.activities.load_activity_records(facet, day)` across all enabled facets, filtered to `source == "anticipated"` using the same participation parsing pattern Home uses today (`solstone/apps/home/routes.py:305-337`, `solstone/think/activities.py:877-890`) | `{"error": "today unavailable"}` only on unexpected failures; normal empty day is `{"date": "...", "events": []}` |
 | `briefing.get` | `{}` | `{"date": "YYYY-MM-DD", "facet": "identity", "text": "<spoken-English body>", "highlights": ["...", "..."]}` or `{"error": "no briefing today yet"}` | Reuse `solstone.think.briefing.load_briefing(today)` and `render_briefing_sections(...)` exactly. `None` returns the error object. `text` is a plain-text join of the loaded sections; `highlights` comes from `needs_attention` items first, then falls back to the first three bullets across the other sections | `{"error": "no briefing today yet"}` |
-| `observer.start_listening` | `{"mode": "meeting"|"voice_memo"}` | `{"status": "ack", "mode": "<mode>", "note": "wave-4 observer not yet wired"}` | No data dependency in Wave 2. Log the requested mode at INFO and return the stub acknowledgement. | `{"error": "invalid mode"}` |
+| `observer.start_listening` | `{"mode": "meeting"|"voice_memo"}` | `{"status": "ack", "mode": "<mode>", "note": "observer integration not yet wired"}` | No data dependency in this design. Log the requested mode at INFO and return the stub acknowledgement. | `{"error": "invalid mode"}` |
 
 Implementation notes by tool:
 
@@ -254,8 +254,8 @@ Output only this wrapper and the instruction inside it:
 
 Notes:
 
-- The prompt intentionally has no `ask_sol` clause. Wave 2 ships the 9-tool manifest only.
-- `think.voice.brain.ask_brain(...)` still exists as a parity helper for future expansion, but it is not referenced in the Wave 2 prompt or tool manifest.
+- The prompt intentionally has no `ask_sol` clause. This design ships the 9-tool manifest only.
+- `think.voice.brain.ask_brain(...)` still exists as a parity helper for future expansion, but it is not referenced in the prompt or tool manifest.
 
 ## 7. Background runtime + shutdown
 
@@ -419,7 +419,7 @@ Journal-data rule:
 - Commitments resolution mapping: this design maps `done|sent|signed|deferred -> as_state="closed"` and `dropped -> as_state="dropped"` because `think.surfaces.ledger.close(...)` only accepts `closed|dropped`.
 - OpenAI key sourcing: this design uses `config.voice.openai_api_key` in `journal/config/journal.json` first, then `OPENAI_API_KEY`, and does not add `journal/config/openai.json`.
 - `ask_sol` clause: this design removes it from the brain init prompt and does not add a 10th tool to the manifest.
-- Decision-record location: this design keeps the Wave 2 voice decisions in `docs/design/voice-server.md` because `records/decisions/` does not exist in the repo.
+- Decision-record location: this design keeps the voice decisions in `docs/design/voice-server.md` .
 - Config keys: this design adds a `voice` block to journal config and defaults, which is a scope-visible contract change.
 
 ## 13. Risks / sharp edges
@@ -428,6 +428,6 @@ Journal-data rule:
 - OpenAI Realtime API stability: the repo pins `openai>=1.2.0`, but the local environment on 2026-04-19 reports `openai 2.17.0`; implementation should lock tests to the currently observed surfaces `client.realtime.client_secrets.create(session=...)` and `client.realtime.connect(call_id=..., model=...)`.
 - Brain subprocess prompt safety: the prompt itself is fixed and repo-controlled, but the Claude CLI invocation must avoid shell interpolation and must pass arguments as a list to `create_subprocess_exec`.
 - Fixture briefing date drift: without the `_today()` seam, `briefing.get` and date-window tools would fail when run against the real system clock.
-- `commitments.list.resolution` diminishment is accepted as a Wave 2 known-limit. The ledger surface stores resolution nuance in close-note edits rather than a typed field, so `commitments.list` surfaces `"dropped"` only for dropped items and omits the field otherwise. Full resolution carry-through remains available for a follow-up if post-ship live validation reveals a real need.
+- `commitments.list.resolution` diminishment is accepted as an accepted known limit. The ledger surface stores resolution nuance in close-note edits rather than a typed field, so `commitments.list` surfaces `"dropped"` only for dropped items and omits the field otherwise. Full resolution carry-through remains available for a follow-up if post-ship live validation reveals a real need.
 - `sources` leakage: `LedgerItem.sources` is provenance, not model-facing data. The tool layer must strip it before returning commitments to OpenAI.
 - `segment_path()` still creates directories by default for write paths; read-only callers (for example segment-summary readers) must pass `create=False`.

@@ -42,7 +42,7 @@
   "provenance": {
     "captured_from_rev": "3d2e593bd6ed349692e2ed5779f61a8b00408806",
     "guard": "Run from a clean tree unless --allow-dirty is explicitly used while developing the native port.",
-    "interpreter": "/home/jer/.hopper/worktrees/rfgkwqoa/.venv/bin/python"
+    "interpreter": "/workspace/owner/.hopper/worktrees/rfgkwqoa/.venv/bin/python"
   },
   "schema": "schedule-reference-output/1"
 }

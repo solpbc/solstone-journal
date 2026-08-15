@@ -1,4 +1,4 @@
-{"event": "exec", "ts": 1770778598315, "app": "entities", "task": "001_migrate_to_journal_entities", "cmd": ["/home/jer/projects/sunstone/.venv/bin/python3", "-m", "apps.entities.maint.001_migrate_to_journal_entities"]}
+{"event": "exec", "ts": 1770778598315, "app": "entities", "task": "001_migrate_to_journal_entities", "cmd": ["/workspace/owner/projects/sunstone/.venv/bin/python3", "-m", "apps.entities.maint.001_migrate_to_journal_entities"]}
 {"event": "line", "ts": 1770778598438, "line": "============================================================"}
 {"event": "line", "ts": 1770778598438, "line": "Entity Migration: Legacy to Journal-Wide Structure"}
 {"event": "line", "ts": 1770778598438, "line": "============================================================"}

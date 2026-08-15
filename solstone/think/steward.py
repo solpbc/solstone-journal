@@ -32,7 +32,7 @@ _SEVEN_DAYS_MS = 7 * 86_400_000
 _THIRTY_DAYS_MS = 30 * 86_400_000
 
 # Closed set of summary actions the convey widget can map to an affordance.
-# CPO-named contract (S3); VPE proposes the initial values. Keep it closed so the
+# Closed contract; initial values are reviewed. Keep it closed so the
 # UI can map each value to a button/link.
 SUGGESTED_ACTIONS: tuple[str, ...] = (
     "none",

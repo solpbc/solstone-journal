@@ -931,7 +931,7 @@ print(json.dumps({
 }
 
 #[test]
-#[ignore = "requires installed restic; VPE runs this real backup/restore gate directly"]
+#[ignore = "requires installed restic; this real backup/restore gate runs outside the routine test environment"]
 fn apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild() {
     let harness = ClientHarness::new("real-round-trip");
     let source_journal = harness._temp.path.join("source-journal");

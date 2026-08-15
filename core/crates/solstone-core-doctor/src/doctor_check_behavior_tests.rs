@@ -57,6 +57,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, SnapshotEntry> {
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+// W3C names are standards-body vocabulary, not project-phase identifiers.
 const W3C_CHECK_NAMES: &[&str] = &[
     "journal_sync",
     "journal_caught_up",
@@ -76,7 +77,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "feature:pdf-export",
 ];
 
-const W3A_REAL_CHECK_NAMES: &[&str] = &[
+const BASELINE_CHECK_NAMES: &[&str] = &[
     "config_dir_readable",
     "journal_dir_writable",
     "supervisor_conflict",
@@ -84,11 +85,11 @@ const W3A_REAL_CHECK_NAMES: &[&str] = &[
     "launchd_stale_plist",
 ];
 
-// W3b landed before this branch. Like the W3c list above, these names carry
-// `deferred: None` now and so are indistinguishable from W3a's rows in the
+// The earlier check set landed before this branch. These names carry `deferred:
+// None` now and so are indistinguishable from the baseline rows in the
 // registry — the classification cannot be derived after the fact and has to be
 // written down to keep the partition assertion below self-policing.
-const W3B_REAL_CHECK_NAMES: &[&str] = &[
+const EARLIER_CHECK_NAMES: &[&str] = &[
     "journal_leaf_exclusivity",
     "journal_package_version",
     "retired_host_shim",
@@ -103,7 +104,7 @@ const W3B_REAL_CHECK_NAMES: &[&str] = &[
 
 fn fixture() -> CheckContext {
     let root = std::env::temp_dir().join(format!(
-        "w3c-{}-{}",
+        "check-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
@@ -537,12 +538,12 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             stage_router_skills(&mut context, !ok);
         }
         "feature:pdf-import" | "feature:pdf-export" => stage_feature(&mut context, name, ok),
-        _ => unreachable!("unknown W3c check {name}"),
+        _ => unreachable!("unknown W3C check {name}"),
     }
     result(name, &context)
 }
 #[test]
-fn w3c_registry_replaces_exact_deferred_set_with_runners() {
+fn registry_replaces_deferred_check_sets_with_runners() {
     assert!(
         registry::entries(Battery::Journal)
             .iter()
@@ -567,7 +568,7 @@ fn w3c_registry_replaces_exact_deferred_set_with_runners() {
     );
 }
 #[test]
-fn w3c_severity_table_matches_reference() {
+fn check_severity_table_matches_reference() {
     for (name, severity) in [
         ("journal_sync", Severity::Blocker),
         ("journal_caught_up", Severity::Advisory),
@@ -596,7 +597,7 @@ fn w3c_severity_table_matches_reference() {
     }
 }
 #[test]
-fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
+fn fixture_covers_ok_and_non_ok_paths() {
     let coverage = [
         ("journal_sync", SecondBranch::DifferentStatus),
         ("journal_caught_up", SecondBranch::DifferentStatus),
@@ -624,37 +625,39 @@ fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
         .iter()
         .map(|(name, _)| *name)
         .collect::<std::collections::BTreeSet<_>>();
-    let w3c_names = W3C_CHECK_NAMES
+    let names = W3C_CHECK_NAMES
         .iter()
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
-        w3c_names, coverage_names,
-        "every native W3c registry row needs AC1 coverage"
+        names, coverage_names,
+        "every native W3C registry row needs AC1 coverage"
     );
     for name in W3C_CHECK_NAMES {
         let entry = registry::lookup(Battery::Journal, name)
-            .unwrap_or_else(|| panic!("W3c check {name} is missing from the registry"));
+            .unwrap_or_else(|| panic!("W3C check {name} is missing from the registry"));
         assert!(
             entry.deferred.is_none(),
-            "W3c check {name} must resolve to a real runner"
+            "W3C check {name} must resolve to a real runner"
         );
     }
-    let w3a_names = W3A_REAL_CHECK_NAMES
+    let baseline_names = BASELINE_CHECK_NAMES
         .iter()
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
-    let w3b_names = W3B_REAL_CHECK_NAMES
+    let earlier_names = EARLIER_CHECK_NAMES
         .iter()
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
-    for name in W3B_REAL_CHECK_NAMES {
+    for name in EARLIER_CHECK_NAMES {
         let entry = registry::lookup(Battery::Journal, name)
             .or_else(|| registry::lookup(Battery::JournalReadiness, name))
-            .unwrap_or_else(|| panic!("W3b check {name} is missing from the registry"));
+            .unwrap_or_else(|| {
+                panic!("earlier check set check {name} is missing from the registry")
+            });
         assert!(
             entry.deferred.is_none(),
-            "W3b check {name} must resolve to a real runner"
+            "earlier check set check {name} must resolve to a real runner"
         );
     }
     assert!(
@@ -664,18 +667,18 @@ fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
             .all(|entry| entry.deferred.is_none()),
         "every deferred wave has landed; no registry row may still be a stub"
     );
-    assert!(w3a_names.is_disjoint(&w3b_names));
-    assert!(w3a_names.is_disjoint(&w3c_names));
-    assert!(w3b_names.is_disjoint(&w3c_names));
-    let partition = w3a_names
-        .union(&w3b_names)
+    assert!(baseline_names.is_disjoint(&earlier_names));
+    assert!(baseline_names.is_disjoint(&names));
+    assert!(earlier_names.is_disjoint(&names));
+    let partition = baseline_names
+        .union(&earlier_names)
         .copied()
-        .chain(w3c_names.iter().copied())
+        .chain(names.iter().copied())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(
         registry::union_names(),
         partition,
-        "every registry check must be classified as W3a, W3b, or W3c"
+        "every registry check must be classified as baseline, earlier, or W3C"
     );
     for (name, kind) in coverage {
         let ok = staged_coverage_result(name, true);
@@ -696,18 +699,18 @@ fn w3c_fixture_drives_all_w3c_ok_and_non_ok_paths() {
     }
 }
 #[test]
-fn w3c_parakeet_cpp_required_states_are_distinct() {
+fn parakeet_cpp_required_states_are_distinct() {
     assert_eq!(status("parakeet_cpp_stt_ready", &fixture()), Status::Skip);
 }
 #[test]
-fn w3c_default_stt_backend_platform_and_corrupt_config_matrix() {
+fn default_stt_backend_platform_and_corrupt_config_matrix() {
     let c = fixture();
     fs::create_dir_all(c.journal_path.join("config")).unwrap();
     fs::write(c.journal_path.join("config/journal.json"), b"{").unwrap();
     assert_eq!(status("default_stt_ready", &c), Status::Fail);
 }
 #[test]
-fn w3c_orphan_pdf_depth_transcript_and_dot_entry_matrix() {
+fn orphan_pdf_depth_transcript_and_dot_entry_matrix() {
     let c = fixture();
     let p = c.journal_path.join("chronicle/.dot/a/b/raw.pdf");
     fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -715,7 +718,7 @@ fn w3c_orphan_pdf_depth_transcript_and_dot_entry_matrix() {
     assert_eq!(status("orphan_segment_pdf", &c), Status::Warn);
 }
 #[test]
-fn w3c_no_enabled_observers_skip_observer_trio() {
+fn no_enabled_observers_skip_observer_trio() {
     let c = fixture();
     for name in [
         "capture_health",
@@ -727,7 +730,7 @@ fn w3c_no_enabled_observers_skip_observer_trio() {
 }
 
 #[test]
-fn w3c_observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
+fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     let dated = fixture();
     write_observer(
         &dated,
@@ -767,7 +770,7 @@ fn w3c_observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
 }
 
 #[test]
-fn w3c_maint_unreadable_state_uses_reference_detail() {
+fn maint_unreadable_state_uses_reference_detail() {
     let unreadable = fixture();
     let state = unreadable.journal_path.join("maint/settings/reindex.jsonl");
     fs::create_dir_all(state.parent().unwrap()).unwrap();
@@ -794,7 +797,7 @@ fn w3c_maint_unreadable_state_uses_reference_detail() {
 }
 
 #[test]
-fn w3c_maint_static_task_preserves_failed_and_stale_classification() {
+fn maint_static_task_preserves_failed_and_stale_classification() {
     let failed = fixture();
     let state = failed
         .journal_path
@@ -834,7 +837,7 @@ fn w3c_maint_static_task_preserves_failed_and_stale_classification() {
 }
 
 #[test]
-fn w3c_setup_json_and_jsonl_filters_receive_advisory_warning() {
+fn setup_json_and_jsonl_filters_receive_advisory_warning() {
     let warned = run(&args(), &fixture());
     let json = serde_json::json!({"checks": warned});
     let json_matches = json["checks"]
@@ -887,7 +890,7 @@ fn w3c_setup_json_and_jsonl_filters_receive_advisory_warning() {
     );
 }
 #[test]
-fn w3c_feature_environment_inspection_matrix() {
+fn feature_environment_inspection_matrix() {
     let missing = fixture();
     let env = missing.journal_path.parent().unwrap().join("venv");
     fs::create_dir_all(env.join("lib/python3.13/site-packages")).unwrap();
@@ -936,7 +939,7 @@ fn w3c_feature_environment_inspection_matrix() {
 }
 
 #[test]
-fn w3c_brain_unconstructible_snapshot_is_an_explicit_warning() {
+fn brain_unconstructible_snapshot_is_an_explicit_warning() {
     let context = fixture();
     let path = context.journal_path.join("health/brain.json");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -947,7 +950,7 @@ fn w3c_brain_unconstructible_snapshot_is_an_explicit_warning() {
 }
 
 #[test]
-fn w3c_brain_ready_and_checking_records_are_healthy() {
+fn brain_ready_and_checking_records_are_healthy() {
     let ready = fixture();
     stage_brain_ready(&ready);
     let row = result("brain", &ready);
@@ -968,7 +971,7 @@ fn w3c_brain_ready_and_checking_records_are_healthy() {
 }
 
 #[test]
-fn w3c_task_pace_uses_callosum_status_fixture() {
+fn task_pace_uses_callosum_status_fixture() {
     let ok = task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]));
     assert_eq!(ok.status, Status::Ok);
     assert_eq!(ok.detail, "tasks on pace");
@@ -981,7 +984,7 @@ fn w3c_task_pace_uses_callosum_status_fixture() {
 }
 
 #[test]
-fn w3c_caught_up_native_backlog_fixture_states() {
+fn caught_up_native_backlog_fixture_states() {
     let clean = fixture();
     let row = result("journal_caught_up", &clean);
     assert_eq!(row.status, Status::Ok);
@@ -1020,7 +1023,7 @@ fn w3c_caught_up_native_backlog_fixture_states() {
 
 #[test]
 #[cfg(unix)]
-fn w3c_parakeet_cpp_fixture_states_are_distinct() {
+fn parakeet_cpp_fixture_states_are_distinct() {
     let not_applicable = fixture();
     let row = result("parakeet_cpp_stt_ready", &not_applicable);
     assert_eq!(row.status, Status::Skip);
@@ -1110,7 +1113,7 @@ fn w3c_parakeet_cpp_fixture_states_are_distinct() {
 
 #[test]
 #[cfg(unix)]
-fn w3c_default_stt_fixture_matrix_delegates_and_checks_coreml() {
+fn default_stt_fixture_matrix_delegates_and_checks_coreml() {
     let other = fixture();
     config_backend(&other, "whisper");
     let row = result("default_stt_ready", &other);
@@ -1190,7 +1193,7 @@ fn w3c_default_stt_fixture_matrix_delegates_and_checks_coreml() {
 
 #[test]
 #[cfg(unix)]
-fn w3c_skill_state_fixture_branches() {
+fn skill_state_fixture_branches() {
     use std::os::unix::fs::symlink;
 
     let mut installed = fixture();
@@ -1230,7 +1233,7 @@ fn w3c_skill_state_fixture_branches() {
 
 #[test]
 #[cfg(unix)]
-fn w3c_speakers_installation_uses_injected_resolvers() {
+fn speakers_installation_uses_injected_resolvers() {
     let mut ready = fixture();
     stage_speakers_analyze(&mut ready, true);
     let row = result("speakers_analyze_installation", &ready);
@@ -1251,7 +1254,7 @@ fn w3c_speakers_installation_uses_injected_resolvers() {
 }
 
 #[test]
-fn w3c_observer_delivery_stall_clause_escalation() {
+fn observer_delivery_stall_clause_escalation() {
     let stage = |value: serde_json::Value| {
         let context = fixture();
         write_observer(&context, "abcdefgh", value);
@@ -1288,7 +1291,7 @@ fn w3c_observer_delivery_stall_clause_escalation() {
 }
 
 #[test]
-fn w3c_owner_boundary_guard_is_nonvacuous() {
+fn owner_boundary_guard_is_nonvacuous() {
     let owners = [
         ("journal_sync", "solstone_core_system"),
         ("journal_caught_up", "solstone_core_system_health"),
@@ -1346,7 +1349,7 @@ fn w3c_owner_boundary_guard_is_nonvacuous() {
     assert!(!cargo.contains("solstone-core-sol.workspace"));
 }
 #[test]
-fn w3c_poisoned_interpreters_positive_control_and_battery() {
+fn poisoned_interpreters_positive_control_and_battery() {
     let mut c = fixture();
     // The production resolver looks for the helper next to the running test
     // executable, and a sibling convey-shell test installs a stub speakers
@@ -1453,7 +1456,7 @@ fn w3c_poisoned_interpreters_positive_control_and_battery() {
     assert!(!witness.exists());
 }
 #[test]
-fn w3c_batteries_preserve_staged_home_and_journal() {
+fn batteries_preserve_staged_home_and_journal() {
     let c = fixture();
     fs::create_dir_all(&c.home_dir).unwrap();
     fs::write(c.home_dir.join("marker"), "home").unwrap();

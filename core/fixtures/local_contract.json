@@ -1155,7 +1155,7 @@
     "schema_version": 1
   },
   "local_converse": {
-    "generated_by": "hand-authored from the Rust implementation for R4b; not produced by scripts/local_contract_corpus.py or make core-fixtures",
+    "generated_by": "hand-authored from the Rust implementation; not produced by scripts/local_contract_corpus.py or make core-fixtures",
     "wire_dialect": "openai-chat-completions",
     "wire_shapes": {
       "tool_spec": {

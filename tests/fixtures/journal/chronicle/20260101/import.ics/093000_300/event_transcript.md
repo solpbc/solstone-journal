@@ -2,7 +2,7 @@
 
 - **When:** Thursday, January 1, 2026 12:00–13:00 MST
 - **Where:** The Kitchen, 1530 16th St, Denver, CO 80202
-- **Organizer:** jer@solpbc.org
+- **Organizer:** rae@example.test
 - **Attendees:** sarah.chen@whitfield-law.com
 
 Catch up with Sarah on outstanding items. Need to review the updated operating agreement language around benefit purpose reporting obligations. Also discuss IP assignment cleanup for the new contractor agreements — she flagged some ambiguity in the current template.
@@ -13,7 +13,7 @@ Catch up with Sarah on outstanding items. Need to review the updated operating a
 
 - **When:** Thursday, January 1, 2026 14:00–15:00 MST
 - **Where:** Google Meet (meet.google.com/qjz-wmvx-dck)
-- **Organizer:** jer@solpbc.org
+- **Organizer:** rae@example.test
 - **Attendees:** maya@solpbc.org, erik@solpbc.org
 
 Dry run for the Betaworks Studio Day demo on Jan 15. Cover list:

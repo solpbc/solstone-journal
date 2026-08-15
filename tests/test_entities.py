@@ -2256,16 +2256,16 @@ def test_get_identity_names_from_config(tmp_path, monkeypatch):
     config_dir.mkdir()
     config = {
         "identity": {
-            "name": "Jeremy Miller",
-            "preferred": "Jer",
-            "aliases": ["JM", "Jeremy"],
+            "name": "Raylyn Miller",
+            "preferred": "Rae",
+            "aliases": ["JM", "Raylyn"],
         }
     }
     (config_dir / "journal.json").write_text(json.dumps(config))
 
     names = get_identity_names()
     # Preferred comes first (best for display), then full name, then aliases
-    assert names == ["Jer", "Jeremy Miller", "JM", "Jeremy"]
+    assert names == ["Rae", "Raylyn Miller", "JM", "Raylyn"]
 
 
 def test_get_identity_names_no_config(tmp_path, monkeypatch):
@@ -2335,7 +2335,7 @@ def test_save_entities_flags_principal_on_preferred_match(tmp_path, monkeypatch)
     # Create config with identity - preferred name differs from entity name
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy Miller", "preferred": "Jer", "aliases": []}}
+    config = {"identity": {"name": "Raylyn Miller", "preferred": "Rae", "aliases": []}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
     # Create facet directory
@@ -2344,13 +2344,13 @@ def test_save_entities_flags_principal_on_preferred_match(tmp_path, monkeypatch)
 
     # Save entity matching preferred name
     entities = [
-        {"type": "Person", "name": "Jer", "description": "Me at work"},
+        {"type": "Person", "name": "Rae", "description": "Me at work"},
     ]
     save_entities("work", entities)
 
     loaded = load_entities("work")
-    jer = loaded[0]
-    assert jer.get("is_principal") is True
+    rae = loaded[0]
+    assert rae.get("is_principal") is True
 
 
 def test_save_entities_flags_principal_on_alias_match(tmp_path, monkeypatch):
@@ -2362,7 +2362,7 @@ def test_save_entities_flags_principal_on_alias_match(tmp_path, monkeypatch):
     # Create config with alias
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy Miller", "preferred": "", "aliases": ["JM"]}}
+    config = {"identity": {"name": "Raylyn Miller", "preferred": "", "aliases": ["JM"]}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
     # Create facet directory
@@ -2388,7 +2388,7 @@ def test_save_entities_flags_principal_via_entity_aka(tmp_path, monkeypatch):
     # Create config
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy Miller", "preferred": "Jer", "aliases": []}}
+    config = {"identity": {"name": "Raylyn Miller", "preferred": "Rae", "aliases": []}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
     # Create facet directory
@@ -2401,7 +2401,7 @@ def test_save_entities_flags_principal_via_entity_aka(tmp_path, monkeypatch):
             "type": "Person",
             "name": "J. Miller",
             "description": "Me",
-            "aka": ["Jeremy Miller", "JM"],
+            "aka": ["Raylyn Miller", "JM"],
         },
     ]
     save_entities("test", entities)

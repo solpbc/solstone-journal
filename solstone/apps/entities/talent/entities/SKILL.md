@@ -365,8 +365,8 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities merge jeremy-miller jeremie-miller
-sol call entities merge jeremy-miller jeremie-miller --commit
+sol call entities merge raelyn-brooks raylyn-brooks
+sol call entities merge raelyn-brooks raylyn-brooks --commit
 ```
 
 ## undo-merge

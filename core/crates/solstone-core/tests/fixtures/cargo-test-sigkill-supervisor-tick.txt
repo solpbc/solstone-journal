@@ -87,7 +87,7 @@
    Compiling libsqlite3-sys v0.38.2
    Compiling hashlink v0.12.1
    Compiling fallible-iterator v0.3.0
-   Compiling solstone-core-npy v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-npy)
+   Compiling solstone-core-npy v1.0.22 (/workspace/solstone/core/crates/solstone-core-npy)
    Compiling const-oid v0.9.6
    Compiling fallible-streaming-iterator v0.1.9
    Compiling der v0.7.10
@@ -106,7 +106,7 @@
    Compiling regex-syntax v0.8.11
    Compiling tar v0.4.46
    Compiling ff v0.13.1
-   Compiling solstone-core-entity-matching v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-entity-matching)
+   Compiling solstone-core-entity-matching v1.0.22 (/workspace/solstone/core/crates/solstone-core-entity-matching)
    Compiling aho-corasick v1.1.5
    Compiling asn1-rs v0.6.2
    Compiling rustls v0.23.43
@@ -115,8 +115,8 @@
    Compiling slab v0.4.12
    Compiling futures-sink v0.3.34
    Compiling base16ct v0.2.0
-   Compiling solstone-core-format v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-format)
-   Compiling solstone-core-assets v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-assets)
+   Compiling solstone-core-format v1.0.22 (/workspace/solstone/core/crates/solstone-core-format)
+   Compiling solstone-core-assets v1.0.22 (/workspace/solstone/core/crates/solstone-core-assets)
    Compiling sec1 v0.7.3
    Compiling futures-util v0.3.34
    Compiling pkcs8 v0.10.2
@@ -134,12 +134,12 @@
    Compiling http-body v1.1.0
    Compiling num-complex v0.4.6
    Compiling utf8_iter v1.0.4
-   Compiling solstone-core-journal v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-journal)
+   Compiling solstone-core-journal v1.0.22 (/workspace/solstone/core/crates/solstone-core-journal)
    Compiling rand_chacha v0.9.0
    Compiling icu_collections v2.2.0
-   Compiling solstone-core-processing-record v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-processing-record)
-   Compiling solstone-core-journal-io v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-journal-io)
-   Compiling solstone-core-journal-config v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-journal-config)
+   Compiling solstone-core-processing-record v1.0.22 (/workspace/solstone/core/crates/solstone-core-processing-record)
+   Compiling solstone-core-journal-io v1.0.22 (/workspace/solstone/core/crates/solstone-core-journal-io)
+   Compiling solstone-core-journal-config v1.0.22 (/workspace/solstone/core/crates/solstone-core-journal-config)
    Compiling oid-registry v0.7.1
    Compiling der-parser v9.0.0
    Compiling regex-automata v0.4.18
@@ -148,9 +148,9 @@
    Compiling rand v0.9.5
    Compiling icu_provider v2.2.0
    Compiling icu_properties_data v2.2.0
-   Compiling solstone-core-speaker-id v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-speaker-id)
+   Compiling solstone-core-speaker-id v1.0.22 (/workspace/solstone/core/crates/solstone-core-speaker-id)
    Compiling x509-parser v0.16.0
-   Compiling solstone-core-brain v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-brain)
+   Compiling solstone-core-brain v1.0.22 (/workspace/solstone/core/crates/solstone-core-brain)
    Compiling elliptic-curve v0.13.8
    Compiling icu_normalizer_data v2.2.0
    Compiling num-rational v0.4.2
@@ -165,9 +165,9 @@
    Compiling ref-cast v1.0.26
    Compiling icu_normalizer v2.2.0
    Compiling icu_properties v2.2.0
-   Compiling solstone-core-segment v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-segment)
+   Compiling solstone-core-segment v1.0.22 (/workspace/solstone/core/crates/solstone-core-segment)
    Compiling num v0.4.3
-   Compiling solstone-core-callosum v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-callosum)
+   Compiling solstone-core-callosum v1.0.22 (/workspace/solstone/core/crates/solstone-core-callosum)
    Compiling p256 v0.13.2
    Compiling ahash v0.8.12
    Compiling parking_lot_core v0.9.12
@@ -194,11 +194,11 @@
    Compiling idna_adapter v1.2.2
    Compiling png v0.18.1
    Compiling hyper v1.11.0
-   Compiling solstone-core-spp-attest v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-spp-attest)
+   Compiling solstone-core-spp-attest v1.0.22 (/workspace/solstone/core/crates/solstone-core-spp-attest)
    Compiling fluent-uri v0.4.1
    Compiling ureq v3.4.0
    Compiling tokio-rustls v0.26.4
-   Compiling solstone-core-indexer v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-indexer)
+   Compiling solstone-core-indexer v1.0.22 (/workspace/solstone/core/crates/solstone-core-indexer)
    Compiling tungstenite v0.26.2
    Compiling parking_lot v0.12.5
    Compiling fraction v0.15.4
@@ -207,10 +207,10 @@
    Compiling regex v1.13.1
    Compiling form_urlencoded v1.2.2
    Compiling tracing-core v0.1.36
-   Compiling solstone-core-indexer-store v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-indexer-store)
+   Compiling solstone-core-indexer-store v1.0.22 (/workspace/solstone/core/crates/solstone-core-indexer-store)
    Compiling encoding_rs v0.8.35
    Compiling tokio-tungstenite v0.26.2
-   Compiling solstone-core-local v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-local)
+   Compiling solstone-core-local v1.0.22 (/workspace/solstone/core/crates/solstone-core-local)
    Compiling outref v0.5.2
    Compiling bytemuck v1.25.2
    Compiling bytecount v0.6.9
@@ -223,12 +223,12 @@
    Compiling serde_urlencoded v0.7.1
    Compiling hyper-util v0.1.20
    Compiling jsonschema-value v0.49.9
-   Compiling solstone-core-entity v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-entity)
+   Compiling solstone-core-entity v1.0.22 (/workspace/solstone/core/crates/solstone-core-entity)
    Compiling moxcms v0.8.1
    Compiling referencing v0.49.9
    Compiling fancy-regex v0.19.0
    Compiling uuid-simd v0.8.0
-   Compiling solstone-core-spp-ratls v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-spp-ratls)
+   Compiling solstone-core-spp-ratls v1.0.22 (/workspace/solstone/core/crates/solstone-core-spp-ratls)
    Compiling unicode-general-category v1.1.0
    Compiling multer v3.1.0
    Compiling idna v1.1.0
@@ -243,60 +243,60 @@
    Compiling base64ct v1.8.3
    Compiling spl-transport v0.1.0 (https://github.com/solpbc/spl-rust?tag=v0.5.0#d64f8a1e)
    Compiling jsonschema v0.49.9
-   Compiling solstone-core-cogitate v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-cogitate)
+   Compiling solstone-core-cogitate v1.0.22 (/workspace/solstone/core/crates/solstone-core-cogitate)
    Compiling tower-http v0.6.11
-   Compiling solstone-core-journal-config-write v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-journal-config-write)
-   Compiling solstone-core-generate v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-generate)
-   Compiling solstone-core-body-source v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-body-source)
+   Compiling solstone-core-journal-config-write v1.0.22 (/workspace/solstone/core/crates/solstone-core-journal-config-write)
+   Compiling solstone-core-generate v1.0.22 (/workspace/solstone/core/crates/solstone-core-generate)
+   Compiling solstone-core-body-source v1.0.22 (/workspace/solstone/core/crates/solstone-core-body-source)
    Compiling password-hash v0.5.0
    Compiling blake2 v0.10.6
    Compiling quick-xml v0.41.0
    Compiling fastrand v2.5.0
    Compiling rawpointer v0.2.1
    Compiling argon2 v0.5.3
-   Compiling solstone-core-facets v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-facets)
-   Compiling solstone-core-system v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-system)
+   Compiling solstone-core-facets v1.0.22 (/workspace/solstone/core/crates/solstone-core-facets)
+   Compiling solstone-core-system v1.0.22 (/workspace/solstone/core/crates/solstone-core-system)
    Compiling tempfile v3.27.0
-   Compiling solstone-core-cogitate-tools v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-cogitate-tools)
-   Compiling solstone-core-convey-shell v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-convey-shell)
+   Compiling solstone-core-cogitate-tools v1.0.22 (/workspace/solstone/core/crates/solstone-core-cogitate-tools)
+   Compiling solstone-core-convey-shell v1.0.22 (/workspace/solstone/core/crates/solstone-core-convey-shell)
    Compiling plist v1.10.0
-   Compiling solstone-core-sol-client v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-sol-client)
+   Compiling solstone-core-sol-client v1.0.22 (/workspace/solstone/core/crates/solstone-core-sol-client)
    Compiling axum v0.8.9
-   Compiling solstone-core-body-store v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-body-store)
-   Compiling solstone-core-ingest-resolve v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-ingest-resolve)
-   Compiling solstone-core-ced-sys v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-ced-sys)
-   Compiling solstone-core-sound-tags v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-sound-tags)
-   Compiling solstone-core-doctor v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-doctor)
-   Compiling solstone-core-body-rebuild v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-body-rebuild)
-   Compiling solstone-core-speaker-resolve v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-speaker-resolve)
-   Compiling solstone-core-observer v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-observer)
+   Compiling solstone-core-body-store v1.0.22 (/workspace/solstone/core/crates/solstone-core-body-store)
+   Compiling solstone-core-ingest-resolve v1.0.22 (/workspace/solstone/core/crates/solstone-core-ingest-resolve)
+   Compiling solstone-core-ced-sys v1.0.22 (/workspace/solstone/core/crates/solstone-core-ced-sys)
+   Compiling solstone-core-sound-tags v1.0.22 (/workspace/solstone/core/crates/solstone-core-sound-tags)
+   Compiling solstone-core-doctor v1.0.22 (/workspace/solstone/core/crates/solstone-core-doctor)
+   Compiling solstone-core-body-rebuild v1.0.22 (/workspace/solstone/core/crates/solstone-core-body-rebuild)
+   Compiling solstone-core-speaker-resolve v1.0.22 (/workspace/solstone/core/crates/solstone-core-speaker-resolve)
+   Compiling solstone-core-observer v1.0.22 (/workspace/solstone/core/crates/solstone-core-observer)
    Compiling image v0.25.10
    Compiling ndarray v0.17.2
    Compiling spl-home v0.1.0 (https://github.com/solpbc/spl-rust?tag=v0.5.0#d64f8a1e)
    Compiling quick-xml v0.38.4
-   Compiling solstone-core-system-health v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-system-health)
-   Compiling solstone-core-cli v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-cli)
-   Compiling solstone-core-check v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-check)
-   Compiling solstone-core-body-ingest v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-body-ingest)
-   Compiling solstone-core-journal-stats-cli v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-journal-stats-cli)
-   Compiling solstone-core-reprocess-cli v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-reprocess-cli)
-   Compiling solstone-core-transfer v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-transfer)
-   Compiling solstone-core-indexer-query v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-indexer-query)
-   Compiling solstone-core-segment-cli v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-segment-cli)
-   Compiling solstone-core-spl v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-spl)
-   Compiling solstone-core-streams-cli v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-streams-cli)
-   Compiling solstone-core-convey-http v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-convey-http)
-   Compiling solstone-core-backfill-cli v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-backfill-cli)
-   Compiling solstone-core-identity v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-identity)
-   Compiling solstone-core-sol-link v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-sol-link)
-   Compiling solstone-core-generate-wire v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-generate-wire)
-   Compiling solstone-core-cogitate-runtime v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-cogitate-runtime)
-   Compiling solstone-core-cogitate-wire v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-cogitate-wire)
+   Compiling solstone-core-system-health v1.0.22 (/workspace/solstone/core/crates/solstone-core-system-health)
+   Compiling solstone-core-cli v1.0.22 (/workspace/solstone/core/crates/solstone-core-cli)
+   Compiling solstone-core-check v1.0.22 (/workspace/solstone/core/crates/solstone-core-check)
+   Compiling solstone-core-body-ingest v1.0.22 (/workspace/solstone/core/crates/solstone-core-body-ingest)
+   Compiling solstone-core-journal-stats-cli v1.0.22 (/workspace/solstone/core/crates/solstone-core-journal-stats-cli)
+   Compiling solstone-core-reprocess-cli v1.0.22 (/workspace/solstone/core/crates/solstone-core-reprocess-cli)
+   Compiling solstone-core-transfer v1.0.22 (/workspace/solstone/core/crates/solstone-core-transfer)
+   Compiling solstone-core-indexer-query v1.0.22 (/workspace/solstone/core/crates/solstone-core-indexer-query)
+   Compiling solstone-core-segment-cli v1.0.22 (/workspace/solstone/core/crates/solstone-core-segment-cli)
+   Compiling solstone-core-spl v1.0.22 (/workspace/solstone/core/crates/solstone-core-spl)
+   Compiling solstone-core-streams-cli v1.0.22 (/workspace/solstone/core/crates/solstone-core-streams-cli)
+   Compiling solstone-core-convey-http v1.0.22 (/workspace/solstone/core/crates/solstone-core-convey-http)
+   Compiling solstone-core-backfill-cli v1.0.22 (/workspace/solstone/core/crates/solstone-core-backfill-cli)
+   Compiling solstone-core-identity v1.0.22 (/workspace/solstone/core/crates/solstone-core-identity)
+   Compiling solstone-core-sol-link v1.0.22 (/workspace/solstone/core/crates/solstone-core-sol-link)
+   Compiling solstone-core-generate-wire v1.0.22 (/workspace/solstone/core/crates/solstone-core-generate-wire)
+   Compiling solstone-core-cogitate-runtime v1.0.22 (/workspace/solstone/core/crates/solstone-core-cogitate-runtime)
+   Compiling solstone-core-cogitate-wire v1.0.22 (/workspace/solstone/core/crates/solstone-core-cogitate-wire)
    Compiling ffmpeg-next v9.0.0
-   Compiling solstone-core-observe-audio v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-observe-audio)
-   Compiling solstone-core-grab v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-grab)
-   Compiling solstone-core-transcribe v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core-transcribe)
-   Compiling solstone-core v1.0.22 (/home/jer/.hopper/worktrees/jjihelyd/core/crates/solstone-core)
+   Compiling solstone-core-observe-audio v1.0.22 (/workspace/solstone/core/crates/solstone-core-observe-audio)
+   Compiling solstone-core-grab v1.0.22 (/workspace/solstone/core/crates/solstone-core-grab)
+   Compiling solstone-core-transcribe v1.0.22 (/workspace/solstone/core/crates/solstone-core-transcribe)
+   Compiling solstone-core v1.0.22 (/workspace/solstone/core/crates/solstone-core)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 10s
      Running tests/supervisor_tick.rs (core/target/debug/deps/supervisor_tick-361a30504ac6d184)
 
@@ -304,4 +304,4 @@ running 1 test
 error: test failed, to rerun pass `-p solstone-core --test supervisor_tick`
 
 Caused by:
-  process didn't exit successfully: `/home/jer/.hopper/worktrees/jjihelyd/core/target/debug/deps/supervisor_tick-361a30504ac6d184 ac11_capped_task_is_terminated_with_timeout_exit --exact --nocapture` (signal: 9, SIGKILL: kill)
+  process didn't exit successfully: `/workspace/solstone/core/target/debug/deps/supervisor_tick-361a30504ac6d184 ac11_capped_task_is_terminated_with_timeout_exit --exact --nocapture` (signal: 9, SIGKILL: kill)

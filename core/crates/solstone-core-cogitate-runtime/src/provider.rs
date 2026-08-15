@@ -15,7 +15,7 @@ pub struct ProviderResponse {
     pub response_id: String,
 }
 
-/// Provider boundary for the synchronous, in-process R5a loop.
+/// Provider boundary for the synchronous, in-process loop.
 ///
 /// The deadline is cooperative: unlike Python's cancellable asyncio task, this
 /// wave cannot interrupt a blocking provider call from another thread.

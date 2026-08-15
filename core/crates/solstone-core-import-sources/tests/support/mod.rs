@@ -22,7 +22,7 @@ impl TempTree {
         let index = NEXT_TREE.fetch_add(1, Ordering::Relaxed);
         let path = tempfile::Builder::new()
             .prefix(&format!(
-                "solstone-core-import-sources-w7-{}-{index}-",
+                "solstone-core-import-sources-preview-{}-{index}-",
                 std::process::id()
             ))
             .tempdir_in(std::env::temp_dir())

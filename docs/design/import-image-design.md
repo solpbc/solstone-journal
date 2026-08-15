@@ -1,4 +1,4 @@
-# W5: native image import source
+# the native image importer: native image import source
 
 ## Scope and deliberate differences
 
@@ -171,10 +171,10 @@ continue checking remaining stub rows separately.
 ## Open risks
 
 - `NoEngineConfigured` is non-error at the wire boundary but still produces an
-  unavailable description result and transcript by deliberate W5 policy.
+  unavailable description result and transcript by deliberate the native image importer policy.
 - TIFF's advertised/detected-but-undecodable status is intentional for this
   wave and must not be mistaken for MIME support.
 - Decode reads the source bytes, install streams the source again, and manifest
   creation hashes it a third time. A concurrent source replacement can make
   those artifacts describe different revisions; this limitation is accepted
-  for W5.
+  for the native image importer.

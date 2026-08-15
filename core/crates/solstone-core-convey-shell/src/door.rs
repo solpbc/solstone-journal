@@ -199,7 +199,7 @@ impl PairingCarrierRegistry {
 }
 
 /// Identity observed from the accepted leaf. Keeping this as a struct leaves one
-/// stable cell for W1b refusal classification without parallel state.
+/// per-connection refusal-classification state without parallel state.
 #[derive(Clone, Debug)]
 struct AcceptedIdentity {
     did: LinkedDeviceDid,
@@ -328,8 +328,8 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
             };
         }
     };
-    // Deliberately no SO_REUSEPORT. suze is both a hopper pool host and the
-    // founder's live journal host, where Python owns 7657 with SO_REUSEPORT;
+    // Deliberately no SO_REUSEPORT. The existing Python service owns 7657 with
+    // SO_REUSEPORT;
     // sharing it in a test would split the owner's live device connections.
     let listener =
         match TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, options.port))).await {

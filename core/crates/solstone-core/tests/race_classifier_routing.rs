@@ -15,7 +15,7 @@ fn successful_cargo_run_is_green() {
 fn marker_tagged_named_libtest_failure_is_inconclusive() {
     let output = "\
 ---- wait_timeout stdout ----
-thread 'wait_timeout' panicked at test.rs:1: W4B_INCONCLUSIVE elapsed 11ms
+thread 'wait_timeout' panicked at test.rs:1: SUPERVISOR_RACE_INCONCLUSIVE elapsed 11ms
 
 failures:
     wait_timeout
@@ -24,7 +24,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n
     assert_eq!(
         classify(101, output),
         RaceVerdict::Inconclusive(
-            "W4B_INCONCLUSIVE named libtest failure(s): wait_timeout".to_owned()
+            "SUPERVISOR_RACE_INCONCLUSIVE named libtest failure(s): wait_timeout".to_owned()
         )
     );
 }
@@ -49,7 +49,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n
 fn combined_capture_keeps_ordinary_failure_when_another_block_is_marked() {
     let output = "\
 ---- dilated_wait stdout ----
-thread 'dilated_wait' panicked at test.rs:1: W4B_INCONCLUSIVE elapsed 11ms
+thread 'dilated_wait' panicked at test.rs:1: SUPERVISOR_RACE_INCONCLUSIVE elapsed 11ms
 
 failures:
     dilated_wait
@@ -73,7 +73,7 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n
 fn combined_capture_with_only_marked_blocks_is_inconclusive() {
     let output = "\
 ---- first_wait stdout ----
-thread 'first_wait' panicked at test.rs:1: W4B_INCONCLUSIVE elapsed 11ms
+thread 'first_wait' panicked at test.rs:1: SUPERVISOR_RACE_INCONCLUSIVE elapsed 11ms
 
 failures:
     first_wait
@@ -81,7 +81,7 @@ failures:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
 
 ---- second_wait stdout ----
-thread 'second_wait' panicked at test.rs:1: W4B_INCONCLUSIVE elapsed 11ms
+thread 'second_wait' panicked at test.rs:1: SUPERVISOR_RACE_INCONCLUSIVE elapsed 11ms
 
 failures:
     second_wait
@@ -90,7 +90,8 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out\n
     assert_eq!(
         classify(101, output),
         RaceVerdict::Inconclusive(
-            "W4B_INCONCLUSIVE named libtest failure(s): first_wait, second_wait".to_owned()
+            "SUPERVISOR_RACE_INCONCLUSIVE named libtest failure(s): first_wait, second_wait"
+                .to_owned()
         )
     );
 }
@@ -115,8 +116,8 @@ fn nonzero_without_test_binary_evidence_is_failed() {
 }
 
 // Captured from a real `make check-rust-race` run on a measured-quiet 16-core
-// host: a W4b wait exceeded its budget with dilation 1.22x, panicked carrying
-// W4B_INCONCLUSIVE, and the classifier still reported a hard FAILED.
+// host: a supervisor-race wait exceeded its budget with dilation 1.22x, panicked carrying
+// SUPERVISOR_RACE_INCONCLUSIVE, and the classifier still reported a hard FAILED.
 //
 // The synthetic capture in marker_tagged_named_libtest_failure_is_inconclusive
 // passes with or without that bug, because it OMITS the leading bare
@@ -129,11 +130,11 @@ fn real_capture_with_leading_failures_block_routes_marked_wait_to_inconclusive()
     assert_eq!(
         verdict,
         RaceVerdict::Inconclusive(
-            "W4B_INCONCLUSIVE named libtest failure(s): \
+            "SUPERVISOR_RACE_INCONCLUSIVE named libtest failure(s): \
 ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child"
                 .to_owned()
         ),
-        "a dilated wait carrying W4B_INCONCLUSIVE must never route to FAILED -- \
+        "a dilated wait carrying SUPERVISOR_RACE_INCONCLUSIVE must never route to FAILED -- \
 that is the false red AC3 exists to prevent"
     );
 }

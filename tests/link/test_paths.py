@@ -23,7 +23,7 @@ def _set_journal(monkeypatch: pytest.MonkeyPatch, journal: Path) -> None:
     monkeypatch.setenv("SOLSTONE_JOURNAL", str(journal))
 
 
-# Built by concatenation so the legacy account-token DATA key does not trip the AC4 grep-clean check; lode L2 renames the relay side.
+# Built by concatenation so the legacy account-token DATA key does not trip the AC4 grep-clean check.
 def _legacy_token_key() -> str:
     return "account" + "_token"
 

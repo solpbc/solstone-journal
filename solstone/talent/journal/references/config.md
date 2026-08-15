@@ -9,16 +9,16 @@ The `identity` block contains information about the journal owner that helps too
 ```json
 {
   "identity": {
-    "name": "Jeremie Miller",
-    "preferred": "Jer",
+    "name": "Raelyn Brooks",
+    "preferred": "Rae",
     "pronouns": {
       "subject": "he",
       "object": "him",
       "possessive": "his",
       "reflexive": "himself"
     },
-    "aliases": ["Jer", "jeremie"],
-    "email_addresses": ["jer@example.com"],
+    "aliases": ["Rae", "raylyn"],
+    "email_addresses": ["rae@example.com"],
     "timezone": "America/Los_Angeles"
   }
 }

@@ -334,12 +334,12 @@ def test_load_setting_field_with_gaps_missing_and_invalid_utf8(tmp_path):
 def test_derive_owner_name_variants():
     from solstone.apps.speakers.attribution import _derive_owner_name_variants
 
-    assert _derive_owner_name_variants(["Jer", "Jeremie Miller", "Jeremy"]) == {
-        "jer",
-        "jeremie",
-        "jeremie miller",
-        "miller",
-        "jeremy",
+    assert _derive_owner_name_variants(["Rae", "Raelyn Brooks", "Raylyn"]) == {
+        "rae",
+        "raelyn",
+        "raelyn brooks",
+        "brooks",
+        "raylyn",
     }
     assert _derive_owner_name_variants(["Maya Chen"]) == {
         "maya",
@@ -352,14 +352,14 @@ def test_parse_setting_names(speakers_env):
     from solstone.apps.speakers.attribution import _parse_setting_names
 
     env = speakers_env()
-    env.set_identity(preferred="Jer", name="Jeremie Miller", aliases=["Jeremy"])
-    assert _parse_setting_names("Jer and Jack at coffee") == ["Jack"]
-    assert _parse_setting_names("Jeremie and Jack at coffee") == ["Jack"]
-    assert _parse_setting_names("JEREMIE MILLER and Jack at coffee") == ["Jack"]
-    assert _parse_setting_names("Jeremy and Jack at coffee") == ["Jack"]
-    assert _parse_setting_names("Miller and Jack at coffee") == ["Jack"]
+    env.set_identity(preferred="Rae", name="Raelyn Brooks", aliases=["Raylyn"])
+    assert _parse_setting_names("Rae and Jack at coffee") == ["Jack"]
+    assert _parse_setting_names("Raelyn and Jack at coffee") == ["Jack"]
+    assert _parse_setting_names("RAELYN BROOKS and Jack at coffee") == ["Jack"]
+    assert _parse_setting_names("Raylyn and Jack at coffee") == ["Jack"]
+    assert _parse_setting_names("Brooks and Jack at coffee") == ["Jack"]
     assert _parse_setting_names("Meeting with Perry and Thomas") == ["Perry", "Thomas"]
-    assert _parse_setting_names("Lunch with John Borthwick") == ["John Borthwick"]
+    assert _parse_setting_names("Lunch with Jordan Patel") == ["Jordan Patel"]
     assert _parse_setting_names("") == []
     assert _parse_setting_names("Call with Ryan") == ["Ryan"]
 
@@ -766,7 +766,7 @@ def test_layer2_setting_field(speakers_env):
     from solstone.apps.speakers.attribution import attribute_segment
 
     env = speakers_env()
-    env.set_identity(preferred="Jer", name="Jeremie Miller", aliases=["Jeremy"])
+    env.set_identity(preferred="Rae", name="Raelyn Brooks", aliases=["Raylyn"])
     _setup_owner(env)
     env.create_entity("Jack Andersohn")
 
@@ -783,7 +783,7 @@ def test_layer2_setting_field(speakers_env):
     header = {
         "raw": "imported_audio.flac",
         "model": "medium.en",
-        "setting": "Jer and Jack Andersohn at coffee",
+        "setting": "Rae and Jack Andersohn at coffee",
     }
     lines = [json.dumps(header)]
     lines.append(json.dumps({"start": "09:00:00", "text": "Owner talking"}))

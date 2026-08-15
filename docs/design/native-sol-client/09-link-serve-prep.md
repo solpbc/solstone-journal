@@ -1,6 +1,6 @@
 # 09 Link Serve Prep
 
-Arc: W1.5a-link, native `sol link serve`.
+Arc: native link-serve, native `sol link serve`.
 
 Scope: ground-truth research only. No implementation decisions recorded here.
 

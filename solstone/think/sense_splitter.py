@@ -36,7 +36,7 @@ def write_sense_outputs(
     )
     # Keep the structured Sense artifact and temporary markdown projection.
     # think/talent_outputs.py renders sense.json for consumers that need text,
-    # but sense.md remains until the follow-up lode removes the dual channel.
+    # but sense.md remains until follow-up work removes the dual channel.
     # Per-segment absence is normal when Sense found no entities, and consumers
     # must tolerate missing snippets.
     atomic_replace(agents_dir / "sense.json", json.dumps(sense_json))

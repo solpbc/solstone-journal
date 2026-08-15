@@ -1,4 +1,4 @@
-# W4c design — check-rust-race
+# Supervisor-race classification design
 
 ## Decision summary
 
@@ -9,7 +9,7 @@ INCONCLUSIVE, or FAILED. ci-under-poison retains its current Cargo traversal,
 so its closing informational echo names this gate alongside check-differentials
 rather than invoking it.
 
-The registered set is exactly the three tests already using W4b's load-aware
+The registered set is exactly the three tests already using supervisor-race's load-aware
 WaitOutcome contract:
 
 - supervisor_app_stack
@@ -31,7 +31,7 @@ five concurrent Cargo test processes also compete for those cores. This
 deliberately overcommits the scheduler while retaining a modest scheduling
 margin; the variable is an explicit operator override for different hosts.
 
-The untouched W4b mechanism has the relevant threshold in
+The untouched supervisor-race mechanism has the relevant threshold in
 core/crates/solstone-core/tests/support/await_outcome.rs lines 7–10 and
 207–209: slept/requested >= 11/10, or 1.10x, is dilated. For a positive wait
 whose check is still Pending when its iteration budget expires, that dilation
@@ -52,16 +52,16 @@ are:
   path/log/runtime/schedule/restart waits; and :647–660: 10 ms × 3,000 for
   AC11 readiness.
 
-For these three W4b-converted files specifically, a load-only delayed positive
+For these three supervisor-race files specifically, a load-only delayed positive
 poll that is still pending at exhaustion cannot be pushed below the 1.10x
 dilation threshold in a way that misclassifies it as FAILED: if load delayed
 the sleeps enough to exhaust the budget, slept/requested is at least 1.10x and
-W4b reports INCONCLUSIVE. Thus the worst load-only outcome is INCONCLUSIVE,
+supervisor-race reports INCONCLUSIVE. Thus the worst load-only outcome is INCONCLUSIVE,
 not a false ordering FAILED. A true PollState::HardFail or a real assertion
 remains FAILED.
 
 This reasoning does **not** extend to any test outside the registered set.
-Those tests retain raw hard-timeout polling or otherwise do not use the W4b
+Those tests retain raw hard-timeout polling or otherwise do not use the supervisor-race
 truth table, so synthetic scheduling delay can become a normal named test
 failure and violate AC3.
 
@@ -70,7 +70,7 @@ Twelve workers are therefore a calibration choice, not a mathematical guarantee
 for every external-resource failure. Immediately before AC1 validation,
 re-check CPU count, current load, and other worktree processes; prep's 18.42
 load average and orphaned fixtures are not a quiet-host baseline. If the host
-differs materially, override the worker count rather than changing W4b's
+differs materially, override the worker count rather than changing supervisor-race's
 threshold or test budgets.
 
 ### Quiet, defined as a number
@@ -93,7 +93,7 @@ host that keeps clang's builtin headers only under `/usr/lib64` resolves
 `check-rust-race` still runs there (AC1/AC3 are about races, not about the
 export), but a SUSE-host run is not evidence that the export list itself
 works, and must not be cited as such. Do not chase quiet on a host that
-would require disrupting another lane's parked lode to get there.
+would require disrupting another test run to get there.
 
 If no window at or below this bar opens, do not force a run and do not
 soften the bar: report AC1/AC3 as **COULD NOT RUN**, with the measured load
@@ -179,7 +179,7 @@ under dilated polling.
 
 Seven evaluated files remain explicitly out of scope:
 
-- Supervisor-domain but not W4b-converted: supervisor_boot,
+- Supervisor-domain but not supervisor-race: supervisor_boot,
   supervisor_providers, and restart_convey_supervisor_seam.
 - Concurrency-sensitive but outside supervisor scope: cogitate_session and
   generate_session.
@@ -225,7 +225,7 @@ and make normal Rust CI execute stress load.
 ## 5. The drift guard — the two lists and how removal reds it
 
 Add a focused ci_gate_purity.rs guard, for example
-every_w4b_supervisor_test_is_named_in_rust_race_gate, modeled on
+every_supervisor_race_supervisor_test_is_named_in_rust_race_gate, modeled on
 every_host_excluded_crate_is_tested_by_a_ci_target:
 
 1. The Makefile-side list is parsed from RUST_RACE_TEST_TARGETS := into a
@@ -259,20 +259,20 @@ the existing explicit stanzas are for differential-gated tests. The filesystem
 scan therefore follows the actual integration-target naming convention rather
 than duplicating a Cargo list.
 
-## 6. Classification and the W4B_INCONCLUSIVE marker
+## 6. Classification and the SUPERVISOR_RACE_INCONCLUSIVE marker
 
 ### Stable marker
 
-The existing W4b support layer is intentionally unchanged. Update only the
+The existing supervisor-race support layer is intentionally unchanged. Update only the
 WaitOutcome::Inconclusive arm of panic_for_wait in each registered consumer
 (supervisor_app_stack.rs, supervisor_shutdown.rs, and supervisor_tick.rs) to
-prefix its panic text with the stable exact marker W4B_INCONCLUSIVE.
+prefix its panic text with the stable exact marker SUPERVISOR_RACE_INCONCLUSIVE.
 
 The current panic text exposes only free-form WaitMetrics::describe() output.
 Parsing a printed floating-point dilation would duplicate the private 11/10
 threshold and could incorrectly treat a real HardFail after delayed polls as a
 load artifact. The marker changes test diagnostics only, not product behavior
-or the trusted W4b support file.
+or the trusted supervisor-race support file.
 
 ### Classifier location and shape
 
@@ -307,7 +307,7 @@ Cargo output.
    (test result: FAILED plus its failures: list) and the matching per-test
    failure section or panic text. A mere string FAILED or an expected panic is
    not enough.
-3. If any named failed test lacks W4B_INCONCLUSIVE, return hard FAILED and name
+3. If any named failed test lacks SUPERVISOR_RACE_INCONCLUSIVE, return hard FAILED and name
    every ordinary failing test. This includes assertion, panic, and ordering
    violations. If every named failure is marker-tagged, return INCONCLUSIVE,
    naming the affected tests.
@@ -322,7 +322,7 @@ Cargo output.
 
 If one capture has both a marker-tagged inconclusive wait and an ordinary failed
 test, FAILED wins. This honors AC8: a real named test failure is FAILED, while
-an explicitly W4b-classified exhaustion is not falsely promoted to an ordering
+an explicitly supervisor-race-classified exhaustion is not falsely promoted to an ordering
 violation.
 
 ## 7. Exit code vs. printed verdict — why the message is the deliverable
@@ -405,21 +405,21 @@ This pure helper assertion fails every run independent of supervisor startup
 timing, emits a conventional named libtest failure, and must make the aggregate
 hard FAILED under the classifier. Revert it immediately after collecting the
 routing evidence. It changes no product code and is separate from the
-W4B_INCONCLUSIVE diagnostic edits.
+SUPERVISOR_RACE_INCONCLUSIVE diagnostic edits.
 
 ## 11. Gate-hole-1: a new test escaping registration
 
 The registered-list variable plus source-derived drift guard blocks silent
-removal of any existing W4b-converted supervisor test and forces an explicit
-decision when a future supervisor_*.rs test adopts the W4b module. It does not
-catch a new raw-thread::sleep supervisor race test that never adopts W4b: that
+removal of any existing supervisor-race supervisor test and forces an explicit
+decision when a future supervisor_*.rs test adopts the supervisor-race module. It does not
+catch a new raw-thread::sleep supervisor race test that never adopts supervisor-race: that
 file appears on neither side of the equality and can still escape
 check-rust-race. This is the remaining gate-hole-1 risk.
 
-Mitigate it in this wave with one concise convention in docs/testing.md, not
+Mitigate it in with one concise convention in docs/testing.md, not
 with a broad sleep-grep policy or rendered-document assertion: new
 concurrency-sensitive supervisor integration tests must use
-tests/support/await_outcome.rs, emit the W4B inconclusive marker at their
+tests/support/await_outcome.rs, emit the supervisor-race inconclusive marker at their
 boundary, and be represented by RUST_RACE_TEST_TARGETS. docs/testing.md is the
 appropriate contributor-facing testing guidance; CLAUDE.md is a symlink to the
 broad developer guide and is less focused. This is proportionate to the known
@@ -453,7 +453,7 @@ execution.
    core/crates/solstone-core/tests/; include the existing SIGKILL fixture as
    classifier input.
 4. The three registered supervisor test files: add only the stable
-   W4B_INCONCLUSIVE diagnostic to their existing inconclusive panic arm.
+   SUPERVISOR_RACE_INCONCLUSIVE diagnostic to their existing inconclusive panic arm.
 5. core/crates/solstone-core/tests/ci_gate_purity.rs: source/list equality
    drift guard plus target/echo wiring assertions; leave the pinned CI Cargo
    vector and existing serialization guard unchanged.
@@ -464,7 +464,7 @@ execution.
 A direct, twice-reproduced `check-rust-race` run on the unmodified tree
 surfaced real hard-FAILED runs under the documented synthetic load,
 violating AC3: not every wait in the three registered files went through
-W4b's dilation-aware `panic_for_wait`. Two patterns were unmarked: plain
+supervisor-race's dilation-aware `panic_for_wait`. Two patterns were unmarked: plain
 `tokio::time::timeout(Duration::from_secs(N), ...)` sites (8 in
 `supervisor_tick.rs`, 1 in `supervisor_app_stack.rs`), and a derived-state
 gap in `supervisor_shutdown.rs`'s `ac14` test, where `Held` triggered on
@@ -501,7 +501,7 @@ established, correctly left unwrapped.
 
 **On the socket-closed HardFail messages observed during revalidation**
 (`"the connection closed before <event>"`): these are **not** a new gap.
-W4b's own earlier work already converted six previously-unhandled EOF sites
+supervisor-race's own earlier work already converted six previously-unhandled EOF sites
 (`supervisor_tick.rs` 197, 223, 350, 417, 602; `supervisor_shutdown.rs` 106)
 to detect `Ok(0)` as end-of-stream and report a clear, named message instead
 of an opaque timeout. Seeing that message under an extremely noisy host
@@ -510,20 +510,20 @@ sessions) is the mechanism doing exactly what it should: per the truth
 table, a genuine `HardFail` must always classify FAILED and must never be
 softened toward INCONCLUSIVE by dilation, on any host, at any load. Do not
 add dilation-based softening to a HardFail path to make a noisy host green —
-that would invert the entire design this wave exists to protect.
+that would invert the entire design this document exists to protect.
 
-## Operational constraint: Hopper fleet contention
+## Operational constraint: shared-host contention
 
-⚠ Do not run `make check-rust-race` on a host concurrently running the Hopper
-fleet. The synthetic busy-spin workers plus parallel Cargo test processes have
-disrupted sibling Hopper lodes on this host in three observed implementation
+⚠ Do not run `make check-rust-race` on a host concurrently running the shared
+test workload. The synthetic busy-spin workers plus parallel Cargo test processes have
+disrupted sibling checkouts on this host in three observed implementation
 attempts. The exact mechanism is not established; treat the stress target as a
 host-exclusive operation.
 
 ## 14. Unrelated state
 
 The prior solstone-core-convey-shell clippy authorization_gate red appeared
-resolved during prep and is not credited to W4c. The
+resolved during prep and is not credited to this change. The
 journal_native_process_contract state remained unconfirmed because the bare
 Cargo reproduction hit the same bindgen environment failure; re-check it
 through the Make-wrapped environment during implementation, without weakening

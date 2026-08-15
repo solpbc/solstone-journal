@@ -39,7 +39,7 @@ pub(crate) fn classify(status: i32, output: &str) -> RaceVerdict {
             ));
         }
         return RaceVerdict::Inconclusive(format!(
-            "W4B_INCONCLUSIVE named libtest failure(s): {}",
+            "SUPERVISOR_RACE_INCONCLUSIVE named libtest failure(s): {}",
             named
                 .iter()
                 .map(|failure| failure.name.as_str())
@@ -98,7 +98,7 @@ fn failure_section_has_marker(output: &str, failures_start: usize, name: &str) -
     // The per-test stdout block lives AFTER the `failures:` line that introduces
     // it, so searching `output[..failures_start]` could never find the header --
     // it looked for the evidence strictly before the point where the evidence
-    // begins, and a marked W4B_INCONCLUSIVE wait was therefore routed as a hard
+    // begins, and a marked SUPERVISOR_RACE_INCONCLUSIVE wait was therefore routed as a hard
     // FAILED. That is the exact false red AC3 exists to prevent. Measured on a
     // quiet host: `dilation 1.22x` reported as `named libtest failure(s)`.
     let header = format!("---- {name} stdout ----");
@@ -117,5 +117,5 @@ fn failure_section_has_marker(output: &str, failures_start: usize, name: &str) -
         end = end.min(section_start + names);
     }
     let _ = failures_start;
-    output[section_start..end].contains("W4B_INCONCLUSIVE")
+    output[section_start..end].contains("SUPERVISOR_RACE_INCONCLUSIVE")
 }

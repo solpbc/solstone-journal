@@ -562,7 +562,7 @@ fn native_help_uses_the_reference_capture_as_the_token_source() {
 fn identity_never_invokes_a_path_python() {
     // This is the PATH-shim proof, not the sibling-interpreter proof: the journal
     // dispatcher resolves python3 beside its own executable and never reads PATH.
-    // The sibling probe belongs to the W3b cut wave.
+    // The sibling probe tests the separate sibling-interpreter path.
     let journal = TestJournal::new();
     let shim_dir = tempfile::tempdir().expect("shims");
     let marker = shim_dir.path().join("called");

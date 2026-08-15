@@ -73,7 +73,7 @@ PIP_ANCESTOR_STDOUT = """Processing ./wheels/nested/pip_render_probe-0.1.0-py3-n
 Installing collected packages: pip-render-probe
 Successfully installed pip-render-probe-0.1.0
 """
-PIP_UNRELATED_STDOUT = """Processing /tmp/claude-1000/-home-jer--hopper-worktrees-4yw4uak3/a9c8603b-3fbf-4c99-8870-f7c8eb731d22/scratchpad/wheels/nested/pip_render_probe-0.1.0-py3-none-any.whl
+PIP_UNRELATED_STDOUT = """Processing /var/tmp/solstone-checkout-4yw4uak3/a9c8603b-3fbf-4c99-8870-f7c8eb731d22/scratchpad/wheels/nested/pip_render_probe-0.1.0-py3-none-any.whl
 Installing collected packages: pip-render-probe
 Successfully installed pip-render-probe-0.1.0
 """
@@ -832,7 +832,7 @@ def test_receipt_validator_names_policy_negative_cases(tmp_path: Path) -> None:
         ),
         lambda data: data["installed_package"].update(
             {
-                "module_origin": "/home/jer/source/solstone/think/providers/nvattest_install.py"
+                "module_origin": "/workspace/owner/source/solstone/think/providers/nvattest_install.py"
             }
         ),
         lambda data: data["smoke"].update({"argv": ["nvattest", "--help"]}),

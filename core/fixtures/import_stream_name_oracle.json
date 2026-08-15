@@ -1,5 +1,5 @@
 {
-  "schema": "w1b-stream-name-oracle/1",
+  "schema": "import-stream-name-oracle/1",
   "provenance": {
     "captured_from_rev": "86fd678a6b3aec2eb4f33a4c934f0cf34a099542",
     "python": "3.13.14",

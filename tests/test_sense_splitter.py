@@ -99,7 +99,7 @@ class TestWriteSenseOutputs:
                 },
                 {
                     "type": "Person",
-                    "name": "John Borthwick",
+                    "name": "Avery Nguyen",
                     "role": "attendee",
                     "source": "voice",
                     "context": "active meeting participant",
@@ -113,7 +113,7 @@ class TestWriteSenseOutputs:
         assert sense_md == (
             "# Sense Entities\n\n"
             "- Project — SolAPI (role=mentioned, source=screen) — main project\n"
-            "- Person — John Borthwick (role=attendee, source=voice) "
+            "- Person — Avery Nguyen (role=attendee, source=voice) "
             "— active meeting participant"
         )
 

@@ -20,7 +20,7 @@ EXCLUDED_DIRS = {
     "node_modules",
     "scratch",
     "tmp",
-    "vpe",
+    "operator",
 }
 TEXT_SUFFIXES = {
     ".html",

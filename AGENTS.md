@@ -39,7 +39,7 @@ Read, in order, when you enter the repo for a coding task:
 | `solstone/convey/` | Web app framework — app discovery, routing, bridge | layout / framework-level UI changes | `docs/CONVEY.md` |
 | `solstone/apps/` | Convey apps — each self-contained (`native/` authority + Rust command, `routes.py`, `templates/`) | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` (required reading before modifying `solstone/apps/`) |
 | `solstone/talent/` | AI talent configs (markdown prompts + optional `.py` post-hooks) + installed router skills (`sol`, `journal`); app fragments feed generated router references | defining or tuning a talent; updating router guidance | `solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
-| `core/` | Rust wave-0 workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, or Python→Rust porting doctrine | `docs/PORTING.md` |
+| `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, or Python→Rust porting doctrine | `docs/PORTING.md` |
 | `scripts/` | Repo maintenance scripts — `check_layer_hygiene.py` | tooling that guards the codebase; wired into `make install-checks`, not reached by the frozen `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
 | `tests/` | Pytest suites + `tests/fixtures/journal/` mock journal | writing tests; debugging flakiness; `make dev` / `make sandbox` use fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
@@ -268,7 +268,7 @@ Candidate readiness means candidate payload, ledger, retained support wheels,
 and both per-target receipt classes — install/smoke and nvattest — are locally
 consistent for the retained bytes. Proofs do not authorize publication and do
 not prove external distribution. Live SPP composite acceptance, real remote
-lanes, and production URL reach are VPE post-ship work; this rail does not
+lanes, and production URL reach are post-ship verification work; this rail does not
 attest them.
 
 Aggregate release publication is the retryable delivery step for an already
@@ -388,7 +388,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Domain | Write-owning module(s) |
 |--------|------------------------|
 | Entities (`entities/*/entity.json`) | `solstone/think/entities/journal.py` + `solstone/think/entities/relationships.py` + `solstone/think/entities/saving.py` + `solstone/think/entities/merge.py` |
-| Speaker-identity entity artifacts (`entities/*/{voiceprints,owner_centroid}.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/think/entities/voiceprints.py` remains only for the Lane B entity-merge flow; `scripts/entity_corpus.py` remains the differential-fixture oracle builder. |
+| Speaker-identity entity artifacts (`entities/*/{voiceprints,owner_centroid}.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/think/entities/voiceprints.py` remains only for the entity-merge flow; `scripts/entity_corpus.py` remains the differential-fixture oracle builder. |
 | Entity history content (`entities/*/history/{events,prepared,private}/**`) | `solstone/think/entities/history.py` is the sole writer of history events, prepared staging, and private merge payloads. Whole-entity deletion by entity owners removes `history/` only as part of removing `entities/<id>/`. |
 | Owner voice candidate (`awareness/owner_candidate.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`. |
 | Speaker discovery clusters (`awareness/discovery_clusters.json`, `awareness/discovery_clusters.resolved.json`) | `core/crates/solstone-core-convey-shell/` (`speakers_discovery_write.rs`) |
@@ -435,8 +435,8 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Hosted backup binding (`backup/hosted/binding.json`) | `solstone/think/backup/hosted.py` |
 | Convey config (`config/convey.json`) | `solstone/convey/config.py` + `solstone/think/facets.py` |
 | Chat config (`config/chat.json`) | `solstone/apps/chat/config.py` |
-| Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the Lane B entity-merge flow through `update_speaker_labels`. |
-| Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the Lane B entity-merge flow through `remap_speaker_corrections_for_entity_merge` and `apply_entity_merge_segment_inverse`. |
+| Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the entity-merge flow through `update_speaker_labels`. |
+| Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the entity-merge flow through `remap_speaker_corrections_for_entity_merge` and `apply_entity_merge_segment_inverse`. |
 | Stream identity (`chronicle/**/<seg>/stream.json` marker + `streams/<name>.json` state) | `solstone/think/streams.py` |
 | Observer ingest manifest (`chronicle/**/<seg>/ingest.json`) | `solstone/apps/observer/utils.py` |
 | Link service state (`link/ca/cert.pem`, `link/ca/private.pem`, `link/ca-staging/**`, `link/authorized_clients.json`, `link/state.json` including optional `locked_at`, `link/tokens/account.json`, `link/totp.json`) | `solstone/think/link/ca.py` + `solstone/think/link/establish.py` + `solstone/think/link/auth.py` + `solstone/think/link/paths.py` |
@@ -554,7 +554,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/CONVEY.md` | Framework-level web changes (as opposed to an individual app) |
 | `docs/OBSERVE.md` | Capture-side work: new modalities, transcription, sensing |
 | `docs/SOLCLI.md` | Adding a new `sol <cmd>` or `sol call <app> <verb>` |
-| `docs/PORTING.md` | Python→Rust porting doctrine, Rust workspace layering, and wave-0 lockstep/gate rules |
+| `docs/PORTING.md` | Python→Rust porting doctrine, Rust workspace layering, and workspace lockstep/gate rules |
 | `docs/PROMPT_TEMPLATES.md` | Modifying talent prompt format or frontmatter |
 | `docs/PROVIDERS.md` | Three-lane provider architecture: active-brain resolution, local/BYO/confidential lanes, and honest no-fallback failure semantics |
 | `docs/testing.md` | Test structure, fixtures, debugging test isolation |

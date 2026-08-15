@@ -1,4 +1,4 @@
-{"event": "exec", "ts": 1770952499902, "app": "sol", "task": "001_migrate_agent_run_logs", "cmd": ["/home/jer/.local/share/hopper/lodes/vymuqdvr/worktree/.venv/bin/python", "-m", "apps.sol.maint.001_migrate_agent_run_logs"]}
+{"event": "exec", "ts": 1770952499902, "app": "sol", "task": "001_migrate_agent_run_logs", "cmd": ["/workspace/owner/.local/share/worktrees/vymuqdvr/worktree/.venv/bin/python", "-m", "apps.sol.maint.001_migrate_agent_run_logs"]}
 {"event": "line", "ts": 1770952500054, "line": "Migrating agent run logs in: tests/fixtures/journal/agents"}
 {"event": "line", "ts": 1770952500054, "line": "Migration complete"}
 {"event": "line", "ts": 1770952500054, "line": "  moved:            0"}

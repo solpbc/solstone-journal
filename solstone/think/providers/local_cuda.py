@@ -255,7 +255,7 @@ def resolve_local_backend(pin: CudaServerPin) -> BackendChoice:
 
 def parse_embedded_arch_set(cuobjdump_list_elf_text: str) -> frozenset[str]:
     # TODO(AC10): live cuobjdump --list-elf on the extracted libggml-cuda.so
-    # runs on hardware; in-lode uses a synthetic fixture.
+    # runs on hardware; tests use a synthetic fixture.
     return frozenset(_ARCH_RE.findall(cuobjdump_list_elf_text))
 
 

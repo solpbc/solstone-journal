@@ -389,7 +389,7 @@ def snapshot_tree(root: Path) -> dict:
 
     A read-wave port cannot re-derive this layout without the write routes, and
     hand-rolling an approximation of it would make the conformance test measure
-    the fixture rather than the handler (VPE operating principle 15d). So the
+    the fixture rather than the handler. So the
     reference's own bytes travel with the corpus.
     """
     tree = {}

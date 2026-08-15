@@ -428,7 +428,7 @@ fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
 
 // --- export ---------------------------------------------------------------
 //
-// export reproduced the identical defect one wave later: W6b's cut was already
+// export reproduced the identical defect one wave later: the later cutover was already
 // in flight when grab/transfer/observer were repaired, and its scope never
 // named this surface. That recurrence is why the coverage is here rather than
 // left to each wave to remember.

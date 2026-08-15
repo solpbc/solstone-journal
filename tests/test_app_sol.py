@@ -611,13 +611,13 @@ class TestSolIdentityRoutes:
 
         resp = client.post(
             "/app/sol/api/set-owner",
-            json={"name": "Jer", "bio": "Building solstone"},
+            json={"name": "Rae", "bio": "Building solstone"},
         )
 
         assert resp.status_code == 200
-        assert resp.get_json() == {"name": "Jer", "bio": "Building solstone"}
+        assert resp.get_json() == {"name": "Rae", "bio": "Building solstone"}
         config = read_journal_config()
-        assert config["identity"]["name"] == "Jer"
+        assert config["identity"]["name"] == "Rae"
         assert config["identity"]["bio"] == "Building solstone"
 
     def test_api_sol_init_creates_identity_directory(self, sol_identity_client):

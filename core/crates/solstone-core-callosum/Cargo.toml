@@ -11,7 +11,7 @@ publish = false
 
 [features]
 default = []
-# W1 live-wire behavioral tests (AC7-18):
+# Live-wire behavioral tests (AC7-18):
 # cargo test --manifest-path core/Cargo.toml -p solstone-core-callosum --features wire --locked --lib wire::tests::
 wire = ["dep:tokio"]
 # Cross-language Callosum differentials (AC19-22), run by `make check-differentials`.

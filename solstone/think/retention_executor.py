@@ -485,7 +485,7 @@ def index_pruned(receipt: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 # The scheduled-pass fingerprint/confirmation gate is retired as a route to deletion:
-# the founder ruling of 2026-08-06 forbids any routine from converting a one-time owner
+# the approved policy of 2026-08-06 forbids any routine from converting a one-time owner
 # decision into standing deletion authority. Daily maintenance now only lists
 # policy-eligible originals via `mark()`/`marks()`; it never removes them.
 # `retention.raw_media_release_confirmed` is no longer read or written by any code path

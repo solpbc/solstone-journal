@@ -1,6 +1,6 @@
 # Native Sol Notify and Contract Retirement Design
 
-This records the W1.5a design for two coupled changes:
+This records the this design design for two coupled changes:
 
 - Port top-level `sol notify` from Python compatibility to native Rust.
 - Retire `sol contract` from the public `sol` surface while leaving

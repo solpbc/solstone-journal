@@ -42,22 +42,23 @@ const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
 const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
-const LANE_AU_REQUIRED_NATIVE_TOKENS: &[&str] =
+const OWNER_VERB_REQUIRED_NATIVE_TOKENS: &[&str] =
     &["engage", "maintenance", "heartbeat", "maint", "backup"];
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
 const THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
 const TALENT_LIFECYCLE_NATIVE_TOKENS: &[&str] = &["cortex", "talent"];
-// Lane BB's done condition. Carried under a lane-scoped name for the same
-// reason Lane AW's is: REQUIRED_NATIVE_TOKENS is already bound to ["brain"] on
-// this tree, so redefining it would not compile and would delete that
-// assertion. The value is the contract; the binding name is not.
-const LANE_BB_REQUIRED_NATIVE_TOKENS: &[&str] = &["think"];
+// Think's done condition. Carried under a dedicated name for the same reason the
+// owner-verb set is: REQUIRED_NATIVE_TOKENS is already bound to ["brain"] on
+// purpose, so a second binding is required or this assertion would be deleted.
+// THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS already covers the setup token set; this
+// binding keeps the think assertion explicit.
+const THINK_REQUIRED_NATIVE_TOKENS: &[&str] = &["think"];
 // `install-provider` is the last owner-facing provider-install verb still
-// routed to Python. Carried under a lane-scoped name for the same reason the
+// routed to Python. Carried under a dedicated name for the same reason the
 // two above are: REQUIRED_NATIVE_TOKENS is already bound on this tree, so
 // rebinding it would not compile and would delete that assertion. The value is
 // the contract; the binding name is not.
-const LANE_BE_REQUIRED_NATIVE_TOKENS: &[&str] = &["install-provider"];
+const INSTALL_PROVIDER_REQUIRED_NATIVE_TOKENS: &[&str] = &["install-provider"];
 // The dispatcher is the one interpreter-resolution site the shipped tree is
 // allowed to have, and `processes.rs` is the census that measures conversion
 // progress. Any other crate that resolves an interpreter is a second,
@@ -206,12 +207,12 @@ struct Probe {
 }
 
 #[test]
-fn lane_au_owner_verbs_are_registered_for_native_dispatch() {
+fn owner_verbs_are_registered_for_native_dispatch() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    let missing = LANE_AU_REQUIRED_NATIVE_TOKENS
+    let missing = OWNER_VERB_REQUIRED_NATIVE_TOKENS
         .iter()
         .copied()
         .filter(|token| !native_tokens.contains(token))
@@ -219,12 +220,12 @@ fn lane_au_owner_verbs_are_registered_for_native_dispatch() {
 
     assert!(
         missing.is_empty(),
-        "required Lane AU native process tokens are missing: {missing:?}"
+        "required owner-verb native process tokens are missing: {missing:?}"
     );
 }
 
 #[test]
-fn lane_av_brain_is_registered_for_native_dispatch() {
+fn brain_is_registered_for_native_dispatch() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()
         .map(|spec| spec.token)
@@ -237,7 +238,7 @@ fn lane_av_brain_is_registered_for_native_dispatch() {
 
     assert!(
         missing.is_empty(),
-        "required Lane AV native process tokens are missing: {missing:?}"
+        "required brain native process tokens are missing: {missing:?}"
     );
 }
 
@@ -303,14 +304,14 @@ fn talent_lifecycle_tokens_are_registered_for_native_dispatch() {
 // with both interpreter poisons live. What resolves it: a NATIVE_PROCESS_SPECS
 // row for `install-provider` plus its PROBES entry. What does not resolve it:
 // do not #[ignore] this test, and do not shrink or reword
-// LANE_BE_REQUIRED_NATIVE_TOKENS.
+// INSTALL_PROVIDER_REQUIRED_NATIVE_TOKENS.
 #[test]
 fn install_provider_is_registered_for_native_dispatch() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    let missing = LANE_BE_REQUIRED_NATIVE_TOKENS
+    let missing = INSTALL_PROVIDER_REQUIRED_NATIVE_TOKENS
         .iter()
         .copied()
         .filter(|token| !native_tokens.contains(token))
@@ -2694,8 +2695,8 @@ fn native_start_help_uses_supervisor_program_name() {
     assert!(!context.poison_marker.exists());
 }
 
-// --- Lane BB: `journal think` dispatches natively, and the talent runtime it
-// --- reaches loads no Python module.
+// --- `journal think` dispatches natively, and the talent runtime it reaches
+// --- loads no Python module.
 //
 // Three assertions, because no one of them is sufficient:
 //
@@ -2707,19 +2708,19 @@ fn native_start_help_uses_supervisor_program_name() {
 //                             loaded or executed by the talent runtime" means
 //                             mechanically.
 //
-// (1) alone is the failure mode this lane exists to avoid: the poison-liveness
+// (1) alone leaves an unproven execution boundary: the poison-liveness
 // probe for a run-mode verb exits at ARGUMENT PARSING, before any spawn, so a
 // registration can go green over a run path that still execs an interpreter.
 // (2) is red until a run mode exists; (3) is red until the talent runtime is
 // native. Do not resolve any of them by relaxing the others.
 
 #[test]
-fn lane_bb_think_is_registered_for_native_dispatch() {
+fn think_is_registered_for_native_dispatch() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    let missing = LANE_BB_REQUIRED_NATIVE_TOKENS
+    let missing = THINK_REQUIRED_NATIVE_TOKENS
         .iter()
         .copied()
         .filter(|token| !native_tokens.contains(token))
@@ -2727,7 +2728,7 @@ fn lane_bb_think_is_registered_for_native_dispatch() {
 
     assert!(
         missing.is_empty(),
-        "required Lane BB native process tokens are missing: {missing:?}"
+        "required think native process tokens are missing: {missing:?}"
     );
 }
 
@@ -2743,11 +2744,11 @@ fn lane_bb_think_is_registered_for_native_dispatch() {
 /// argument parsing, by the unavailable-run boundary, or by an empty run.
 ///
 /// Both seeded talents declare a frontmatter `hook` object, so reaching them is
-/// reaching the surface this lane converts. No model endpoint is configured and
+/// reaching the native talent runtime surface. No model endpoint is configured and
 /// the journal has no completed work, so the run resolves them and does not
 /// call a provider -- the test is hermetic and makes no network claim.
 #[test]
-fn lane_bb_native_think_cadence_run_reaches_the_talent_plane_without_python() {
+fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
     let harness = Harness::new();
     let context = harness.context();
     prove_poison_interpreters_live(&context);
@@ -2866,7 +2867,7 @@ fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
 /// a file's first `#[cfg(test)]` is test scaffolding, and several crates
 /// legitimately write interpreter stubs there.
 #[test]
-fn lane_bb_only_the_dispatcher_crate_resolves_an_interpreter() {
+fn only_the_dispatcher_crate_resolves_an_interpreter() {
     let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crates directory")
@@ -2952,7 +2953,7 @@ fn rust_sources_under(crates: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn lane_w_process_tokens_are_native_cutovers() {
+fn process_tokens_are_native_cutovers() {
     let native_tokens = NATIVE_PROCESS_SPECS
         .iter()
         .map(|spec| spec.token)
@@ -2960,7 +2961,7 @@ fn lane_w_process_tokens_are_native_cutovers() {
     for token in ["grab", "transfer", "export", "observer", "transcribe"] {
         assert!(
             native_tokens.contains(token),
-            "{token}: Lane W requires a native process cutover"
+            "{token}: native process dispatch is required"
         );
     }
 }

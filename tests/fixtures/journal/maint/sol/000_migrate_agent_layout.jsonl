@@ -1,4 +1,4 @@
-{"event": "exec", "ts": 1770778598011, "app": "sol", "task": "000_migrate_agent_layout", "cmd": ["/home/jer/projects/sunstone/.venv/bin/python3", "-m", "apps.sol.maint.000_migrate_agent_layout"]}
+{"event": "exec", "ts": 1770778598011, "app": "sol", "task": "000_migrate_agent_layout", "cmd": ["/workspace/owner/projects/sunstone/.venv/bin/python3", "-m", "apps.sol.maint.000_migrate_agent_layout"]}
 {"event": "line", "ts": 1770778598147, "line": "Migration complete"}
 {"event": "line", "ts": 1770778598147, "line": "  moved:   0"}
 {"event": "line", "ts": 1770778598147, "line": "  cleaned: 0"}

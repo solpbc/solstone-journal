@@ -1,7 +1,7 @@
 # Python to Rust Porting Doctrine
 
 This document is for engineers and coding agents porting solstone behavior from
-Python into the Rust workspace under `core/`. It records the wave-0 rules before
+Python into the Rust workspace under `core/`. It records the workspace rules before
 any behavior moves.
 
 **The map is separate from the doctrine.** This document is *how* to port. The
@@ -486,7 +486,7 @@ Native sol client design records:
 - `docs/design/native-sol-client/08-link-join-design.md`
 - `docs/design/native-sol-client/09-link-serve-prep.md`
 - `docs/design/native-sol-client/09-link-serve-design.md` (hold decision; no implementation landed)
-- `docs/design/native-sol-client/10-resident-command-lane-design.md`
+- `docs/design/native-sol-client/resident-command-design.md`
 - `docs/design/native-sol-client/11-link-serve-design.md`
 
 ## Dual Paths And Shims
@@ -515,7 +515,7 @@ Native brain verbs ship as `solstone-core brain <verb>` subcommands of the
 installed aggregate binary, not as a standalone writer binary.
 `scripts/local_contract_corpus.py` and `scripts/brain_projection_corpus.py`
 are retired from `expected_outputs()` because they import from `brain_state.py`,
-which Wave 2 reduces to a thin transport shim. The checked-in contract and
+which the native conversion reduces to a thin transport shim. The checked-in contract and
 projection fixtures remain frozen native compatibility corpus; regenerating
 them requires the recorded pre-cut source tree, not a fallback implementation
 in the post-cut tree.

@@ -1,8 +1,8 @@
-# W1b Import Resolver Design
+# this resolver design Import Resolver Design
 
 ## Purpose and boundary
 
-W1b ports the resolution half of `journal importer` into library crates only:
+this resolver design ports the resolution half of `journal importer` into library crates only:
 
 - `solstone-core-import`: detection orchestration, timestamp validation and
   resolution, generic-source hashing/deduplication, and import stream naming.
@@ -129,7 +129,7 @@ with a compiled-in registry.
    - An unclaimed directory is refused at stream derivation after deduplication
      and timestamp resolution. `cli.py:681-690` derives a label, but that branch
      is unreachable in practice because staging then raises `IsADirectoryError`.
-     W1b deliberately replaces that unreachable failure with a named remedy;
+     this resolver design deliberately replaces that unreachable failure with a named remedy;
      it applies regardless of extension. A `.pdf`-named directory remains the
      earlier PDF refusal.
    - A `.pdf`-named directory reaches the PDF refusal after no importer claims
@@ -142,7 +142,7 @@ with a compiled-in registry.
 7. `registry.rs` is the precedent for partial completion: it exposes
    `ORDERED_FILE_IMPORTER_NAMES` and `first_claimed` while retaining
    `reserved_seam()` (`core/crates/solstone-core-import-sources/src/registry.rs:12-36`).
-   W1b retains the `registry` stub row and its convention. It removes no
+   this resolver design retains the `registry` stub row and its convention. It removes no
    `MODULE_STUBS` rows: `detect` and `dedupe` are only partly implemented, and
    `apple_health`/`oura` retain future body-reader seams. Counts stay 19 and 12;
    both existing stub-table tests remain valid. This is not a claim that a
@@ -158,7 +158,7 @@ All new source files receive the repository SPDX header.
 | `detect.rs` seams | `ResolutionSeams<A, C, D, M, L, T> { apple_detector: A, claims: C, deterministic_detector: D, model_detector: M, manifest_lookup: L, generated_timestamp: T }`. Each field has a one-line doc contract: Apple runs only at the source-absent directory/ZIP pre-empt and its error is terminal; claims runs during ordered sweeps and an error is a swallowed non-answer; deterministic detection receives the path and Python-equivalent optional original filename; model detection runs once only after deterministic no-match and receives optional guidance; manifest lookup runs only for non-dry-run generic dedup and `None` is no prior manifest; generated timestamp runs only for a selected source with no explicit timestamp. Named fields prevent positional seam mix-ups and ambient-clock reads. Deterministic detection is injected because this wave ports resolution, not `resolve_created_deterministic`'s filename/Exif extraction implementation; its reference inputs are `path` and `original_filename` (`detect_created.py:205-227`, called at `cli.py:621-624`). |
 | `detect.rs` types | `ResolutionOptions { media: &Path, source: Option<&str>, timestamp: Option<&str>, auto: AutoTimestamp, dry_run: bool, deterministic_only: bool, force: bool }`; `ResolutionOutcome::{RouteAppleHealth, Skipped { reason, detected_timestamp }, Resolved { source, timestamp, stream }}`; `ManifestSummary { entry_count: u64 }`; `SkipReason::{AlreadyImported, NoDeterministicMatch, TimestampRequired}`; `ResolvedSource::{Registry(RegistrySource), GenericAudio, GenericText}`. Every refusal is `Err(ResolutionError::...)`; no outcome variant represents a refusal. |
 | `timestamp.rs` | `AutoTimestamp::from_raw(raw: Option<Option<&str>>) -> AutoTimestamp`; `validate_timestamp(raw: &str) -> Result<Timestamp, TimestampError>`; `DetectedTimestamp { timestamp: Timestamp }`; pure helpers for timestamp candidate handling. The deterministic seam supplies an already-resolved deterministic answer because metadata/Exif extraction is outside this wave. |
-| `dedupe.rs` | `hash_source(path: &Path) -> Result<SourceHash, HashSourceError>`. It constructs the existing `SourceHash` with its current `new(String)` API; W1b does not redesign that type. |
+| `dedupe.rs` | `hash_source(path: &Path) -> Result<SourceHash, HashSourceError>`. It constructs the existing `SourceHash` with its current `new(String)` API; this resolver design does not redesign that type. |
 | `stream_name.rs` | `import_stream_name(import_source: &str) -> Result<String, StreamNameError>` and `canonicalize_stream_name(base: &str, qualifier: Option<&str>) -> Result<String, StreamNameError>`. The resolver calls the former only after final source selection. |
 | `registry.rs` | Retain `first_claimed`; the resolver-owned order and source type live in `solstone-core-import` because this crate depends on it. |
 | `apple_health.rs` / `oura.rs` | Retain only future-body `reserved_seam()`s. The Apple routing verdict and Oura refusal live in `solstone-core-import`, where the resolver can use the single truth source. This is a scope deviation: putting them here would require inverting the crate dependency direction. |
@@ -245,7 +245,7 @@ The hash-tree discriminators are
 ## Fixture and test plan
 
 First vendor the supplied file verbatim from
-`~/import-fixtures-260811/w1b-stream-name-oracle.json` to
+`~/import-fixtures-260811/stream-name-oracle.json` to
 `core/fixtures/import_stream_name_oracle.json`. Tests use `include_str!` plus
 `serde_json`; no case is transcribed into Rust source.
 
@@ -274,11 +274,11 @@ First vendor the supplied file verbatim from
 | 15 | `stream_name_oracle.rs`; constructed separator, double-dot, and invalid-name inputs. |
 | 16 | `resolution.rs`; corpus boundary rows and constructed fixture trees using documented document/Obsidian predicate stand-ins. This certifies resolver dispatch and ordering given faithful predicates; source-body discrimination remains later work. |
 | 17 | `resolution.rs`; constructed unclaimed directory, assert the named refusal after generic resolution; a `.pdf` directory asserts the earlier PDF refusal. |
-| 18 | Implement-stage written finding, not a test: W1b libraries perform no writes. The caller-owned reference `get_journal()` auto-create is conditional; `_setup_import` is the first real write, reached at `cli.py:825` and `:865`, outside W1b. |
+| 18 | Implement-stage written finding, not a test: this resolver design libraries perform no writes. The caller-owned reference `get_journal()` auto-create is conditional; `_setup_import` is the first real write, reached at `cli.py:825` and `:865`, outside this resolver design. |
 | 19 | After implementation only, run `make ci` through `hop check --allow-capture` and report its actual result. |
 
 AC 7 is directly testable at the library boundary by recursive source-tree
-snapshots. AC 18 is an implementation-report check: the W1b libraries create
+snapshots. AC 18 is an implementation-report check: the this resolver design libraries create
 no files at all, while caller-owned `get_journal()` auto-creation remains out of
 scope.
 
@@ -327,7 +327,7 @@ source/corpus. The following qualifications must remain visible:
   subsequently fails in staging.
 - AC 12c is the one intentional divergence: Python only swallows
   `NoBrainConfiguredError`, `ValueError`, and `JSONDecodeError`
-  (`detect_created.py:282-288`); W1b turns all other model errors into a
+  (`detect_created.py:282-288`); this resolver design turns all other model errors into a
   named-remedy refusal.
 - AC 18 concerns writes, not reads. `hash_source` reads the source, and the
   Python Apple branch calls `get_journal()` before delegating

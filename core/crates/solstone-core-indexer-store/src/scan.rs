@@ -2851,12 +2851,12 @@ mod tests {
             "DELETE FROM chunks WHERE path IN (?, ?)",
             params![first, nested],
         )
-        .expect("remove child rows to mimic pre-W1 index");
+        .expect("remove child rows to mimic legacy index");
         conn.execute(
             "DELETE FROM files WHERE path IN (?, ?)",
             params![first, nested],
         )
-        .expect("remove child markers to mimic pre-W1 index");
+        .expect("remove child markers to mimic legacy index");
         seed_legacy_segment_aggregate(&conn, segment);
         reset_segment_aggregate_migration(&conn);
         create_abort_trigger(
@@ -2954,9 +2954,9 @@ mod tests {
         scan_journal(&root, true).expect("initial real scan");
         let conn = open_index(&root).expect("open index");
         conn.execute("DELETE FROM chunks WHERE path=?", [child])
-            .expect("remove child rows to mimic pre-W1 index");
+            .expect("remove child rows to mimic legacy index");
         conn.execute("DELETE FROM files WHERE path=?", [child])
-            .expect("remove child marker to mimic pre-W1 index");
+            .expect("remove child marker to mimic legacy index");
         seed_legacy_segment_aggregate(&conn, segment);
         reset_segment_aggregate_migration(&conn);
         create_abort_trigger(

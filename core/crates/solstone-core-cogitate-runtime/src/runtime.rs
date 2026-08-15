@@ -41,7 +41,7 @@ pub fn run_cogitate(
     // Conversation compaction is intentionally outside this runtime. Messages
     // are never summarized or dropped, so this history accumulates for the full
     // run; only MAX_TURNS (default 60) and the cost/context ladder's stage-3
-    // force-stop bound it. This is a deliberate scope cut, to revisit in R6
+    // force-stop bound it. This is a deliberate scope cut, to revisit when
     // or later if long runs make that accumulation a practical cost/context
     // problem.
     let mut messages = vec![ConverseMessage::User {

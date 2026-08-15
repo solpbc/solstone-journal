@@ -96,7 +96,7 @@ Media processing: an ingested segment's raw media becoming analysed output on di
 
 **Shape, re-measured 2026-08-13 — the plate is NATIVE.** One long-running dispatcher plus three
 handlers, all separate processes. ⛔ `observe/sense.py` and `observe/describe.py` **no longer exist**;
-both were deleted from `main` on 2026-08-13 (Lane AJ, `req_mvti7llt`).
+both were deleted from `main` on 2026-08-13 .
 
 | | Module | Reads | Writes | Notes |
 |---|---|---|---|---|
@@ -107,9 +107,7 @@ both were deleted from `main` on 2026-08-13 (Lane AJ, `req_mvti7llt`).
 
 🍎 **`describe` ships Linux-only, deliberately.** A macOS journal host has no `journal describe`: it
 dispatches to a sibling not installed there and exits **70**, which `sense` records as a segment error
-and notifies. 🔒 Founder decision 2026-08-13
-([rec](../../records/decisions/260812-founder-describe-cuts-over-linux-only-and-macos-loses-it.md) in
-the org repo) — holding the cut would have stranded a landed handler behind a signing credential no
+and notifies. Holding the cut would have stranded a landed handler behind a signing credential no
 session can obtain. ⚠ The mac wheel **builds**; only signing is missing.
 
 ⚠ **The dispatcher spawns handlers by NAME** (`["journal", "describe", …]`), so the `journal` entry
@@ -119,7 +117,7 @@ point must be on `PATH`. An absolute-path invocation without it makes **every** 
 
 ⚠ **Handler exit codes are a contract of their own** and `observe/exit_codes.py` declares only part of it: `EXIT_PROVIDER_BLOCKED = 69`, plus `WATCHDOG_TIMEOUT`, which despite the module name is **a log string compared against nothing**. Also live and undeclared: **1** (transcribe hard failure and speaker-analysis failure), and **78** — ⚠ which is *not* a handler code at all but the dispatcher's own startup exit (`sense.py:1423`), before any handler runs.
 
-🔴 **A code CHANGED MEANING on 2026-08-13** (Lane AJ, `req_mvti7llt`). The dispatcher's result for an
+🔴 **A code CHANGED MEANING on 2026-08-13** . The dispatcher's result for an
 **unresolvable native sibling** moved from **69 to 70** across all native tokens, so **69 now means
 only** *"a handler ran and hit an owner-remediable provider condition."* ⚠ The reason is the one that
 matters: at 69 the dispatcher reads a missing sibling as an honest deferral — no error recorded, no
@@ -131,9 +129,8 @@ looks identical to a busy provider. **70 surfaces; 69 defers.** ⛔ Do not re-co
 🔴 **⛔ `sense` exits 0 and prints a success banner when EVERY handler fails to spawn** — measured
 2026-08-13. Its `observed` event correctly carries `error: true` and a populated `errors` list, so the
 plate contract holds; the CLI discards it. ⚠ Compounded by `solstone-core` installing no logger, which
-leaves the `ManagedProcess` log for a failed handler at **zero bytes**. Carrier `vpe-244` in the org
-repo. ⚠ Related: `describe` discards a *specific* refusal reason on its own blocked path — the reason
-is carried to `RunError::Blocked`, which is a unit variant that drops it (`vpe-242`).
+leaves the `ManagedProcess` log for a failed handler at **zero bytes**. ⚠ Related: `describe` discards a *specific* refusal reason on its own blocked path — the reason
+is carried to `RunError::Blocked`, which is a unit variant that drops it.
 
 🔴 **CORRECTED 2026-08-05 — "a deferral records neither success nor failure" is FALSE, and the comment that says so is in the code.** `sense.py:549-560` states the intent and does not implement it. The `69` branch and the `exit 0` branch **both** call `_check_segment_observed(file_path)`; the *only* difference is that success additionally calls `_record_successful_contact()`, a health-beacon counter — and that same counter is also ticked by the idle status loop every 5 seconds (`:885-887`), so it distinguishes nothing durable either.
 
@@ -160,7 +157,7 @@ Both are gated only by `transcribe.preserve_all`, which **defaults to false**, a
 
 📌 There is a **third** unlink in the same write path — `transcribe/native.py:183-197` removes an existing `.npz` whenever its `.jsonl` is absent, on every write call. Derived artifact, not owner media.
 
-⛔ **Recorded as a measurement, not a proposal.** `P-journal-retention` § 2 says *"`transcribe` stops unlinking VAD-empty raw audio"*; read literally that names one site and leaves the other in place. **Whether the ruling covers both is a founder call and is raised, not edited here.**
+⛔ **Recorded as a measurement, not a proposal.** `P-journal-retention` § 2 says *"`transcribe` stops unlinking VAD-empty raw audio"*; read literally that names one site and leaves the other in place. **Whether the ruling covers both remains unresolved and is not edited here.**
 
 ⚠ **The retry budget is describe-only in practice.** `should_reenter_analysis_output` (`observe/processing_record.py:118-152`) returns `True` **only** for `handler == "describe"`, and transcribe writes its `corrupt_input` output through `_write_failed_processing_jsonl`, which then blocks re-entry at three separate guards. `FAILED_ATTEMPT_BOUND` never applies to audio.
 
@@ -283,14 +280,14 @@ Consistent formatting of **structured journal data** for its consumers — the i
 ⚠ **Four near-identical entry points, three error semantics.** `generate` / `generate_with_result` / `agenerate` / `agenerate_with_result` each repeat the same nine-step policy sequence; the two `_with_result` forms make schema validation advisory while the two plain forms raise on it. Only `generate_with_result` accepts `num_retries`, `inference_retry_index`, `local_exclusive_admission` and `enforce_responsiveness`. One boundary, four doors, differing on what a schema failure means.
 
 🆕 ✅ **CLOSED 2026-08-11 — the cogitate Python-runtime inventory below is
-historical.** R6b-2 removed the OpenHands/LiteLLM driver, Python command gate,
+historical.** Cogitate cutover removed the OpenHands/LiteLLM driver, Python command gate,
 prompt assembly, raw-read bindings, and Python contract. The live path is
 `cogitate_client.run_cogitate` → `solstone-core cogitate --one-shot`; the
 native talent-contract query and dry-run event supply inventory and effective
 prompt details. Retain the pre-cut module counts and decisions below as the
 conversion record, not as current implementation guidance.
 
-⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate`; `run_generate` and `run_agenerate` never touch it. It is a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture **— ⛔ FALSE AT HEAD since R1/R2: `solstone-core-cogitate` and `-cogitate-tools` both `include_str!` it**** (re-verified 2026-08-09), so today the digest detects only Python-source-versus-fixture drift.
+⚠ **The runtime preamble is `cogitate`'s, not `generate`'s.** `COGITATE_RUNTIME_PREAMBLE` is prepended by `providers/cli.assemble_prompt`, reached only from `run_cogitate`; `run_generate` and `run_agenerate` never touch it. It is a **sha256 only** in `core/fixtures/cogitate_contract.json` — 1,989 bytes. ⚠ **And "cross-language" is a location, not yet a fact: zero Rust files read that fixture **— ⛔ FALSE AT HEAD since the native readers: `solstone-core-cogitate` and `-cogitate-tools` both `include_str!` it**** (re-verified 2026-08-09), so today the digest detects only Python-source-versus-fixture drift.
 
 🆕 ⛔ **CORRECTED 2026-08-09 — "not reconstructible" was FALSE, and the correction changes what the fixture is for.** The text *is* recoverable from the repo: `docs/COGITATE.md` carries a **byte-identical** copy — extracted from its fence and hashed, 1,989 bytes, `6614e3fd…`, identical to the constant and to the fixture. 🔴 **But nothing checks that copy.** Grepping every `.py`, `.rs` and `Makefile` for `COGITATE.md` finds one reader, and it reads the doc for an unrelated assertion. So the text is reproducible **by luck of maintenance**, and the doc copy is a live drift hazard rather than a mitigation. ✅ **Disposition: the text goes INTO the fixture beside the digest**, the house style `core/fixtures/local_contract.json` already uses so a divergence *"fails on the string rather than on a hex value that says only 'different'."* 📌 **A digest is the right instrument for one implementation and the wrong one for two** — it can tell the second implementation that it is wrong while being structurally unable to tell it what right is. ⚠ **`COGITATE_DIAGNOSTIC_PREAMBLE` — the second runtime contract, the one the brain readiness probe runs against — is in NEITHER the fixture nor `COGITATE.md`**, and gets the same treatment.
 
@@ -363,7 +360,7 @@ fallback), a synthesised tool call arriving as prose under `finish_reason: "stop
 finalized as an answer, and the bundled lane must be **exercised against the real runtime** before
 the cut. Full reasoning:
 **the native runtime speaks native tool calls on every lane**.
-📌 **This paragraph was written at wave 0 and three later wave scopes were authored without
+📌 **This paragraph was written before the native conversion and later work were authored without
 re-reading it** — the divergence was taken implicitly in landed work and recorded only afterwards.
 ⛔ A conversion dictionary is only worth what re-reading it costs. ⚠ **And the condenser is local-only** —
 `LLMSummarizingCondenser(keep_first=4)`, whose `max_tokens` divides by a `1.125` factor its own
@@ -399,7 +396,7 @@ path, and only because of the separation above.
 
 ⚠ **THE FINISH TOOL WAS AUTHORED, NOT PORTED, AND THAT IS DELIBERATE.** **4 of the 6 cogitate talents finalize through it** — measured — but the tool belongs to the agent SDK this conversion deletes. Its captured description tells the model about *"the **user's** requested task"* and a *"Final message to send to the **user**"*: generic agent-framework copy, and **there is no user on the other end of a talent**. The native description is written in solstone's own terms and pinned by digest.
 
-🔴 **AND THE CONVERSION CANNOT SIMPLY EXTEND THE `generate` ARMS — measured, not assumed.** Two findings a scope review proved against the tree: **`openai` and `google` normalise a valid tool call into a hard refusal** (both map a tool stop to `"stop"`, a tool-call response carries no text, and the shared validation turns `Stop` + blank output into `provider_response_invalid`) — ⚠ unreachable today because `generate` sends no tools, and reachable the moment a tool-calling turn exists. And **`endpoint` and `confidential` cannot represent a tool call at all**: their shared parser **errors** on a `tool_calls` finish reason against a vocabulary frozen in `core/fixtures/local_contract.json`. ⛔ That is a settled one-shot contract, so it gets its own wave and its own decision rather than being widened in passing.
+🔴 **AND THE CONVERSION CANNOT SIMPLY EXTEND THE `generate` ARMS — measured, not assumed.** Two findings a scope review proved against the tree: **`openai` and `google` normalise a valid tool call into a hard refusal** (both map a tool stop to `"stop"`, a tool-call response carries no text, and the shared validation turns `Stop` + blank output into `provider_response_invalid`) — ⚠ unreachable today because `generate` sends no tools, and reachable the moment a tool-calling turn exists. And **`endpoint` and `confidential` cannot represent a tool call at all**: their shared parser **errors** on a `tool_calls` finish reason against a vocabulary frozen in `core/fixtures/local_contract.json`. ⛔ That is a settled one-shot contract, so it gets its own decision rather than being widened in passing.
 
 ⚠ **A HAZARD THE LOOP INHERITS AND NOTHING CURRENTLY SOLVES:** the endpoint arm's context fitting is keyed to **one-shot content shapes** and cannot express an assistant turn carrying tool calls or a tool-result message; and the **attested arm has no fitting at all**, because its served window comes from a discovery call it deliberately refuses so it cannot issue an unaudited second request. That leaves a 400-overflow retry — keyed on the serving runtime's **English error text** — as the only backstop. Fine for one shot; **primary for a loop that regrows its prompt every turn**, on a 16,384-token window whose preamble alone is ~2 KB.
 
@@ -727,7 +724,7 @@ Measured against hand-built segments, `eligible` meaning the owner's raw audio i
 
 **An image-only segment is releasable with no evidence, and with no sidecar at all.** `resolve_segment_gate` globs `audio.jsonl`, `*_audio.jsonl`, `screen.jsonl`, `*_screen.jsonl` (`retention.py:207-212`) while `is_raw_media` accepts all eight still-image formats (`:57`). The still-image handler writes its sidecar as `<stem>.jsonl` (`observe/depict.py:49`), which matches neither glob, so `has_audio_raw` and `has_video_raw` are both false, both incompleteness checks are skipped, and the verdict is `eligible` with `processed_at = None`. ⚠ The comment at `:216-218` claims `monitor_*_diff.png` diffs *"ride the whole-segment gate"* — true only when audio or video is **also** present. ✅ A predicate that resolves an expected handler **before** reading a record closes this by construction: no handler in the closed set means no obtainable proof, which must never release.
 
-✅ **Resolved in W3a — historical finding:** **The raw-media policy has no runner.** `purge()` had no schedule entry, no maintenance routine and no timer; its only two callers were a CLI command and one HTTP route. So `retention.raw_media: "days"` and `"processed"` were owner-settable, rendered in the owner UI, and **never executed**. ⚠ The two doors also carried **opposite destructive defaults** — `--dry-run` defaulted *false* on the CLI, *true* on the route — and the route required `older_than_days >= 1`, so it could not express the configured policy at all. `purge()` is now removed; both doors call `mark()` against the configured policy and expose neither override nor dry-run mode.
+✅ **Resolved in the completed raw-media migration — historical finding:** **The raw-media policy has no runner.** `purge()` had no schedule entry, no maintenance routine and no timer; its only two callers were a CLI command and one HTTP route. So `retention.raw_media: "days"` and `"processed"` were owner-settable, rendered in the owner UI, and **never executed**. ⚠ The two doors also carried **opposite destructive defaults** — `--dry-run` defaulted *false* on the CLI, *true* on the route — and the route required `older_than_days >= 1`, so it could not express the configured policy at all. `purge()` is now removed; both doors call `mark()` against the configured policy and expose neither override nor dry-run mode.
 
 ### Retention marks; the owner approves
 
@@ -753,9 +750,9 @@ the set-aside directory is finished.
 
 ⚠ Retention imports `apps/backup/copy` and `think/offload.py` imports back out of retention, so deletion is coupled to backup. ✅ **No cycle** — `apps/backup/copy.py` is a leaf with two imports.
 
-⚠ **Historical at ruling; partly superseded in W3a:** **Two logs this plate writes and never prunes**: `health/retention.log` and `health/pruning-runs/{day}.jsonl`. The log-retention class list covers `chronicle/{day}/health/`, not the journal root's `health/`, so the subsystem that prunes logs does not prune its own. `health/retention.log` no longer has a writer; `health/pruning-runs/{day}.jsonl` still grows from `raw_media_offload` audit records written by offload.
+⚠ **Historical at ruling; partly superseded in the completed raw-media migration:** **Two logs this plate writes and never prunes**: `health/retention.log` and `health/pruning-runs/{day}.jsonl`. The log-retention class list covers `chronicle/{day}/health/`, not the journal root's `health/`, so the subsystem that prunes logs does not prune its own. `health/retention.log` no longer has a writer; `health/pruning-runs/{day}.jsonl` still grows from `raw_media_offload` audit records written by offload.
 
-⚠ **Historical at ruling; partly superseded in W3a:** **Two of this plate's writes bypass the journal write discipline** and pass the access lint by not importing the primitives it inspects: `_write_retention_log` has been deleted; `write_prune_audit` still uses a bare `open(path, "a")` (`think/pruning_audit.py:55-56`).
+⚠ **Historical at ruling; partly superseded in the completed raw-media migration:** **Two of this plate's writes bypass the journal write discipline** and pass the access lint by not importing the primitives it inspects: `_write_retention_log` has been deleted; `write_prune_audit` still uses a bare `open(path, "a")` (`think/pruning_audit.py:55-56`).
 
 ⚠ **Two config keys are dead.** `retention.storage_warning_disk_percent` and `retention.storage_warning_raw_media_gb` are read (`retention.py:413`, `:439`) and written nowhere — no route, CLI, migration or UI. The owner cannot change either.
 
@@ -763,7 +760,7 @@ the set-aside directory is finished.
 
 ## `P-web` — SPLITS into `P-web-[app]`
 
-✅ **TEN plates APPROVED by the founder 2026-08-09.** The remainder are deferred, not dropped.
+✅ **TEN plates are approved.** The remainder are deferred, not dropped.
 
 | Plate | From | Note |
 |---|---|---|
@@ -800,7 +797,7 @@ the set-aside directory is finished.
 
 **Carry forward, from the first lane — each of these cost real time to find:**
 
-- 🔴 **Check that something can SERVE a route before converting one.** `solstone-core-entities` carries a complete **3,427-line** `/app/entities/*` axum router that **nothing in the workspace calls** — it compiles, tests and gates, and no owner can reach it. So the first wave is **the process**, not routes. ⚠ And building the server is not wiring it: `journal convey` still resolved to Flask after the Rust process shipped.
+- 🔴 **Check that something can SERVE a route before converting one.** `solstone-core-entities` carries a complete **3,427-line** `/app/entities/*` axum router that **nothing in the workspace calls** — it compiles, tests and gates, and no owner can reach it. So the first requirement is **the process**, not routes. ⚠ And building the server is not wiring it: `journal convey` still resolved to Flask after the Rust process shipped.
 - 🔴 **The session gate has THREE outcomes, not two.** `journal_is_active` **raises** on a config that exists and cannot be parsed, and the reference answers a **500 in the owner's voice** — not the first-run wizard. A port written `unwrap_or(false)` tells an owner their journal was never set up, over an existing journal.
 - 🔴 **A refusal that answers 2xx tells every client it succeeded.** The unconverted-app refusal shipped as 200; the shell evaluates a background body with `new Function` only when `response.ok`, so it executed refusal JSON as JavaScript on every page load. Nine more plates each serve refusals for their unconverted siblings — pin `!status.is_success()`, never the code.
 - 🔴 **An oracle diff is not an acceptance.** Two frozen corpora agreed while the page was throwing. **Drive it in a browser.** ⚠ `networkidle` never fires — the shell holds an SSE stream open.
@@ -862,7 +859,7 @@ Model and runtime **artifact management** — what an owner's machine downloads,
 
 ✅ **APPROVED 2026-08-12** by operator ruling.
 
-⚠ **The name under-reads the scope, deliberately, and a reader should know it.** The plate owns artifacts that are not models: the `llama-server` and `parakeet-server` binaries, the ced and rf-detr engines, and the Vulkan probe helper. "Models" is the founder's own word for the thing and the family placement beside `P-system` / `P-system-health` is the point; ⛔ do not read the name as a boundary.
+⚠ **The name under-reads the scope, deliberately, and a reader should know it.** The plate owns artifacts that are not models: the `llama-server` and `parakeet-server` binaries, the ced and rf-detr engines, and the Vulkan probe helper. "Models" is the established term for the thing and the family placement beside `P-system` / `P-system-health` is the point; ⛔ do not read the name as a boundary.
 
 🔴 **The covenant property lives here, and it is structural rather than conventional.** Every Rust-side download resolves through `Artifact::origin_key` to sol pbc's own origin, enforced by a **single-element allowlist** inside the one fetch primitive (`install/archive.rs:14`, `DOWNLOAD_ALLOWED_HOSTS = ["updates.solstone.app"]`; `PRODUCTION_DOWNLOAD_POLICY` sets `allow_http: false`). `validate_url` refuses any other host with `HostRefused` and any `http` scheme with `InsecureScheme`, **per redirect hop**, under `MAX_REDIRECT_HOPS = 5`. A caller cannot forget it and there is no upstream host to fall back to.
 

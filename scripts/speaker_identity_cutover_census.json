@@ -37,7 +37,7 @@
       "fingerprint": "0ccf1f9a8c236f5a",
       "function": "<module>._apply_speaker_correction_inverse_file",
       "line": 1152,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_corrections.json"
     },
     {
@@ -47,7 +47,7 @@
       "fingerprint": "f1ee007f0c9905a4",
       "function": "<module>.apply_entity_merge_segment_inverse",
       "line": 1081,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_corrections.json"
     },
     {
@@ -57,7 +57,7 @@
       "fingerprint": "91070d0f814423c7",
       "function": "<module>.remap_speaker_corrections_for_entity_merge",
       "line": 1054,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_corrections.json"
     },
     {
@@ -67,7 +67,7 @@
       "fingerprint": "912759e0b29e9a70",
       "function": "<module>._apply_segment_plan",
       "line": 1148,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_corrections.json"
     },
     {
@@ -77,7 +77,7 @@
       "fingerprint": "3280a3343e854c2f",
       "function": "<module>._undo_segment_remaps",
       "line": 1158,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_corrections.json"
     },
     {
@@ -87,7 +87,7 @@
       "fingerprint": "1e399416b30e1d00",
       "function": "<module>._concurrent_speaker_shift_worker",
       "line": 354,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_labels.json"
     },
     {
@@ -97,7 +97,7 @@
       "fingerprint": "4ba075146c14e1dd",
       "function": "<module>._apply_speaker_label_inverse_file",
       "line": 1117,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_labels.json"
     },
     {
@@ -107,7 +107,7 @@
       "fingerprint": "e2e31ce9260276de",
       "function": "<module>.apply_entity_merge_segment_inverse",
       "line": 1075,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_labels.json"
     },
     {
@@ -117,7 +117,7 @@
       "fingerprint": "4172bf05cd28af06",
       "function": "<module>.update_speaker_labels",
       "line": 992,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_labels.json"
     },
     {
@@ -127,7 +127,7 @@
       "fingerprint": "dbb24ad664573f97",
       "function": "<module>._apply_segment_plan",
       "line": 1146,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_labels.json"
     },
     {
@@ -137,7 +137,7 @@
       "fingerprint": "7cc82211f4f9871f",
       "function": "<module>._undo_segment_remaps",
       "line": 1158,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "chronicle/**/talents/speaker_labels.json"
     },
     {
@@ -147,7 +147,7 @@
       "fingerprint": "f1ccb3e05fadaa18",
       "function": "<module>._corrupt_preflight_owner",
       "line": 704,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {
@@ -157,7 +157,7 @@
       "fingerprint": "659b0b5b6a2f6cb6",
       "function": "<module>._corrupt_preflight_owner",
       "line": 711,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {
@@ -167,7 +167,7 @@
       "fingerprint": "1b52fe4e8b8b2457",
       "function": "<module>._commit_merge",
       "line": 1494,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {
@@ -177,7 +177,7 @@
       "fingerprint": "d752eff0d003c2f1",
       "function": "<module>._undo_voiceprints",
       "line": 1971,
-      "role": "lane_b_entity_merge",
+      "role": "entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {
@@ -187,7 +187,7 @@
       "fingerprint": "67a4a98ff07dee81",
       "function": "<module>.apply_entity_merge_voiceprint_inverse",
       "line": 231,
-      "role": "legacy_fixture_or_lane_b_writer",
+      "role": "legacy_fixture_or_entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {
@@ -197,7 +197,7 @@
       "fingerprint": "29ceeddca796de5a",
       "function": "<module>.rewrite_voiceprint_metadata",
       "line": 160,
-      "role": "legacy_fixture_or_lane_b_writer",
+      "role": "legacy_fixture_or_entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {
@@ -207,7 +207,7 @@
       "fingerprint": "92952365fdd0f339",
       "function": "<module>.save_voiceprints_batch",
       "line": 122,
-      "role": "legacy_fixture_or_lane_b_writer",
+      "role": "legacy_fixture_or_entity_merge_writer",
       "target": "entities/<id>/voiceprints.npz"
     },
     {

@@ -148,7 +148,7 @@ def test_locator_uses_basename_not_original_filename(tmp_path):
     ts = "20250630_143256"
     original_filename = "Method Coffee Roasters.m4a"
     file_path = (
-        "/home/jer/Pictures/Eri/imports/20250630_143256/Method_Coffee_Roasters.m4a"
+        "/workspace/owner/Pictures/Eri/imports/20250630_143256/Method_Coffee_Roasters.m4a"
     )
     import_dir = _make_import(
         journal,

@@ -1821,8 +1821,8 @@ CLOSER_STRIP_PATTERNS = {
 #   coerce: leading/trailing whitespace stripped before non-empty check
 #   keep: empty-after-trim still raises
 
-# context field — fix shipped in parallel lode at d03aa3ad
-#   (prose → {"hint": str}); this lode ratifies, adds no new context behavior.
+# context field — the prior fix changed prose to {"hint": str}; this code adds
+# no new context behavior.
 
 # talent_request itself — keep "must be dict or null" strict;
 #   total structural violation is a real-bug-guard.
@@ -2624,7 +2624,7 @@ def _support_draft_state(day: str) -> str:
     Returns:
       "submitted" — a `result` event back-references the latest draft's draft_id
                     (forward seam; no `result` writer exists yet, so this is
-                    present-but-inert today — the next lode adds only that writer).
+                    present-but-inert today — the future writer adds only that behavior).
       "pending"   — a support_draft exists and is not yet submitted.
       "none"      — no support_draft.
     Precedence: submitted, then pending, else none.

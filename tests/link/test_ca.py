@@ -128,13 +128,13 @@ def test_sign_csr_produces_valid_cert_chained_to_ca(tmp_path: Path) -> None:
     csr = (
         x509.CertificateSigningRequestBuilder()
         .subject_name(
-            x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "Jer's iPhone")]),
+            x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "Rae's iPhone")]),
         )
         .sign(key, hashes.SHA256())
     )
     csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode("ascii")
 
-    cert_pem, fp = sign_csr(ca, csr_pem, "Jer's iPhone")
+    cert_pem, fp = sign_csr(ca, csr_pem, "Rae's iPhone")
 
     assert isinstance(cert_pem, str)
     assert isinstance(fp, str)

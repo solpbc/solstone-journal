@@ -404,8 +404,8 @@ class TestWrapperHelpers:
         }
 
     def test_render_wrapper_matches_spec_template(self):
-        journal = "/Users/jer/Documents/Solstone"
-        sol_bin = "/Users/jer/projects/solstone/.venv/bin/sol"
+        journal = "/Users/owner/Documents/Solstone"
+        sol_bin = "/Users/owner/projects/solstone/.venv/bin/sol"
 
         content = install_guard.render_wrapper(journal, sol_bin, "sol")
         warning_line = (
@@ -417,9 +417,9 @@ class TestWrapperHelpers:
             "#!/bin/bash\n"
             "# sol — managed by 'journal config'. Edits will be overwritten.\n"
             "# managed-version: 7\n"
-            ': "${SOLSTONE_JOURNAL:=/Users/jer/Documents/Solstone}"\n'
+            ': "${SOLSTONE_JOURNAL:=/Users/owner/Documents/Solstone}"\n'
             "export SOLSTONE_JOURNAL\n"
-            "SOL_BIN='/Users/jer/projects/solstone/.venv/bin/sol'\n"
+            "SOL_BIN='/Users/owner/projects/solstone/.venv/bin/sol'\n"
             "# Warn when pyproject.toml or uv.lock is newer than .installed.\n"
             "# Skipped silently if .installed is absent.\n"
             'REPO_ROOT="${SOL_BIN%/.venv/bin/sol}"\n'
@@ -439,8 +439,8 @@ class TestWrapperHelpers:
 
     def test_render_journal_wrapper_parameterizes_binary_strings(self):
         content = install_guard.render_wrapper(
-            "/Users/jer/Documents/Solstone",
-            "/Users/jer/projects/solstone/.venv/bin/journal",
+            "/Users/owner/Documents/Solstone",
+            "/Users/owner/projects/solstone/.venv/bin/journal",
             "journal",
         )
 

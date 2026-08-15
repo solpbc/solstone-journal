@@ -58,7 +58,7 @@
 //! ## D8: paired-device admission is connection-scoped and durable
 //!
 //! Each carrier receives a fresh verifier and identity cell, leaving room for
-//! W1b's second refusal-classification field. The door uses explicit mux limits
+//! a second refusal-classification field. The door uses explicit mux limits
 //! (documented beside their configuration): they constrain one carrier only,
 //! never the uncapped population of carriers. Handshake admission fails closed;
 //! after admission, only a definite `Present` removal closes a carrier, so a

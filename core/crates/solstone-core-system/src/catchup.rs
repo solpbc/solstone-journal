@@ -686,8 +686,8 @@ mod tests {
     }
 
     #[test]
-    fn wave_two_writers_preserve_repair_transitions_and_daily_retention() {
-        let bed = Bed::new("wave-two-writers");
+    fn writers_preserve_repair_transitions_and_daily_retention() {
+        let bed = Bed::new("repair-writers");
         bed.segment_file("20260101", "120000_60", "audio.json", b"raw");
         record_daily_catchup_progress(&bed.root, "20260101", 2, 3);
         record_segment_repair_attempt(&bed.root, "20260101", 10.0);

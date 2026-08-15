@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn schema_matches_documented_python_value() {
         // Equality with solstone/observe/processing_record.py:23 was confirmed by inspection at
-        // lode time; nothing mechanically enforces cross-language equality.
+        // isolated-checkout time; nothing mechanically enforces cross-language equality.
         assert_eq!(vocab::SCHEMA, "solstone.processing.v1");
     }
 

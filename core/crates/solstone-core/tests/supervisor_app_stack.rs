@@ -74,7 +74,10 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
             panic!("{context}: {reason}; {}", metrics.describe());
         }
         WaitOutcome::Inconclusive(metrics) => {
-            panic!("W4B_INCONCLUSIVE {context}: {}", metrics.describe());
+            panic!(
+                "SUPERVISOR_RACE_INCONCLUSIVE {context}: {}",
+                metrics.describe()
+            );
         }
     }
 }
@@ -107,7 +110,7 @@ fn panic_or_log_termination(outcome: WaitOutcome) {
             )
         }
         WaitOutcome::Inconclusive(metrics) => format!(
-            "W4B_INCONCLUSIVE supervisor shutdown wait was inconclusive after SIGTERM: {}",
+            "SUPERVISOR_RACE_INCONCLUSIVE supervisor shutdown wait was inconclusive after SIGTERM: {}",
             metrics.describe()
         ),
         WaitOutcome::Passed(_) => unreachable!(),

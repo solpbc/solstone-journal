@@ -5,7 +5,7 @@
 //! agrees with the Python original it replaces
 //! (`solstone.observe.transcribe.resource.resolve_stt_backend_choice`) across
 //! the same decision table the Rust unit test exercises. This is the
-//! "option (a)" proof for the W7c architectural fork: two in-scope
+//! "option (a)" proof for the backend-selection architectural fork: two in-scope
 //! supervisor call sites depend on this choice at runtime, so porting it
 //! without a differential would silently duplicate an already-shared
 //! decision a fourth way.

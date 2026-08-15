@@ -3,7 +3,7 @@
 
 """Erase the owner's location data, by deleting every segment that contains it.
 
-🔴 Segment-scoped since the founder ruling of 2026-08-05. This module previously
+🔴 Segment-scoped since the approved policy of 2026-08-05. This module previously
 unlinked `location.jsonl` out of a segment that also held audio and kept the rest --
 a partial owner-directed delete, which the ruling forbids. Now every segment holding
 location data is deleted whole, through the retention executor.
@@ -115,7 +115,7 @@ def delete_source_stream(stream: str) -> dict:
     location_only_parents: set[Path] = set()
     mobile_streams_touched: set[str] = set()
 
-    # 🔴 Segment-scoped, per the founder ruling of 2026-08-05: erasing location data
+    # 🔴 Segment-scoped, per the approved policy of 2026-08-05: erasing location data
     # deletes every segment that CONTAINS location data, whole. The previous shape
     # unlinked `location.jsonl` out of a segment that also held audio and kept the
     # rest -- a partial owner-directed delete, which the ruling forbids.

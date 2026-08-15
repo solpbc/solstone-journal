@@ -1415,7 +1415,7 @@ fn mutation_error(error: solstone_core_thinking::MutationError) -> Response {
     }
 }
 
-#[allow(dead_code)] // Wired by Thinking write routes in W2 chunks 2–3.
+#[allow(dead_code)] // Wired by Thinking write routes in Thinking write-route chunks.
 fn thinking_config_busy_response() -> Response {
     error_envelope(
         "config_busy",

@@ -137,7 +137,7 @@ def scan_retired_references(root: Path) -> list[tuple[str, int, str]]:
     }
     # ⚠ Scope the walk to the trees this repository authors. `root.rglob` reaches
     # `.venv`, `target`, `build` and `node_modules`, which do not exist in a fresh
-    # lode worktree and do exist in every real checkout — so an unscoped walk
+    # fresh worktree and do exist in every real checkout — so an unscoped walk
     # passes where it was written and crashes or false-positives everywhere else.
     # A vendored copy of anything would also trip a retired-symbol check that has
     # no business reading it.

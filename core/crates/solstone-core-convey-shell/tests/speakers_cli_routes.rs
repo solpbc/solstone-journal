@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-const W5_OPERATIONS: [&str; 21] = [
+const SPEAKERS_CLI_OPERATIONS: [&str; 21] = [
     "speakers.attribute-segment",
     "speakers.backfill",
     "speakers.backfill-last-seen",
@@ -47,7 +47,7 @@ fn authority_routes(source: &str) -> Vec<(String, String)> {
         .skip(1)
         .filter_map(|entry| {
             let id = quoted(entry, "operation_id")?;
-            if !W5_OPERATIONS.contains(&id.as_str()) {
+            if !SPEAKERS_CLI_OPERATIONS.contains(&id.as_str()) {
                 return None;
             }
             Some((quoted(entry, "route")?, quoted(entry, "method")?))
@@ -82,7 +82,7 @@ fn registered_routes(source: &str) -> BTreeSet<(String, String)> {
 }
 
 #[test]
-fn router_covers_every_w5_speakers_cli_operation() {
+fn router_covers_every_speakers_cli_operation() {
     let authority = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../solstone/apps/speakers/native/authority.toml"
@@ -91,7 +91,7 @@ fn router_covers_every_w5_speakers_cli_operation() {
     assert_eq!(
         inventory.len(),
         21,
-        "W5 authority inventory changed; update this explicit scope review"
+        "speakers CLI authority inventory changed; update this explicit scope review"
     );
     let expected = inventory.into_iter().collect::<BTreeSet<_>>();
     let registered = registered_routes(include_str!("../src/lib.rs"));
@@ -101,7 +101,7 @@ fn router_covers_every_w5_speakers_cli_operation() {
         .collect::<Vec<_>>();
     assert!(
         missing.is_empty(),
-        "router is missing W5 speakers CLI route-method pairs: {missing:?}"
+        "router is missing speakers CLI route-method pairs: {missing:?}"
     );
 }
 

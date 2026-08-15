@@ -1098,7 +1098,7 @@ def test_existing_segment_talent_output_prevents_second_llm_run(
         "schedule": "segment",
     }
 
-    # Lode-level analogue of test_talent_fallback's guard: the second run is
+    # This test's analogue of test_talent_fallback's guard: the second run is
     # the healthy-day segment re-think and must use the cached output.
     asyncio.run(talents._run_talent(config, events.append, dry_run=False))
     assert len(called) == 1

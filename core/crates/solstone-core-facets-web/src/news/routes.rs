@@ -359,7 +359,7 @@ async fn detail(root: PathBuf, facet: String, day: String) -> Response {
         ),
         Ok(None) => json_response(empty_detail(&facet, &day)),
         // Flask's internal_error envelope is 89 B because it appends a newline. Native
-        // http::internal_error() is 88 B and W1 already pins that body, so tests assert
+        // http::internal_error() is 88 B and the existing test already pins that body, so tests assert
         // the JSON content rather than importing Flask's trailing-newline divergence.
         Err(()) => http::internal_error(),
     }

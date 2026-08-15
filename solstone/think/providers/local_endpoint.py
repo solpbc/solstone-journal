@@ -21,11 +21,11 @@ from solstone.think.providers.shared import (
 
 LOG = logging.getLogger(__name__)
 
-# COPY REVIEW: founder-gated owner-facing copy; keep in sync with convey reason UI.
+# COPY REVIEW: approved owner-facing copy; keep in sync with convey reason UI.
 LOCAL_ENDPOINT_UNREACHABLE_COPY = (
     "The inference endpoint you configured could not be reached."
 )
-# COPY REVIEW: founder-gated owner-facing copy; keep in sync with convey reason UI.
+# COPY REVIEW: approved owner-facing copy; keep in sync with convey reason UI.
 LOCAL_ENDPOINT_CONTRACT_COPY = (
     "The configured endpoint did not respond in the expected format."
 )

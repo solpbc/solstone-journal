@@ -51,7 +51,10 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
             panic!("{context}: {reason}; {}", metrics.describe());
         }
         WaitOutcome::Inconclusive(metrics) => {
-            panic!("W4B_INCONCLUSIVE {context}: {}", metrics.describe());
+            panic!(
+                "SUPERVISOR_RACE_INCONCLUSIVE {context}: {}",
+                metrics.describe()
+            );
         }
     }
 }

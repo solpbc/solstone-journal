@@ -132,7 +132,10 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
             panic!("{context}: {reason}; {}", metrics.describe());
         }
         WaitOutcome::Inconclusive(metrics) => {
-            panic!("W4B_INCONCLUSIVE {context}: {}", metrics.describe());
+            panic!(
+                "SUPERVISOR_RACE_INCONCLUSIVE {context}: {}",
+                metrics.describe()
+            );
         }
     }
 }
@@ -470,9 +473,9 @@ async fn receive_restarting(
 // cannot express as a synchronous poll closure (an async socket read). It
 // preserves each call site's exact interval*iterations budget and reuses
 // WaitMetrics::dilation() so an expiry caused by scheduler starvation under
-// check-rust-race's synthetic load reports W4B_INCONCLUSIVE instead of an
+// check-rust-race's synthetic load reports SUPERVISOR_RACE_INCONCLUSIVE instead of an
 // ordinary panic, while a genuine hang (dilation below the shared 1.10x
-// threshold cited in docs/design/check-rust-race-w4c.md) still reports FAILED.
+// threshold cited in docs/design/check-rust-race-classification.md) still reports FAILED.
 async fn await_bounded_read<T>(
     context: &str,
     interval: Duration,
@@ -496,7 +499,7 @@ async fn await_bounded_read<T>(
 }
 
 // Mirrors support/await_outcome.rs's own DILATION_NUMERATOR/DILATION_DENOMINATOR
-// (11/10, cited in docs/design/check-rust-race-w4c.md #1) without touching that
+// (11/10, cited in docs/design/check-rust-race-classification.md #1) without touching that
 // trusted, untouched file: WaitTracker::is_dilated is private and not reusable.
 fn wait_outcome_from_dilation(reason: &str, requested: Duration, slept: Duration) -> WaitOutcome {
     const DILATION_THRESHOLD: f64 = 11.0 / 10.0;

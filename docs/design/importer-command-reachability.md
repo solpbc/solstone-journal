@@ -1,15 +1,15 @@
-# W11 Importer Reachability Design
+# this reachability design Importer Reachability Design
 
 ## Purpose and boundary
 
-W11 makes the already-landed native importer grammar reachable as `journal
+this reachability design makes the already-landed native importer grammar reachable as `journal
 importer` through `solstone-core`. It adds only the parsed-command forwarding
 seam, the thin binary handler, argv dispatch, pure CLI rendering, and
 spawned-binary reachability tests. It does not cut over the retained Python
-process row; that is W12.
+process row; that is the process-table work.
 
 The scope's description of three unlanded bodies is stale. Generic audio,
-archive merge, and all four chat/reading export parsers have landed. The W7
+archive merge, and all four chat/reading export parsers have landed. The the source-import work
 source-crate stub table now contains only `registry`, `apple_health`, and
 `oura`; `chatgpt`, `claude`, `gemini`, and `kindle` are landed bodies. The
 source crate still depends on `solstone-core-import`, however, so making
@@ -182,7 +182,7 @@ fixture.
    spawned freshly built binary for every criterion, has no
    `required-features = ["differential"]`, and therefore runs on a bare
    checkout through `make ci`.
-5. Keep all W12 cutover work separate: no process-table/probe mutation, no
+5. Keep all the process-table work cutover work separate: no process-table/probe mutation, no
    Python change, no source-crate/audio change, no native `sol import` change,
    and no generated-inventory change.
 
@@ -190,6 +190,6 @@ fixture.
 
 The largest current risk is the unusable help fixture; 1b cannot honestly be
 reported green until its capture is corrected. Separately, the direct-binary
-suite proves only binary reachability. It does not prove the W12 dispatcher
+suite proves only binary reachability. It does not prove the the process-table work dispatcher
 argv composition, sibling-binary resolution, or sibling-interpreter poisoning;
-those remain explicit W12 handoff tests.
+those remain explicit the process-table work handoff tests.

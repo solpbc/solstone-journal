@@ -11,7 +11,7 @@
 - Before reopening this arc, first re-check D10's upstream issue list against
   the then-current spl-rust release.
 
-This records the design-stage decision for arc W1.5a-link, native
+This records the design-stage decision for arc native link-serve, native
 `sol link serve`.
 
 Evidence base:
@@ -26,7 +26,7 @@ No runtime behavior changes are made by this record.
 
 ## D0. Recommendation
 
-Decision: **B. Hold the lode**. Do not land a native `sol link serve`
+Decision: **B. Hold the implementation**. Do not land a native `sol link serve`
 implementation on SPL v0.2.0.
 
 Rationale: a reduced LAN-only native serve would not be a usable substitute for
@@ -78,7 +78,7 @@ Behavior marker: `expected-differs`.
 
 ## D2. Authority and Dispatch
 
-Decision: the native authority, if this lode becomes unblocked, is a second
+Decision: the native authority, if this implementation becomes unblocked, is a second
 top-level link entry in `solstone/think/native/link/authority.toml`.
 
 Authority shape:
@@ -116,7 +116,7 @@ Dispatch changes:
   `link`.
 
 Behavior marker: `matches-python` for argv shape and help bytes; no runtime
-serve behavior is implemented while the lode is held.
+serve behavior is implemented while the implementation is held.
 
 ## D3. Serve Seam and Runtime Boundary
 
@@ -477,7 +477,7 @@ Design-stage edits:
 
 - `docs/design/native-sol-client/09-link-serve-design.md`
 
-Implementation-stage edits if the lode is later unblocked:
+Implementation-stage edits if the implementation is later unblocked:
 
 - `solstone/think/native/link/authority.toml`
 - `solstone/think/native/link/command.rs`

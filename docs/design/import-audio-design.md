@@ -1,8 +1,8 @@
-# W2 — native generic audio import
+# the native audio importer — native generic audio import
 
 ## Purpose and boundary
 
-W2 replaces the generic-audio segmentation half of
+the native audio importer replaces the generic-audio segmentation half of
 `solstone/think/importers/audio.py::prepare_audio_segments` and the associated
 submit-and-wait path in `solstone/think/importers/cli.py`.  It owns probing an
 already staged media file, allocating chronicle segment directories, stream-copy
@@ -12,8 +12,8 @@ waiting for their terminal transcription evidence.
 
 It does not own staging, source resolution, manifest policy, publication,
 stream advancement, or owner-facing grammar.  The future dispatcher passes this
-module's `CreatedSegment` and file-path lists unchanged to W1c's
-`PublicationInput`; W1c remains the owner of `imported.json`.
+module's `CreatedSegment` and file-path lists unchanged to the publication layer's
+`PublicationInput`; the publication layer remains the owner of `imported.json`.
 
 ## Acceptance criteria (scope §7)
 
@@ -83,7 +83,7 @@ shared payload contains `segments: Vec<CreatedSegment>`,
 `files_created: Vec<PathBuf>`, the durable record path, and
 `processing: ProcessingWaitOutcome`.  Thus it names the existing hand-off
 vocabulary: the dispatcher uses `segments` and `files_created` unchanged in
-`PublicationInput` and receives the later `PublicationRecord` from W1c rather
+`PublicationInput` and receives the later `PublicationRecord` from the publication layer rather
 than inventing a competing publication record.
 
 The module itself emits one `ObservingSegment` for every successful slice,
@@ -95,8 +95,8 @@ The emitter is a seam, not a returned duplicate event list.
 Every `CreatedSegment` uses `StreamHints { kind:
 Some(Kind::Imported(ImportSource::Named("audio".to_owned()))), host: None,
 platform: None }`: this is a local batch import, not a device capture,
-and lets `publish.rs` advance the supplied import stream without a W1c change
-(`CreatedSegment` and its W1c consumer are in
+and lets `publish.rs` advance the supplied import stream without a the publication layer change
+(`CreatedSegment` and its the publication layer consumer are in
 `core/crates/solstone-core-import/src/publish.rs:28-43,181-195`).
 
 Rejected: a bare `Vec<CreatedSegment>` plus logs.  It cannot express partial
@@ -178,7 +178,7 @@ Write `imports/<id>/audio-import.json` with
 `write_audio_import_record` and `read_audio_import_record`; both use atomic
 JSON replacement and the reader is used directly by AC5.  This filename avoids
 the existing `import.json` (metadata), `manifest.json` (dedupe), and
-`imported.json` (W1c publication) records.
+`imported.json` (the publication layer publication) records.
 
 The strict serde record shape (`#[serde(deny_unknown_fields)]`) is:
 
@@ -206,8 +206,8 @@ completion reconciliation atomically rewrites this same record with the
 per-segment processing state; there is no append-only second record.  That
 makes both AC5 drops and AC10 wait failures/recoveries re-readable.
 
-Rejected: extend `PublicationRecord`.  `publish.rs` owns that W1c record and
-this would broaden W2 into an out-of-scope change.  Rejected: a sidecar inside
+Rejected: extend `PublicationRecord`.  `publish.rs` owns that the publication layer record and
+this would broaden the native audio importer into an out-of-scope change.  Rejected: a sidecar inside
 each chronicle segment.  The capturing module could own such a file, but it
 would enter chronicle scans and add files visible to sense, system-health, and
 the indexer.  A single import-local record is one DRY mechanism for every
@@ -252,7 +252,7 @@ input/configuration failures, so they abort with `AudioSliceRejected` rather
 than draining into partial drops.  The native error vocabulary is
 `ffmpeg-next/src/util/error.rs:40-81`.
 
-Do **not** port Python's re-encode fallback (`audio.py:57-75`).  W2 is a
+Do **not** port Python's re-encode fallback (`audio.py:57-75`).  the native audio importer is a
 lossless stream-copy import; AC11 forbids silently re-encoding.  A packet-level
 `EINVAL` rejection of one copied chunk becomes a named durable drop.  A missing
 or unsupported muxer configuration aborts instead, and all drops still trigger
@@ -265,7 +265,7 @@ output chunk.
 ### D5 — partial imports suppress the dedupe manifest
 
 Partial (`AudioImportOutcome::Partial`) must not write a generic dedupe
-manifest.  A generic manifest with a positive `entry_count` causes the W1b
+manifest.  A generic manifest with a positive `entry_count` causes the the resolver layer
 dedupe guard to skip every normal recovery import.  `should_write_manifest`
 cannot express this policy without changing `contract.rs`: it returns true
 whenever `entries_written > 0`, even when `hard_failures` is nonempty
@@ -277,7 +277,7 @@ writing the manifest, so that wiring is out of scope.
 
 An owner can re-import normally after a partial result because no manifest
 blocks it.  The consequence is explicit: successful chunks are made again as
-additional, deterministically deconflicted segments; W2 does not deduplicate
+additional, deterministically deconflicted segments; the native audio importer does not deduplicate
 or delete the first run's good chunks.
 
 Rejected: write the manifest and require `--force` for recovery.  That turns a
@@ -287,7 +287,7 @@ corrupts the import result to work around a policy seam.
 
 ### D6 — async wait with durable reconciliation
 
-`import_audio` is async and is driven by its caller's runtime; W2 owns no
+`import_audio` is async and is driven by its caller's runtime; the native audio importer owns no
 Tokio runtime.  This matches `identity::steward::wait_for_uses`
 (`core/crates/solstone-core/src/identity/steward.rs:276-321`) and keeps a
 library crate from nesting runtimes.  `wait=false` writes the initial record,
@@ -346,7 +346,7 @@ the import.
 
 ### D7 — seams, arithmetic, and tests
 
-Use W1b's named generic `FnMut` seam pattern, not traits or global function
+Use the resolver layer's named generic `FnMut` seam pattern, not traits or global function
 patching.  `AudioImportSeams<P, S, E>` has:
 
 * `duration_probe: P`, where `P: FnMut(&Path) -> Result<f64, AudioProbeError>`;
@@ -379,7 +379,7 @@ loses fractional tails (including 600.5, 601.482, and 0.02).  The
 `fractional_durations` block in the vendored oracle is the authority; its
 `rules.count` prose is not.
 
-Vendor `~/import-fixtures-260811/w2-audio-oracles.json` verbatim as
+Vendor `~/import-fixtures-260811/audio-oracles.json` verbatim as
 `core/fixtures/import_audio_oracles.json`; add
 `core/crates/solstone-core-import/tests/audio.rs` using `include_str!` and
 serde_json, following `tests/stream_name_oracle.rs`.
@@ -416,7 +416,7 @@ ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["bu
 `format` enables the format/codec APIs needed for input, output, streams,
 packets, seek, and duration; no scaling or resampling feature is needed.  The
 three current precedents are describe, grab, and observe-audio.  `build` plus
-`build-portable` compiles FFmpeg into the shipped native binary; W2 does not
+`build-portable` compiles FFmpeg into the shipped native binary; the native audio importer does not
 dynamically load a local tool or shell out to `ffmpeg`/`ffprobe`.
 
 Regenerate and commit `core/Cargo.lock`.  The resolved ffmpeg packages already
@@ -429,8 +429,8 @@ portable static-binary constraint.
 
 ### D9 — explicit non-goals and follow-ups
 
-W2 changes no supervisor, callosum protocol/crate, drain behavior,
-transcription consumer, `sense.py`, owner-facing grammar, W1a/W1b/W1c module
+the native audio importer changes no supervisor, callosum protocol/crate, drain behavior,
+transcription consumer, `sense.py`, owner-facing grammar, the input boundary/the resolver layer/the publication layer module
 bodies, or Python.  It does not add a new `sol`/`journal` flag.  It leaves the
 scope §9 follow-ups—dispatcher wiring, manifest finalization, publication,
 and any end-to-end owner-command integration—to their owning waves.  The
@@ -455,5 +455,5 @@ replacement behavior.
 5. Leave dispatcher/manifest/publication integration for its own commit/wave.
 
 The implementation commit should contain only the import crate, its fixture and
-tests, and the lockfile.  No Python or W1c changes are authorized by this
+tests, and the lockfile.  No Python or the publication layer changes are authorized by this
 design.

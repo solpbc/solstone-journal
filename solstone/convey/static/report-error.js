@@ -4,7 +4,7 @@
 (function() {
   const MAILTO_LIMIT = 1800;
   const CONSOLE_ENTRY_LIMIT = 20000;
-  const SUPPORT_EMAIL = 'jer@solpbc.org';
+  const SUPPORT_EMAIL = 'support@solstone.app';
   const TICKET_URL = '/app/support/';
   const REPORT_CATEGORY = 'error_report';
 

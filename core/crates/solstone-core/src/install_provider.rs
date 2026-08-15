@@ -1585,7 +1585,7 @@ mod tests {
     fn local_darwin_reaches_the_mlx_installer_instead_of_refusing() {
         // This asserted the opposite until 2026-08-12: native local refused on
         // Darwin, on the stated grounds that "the native pool has no mac host".
-        // That was a claim about the hopper POOL, not about the platform -- the
+        // That was a claim about the test host pool, not about the platform -- the
         // refusal made Python the only way to install a local provider on a mac,
         // and Python's route calls huggingface_hub.snapshot_download.
         let journal = tempfile::tempdir().unwrap();

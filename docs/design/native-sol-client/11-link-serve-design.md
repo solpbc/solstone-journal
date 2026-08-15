@@ -1,15 +1,15 @@
 # Native Sol Link Serve Shipping Design
 
-This records the shipping design for arc W1.5a-link, native `sol link serve`.
+This records the shipping design for the native link-serve delivery, native `sol link serve`.
 It supersedes the hold decision in
 `docs/design/native-sol-client/09-link-serve-design.md` because SPL v0.3.0
-closed the four D9 blockers and the native resident lane has since shipped.
+closed the four D9 blockers and the native resident boundary has since shipped.
 
 Evidence base:
 
 - `docs/design/native-sol-client/09-link-serve-prep.md`
 - `docs/design/native-sol-client/09-link-serve-design.md`
-- `docs/design/native-sol-client/10-resident-command-lane-design.md`
+- `docs/design/native-sol-client/resident-command-design.md`
 - `docs/design/native-sol-client/08-link-join-design.md`
 - spl-rust v0.3.0 annotated tag
   `62f3c9b6d75f4230b5a13566040965da19fc1c08`, peeled commit
@@ -20,13 +20,13 @@ No implementation lands in this record.
 ## D0. Recommendation
 
 Decision: **ship the native `link.serve` authority entry against SPL v0.3.0**.
-It is declared, compiled, inventoried, and parity-covered in this lode, but
+It is declared, compiled, inventoried, and parity-covered in this checkout, but
 public `sol link` remains the Python compatibility-dispatched path until the
-separate cutover lode flips the command.
+separate cutover checkout flips the command.
 
 All four blockers from `09-link-serve-design.md` D9 are closed:
 
-1. Relay lane: SPL now exposes public relay enrollment at
+1. Relay boundary: SPL now exposes public relay enrollment at
    spl-rust v0.3.0 `crates/spl-transport/src/relay_pairing.rs:143-170`, and
    `Credential` carries `relay_origin`, `device_token`, and
    `device_token_expires_at` at
@@ -69,12 +69,12 @@ Constraints:
 
 ## D1. Resident Inventory Lane
 
-Decision: use option (a), a generator-level resident lane.
+Decision: use option (a), a generator-level resident boundary.
 
 Add an authority entry for `link.serve` in
 `solstone/think/native/link/authority.toml` with the normal top-level link
 shape plus one entry-local marker: `resident = true`. Missing or false
-`resident` means the existing buffered lane. The `link.serve` authority fields
+`resident` means the existing buffered boundary. The `link.serve` authority fields
 are:
 
 - `surface = "sol-link"`
@@ -88,7 +88,7 @@ are:
 `scripts/build_native_sol_inventory.py` must parse `resident` as a boolean,
 default false, reject non-boolean values, and route resident entries into a new
 generated `RESIDENT_HANDLERS` table. It should reject `resident = true` on
-`surface = "sol-call"` or `kind != "top-level"`; this lane is for resident
+`surface = "sol-call"` or `kind != "top-level"`; this boundary is for resident
 process commands, not HTTP/app callbacks.
 
 The generated inventory should still emit one `InventoryEntry` per authority
@@ -115,7 +115,7 @@ one `HANDLERS` binding per entry today at
 - The length assertion becomes buffered handler count plus resident handler
   count equals `aggregate::entries().len()`.
 - Retain `assert_buffered_handler_slice(handlers)` exactly as the compile-time
-  proof that the buffered lane stays `&'static [Handler]`.
+  proof that the buffered boundary stays `&'static [Handler]`.
 - Add a mirror helper taking `&'static [ResidentHandler]` and assert
   `aggregate::resident_handler_bindings()` passes it.
 
@@ -144,8 +144,8 @@ args: Vec<String> } }`. The dispatcher resolves the path and returns the
 trimmed argv for resident commands. The `-cli` crate may resolve and return a
 resident outcome for parity and seam callers, but it must not run the resident
 loop or invoke the resident handler in production. Public `sol link` production
-dispatch stays on the Python compatibility path in this lode, matching
-`link.join`; the cutover lode owns wiring `solstone-core-sol` to build the
+dispatch stays on the Python compatibility path in this checkout, matching
+`link.join`; the cutover checkout owns wiring `solstone-core-sol` to build the
 resident `CommandContext` and call `run_resident_command`.
 
 `core/crates/solstone-core-sol-client-cli/src/bin/resolve_parity_leaves.rs:47`
@@ -218,7 +218,7 @@ handle/runtime in the returned session, and block in `serve` until
 
 `CommandContext` gains `link_serve: Option<&dyn LinkServeRunner>`, mirroring
 `link_pairing`. `LinkDispatchSeams` gains the same field. Parity/unit tests pass
-`ScriptedLinkServeRunner`; the cutover lode will wire production
+`ScriptedLinkServeRunner`; the cutover checkout will wire production
 `solstone-core-sol` to pass `SplLinkServeRunner`.
 
 Scripted test surface:
@@ -278,7 +278,7 @@ the resident runner at `core/crates/solstone-core-sol/src/lib.rs:708-717`. This
 is `expected-differs`: timing matches resident expectations, but stream and log
 format differ.
 
-Honor `10-resident-command-lane-design.md` D4: the runtime must be built inside
+Honor `resident-command-design.md` D4: the runtime must be built inside
 the resident handler, never while constructing global process seams. Threads
 inherit the creator thread's signal mask, and `run_resident_command` blocks
 SIGINT/SIGTERM before calling the handler at
@@ -526,7 +526,7 @@ New differences introduced by this design:
 19. Relay URL journal config leg: `expected-differs`. Native serve ignores
     journal config to keep satellite operation independent of a local journal.
 20. Resident clean shutdown: `expected-differs`. Native SIGINT/SIGTERM exits
-    cleanly through the resident lane; Python catches `KeyboardInterrupt` only
+    cleanly through the resident boundary; Python catches `KeyboardInterrupt` only
     for foreground interruption at `serve_cli.py:128-136`.
 21. Relay enrollment failure timing: `expected-differs`. Native enrollment
     failure happens before startup; Python's manager records/retries failures in
@@ -534,7 +534,7 @@ New differences introduced by this design:
 
 Per-request attribution delivered by this design:
 
-- Native installs no attribution hook in this lode.
+- Native installs no attribution hook in this checkout.
 - Native does not deliver per-request client-supplied
   `X-Solstone-Observer` or `X-Solstone-Protocol-Version`; SPL strips those
   reserved names before upstream forwarding.
@@ -568,7 +568,7 @@ AC 3, native implementation and no Python subprocess:
   generated native inventory resolves `link serve` for native parity/seam
   callers without invoking Python.
 - Production `sol link` remains the Python compatibility-dispatched path until
-  cutover; this lode does not claim no-Python production dispatch for public
+  cutover; this checkout does not claim no-Python production dispatch for public
   `sol link serve`.
 
 AC 4, compat boundary untouched:
@@ -667,7 +667,7 @@ AC 14, help oracle:
 
 Additional implementation tests:
 
-- Resident lane inventory:
+- Resident boundary inventory:
   `tests/test_native_sol_inventory.py::test_resident_entries_generate_resident_handlers`
   asserts `resident = true` routes `link_serve` into `RESIDENT_HANDLERS`.
 - Resident static slice proof:
@@ -705,7 +705,7 @@ Sequence:
    `RESIDENT_HANDLERS`, aggregate accessors, and resident static-slice tests.
 3. Add link-dispatch return enum, argv-derived link resolution, and parity
    resolver changes; do not route public `sol link serve` to native production
-   dispatch in this lode.
+   dispatch in this checkout.
 4. Add client seam types, `CommandContext.link_serve`, and scripted runner.
 5. Add `link_serve` resident handler: argparse-compatible help/errors, port
    validation, bundle loading, relay resolution, direct enforcement, startup

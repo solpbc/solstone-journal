@@ -39,7 +39,7 @@ def _format_principal_role(
 
     Returns:
         Tuple of (role_line, filtered_entities) where:
-        - role_line is markdown like "**Jer's Role**: Description" or None if incomplete
+        - role_line is markdown like "**Rae's Role**: Description" or None if incomplete
         - filtered_entities excludes the principal entity
     """
     # Find principal entity

@@ -8,7 +8,7 @@ use solstone_core_import::ImportPreview;
 use solstone_core_import_sources::{chatgpt, claude, gemini, kindle};
 use support::TempTree;
 
-const ORACLE: &str = include_str!("../../../fixtures/import_sources_w7_oracle.json");
+const ORACLE: &str = include_str!("../../../fixtures/import-sources-oracle.json");
 
 #[test]
 fn preview_oracle_honors_status_data_and_atomic_summary_units() {

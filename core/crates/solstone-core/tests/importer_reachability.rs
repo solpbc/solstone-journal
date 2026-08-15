@@ -351,7 +351,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 0,
                     stream: Stream::Stdout,
-                    identifies: "w11-source",
+                    identifies: "sample-source",
                 },
             ),
             (
@@ -359,7 +359,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 0,
                     stream: Stream::Stdout,
-                    identifies: "Journal source: w11-source",
+                    identifies: "Journal source: sample-source",
                 },
             ),
             (
@@ -367,7 +367,7 @@ const MODE_CASES: &[ModeCase] = &[
                 Expected {
                     exit: 0,
                     stream: Stream::Stdout,
-                    identifies: "Revoked journal source 'w11-source'",
+                    identifies: "Revoked journal source 'sample-source'",
                 },
             ),
         ],
@@ -548,18 +548,18 @@ impl Invocation {
             Self::JournalSourceCreate => vec![
                 "journal-source".to_owned(),
                 "create".to_owned(),
-                "w11-source".to_owned(),
+                "sample-source".to_owned(),
             ],
             Self::JournalSourceList => vec!["journal-source".to_owned(), "list".to_owned()],
             Self::JournalSourceStatus => vec![
                 "journal-source".to_owned(),
                 "status".to_owned(),
-                "w11-source".to_owned(),
+                "sample-source".to_owned(),
             ],
             Self::JournalSourceRevoke => vec![
                 "journal-source".to_owned(),
                 "revoke".to_owned(),
-                "w11-source".to_owned(),
+                "sample-source".to_owned(),
             ],
         }
     }
@@ -874,7 +874,7 @@ fn list_and_backend_human_forms_match_the_usable_oracle_cases() {
 }
 
 #[test]
-#[ignore = "help_long, help_short, and journal_source_help await a corrected help-oracle capture; see docs/design/import-reachability-w11.md"]
+#[ignore = "help_long, help_short, and journal_source_help await a corrected help-oracle capture; see docs/design/importer-command-reachability.md"]
 fn help_fidelity_is_fixture_exact_when_the_capture_is_corrected() {
     let oracle: Value = serde_json::from_str(ORACLE).expect("help oracle");
     for column in [SupervisorColumn::GatePassed, SupervisorColumn::SolstoneDown] {

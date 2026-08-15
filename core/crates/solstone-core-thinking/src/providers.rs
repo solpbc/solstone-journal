@@ -1079,13 +1079,13 @@ mod tests {
 
     #[cfg(unix)]
     fn assert_split_probe(reason_code: &str) -> (Value, Value) {
-        const KEY: &str = "sk-w2c-candidate-not-in-request";
+        const KEY: &str = "sk-candidate-not-in-request";
         let stub = ValidationStub::new(reason_code, reason_code);
         let validator = OneShotKeyValidator::at_path(&stub.executable);
         let key_result = validator.validate("openai", KEY).expect("key probe runs");
         let (key_request, key_environment) = stub.records();
         let model_result = validator
-            .validate_model("openai", "w2c-model", KEY)
+            .validate_model("openai", "candidate-model", KEY)
             .expect("model probe runs");
         let (model_request, model_environment) = stub.records();
         let expected = encode_one_shot_request(&expected_validation_request())
@@ -1113,7 +1113,7 @@ mod tests {
         assert_environment_line(
             &model_environment,
             "SOLSTONE_GENERATE_MODEL_OVERRIDE",
-            "w2c-model",
+            "candidate-model",
         );
         let _ = fs::remove_dir_all(stub.root);
         (key_result, model_result)

@@ -1,4 +1,4 @@
-# R6b-2 cogitate cutover: design gate
+# Cogitate cutover cogitate cutover: design gate
 
 ## 1. Resolve the two incorrect premises
 
@@ -147,8 +147,8 @@ top-level distributions.  Both entries use an empty
 
 | id | distribution | python_roots | import_roots |
 | --- | --- | --- | --- |
-| `R6b-2-cogitate-openhands-sdk` | `openhands-sdk` | `solstone/think/providers/openhands.py`, `solstone/think/providers/emit_final_tool.py`, `solstone/think/providers/read_tools.py`, `solstone/think/cogitate_read_tools.py` | `openhands` |
-| `R6b-2-cogitate-litellm` | `litellm` | none | `litellm` |
+| `Cogitate cutover-cogitate-openhands-sdk` | `openhands-sdk` | `solstone/think/providers/openhands.py`, `solstone/think/providers/emit_final_tool.py`, `solstone/think/providers/read_tools.py`, `solstone/think/cogitate_read_tools.py` | `openhands` |
+| `Cogitate cutover-cogitate-litellm` | `litellm` | none | `litellm` |
 
 The existing manifest's field shape is `id`, `status`, `distribution`,
 `python_roots`, `import_roots`, and `test_only_dependency_locations`

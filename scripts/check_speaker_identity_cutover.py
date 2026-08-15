@@ -7,7 +7,7 @@
 The native speaker commands own ordinary writes to the guarded paths.  This
 checker deliberately scans every Python file rather than exempting a subtree:
 the only direct-writer exceptions are the role-verified fixture oracle and
-the individually recorded Lane B entity-merge calls in the committed census.
+the individually recorded entity-merge calls in the committed census.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CENSUS_RELATIVE_PATH = Path("scripts/speaker_identity_cutover_census.json")
 ROLE_MARKER = "SPEAKER_IDENTITY_CUTOVER_ROLE"
 FIXTURE_ROLE = "differential_fixture_oracle_builder"
-LANE_B_ROLE = "lane_b_entity_merge"
+ENTITY_MERGE_WRITER_ROLE = "entity_merge_writer"
 RUNTIME_READER_ROLE = "runtime_reader"
 RUNTIME_TRANSPORT_ROLE = "runtime_native_transport"
-LEGACY_SHARED_WRITER_ROLE = "legacy_fixture_or_lane_b_writer"
+LEGACY_SHARED_WRITER_ROLE = "legacy_fixture_or_entity_merge_writer"
 TEST_FIXTURE_SETUP_ROLE = "test_fixture_setup"
 
 TARGETS = (
@@ -79,7 +79,7 @@ OWNER_CANDIDATE_PATH_HELPERS = {"_owner_candidate_path", "owner_candidate_path"}
 
 # These writers construct their paths from a runtime segment directory, so the
 # generic literal/path-helper resolver cannot identify their target.  They are
-# the four definitions retained solely for the explicit Lane B entity-merge
+# the four definitions retained solely for the explicit entity-merge
 # flow; keep the mapping at this exact function/callee granularity rather than
 # widening a file-level exemption.
 DEFINITION_WRITER_TARGETS = {
@@ -589,7 +589,7 @@ def _role_for_entry(
     expected_entry = expected.get(entry.semantic_identity())
     if expected_entry and expected_entry.role in {
         FIXTURE_ROLE,
-        LANE_B_ROLE,
+        ENTITY_MERGE_WRITER_ROLE,
         LEGACY_SHARED_WRITER_ROLE,
         TEST_FIXTURE_SETUP_ROLE,
     }:
@@ -603,8 +603,8 @@ def _role_for_entry(
     return entry
 
 
-def _lane_b_entry_is_valid(entry: CensusEntry) -> bool:
-    """Keep each temporary Lane B entity-merge write explicit and bounded."""
+def _entity_merge_writer_entry_is_valid(entry: CensusEntry) -> bool:
+    """Keep each temporary entity-merge write explicit and bounded."""
     allowed = {
         "solstone/think/entities/merge.py": {
             ("update_speaker_labels", TARGETS[3], "<module>._apply_segment_plan"),
@@ -682,7 +682,7 @@ def _lane_b_entry_is_valid(entry: CensusEntry) -> bool:
 
 
 def _legacy_shared_writer_entry_is_valid(entry: CensusEntry) -> bool:
-    """Bound legacy direct writers to their fixture/Lane B compatibility surface."""
+    """Bound legacy direct writers to their fixture/entity-merge compatibility surface."""
     return (entry.callee, entry.target, entry.function) in {
         (
             "update_npz",
@@ -725,11 +725,11 @@ def check(root: Path, census_path: Path, *, all_files: bool = False) -> list[Fin
     ]
 
     for entry in expected_entries:
-        if entry.role == LANE_B_ROLE and not _lane_b_entry_is_valid(entry):
+        if entry.role == ENTITY_MERGE_WRITER_ROLE and not _entity_merge_writer_entry_is_valid(entry):
             findings.append(
                 Finding(
                     f"{entry.file}:{entry.line}",
-                    "invalid-lane-b-entity-merge-role",
+                    "invalid-entity-merge-role",
                     f"{entry.callee} -> {entry.target}",
                 )
             )

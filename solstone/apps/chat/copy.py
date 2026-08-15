@@ -4,7 +4,7 @@
 """Owner-facing copy for the chat surface (apps/chat + convey chat-bar)."""
 
 # fmt: off
-# T1.3 — owner-language talent labels (CMO subagent voice pass, 2026-05-26)
+# Owner-language talent labels.
 TALENT_LABEL_READ_RUNNING = "reading your journal…"
 TALENT_LABEL_READ_FINISHED = "read your journal"
 TALENT_LABEL_READ_ERRORED = "couldn't finish reading your journal"

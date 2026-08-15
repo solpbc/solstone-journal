@@ -1,7 +1,7 @@
 {
   "schema": "journal-local-ops-v1",
   "source": "P-CLI",
-  "founder_break_approval": "records/decisions/260807-vpe-p-cli-clean-command-cut.md",
+  "approval_reference": "fixture-local-no-external-approval",
   "leaf_count": 5,
   "exit_codes": {
     "success": 0,

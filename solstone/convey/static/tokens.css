@@ -3,14 +3,14 @@
  * The single consumable embodiment of the design-token SOT.
  *
  *   SOT (prose, authoritative):   vpx/design-system/tokens.md
- *   Identity source (CMO owns):   cmo/brand/sol/index.md
+ *   Identity source:              brand/sol/index.md
  *   Consumption contract:         vpx/design-system/web/index.md
  *   Surface tiers (who uses what): vpx/design-system/surface-tiers.md
  *
  * Variable names mirror the reference implementation (services.solstone.app
  * `portal.css`) so surfaces adopt with minimal churn. Derivation is ONE-WAY:
  * do not edit a value here to "fix" a surface — fix it in tokens.md (usage,
- * VPX) or via a CMO request (identity), then re-derive. A surface that
+ * product review) or via an identity request, then re-derive. A surface that
  * hard-codes brand values instead of importing this file is non-compliant
  * (web/index.md § no inline brand values).
  *
@@ -43,7 +43,7 @@
 }
 
 :root {
-  /* ── brand identity — CMO owns (cmo/brand/sol/index.md) ───────────────── */
+  /* ── brand identity (brand/sol/index.md) ─────────────────────────────── */
   --gold:        #FFCF33; /* sun rays — decoration only */
   --orange:      #E8923A; /* THE sol orange. DECORATION ONLY (see contrast law) */
   --orange-ink:  #B06A1A; /* accessible orange — ALL orange text + links on light */
@@ -61,7 +61,7 @@
   --ink-faint:   #6E6453; /* meta/muted — WARM; for cream/warm grounds */
   --ink-on-dark: #FFFFFF; /* text on --surface-dark only */
   /* neutral inks — for --paper (white) grounds. Warm ink reads dusty on stark white,
-   * so paper surfaces use these (founder-approved two-ground rule 2026-06-16):
+   * so paper surfaces use these (approved two-ground rule):
    * warm ink on warm ground, neutral ink on paper. */
   --ink-soft-paper:  #555555; /* secondary text on white/paper */
   --ink-faint-paper: #767676; /* meta/muted on white/paper (4.5:1 on white) */
@@ -90,10 +90,10 @@
   /* ── type ────────────────────────────────────────────────────────────────
    * --font-display: brand register — headings + wordmark, Comfortaa Bold 700.
    *   REQUIRED wherever the brand speaks (display, wordmark, T1 hero) — non-negotiable.
-   * --font-body: body. CMO ruling 2026-06-15 (b): Inter PREFERRED, system fallback
+   * --font-body: body. Inter is preferred; system fallback
    *   acceptable — a surface that doesn't ship the Inter woff2 still degrades cleanly
-   *   on the stack below. Inter, when loaded, is self-hosted (cmo/brand/fonts/); no
-   *   external font CDN, ever. Decision: records/decisions/260615-cmo-web-alignment-identity-rulings.md */
+   *   on the stack below. Inter, when loaded, is self-hosted (brand/fonts/); no
+   *   external font CDN, ever. */
   --font-display: 'Comfortaa', ui-rounded, 'Trebuchet MS', system-ui, sans-serif;
   --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;

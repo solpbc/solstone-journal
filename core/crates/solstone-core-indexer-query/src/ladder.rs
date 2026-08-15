@@ -18,7 +18,7 @@ const RELAX_STOPWORDS: &[&str] = &[
     "could", "should", "shall", "may", "might", "must", "get", "got", "gets",
 ];
 
-/// Try Python-compatible recall relaxation without bypassing W2 compilation.
+/// Try Python-compatible recall relaxation without bypassing query compilation.
 pub(super) fn relaxed_plan(
     connection: &mut QueryConnection,
     compilation: &QueryCompilation,

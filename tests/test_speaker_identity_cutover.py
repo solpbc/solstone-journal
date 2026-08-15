@@ -94,7 +94,7 @@ def test_clean_native_transport_and_explicit_roles_pass(tmp_path: Path) -> None:
         elif entry.file == "scripts/entity_corpus.py":
             expected.append(replace(entry, role=gate.FIXTURE_ROLE))
         elif entry.file == "solstone/think/entities/merge.py":
-            expected.append(replace(entry, role=gate.LANE_B_ROLE))
+            expected.append(replace(entry, role=gate.ENTITY_MERGE_WRITER_ROLE))
     census = _write_census(tmp_path, expected)
 
     assert gate.check(tmp_path, census, all_files=True) == []

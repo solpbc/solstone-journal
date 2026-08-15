@@ -6,7 +6,7 @@
   buffered `CommandOutput` lane.
 - Scope: L5.8 resident-lane infrastructure and a trivial resident fixture only.
   This does not design `sol link serve`.
-- Routing: this lode ships no production resident arm. `run_dispatched` and the
+- Routing: this design ships no production resident arm. `run_dispatched` and the
   five `solstone-core-sol-client-cli` dispatchers remain unchanged; the fixture
   bin calls the runner directly.
 - Baseline: the corrected untouched-tree baseline is green for `make ci`;
@@ -68,7 +68,7 @@ counterpart.
 ## D1. Borrowing And Runner Lifetime
 
 Decision: resident execution must happen inside `run_dispatched`'s frame when a
-production resident command is eventually routed. This implementation lode adds
+production resident command is eventually routed. This implementation adds
 no such arm, so the fixture invokes the runner directly with its own context.
 
 `run_dispatched` builds `today`, argv strings, journal path, HTTP transport,
@@ -148,15 +148,15 @@ and uses nix `SigSet` block plus `wait`.
 Use nix 0.30.1's safe APIs only:
 
 - `SigSet::thread_set_mask` is safe at
-  `/home/jer/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:565`.
+  `/opt/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:565`.
 - `SigSet::thread_block` is safe at
-  `/home/jer/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:570`.
+  `/opt/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:570`.
 - `SigSet::wait` is safe at
-  `/home/jer/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:589`.
+  `/opt/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:589`.
 - `sigaction` and `signal` are `pub unsafe fn` at
-  `/home/jer/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:880`
+  `/opt/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:880`
   and
-  `/home/jer/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:942`;
+  `/opt/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nix-0.30.1/src/sys/signal.rs:942`;
   do not use them under `core/Cargo.toml:24-25` `unsafe_code = "forbid"`.
 
 Ordering rule: the runner installs the signal mask before invoking the resident
@@ -166,7 +166,7 @@ spawn threads at all.
 
 Dependency placement: add `nix` with feature `signal` as a non-dev dependency of
 `solstone-core-sol` (`core/crates/solstone-core-sol/Cargo.toml:11`). Before
-this lode, the client crate had `nix` only as a dev-dependency
+this design, the client crate had `nix` only as a dev-dependency
 (`core/crates/solstone-core-sol-client/Cargo.toml:16-17`), and
 `solstone-core-sol` had no `nix` in its dependency table. Keeping the real
 signal impl in `solstone-core-sol` avoids adding host signal behavior to the

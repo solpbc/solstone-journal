@@ -478,7 +478,7 @@ pub fn load_network_overview(
     ordered.truncate(request.limit as usize);
     for entity in &mut ordered {
         // Entity-file reading moved to the caller; this guard remains so hostile stored IDs
-        // cannot make a naive W2b-2 callback walk outside entities/.
+        // cannot make a naive bounded callback walk outside entities/.
         if is_safe_entity_id_component(&entity.entity_id) {
             entity.r#type = entity_type_lookup(&entity.entity_id);
         }
@@ -689,7 +689,7 @@ fn unavailable(path: PathBuf, error: SqlError) -> EdgeQueryError {
 }
 fn unavailable_db(connection: &Connection, error: SqlError) -> EdgeQueryError {
     // Mirror routes.py:394-402: SQLite operational/schema failures mean the index is
-    // unavailable; decoding, conversion, and binding failures remain Internal for W2b-2.
+    // unavailable; decoding, conversion, and binding failures remain Internal for this callback contract.
     match error {
         error @ SqlError::SqliteFailure(_, _) => unavailable(
             connection

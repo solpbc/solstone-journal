@@ -789,10 +789,10 @@ def test_get_principal_display_name_preferred(tmp_path, monkeypatch):
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy Miller", "preferred": "Jer"}}
+    config = {"identity": {"name": "Raylyn Miller", "preferred": "Rae"}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
-    assert _get_principal_display_name() == "Jer"
+    assert _get_principal_display_name() == "Rae"
 
 
 def test_get_principal_display_name_fallback_to_name(tmp_path, monkeypatch):
@@ -803,10 +803,10 @@ def test_get_principal_display_name_fallback_to_name(tmp_path, monkeypatch):
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy Miller", "preferred": ""}}
+    config = {"identity": {"name": "Raylyn Miller", "preferred": ""}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
-    assert _get_principal_display_name() == "Jeremy Miller"
+    assert _get_principal_display_name() == "Raylyn Miller"
 
 
 def test_get_principal_display_name_none_when_empty(tmp_path, monkeypatch):
@@ -825,17 +825,17 @@ def test_format_principal_role_with_principal(tmp_path, monkeypatch):
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy", "preferred": "Jer"}}
+    config = {"identity": {"name": "Raylyn", "preferred": "Rae"}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
     entities = [
-        {"name": "Jeremy", "description": "Software engineer", "is_principal": True},
+        {"name": "Raylyn", "description": "Software engineer", "is_principal": True},
         {"name": "Bob", "description": "Friend"},
     ]
 
     role_line, filtered = _format_principal_role(entities)
 
-    assert role_line == "**Jer's Role**: Software engineer"
+    assert role_line == "**Rae's Role**: Software engineer"
     assert len(filtered) == 1
     assert filtered[0]["name"] == "Bob"
 
@@ -863,11 +863,11 @@ def test_format_principal_role_no_description(tmp_path, monkeypatch):
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    config = {"identity": {"name": "Jeremy", "preferred": "Jer"}}
+    config = {"identity": {"name": "Raylyn", "preferred": "Rae"}}
     (config_dir / "journal.json").write_text(json.dumps(config))
 
     entities = [
-        {"name": "Jeremy", "description": "", "is_principal": True},
+        {"name": "Raylyn", "description": "", "is_principal": True},
         {"name": "Bob", "description": "Friend"},
     ]
 
@@ -885,7 +885,7 @@ def test_format_principal_role_no_identity(tmp_path, monkeypatch):
     # No config file
 
     entities = [
-        {"name": "Jeremy", "description": "Engineer", "is_principal": True},
+        {"name": "Raylyn", "description": "Engineer", "is_principal": True},
         {"name": "Bob", "description": "Friend"},
     ]
 

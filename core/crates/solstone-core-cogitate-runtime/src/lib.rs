@@ -8,10 +8,10 @@
 //! This crate deliberately builds no conversation-persistence format. The
 //! reason is not that nothing would read one: the retention crate will
 //! eventually read a persistence directory in order to delete it under
-//! retention policy. The retention read is real deferred R6 work, not evidence
+//! retention policy. The retention read remains deferred work, not evidence
 //! that persistence has no consumers.
 //! This wave creates no such directory, so retention has nothing to dangle
-//! over yet. When this crate or R5b begins persisting conversations, retention
+//! over yet. When this crate begins persisting conversations, retention
 //! must be updated in lockstep.
 
 pub mod config;

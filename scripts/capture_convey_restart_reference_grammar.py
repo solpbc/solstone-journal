@@ -26,7 +26,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "core/fixtures/convey_restart_reference_grammar.json"
 DEFAULT_REFERENCE_PYTHON = ROOT / ".venv/bin/python"
-SCRATCH_JOURNAL = Path("/tmp/solstone-lane-af-capture-journal")
+SCRATCH_JOURNAL = Path("/tmp/solstone-restart-capture-journal")
 REFERENCE_REV = "c1f9da3e0d4b55cbef68e68876065ac213721d6b"
 ALLOWED_CAPTURE_PATHS = {
     Path("scripts/capture_convey_restart_reference_grammar.py"),
@@ -52,7 +52,7 @@ CONVEY_INTERCEPT = (
 from pathlib import Path
 target = importlib.import_module(module)
 def capture_execv(_path, argv):
-    Path(os.environ['LANE_AF_FORWARDED_ARGV']).write_text(json.dumps(argv[1:]), encoding='utf-8')
+    Path(os.environ['CAPTURE_FORWARDED_ARGV']).write_text(json.dumps(argv[1:]), encoding='utf-8')
     raise SystemExit(0)
 target.os.execv = capture_execv
 result = target.main()
@@ -75,7 +75,7 @@ target.require_solstone = lambda: None
 def capture_wait(timeout, verbose):
     parsed['parsed_timeout'] = timeout
     parsed['parsed_verbose'] = verbose
-    Path(os.environ['LANE_AF_RESTART_PARSE']).write_text(json.dumps(parsed, sort_keys=True), encoding='utf-8')
+    Path(os.environ['CAPTURE_RESTART_PARSE']).write_text(json.dumps(parsed, sort_keys=True), encoding='utf-8')
     raise SystemExit(0)
 target.wait_for_convey_restart = capture_wait
 result = target.main()
@@ -227,7 +227,7 @@ def checked_provenance(reference_python: Path, output: Path) -> dict[str, Any]:
         "convey_exec_capture": {
             "intercepted": "solstone.convey.cli.os.execv",
             "records": "forwarded_argv excluding the helper binary path",
-            "note": "accepted Convey cases are parse-accept records without an exit code. The previously verified external interpreter /home/jer/solstone-finding1-b7530552/.venv/bin/python has sibling solstone-core 0.8.9, so post-exec output is never corpus behavior.",
+            "note": "accepted Convey cases are parse-accept records without an exit code. The previously verified external interpreter /workspace/owner/solstone-finding1-b7530552/.venv/bin/python has sibling solstone-core 0.8.9, so post-exec output is never corpus behavior.",
         },
         "guard": "This is immutable committed capture data. A build worktree without a runnable Python environment must not regenerate it.",
     }
@@ -290,7 +290,7 @@ def convey_accept_case(
     reference_python: Path, label: str, argv: list[str]
 ) -> dict[str, Any]:
     forwarded = SCRATCH_JOURNAL / f"forwarded-{label}.json"
-    child_env = environment({"LANE_AF_FORWARDED_ARGV": str(forwarded)})
+    child_env = environment({"CAPTURE_FORWARDED_ARGV": str(forwarded)})
     result = subprocess.run(
         [
             str(reference_python),
@@ -336,7 +336,7 @@ def restart_accept_case(
         ],
         capture_output=True,
         text=True,
-        env=environment({"LANE_AF_RESTART_PARSE": str(parsed_path)}),
+        env=environment({"CAPTURE_RESTART_PARSE": str(parsed_path)}),
         check=False,
     )
     if result.returncode != 0 or not parsed_path.is_file():

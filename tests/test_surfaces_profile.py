@@ -415,24 +415,24 @@ def test_resolve_exact_and_slug_and_aka_and_fuzzy(tmp_path, monkeypatch):
         tmp_path,
         journal_entities=(
             {
-                "id": "john_borthwick",
-                "name": "John Borthwick",
+                "id": "avery_nguyen",
+                "name": "Avery Nguyen",
                 "type": "Person",
-                "aka": ["JB"],
+                "aka": ["AN"],
             },
         ),
     )
     _write_facet_relationship(
-        tmp_path, "work", "john_borthwick", description="Investor"
+        tmp_path, "work", "avery_nguyen", description="Investor"
     )
 
-    queries = ["John Borthwick", "john_borthwick", "JB", "John Borthwik"]
+    queries = ["Avery Nguyen", "avery_nguyen", "AN", "Avery Nguyne"]
     resolved_ids = {
         profile_surface._resolve_target(query).entity_id  # noqa: SLF001
         for query in queries
     }
 
-    assert resolved_ids == {"john_borthwick"}
+    assert resolved_ids == {"avery_nguyen"}
 
 
 def test_facets_filter_narrows_display_not_cadence(tmp_path, monkeypatch):

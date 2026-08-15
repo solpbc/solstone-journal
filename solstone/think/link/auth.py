@@ -10,13 +10,13 @@ renameable label for the paired client. Solstone also stores local-only
 
     {
       "fingerprint": "sha256:<hex>",
-      "device_label": "Jer's iPhone",
+      "device_label": "Rae's iPhone",
       "paired_at": "2026-04-19T17:42:13Z",
       "instance_id": "<home_instance_id>",
       "role": "",
       "last_seen_at": "2026-04-19T18:03:12Z",  // optional; null/absent = never
       "network": "network",                    // optional; local display label source
-      "client_label": "jer-laptop",            // optional; client self-name/hostname
+      "client_label": "rae-laptop",            // optional; client self-name/hostname
       "label_ordinal": 2,                      // optional positive int;
                                                // invalid/absent = 1; omitted when 1
       "kind": "cert"

@@ -259,7 +259,7 @@ The vision analysis uses multi-stage conditional processing:
 The retired occurrence hook previously extracted time-based events from the day's transcripts—meetings, messages, follow-ups, file activity, and more. Those historical event rows were stored per-facet in JSONL files at `facets/{facet}/events/{day}.jsonl`. These files persist for historical search via `search_journal(agent="event")`. Live future scheduled items are stored separately as anticipated activity records under `facets/{facet}/activities/{target_day}.jsonl` with `source: "anticipated"`.
 
 ```jsonl
-{"type": "meeting", "start": "09:00:00", "end": "09:30:00", "title": "Team stand-up", "summary": "Status update with the engineering team", "work": true, "participants": ["Jeremie Miller", "Alice", "Bob"], "facet": "work", "agent": "meetings", "occurred": true, "source": "20250101/talents/meetings.md", "details": "Sprint planning discussion"}
+{"type": "meeting", "start": "09:00:00", "end": "09:30:00", "title": "Team stand-up", "summary": "Status update with the engineering team", "work": true, "participants": ["Raelyn Miller", "Alice", "Bob"], "facet": "work", "agent": "meetings", "occurred": true, "source": "20250101/talents/meetings.md", "details": "Sprint planning discussion"}
 ```
 
 **Common historical fields:**

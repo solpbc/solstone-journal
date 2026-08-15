@@ -20,7 +20,7 @@ def _activity_record():
         "segments": ["090000_300"],
         "level_avg": 1.0,
         "description": "Team sync",
-        "active_entities": ["JB", "Alex"],
+        "active_entities": ["AN", "Alex"],
         "created_at": 1,
     }
 
@@ -41,10 +41,10 @@ def test_participation_post_hook_merges_fields_and_preserves_active_entities(
         day,
         [
             {
-                "id": "john_borthwick",
+                "id": "avery_nguyen",
                 "type": "Person",
-                "name": "John Borthwick",
-                "aka": ["JB"],
+                "name": "Avery Nguyen",
+                "aka": ["AN"],
             }
         ],
     )
@@ -55,7 +55,7 @@ def test_participation_post_hook_merges_fields_and_preserves_active_entities(
             {
                 "participation": [
                     {
-                        "name": "JB",
+                        "name": "AN",
                         "role": "attendee",
                         "source": "voice",
                         "confidence": 0.91,
@@ -78,9 +78,9 @@ def test_participation_post_hook_merges_fields_and_preserves_active_entities(
     )
 
     record = load_activity_records(facet, day)[0]
-    assert record["active_entities"] == ["JB", "Alex"]
+    assert record["active_entities"] == ["AN", "Alex"]
     assert record["participation_confidence"] == 0.77
-    assert record["participation"][0]["entity_id"] == "john_borthwick"
+    assert record["participation"][0]["entity_id"] == "avery_nguyen"
     assert record["participation"][1]["entity_id"] is None
     assert record["title"] == "Team sync"
     assert record["details"] == ""

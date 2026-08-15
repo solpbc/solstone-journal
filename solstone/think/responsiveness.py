@@ -20,8 +20,8 @@ spec's non-goal is that a mediocre-but-real description ships, so a miss that
 withholds real content is the worse error.
 
 Chat copy usually lives in solstone/apps/chat/copy.py and provider-readiness copy
-inline in provider_readiness.py; these constants live here because the lode B
-anti-asks keep those files closed.
+inline in provider_readiness.py; these constants live here to keep those files
+closed to this detector.
 
 This module is pure stdlib and never calls a model, since the local-lane grader
 would be the same model that just declined. Prose-likeness is deliberately loose:
@@ -46,8 +46,8 @@ NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS = 512
 # Placeholder copy in constant-first shape: VPX rewords after the copy gate, and
 # keeping the strings here makes that a one-file change. The support closer branch
 # has no {reason} slot (solstone/convey/chat.py:1835-1839; OUTBOUND_TALENTS at
-# :1029), so once lode B marks non_responsive deterministic the batch-#18 case
-# never renders the fragment. That honest solstone-voiced branch stands.
+# :1029), so once non_responsive is deterministic the batch-#18 case never
+# renders the fragment. That honest solstone-voiced branch stands.
 NON_RESPONSIVE_OUTPUT_MESSAGE = (
     "The requested work was not completed. Open Thinking to choose a different "
     "engine, then try again."
@@ -93,8 +93,8 @@ _WHITESPACE_RE = re.compile(r"\s+")
 @dataclass(frozen=True)
 class ResponsivenessVerdict:
     non_responsive: bool
-    # matched_signal is the private table key, never leaf text, because lode B
-    # logs it and must not receive raw model output.
+    # matched_signal is the private table key, never leaf text, because logging
+    # must not receive raw model output.
     matched_signal: str | None
     empty_corpus: bool
 

@@ -92,7 +92,7 @@ pub enum BootstrapError {
     },
 }
 
-/// Outcome of the pre-Lane-B portion of a requested name merge.
+/// Outcome of the validation portion of a requested name merge.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MergeNamesOutcome {
     Ambiguous {
@@ -440,7 +440,7 @@ pub fn seed_from_imports(
     Ok(SeedFromImportsOutcome::Completed(stats))
 }
 
-/// Resolve both names and perform every merge guard before the Lane-B merge.
+/// Resolve both names and perform every merge guard before the write.
 pub fn merge_names(
     journal_root: &Path,
     alias_name: &str,

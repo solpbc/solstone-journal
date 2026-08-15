@@ -76,7 +76,7 @@ pub struct ApplyPlan {
     pub landed_segment: String,
     pub segment: SegmentDir,
     pub files: Vec<PlannedFile>,
-    /// INDEPENDENT WRITE-PATH PARITY FIX: this lode carries Python's
+    /// INDEPENDENT WRITE-PATH PARITY FIX: this isolated checkout carries Python's
     /// directory-creation fact because it already changes ingest, not because
     /// the observer read path depends on it.
     pub created_segment: bool,

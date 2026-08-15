@@ -889,7 +889,7 @@ def test_delete_source_location_happy_path(observer_env):
     assert receipt["removed"]["segments"] == 1
     assert receipt["removed"]["originals"] == 1
     # ⛔ The segment is emptied and keeps its tombstone -- the owner's evidence that a
-    # deletion happened. It no longer vanishes outright, per the founder ruling of
+    # deletion happened. It no longer vanishes outright, per the approved policy of
     # 2026-08-05 routing every removal through the retention executor.
     assert sorted(entry.name for entry in seg_dir.iterdir()) == ["tombstone.json"]
 
@@ -1431,7 +1431,7 @@ def test_observer_health_records_sanitized_beacon(observer_env):
             "pending_queue_depth": 3,
             "recent_error_count": 2,
             "last_error_reason": "x" * 250,
-            "captured_path": "/Users/jer/private/audio.m4a",
+            "captured_path": "/Users/owner/private/audio.m4a",
             "response_body": "raw server body",
         },
         content_type="application/json",

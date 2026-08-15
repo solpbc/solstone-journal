@@ -43,7 +43,7 @@ def _format_name_key(name: str) -> tuple[str, str]:
 
 def _review_days(day: str) -> list[str]:
     run_day = datetime.strptime(day, "%Y%m%d")
-    # Offset 1 excludes the run day; out-of-lode VPE can flip this to 0.
+    # Offset 1 excludes the run day; a later review can flip this to 0.
     start_offset = 1
     return [
         (run_day - timedelta(days=i)).strftime("%Y%m%d")

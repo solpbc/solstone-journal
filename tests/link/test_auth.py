@@ -182,7 +182,7 @@ def test_empty_file_is_empty(tmp_path: Path) -> None:
 def test_add_and_authorized(tmp_path: Path) -> None:
     store = AuthorizedClients(tmp_path / "auth.json")
 
-    store.add("sha256:abc", "Jer's phone", "inst-1")
+    store.add("sha256:abc", "Rae's phone", "inst-1")
 
     assert store.is_authorized("sha256:abc")
     assert not store.is_authorized("sha256:xyz")
@@ -190,7 +190,7 @@ def test_add_and_authorized(tmp_path: Path) -> None:
 
 def test_remove(tmp_path: Path) -> None:
     store = AuthorizedClients(tmp_path / "auth.json")
-    store.add("sha256:abc", "Jer", "inst-1")
+    store.add("sha256:abc", "Rae", "inst-1")
 
     assert store.remove("sha256:abc") is True
     assert not store.is_authorized("sha256:abc")
@@ -200,7 +200,7 @@ def test_remove(tmp_path: Path) -> None:
 def test_external_edit_reloads_on_mtime_change(tmp_path: Path) -> None:
     path = tmp_path / "auth.json"
     store = AuthorizedClients(path)
-    store.add("sha256:abc", "Jer", "inst-1")
+    store.add("sha256:abc", "Rae", "inst-1")
     assert store.is_authorized("sha256:abc")
 
     time.sleep(0.02)
@@ -250,7 +250,7 @@ def test_add_then_last_seen_key_absent_in_payload(tmp_path: Path) -> None:
     path = tmp_path / "auth.json"
     store = AuthorizedClients(path)
 
-    store.add("sha256:abc", "Jer", "inst-1")
+    store.add("sha256:abc", "Rae", "inst-1")
 
     payload = _load_payload(path)
     assert payload[0]["role"] == ""
@@ -263,7 +263,7 @@ def test_network_round_trips(tmp_path: Path) -> None:
     path = tmp_path / "auth.json"
     store = AuthorizedClients(path)
 
-    store.add("sha256:abc", "Jer", "inst-1", network="anywhere")
+    store.add("sha256:abc", "Rae", "inst-1", network="anywhere")
 
     payload = _load_payload(path)
     assert payload[0]["network"] == "anywhere"
@@ -345,7 +345,7 @@ def test_missing_network_defaults_to_none(tmp_path: Path) -> None:
             [
                 {
                     "fingerprint": "sha256:abc",
-                    "device_label": "Jer",
+                    "device_label": "Rae",
                     "paired_at": "2026-04-19T00:00:00Z",
                     "instance_id": "inst-1",
                 }
@@ -369,7 +369,7 @@ def test_missing_client_label_defaults_to_empty(tmp_path: Path) -> None:
             [
                 {
                     "fingerprint": "sha256:abc",
-                    "device_label": "Jer",
+                    "device_label": "Rae",
                     "paired_at": "2026-04-19T00:00:00Z",
                     "instance_id": "inst-1",
                 }
@@ -391,7 +391,7 @@ def test_touch_last_seen_unknown_fp_returns_false(tmp_path: Path) -> None:
 
     assert store.touch_last_seen("sha256:deadbeef") is False
 
-    store.add("sha256:abc", "Jer", "inst-1")
+    store.add("sha256:abc", "Rae", "inst-1")
 
     assert store.touch_last_seen("sha256:deadbeef") is False
 
@@ -401,7 +401,7 @@ def test_touch_last_seen_updates_timestamp(tmp_path: Path) -> None:
     fingerprint = "sha256:abc"
     later = dt.datetime(2026, 4, 19, 18, 3, 12, tzinfo=dt.UTC)
 
-    store.add(fingerprint, "Jer", "inst-1")
+    store.add(fingerprint, "Rae", "inst-1")
 
     assert store.touch_last_seen(fingerprint) is True
     first_entry = next(
@@ -420,7 +420,7 @@ def test_touch_last_seen_persists_key_in_payload(tmp_path: Path) -> None:
     path = tmp_path / "auth.json"
     store = AuthorizedClients(path)
 
-    store.add("sha256:abc", "Jer", "inst-1")
+    store.add("sha256:abc", "Rae", "inst-1")
     assert store.touch_last_seen("sha256:abc") is True
 
     payload = _load_payload(path)
@@ -432,7 +432,7 @@ def test_touch_last_seen_preserves_network(tmp_path: Path) -> None:
     path = tmp_path / "auth.json"
     store = AuthorizedClients(path)
 
-    store.add("sha256:abc", "Jer", "inst-1", network="anywhere")
+    store.add("sha256:abc", "Rae", "inst-1", network="anywhere")
     assert store.touch_last_seen("sha256:abc") is True
 
     entry = store.get("sha256:abc")
@@ -796,11 +796,11 @@ def test_find_all_by_display_label(tmp_path: Path) -> None:
     path = tmp_path / "auth.json"
     store = AuthorizedClients(path)
 
-    assert store.find_all_by_display_label("Jer") == []
+    assert store.find_all_by_display_label("Rae") == []
 
-    store.add("sha256:abc", "Jer", "inst-1")
+    store.add("sha256:abc", "Rae", "inst-1")
     store.add("sha256:empty", "", "inst-1", client_label="client-host")
-    entries = store.find_all_by_display_label("Jer")
+    entries = store.find_all_by_display_label("Rae")
     assert len(entries) == 1
     entry = entries[0]
     assert entry.fingerprint == "sha256:abc"
@@ -835,7 +835,7 @@ def test_find_all_by_display_label(tmp_path: Path) -> None:
     assert reloaded.fingerprint == "sha256:xyz"
     assert reloaded.role == ""
     assert reloaded.last_seen_at == "2026-04-19T18:03:12Z"
-    assert store.find_all_by_display_label("Jer") == []
+    assert store.find_all_by_display_label("Rae") == []
 
 
 def test_old_cert_entry_defaults_to_cert_kind(tmp_path: Path) -> None:
