@@ -1201,7 +1201,7 @@ fn remove_marked_reports_current_policy_and_processing_proof_refusals() {
     assert_eq!(policy_refused.status.code(), Some(3));
     assert_eq!(
         receipt(&policy_refused)["outcome"]["targets"][0]["not_removed"][0]["reason"],
-        "your retention settings keep these originals indefinitely."
+        "this one is kept indefinitely."
     );
 
     let too_young =
@@ -1225,7 +1225,7 @@ fn remove_marked_reports_current_policy_and_processing_proof_refusals() {
     assert_eq!(too_young_refused.status.code(), Some(3));
     assert_eq!(
         receipt(&too_young_refused)["outcome"]["targets"][0]["not_removed"][0]["reason"],
-        "your retention settings don't release these originals yet. they aren't old enough."
+        "this one isn't old enough to delete yet."
     );
 
     let proof_bed = Bed::new("proof-refusal");
@@ -1316,7 +1316,7 @@ fn remove_marked_reports_current_policy_and_processing_proof_refusals() {
     assert_eq!(missing_anchor.status.code(), Some(3));
     assert_eq!(
         receipt(&missing_anchor)["outcome"]["targets"][0]["not_removed"][0]["reason"],
-        "i don't have a record of when these originals are from, so i can't release them."
+        "there's no date on this one, so it can't be deleted."
     );
 }
 

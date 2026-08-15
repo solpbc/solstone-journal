@@ -21,11 +21,9 @@ use crate::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 use crate::scan::scan_segment;
 use crate::{Eligibility, Policy};
 
-const TOO_YOUNG: &str =
-    "your retention settings don't release these originals yet. they aren't old enough.";
-const KEPT_FOREVER: &str = "your retention settings keep these originals indefinitely.";
-const ANCHOR_MISSING: &str =
-    "i don't have a record of when these originals are from, so i can't release them.";
+const TOO_YOUNG: &str = "this one isn't old enough to delete yet.";
+const KEPT_FOREVER: &str = "this one is kept indefinitely.";
+const ANCHOR_MISSING: &str = "there's no date on this one, so it can't be deleted.";
 const NOT_ON_REMOVAL_LIST: &str =
     "this file was proven releasable but is not on the removal list, so it is left in place";
 const NO_LONGER_PRESENT: &str = "this file was on the removal list but is no longer present";
