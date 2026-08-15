@@ -128,6 +128,7 @@ async function main() {
     renderIdentityLoading,
     renderIdentity,
     renderIdentityFailure,
+    renderThinkingRunList,
     loadThinkingRuns,
     loadThinkingRun,
     loadThinkingOutput,
@@ -283,6 +284,23 @@ async function main() {
   thinking.bind();
   thinking.bindThinkingSectionTabs();
   thinking.bindThinkingRuns();
+
+  const heterogeneousRuns = make('heterogeneousRuns');
+  thinking.renderThinkingRunList(heterogeneousRuns, [
+    {id: 'output-run', name: 'output run', output_file: 'saved.txt'},
+    {id: 'no-output-run', name: 'no output run'},
+    {id: 'failed-run', name: 'failed run', failed: true},
+    {id: 'completed-run', name: 'completed run', failed: false},
+  ]);
+  const heterogeneousRows = heterogeneousRuns.children[0].children[1].children;
+  assert.strictEqual(heterogeneousRows.length, 4, 'heterogeneous run table renders every row');
+  heterogeneousRows.forEach((row) => {
+    const control = row.children[row.children.length - 1].children[0];
+    assert.strictEqual(control.className, 'thinking-runs-run-control', 'every run row exposes an explicit control');
+  });
+  heterogeneousRuns.children[1].children.forEach((card) => {
+    assert.strictEqual(card.children[card.children.length - 1].className, 'thinking-runs-run-control', 'every run card exposes an explicit control');
+  });
 
   const setupHashes = ['#main', '#byo-setup', '#confidential-setup', '#local-setup', '#lane-switch'];
   for (const hash of setupHashes) {
@@ -476,6 +494,58 @@ async function main() {
   assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'saved output', 'newly visible output tab activates its panel');
   outputTab.emit('keydown', {key: 'ArrowLeft'});
   assert.strictEqual(logTab.attributes['aria-selected'], 'true', 'detail tabs rove after output becomes visible');
+
+  window.location.hash = '#runs/20260113';
+  thinking.routeThinkingHash('history');
+  assert.strictEqual(thinking.state.runsDetail, null, 'day-only route clears the selected run');
+  assert.strictEqual(nodes.get('thinkingRunsDetail').hidden, true, 'day-only route hides prior run detail');
+  assert.strictEqual(outputTab.hidden, true, 'day-only route hides prior output tab');
+  assert.strictEqual(noOutput.hidden, true, 'day-only route hides prior no-output notice');
+
+  runResponses.push(Promise.resolve({id: 'same-run', day: '20260113', name: 'talent-a', output_file: 'same.txt', events: []}));
+  window.location.hash = '#runs/20260113/talent-a/same-run';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  const sameRunRequests = requests.filter((url) => url === '/app/thinking/api/run/same-run').length;
+  nodes.get('thinkingRunsOutputPanel').textContent = 'same run output';
+  thinking.routeThinkingHash('history');
+  await settle();
+  assert.strictEqual(thinking.state.runsDetail.id, 'same-run', 'same-run re-entry retains its selected record');
+  assert.strictEqual(requests.filter((url) => url === '/app/thinking/api/run/same-run').length, sameRunRequests, 'same-run re-entry uses the run cache without a refetch');
+  assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'same run output', 'same-run re-entry does not clear selected output state');
+
+  window.location.hash = '#runs/20260113/talent-a';
+  thinking.routeThinkingHash('history');
+  assert.strictEqual(thinking.state.runsDetail, null, 'talent-only route clears the selected run');
+  assert.strictEqual(nodes.get('thinkingRunsDetail').hidden, true, 'talent-only route hides prior run detail');
+  assert.strictEqual(outputTab.hidden, true, 'talent-only route hides prior output tab');
+  assert.strictEqual(noOutput.hidden, true, 'talent-only route hides prior no-output notice');
+
+  window.location.hash = '#runs/20260113/talent-a/same-run';
+  thinking.routeThinkingHash('history');
+  await settle();
+  nodes.get('thinkingRunsPrompt').focus();
+  thinking.openThinkingPrompt();
+  assert.strictEqual(promptModal.hidden, false, 'selected run opens its prompt before a selection change');
+  const runB = deferred();
+  runResponses.push(runB.promise);
+  window.location.hash = '#runs/20260114/talent-b/run-b';
+  thinking.routeThinkingHash('history');
+  assert.strictEqual(promptModal.hidden, true, 'changing runs closes the prior run prompt');
+  assert.strictEqual((documentListeners.keydown || []).length, 0, 'changing runs removes the prompt Escape listener');
+  assert.strictEqual(thinking.state.runsDetail, null, 'changing runs clears the prior run detail before loading');
+  runB.resolve({id: 'run-b', day: '20260114', name: 'talent-b', events: []});
+  await settle();
+  await settle();
+  assert.strictEqual(thinking.state.runsDetail.id, 'run-b', 'new run detail renders after the prior prompt closes');
+
+  window.location.hash = '#identity';
+  thinking.routeThinkingHash('history');
+  assert.strictEqual(thinking.state.runsDetail, null, 'identity route clears the selected run');
+  assert.strictEqual(nodes.get('thinkingRunsDetail').hidden, true, 'identity route hides prior run detail');
+  assert.strictEqual(outputTab.hidden, true, 'identity route hides prior output tab');
+  assert.strictEqual(noOutput.hidden, true, 'identity route hides prior no-output notice');
 
   runResponses.push(Promise.resolve({reason_code: 'talent_run_pending'}));
   window.location.hash = '#runs/20260103/talent/active';

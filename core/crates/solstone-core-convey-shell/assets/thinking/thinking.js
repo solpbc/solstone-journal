@@ -33,6 +33,7 @@
     },
     runsFacet: '',
     runsFacetExplicit: false,
+    runsSelectedUseId: '',
     runsDetail: null,
     runsModalFocus: null,
     runsPromptEscapeHandler: null,
@@ -938,7 +939,17 @@
     }
   }
 
+  function thinkingSelectedRunId(route) {
+    return (route?.kind === 'runs' || route?.kind === 'run-id') ? route.useId || '' : '';
+  }
+
   function setThinkingRoute(route) {
+    const selectedUseId = thinkingSelectedRunId(route);
+    if (state.runsSelectedUseId !== selectedUseId) {
+      state.runsSelectedUseId = selectedUseId;
+      closeThinkingPrompt();
+      clearThinkingRunRenderState();
+    }
     if (state.runsRouteKey !== route.key) {
       state.runsRouteKey = route.key;
       state.runsNavigationGeneration += 1;
@@ -1545,6 +1556,7 @@
 
   function clearThinkingRunRenderState() {
     state.runsDetail = null;
+    $('thinkingRunsDetail').hidden = true;
     $('thinkingRunsDetailFacts')?.replaceChildren();
     $('thinkingRunsOutputTab').hidden = true;
     $('thinkingRunsNoOutput').hidden = true;
@@ -1573,7 +1585,6 @@
 
   function loadThinkingRun(route) {
     if (!route?.useId) return;
-    clearThinkingRunRenderState();
     const key = thinkingCacheKey('run', {useId: route.useId});
     const cached = readThinkingCache('run', key);
     if (cached) {

@@ -292,17 +292,6 @@ fn thinking_runs_list_source_has_explicit_table_controls_and_mobile_cards() {
         row.contains("prompt.appendChild(thinkingRunControl(run));"),
         "every generated run row appends its explicit control"
     );
-    let prompt_start = row
-        .find("const prompt =")
-        .expect("run row has a prompt cell");
-    let prompt_end = row[prompt_start..]
-        .find("row.appendChild(prompt);")
-        .expect("prompt cell is appended to every row")
-        + prompt_start;
-    assert!(
-        !row[prompt_start..prompt_end].contains("if ("),
-        "the per-row control is not conditional"
-    );
     assert!(
         !row.contains("row.addEventListener(") && !row.contains("row.onclick"),
         "run rows are not clickable"
