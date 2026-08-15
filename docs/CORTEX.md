@@ -9,7 +9,7 @@ For details on the Callosum protocol and message format, see [CALLOSUM.md](CALLO
 ### Event Flow
 1. **Request Creation**: Client calls `cortex_request()` which broadcasts to Callosum (`tract="cortex"`, `event="request"`)
 2. **Request Reception**: Cortex receives message via Callosum callback and creates `<name>/<timestamp>_active.jsonl`
-3. **Talent Spawning**: Cortex spawns a talent process via `python -m solstone.think.talents` with merged configuration
+3. **Talent Spawning**: Cortex resolves the sibling `solstone-core` binary and spawns `solstone-core __talent-worker` with the raw request
 4. **Event Emission**: Talents write JSON events to stdout (captured by Cortex)
 5. **Event Distribution**: Cortex appends events to JSONL file AND broadcasts to Callosum
 6. **Agent Completion**: Cortex renames file to `<name>/<timestamp>.jsonl` when agent finishes
@@ -17,10 +17,11 @@ For details on the Callosum protocol and message format, see [CALLOSUM.md](CALLO
 ### Key Components
 - **Message Bus Integration**: Cortex connects to Callosum to receive requests and broadcast events
 - **Process Management**: Spawns talent subprocesses (both tool talents and generators)
-- **Configuration Delegation**: Passes raw requests to `python -m solstone.think.talents`, which handles all config loading, validation, and hydration
+- **Execution-Fact Resolution**: Resolves talent type, declared cwd, and timeout with `resolve_execution_facts` before spawning the native worker; Cortex resolves no interpreter
+- **Configuration Delegation**: Passes raw requests to `solstone-core __talent-worker`, whose native talent runtime loads and prepares the talent configuration
 - **Event Capture**: Monitors agent stdout/stderr and appends to JSONL files
 - **Dual Event Distribution**: Events go to both persistent files and real-time message bus
-- **NDJSON Input Mode**: Agent processes accept newline-delimited JSON via stdin containing the full merged configuration
+- **NDJSON Input Mode**: The native worker accepts newline-delimited raw request JSON via stdin, then composes the talent configuration
 
 ### File States
 - `<name>/<timestamp>_active.jsonl`: Talent currently executing (Cortex is appending events)
@@ -269,12 +270,9 @@ Talents use configurations stored in the `solstone/talent/` directory. Each tale
 - The talent-specific prompt and instructions in the content
 
 When spawning a talent:
-1. Cortex passes the raw request to `python -m solstone.think.talents` via stdin (NDJSON format)
-2. The talent process (`solstone/think/talents.py`) handles all config loading via `prepare_config()`:
-   - Loads talent configuration using `get_talent()` from `solstone/think/talent.py`
-   - Merges request parameters with talent defaults
-   - Resolves provider and model based on context
-3. The agent validates the config via `validate_config()` before execution
+1. Cortex resolves the talent type, declared cwd, and timeout via `resolve_execution_facts`, then passes the raw request to the sibling `solstone-core __talent-worker` via stdin (NDJSON format).
+2. The native talent worker discovers and composes the talent configuration, including request parameters, defaults, and provider/model context.
+3. Cortex sets the child cwd to the journal only when the talent type is `cogitate` and its declared `cwd` is `journal`; otherwise it leaves the worker's cwd unchanged.
 4. Instructions are built with three components:
    - `system_instruction`: `journal.md` (shared base prompt, cacheable)
    - `extra_context`: Runtime context (facets, generators list, datetime)

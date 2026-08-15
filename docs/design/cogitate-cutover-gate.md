@@ -10,7 +10,12 @@ and the `generate` path.  It does **not** exclude the cogitate transport adapter
 `talents.py`: retain and, where necessary, edit `_execute_with_tools` and its direct
 `_run_talent` call site.
 
-**Evidence and rationale:** Cortex starts `python -m solstone.think.talents`
+> **Superseded by the native talent-worker cutover:** Cortex now resolves the
+> sibling `solstone-core` binary and starts it with `__talent-worker`; it no
+> longer starts a Python talent child. The rationale below records the prior
+> design state.
+
+**Evidence and rationale (historical):** Cortex starts `python -m solstone.think.talents`
 (`solstone/think/cortex.py:957-966`).  `_run_talent` selects `_execute_with_tools`
 only for a cogitate talent (`solstone/think/talents.py:2040-2054`), while the
 adapter dispatches cloud runs straight to `cogitate_client.run_cogitate` and local

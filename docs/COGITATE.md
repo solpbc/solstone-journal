@@ -24,18 +24,17 @@ contract.
 ## What a cogitate run is
 
 A cogitate run is **not** a coding agent (Claude / Codex / Gemini) launched in the
-journal. It is a Python talent subprocess spawned by Cortex, which invokes the
-native `solstone-core cogitate --one-shot` runtime against a small, explicit tool
-set.
+journal. Cortex starts the native sibling `solstone-core __talent-worker`, which
+invokes the native `solstone-core cogitate --one-shot` runtime against a small,
+explicit tool set.
 
 ```
 Cortex (cortex/request)
-   |- spawns: python -m solstone.think.talents      (cwd = journal root)
-        |- prepare_config()                          (talents.py)
-             |- _execute_with_tools()                 (talents.py)
-                  |- run_cogitate()                   (cogitate_client.py)
-                       |- solstone-core cogitate --one-shot
-                            |- native request/prompt/tool/finalization runtime
+   |- resolves execution facts
+   |- spawns: solstone-core __talent-worker
+        |- native talent runtime
+             |- solstone-core cogitate --one-shot
+                  |- native request/prompt/tool/finalization runtime
 ```
 
 The model's initial context is the native request's **initial prompt plus native

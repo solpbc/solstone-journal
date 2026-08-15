@@ -17,7 +17,7 @@ The package exposes several commands:
 - `sol call transcripts read` groups audio and screen transcripts into report sections. Use `--start` and
   `--length` to limit the report to a specific time range. See `sol call transcripts --help` for additional commands.
 - `journal think` runs generators and agents for a single day via Cortex.
-- `python -m solstone.think.talents` is the unified execution module for tool talents and generators spawned by Cortex (NDJSON protocol).
+- Cortex resolves the sibling `solstone-core` binary and runs `solstone-core __talent-worker` for tool talents and generators (NDJSON protocol). `python -m solstone.think.talents` remains available for callers that invoke the Python module directly.
 - `journal supervisor` monitors journaling health and starts the local services that feed Convey, Cortex, and related background tasks. Use the `--no-*` flags to opt out of specific services when debugging.
 - `journal cortex` starts a Callosum-based service for managing AI agent instances and generators.
 - `journal talent` lists available agents and generators with their configuration. Use `journal talent show <name>` to see details, and `journal talent show <name> --prompt` to see the fully composed prompt that would be sent to the LLM.
@@ -88,10 +88,11 @@ and `weekly_time`; every other top-level key is a named entry with `cmd` and
 
 The scheduler's runtime reader, `load_config`, is forgiving: malformed entries
 are skipped, reserved metadata is extracted separately, and invalid per-entry
-data is not fatal. Writes go through `solstone/think/schedule_config.py`, the
-sole write owner for the file. That owner is fail-visible for whole-file
-malformation: malformed JSON or a non-object top-level value raises instead of
-clobbering existing bytes.
+data is not fatal. Writes go through the domain-owned Python
+`solstone/think/schedule_config.py` and native
+`solstone-core-system/src/schedule/config.rs` doors; the latter includes
+`set_schedule_metadata` beside `mutate_schedule_entries`. Both keep whole-file
+malformation fail-visible rather than clobbering existing bytes.
 
 ## Agent System
 
@@ -114,11 +115,14 @@ After each generator completes and creates output, the indexer runs `--rescan-fi
 
 The Cortex service (`journal cortex`) is the central system for managing AI talent instances and generators. It monitors the journal's `talents/` directory for new requests and manages execution. All talent spawning should go through Cortex for proper event tracking and management.
 
-Cortex routes requests based on configuration:
-- Requests with `tools` field → tool-using talents (`python -m solstone.think.talents`)
-- Requests with `output` field (no `tools`) → generators (`python -m solstone.think.talents`)
+Cortex routes requests to the sibling native `solstone-core __talent-worker`:
+- Requests with `tools` field → tool-using talents
+- Requests with `output` field (no `tools`) → generators
 
-Both types are handled by the unified `python -m solstone.think.talents` execution module.
+Before spawning, Cortex resolves talent type, declared cwd, and timeout through
+`resolve_execution_facts`. It sets the worker cwd to the journal only for a
+`cogitate` talent whose declared `cwd` is `journal`; it does not resolve a Python
+interpreter.
 
 To spawn talents programmatically, use the cortex_client functions:
 
