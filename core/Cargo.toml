@@ -38,6 +38,7 @@ members = [
     "crates/solstone-core-brain-cli",
     "crates/solstone-core-identity",
     "crates/solstone-core-callosum",
+    "crates/solstone-core-cortex-client",
     "crates/solstone-core-cogitate",
     "crates/solstone-core-cogitate-tools",
     "crates/solstone-core-cogitate-runtime",
@@ -172,6 +173,7 @@ solstone-core-doctor = { path = "crates/solstone-core-doctor" }
 solstone-core-setup = { path = "crates/solstone-core-setup" }
 solstone-core-identity = { path = "crates/solstone-core-identity" }
 solstone-core-callosum = { path = "crates/solstone-core-callosum" }
+solstone-core-cortex-client = { path = "crates/solstone-core-cortex-client" }
 solstone-core-system = { path = "crates/solstone-core-system" }
 solstone-core-system-health = { path = "crates/solstone-core-system-health" }
 solstone-core-think-cli = { path = "crates/solstone-core-think-cli" }

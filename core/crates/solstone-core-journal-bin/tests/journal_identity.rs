@@ -319,14 +319,6 @@ fn journal_binary_cannot_switch_to_the_sol_identity() {
         String::from_utf8(sol_marker.stderr).expect("stderr should be utf-8"),
         solstone_core_journal_cli::JOURNAL_USAGE
     );
-
-    let journal_think = run_journal(&["think"], None);
-    assert_eq!(journal_think.status.code(), Some(69));
-    assert!(
-        String::from_utf8(journal_think.stderr)
-            .expect("journal stderr should be utf-8")
-            .contains("native journal Python is missing")
-    );
 }
 
 #[test]
@@ -825,33 +817,33 @@ fn journal_identity_exec_replaces_itself_and_forwards_process_argv() {
 }
 
 #[test]
-fn journal_identity_requires_an_executable_sibling_interpreter() {
-    let temp = TempDir::new("journal-missing-python");
+fn journal_identity_requires_an_executable_sibling_for_native_think() {
+    let temp = TempDir::new("journal-missing-native-think");
     let layout = installed_layout(&temp);
 
     let missing = installed_output(&layout, &["think"]);
-    assert_eq!(missing.status.code(), Some(69));
+    assert_eq!(missing.status.code(), Some(70));
     assert_eq!(missing.stdout, b"");
     assert!(
         String::from_utf8(missing.stderr)
-            .expect("missing interpreter stderr should be utf-8")
-            .contains("native journal Python is missing")
+            .expect("missing native sibling stderr should be utf-8")
+            .contains("native-helper-missing:")
     );
 
-    fs::write(layout.bin.join("python3"), "not executable")
-        .expect("write non-executable interpreter");
+    fs::write(layout.bin.join("solstone-core"), "not executable")
+        .expect("write non-executable native sibling");
     fs::set_permissions(
-        layout.bin.join("python3"),
+        layout.bin.join("solstone-core"),
         fs::Permissions::from_mode(0o644),
     )
-    .expect("make interpreter non-executable");
+    .expect("make native sibling non-executable");
     let non_executable = installed_output(&layout, &["think"]);
-    assert_eq!(non_executable.status.code(), Some(69));
+    assert_eq!(non_executable.status.code(), Some(70));
     assert_eq!(non_executable.stdout, b"");
     assert!(
         String::from_utf8(non_executable.stderr)
-            .expect("non-executable interpreter stderr should be utf-8")
-            .contains("native journal Python is not executable")
+            .expect("non-executable native sibling stderr should be utf-8")
+            .contains("native-helper-not-executable:")
     );
 }
 

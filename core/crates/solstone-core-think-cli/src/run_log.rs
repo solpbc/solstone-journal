@@ -69,6 +69,7 @@ impl RunLogWriter<std::fs::File> {
 }
 
 impl<W: Write> RunLogWriter<W> {
+    #[cfg(test)]
     pub(crate) fn with_sink(display_path: PathBuf, sink: W) -> Self {
         Self {
             sink: Some(sink),

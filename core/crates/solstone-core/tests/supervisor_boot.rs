@@ -6,9 +6,11 @@
 use std::fs;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use super::supervisor_guard::SupervisorGuard;
 
 struct TempJournal(PathBuf);
 
@@ -35,28 +37,8 @@ impl Drop for TempJournal {
     }
 }
 
-struct ChildGuard(Child);
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if self.0.try_wait().ok().flatten().is_none() {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(self.0.id() as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            );
-            for _ in 0..1_000 {
-                if self.0.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(5));
-            }
-            let _ = self.0.kill();
-        }
-        let _ = self.0.wait();
-    }
-}
-
-fn start(journal: &TempJournal) -> ChildGuard {
-    ChildGuard(
+fn start(journal: &TempJournal) -> SupervisorGuard {
+    SupervisorGuard::new(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])
             .arg(&journal.0)
@@ -78,12 +60,12 @@ fn start(journal: &TempJournal) -> ChildGuard {
     )
 }
 
-fn wait_for_socket(child: &mut ChildGuard, socket: &std::path::Path) {
+fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
     for _ in 0..400 {
         if UnixStream::connect(socket).is_ok() {
             return;
         }
-        if let Some(status) = child.0.try_wait().expect("supervisor status") {
+        if let Some(status) = child.try_wait().expect("supervisor status") {
             panic!("supervisor exited during boot: {status}");
         }
         thread::sleep(Duration::from_millis(5));
@@ -133,7 +115,7 @@ fn ac6_boot_order_is_identity_then_socket_then_ready() {
         if first_ready.is_some() {
             break;
         }
-        if child.0.try_wait().expect("supervisor status").is_some() {
+        if child.try_wait().expect("supervisor status").is_some() {
             panic!("supervisor exited during boot");
         }
         thread::sleep(Duration::from_millis(5));
@@ -180,7 +162,7 @@ fn ac7_second_instance_refused_first_survives() {
         .expect("second supervisor runs");
     assert_eq!(second.code(), Some(75));
     assert!(nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok());
-    assert!(first.0.try_wait().expect("first status").is_none());
+    assert!(first.try_wait().expect("first status").is_none());
 }
 
 #[test]

@@ -143,6 +143,7 @@ solstone-core-talent-runtime.workspace = true
 solstone-core-reprocess-cli.workspace = true
 solstone-core-backfill-cli.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
+solstone-core-cortex-client.workspace = true
 serde_json.workspace = true
 jsonschema.workspace = true
 nix = { workspace = true, features = ["fs", "process", "signal", "user"] }

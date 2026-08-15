@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -13,6 +13,11 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
+
+#[path = "support/supervisor_guard.rs"]
+mod supervisor_guard;
+
+use supervisor_guard::SupervisorGuard;
 
 #[allow(dead_code)]
 #[path = "support/await_outcome.rs"]
@@ -42,8 +47,6 @@ impl Drop for TempJournal {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-struct ChildGuard(Child);
-
 fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     match outcome {
         WaitOutcome::Passed(_) => {}
@@ -59,36 +62,8 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     }
 }
 
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if self.0.try_wait().ok().flatten().is_none() {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(self.0.id() as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            );
-            let outcome = await_outcome(
-                WaitPolarity::Positive,
-                Duration::from_millis(5),
-                1_000,
-                Instant::now,
-                || match self.0.try_wait() {
-                    Ok(Some(_)) => PollState::Held,
-                    Ok(None) => PollState::Pending,
-                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
-                },
-                thread::sleep,
-            );
-            if matches!(outcome, WaitOutcome::Passed(_)) {
-                return;
-            }
-            let _ = self.0.kill();
-        }
-        let _ = self.0.wait();
-    }
-}
-
-fn start(journal: &TempJournal) -> ChildGuard {
-    ChildGuard(
+fn start(journal: &TempJournal) -> SupervisorGuard {
+    SupervisorGuard::new(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])
             .arg(&journal.0)
@@ -109,7 +84,7 @@ fn start(journal: &TempJournal) -> ChildGuard {
             .expect("supervisor starts"),
     )
 }
-fn wait_for(path: &std::path::Path, child: &mut ChildGuard) {
+fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
     let outcome = await_outcome(
         WaitPolarity::Positive,
         Duration::from_millis(5),
@@ -119,7 +94,7 @@ fn wait_for(path: &std::path::Path, child: &mut ChildGuard) {
             if path.exists() {
                 PollState::Held
             } else {
-                match child.0.try_wait() {
+                match child.try_wait() {
                     Ok(Some(status)) => PollState::HardFail(format!("supervisor exited: {status}")),
                     Ok(None) => PollState::Pending,
                     Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
@@ -215,7 +190,7 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     panic_for_wait("task child did not reach its ready point", outcome);
     assert!(ready_path.exists(), "task child reached its ready point");
     nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(child.0.id() as i32),
+        nix::unistd::Pid::from_raw(child.id() as i32),
         nix::sys::signal::Signal::SIGTERM,
     )
     .expect("signal supervisor");
@@ -245,7 +220,7 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
             if socket_removed.is_none() && !socket.exists() {
                 socket_removed = Some(current_tick);
             }
-            match child.0.try_wait() {
+            match child.try_wait() {
                 Ok(Some(exited)) => {
                     status = Some(exited);
                     if ready_removed.is_some() && pid_removed.is_some() && socket_removed.is_some()
@@ -328,7 +303,7 @@ fn ac15_mid_tick_sync_conflict_exits_2_keeps_own_identity_and_heartbeat() {
     // foreign writer can be classified as a mid-tick conflict.
     thread::sleep(Duration::from_secs(2));
     foreign_heartbeat(&journal);
-    let status = child.0.wait().expect("wait sync conflict");
+    let status = child.wait().expect("wait sync conflict");
     assert_eq!(status.code(), Some(2));
     assert!(journal.0.join("health/supervisor.pid").exists());
     assert!(!ready.exists());

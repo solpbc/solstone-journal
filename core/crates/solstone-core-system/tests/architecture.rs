@@ -10,6 +10,7 @@ use solstone_core_system::TASK_VERB_TOKENS;
 const JOURNAL_PROCESSES: &str = include_str!("../../solstone-core-journal-cli/src/processes.rs");
 const JOURNAL_MANIFEST: &str = include_str!("../../solstone-core-journal-cli/src/manifest.rs");
 const LIB: &str = include_str!("../src/lib.rs");
+const ACTIVITY_STATE: &str = include_str!("../src/activity_state.rs");
 const CAP: &str = include_str!("../src/cap.rs");
 const CATCHUP: &str = include_str!("../src/catchup.rs");
 const ERROR: &str = include_str!("../src/error.rs");
@@ -33,6 +34,7 @@ const LIFECYCLE_STATE: &str = include_str!("../src/lifecycle/state.rs");
 const LIFECYCLE_SWEEP: &str = include_str!("../src/lifecycle/sweep.rs");
 const LIFECYCLE_SYNC: &str = include_str!("../src/lifecycle/sync.rs");
 const LIFECYCLE_WATCHER: &str = include_str!("../src/lifecycle/watcher.rs");
+const MEMORY_ADMISSION: &str = include_str!("../src/memory_admission.rs");
 const STATUS_WIRE: &str = include_str!("../src/status_wire.rs");
 const STT_BACKEND_CHOICE: &str = include_str!("../src/stt_backend_choice.rs");
 const SCHEDULE: &str = include_str!("../src/schedule/mod.rs");
@@ -151,10 +153,12 @@ fn ac7_bus_decode_is_typed_to_bus_requests_not_scheduled_execution_requests() {
 #[test]
 fn ac21_only_operational_log_module_names_write_primitives() {
     let root_modules = [
+        ("activity_state", ACTIVITY_STATE),
         ("cap", CAP),
         ("catchup", CATCHUP),
         ("error", ERROR),
         ("lifecycle", LIFECYCLE),
+        ("memory_admission", MEMORY_ADMISSION),
         ("operational_log_parse", OPERATIONAL_LOG_PARSE),
         ("partition", PARTITION),
         ("process", PROCESS_MOD),
@@ -254,6 +258,18 @@ fn ac21_only_operational_log_module_names_write_primitives() {
                 && *name != "catchup"
         })
     {
+        // Checked against PRODUCTION source only -- everything before a trailing
+        // `mod tests`. The claim is "must not write journal data", and a unit
+        // test building a fixture tree under the OS temp dir is not that. This
+        // mirrors the `catchup` treatment immediately below, which established
+        // the pattern for exactly this shape; scanning whole files instead made
+        // `activity_state` (0 write primitives in production, 4 `fs::write` and
+        // 3 `create_dir_all` in its tests) and `schedule/config` red on test
+        // code. Production is a subset of the whole file, so this removes false
+        // positives without weakening any module's real coverage.
+        let production = source
+            .split_once("mod tests")
+            .map_or(source, |(production, _)| production);
         for primitive in [
             "File::",
             "OpenOptions",
@@ -262,7 +278,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
             "create_dir_all",
         ] {
             assert!(
-                !source.contains(primitive),
+                !production.contains(primitive),
                 "{name} must not write journal data through {primitive}"
             );
         }

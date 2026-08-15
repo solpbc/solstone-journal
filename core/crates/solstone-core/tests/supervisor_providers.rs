@@ -4,14 +4,17 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::net::TcpListener;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_local::install::{archive, manifest, pins};
+
+use super::supervisor_guard::SupervisorGuard;
 
 struct TempJournal(PathBuf);
 impl TempJournal {
@@ -86,31 +89,9 @@ impl Drop for TempJournal {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-struct ChildGuard(Child);
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if self.0.try_wait().ok().flatten().is_none() {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(self.0.id() as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            );
-            for _ in 0..1_000 {
-                if self.0.try_wait().ok().flatten().is_some() {
-                    return;
-                }
-                thread::sleep(Duration::from_millis(5));
-            }
-            let _ = self.0.kill();
-        }
-        let _ = self.0.wait();
-    }
-}
 
-#[test]
-fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
-    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
-    let journal = TempJournal::new(fixture);
-    let mut child = ChildGuard(
+fn start(journal: &TempJournal, fixture: &str) -> SupervisorGuard {
+    SupervisorGuard::new(
         Command::new(env!("CARGO_BIN_EXE_solstone-core"))
             .args(["supervisor", "--journal"])
             .arg(&journal.0)
@@ -124,38 +105,108 @@ fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
             .stderr(Stdio::piped())
             .spawn()
             .expect("supervisor starts"),
-    );
-    let local = journal.0.join("health/providers/runtime/local.json");
-    let parakeet = journal.0.join("health/providers/runtime/parakeet.json");
-    let mut local_ready = false;
-    let mut parakeet_ready = false;
-    let mut parakeet_state = None;
-    for _ in 0..1200 {
-        if let Ok(bytes) = fs::read(&local)
-            && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
-        {
-            local_ready |= value["phase"] == "ready";
+    )
+}
+
+fn wait_for_provider_records(journal: &TempJournal, child: &mut SupervisorGuard) -> [Value; 2] {
+    let paths = [
+        journal.0.join("health/providers/runtime/local.json"),
+        journal.0.join("health/providers/runtime/parakeet.json"),
+    ];
+    let mut records = [None, None];
+    for _ in 0..1_200 {
+        for (record, path) in records.iter_mut().zip(&paths) {
+            if let Ok(bytes) = fs::read(path)
+                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+            {
+                *record = Some(value);
+            }
         }
-        if let Ok(bytes) = fs::read(&parakeet)
-            && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
-        {
-            parakeet_ready |= value["phase"] == "ready";
-            parakeet_state = Some(value);
+        if records.iter().all(|record| {
+            record
+                .as_ref()
+                .is_some_and(|value| value["phase"] == "ready")
+        }) {
+            return records.map(Option::unwrap);
         }
-        if local_ready && parakeet_ready {
-            break;
-        }
-        if let Some(status) = child.0.try_wait().expect("supervisor status") {
+        if let Some(status) = child.try_wait().expect("supervisor status") {
             panic!("supervisor exited: {status}");
         }
         thread::sleep(Duration::from_millis(10));
     }
+    panic!("providers did not become ready: {records:?}");
+}
+
+#[test]
+fn ac12_local_and_parakeet_reconcile_real_fixture_cycles() {
+    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+    let journal = TempJournal::new(fixture);
+    let mut child = start(&journal, fixture);
+    let _ = wait_for_provider_records(&journal, &mut child);
+}
+
+#[test]
+fn supervisor_guard_reclaims_provider_tree_during_unwind() {
+    let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+    let journal = TempJournal::new(fixture);
+    let mut observed = None;
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut child = start(&journal, fixture);
+        let records = wait_for_provider_records(&journal, &mut child);
+        let providers = records.map(|record| {
+            let process = &record["process"];
+            (
+                u32::try_from(process["pid"].as_u64().expect("provider pid"))
+                    .expect("provider pid fits in u32"),
+                u16::try_from(process["port"].as_u64().expect("provider port"))
+                    .expect("provider port fits in u16"),
+            )
+        });
+        observed = Some((child.id(), providers));
+        panic!("exercise supervisor guard unwind cleanup");
+    }));
     assert!(
-        local_ready,
-        "Local did not complete the fixture desired/start/truth/ready cycle"
+        panic.is_err(),
+        "fixture panic must unwind through the guard"
     );
-    assert!(
-        parakeet_ready,
-        "Parakeet did not complete the fixture desired/start/truth/ready cycle: {parakeet_state:?}"
+
+    let (supervisor_pid, providers) = observed.expect("cleanup subjects captured before panic");
+    for _ in 0..500 {
+        let pids_gone = std::iter::once(supervisor_pid)
+            .chain(providers.iter().map(|(pid, _)| *pid))
+            .all(process_is_gone);
+        let ports_free = providers
+            .iter()
+            .all(|(_, port)| TcpListener::bind(("127.0.0.1", *port)).is_ok());
+        if pids_gone && ports_free {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let surviving_pids = std::iter::once(supervisor_pid)
+        .chain(providers.iter().map(|(pid, _)| *pid))
+        .filter(|pid| !process_is_gone(*pid))
+        .collect::<Vec<_>>();
+    let held_ports = providers
+        .iter()
+        .filter_map(|(_, port)| {
+            TcpListener::bind(("127.0.0.1", *port))
+                .is_err()
+                .then_some(*port)
+        })
+        .collect::<Vec<_>>();
+    panic!(
+        "guard cleanup incomplete: surviving_pids={surviving_pids:?}, held_ports={held_ports:?}"
     );
+}
+
+fn process_is_gone(pid: u32) -> bool {
+    let Ok(pid) = i32::try_from(pid) else {
+        return false;
+    };
+    matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
 }

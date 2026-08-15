@@ -8,7 +8,7 @@ use std::future::Future;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -16,6 +16,11 @@ use serde_json::{Value, json};
 use solstone_core_local::install::{archive, manifest, pins};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+
+#[path = "support/supervisor_guard.rs"]
+mod supervisor_guard;
+
+use supervisor_guard::SupervisorGuard;
 
 #[allow(dead_code)]
 #[path = "support/await_outcome.rs"]
@@ -135,8 +140,6 @@ impl Drop for TempJournal {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-struct ChildGuard(Child);
-
 fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     match outcome {
         WaitOutcome::Passed(_) => {}
@@ -152,35 +155,7 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     }
 }
 
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if self.0.try_wait().ok().flatten().is_none() {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(self.0.id() as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            );
-            let outcome = await_outcome(
-                WaitPolarity::Positive,
-                Duration::from_millis(5),
-                1_000,
-                Instant::now,
-                || match self.0.try_wait() {
-                    Ok(Some(_)) => PollState::Held,
-                    Ok(None) => PollState::Pending,
-                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
-                },
-                thread::sleep,
-            );
-            if matches!(outcome, WaitOutcome::Passed(_)) {
-                return;
-            }
-            let _ = self.0.kill();
-        }
-        let _ = self.0.wait();
-    }
-}
-
-fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> ChildGuard {
+fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> SupervisorGuard {
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])
@@ -213,10 +188,10 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> ChildGuard {
             cap_seconds.to_string(),
         );
     }
-    ChildGuard(command.spawn().expect("supervisor starts"))
+    SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
-fn wait_for_socket(child: &mut ChildGuard, socket: &std::path::Path) {
+fn wait_for_socket(child: &mut SupervisorGuard, socket: &std::path::Path) {
     let ready = socket
         .parent()
         .expect("Callosum socket health directory")
@@ -230,7 +205,7 @@ fn wait_for_socket(child: &mut ChildGuard, socket: &std::path::Path) {
             if socket.exists() && ready.exists() {
                 PollState::Held
             } else {
-                match child.0.try_wait() {
+                match child.try_wait() {
                     Ok(Some(status)) => {
                         PollState::HardFail(format!("supervisor exited during boot: {status}"))
                     }
@@ -1053,7 +1028,7 @@ async fn segment_events_log_does_not_materialize_missing_segment() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     assert!(!segment.exists());
-    assert!(child.0.try_wait().expect("supervisor status").is_none());
+    assert!(child.try_wait().expect("supervisor status").is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

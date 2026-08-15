@@ -3,5 +3,7 @@
 
 #[path = "supervisor_boot.rs"]
 mod supervisor_boot;
+#[path = "support/supervisor_guard.rs"]
+mod supervisor_guard;
 #[path = "supervisor_providers.rs"]
 mod supervisor_providers;
